@@ -1,0 +1,38 @@
+<?php
+
+// Routes induk milik fransDeveloper (folder: career)
+
+// MasterSiklus DIHAPUS (Batch 11) — siklus tidak menggerakkan logika apa pun.
+require base_path('routes/career/MasterTalent/MasterTalentWeb.php');
+require base_path('routes/career/MasterTalent/MasterTalentApi.php');
+require base_path('routes/career/MasterPerilaku/MasterPerilakuWeb.php');
+require base_path('routes/career/MasterPerilaku/MasterPerilakuApi.php');
+require base_path('routes/career/MasterMode/MasterModeWeb.php');
+require base_path('routes/career/MasterMode/MasterModeApi.php');
+require base_path('routes/career/MasterSumber/MasterSumberWeb.php');
+require base_path('routes/career/MasterSumber/MasterSumberApi.php');
+require base_path('routes/career/MasterTipe/MasterTipeWeb.php');
+require base_path('routes/career/MasterTipe/MasterTipeApi.php');
+require base_path('routes/career/MasterKampus/MasterKampusWeb.php');
+require base_path('routes/career/MasterKampus/MasterKampusApi.php');
+require base_path('routes/career/MasterKriteria/MasterKriteriaWeb.php');
+require base_path('routes/career/MasterKriteria/MasterKriteriaApi.php');
+require base_path('routes/career/MasterKategori/MasterKategoriWeb.php');
+require base_path('routes/career/MasterKategori/MasterKategoriApi.php');
+require base_path('routes/career/MasterKemitraan/MasterKemitraanWeb.php');
+require base_path('routes/career/MasterKemitraan/MasterKemitraanApi.php');
+require base_path('routes/career/MasterJadwal/MasterJadwalWeb.php');
+require base_path('routes/career/MasterJadwal/MasterJadwalApi.php');
+require base_path('routes/career/MasterTes/MasterTesWeb.php');
+require base_path('routes/career/MasterTes/MasterTesApi.php');
+require base_path('routes/career/MasterFormulir/MasterFormulirWeb.php');
+require base_path('routes/career/MasterFormulir/MasterFormulirApi.php');
+require base_path('routes/career/MasterAlur/MasterAlurWeb.php');
+require base_path('routes/career/MasterAlur/MasterAlurApi.php');
+require base_path('routes/career/MasterAkun/MasterAkunWeb.php');
+require base_path('routes/career/MasterAkun/MasterAkunApi.php');
+require base_path('routes/career/ProgramKegiatan/ProgramKegiatanWeb.php');
+require base_path('routes/career/ProgramKegiatan/ProgramKegiatanApi.php');
+require base_path('routes/career/PembukaanProgram/PembukaanProgramWeb.php');
+require base_path('routes/career/Penjadwalan/PenjadwalanWeb.php');
+require base_path('routes/career/Penjadwalan/PenjadwalanApi.php');

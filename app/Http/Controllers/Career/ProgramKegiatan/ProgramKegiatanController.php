@@ -1,0 +1,317 @@
+<?php
+
+namespace App\Http\Controllers\Career\ProgramKegiatan;
+
+use App\Helpers\ResponseHelper;
+use App\Http\Controllers\Controller;
+use App\Support\Career\MesinSyarat;
+use App\Support\CareerShell;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Inertia\Inertia;
+use Vinkla\Hashids\Facades\Hashids;
+
+/**
+ * WEB CAREER — PROGRAM KEGIATAN (induk-detail: Program + Batch + Posisi + Kriteria).
+ * SPA + WEB. CRUD Query Builder + ResponseHelper + Log channel + Hashids.
+ */
+class ProgramKegiatanController extends Controller
+{
+    public function index()
+    {
+        return Inertia::render('Career/admin/program-kegiatan/programKegiatan', CareerShell::props('/karir/program-kegiatan', 'Program Kegiatan'));
+    }
+
+    public function list()
+    {
+        try {
+            $programs = DB::table('N_WEB_CAREERS_Program as p')
+                ->leftJoin('N_WEB_CAREERS_Users as u', 'u.Id_Users', '=', 'p.Created_By_Id')
+                ->leftJoin('N_WEB_CAREERS_Master_Alur as a', 'a.Kode', '=', 'p.Alur_Kode')
+                ->orderBy('p.Id_Program')
+                ->select('p.*', 'u.Nama as Pembuat', 'a.Nama as AlurNama')
+                ->get();
+
+            $batch = DB::table('N_WEB_CAREERS_Program_Batch')->orderBy('Id_Program_Batch')->get()->groupBy('Program_Id');
+            $posisi = DB::table('N_WEB_CAREERS_Program_Posisi')->orderBy('Id_Program_Posisi')->get()->groupBy('Program_Id');
+            $syarat = DB::table('N_WEB_CAREERS_Program_Syarat')->orderBy('Urutan')->get()->groupBy('Program_Id');
+
+            $rows = $programs->map(fn ($p) => [
+                'id' => Hashids::encode($p->Id_Program),
+                'kode' => $p->Kode,
+                'nama' => $p->Nama,
+                'kategori' => $p->Kategori,
+                'warna' => $p->Warna,
+                'mode' => $p->Mode,
+                'alur' => $p->Alur_Kode,
+                'alurNama' => $p->AlurNama,
+                'jadwal' => $p->Jadwal_Kode,
+                'penyelenggara' => $p->Penyelenggara,
+                'status' => $p->Status,
+                'createdBy' => $p->Pembuat ?: $p->Created_By,
+                'createdAt' => $p->Created_At,
+                'batch' => collect($batch->get($p->Id_Program, []))->map(fn ($b) => ['nama' => $b->Nama, 'kuota' => (int) $b->Kuota, 'terisi' => (int) $b->Terisi, 'status' => $b->Status])->values(),
+                'posisi' => collect($posisi->get($p->Id_Program, []))->map(fn ($x) => ['posisi' => $x->Posisi, 'departemen' => $x->Departemen, 'lokasi' => $x->Lokasi, 'kuota' => (int) $x->Kuota, 'status' => $x->Status, 'mppRef' => $x->Mpp_Ref ?? null, 'level' => $x->Level ?? null])->values(),
+                // Syarat auto-gugur: satu baris = satu aturan bertingkat, menempel
+                // ke tahap alur tertentu (lihat Batch 10).
+                'syarat' => collect($syarat->get($p->Id_Program, []))->map(fn ($s) => [
+                    'id' => Hashids::encode($s->Id_Program_Syarat),
+                    'tahapId' => $s->Master_Alur_Tahap_Id,
+                    'formulir' => $s->Formulir_Kode,
+                    'nama' => $s->Nama,
+                    'aturan' => json_decode($s->Aturan_Json ?: '{}', true),
+                    'aksi' => $s->Aksi,
+                    'pesanGugur' => $s->Pesan_Gugur,
+                    'uji' => $s->Flag_Uji === 'Y',
+                    'aktif' => $s->Flag_Aktif === 'Y',
+                ])->values(),
+            ])->values();
+
+            return ResponseHelper::success($rows, 'Data program dimuat');
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->error('Gagal memuat program: ' . $e->getMessage());
+
+            return ResponseHelper::error('Gagal memuat data program', 500);
+        }
+    }
+
+    private function rules(): array
+    {
+        return [
+            'nama' => 'required|string|max:150',
+            'kategori' => 'required|string|max:20',
+            'warna' => 'nullable|string|max:20',
+            'mode' => 'nullable|string|max:20',
+            'alur' => 'nullable|string|max:30',
+            'jadwal' => 'nullable|string|max:30',
+            'penyelenggara' => 'nullable|string|max:120',
+            // Opsional: saat dibuat status dipaksa BERJALAN (lihat store()), dan saat
+            // diubah field ini boleh tidak dikirim -> status lama dipertahankan.
+            'status' => 'nullable|in:DRAFT,BERJALAN,SELESAI',
+            // Batch, posisi, dan kriteria semuanya OPSIONAL. Program rekrutmen/MT yang
+            // jalan langsung tanpa angkatan & tanpa syarat auto-gugur tetap sah.
+            'batch' => 'nullable|array',
+            'batch.*.nama' => 'required|string|max:120',
+            'batch.*.kuota' => 'nullable|integer|min:0',
+            'batch.*.terisi' => 'nullable|integer|min:0',
+            'batch.*.status' => 'nullable|string|max:20',
+            'posisi' => 'nullable|array',
+            'posisi.*.posisi' => 'required|string|max:120',
+            'posisi.*.departemen' => 'nullable|string|max:120',
+            'posisi.*.lokasi' => 'nullable|string|max:80',
+            'posisi.*.kuota' => 'nullable|integer|min:0',
+            // Sengaja nullable, bukan required: baris posisi lama (diinput manual
+            // sebelum aturan "wajib dari MPP") tetap bisa disimpan ulang saat program
+            // diedit. Pemaksaan pilih-dari-MPP ada di modal.
+            'posisi.*.mppRef' => 'nullable|string|max:60',
+            'posisi.*.level' => 'nullable|string|max:40',
+            'posisi.*.status' => 'nullable|in:BUKA,PENUH,TUTUP',
+            // Syarat auto-gugur. `aturan` berupa pohon DAN/ATAU — strukturnya
+            // divalidasi MesinSyarat::bersihkan(), bukan oleh aturan Laravel,
+            // karena kedalamannya tidak terbatas.
+            'syarat' => 'nullable|array',
+            'syarat.*.nama' => 'required|string|max:120',
+            'syarat.*.tahapId' => 'nullable|integer',
+            'syarat.*.formulir' => 'nullable|string|max:30',
+            'syarat.*.aturan' => 'required|array',
+            'syarat.*.aksi' => 'nullable|in:TANDAI,GUGUR',
+            'syarat.*.pesanGugur' => 'nullable|string|max:500',
+            'syarat.*.uji' => 'nullable|boolean',
+            'syarat.*.aktif' => 'nullable|boolean',
+        ];
+    }
+
+    /**
+     * Total kursi batch tidak boleh melebihi pagu MPP (jumlah kuota seluruh posisi).
+     * Kurang dari pagu boleh — program memang tidak harus mengisi semua kursi sekaligus.
+     * Kalau program tidak punya posisi sama sekali, tidak ada pagu yang bisa dilanggar.
+     *
+     * @return string|null pesan galat, atau null bila lolos
+     */
+    private function cekKuotaBatch(array $data): ?string
+    {
+        $pagu = collect($data['posisi'] ?? [])->sum(fn ($p) => (int) ($p['kuota'] ?? 0));
+        if ($pagu <= 0) {
+            return null;
+        }
+
+        $kursi = collect($data['batch'] ?? [])->sum(fn ($b) => (int) ($b['kuota'] ?? 0));
+
+        return $kursi > $pagu
+            ? "Total kursi batch ({$kursi}) melebihi kuota MPP ({$pagu})."
+            : null;
+    }
+
+    private function simpanAnak(int $programId, array $data, ?int $userId): void
+    {
+        foreach ($data['batch'] ?? [] as $b) {
+            DB::table('N_WEB_CAREERS_Program_Batch')->insert(['Program_Id' => $programId, 'Nama' => $b['nama'], 'Kuota' => $b['kuota'] ?? 0, 'Terisi' => $b['terisi'] ?? 0, 'Status' => $b['status'] ?? 'AKTIF', 'Created_By_Id' => $userId, 'Updated_By_Id' => $userId]);
+        }
+        foreach ($data['posisi'] ?? [] as $p) {
+            DB::table('N_WEB_CAREERS_Program_Posisi')->insert(['Program_Id' => $programId, 'Posisi' => $p['posisi'], 'Departemen' => $p['departemen'] ?? null, 'Lokasi' => $p['lokasi'] ?? null, 'Kuota' => $p['kuota'] ?? 0, 'Status' => $p['status'] ?? 'BUKA', 'Mpp_Ref' => $p['mppRef'] ?? null, 'Level' => $p['level'] ?? null, 'Created_By_Id' => $userId, 'Updated_By_Id' => $userId]);
+        }
+        $now = now();
+        $userName = session('career_auth.nama', 'ADMIN');
+        $urut = 1;
+
+        foreach ($data['syarat'] ?? [] as $s) {
+            // Simpul setengah jadi dibuang di sini. Aturan yang tidak lengkap
+            // berbahaya: bisa menggugurkan pelamar tanpa maksud siapa pun.
+            $aturan = MesinSyarat::bersihkan($s['aturan'] ?? []);
+            if (! $aturan) {
+                continue;
+            }
+
+            DB::table('N_WEB_CAREERS_Program_Syarat')->insert([
+                'Program_Id' => $programId,
+                'Master_Alur_Tahap_Id' => $s['tahapId'] ?? null,
+                'Formulir_Kode' => $s['formulir'] ?? null,
+                'Nama' => $s['nama'],
+                'Aturan_Json' => json_encode($aturan, JSON_UNESCAPED_UNICODE),
+                'Aksi' => $s['aksi'] ?? 'TANDAI',
+                'Pesan_Gugur' => $s['pesanGugur'] ?? null,
+                'Urutan' => $urut++,
+                'Flag_Uji' => ! empty($s['uji']) ? 'Y' : 'T',
+                'Flag_Aktif' => array_key_exists('aktif', $s) && ! $s['aktif'] ? 'T' : 'Y',
+                'Created_At' => $now, 'Created_By' => $userName, 'Created_By_Id' => $userId,
+                'Updated_At' => $now, 'Updated_By' => $userName, 'Updated_By_Id' => $userId,
+            ]);
+        }
+    }
+
+    private function hapusAnak(int $programId): void
+    {
+        DB::table('N_WEB_CAREERS_Program_Batch')->where('Program_Id', $programId)->delete();
+        DB::table('N_WEB_CAREERS_Program_Posisi')->where('Program_Id', $programId)->delete();
+        DB::table('N_WEB_CAREERS_Program_Syarat')->where('Program_Id', $programId)->delete();
+    }
+
+    public function store(Request $request)
+    {
+        try {
+            $data = $request->validate($this->rules());
+            if ($galat = $this->cekKuotaBatch($data)) {
+                return ResponseHelper::error($galat, 422);
+            }
+            $userId = session('career_auth.id');
+            $userName = session('career_auth.nama', 'ADMIN');
+            $now = now();
+
+            $base = trim(preg_replace('/[^A-Z0-9]+/', '_', strtoupper($data['nama'])), '_') ?: 'PROGRAM';
+            $base = substr($base, 0, 26); // Kode varchar(30): sisakan ruang untuk sufiks _N
+            $kode = $base;
+            $n = 2;
+            while (DB::table('N_WEB_CAREERS_Program')->where('Kode', $kode)->exists()) {
+                $kode = $base . '_' . $n++;
+            }
+
+            DB::transaction(function () use ($data, $kode, $userId, $userName, $now) {
+                $id = DB::table('N_WEB_CAREERS_Program')->insertGetId([
+                    'Kode' => $kode, 'Nama' => $data['nama'], 'Kategori' => $data['kategori'], 'Warna' => $data['warna'] ?? '#4f46e5',
+                    'Mode' => $data['mode'] ?? null, 'Alur_Kode' => $data['alur'] ?? null, 'Jadwal_Kode' => $data['jadwal'] ?? null,
+                    // Program baru LANGSUNG berjalan. Admin tidak memilih status saat
+                    // membuat — sebuah program yang baru didefinisikan memang dianggap
+                    // aktif. DRAFT/SELESAI diatur belakangan lewat toggle / modal ubah.
+                    'Penyelenggara' => $data['penyelenggara'] ?? null, 'Status' => 'BERJALAN',
+                    'Created_At' => $now, 'Created_By' => $userName, 'Created_By_Id' => $userId, 'Updated_At' => $now, 'Updated_By' => $userName, 'Updated_By_Id' => $userId,
+                ], 'Id_Program');
+                $this->simpanAnak($id, $data, $userId);
+            });
+
+            Log::channel('web_career')->info("Program dibuat ({$kode}) oleh {$userName}");
+
+            return ResponseHelper::success(null, 'Program berhasil ditambahkan', 201);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return ResponseHelper::error(collect($e->errors())->flatten()->first() ?? 'Data tidak valid', 422);
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->error('Gagal membuat program: ' . $e->getMessage());
+
+            return ResponseHelper::error('Gagal menyimpan data', 500);
+        }
+    }
+
+    public function update(Request $request, $id)
+    {
+        try {
+            $realId = Hashids::decode($id)[0] ?? null;
+            $row = DB::table('N_WEB_CAREERS_Program')->where('Id_Program', $realId)->first();
+            if (! $row) {
+                return ResponseHelper::error('Data tidak ditemukan', 404);
+            }
+            $data = $request->validate($this->rules());
+            if ($galat = $this->cekKuotaBatch($data)) {
+                return ResponseHelper::error($galat, 422);
+            }
+            $userId = session('career_auth.id');
+            $userName = session('career_auth.nama', 'ADMIN');
+
+            // $row WAJIB ikut di-use: dipakai sebagai nilai jatuhan untuk Warna & Status.
+            DB::transaction(function () use ($data, $realId, $userId, $userName, $row) {
+                DB::table('N_WEB_CAREERS_Program')->where('Id_Program', $realId)->update([
+                    'Nama' => $data['nama'], 'Kategori' => $data['kategori'], 'Warna' => $data['warna'] ?? $row->Warna ?? '#4f46e5',
+                    'Mode' => $data['mode'] ?? null, 'Alur_Kode' => $data['alur'] ?? null, 'Jadwal_Kode' => $data['jadwal'] ?? null,
+                    // Status boleh tidak dikirim -> pertahankan yang lama.
+                    'Penyelenggara' => $data['penyelenggara'] ?? null, 'Status' => $data['status'] ?? $row->Status,
+                    'Updated_At' => now(), 'Updated_By' => $userName, 'Updated_By_Id' => $userId,
+                ]);
+                $this->hapusAnak($realId);
+                $this->simpanAnak($realId, $data, $userId);
+            });
+
+            Log::channel('web_career')->info("Program #{$realId} diperbarui");
+
+            return ResponseHelper::success(null, 'Program diperbarui');
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return ResponseHelper::error(collect($e->errors())->flatten()->first() ?? 'Data tidak valid', 422);
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->error("Gagal update program #{$id}: " . $e->getMessage());
+
+            return ResponseHelper::error('Gagal memperbarui data', 500);
+        }
+    }
+
+    public function toggle(Request $request, $id)
+    {
+        try {
+            $realId = Hashids::decode($id)[0] ?? null;
+            $aktif = $request->boolean('aktif');
+            $terpengaruh = DB::table('N_WEB_CAREERS_Program')->where('Id_Program', $realId)->update([
+                'Status' => $aktif ? 'BERJALAN' : 'DRAFT',
+                'Updated_At' => now(), 'Updated_By' => session('career_auth.nama', 'ADMIN'), 'Updated_By_Id' => session('career_auth.id'),
+            ]);
+            if (! $terpengaruh) {
+                return ResponseHelper::error('Data tidak ditemukan', 404);
+            }
+            Log::channel('web_career')->info("Program #{$realId} status " . ($aktif ? 'BERJALAN' : 'DRAFT'));
+
+            return ResponseHelper::success(null, 'Status diperbarui');
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->error("Gagal toggle program #{$id}: " . $e->getMessage());
+
+            return ResponseHelper::error('Gagal mengubah status', 500);
+        }
+    }
+
+    public function destroy($id)
+    {
+        try {
+            $realId = Hashids::decode($id)[0] ?? null;
+            $row = DB::table('N_WEB_CAREERS_Program')->where('Id_Program', $realId)->first();
+            if (! $row) {
+                return ResponseHelper::error('Data tidak ditemukan', 404);
+            }
+            DB::transaction(function () use ($realId) {
+                $this->hapusAnak($realId);
+                DB::table('N_WEB_CAREERS_Program')->where('Id_Program', $realId)->delete();
+            });
+            Log::channel('web_career')->info("Program #{$realId} dihapus");
+
+            return ResponseHelper::success(null, 'Program dihapus');
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->error("Gagal hapus program #{$id}: " . $e->getMessage());
+
+            return ResponseHelper::error('Gagal menghapus data', 500);
+        }
+    }
+}

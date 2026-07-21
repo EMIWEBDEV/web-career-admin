@@ -1,0 +1,231 @@
+<?php
+
+namespace App\Http\Controllers\Career\MasterJadwal;
+
+use App\Helpers\ResponseHelper;
+use App\Http\Controllers\Controller;
+use App\Support\CareerShell;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Inertia\Inertia;
+use Vinkla\Hashids\Facades\Hashids;
+
+/**
+ * WEB CAREER — MASTER JADWAL KEGIATAN (induk-detail: Jadwal + Agenda).
+ * SPA + WEB (tanpa API controller). CRUD Query Builder langsung + ResponseHelper + Log channel.
+ */
+class MasterJadwalController extends Controller
+{
+    public function index()
+    {
+        return Inertia::render('Career/admin/master-jadwal/masterJadwal', CareerShell::props('/master-jadwal', 'Master Jadwal Kegiatan'));
+    }
+
+    /** List jadwal + agenda (anak) — Query Builder, join nama alur/pembuat. */
+    public function list()
+    {
+        try {
+            $jadwals = DB::table('N_WEB_CAREERS_Master_Jadwal as j')
+                ->leftJoin('N_WEB_CAREERS_Users as u', 'u.Id_Users', '=', 'j.Created_By_Id')
+                ->leftJoin('N_WEB_CAREERS_Master_Alur as a', 'a.Kode', '=', 'j.Alur_Kode')
+                ->orderBy('j.Id_Master_Jadwal')
+                ->select('j.*', 'u.Nama as Pembuat', 'a.Nama as AlurNama')
+                ->get();
+
+            $agenda = DB::table('N_WEB_CAREERS_Master_Jadwal_Agenda')->orderBy('Urutan')->get()->groupBy('Master_Jadwal_Id');
+
+            $rows = $jadwals->map(function ($j) use ($agenda) {
+                return [
+                    'id' => Hashids::encode($j->Id_Master_Jadwal),
+                    'kode' => $j->Kode,
+                    'kegiatan' => $j->Kegiatan,
+                    'kategori' => $j->Kategori,
+                    'alur' => $j->Alur_Kode,
+                    'alurNama' => $j->AlurNama,
+                    'status' => $j->Status === 'AKTIF' ? 'AKTIF' : 'NONAKTIF',
+                    'createdBy' => $j->Pembuat ?: $j->Created_By,
+                    'createdAt' => $j->Created_At,
+                    'agenda' => collect($agenda->get($j->Id_Master_Jadwal, []))->map(fn ($g) => [
+                        'jenis' => $g->Jenis,
+                        'label' => $g->Label,
+                        'mulai' => $g->Tanggal_Mulai,
+                        'selesai' => $g->Tanggal_Selesai,
+                    ])->values(),
+                ];
+            })->values();
+
+            return ResponseHelper::success($rows, 'Data jadwal dimuat');
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->error('Gagal memuat jadwal: ' . $e->getMessage());
+
+            return ResponseHelper::error('Gagal memuat data jadwal', 500);
+        }
+    }
+
+    /** Aturan validasi jadwal + agenda. */
+    private function rules(): array
+    {
+        return [
+            'kegiatan' => 'required|string|max:120',
+            'kategori' => 'required|string|max:20',
+            'alur' => 'nullable|string|max:30',
+            // Opsional: saat dibuat dipaksa AKTIF (lihat store()); saat diubah boleh
+            // tidak dikirim -> status lama dipertahankan.
+            'status' => 'nullable|in:AKTIF,NONAKTIF',
+            'agenda' => 'nullable|array',
+            'agenda.*.jenis' => 'required|string|max:20',
+            'agenda.*.label' => 'required|string|max:150',
+            'agenda.*.mulai' => 'nullable|date',
+            'agenda.*.selesai' => 'nullable|date',
+        ];
+    }
+
+    /** Simpan baris agenda (anak) untuk sebuah jadwal. */
+    private function simpanAgenda(int $jadwalId, array $agenda, ?int $userId): void
+    {
+        foreach (array_values($agenda) as $i => $g) {
+            DB::table('N_WEB_CAREERS_Master_Jadwal_Agenda')->insert([
+                'Master_Jadwal_Id' => $jadwalId,
+                'Urutan' => $i + 1,
+                'Jenis' => $g['jenis'],
+                'Label' => $g['label'],
+                'Tanggal_Mulai' => $g['mulai'] ?? null,
+                'Tanggal_Selesai' => $g['selesai'] ?? null,
+                'Alur_Idx' => null,
+                'Created_By_Id' => $userId,
+                'Updated_By_Id' => $userId,
+            ]);
+        }
+    }
+
+    public function store(Request $request)
+    {
+        try {
+            $data = $request->validate($this->rules());
+            $userId = session('career_auth.id');
+            $userName = session('career_auth.nama', 'ADMIN');
+            $now = now();
+
+            // Kode = KEGIATAN di-uppercase (tanpa prefix), unik.
+            // Kolom Kode varchar(30): potong ke 26 agar masih ada ruang untuk
+            // sufiks "_N" saat harus dibuat unik. Nama panjang seperti
+            // "TESTING - KEGIATAN MT 2026 BY FRANS" tadinya meluber & gagal insert.
+            $base = trim(preg_replace('/[^A-Z0-9]+/', '_', strtoupper($data['kegiatan'])), '_') ?: 'JADWAL';
+            $base = substr($base, 0, 26);
+            $kode = $base;
+            $n = 2;
+            while (DB::table('N_WEB_CAREERS_Master_Jadwal')->where('Kode', $kode)->exists()) {
+                $kode = $base . '_' . $n++;
+            }
+
+            DB::transaction(function () use ($data, $kode, $userId, $userName, $now) {
+                $id = DB::table('N_WEB_CAREERS_Master_Jadwal')->insertGetId([
+                    'Kode' => $kode,
+                    'Kegiatan' => $data['kegiatan'],
+                    'Kategori' => $data['kategori'],
+                    'Alur_Kode' => $data['alur'] ?? null,
+                    // Jadwal baru selalu aktif — admin tidak ditanya hal yang sudah pasti.
+                    'Status' => 'AKTIF',
+                    'Created_At' => $now, 'Created_By' => $userName, 'Created_By_Id' => $userId,
+                    'Updated_At' => $now, 'Updated_By' => $userName, 'Updated_By_Id' => $userId,
+                ], 'Id_Master_Jadwal');
+
+                $this->simpanAgenda($id, $data['agenda'] ?? [], $userId);
+            });
+
+            Log::channel('web_career')->info("Master jadwal dibuat ({$kode}) oleh {$userName}");
+
+            return ResponseHelper::success(null, 'Jadwal berhasil ditambahkan', 201);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return ResponseHelper::error(collect($e->errors())->flatten()->first() ?? 'Data tidak valid', 422);
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->error('Gagal membuat jadwal: ' . $e->getMessage());
+
+            return ResponseHelper::error('Gagal menyimpan data', 500);
+        }
+    }
+
+    public function update(Request $request, $id)
+    {
+        try {
+            $realId = Hashids::decode($id)[0] ?? null;
+            $row = DB::table('N_WEB_CAREERS_Master_Jadwal')->where('Id_Master_Jadwal', $realId)->first();
+            if (! $row) {
+                return ResponseHelper::error('Data tidak ditemukan', 404);
+            }
+            $data = $request->validate($this->rules());
+            $userId = session('career_auth.id');
+            $userName = session('career_auth.nama', 'ADMIN');
+
+            // $row WAJIB ikut di-use: dipakai sebagai nilai jatuhan untuk Status.
+            DB::transaction(function () use ($data, $realId, $userId, $userName, $row) {
+                DB::table('N_WEB_CAREERS_Master_Jadwal')->where('Id_Master_Jadwal', $realId)->update([
+                    'Kegiatan' => $data['kegiatan'],
+                    'Kategori' => $data['kategori'],
+                    'Alur_Kode' => $data['alur'] ?? null,
+                    // Boleh tidak dikirim -> pertahankan status lama.
+                    'Status' => $data['status'] ?? $row->Status,
+                    'Updated_At' => now(), 'Updated_By' => $userName, 'Updated_By_Id' => $userId,
+                ]);
+                // Ganti seluruh agenda anak (hapus lama, simpan baru).
+                DB::table('N_WEB_CAREERS_Master_Jadwal_Agenda')->where('Master_Jadwal_Id', $realId)->delete();
+                $this->simpanAgenda($realId, $data['agenda'] ?? [], $userId);
+            });
+
+            Log::channel('web_career')->info("Master jadwal #{$realId} diperbarui");
+
+            return ResponseHelper::success(null, 'Jadwal diperbarui');
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return ResponseHelper::error(collect($e->errors())->flatten()->first() ?? 'Data tidak valid', 422);
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->error("Gagal update jadwal #{$id}: " . $e->getMessage());
+
+            return ResponseHelper::error('Gagal memperbarui data', 500);
+        }
+    }
+
+    public function toggle(Request $request, $id)
+    {
+        try {
+            $realId = Hashids::decode($id)[0] ?? null;
+            $aktif = $request->boolean('aktif');
+            $terpengaruh = DB::table('N_WEB_CAREERS_Master_Jadwal')->where('Id_Master_Jadwal', $realId)->update([
+                'Status' => $aktif ? 'AKTIF' : 'NONAKTIF',
+                'Updated_At' => now(), 'Updated_By' => session('career_auth.nama', 'ADMIN'), 'Updated_By_Id' => session('career_auth.id'),
+            ]);
+            if (! $terpengaruh) {
+                return ResponseHelper::error('Data tidak ditemukan', 404);
+            }
+            Log::channel('web_career')->info("Master jadwal #{$realId} status " . ($aktif ? 'AKTIF' : 'NONAKTIF'));
+
+            return ResponseHelper::success(null, 'Status diperbarui');
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->error("Gagal toggle jadwal #{$id}: " . $e->getMessage());
+
+            return ResponseHelper::error('Gagal mengubah status', 500);
+        }
+    }
+
+    public function destroy($id)
+    {
+        try {
+            $realId = Hashids::decode($id)[0] ?? null;
+            $row = DB::table('N_WEB_CAREERS_Master_Jadwal')->where('Id_Master_Jadwal', $realId)->first();
+            if (! $row) {
+                return ResponseHelper::error('Data tidak ditemukan', 404);
+            }
+            DB::transaction(function () use ($realId) {
+                DB::table('N_WEB_CAREERS_Master_Jadwal_Agenda')->where('Master_Jadwal_Id', $realId)->delete();
+                DB::table('N_WEB_CAREERS_Master_Jadwal')->where('Id_Master_Jadwal', $realId)->delete();
+            });
+            Log::channel('web_career')->info("Master jadwal #{$realId} dihapus");
+
+            return ResponseHelper::success(null, 'Jadwal dihapus');
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->error("Gagal hapus jadwal #{$id}: " . $e->getMessage());
+
+            return ResponseHelper::error('Gagal menghapus data', 500);
+        }
+    }
+}
