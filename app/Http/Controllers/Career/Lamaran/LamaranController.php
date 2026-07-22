@@ -182,7 +182,7 @@ class LamaranController extends Controller
                     continue;
                 }
                 $ext = strtolower($file->getClientOriginalExtension() ?: $file->extension());
-                $konten = file_get_contents($file->getRealPath()); // binary di memori (≤2MB), bukan base64
+                $konten = $file->getContent(); // andal (getPathname), bukan getRealPath yang bisa kosong di Apache
                 $gcs->validasi($file->getClientOriginalName(), $ext, strlen($konten));
                 $path = $gcs->unggah($folder, $field, $ext, $konten);
 
@@ -200,7 +200,7 @@ class LamaranController extends Controller
 
             if ($request->hasFile('foto')) {
                 $f = $request->file('foto');
-                $konten = file_get_contents($f->getRealPath());
+                $konten = $f->getContent();
                 $path = $gcs->unggahFoto($folder, $konten);
                 $terunggah[] = $path;
                 $berkasMeta[] = [
@@ -216,7 +216,8 @@ class LamaranController extends Controller
         } catch (\Throwable $e) {
             // Ada berkas gagal unggah → bersihkan yang sempat masuk, batalkan (tak ada insert).
             $gcs->hapus($terunggah);
-            Log::channel('web_career')->warning('[APPLY] unggah berkas gagal: ' . $e->getMessage());
+            Log::channel('web_career')->error('[APPLY] unggah berkas gagal: ' . $e->getMessage()
+                . ' | at ' . $e->getFile() . ':' . $e->getLine() . "\n" . $e->getTraceAsString());
 
             return ResponseHelper::error('Gagal mengunggah berkas: ' . $e->getMessage(), 422);
         }
@@ -259,6 +260,37 @@ class LamaranController extends Controller
 
             return ResponseHelper::error('Gagal memproses lamaran.', 500);
         }
+    }
+
+    /**
+     * GET /api/v1/lamaran/apply-status/{processId} — status pemrosesan apply (queue).
+     * Dipoll frontend supaya kandidat lihat HASIL NYATA (lolos/gugur), bukan sukses palsu.
+     */
+    public function applyStatus(string $processId)
+    {
+        $userId = (int) session('career_auth.id');
+        $row = DB::table('N_WEB_CAREERS_Apply_Payload')->where('Process_Id', $processId)->first();
+        if (! $row || (int) $row->Users_Id !== $userId) {
+            return ResponseHelper::error('Proses tidak ditemukan.', 404);
+        }
+
+        $out = ['status' => $row->Status, 'pesan' => $row->Pesan_Error];
+
+        if ($row->Status === 'SELESAI' && $row->Lamaran_Id) {
+            $l = DB::table('N_WEB_CAREERS_Lamaran')->where('Id_Lamaran', $row->Lamaran_Id)->first();
+            $out['lamaran'] = $l ? [
+                'id' => Hashids::encode($l->Id_Lamaran),
+                'kode' => $l->Kode,
+                'status' => $l->Status,          // BERJALAN (lolos administrasi) / GUGUR
+                'hasilAkhir' => $l->Hasil_Akhir,
+                'gugurDi' => $l->Gugur_Di_Tahap,
+                'alasanGugur' => $l->Alasan_Gugur,
+                'tahap' => (int) $l->Urutan_Tahap,
+                'totalTahap' => (int) $l->Total_Tahap,
+            ] : null;
+        }
+
+        return ResponseHelper::success($out, 'Status lamaran');
     }
 
     /** DELETE /api/v1/lamaran/{id} — kandidat MENGHAPUS/membatalkan lamarannya sendiri. */

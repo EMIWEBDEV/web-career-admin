@@ -15,17 +15,30 @@
                     <p class="wc-af__meta"><i class="bi bi-building"></i> {{ flow.lowongan.program }} <span class="wc-af__sep">·</span> <i class="bi bi-geo-alt"></i> {{ flow.lowongan.lokasi }}</p>
                 </header>
 
-                <!-- Sukses -->
-                <div v-if="done" class="wca-apply__done" :class="{ 'is-fail': doneKo.length }">
-                    <div class="wca-apply__doneic"><i class="bi" :class="doneKo.length ? 'bi-x-circle-fill' : 'bi-check-circle-fill'"></i></div>
+                <!-- Sedang diproses (queue) — JANGAN klaim hasil sebelum server pasti -->
+                <div v-if="memproses" class="wca-apply__done wca-apply__proc">
+                    <div class="wca-apply__spin"><span class="wca-spinner"></span></div>
+                    <h2>Memproses Lamaran…</h2>
+                    <p>Kami sedang mengunggah berkas &amp; memverifikasi data Anda untuk posisi <b>{{ flow.lowongan.posisi }}</b>. Mohon tunggu sebentar, jangan tutup halaman ini.</p>
+                </div>
+
+                <!-- Hasil NYATA dari server -->
+                <div v-else-if="done" class="wca-apply__done" :class="{ 'is-fail': doneKo.length }">
+                    <div class="wca-apply__doneic"><i class="bi" :class="doneKo.length ? 'bi-x-circle-fill' : (hasilServer && hasilServer.status === 'DIPROSES' ? 'bi-hourglass-split' : 'bi-check-circle-fill')"></i></div>
+
                     <template v-if="doneKo.length">
                         <h2>Belum Memenuhi Syarat</h2>
-                        <p>Terima kasih telah melamar <b>{{ flow.lowongan.posisi }}</b>. Namun lamaran Anda <b>belum memenuhi syarat wajib</b>: <b>{{ doneKo.join(' · ') }}</b>. Anda tetap dapat melamar posisi lain yang sesuai dengan kualifikasi Anda.</p>
+                        <p>Terima kasih telah melamar <b>{{ flow.lowongan.posisi }}</b>. Setelah kami verifikasi, lamaran Anda <b>belum memenuhi kualifikasi</b>: <b>{{ doneKo.join(' · ') }}</b>. Anda tetap dapat melamar posisi lain yang sesuai.</p>
+                    </template>
+                    <template v-else-if="hasilServer && hasilServer.status === 'DIPROSES'">
+                        <h2>Lamaran Terkirim</h2>
+                        <p>Lamaran untuk <b>{{ flow.lowongan.posisi }}</b> sedang diproses. Hasil seleksi administrasi akan muncul di <b>Lamaran Saya</b> beberapa saat lagi.</p>
                     </template>
                     <template v-else>
-                        <h2>Lamaran Terkirim!</h2>
-                        <p>Data Anda telah <b>difinalisasi</b> & terkirim untuk posisi <b>{{ flow.lowongan.posisi }}</b>. Tim rekrutmen akan meninjau di tahap <b>Seleksi Administrasi</b>. Pantau statusnya di menu <b>Lamaran Saya</b>.</p>
+                        <h2>Lolos Seleksi Administrasi! 🎉</h2>
+                        <p>Selamat, lamaran <b>{{ flow.lowongan.posisi }}</b> <b>lolos seleksi administrasi</b> secara otomatis<template v-if="hasilServer && hasilServer.totalTahap"> dan lanjut ke <b>tahap {{ hasilServer.tahap }} dari {{ hasilServer.totalTahap }}</b></template>. Pantau &amp; kerjakan tahap berikutnya di <b>Lamaran Saya</b>.</p>
                     </template>
+
                     <a href="/kandidat/portal" class="wca-btn wca-btn--primary"><i class="bi bi-list-check"></i> Ke Lamaran Saya</a>
                 </div>
 
@@ -238,6 +251,8 @@ const step = ref(0);
 const cur = computed(() => steps[step.value] || {});
 const done = ref(false);
 const doneKo = ref([]); // alasan knock-out bila lamaran langsung tidak lolos
+const memproses = ref(false); // loading saat server memproses lamaran (queue)
+const hasilServer = ref(null); // hasil NYATA dari server: BERJALAN / GUGUR / DIPROSES
 const err = ref('');
 const preview = ref(null);
 const uploadErr = ref('');
@@ -377,6 +392,7 @@ async function finalize() {
     stopCamera();
     const isForm2 = props.flow.form === 2;
     const ko = !isForm2 ? checkKnockout(jenis, form) : [];
+    let procId = null; // id proses queue (untuk poll hasil nyata)
 
     // FINALISASI = benar-benar MENGAJUKAN lamaran ke sistem (DB), bukan sekadar
     // draf sessionStorage. Kalau knock-out (tidak lolos syarat wajib) lamaran
@@ -396,17 +412,25 @@ async function finalize() {
             // Foto verifikasi (dari kamera).
             if (facePhoto.value) fd.append('foto', dataUrlKeBlob(facePhoto.value), 'verifikasi.jpg');
 
-            await axios.post('/api/v1/lamaran', fd, { headers: { Accept: 'application/json' } });
+            const res = await axios.post('/api/v1/lamaran', fd, { headers: { Accept: 'application/json' } });
+            procId = res.data?.result?.processId || null;
         } catch (e) {
             const st = e.response?.status;
             if (st === 401) { router.visit('/login'); return; }
             notice(e.response?.data?.message || 'Gagal mengirim lamaran ke sistem.');
-            if (st === 422) return; // duplikat / berkas invalid / di luar masa berlaku
+            return; // JANGAN tampilkan sukses palsu bila request gagal
         }
     }
 
-    done.value = true;
-    // Bila Form 2 (tahap lanjut) — tandai form2 selesai & majukan dari tahap biodata lanjutan.
+    // Apply ke DB diproses ASINKRON (queue) → tampilkan loading, lalu POLL hasil NYATA
+    // (lolos administrasi / gugur). Tidak menyatakan berhasil sebelum server memastikan.
+    if (procId) {
+        memproses.value = true;
+        pollStatus(procId);
+    } else {
+        done.value = true; // Form 2 / tanpa target DB — tetap seperti semula
+    }
+    // Snapshot sessionStorage (legacy card) — tetap dibuat, tapi TAMPILAN akhir ikut server.
     const existing = getApp(lowongan.id);
     const pipeline = existing?.pipeline || flowFor(jenis);
     const base = {
@@ -430,8 +454,44 @@ async function finalize() {
     const finalApp = snapshot('FINAL', base);
     finalApp.nextAction = nextActionFor(finalApp);
     upsertApp(finalApp);
-    doneKo.value = base.knockout || [];
-    notice('Lamaran difinalisasi & terkirim.');
+    // Untuk jalur DB (procId): jangan set doneKo di sini — hasil ditentukan server via poll.
+    if (!procId) { doneKo.value = base.knockout || []; }
+}
+
+// Poll status pemrosesan lamaran (queue) → tampilkan HASIL NYATA dari server.
+async function pollStatus(processId) {
+    const mulai = Date.now();
+    const CFG = { headers: { Accept: 'application/json' } };
+    const tick = async () => {
+        try {
+            const res = await axios.get(`/api/v1/lamaran/apply-status/${processId}`, CFG);
+            const r = res.data?.result;
+            if (r?.status === 'SELESAI') {
+                const lam = r.lamaran || {};
+                hasilServer.value = lam;
+                doneKo.value = lam.status === 'GUGUR' ? [lam.alasanGugur || 'Belum memenuhi kualifikasi yang dibutuhkan'] : [];
+                memproses.value = false;
+                done.value = true;
+                return;
+            }
+            if (r?.status === 'GAGAL') {
+                memproses.value = false;
+                notice(r.pesan || 'Pemrosesan lamaran gagal. Silakan coba lagi.');
+                return;
+            }
+        } catch (e) { /* diamkan, lanjut poll */ }
+
+        if (Date.now() - mulai > 45000) {
+            // Timeout — JANGAN klaim lolos/gugur. Arahkan pantau di Lamaran Saya.
+            memproses.value = false;
+            hasilServer.value = { status: 'DIPROSES' };
+            doneKo.value = [];
+            done.value = true;
+            return;
+        }
+        setTimeout(tick, 1500);
+    };
+    tick();
 }
 
 // ── Sesi kandidat: draf tersimpan di sessionStorage, bisa dilanjutkan ──
@@ -538,3 +598,10 @@ const toast = ref('');
 let tm = null;
 function notice(m) { toast.value = m; if (tm) clearTimeout(tm); tm = setTimeout(() => (toast.value = ''), 3000); }
 </script>
+
+<style scoped>
+.wca-apply__proc { text-align: center; }
+.wca-apply__spin { display: grid; place-items: center; margin-bottom: 1rem; }
+.wca-spinner { width: 46px; height: 46px; border-radius: 50%; border: 4px solid rgba(79, 70, 229, .18); border-top-color: #4f46e5; animation: wcaspin .8s linear infinite; }
+@keyframes wcaspin { to { transform: rotate(360deg); } }
+</style>

@@ -31,6 +31,10 @@ export default {
             forgotOpen: false,
             forgotEmail: '',
             forgotErr: '',
+            // Email yang masih menunggu verifikasi (dari register / login ditolak)
+            // → memunculkan baris "kirim ulang email verifikasi".
+            pendingVerifEmail: '',
+            resendingVerif: false,
             subsidiaries: [
                 { src: '/logo/EMI.png', alt: 'PT EVO Manufacturing Indonesia' },
                 { src: '/logo/ENB.png', alt: 'PT EVO Nusa Bersaudara' },
@@ -60,6 +64,7 @@ export default {
     },
     mounted() {
         // Bila datang dari logout, bersihkan sesi klien (sessionStorage).
+        // (Hasil verifikasi email kini punya halamannya sendiri: /verifikasi-email.)
         try {
             if (new URLSearchParams(window.location.search).get('loggedout')) clearSession();
         } catch (e) { /* noop */ }
@@ -101,6 +106,20 @@ export default {
             }
             router.visit('/ganti-sandi?email=' + encodeURIComponent(this.forgotEmail));
         },
+        /* ── Kirim ulang email verifikasi (setelah register / login ditolak) ── */
+        async resendVerif() {
+            if (this.resendingVerif || !this.pendingVerifEmail) return;
+            this.resendingVerif = true;
+            try {
+                const res = await axios.post('/api/v1/kirim-verifikasi', { email: this.pendingVerifEmail }, { headers: { Accept: 'application/json' } });
+                this.flashNotice('info', (res.data && res.data.message) || 'Email verifikasi dikirim ulang.');
+            } catch (e) {
+                const r = e.response;
+                this.flashNotice('error', (r && r.data && r.data.message) || 'Gagal mengirim ulang. Silakan coba lagi.');
+            } finally {
+                this.resendingVerif = false;
+            }
+        },
         validate() {
             this.clearAll();
             if (!this.form.email) this.errors.email = 'Email wajib diisi.';
@@ -123,7 +142,15 @@ export default {
                     ? { email: this.form.email, password: this.form.password }
                     : { nama: this.form.nama, email: this.form.email, phone: this.form.phone, password: this.form.password };
                 const res = await axios.post(url, payload, { headers: { Accept: 'application/json' } });
-                // ResponseHelper membungkus data akun di key `result`.
+
+                if (!this.isLogin) {
+                    // REGISTER: TIDAK auto-login — kandidat wajib verifikasi email
+                    // dulu. Alihkan ke halaman "menunggu verifikasi" (tab yang sama).
+                    router.visit('/menunggu-verifikasi?email=' + encodeURIComponent(this.form.email));
+                    return;
+                }
+
+                // LOGIN: ResponseHelper membungkus data akun di key `result`.
                 const user = res.data && res.data.result;
                 if (user) syncFromServer(user);
                 // Tujuan sesuai peran: admin/superadmin → dashboard /karir, kandidat → portal.
@@ -132,13 +159,17 @@ export default {
                 if (dest === '/kandidat/portal' && user && ['ADMIN', 'SUPERADMIN'].includes(user.role)) {
                     dest = '/karir';
                 }
-                this.flashNotice('info', this.isLogin ? 'Berhasil masuk — mengalihkan…' : 'Akun berhasil dibuat — mengalihkan…');
+                this.flashNotice('info', 'Berhasil masuk — mengalihkan…');
                 this.redirectTimer = setTimeout(() => router.visit(dest), 600);
             } catch (e) {
                 this.processing = false;
                 const r = e.response;
                 if (r && r.status === 422 && r.data.errors) {
                     Object.keys(r.data.errors).forEach((k) => (this.errors[k] = Array.isArray(r.data.errors[k]) ? r.data.errors[k][0] : r.data.errors[k]));
+                } else if (r && r.status === 403 && r.data && r.data.code === 'BELUM_VERIFIKASI') {
+                    // Login ditolak karena email belum diverifikasi → tawarkan kirim ulang.
+                    this.pendingVerifEmail = this.form.email;
+                    this.flashNotice('error', r.data.message || 'Email kamu belum diverifikasi.');
                 } else {
                     this.flashNotice('error', (r && r.data && r.data.message) || 'Terjadi kesalahan. Silakan coba lagi.');
                 }
@@ -316,6 +347,16 @@ export default {
                                 Sudah punya akun?
                                 <Link :href="loginUrl" class="switch-link">Masuk di sini</Link>
                             </template>
+                        </p>
+
+                        <!-- Baris kirim ulang verifikasi (muncul setelah register /
+                             login ditolak karena email belum diverifikasi) -->
+                        <p v-if="pendingVerifEmail" class="verif-pending">
+                            <i class="bi bi-envelope-exclamation"></i>
+                            Belum menerima email verifikasi?
+                            <button type="button" class="switch-link" :disabled="resendingVerif" @click="resendVerif">
+                                {{ resendingVerif ? 'Mengirim…' : 'Kirim ulang' }}
+                            </button>
                         </p>
 
                         <div class="ver-row">
@@ -886,6 +927,24 @@ export default {
 .switch-link:hover {
     color: var(--violet);
     text-decoration: underline;
+}
+.verif-pending {
+    margin: 12px 0 0;
+    padding: 10px 14px;
+    text-align: center;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--text-soft);
+    background: rgba(79, 70, 229, 0.08);
+    border: 1px solid rgba(79, 70, 229, 0.18);
+    border-radius: 12px;
+}
+.verif-pending i {
+    color: var(--indigo);
+}
+.verif-pending .switch-link:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
 }
 .ver-row {
     margin-top: 14px;

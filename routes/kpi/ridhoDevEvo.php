@@ -79,33 +79,8 @@ Route::prefix('api/v1/lamaran')
     ->group(function () {
         Route::get('/loker', [LamaranController::class, 'lokerList'])->name('loker');
         Route::post('/', [LamaranController::class, 'lamar'])->name('lamar');
+        Route::get('/apply-status/{processId}', [LamaranController::class, 'applyStatus'])->name('apply.status');
         Route::post('/tahap/{id}/kirim', [LamaranController::class, 'kirimFormulir'])->name('kirim');
         Route::delete('/{id}', [LamaranController::class, 'batalkan'])->name('batal');
     });
 
-// SEMENTARA — uji metode GcsBerkas persis di bawah Apache
-Route::get('/_test-gcs-apache', function () {
-    $g = new \App\Support\Career\GcsBerkas();
-    $out = [];
-    try {
-        $folder = $g->folderKandidat(date('Y'), date('m'), date('d'), 'Frans Bachtiar');
-        $out['folder'] = $folder;
-        $im = imagecreatetruecolor(2, 2);
-        ob_start();
-        imagejpeg($im);
-        $jpg = ob_get_clean();
-        imagedestroy($im);
-        $out['unggah_berkas'] = $g->unggah($folder, 'dok_cv', 'jpg', $jpg);
-        $out['unggah_foto'] = $g->unggahFoto($folder, $jpg);
-        $g->hapus([$out['unggah_berkas'], $out['unggah_foto']]);
-        $out['ok'] = true;
-
-        return response()->json($out);
-    } catch (\Throwable $e) {
-        $out['ok'] = false;
-        $out['msg'] = $e->getMessage();
-        $out['at'] = $e->getFile() . ':' . $e->getLine();
-
-        return response()->json($out, 500);
-    }
-});
