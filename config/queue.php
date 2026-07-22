@@ -48,6 +48,19 @@ return [
             'after_commit' => false,
         ],
 
+        // Koneksi khusus modul WEB CAREERS — antrean terpisah dari N_LMS_Jobs.
+        // Dipakai job WC saat LOCAL (driver database). Worker lokal:
+        //   php artisan queue:work webcareers
+        // Non-local WC pakai connection 'cloudtasks' (tak menyentuh tabel ini).
+        'webcareers' => [
+            'driver' => 'database',
+            'connection' => env('DB_CONNECTION', 'sqlsrv'),
+            'table' => 'N_WEB_CAREERS_Jobs',
+            'queue' => 'default',
+            'retry_after' => 300,
+            'after_commit' => false,
+        ],
+
         'beanstalkd' => [
             'driver' => 'beanstalkd',
             'host' => 'localhost',

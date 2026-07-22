@@ -2,6 +2,7 @@
 
 namespace App\Jobs\Career;
 
+use App\Jobs\Career\Concerns\CatatGagalWebCareers;
 use App\Support\Career\GcsBerkas;
 use App\Support\Career\LamaranService;
 use Illuminate\Bus\Queueable;
@@ -27,7 +28,7 @@ use Illuminate\Support\Facades\Log;
  */
 class WcApplyFormJob implements ShouldQueue, ShouldBeUnique
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    use CatatGagalWebCareers, Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public const QUEUE = 'wc-applyform';
 
@@ -45,11 +46,13 @@ class WcApplyFormJob implements ShouldQueue, ShouldBeUnique
     {
         $this->processId = $processId;
 
-        // Local (database) → biarkan di queue 'default' supaya `php artisan queue:work`
-        // polos langsung memprosesnya. Non-local → otomatis connection 'cloudtasks'
-        // dengan nama queue 'wc-applyform'.
+        // Non-local → cloudtasks queue 'wc-applyform'. Local → koneksi 'webcareers'
+        // → antrean N_WEB_CAREERS_Jobs (TERPISAH dari N_LMS_Jobs).
+        // Worker lokal: `php artisan queue:work webcareers`.
         if (env('QUEUE_CONNECTION') === 'cloudtasks') {
             $this->onConnection('cloudtasks')->onQueue(self::QUEUE);
+        } else {
+            $this->onConnection('webcareers');
         }
     }
 
@@ -148,7 +151,15 @@ class WcApplyFormJob implements ShouldQueue, ShouldBeUnique
 
             Log::channel('web_career')->error("[APPLY] {$this->processId} GAGAL: " . $e->getMessage());
 
-            throw $e; // biar retry (tries) berjalan
+            // Percobaan terakhir → catat ke N_WEB_CAREERS_Failed_Jobs & SELESAI.
+            // Sengaja TIDAK throw agar kegagalan tak masuk N_LMS_Failed_Jobs global.
+            if ($this->attempts() >= $this->tries) {
+                $this->catatGagalWc('APPLYFORM', json_encode(['processId' => $this->processId]), $e);
+
+                return;
+            }
+
+            throw $e; // masih ada sisa percobaan → retry
         }
     }
 }
