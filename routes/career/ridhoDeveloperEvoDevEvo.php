@@ -1,6 +1,6 @@
 <?php
 
 // Routes induk milik ridhoDeveloperEvo (folder: career)
+// Di-require di dalam gerbang admin (career.auth + career.role:ADMIN,SUPERADMIN) via routes/web.php.
 
 require base_path('routes/career/MppLowongan/MppLowonganWeb.php');
-require base_path('routes/career/MppLowongan/MppLowonganApi.php');
