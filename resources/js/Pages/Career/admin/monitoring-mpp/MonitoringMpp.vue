@@ -1,10 +1,6 @@
 <!--
-  WEB CAREER — Admin: Monitoring MPP (read-only).
-  Card Grid (default) ↔ Table List (toggle tersimpan di localStorage). Klik card/row → off-canvas detail.
-
-  Pencarian, filter, sort, & PAGINATION dikerjakan di SERVER (endpoint /api/v1/monitoring-mpp).
-  Frontend hanya mengirim query params & menampilkan satu halaman hasil — siap dicolok backend
-  fase 2 tanpa ubah UI. Search memakai DEBOUNCE agar tidak memanggil API tiap ketikan.
+  Monitoring MPP (read-only) — Card Grid / Table List, klik → off-canvas detail.
+  Search, filter, sort, & pagination dikerjakan di server (/api/v1/monitoring-mpp); search di-debounce.
 -->
 <template>
     <Head><title>Monitoring MPP - Web Career</title></Head>
@@ -23,7 +19,6 @@
             </div>
         </div>
 
-        <!-- Statistik ringkas (global, dari endpoint options) -->
         <div class="wca-stats">
             <div class="wca-stat"><div class="wca-stat__top"><span class="wca-stat__ico"><i class="bi bi-clipboard-data"></i></span></div><div class="wca-stat__num">{{ stats.total }}</div><div class="wca-stat__label">Total MPP</div></div>
             <div class="wca-stat"><div class="wca-stat__top"><span class="wca-stat__ico" style="background:rgba(16,185,129,.12);color:#059669"><i class="bi bi-play-circle"></i></span></div><div class="wca-stat__num">{{ stats.aktif }}</div><div class="wca-stat__label">Aktif</div></div>
@@ -31,7 +26,6 @@
             <div class="wca-stat"><div class="wca-stat__top"><span class="wca-stat__ico" style="background:rgba(239,68,68,.12);color:#b91c1c"><i class="bi bi-x-circle"></i></span></div><div class="wca-stat__num">{{ stats.dibatalkan }}</div><div class="wca-stat__label">Dibatalkan</div></div>
         </div>
 
-        <!-- Toolbar: search + filter -->
         <div class="wca-toolbar">
             <div class="wca-search2">
                 <i class="bi" :class="loading && ready ? 'bi-arrow-repeat mpp-spin' : 'bi-search'"></i>
@@ -51,7 +45,7 @@
             </el-select>
         </div>
 
-        <!-- Loading skeleton (hanya saat load pertama) -->
+        <!-- Skeleton hanya saat load pertama; refetch berikutnya memakai dim halus (.mpp-busy). -->
         <template v-if="loading && !ready">
             <div v-if="view === 'grid'" class="mpp-grid">
                 <div v-for="n in perPage" :key="n" class="mpp-skcard"></div>
@@ -59,28 +53,23 @@
             <div v-else class="wca-card"><div class="wca-card__body--flush"><div class="mpp-skrows"><div v-for="n in perPage" :key="n" class="mpp-skrow"></div></div></div></div>
         </template>
 
-        <!-- Error -->
         <div v-else-if="error" class="wca-card"><div class="wca-empty">
             <i class="bi bi-wifi-off"></i>
             <h4>Gagal memuat data MPP</h4>
             <button class="wca-btn wca-btn--primary wca-btn--sm" @click="fetchList"><i class="bi bi-arrow-clockwise"></i> Coba lagi</button>
         </div></div>
 
-        <!-- Empty -->
         <div v-else-if="!list.length" class="wca-card"><div class="wca-empty">
             <i class="bi bi-inbox"></i>
             <h4>{{ hasFilter ? 'Tidak ada MPP yang cocok dengan filter' : 'Belum ada data MPP' }}</h4>
             <button v-if="hasFilter" class="wca-btn wca-btn--ghost wca-btn--sm" @click="resetFilter"><i class="bi bi-x-circle"></i> Reset filter</button>
         </div></div>
 
-        <!-- Hasil -->
         <template v-else>
-            <!-- Card Grid -->
             <div v-if="view === 'grid'" class="mpp-grid" :class="{ 'mpp-busy': loading }">
                 <MppCard v-for="m in list" :key="m.no_transaksi" :mpp="m" @open="openDetail" />
             </div>
 
-            <!-- Table List -->
             <div v-else class="wca-card" :class="{ 'mpp-busy': loading }">
                 <div class="wca-card__body--flush">
                     <div class="wca-tablewrap">
@@ -125,14 +114,12 @@
                 </div>
             </div>
 
-            <!-- Pagination server-side + info jumlah -->
             <div class="mpp-pagerow">
                 <span class="mpp-count">Menampilkan {{ list.length }} dari {{ totalData }} MPP</span>
                 <Pagination :current-page="page" :total-pages="totalPages" @page-change="changePage" />
             </div>
         </template>
 
-        <!-- Off-canvas detail -->
         <MppDetailPanel :no="selectedNo" @close="selectedNo = null" />
     </div>
 </template>
@@ -148,7 +135,6 @@ import { formatTanggal, namaLengkap, initials, statusBadge, flagBadge, isSelesai
 const API = '/api/v1/monitoring-mpp';
 const CFG = { headers: { Accept: 'application/json' } };
 const BULAN = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
-const VIEW_KEY = 'mpp_view';
 const PAGE_SIZE = 9;
 const SEARCH_DEBOUNCE = 400;
 
@@ -184,10 +170,6 @@ export default {
         hasFilter() {
             return !!(this.q.trim() || this.fStatus || this.fFlag || this.fDivisi || this.fPeriode);
         },
-    },
-    created() {
-        const saved = localStorage.getItem(VIEW_KEY);
-        if (saved === 'grid' || saved === 'table') this.view = saved;
     },
     mounted() {
         this.fetchOptions();
@@ -258,12 +240,11 @@ export default {
                 }
             }
         },
-        // Ketikan search → debounce sebelum memanggil API.
         onSearchInput() {
             if (this.searchTimer) clearTimeout(this.searchTimer);
             this.searchTimer = setTimeout(() => this.reload(), SEARCH_DEBOUNCE);
         },
-        // Filter/sort/search berubah → kembali ke halaman 1 lalu fetch.
+        // Search/filter/sort berubah → selalu balik ke halaman 1.
         reload() {
             this.page = 1;
             this.fetchList();
@@ -275,7 +256,6 @@ export default {
         },
         setView(v) {
             this.view = v;
-            localStorage.setItem(VIEW_KEY, v);
         },
         toggleSort(key) {
             if (this.sortKey === key) {

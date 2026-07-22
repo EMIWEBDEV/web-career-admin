@@ -7,7 +7,6 @@
         <transition name="mpp-drawer">
             <div v-if="no" class="wca-drawer-mask wca" @click.self="$emit('close')">
                 <aside ref="panel" class="wca-drawer wca-drawer--wide" role="dialog" aria-modal="true" :aria-label="`Detail MPP ${no}`">
-                    <!-- Header -->
                     <div class="wca-drawer__head">
                         <span class="wca-avatar"><i class="bi bi-briefcase-fill"></i></span>
                         <div style="min-width:0">
@@ -18,7 +17,6 @@
                     </div>
 
                     <div class="wca-drawer__body">
-                        <!-- Skeleton saat fetch -->
                         <template v-if="loading">
                             <div class="mpp-sk mpp-sk--grid">
                                 <div v-for="n in 8" :key="n" class="mpp-sk__box"></div>
@@ -26,16 +24,13 @@
                             <div v-for="n in 3" :key="'s' + n" class="mpp-sk__card"></div>
                         </template>
 
-                        <!-- Error -->
                         <div v-else-if="error" class="wca-empty">
                             <i class="bi bi-exclamation-triangle"></i>
                             <h4>Gagal memuat detail</h4>
                             <button class="wca-btn wca-btn--ghost wca-btn--sm" @click="load"><i class="bi bi-arrow-clockwise"></i> Coba lagi</button>
                         </div>
 
-                        <!-- Konten -->
                         <template v-else-if="detail">
-                            <!-- Info ringkas -->
                             <div class="wca-dsec">
                                 <h4>Informasi</h4>
                                 <div class="wca-dinfo">
@@ -50,7 +45,6 @@
                                 </div>
                             </div>
 
-                            <!-- Deskripsi -->
                             <div class="wca-seccard sec-data">
                                 <div class="wca-seccard__top">
                                     <span class="wca-seccard__ico"><i class="bi bi-file-earmark-text"></i></span>
@@ -59,7 +53,6 @@
                                 <p class="mpp-desc">{{ detail.deskripsi || '—' }}</p>
                             </div>
 
-                            <!-- Tanggung Jawab -->
                             <div class="wca-seccard sec-say">
                                 <div class="wca-seccard__top">
                                     <span class="wca-seccard__ico" style="background:rgba(16,185,129,.12);color:#059669"><i class="bi bi-list-check"></i></span>
@@ -72,7 +65,6 @@
                                 </ul>
                             </div>
 
-                            <!-- Persyaratan -->
                             <div class="wca-seccard sec-upl">
                                 <div class="wca-seccard__top">
                                     <span class="wca-seccard__ico" style="background:rgba(245,158,11,.12);color:#d97706"><i class="bi bi-clipboard-check"></i></span>
@@ -85,7 +77,6 @@
                                 </ul>
                             </div>
 
-                            <!-- Skill -->
                             <div class="wca-seccard sec-tpl">
                                 <div class="wca-seccard__top">
                                     <span class="wca-seccard__ico" style="background:rgba(139,92,246,.12);color:#7c3aed"><i class="bi bi-stars"></i></span>
@@ -97,7 +88,6 @@
                                 </div>
                             </div>
 
-                            <!-- Benefit -->
                             <div class="wca-seccard">
                                 <div class="wca-seccard__top">
                                     <span class="wca-seccard__ico" style="background:rgba(16,185,129,.12);color:#059669"><i class="bi bi-gift"></i></span>
@@ -148,7 +138,6 @@ async function load() {
     }
 }
 
-// Semua elemen fokusabel yang terlihat di dalam drawer.
 function focusables() {
     if (!panel.value) return [];
     return Array.from(
