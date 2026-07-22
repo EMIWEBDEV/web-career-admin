@@ -65,7 +65,7 @@ class CareerShell
         return [
             ['id' => 'lamaran', 'title' => 'Lamaran Saya', 'items' => [
                 ['key' => 'portal', 'label' => 'Lamaran Saya', 'icon' => 'bi bi-file-earmark-text', 'url' => '/kandidat/portal'],
-                ['key' => 'loker', 'label' => 'Cari Lowongan', 'icon' => 'bi bi-search', 'url' => '/kandidat/loker'],
+                ['key' => 'loker', 'label' => 'Cari Lowongan', 'icon' => 'bi bi-search', 'url' => '/test/karir/landing-page'],
             ]],
             ['id' => 'akun', 'title' => 'Akun', 'items' => [
                 ['key' => 'profil', 'label' => 'Profil Saya', 'icon' => 'bi bi-person-circle', 'url' => '/profil'],

@@ -4,7 +4,6 @@
 // Pindahkan folder ini (+ route & controller Career) untuk memindahkan modul.
 // ══════════════════════════════════════════════════════════════════
 import { router } from '@inertiajs/vue3';
-import { isLoggedIn } from './careerSession';
 
 export const CAREER_HOME = '/'; // halaman utama (landing) — route root
 export const CAREER_LANDING = '/test/karir/landing-page'; // basis sub-route detail (lowongan/mt)
@@ -15,16 +14,25 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', '
 
 export function formatDate(iso) {
     if (!iso) return '-';
-    const d = new Date(iso);
+    const d = new Date(String(iso).replace(' ', 'T'));
     if (Number.isNaN(d.getTime())) return iso;
     return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+// Tanggal + jam — window pendaftaran (buka/tutup) WAJIB tampil dgn waktunya.
+export function formatDateTime(iso) {
+    if (!iso) return '-';
+    const d = new Date(String(iso).replace(' ', 'T'));
+    if (Number.isNaN(d.getTime())) return iso;
+    const jam = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+    return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()} · ${jam}`;
 }
 
 export function daysLeft(iso) {
     if (!iso) return 999;
     const now = new Date();
     now.setHours(0, 0, 0, 0);
-    return Math.ceil((new Date(iso).getTime() - now.getTime()) / 86400000);
+    return Math.ceil((new Date(String(iso).replace(' ', 'T')).getTime() - now.getTime()) / 86400000);
 }
 
 export function deadlineLabel(iso) {
@@ -154,13 +162,10 @@ export function goHome() {
     }
 }
 
-export function goApply(id) {
-    // Apply WAJIB login dulu (skenario real). Belum login → arahkan ke login
-    // dengan redirect balik ke formulir apply terkait.
-    const target = id ? `/test/karir/apply/${id}` : '/test/karir/apply/RC-2026-001';
-    if (!isLoggedIn()) {
-        router.visit(`/login?redirect=${encodeURIComponent(target)}`);
-        return;
-    }
-    router.visit(target);
+export function goApply(card) {
+    // Formulir pendaftaran memakai DESAIN WIZARD di ApplyForm
+    // (Data Diri → Pendidikan → Verifikasi foto → Finalisasi). Route:
+    // /test/karir/apply/{id}. Menerima objek kartu ATAU id langsung.
+    const id = card && typeof card === 'object' ? card.id : card;
+    router.visit(id ? `/test/karir/apply/${id}` : '/test/karir/apply/RC-2026-001');
 }

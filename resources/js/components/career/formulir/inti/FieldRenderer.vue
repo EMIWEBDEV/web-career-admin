@@ -18,6 +18,20 @@
             @update:model-value="ubah"
         />
 
+        <!-- Telepon Indonesia: WAJIB berawalan 62. Apa pun yang diketik
+             (08.., 8.., +62..) dinormalkan jadi 628.. saat mengetik. -->
+        <el-input
+            v-else-if="field.tipe === 'phone'"
+            :model-value="nilai"
+            :disabled="disabled"
+            :placeholder="field.ph || '628xxxxxxxxxx'"
+            inputmode="numeric"
+            maxlength="16"
+            @update:model-value="ubahTelepon"
+        >
+            <template #prepend>+</template>
+        </el-input>
+
         <el-input
             v-else-if="field.tipe === 'textarea'"
             :model-value="nilai"
@@ -54,17 +68,36 @@
             @update:model-value="ubah"
         />
 
-        <el-select
-            v-else-if="field.tipe === 'select'"
-            :model-value="nilai"
-            filterable
-            :disabled="disabled"
-            :placeholder="field.ph || 'Pilih salah satu'"
-            style="width: 100%"
-            @update:model-value="ubah"
-        >
-            <el-option v-for="o in field.opsi || []" :key="o" :value="o" :label="o" />
-        </el-select>
+        <!-- select: opsi statis dari skema, ATAU dinamis dari konteks (sumber_opsi,
+             mis. kampus dari Master Kampus). Field ber-sumber_opsi DIKUNCI ke daftar
+             resmi: bisa dicari (filterable) tapi kandidat TIDAK boleh mengetik bebas
+             (tanpa allow-create). Kalau daftar belum ada -> input terkunci, bukan bebas. -->
+        <template v-else-if="field.tipe === 'select'">
+            <el-select
+                v-if="opsiEfektif.length"
+                :model-value="nilai"
+                filterable
+                :disabled="disabled"
+                :placeholder="field.ph || 'Cari lalu pilih'"
+                style="width: 100%"
+                @update:model-value="ubah"
+            >
+                <el-option v-for="o in opsiEfektif" :key="o" :value="o" :label="o" />
+            </el-select>
+            <el-input
+                v-else-if="field.sumber_opsi"
+                model-value=""
+                disabled
+                placeholder="Daftar pilihan belum tersedia — hubungi admin"
+            />
+            <el-input
+                v-else
+                :model-value="nilai"
+                :disabled="disabled"
+                :placeholder="field.ph || 'Ketik jawaban'"
+                @update:model-value="ubah"
+            />
+        </template>
 
         <el-radio-group
             v-else-if="field.tipe === 'radio'"
@@ -72,7 +105,7 @@
             :disabled="disabled"
             @update:model-value="ubah"
         >
-            <el-radio v-for="o in field.opsi || []" :key="o" :value="o">{{ o }}</el-radio>
+            <el-radio v-for="o in opsiEfektif" :key="o" :value="o">{{ o }}</el-radio>
         </el-radio-group>
 
         <el-checkbox-group
@@ -81,7 +114,7 @@
             :disabled="disabled"
             @update:model-value="ubah"
         >
-            <el-checkbox v-for="o in field.opsi || []" :key="o" :value="o">{{ o }}</el-checkbox>
+            <el-checkbox v-for="o in opsiEfektif" :key="o" :value="o">{{ o }}</el-checkbox>
         </el-checkbox-group>
 
         <!-- Berkas: file-nya sendiri disimpan di N_WEB_CAREERS_Formulir_Berkas,
@@ -133,11 +166,25 @@ const props = defineProps({
     modelValue: { type: [String, Number, Boolean, Array, Object, null], default: null },
     disabled: { type: Boolean, default: false },
     galat: { type: String, default: '' },
+    // Konteks opsi dinamis (mis. { kampus: ['ITB', ...] } dari Master Kampus).
+    // Mengisi opsi field ber-sumber_opsi tanpa mengubah skema di kode.
+    konteks: { type: Object, default: () => ({}) },
 });
 
 const emit = defineEmits(['update:modelValue', 'berkas']);
 
 const nilai = computed(() => props.modelValue);
+
+/**
+ * Opsi yang benar-benar dipakai: dari konteks bila field menandai `sumber_opsi`
+ * (mis. kampus dari whitelist pembukaan), selain itu dari opsi statis skema.
+ */
+const opsiEfektif = computed(() => {
+    if (props.field.sumber_opsi) {
+        return props.konteks?.[props.field.sumber_opsi] || [];
+    }
+    return props.field.opsi || [];
+});
 
 // Consent & textarea selalu memakan lebar penuh — dipaksa di sini supaya
 // admin tidak perlu ingat mencentang "lebar penuh" untuk keduanya.
@@ -145,6 +192,29 @@ const lebarPenuh = computed(() => ['textarea', 'consent', 'checkbox'].includes(p
 
 function ubah(v) {
     emit('update:modelValue', v);
+}
+
+/**
+ * Normalkan nomor telepon Indonesia agar SELALU berawalan 62 (tanpa +).
+ *   08123..  -> 628123..   (0 diganti 62)
+ *   8123..   -> 628123..   (langsung ditambah 62)
+ *   +62 / 62 -> tetap 62..
+ *   620..    -> 62..        (buang 0 setelah 62, mis. hasil ketik 62 lalu 08)
+ * Disimpan sebagai '628xxxxxxxxx'; tampilan diberi awalan '+' oleh prepend.
+ */
+function normalTelepon(raw) {
+    let s = String(raw ?? '').replace(/\D/g, '');
+    if (!s) return '';
+    if (s.startsWith('620')) s = '62' + s.slice(3);
+    else if (s.startsWith('62')) s = s;
+    else if (s.startsWith('0')) s = '62' + s.slice(1);
+    else if (s.startsWith('8')) s = '62' + s;
+    else s = '62' + s;
+    return s;
+}
+
+function ubahTelepon(v) {
+    emit('update:modelValue', normalTelepon(v));
 }
 
 function pilihBerkas(uf) {

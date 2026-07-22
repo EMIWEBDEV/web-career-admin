@@ -12,11 +12,17 @@ use Inertia\Inertia;
 use Vinkla\Hashids\Facades\Hashids;
 
 /**
- * WEB CAREER — PEMBUKAAN PROGRAM (publikasi 1 program ke channel + window; detail: kampus target).
+ * WEB CAREER — PEMBUKAAN PROGRAM (publikasi 1 program ke landing + window pendaftaran).
+ * Channel UMUM/KAMPUS SUDAH DIGABUNG: semua pembukaan bersifat publik (kolom Channel
+ * dipertahankan sebagai 'UMUM' agar skema lama tetap valid). Pembatasan kampus mitra
+ * diatur lewat SYARAT (operator ADA_DI) di Program Kegiatan, bukan whitelist di sini.
  * SPA + WEB. CRUD Query Builder + ResponseHelper + Log channel + Hashids.
  */
 class PembukaanProgramController extends Controller
 {
+    /** Nilai channel tunggal setelah UMUM & KAMPUS digabung. */
+    private const CHANNEL = 'UMUM';
+
     public function index()
     {
         return Inertia::render('Career/admin/pembukaan-program/pembukaanProgram', CareerShell::props('/karir/pembukaan', 'Pembukaan Program'));
@@ -33,25 +39,17 @@ class PembukaanProgramController extends Controller
                 ->select('pb.*', 'u.Nama as Pembuat', 'p.Nama as ProgramNama', 'p.Kode as ProgramKode', 'p.Kategori as ProgramKategori', 'b.Nama as BatchNama')
                 ->get();
 
-            $kampus = DB::table('N_WEB_CAREERS_Pembukaan_Kampus as pk')
-                ->leftJoin('N_WEB_CAREERS_Master_Kampus as k', 'k.Id_Master_Kampus', '=', 'pk.Master_Kampus_Id')
-                ->select('pk.Pembukaan_Id', 'pk.Master_Kampus_Id', 'k.Nama as KampusNama')
-                ->get()->groupBy('Pembukaan_Id');
-
             $data = $rows->map(fn ($r) => [
                 'id' => Hashids::encode($r->Id_Pembukaan),
                 'kode' => $r->Kode,
                 'program' => $r->ProgramKode,
                 'programNama' => $r->ProgramNama,
                 'kategori' => $r->ProgramKategori,
-                'channel' => $r->Channel,
                 'masaBerlaku' => $r->Masa_Berlaku,
                 'buka' => $r->Tanggal_Buka,
                 'tutup' => $r->Tanggal_Tutup,
                 'batchNama' => $r->BatchNama,
                 'statusPublish' => $r->Status_Publish,
-                'kampusIds' => collect($kampus->get($r->Id_Pembukaan, []))->map(fn ($x) => $x->Master_Kampus_Id)->values(),
-                'kampus' => collect($kampus->get($r->Id_Pembukaan, []))->map(fn ($x) => $x->KampusNama)->values(),
                 'createdBy' => $r->Pembuat ?: $r->Created_By,
                 'createdAt' => $r->Created_At,
             ])->values();
@@ -68,26 +66,16 @@ class PembukaanProgramController extends Controller
     {
         return [
             'program' => 'required|string|max:40',
-            'channel' => 'required|in:UMUM,KAMPUS',
             'masaBerlaku' => 'required|in:BERBATAS,EVERGREEN',
             'buka' => 'nullable|date',
             'tutup' => 'nullable|date',
             'statusPublish' => 'required|in:DRAFT,TERBIT',
-            'kampusIds' => 'nullable|array',
-            'kampusIds.*' => 'integer',
         ];
     }
 
     private function programId(string $kode): ?int
     {
         return DB::table('N_WEB_CAREERS_Program')->where('Kode', $kode)->value('Id_Program');
-    }
-
-    private function simpanKampus(int $pembukaanId, array $kampusIds, ?int $userId): void
-    {
-        foreach (array_unique($kampusIds) as $kid) {
-            DB::table('N_WEB_CAREERS_Pembukaan_Kampus')->insert(['Pembukaan_Id' => $pembukaanId, 'Master_Kampus_Id' => (int) $kid, 'Created_By_Id' => $userId, 'Updated_By_Id' => $userId]);
-        }
     }
 
     public function store(Request $request)
@@ -103,17 +91,13 @@ class PembukaanProgramController extends Controller
             $now = now();
 
             $kode = 'PUB-' . str_pad((string) (DB::table('N_WEB_CAREERS_Pembukaan')->max('Id_Pembukaan') + 1), 3, '0', STR_PAD_LEFT);
-            $kampus = $data['channel'] === 'KAMPUS' ? ($data['kampusIds'] ?? []) : [];
 
-            DB::transaction(function () use ($data, $kode, $programId, $kampus, $userId, $userName, $now) {
-                $id = DB::table('N_WEB_CAREERS_Pembukaan')->insertGetId([
-                    'Kode' => $kode, 'Program_Id' => $programId, 'Channel' => $data['channel'], 'Masa_Berlaku' => $data['masaBerlaku'],
-                    'Tanggal_Buka' => $data['buka'] ?? null, 'Tanggal_Tutup' => $data['masaBerlaku'] === 'EVERGREEN' ? null : ($data['tutup'] ?? null),
-                    'Program_Batch_Id' => null, 'Status_Publish' => $data['statusPublish'],
-                    'Created_At' => $now, 'Created_By' => $userName, 'Created_By_Id' => $userId, 'Updated_At' => $now, 'Updated_By' => $userName, 'Updated_By_Id' => $userId,
-                ], 'Id_Pembukaan');
-                $this->simpanKampus($id, $kampus, $userId);
-            });
+            DB::table('N_WEB_CAREERS_Pembukaan')->insert([
+                'Kode' => $kode, 'Program_Id' => $programId, 'Channel' => self::CHANNEL, 'Masa_Berlaku' => $data['masaBerlaku'],
+                'Tanggal_Buka' => $data['buka'] ?? null, 'Tanggal_Tutup' => $data['masaBerlaku'] === 'EVERGREEN' ? null : ($data['tutup'] ?? null),
+                'Program_Batch_Id' => null, 'Status_Publish' => $data['statusPublish'],
+                'Created_At' => $now, 'Created_By' => $userName, 'Created_By_Id' => $userId, 'Updated_At' => $now, 'Updated_By' => $userName, 'Updated_By_Id' => $userId,
+            ]);
 
             Log::channel('web_career')->info("Pembukaan dibuat ({$kode}) oleh {$userName}");
 
@@ -142,18 +126,13 @@ class PembukaanProgramController extends Controller
             }
             $userId = session('career_auth.id');
             $userName = session('career_auth.nama', 'ADMIN');
-            $kampus = $data['channel'] === 'KAMPUS' ? ($data['kampusIds'] ?? []) : [];
 
-            DB::transaction(function () use ($data, $realId, $programId, $kampus, $userId, $userName) {
-                DB::table('N_WEB_CAREERS_Pembukaan')->where('Id_Pembukaan', $realId)->update([
-                    'Program_Id' => $programId, 'Channel' => $data['channel'], 'Masa_Berlaku' => $data['masaBerlaku'],
-                    'Tanggal_Buka' => $data['buka'] ?? null, 'Tanggal_Tutup' => $data['masaBerlaku'] === 'EVERGREEN' ? null : ($data['tutup'] ?? null),
-                    'Status_Publish' => $data['statusPublish'],
-                    'Updated_At' => now(), 'Updated_By' => $userName, 'Updated_By_Id' => $userId,
-                ]);
-                DB::table('N_WEB_CAREERS_Pembukaan_Kampus')->where('Pembukaan_Id', $realId)->delete();
-                $this->simpanKampus($realId, $kampus, $userId);
-            });
+            DB::table('N_WEB_CAREERS_Pembukaan')->where('Id_Pembukaan', $realId)->update([
+                'Program_Id' => $programId, 'Channel' => self::CHANNEL, 'Masa_Berlaku' => $data['masaBerlaku'],
+                'Tanggal_Buka' => $data['buka'] ?? null, 'Tanggal_Tutup' => $data['masaBerlaku'] === 'EVERGREEN' ? null : ($data['tutup'] ?? null),
+                'Status_Publish' => $data['statusPublish'],
+                'Updated_At' => now(), 'Updated_By' => $userName, 'Updated_By_Id' => $userId,
+            ]);
 
             Log::channel('web_career')->info("Pembukaan #{$realId} diperbarui");
 

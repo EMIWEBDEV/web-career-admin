@@ -13,6 +13,7 @@
         :keterangan="keterangan"
         :disabled="disabled"
         :label-kirim="labelKirim"
+        :konteks="konteks"
         @kirim="(v) => $emit('kirim', v)"
         @berkas="(e) => $emit('berkas', e)"
     />
@@ -29,6 +30,7 @@ const props = defineProps({
     keterangan: { type: String, default: 'Lengkapi data berikut untuk mendaftar. Tanda * wajib diisi.' },
     disabled: { type: Boolean, default: false },
     labelKirim: { type: String, default: 'Kirim Pendaftaran' },
+    konteks: { type: Object, default: () => ({}) },
 });
 
 const emit = defineEmits(['update:modelValue', 'kirim', 'berkas']);

@@ -48,7 +48,7 @@ export const SKEMA = {
                             label: 'Tuliskan data yang benar',
                             tipe: 'textarea',
                             wajib: true,
-                            ph: 'mis. No. WhatsApp yang benar: 0812xxxxxxx',
+                            ph: 'mis. No. WhatsApp yang benar: 62812xxxxxxx',
                             tampil_jika: { field: 'data_sesuai', operator: '=', nilai: 'Perlu diperbarui' },
                         },
                     ],
@@ -93,7 +93,7 @@ export const SKEMA = {
                     field: [
                         { key: 'darurat_nama', label: 'Nama Kontak Darurat', tipe: 'text', wajib: true },
                         { key: 'darurat_hubungan', label: 'Hubungan dengan Peserta', tipe: 'text', wajib: true, ph: 'mis. Orang tua / Saudara' },
-                        { key: 'darurat_hp', label: 'No. Handphone Kontak Darurat', tipe: 'text', wajib: true, ph: '08xxxxxxxxxx' },
+                        { key: 'darurat_hp', label: 'No. Handphone Kontak Darurat', tipe: 'phone', wajib: true, ph: '628xxxxxxxxx', bantuan: 'Wajib berawalan 62. Ketik 08… otomatis jadi 628…' },
                     ],
                 },
             ],

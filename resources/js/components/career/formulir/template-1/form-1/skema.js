@@ -62,10 +62,10 @@ export const SKEMA = {
                         {
                             key: 'no_hp',
                             label: 'No. Handphone Aktif (WA)',
-                            tipe: 'text',
+                            tipe: 'phone',
                             wajib: true,
-                            ph: '08xxxxxxxxxx',
-                            bantuan: 'Pastikan nomor aktif WhatsApp — semua pemberitahuan dikirim ke sini.',
+                            ph: '628xxxxxxxxx',
+                            bantuan: 'Wajib berawalan 62. Ketik 08… otomatis jadi 628…',
                         },
                         { key: 'email', label: 'Email', tipe: 'text', wajib: true, ph: 'nama.lengkap@gmail.com' },
                     ],
@@ -95,11 +95,16 @@ export const SKEMA = {
 
                         {
                             key: 'nama_kampus',
-                            label: 'Nama Kampus',
-                            tipe: 'text',
+                            label: 'Nama Kampus / Universitas',
+                            tipe: 'select',
                             wajib: true,
-                            ph: 'mis. Politeknik Negeri Sriwijaya',
+                            ph: 'Cari nama kampus lalu pilih',
+                            bantuan: 'Ketik untuk mencari, lalu pilih dari daftar resmi. Tidak ada? Hubungi admin.',
                             dapat_disaring: true,
+                            // Opsi diambil dari MASTER KAMPUS (daftar resmi, bisa dicari).
+                            // Channel UMUM/KAMPUS sudah digabung — kandidat WAJIB memilih
+                            // dari daftar ini dan tidak boleh mengetik bebas (lihat FieldRenderer).
+                            sumber_opsi: 'kampus',
                         },
                         {
                             key: 'jenis_institusi',

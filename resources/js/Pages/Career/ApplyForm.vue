@@ -85,6 +85,10 @@
                                     <el-date-picker v-else-if="f.tipe === 'date'" v-model="form[f.key]" type="date" value-format="YYYY-MM-DD" placeholder="Pilih tanggal" style="width:100%" />
                                     <el-input v-else-if="f.tipe === 'textarea'" v-model="form[f.key]" type="textarea" :rows="2" :placeholder="f.ph" :disabled="f.readonly" />
                                     <el-input-number v-else-if="f.tipe === 'number'" v-model="form[f.key]" :min="0" :max="f.key === 'ipk' ? 4 : undefined" :precision="f.key === 'ipk' ? 2 : 0" :step="f.key === 'ipk' ? 0.05 : 1" controls-position="right" :placeholder="f.ph" style="width:100%" />
+                                    <!-- Telepon: WAJIB berawalan 62. Ketik 08.. otomatis jadi 628.. -->
+                                    <el-input v-else-if="f.tipe === 'phone'" :model-value="form[f.key]" :placeholder="f.ph || '628xxxxxxxxx'" inputmode="numeric" maxlength="16" @update:model-value="(v) => (form[f.key] = normalTelepon(v))">
+                                        <template #prepend>+</template>
+                                    </el-input>
                                     <el-input v-else v-model="form[f.key]" :placeholder="f.ph" :disabled="f.readonly" />
                                 </div>
                             </template>
@@ -96,7 +100,7 @@
                                 <span class="wca-aup__ic"><i class="bi" :class="files[f.key] ? 'bi-check-circle-fill' : (f.hint === 'PDF' ? 'bi-file-earmark-pdf' : 'bi-cloud-arrow-up')"></i></span>
                                 <span class="wca-aup__main">
                                     <strong>{{ f.label }} <span v-if="f.required" class="wca-req">*</span> <span class="wca-aup__fmt">{{ f.hint }}</span></strong>
-                                    <small>{{ files[f.key] ? files[f.key].name : 'Belum ada berkas — hanya ' + f.hint }}</small>
+                                    <small>{{ files[f.key] ? files[f.key].name + ' · ' + fmtUkuran(files[f.key].size) : 'Belum ada berkas — hanya ' + f.hint + ' · maks 2 MB' }}</small>
                                 </span>
                                 <button v-if="files[f.key]" type="button" class="wca-btn wca-btn--soft wca-btn--sm" @click="showFile(files[f.key])"><i class="bi bi-eye"></i> Lihat</button>
                                 <el-upload class="wca-aup__ep" :accept="f.accept" :auto-upload="false" :show-file-list="false" :on-change="(uf) => onFileEP(f.key, uf, f)">
@@ -104,7 +108,7 @@
                                 </el-upload>
                             </div>
                             <div v-if="uploadErr" class="wca-note wca-note--danger" style="margin:.6rem 0 0"><i class="bi bi-exclamation-triangle-fill"></i><span>{{ uploadErr }}</span></div>
-                            <div class="wca-hint" style="margin:.5rem 0 0"><i class="bi bi-info-circle"></i> Tipe file dibatasi sesuai kolom (dokumen wajib <b>PDF</b>). Klik <b>Lihat</b> untuk pratinjau. Maks 2MB (demo).</div>
+                            <div class="wca-hint" style="margin:.5rem 0 0"><i class="bi bi-info-circle"></i> Tipe file dibatasi sesuai kolom (dokumen wajib <b>PDF</b>). Klik <b>Lihat</b> untuk pratinjau. Maks 2MB per berkas.</div>
                         </div>
 
                         <!-- PERNYATAAN (el-checkbox) -->
@@ -119,8 +123,8 @@
                                 <video v-show="cameraOn && !facePhoto" ref="videoEl" autoplay playsinline muted></video>
                                 <div v-if="!cameraOn && !facePhoto" class="wca-face__idle"><i class="bi bi-camera-video"></i><span>Kamera belum aktif</span></div>
                                 <canvas ref="canvasEl" style="display:none"></canvas>
-                            </div>
-                            <div v-if="cameraError" class="wca-note wca-note--danger" style="margin:.6rem 0 0"><i class="bi bi-exclamation-triangle"></i><span>Kamera tak tersedia (butuh HTTPS / izin). Gunakan simulasi untuk demo.</span></div>
+                            </div> 
+                            <div v-if="cameraError" class="wca-note wca-note--danger" style="margin:.6rem 0 0"><i class="bi bi-exclamation-triangle"></i><span>Kamera tak tersedia. Pastikan situs memakai HTTPS dan izin kamera diaktifkan, lalu coba lagi.</span></div>
                             <div class="wca-face__act">
                                 <template v-if="!facePhoto">
                                     <button v-if="!cameraOn" class="wca-btn wca-btn--primary" @click="startCamera"><i class="bi bi-camera-video"></i> Aktifkan Kamera</button>
@@ -214,10 +218,11 @@
 </template>
 
 <script setup>
-import { Head } from '@inertiajs/vue3';
+import axios from 'axios';
+import { Head, router } from '@inertiajs/vue3';
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import CareerLayout from './Layouts/CareerLayout.vue';
-import { checkKnockout, flowFor, getApp, getSession, isLoggedIn, nextActionFor, requireLogin, upsertApp } from './careerSession';
+import { checkKnockout, flowFor, getApp, nextActionFor, upsertApp } from './careerSession';
 
 defineOptions({ layout: null }); // tanpa shell HCIS — pakai CareerLayout (situs karir)
 
@@ -298,6 +303,18 @@ function stepShort(k) {
 // Kondisional field (showIf) — hanya tampil bila syarat terpenuhi.
 function showField(f) { return !f.showIf || form[f.showIf.key] === f.showIf.value; }
 
+// Telepon Indonesia: SELALU berawalan 62. 08.. -> 628.. ; 8.. -> 628.. ;
+// 62/ +62 tetap ; 620.. -> 62.. (buang 0 setelah 62). Disimpan '628xxxxxxxxx'.
+function normalTelepon(raw) {
+    let s = String(raw ?? '').replace(/\D/g, '');
+    if (!s) return '';
+    if (s.startsWith('620')) s = '62' + s.slice(3);
+    else if (s.startsWith('62')) s = s;
+    else if (s.startsWith('0')) s = '62' + s.slice(1);
+    else s = '62' + s;
+    return s;
+}
+
 // ── Kamera / verifikasi wajah ──
 const videoEl = ref(null);
 const canvasEl = ref(null);
@@ -354,13 +371,42 @@ function validateStep() {
 }
 function next() { if (validateStep() && step.value < steps.length - 1) { step.value++; err.value = ''; persistDraft(); window.scrollTo({ top: 0, behavior: 'smooth' }); } }
 function back() { if (step.value > 0) { step.value--; err.value = ''; persistDraft(); } }
-function finalize() {
+async function finalize() {
     if (!consentOk.value) return;
     for (let i = 0; i < steps.length; i++) { step.value = i; if (!validateStep()) return; }
     stopCamera();
+    const isForm2 = props.flow.form === 2;
+    const ko = !isForm2 ? checkKnockout(jenis, form) : [];
+
+    // FINALISASI = benar-benar MENGAJUKAN lamaran ke sistem (DB), bukan sekadar
+    // draf sessionStorage. Kalau knock-out (tidak lolos syarat wajib) lamaran
+    // TETAP tercatat, tapi statusnya Tidak Lolos. Hanya Form 1 & kartu ber-id DB.
+    if (!isForm2 && lowongan.pembukaanId && lowongan.posisiId) {
+        try {
+            // MULTIPART: jawaban (JSON) + berkas (pdf/jpg ≤2MB) + foto verifikasi.
+            // Diproses asinkron oleh server (queue wc-applyform) + unggah GCS.
+            const fd = new FormData();
+            fd.append('pembukaanId', lowongan.pembukaanId);
+            fd.append('posisiId', lowongan.posisiId);
+            fd.append('gugur', ko.length ? 1 : 0);
+            if (ko.length) fd.append('alasan', ko.join(' · '));
+            fd.append('jawaban', JSON.stringify({ ...form }));
+            // Berkas dinamis: kirim tiap file yang diunggah kandidat.
+            Object.entries(files).forEach(([key, v]) => { if (v && v.raw) fd.append(`berkas[${key}]`, v.raw, v.name); });
+            // Foto verifikasi (dari kamera).
+            if (facePhoto.value) fd.append('foto', dataUrlKeBlob(facePhoto.value), 'verifikasi.jpg');
+
+            await axios.post('/api/v1/lamaran', fd, { headers: { Accept: 'application/json' } });
+        } catch (e) {
+            const st = e.response?.status;
+            if (st === 401) { router.visit('/login'); return; }
+            notice(e.response?.data?.message || 'Gagal mengirim lamaran ke sistem.');
+            if (st === 422) return; // duplikat / berkas invalid / di luar masa berlaku
+        }
+    }
+
     done.value = true;
     // Bila Form 2 (tahap lanjut) — tandai form2 selesai & majukan dari tahap biodata lanjutan.
-    const isForm2 = props.flow.form === 2;
     const existing = getApp(lowongan.id);
     const pipeline = existing?.pipeline || flowFor(jenis);
     const base = {
@@ -380,10 +426,7 @@ function finalize() {
         base.files = { ...(existing?.files || {}), ...Object.fromEntries(Object.entries(files).filter(([, v]) => v).map(([k, v]) => [k, { name: v.name, isPdf: v.isPdf }])) };
     }
     // Knock-out syarat wajib (mis. IPK < min) → langsung Tidak Lolos saat finalisasi.
-    if (!isForm2) {
-        const ko = checkKnockout(jenis, form);
-        if (ko.length) { base.result = 'GAGAL'; base.stageStatus = 'GUGUR'; base.knockout = ko; }
-    }
+    if (ko.length) { base.result = 'GAGAL'; base.stageStatus = 'GUGUR'; base.knockout = ko; }
     const finalApp = snapshot('FINAL', base);
     finalApp.nextAction = nextActionFor(finalApp);
     upsertApp(finalApp);
@@ -426,26 +469,26 @@ function showFile(fc) {
 }
 
 onMounted(() => {
-    // Apply WAJIB login
+    // Login DIJAGA SERVER (career.auth) saat FINALISASI (POST /api/v1/lamaran).
+    // JANGAN pakai gate sessionStorage di sini — user login lewat sistem DB asli,
+    // sessionStorage bisa kosong dan itu dulu bikin salah-redirect ke /login.
     const isForm2 = props.flow.form === 2;
-    if (!isLoggedIn()) { requireLogin(`/test/karir/apply/${lowongan.id}${isForm2 ? '?form=2' : ''}`); return; }
     const saved = getApp(lowongan.id);
-    const sess = getSession();
+    // Identitas dari AKUN LOGIN (dikirim server via flow.kandidat), fallback draf lokal.
+    const akun = props.flow.kandidat || {};
     if (isForm2) {
         // Tahap lanjut: jangan tampilkan layar selesai; prefill field readonly (namaPre/emailPre/waPre).
         const f = saved?.form || {};
-        form.namaPre = f.nama || sess?.nama || '';
-        form.emailPre = f.email || sess?.email || '';
-        form.waPre = f.hp || f.phone || '';
+        form.namaPre = f.nama || akun.nama || '';
+        form.emailPre = f.email || akun.email || '';
+        form.waPre = f.hp || f.phone || akun.hp || '';
         return;
     }
     if (saved && saved.status === 'FINAL') { done.value = true; return; } // sudah dilamar (Form 1)
     if (saved) restore(saved);
-    // Prefill identitas dari sesi (isi bila kosong)
-    if (sess) {
-        if (!form.nama) form.nama = sess.nama;
-        if (!form.email) form.email = sess.email;
-    }
+    // Prefill identitas dari akun login (isi bila kosong).
+    if (!form.nama) form.nama = akun.nama || '';
+    if (!form.email) form.email = akun.email || '';
 });
 
 // Review generik: kumpulkan semua field FORM yang terisi (label + nilai), lintas Form 1 / Form 2 / rekrutmen.
@@ -459,14 +502,33 @@ const reviewItems = computed(() => {
     return items;
 });
 
+const MAKS_BERKAS_MB = 2; // wajib maks 2 MB untuk SEMUA berkas
 function processFile(key, file, f) {
     uploadErr.value = '';
     if (!file) return;
-    const exts = (f.accept || '.pdf').split(',').map((s) => s.trim().replace(/^\./, '').toLowerCase());
+    // Sistem hanya menerima pdf & jpg — apa pun accept field, dibatasi ke dua ini.
+    const izin = ((f.accept || '.pdf,.jpg').split(',').map((s) => s.trim().replace(/^\./, '').toLowerCase()))
+        .filter((x) => ['pdf', 'jpg', 'jpeg'].includes(x));
     const ext = (file.name.split('.').pop() || '').toLowerCase();
-    if (!exts.includes(ext)) { uploadErr.value = `${f.label}: hanya ${exts.map((x) => '.' + x).join(' / ')} yang diperbolehkan.`; return; }
+    if (!izin.includes(ext)) { uploadErr.value = `${f.label}: hanya ${izin.map((x) => '.' + x).join(' / ')} yang diperbolehkan.`; return; }
+    if (file.size > MAKS_BERKAS_MB * 1024 * 1024) { uploadErr.value = `${f.label}: melebihi ${MAKS_BERKAS_MB} MB.`; return; }
     if (files[key]?.url) URL.revokeObjectURL(files[key].url);
-    files[key] = { name: file.name, url: URL.createObjectURL(file), isPdf: ext === 'pdf' };
+    files[key] = { name: file.name, url: URL.createObjectURL(file), isPdf: ext === 'pdf', raw: file, size: file.size };
+}
+
+function fmtUkuran(b) {
+    if (!b) return '';
+    return b < 1024 * 1024 ? Math.round(b / 1024) + ' KB' : (b / 1024 / 1024).toFixed(1) + ' MB';
+}
+
+/** Ubah dataURL foto wajah → Blob JPG untuk diunggah. */
+function dataUrlKeBlob(dataUrl) {
+    const [head, b64] = dataUrl.split(',');
+    const mime = (head.match(/:(.*?);/) || [])[1] || 'image/jpeg';
+    const bin = atob(b64);
+    const arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    return new Blob([arr], { type: mime });
 }
 // el-upload on-change → ambil File asli dari uploadFile.raw
 function onFileEP(key, uf, f) { processFile(key, uf && uf.raw, f); }

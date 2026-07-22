@@ -65,22 +65,24 @@
                         <div class="wc-benefit-grid"><div v-for="(b, i) in mt.benefit" :key="i" class="wc-benefit"><i class="bi bi-patch-check-fill"></i><span>{{ b }}</span></div></div>
                     </section>
 
-                    <section v-if="mt.fasilitas" class="wc-block wc-reveal">
+                    <section v-if="mt.fasilitas && mt.fasilitas.length" class="wc-block wc-reveal">
                         <h2><i class="bi bi-box2-heart"></i> Fasilitas</h2>
                         <div class="wc-tags wc-tags--lg"><span v-for="f in mt.fasilitas" :key="f">{{ f }}</span></div>
                     </section>
 
-                    <section class="wc-block wc-reveal">
+                    <section v-if="mt.kriteria && mt.kriteria.length" class="wc-block wc-reveal">
                         <h2><i class="bi bi-clipboard-check"></i> Kriteria Peserta</h2>
                         <ul class="wc-list"><li v-for="(t, i) in mt.kriteria" :key="i"><i class="bi bi-check-circle-fill"></i><span>{{ t }}</span></li></ul>
                     </section>
 
-                    <section class="wc-block wc-reveal">
+                    <!-- Kampus Sasaran hanya untuk channel KAMPUS (ada whitelist). UMUM -> kosong -> disembunyikan. -->
+                    <section v-if="mt.targetKampus && mt.targetKampus.length" class="wc-block wc-reveal">
                         <h2><i class="bi bi-mortarboard"></i> Kampus Sasaran</h2>
                         <div class="wc-tags wc-tags--lg"><span v-for="c in mt.targetKampus" :key="c">{{ c }}</span></div>
                     </section>
 
-                    <section v-if="mt.jadwal" class="wc-block wc-reveal">
+                    <!-- Jadwal Kegiatan WAJIB dari DB. Tidak ada agenda -> kartu hilang. -->
+                    <section v-if="mt.jadwal && mt.jadwal.length" class="wc-block wc-reveal">
                         <h2><i class="bi bi-calendar-range"></i> Jadwal Kegiatan</h2>
                         <ol class="wc-timeline">
                             <li v-for="(j, i) in mt.jadwal" :key="i">
@@ -90,7 +92,8 @@
                         </ol>
                     </section>
 
-                    <section class="wc-block wc-reveal">
+                    <!-- Tahapan Seleksi WAJIB dari DB (alur). Tanpa tahap -> kartu hilang. -->
+                    <section v-if="mt.pipeline && mt.pipeline.length" class="wc-block wc-reveal">
                         <h2><i class="bi bi-signpost-split"></i> Tahapan Seleksi</h2>
                         <ol class="wc-pipeline"><li v-for="(p, i) in mt.pipeline" :key="i"><span class="wc-pipeline__num">{{ i + 1 }}</span><div><strong>{{ p.label }}</strong><small>{{ stageTypeLabel(p.tipe) }}</small></div></li></ol>
                     </section>
@@ -102,14 +105,13 @@
                         <ul class="wc-apply__facts">
                             <li><span><i class="bi bi-people"></i> Kuota</span><b>{{ mt.kuotaTerisi }} / {{ mt.kuota }} kursi</b></li>
                             <li><span><i class="bi bi-person-lines-fill"></i> Pelamar</span><b>{{ mt.pelamar }} orang</b></li>
-                            <li><span><i class="bi bi-calendar-check"></i> Dibuka</span><b>{{ formatDate(mt.tanggalBuka) }}</b></li>
-                            <li><span><i class="bi bi-calendar-x"></i> Ditutup</span><b>{{ formatDate(mt.tanggalTutup) }}</b></li>
+                            <li><span><i class="bi bi-calendar-check"></i> Dibuka</span><b>{{ formatDateTime(mt.tanggalBuka) }}</b></li>
+                            <li><span><i class="bi bi-calendar-x"></i> Ditutup</span><b>{{ formatDateTime(mt.tanggalTutup) }}</b></li>
                             <li><span><i class="bi bi-megaphone"></i> Pengumuman</span><b>{{ formatDate(mt.tanggalPengumuman) }}</b></li>
                             <li><span><i class="bi bi-clock"></i> Sisa waktu</span><b :class="{ 'wc-danger': isFull(mt) || daysLeft(mt.tanggalTutup) <= 7 }">{{ isFull(mt) ? 'Ditutup' : deadlineLabel(mt.tanggalTutup) }}</b></li>
                         </ul>
-                        <button v-if="!isFull(mt)" type="button" class="wc-btn wc-btn--gold wc-btn--full" @click="goApply(mt.id)"><i class="bi bi-send-fill"></i> Daftar Program</button>
+                        <button v-if="!isFull(mt)" type="button" class="wc-btn wc-btn--gold wc-btn--full" @click="goApply(mt)"><i class="bi bi-send-fill"></i> Daftar Program</button>
                         <button v-else type="button" class="wc-btn wc-btn--disabled wc-btn--full" disabled><i class="bi bi-lock-fill"></i> Kuota Telah Penuh</button>
-                        <p class="wc-apply__note"><i class="bi bi-info-circle"></i> Demo dummy — pendaftaran belum tersambung ke sistem.</p>
                     </div>
                 </aside>
             </div>
@@ -121,7 +123,7 @@
 import { Head } from '@inertiajs/vue3';
 import { computed, nextTick, onMounted, onUnmounted } from 'vue';
 import CareerLayout from './Layouts/CareerLayout.vue';
-import { daysLeft, deadlineLabel, formatDate, goApply, goToSection, isFull, kuotaPct, observeReveal, stageTypeLabel, statusClass, statusLabel } from './careerData';
+import { daysLeft, deadlineLabel, formatDate, formatDateTime, goApply, goToSection, isFull, kuotaPct, observeReveal, stageTypeLabel, statusClass, statusLabel } from './careerData';
 
 defineOptions({ layout: null });
 

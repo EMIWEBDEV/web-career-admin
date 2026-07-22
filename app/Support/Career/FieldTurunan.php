@@ -33,7 +33,9 @@ class FieldTurunan
      */
     public const DEFINISI = [
         'usia' => [
-            'sumber' => ['tanggal_lahir'],
+            // Formulir memakai key 'lahir'; canonical 'tanggal_lahir' & 'tgl_lahir'
+            // tetap didukung supaya syarat lama tak perlu diubah.
+            'sumber' => ['tanggal_lahir', 'lahir', 'tgl_lahir'],
             'label' => 'Usia (otomatis dari tanggal lahir)',
             'tipe' => 'ANGKA',
             'satuan' => 'tahun',
@@ -77,7 +79,14 @@ class FieldTurunan
     {
         switch ($key) {
             case 'usia':
-                return self::usia($jawaban['tanggal_lahir'] ?? null);
+                foreach (self::DEFINISI['usia']['sumber'] as $s) {
+                    $v = $jawaban[$s] ?? null;
+                    if ($v !== null && trim((string) $v) !== '') {
+                        return self::usia($v);
+                    }
+                }
+
+                return null;
 
             case 'jenjang':
             case 'jurusan_gabungan':

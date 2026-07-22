@@ -15,6 +15,7 @@
         :skema="SKEMA"
         :disabled="disabled"
         :label-kirim="labelKirim"
+        :konteks="konteks"
         :langkah-awal="langkahAwal"
         @kirim="(v) => $emit('kirim', v)"
         @berkas="(e) => $emit('berkas', e)"
@@ -31,6 +32,7 @@ const props = defineProps({
     modelValue: { type: Object, default: () => ({}) },
     disabled: { type: Boolean, default: false },
     labelKirim: { type: String, default: 'Kirim Formulir' },
+    konteks: { type: Object, default: () => ({}) },
     // Dipulihkan dari Formulir_Pengisian.Langkah_Terakhir agar kandidat
     // bisa berhenti dan melanjutkan di lain waktu.
     langkahAwal: { type: Number, default: 0 },

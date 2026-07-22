@@ -110,64 +110,61 @@
         </div>
 
         <!-- Modal buat/ubah program -->
-        <AdminModal :show="show" :title="editingId ? 'Ubah Program' : 'Buat Program Kegiatan'" subtitle="Definisi program: identitas, mode, alur, jadwal, batch, posisi & kriteria." icon="bi-diagram-3-fill" lg :save-label="editingId ? 'Perbarui' : 'Buat Program'" @close="show = false" @save="save">
-            <!-- Identitas -->
-            <div class="wca-fsection">
-                <div class="wca-fsection__label"><i class="bi bi-tags"></i> Identitas & Klasifikasi</div>
+        <AdminModal :show="show" :title="editingId ? 'Ubah Program' : 'Buat Program Kegiatan'" :subtitle="langkahMeta[langkah].sub" icon="bi-diagram-3-fill" lg @close="show = false">
+            <!-- ── Stepper ── -->
+            <nav class="pgk-steps">
+                <button
+                    v-for="(s, i) in langkahMeta"
+                    :key="i"
+                    class="pgk-step"
+                    :class="{ done: i < langkah, cur: i === langkah }"
+                    type="button"
+                    :disabled="i > langkah"
+                    @click="i <= langkah && (langkah = i)"
+                >
+                    <span class="pgk-step__dot"><i v-if="i < langkah" class="bi bi-check-lg"></i><i v-else class="bi" :class="s.ikon"></i></span>
+                    <span class="pgk-step__lbl">{{ s.judul }}<small v-if="s.opsional"> (opsional)</small></span>
+                </button>
+            </nav>
+
+            <!-- ══════════ LANGKAH 1 — IDENTITAS ══════════ -->
+            <div v-show="langkah === 0" class="pgk-panel">
                 <div class="wca-form">
-                    <!-- Kategori DULU: mode, warna, alur & jadwal semuanya menurun dari sini. -->
                     <div class="wca-frow">
                         <div>
                             <label class="wca-field-lbl">Kategori <span class="pgk-req">wajib</span></label>
                             <RefSelect type="talent" v-model="form.kategori" placeholder="Pilih kategori dulu" @picked="onKategori" />
-                            <div class="pgk-hint">Menentukan mode, alur & jadwal yang tersedia di bawah.</div>
+                            <div class="pgk-hint">Menentukan mode, alur & jadwal di bawah.</div>
                         </div>
                         <div>
-                            <label class="wca-field-lbl">Nama Program</label>
-                            <el-input v-model="form.nama" :disabled="terkunci" :placeholder="terkunci ? 'Pilih kategori dulu' : 'Rekrutmen Reguler Q4 2026'" />
+                            <label class="wca-field-lbl">Nama Program <span class="pgk-req">wajib</span></label>
+                            <el-input v-model="form.nama" :disabled="terkunci" :placeholder="terkunci ? 'Pilih kategori dulu' : 'mis. Rekrutmen Reguler Q4 2026'" />
                         </div>
                     </div>
                     <div class="wca-frow">
                         <div><label class="wca-field-lbl">Mode</label><RefSelect type="mode" v-model="form.mode" :disabled="terkunci" :placeholder="terkunci ? 'Pilih kategori dulu' : 'Pilih mode'" /></div>
-                        <div><label class="wca-field-lbl">Warna</label>
-                            <el-color-picker v-model="form.warna" :predefine="palette" :disabled="terkunci" />
+                        <div>
+                            <label class="wca-field-lbl">Warna Label</label>
+                            <div><el-color-picker v-model="form.warna" :predefine="palette" :disabled="terkunci" /></div>
                         </div>
                     </div>
                     <div class="wca-frow">
                         <div>
                             <label class="wca-field-lbl">Alur Seleksi</label>
-                            <RefSelect
-                                type="alur"
-                                v-model="form.alur"
-                                :params="{ kategori: form.kategori }"
-                                :disabled="terkunci"
-                                :placeholder="terkunci ? 'Pilih kategori dulu' : 'Pilih alur'"
-                                no-data-text="Belum ada alur untuk kategori ini"
-                                clearable
-                                @picked="onAlurGanti"
-                            />
+                            <RefSelect type="alur" v-model="form.alur" :params="{ kategori: form.kategori }" :disabled="terkunci" :placeholder="terkunci ? 'Pilih kategori dulu' : 'Pilih alur'" no-data-text="Belum ada alur untuk kategori ini" clearable @picked="onAlurGanti" />
                         </div>
                         <div>
                             <label class="wca-field-lbl">Jadwal</label>
-                            <RefSelect
-                                type="jadwal"
-                                v-model="form.jadwal"
-                                :params="{ kategori: form.kategori, alur: form.alur }"
-                                :disabled="terkunci"
-                                :placeholder="terkunci ? 'Pilih kategori dulu' : 'Pilih jadwal'"
-                                no-data-text="Belum ada jadwal untuk alur ini"
-                                clearable
-                            />
+                            <RefSelect type="jadwal" v-model="form.jadwal" :params="{ kategori: form.kategori, alur: form.alur }" :disabled="terkunci" :placeholder="terkunci ? 'Pilih kategori dulu' : 'Pilih jadwal'" no-data-text="Belum ada jadwal untuk alur ini" clearable />
                         </div>
                     </div>
                     <div class="wca-frow">
                         <div>
                             <label class="wca-field-lbl">Penyelenggara</label>
-                            <el-input v-model="form.penyelenggara" :disabled="terkunci" :placeholder="terkunci ? 'Pilih kategori dulu' : 'Tim Rekrutmen'" />
+                            <el-input v-model="form.penyelenggara" :disabled="terkunci" :placeholder="terkunci ? 'Pilih kategori dulu' : 'mis. Tim Rekrutmen'" />
                         </div>
-                        <!-- Status hanya muncul saat MENGUBAH. Program baru selalu lahir
-                             BERJALAN, jadi tak perlu ditanyakan saat dibuat. -->
-                        <div v-if="editingId"><label class="wca-field-lbl">Status</label>
+                        <div v-if="editingId">
+                            <label class="wca-field-lbl">Status</label>
                             <el-select filterable v-model="form.status" placeholder="Status" style="width:100%">
                                 <el-option label="Draft" value="DRAFT" />
                                 <el-option label="Berjalan" value="BERJALAN" />
@@ -182,30 +179,23 @@
                 </div>
             </div>
 
-            <!-- Posisi -->
-            <div class="wca-fsection">
-                <div class="wca-fsection__label" style="display:flex;align-items:center;justify-content:space-between">
-                    <span><i class="bi bi-briefcase"></i> Posisi / Lowongan ({{ form.posisi.length }})</span>
-                    <button class="wca-btn wca-btn--soft wca-btn--sm" type="button" :disabled="terkunci" @click="addPosisi"><i class="bi bi-plus-circle"></i> Ambil dari MPP</button>
+            <!-- ══════════ LANGKAH 2 — POSISI ══════════ -->
+            <div v-show="langkah === 1" class="pgk-panel">
+                <div class="pgk-panel__bar">
+                    <div>
+                        <div class="pgk-panel__title"><i class="bi bi-briefcase"></i> Posisi / Lowongan</div>
+                        <div class="pgk-panel__note">Diambil dari MPP yang sudah disetujui — tidak diketik manual.</div>
+                    </div>
+                    <button class="wca-btn wca-btn--primary wca-btn--sm" type="button" :disabled="terkunci" @click="addPosisi"><i class="bi bi-plus-circle"></i> Ambil dari MPP</button>
                 </div>
+
                 <div class="pgk-rows">
-                    <!-- Posisi TIDAK boleh diketik manual: hanya boleh dipilih dari MPP
-                         yang sudah disetujui. Departemen, lokasi & level ikut terisi
-                         otomatis dan dikunci agar tidak menyimpang dari MPP. -->
                     <div v-for="(l, i) in form.posisi" :key="i" class="pgk-row pgk-row--stack">
                         <div class="pgk-row__pick">
                             <label class="wca-field-lbl">Posisi (dari MPP)</label>
-                            <RefSelect
-                                type="mpp"
-                                v-model="l.mppRef"
-                                :params="{ kategori: form.kategori }"
-                                :placeholder="form.kategori ? 'Cari nomor / nama posisi MPP' : 'Pilih kategori dulu'"
-                                no-data-text="Tidak ada MPP untuk kategori ini"
-                                @picked="(o) => onMpp(l, o)"
-                            />
+                            <RefSelect type="mpp" v-model="l.mppRef" :params="{ kategori: form.kategori }" :placeholder="form.kategori ? 'Cari nomor / nama posisi MPP' : 'Pilih kategori dulu'" no-data-text="Tidak ada MPP untuk kategori ini" @picked="(o) => onMpp(l, o)" />
                             <div v-if="!l.mppRef" class="pgk-hint pgk-hint--warn"><i class="bi bi-exclamation-triangle"></i> Baris ini belum tertaut MPP — pilih dulu sebelum menyimpan.</div>
                         </div>
-
                         <div class="pgk-row__grid pgk-row__grid--posisi" :class="{ 'is-edit': mengubah }">
                             <div><label class="wca-field-lbl">Departemen</label><el-input :model-value="l.departemen" disabled placeholder="—" /></div>
                             <div><label class="wca-field-lbl">Lokasi</label><el-input :model-value="l.lokasi" disabled placeholder="—" /></div>
@@ -214,9 +204,8 @@
                                 <label class="wca-field-lbl">Kuota <small v-if="l.kuotaMpp">/ MPP {{ l.kuotaMpp }}</small></label>
                                 <el-input-number v-model="l.kuota" :min="0" :max="l.kuotaMpp || undefined" controls-position="right" style="width:100%" />
                             </div>
-                            <!-- Lowongan yang baru dibuat pasti BUKA — tidak ditanyakan.
-                                 Baru relevan saat program diubah (mis. ditutup). -->
-                            <div v-if="mengubah"><label class="wca-field-lbl">Status</label>
+                            <div v-if="mengubah">
+                                <label class="wca-field-lbl">Status</label>
                                 <el-select v-model="l.status" style="width:100%">
                                     <el-option label="Buka" value="BUKA" />
                                     <el-option label="Penuh" value="PENUH" />
@@ -227,166 +216,178 @@
                         <button class="wca-iconbtn wca-iconbtn--danger pgk-row__del" type="button" title="Hapus posisi" @click="form.posisi.splice(i, 1)"><i class="bi bi-trash"></i></button>
                     </div>
                     <div v-if="!form.posisi.length" class="pgk-empty">
-                        <template v-if="form.kategori">Tanpa posisi — program tetap bisa dibuat. Klik "Ambil dari MPP" untuk menautkan lowongan.</template>
-                        <template v-else>Pilih kategori dulu, baru daftar MPP bisa ditampilkan.</template>
+                        Tanpa posisi — program tetap bisa dibuat. Klik <b>Ambil dari MPP</b> untuk menautkan lowongan.
                     </div>
                 </div>
             </div>
 
-            <!-- PENGATURAN TAMBAHAN — semuanya opsional dan bergantung pada Posisi
-                 di atas (kuota batch dibatasi pagu MPP), jadi sengaja diletakkan
-                 paling bawah agar tidak dikira langkah wajib. -->
-            <div class="pgk-extra">
-                <div class="pgk-extra__head">
-                    <span class="pgk-extra__title"><i class="bi bi-sliders"></i> Pengaturan Tambahan</span>
-                    <span class="pgk-extra__note">Boleh dilewati — program tetap bisa dibuat tanpa ini.</span>
+            <!-- ══════════ LANGKAH 3 — PENGATURAN TAMBAHAN (opsional) ══════════ -->
+            <div v-show="langkah === 2" class="pgk-panel">
+                <div class="pgk-panel__intro">
+                    <i class="bi bi-info-circle"></i>
+                    Semua di langkah ini <b>boleh dilewati</b>. Aktifkan hanya yang Anda perlukan.
                 </div>
 
                 <!-- Batch -->
-                <div class="wca-fsection">
-                    <div class="wca-fsection__label" style="display:flex;align-items:center;justify-content:space-between">
-                        <span><i class="bi bi-collection"></i> Batch ({{ form.batch.length }})</span>
-                        <span class="pgk-headright">
-                            <!-- Batas kuota berasal dari MPP: total kursi batch tidak boleh
-                                 melebihi total kuota posisi yang ditarik dari MPP. -->
+                <div class="pgk-opsi" :class="{ 'is-on': pakaiBatch }">
+                    <label class="pgk-opsi__hd">
+                        <el-switch v-model="pakaiBatch" @change="togglePakaiBatch" />
+                        <span class="pgk-opsi__t"><i class="bi bi-collection"></i> Bagi per angkatan (Batch)</span>
+                        <small>Kalau seleksi dijalankan bergelombang. Kalau tidak, biarkan mati.</small>
+                    </label>
+
+                    <div v-if="pakaiBatch" class="pgk-opsi__body">
+                        <div class="pgk-opsi__toolbar">
                             <span v-if="kuotaMpp" class="pgk-meter" :class="{ 'is-over': kuotaBatchLebih }">
                                 <i class="bi" :class="kuotaBatchLebih ? 'bi-exclamation-octagon-fill' : 'bi-people-fill'"></i>
                                 {{ kuotaBatch }} / {{ kuotaMpp }} kursi MPP
                             </span>
-                            <button class="wca-btn wca-btn--soft wca-btn--sm" type="button" :disabled="terkunci" @click="addBatch"><i class="bi bi-plus-circle"></i> Tambah Batch</button>
-                        </span>
-                    </div>
-                    <div class="pgk-rows">
+                            <span style="flex:1"></span>
+                            <button class="wca-btn wca-btn--soft wca-btn--sm" type="button" @click="addBatch"><i class="bi bi-plus-circle"></i> Tambah Batch</button>
+                        </div>
                         <div v-if="kuotaBatchLebih" class="pgk-alert">
                             <i class="bi bi-exclamation-triangle-fill"></i>
-                            Total kursi batch <strong>{{ kuotaBatch }}</strong> melebihi kuota MPP <strong>{{ kuotaMpp }}</strong>. Kurangi {{ kuotaBatch - kuotaMpp }} kursi sebelum menyimpan.
+                            Total kursi batch <strong>{{ kuotaBatch }}</strong> melebihi kuota MPP <strong>{{ kuotaMpp }}</strong>. Kurangi {{ kuotaBatch - kuotaMpp }} kursi.
                         </div>
-                        <div v-for="(b, i) in form.batch" :key="i" class="pgk-row">
-                            <div class="pgk-row__grid pgk-row__grid--batch" :class="{ 'is-edit': mengubah }">
-                                <div><label class="wca-field-lbl">Nama</label><el-input v-model="b.nama" placeholder="Batch 1 — Mei 2026" /></div>
-                                <div>
-                                    <label class="wca-field-lbl">Kuota <small v-if="kuotaMpp">maks {{ batasBatch(i) }}</small></label>
-                                    <el-input-number v-model="b.kuota" :min="0" :max="kuotaMpp ? batasBatch(i) : undefined" controls-position="right" style="width:100%" />
-                                </div>
-                                <!-- Batch baru pasti masih kosong (Terisi 0) dan AKTIF.
-                                     Keduanya hasil pengisian peserta, bukan input saat
-                                     mendefinisikan program — jadi hanya muncul saat diubah. -->
-                                <template v-if="mengubah">
-                                    <div><label class="wca-field-lbl">Terisi</label><el-input-number v-model="b.terisi" :min="0" :max="b.kuota || undefined" controls-position="right" style="width:100%" /></div>
-                                    <div><label class="wca-field-lbl">Status</label>
-                                        <el-select v-model="b.status" style="width:100%">
-                                            <el-option label="Aktif" value="AKTIF" />
-                                            <el-option label="Selesai" value="SELESAI" />
-                                            <el-option label="Tutup" value="TUTUP" />
-                                        </el-select>
+                        <div class="pgk-rows">
+                            <div v-for="(b, i) in form.batch" :key="i" class="pgk-row">
+                                <div class="pgk-row__grid pgk-row__grid--batch" :class="{ 'is-edit': mengubah }">
+                                    <div><label class="wca-field-lbl">Nama</label><el-input v-model="b.nama" placeholder="Batch 1 — Mei 2026" /></div>
+                                    <div>
+                                        <label class="wca-field-lbl">Kuota <small v-if="kuotaMpp">maks {{ batasBatch(i) }}</small></label>
+                                        <el-input-number v-model="b.kuota" :min="0" :max="kuotaMpp ? batasBatch(i) : undefined" controls-position="right" style="width:100%" />
                                     </div>
-                                </template>
+                                    <template v-if="mengubah">
+                                        <div><label class="wca-field-lbl">Terisi</label><el-input-number v-model="b.terisi" :min="0" :max="b.kuota || undefined" controls-position="right" style="width:100%" /></div>
+                                        <div><label class="wca-field-lbl">Status</label>
+                                            <el-select v-model="b.status" style="width:100%">
+                                                <el-option label="Aktif" value="AKTIF" />
+                                                <el-option label="Selesai" value="SELESAI" />
+                                                <el-option label="Tutup" value="TUTUP" />
+                                            </el-select>
+                                        </div>
+                                    </template>
+                                </div>
+                                <button class="wca-iconbtn wca-iconbtn--danger" type="button" title="Hapus batch" @click="form.batch.splice(i, 1)"><i class="bi bi-trash"></i></button>
                             </div>
-                            <button class="wca-iconbtn wca-iconbtn--danger" type="button" title="Hapus batch" @click="form.batch.splice(i, 1)"><i class="bi bi-trash"></i></button>
-                        </div>
-                        <div v-if="!form.batch.length" class="pgk-empty">
-                            <template v-if="terkunci">Pilih kategori dulu.</template>
-                            <template v-else>Tanpa batch — program berjalan langsung, tanpa angkatan. Klik "Tambah Batch" bila perlu dibagi per angkatan.</template>
+                            <div v-if="!form.batch.length" class="pgk-empty" style="padding:.6rem">Klik "Tambah Batch" untuk menambah angkatan.</div>
                         </div>
                     </div>
                 </div>
 
                 <!-- Syarat auto-gugur -->
-                <div class="wca-fsection">
-                    <div class="wca-fsection__label" style="display:flex;align-items:center;justify-content:space-between">
-                        <span><i class="bi bi-sliders2"></i> Syarat Auto-Gugur ({{ form.syarat.length }})</span>
-                        <button class="wca-btn wca-btn--soft wca-btn--sm" type="button" :disabled="terkunci || !tahapFormulir.length" @click="addSyarat">
-                            <i class="bi bi-plus-circle"></i> Tambah Syarat
-                        </button>
-                    </div>
+                <div class="pgk-opsi" :class="{ 'is-on': pakaiSyarat }">
+                    <label class="pgk-opsi__hd">
+                        <el-switch v-model="pakaiSyarat" :disabled="!tahapFormulir.length" @change="togglePakaiSyarat" />
+                        <span class="pgk-opsi__t"><i class="bi bi-sliders2"></i> Syarat Auto-Gugur</span>
+                        <small>Saring pelamar otomatis dari jawaban formulir (mis. IPK minimal, usia maksimal).</small>
+                    </label>
 
-                    <!-- Syarat hanya bisa memeriksa field yang memang DITANYAKAN
-                         formulir. Tanpa tahap berformulir, tidak ada yang bisa dinilai. -->
-                    <div v-if="!terkunci && !tahapFormulir.length" class="pgk-alert" style="margin-bottom:.6rem">
+                    <div v-if="!tahapFormulir.length" class="pgk-alert" style="margin:.5rem 0 0">
                         <i class="bi bi-exclamation-triangle-fill"></i>
-                        Alur <b>{{ form.alur || '—' }}</b> belum punya tahap berformulir. Pasang formulir di Master Tahapan Seleksi dulu — tanpa formulir, tidak ada data yang bisa disaring.
+                        Alur <b>{{ form.alur || '—' }}</b> belum punya tahap berformulir. Pasang formulir di Master Tahapan Seleksi dulu — tanpa formulir tidak ada data yang bisa disaring.
                     </div>
 
-                    <div class="pgk-rows">
+                    <div v-if="pakaiSyarat" class="pgk-opsi__body">
+                        <div class="pgk-opsi__toolbar">
+                            <span style="flex:1"></span>
+                            <button class="wca-btn wca-btn--soft wca-btn--sm" type="button" @click="addSyarat"><i class="bi bi-plus-circle"></i> Tambah Syarat</button>
+                        </div>
+
                         <div v-for="(S, i) in form.syarat" :key="i" class="pgk-syarat">
-                            <div class="pgk-syarat__head">
-                                <el-input v-model="S.nama" placeholder="Nama syarat — mis. Kelayakan Akademik" style="flex:1.4" />
-                                <el-select v-model="S.tahapId" placeholder="Diperiksa di tahap" style="flex:1.6" @change="(v) => onTahapSyarat(S, v)">
-                                    <el-option v-for="t in tahapFormulir" :key="t.tahapId" :value="t.tahapId" :label="`${t.urutan}. ${t.label} — ${t.formulirNama || t.formulir}`" />
-                                </el-select>
-                                <button class="wca-iconbtn wca-iconbtn--danger" type="button" title="Hapus syarat" @click="form.syarat.splice(i, 1)"><i class="bi bi-trash"></i></button>
+                            <!-- Baris identitas syarat: nama + tahap, masing-masing berlabel -->
+                            <div class="pgk-syarat__id">
+                                <div class="pgk-syarat__idf">
+                                    <label class="wca-field-lbl">Nama Syarat</label>
+                                    <el-input v-model="S.nama" placeholder="mis. Kelayakan Akademik" />
+                                </div>
+                                <div class="pgk-syarat__idf">
+                                    <label class="wca-field-lbl">Diperiksa di Tahap</label>
+                                    <el-select v-model="S.tahapId" placeholder="Pilih tahap berformulir" style="width:100%" @change="(v) => onTahapSyarat(S, v)">
+                                        <el-option v-for="t in tahapFormulir" :key="t.tahapId" :value="t.tahapId" :label="`${t.urutan}. ${t.label} — ${t.formulirNama || t.formulir}`" />
+                                    </el-select>
+                                </div>
+                                <button class="wca-iconbtn wca-iconbtn--danger pgk-syarat__del" type="button" title="Hapus syarat" @click="form.syarat.splice(i, 1)"><i class="bi bi-trash"></i></button>
                             </div>
 
-                            <!-- Pohon aturan: grup luar DAN/ATAU berisi kondisi. -->
+                            <!-- Pohon aturan -->
                             <div class="pgk-aturan">
                                 <div class="pgk-aturan__bar">
-                                    <span>Pelamar lolos bila</span>
-                                    <el-select v-model="S.aturan.penghubung" size="small" style="width:6.5rem">
+                                    <span>Pelamar <b>lolos</b> bila</span>
+                                    <el-select v-model="S.aturan.penghubung" size="small" style="width:8.5rem">
                                         <el-option value="DAN" label="SEMUA" />
                                         <el-option value="ATAU" label="SALAH SATU" />
                                     </el-select>
-                                    <span>kondisi berikut terpenuhi:</span>
-                                    <span style="flex:1"></span>
-                                    <button class="wca-btn wca-btn--soft wca-btn--sm" type="button" @click="addKondisi(S)"><i class="bi bi-plus-lg"></i> Kondisi</button>
+                                    <span>kondisi terpenuhi</span>
                                 </div>
 
                                 <div v-for="(K, j) in S.aturan.aturan" :key="j" class="pgk-kondisi">
-                                    <el-select v-model="K.field" filterable placeholder="Pilih field" style="flex:1.5" :no-data-text="S.tahapId ? 'Formulir tahap ini tidak punya field' : 'Pilih tahap dulu'">
-                                        <el-option-group label="Dari formulir">
-                                            <el-option v-for="f in fieldTahap(S.tahapId)" :key="f.key" :value="f.key" :label="`${f.label} (${f.key})`" />
-                                        </el-option-group>
-                                        <el-option-group label="Dihitung otomatis">
-                                            <el-option v-for="f in fieldTurunan" :key="f.key" :value="f.key" :label="f.label" />
-                                        </el-option-group>
-                                    </el-select>
-                                    <el-select v-model="K.operator" style="width:8.5rem">
-                                        <el-option v-for="o in operatorOptions" :key="o.value" :value="o.value" :label="o.label" />
-                                    </el-select>
-                                    <el-input v-model="K.nilai" :placeholder="phNilai(K.operator)" style="flex:1" />
-                                    <button class="wca-iconbtn wca-iconbtn--danger" type="button" title="Hapus kondisi" @click="S.aturan.aturan.splice(j, 1)"><i class="bi bi-x-lg"></i></button>
+                                    <div class="pgk-kondisi__f">
+                                        <label class="wca-field-lbl">Field</label>
+                                        <el-select v-model="K.field" filterable placeholder="Pilih field" style="width:100%" :no-data-text="S.tahapId ? 'Formulir tahap ini tidak punya field' : 'Pilih tahap dulu'">
+                                            <el-option-group label="Dari formulir">
+                                                <el-option v-for="f in fieldTahap(S.tahapId)" :key="f.key" :value="f.key" :label="f.label" />
+                                            </el-option-group>
+                                            <el-option-group label="Dihitung otomatis (mis. usia dari tanggal lahir)">
+                                                <el-option v-for="f in fieldTurunan" :key="f.key" :value="f.key" :label="f.label" />
+                                            </el-option-group>
+                                        </el-select>
+                                    </div>
+                                    <div class="pgk-kondisi__o">
+                                        <label class="wca-field-lbl">Syarat</label>
+                                        <el-select v-model="K.operator" style="width:100%">
+                                            <el-option v-for="o in operatorOptions" :key="o.value" :value="o.value" :label="o.label" />
+                                        </el-select>
+                                    </div>
+                                    <div class="pgk-kondisi__v">
+                                        <label class="wca-field-lbl">Nilai</label>
+                                        <el-input v-model="K.nilai" :placeholder="phNilai(K.operator)" />
+                                    </div>
+                                    <button class="wca-iconbtn wca-iconbtn--danger pgk-kondisi__del" type="button" title="Hapus kondisi" @click="S.aturan.aturan.splice(j, 1)"><i class="bi bi-x-lg"></i></button>
                                 </div>
 
-                                <div v-if="!S.aturan.aturan.length" class="pgk-empty" style="padding:.4rem">
-                                    Belum ada kondisi — syarat ini akan diabaikan mesin.
+                                <button class="pgk-addkondisi" type="button" @click="addKondisi(S)"><i class="bi bi-plus-lg"></i> Tambah Kondisi</button>
+                                <div v-if="!S.aturan.aturan.length" class="pgk-kondisi-kosong">Belum ada kondisi — syarat ini akan diabaikan mesin.</div>
+                            </div>
+
+                            <!-- Aksi + pesan -->
+                            <div class="pgk-syarat__opt">
+                                <div>
+                                    <label class="wca-field-lbl">Bila tidak lolos</label>
+                                    <el-select v-model="S.aksi" style="width:100%">
+                                        <el-option value="TANDAI" label="Tandai — admin yang ketuk palu" />
+                                        <el-option value="GUGUR" label="Gugurkan langsung tanpa admin" />
+                                    </el-select>
                                 </div>
+                                <label class="pgk-syarat__uji">
+                                    <el-checkbox v-model="S.uji">Mode uji</el-checkbox>
+                                    <small>Hitung saja, jangan pengaruhi pelamar.</small>
+                                </label>
                             </div>
 
-                            <div class="pgk-syarat__foot">
-                                <el-select v-model="S.aksi" size="small" style="width:16rem">
-                                    <el-option value="TANDAI" label="Tandai — admin yang ketuk palu" />
-                                    <el-option value="GUGUR" label="Gugurkan langsung tanpa admin" />
-                                </el-select>
-                                <el-checkbox v-model="S.uji">Mode uji (hitung saja, jangan pengaruhi pelamar)</el-checkbox>
-                            </div>
-
-                            <!-- Pesan yang DILIHAT KANDIDAT bila tidak lolos. Tulis
-                                 dengan nada manis — ini kesan terakhir mereka. -->
                             <div class="pgk-pesan">
                                 <label class="wca-field-lbl">
                                     <i class="bi bi-chat-heart"></i> Pesan penolakan untuk kandidat
                                     <span class="pgk-opt">opsional</span>
                                 </label>
-                                <el-input
-                                    v-model="S.pesanGugur"
-                                    type="textarea"
-                                    :rows="2"
-                                    :placeholder="contohPesan"
-                                    maxlength="500"
-                                    show-word-limit
-                                />
-                                <button class="pgk-isipesan" type="button" @click="S.pesanGugur = contohPesan">
-                                    <i class="bi bi-magic"></i> Pakai contoh
-                                </button>
+                                <el-input v-model="S.pesanGugur" type="textarea" :rows="3" :placeholder="contohPesan" maxlength="500" show-word-limit resize="none" />
+                                <button class="pgk-isipesan" type="button" @click="S.pesanGugur = contohPesan"><i class="bi bi-magic"></i> Pakai contoh</button>
                             </div>
                         </div>
 
-                        <div v-if="!form.syarat.length" class="pgk-empty">
-                            <template v-if="terkunci">Pilih kategori dulu.</template>
-                            <template v-else>Tanpa syarat — semua pelamar lolos penyaringan otomatis dan diperiksa admin satu per satu.</template>
-                        </div>
+                        <div v-if="!form.syarat.length" class="pgk-empty" style="padding:.6rem">Klik "Tambah Syarat" untuk mulai menyaring pelamar.</div>
                     </div>
                 </div>
             </div>
+
+            <!-- ── Footer wizard ── -->
+            <template #footer>
+                <button class="wca-btn wca-btn--ghost" type="button" @click="show = false"><i class="bi bi-x-circle"></i> Batal</button>
+                <span style="flex:1"></span>
+                <button v-if="langkah > 0" class="wca-btn wca-btn--ghost" type="button" @click="langkah--"><i class="bi bi-arrow-left"></i> Kembali</button>
+                <button v-if="langkah < langkahMeta.length - 1" class="wca-btn wca-btn--primary" type="button" @click="maju">Lanjut <i class="bi bi-arrow-right"></i></button>
+                <button v-else class="wca-btn wca-btn--primary" type="button" @click="save"><i class="bi bi-check-circle-fill"></i> {{ editingId ? 'Perbarui' : 'Buat Program' }}</button>
+            </template>
         </AdminModal>
 
         <ConfirmModal :show="delShow" title="Hapus Program" :busy="deleting" confirm-label="Ya, Hapus" note="Program beserta batch, posisi & kriteria-nya akan dihapus permanen." @cancel="delShow = false" @confirm="confirmDelete">
@@ -419,6 +420,15 @@ export default {
             tab: '',
             show: false,
             editingId: null,
+            // Wizard: langkah aktif + apakah seksi opsional diaktifkan.
+            langkah: 0,
+            langkahMeta: [
+                { judul: 'Identitas', ikon: 'bi-tags', sub: 'Kategori dulu — mode, alur & jadwal mengikutinya.' },
+                { judul: 'Posisi', ikon: 'bi-briefcase', sub: 'Tautkan lowongan dari MPP yang sudah disetujui.' },
+                { judul: 'Tambahan', ikon: 'bi-sliders', opsional: true, sub: 'Batch & syarat auto-gugur — boleh dilewati.' },
+            ],
+            pakaiBatch: false,
+            pakaiSyarat: false,
             form: { nama: '', kategori: '', warna: '#4f46e5', mode: 'ROLLING', alur: '', jadwal: '', penyelenggara: '', status: 'DRAFT', batch: [], posisi: [], syarat: [] },
             tahapFormulir: [],
             fieldTurunan: [],
@@ -547,8 +557,33 @@ export default {
             // Master Kategori begitu kategori dipilih. status juga kosong: backend
             // memaksa BERJALAN untuk program baru.
             this.form = { nama: '', kategori: '', warna: '', mode: '', alur: '', jadwal: '', penyelenggara: '', status: '', batch: [], posisi: [], syarat: [] };
+            this.langkah = 0;
+            this.pakaiBatch = false;
+            this.pakaiSyarat = false;
             this.show = true;
             this.loadTahapFormulir();
+        },
+
+        /** Lanjut ke langkah berikutnya, validasi minimum langkah aktif dulu. */
+        maju() {
+            if (this.langkah === 0) {
+                if (!this.form.kategori) return this.notice('Kategori wajib dipilih.');
+                if (!this.form.nama.trim()) return this.notice('Nama program wajib diisi.');
+            }
+            if (this.langkah === 1) {
+                if (this.form.posisi.some((l) => !l.mppRef)) return this.notice('Ada posisi yang belum dipilih dari MPP.');
+            }
+            this.langkah = Math.min(this.langkah + 1, this.langkahMeta.length - 1);
+        },
+
+        /** Matikan batch -> buang datanya; nyalakan saat kosong -> beri satu baris. */
+        togglePakaiBatch(v) {
+            if (v && !this.form.batch.length) this.addBatch();
+            if (!v) this.form.batch = [];
+        },
+        togglePakaiSyarat(v) {
+            if (v && !this.form.syarat.length) this.addSyarat();
+            if (!v) this.form.syarat = [];
         },
 
         /**
@@ -619,7 +654,12 @@ export default {
                 posisi: (p.posisi || []).map((l) => ({ mppRef: l.mppRef || '', posisi: l.posisi, departemen: l.departemen, lokasi: l.lokasi, level: l.level || '', kuota: l.kuota, kuotaMpp: l.kuota, status: l.status || 'BUKA' })),
                 syarat: (p.syarat || []).map((s) => ({ nama: s.nama, tahapId: s.tahapId, formulir: s.formulir, aturan: s.aturan && s.aturan.aturan ? s.aturan : { penghubung: 'DAN', aturan: [] }, aksi: s.aksi || 'TANDAI', pesanGugur: s.pesanGugur || '', uji: !!s.uji, aktif: s.aktif !== false })),
             };
+            this.langkah = 0;
+            // Seksi opsional otomatis menyala kalau datanya sudah ada.
+            this.pakaiBatch = this.form.batch.length > 0;
+            this.pakaiSyarat = this.form.syarat.length > 0;
             this.show = true;
+            this.loadTahapFormulir();
         },
         addBatch() { this.form.batch.push({ nama: '', kuota: 0, terisi: 0, status: 'AKTIF' }); },
 
@@ -723,33 +763,66 @@ export default {
 .pgk-row--stack .pgk-row__grid { flex: 1 1 100%; }
 .pgk-row__del { position: absolute; top: .7rem; right: .7rem; margin-top: 0 !important; }
 
-/* Pembungkus seksi opsional. Sengaja dibedakan dari .wca-fsection biasa supaya
-   terbaca sebagai "lanjutan", bukan langkah wajib berikutnya. */
-.pgk-extra { border: 1px dashed rgba(11, 16, 51, .16); border-radius: 14px; padding: .9rem; background: rgba(248, 250, 252, .6); }
-.pgk-extra__head { display: flex; align-items: baseline; flex-wrap: wrap; gap: .25rem .6rem; margin-bottom: .75rem; padding-left: .15rem; }
-.pgk-extra__title { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #475569; }
-.pgk-extra__note { font-size: 11.5px; color: #94a3b8; }
-.pgk-extra .wca-fsection { background: #fff; }
-.pgk-extra .wca-fsection + .wca-fsection { margin-top: .75rem; }
+/* ── Stepper wizard ─────────────────────────────────────────── */
+.pgk-steps { display: flex; gap: .4rem; margin-bottom: 1.1rem; padding-bottom: .9rem; border-bottom: 1px solid rgba(11, 16, 51, .09); }
+.pgk-step { flex: 1; display: flex; align-items: center; gap: .5rem; border: 0; background: transparent; cursor: pointer; padding: .3rem .2rem; font: inherit; text-align: left; }
+.pgk-step:disabled { cursor: not-allowed; opacity: .5; }
+.pgk-step__dot { flex: none; width: 1.9rem; height: 1.9rem; display: grid; place-items: center; border-radius: 50%; background: #eef2f7; color: #94a3b8; font-size: .8rem; transition: all 200ms ease; }
+.pgk-step.done .pgk-step__dot { background: rgba(16, 185, 129, .15); color: #059669; }
+.pgk-step.cur .pgk-step__dot { background: linear-gradient(140deg, #4f46e5, #7c3aed); color: #fff; box-shadow: 0 6px 14px -6px rgba(79, 70, 229, .9); }
+.pgk-step__lbl { font-size: 12.5px; font-weight: 600; color: #94a3b8; line-height: 1.25; }
+.pgk-step__lbl small { font-weight: 500; color: #cbd5e1; }
+.pgk-step.cur .pgk-step__lbl { color: #4338ca; }
+.pgk-step.done .pgk-step__lbl { color: #059669; }
+
+/* ── Panel per langkah ──────────────────────────────────────── */
+.pgk-panel__bar { display: flex; align-items: flex-start; justify-content: space-between; gap: .6rem; margin-bottom: .8rem; }
+.pgk-panel__title { font-size: 13px; font-weight: 700; color: #334155; display: flex; align-items: center; gap: .4rem; }
+.pgk-panel__note { font-size: 11.5px; color: #94a3b8; margin-top: .15rem; }
+.pgk-panel__intro { display: flex; align-items: center; gap: .5rem; font-size: 12.5px; color: #475569; background: rgba(79, 70, 229, .06); border-radius: 10px; padding: .6rem .8rem; margin-bottom: 1rem; }
+
+/* ── Seksi opsional dengan toggle ───────────────────────────── */
+.pgk-opsi { border: 1px solid rgba(11, 16, 51, .1); border-radius: 14px; margin-bottom: .9rem; overflow: hidden; transition: border-color 180ms ease; }
+.pgk-opsi.is-on { border-color: rgba(79, 70, 229, .3); }
+.pgk-opsi__hd { display: flex; align-items: center; flex-wrap: wrap; gap: .3rem .7rem; padding: .8rem 1rem; cursor: pointer; margin: 0; }
+.pgk-opsi.is-on .pgk-opsi__hd { background: rgba(79, 70, 229, .04); border-bottom: 1px solid rgba(79, 70, 229, .12); }
+.pgk-opsi__t { font-size: 13.5px; font-weight: 700; color: #0f172a; display: inline-flex; align-items: center; gap: .4rem; }
+.pgk-opsi__hd small { flex: 1 1 100%; font-size: 11.5px; color: #94a3b8; padding-left: 3rem; }
+.pgk-opsi__body { padding: .9rem 1rem 1rem; }
+.pgk-opsi__toolbar { display: flex; align-items: center; gap: .5rem; margin-bottom: .6rem; }
 .pgk-req { font-weight: 600; font-size: 11px; color: #b45309; background: #fef3c7; border-radius: 999px; padding: .1rem .45rem; margin-left: .35rem; }
 .pgk-hint { font-size: 11.5px; color: #64748b; margin-top: .3rem; }
 .pgk-hint--warn { color: #b45309; }
-.pgk-syarat { border: 1px solid rgba(79,70,229,.18); border-radius: 12px; padding: .7rem; margin-bottom: .6rem; background: rgba(248,250,252,.6); }
-.pgk-syarat__head { display: flex; align-items: center; gap: .45rem; margin-bottom: .55rem; }
-.pgk-syarat__foot { display: flex; align-items: center; flex-wrap: wrap; gap: .6rem; margin-top: .55rem; padding-top: .5rem; border-top: 1px dashed rgba(11,16,51,.1); font-size: 12px; }
-.pgk-pesan { margin-top: .6rem; }
+.pgk-syarat { border: 1px solid rgba(79,70,229,.18); border-radius: 14px; padding: .9rem; margin-bottom: .7rem; background: #fff; }
+/* Identitas syarat: nama + tahap berlabel, tombol hapus di kanan. */
+.pgk-syarat__id { display: grid; grid-template-columns: 1fr 1fr auto; gap: .6rem; align-items: end; margin-bottom: .7rem; }
+.pgk-syarat__del { margin-bottom: .1rem; }
+.pgk-pesan { margin-top: .7rem; }
 .pgk-pesan .wca-field-lbl { display: flex; align-items: center; gap: .3rem; color: #4338ca; }
 .pgk-isipesan { margin-top: .35rem; border: 0; background: transparent; color: #7c3aed; font: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: .3rem; padding: 0; }
 .pgk-isipesan:hover { text-decoration: underline; }
-.pgk-aturan { border: 1px dashed rgba(11,16,51,.16); border-radius: 10px; padding: .55rem; background: #fff; }
-.pgk-aturan__bar { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem; font-size: 12px; font-weight: 600; color: #475569; margin-bottom: .5rem; }
-.pgk-kondisi { display: flex; align-items: center; gap: .4rem; margin-bottom: .4rem; }
+
+.pgk-aturan { border: 1px solid rgba(79,70,229,.14); border-radius: 12px; padding: .7rem; background: rgba(248,250,252,.7); }
+.pgk-aturan__bar { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem; font-size: 12.5px; color: #475569; margin-bottom: .6rem; }
+
+/* Kondisi: grid berlabel yang lega — field cukup lebar sehingga tidak
+   terpotong jadi "U". Turun 1 kolom di layar sempit. */
+.pgk-kondisi { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1.2fr) minmax(0, 1fr) auto; gap: .5rem; align-items: end; margin-bottom: .5rem; }
+.pgk-kondisi__f, .pgk-kondisi__o, .pgk-kondisi__v { min-width: 0; }
+.pgk-kondisi__del { margin-bottom: .1rem; }
+.pgk-kondisi-kosong { font-size: 11.5px; color: #94a3b8; padding: .3rem 0; }
+.pgk-addkondisi { margin-top: .2rem; width: 100%; border: 1px dashed rgba(79,70,229,.3); border-radius: 9px; background: transparent; color: #4338ca; font: inherit; font-size: 12px; font-weight: 600; padding: .45rem; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: .35rem; }
+.pgk-addkondisi:hover { background: rgba(79,70,229,.06); }
+
+/* Aksi + mode uji, berdampingan rapi. */
+.pgk-syarat__opt { display: grid; grid-template-columns: 1fr 1fr; gap: .7rem; align-items: center; margin-top: .7rem; }
+.pgk-syarat__uji { display: flex; flex-direction: column; gap: .1rem; }
+.pgk-syarat__uji small { font-size: 11px; color: #94a3b8; padding-left: 1.6rem; }
 .pgk-syarat-ro { border-left: 3px solid #4f46e5; padding: .5rem .7rem; margin-bottom: .5rem; background: rgba(79,70,229,.04); border-radius: 0 10px 10px 0; }
 .pgk-syarat-ro__top { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem; margin-bottom: .35rem; font-size: 13px; }
 .pgk-gab { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; color: #4338ca; background: rgba(79,70,229,.12); border-radius: 999px; padding: .1rem .45rem; }
 .pgk-mpp { font-size: 11.5px; color: #4338ca; background: rgba(79, 70, 229, .08); border-radius: 6px; padding: .1rem .35rem; }
 
-.pgk-headright { display: inline-flex; align-items: center; gap: .5rem; }
 /* Meter kursi: hijau selama masih di dalam pagu MPP, merah begitu terlampaui. */
 .pgk-meter { display: inline-flex; align-items: center; gap: .3rem; font-size: 11.5px; font-weight: 600; letter-spacing: 0; text-transform: none; color: #047857; background: rgba(16, 185, 129, .1); border: 1px solid rgba(16, 185, 129, .25); border-radius: 999px; padding: .2rem .55rem; }
 .pgk-meter.is-over { color: #b91c1c; background: rgba(239, 68, 68, .1); border-color: rgba(239, 68, 68, .3); }
@@ -761,6 +834,9 @@ export default {
     .pgk-row__grid--batch,
     .pgk-row__grid--posisi,
     .pgk-row__grid--kriteria { grid-template-columns: 1fr 1fr; }
+    .pgk-kondisi { grid-template-columns: 1fr 1fr; }
+    .pgk-kondisi__f { grid-column: 1 / -1; }
+    .pgk-kondisi__del { grid-column: 2; justify-self: end; margin-bottom: 0; }
 }
 @media (max-width: 560px) {
     .pgk-row__grid--batch,
@@ -768,5 +844,9 @@ export default {
     .pgk-row__grid--kriteria { grid-template-columns: 1fr; }
     .pgk-row .wca-iconbtn { margin-top: 0; }
     .pgk-row__del { margin-top: 0 !important; }
+    .pgk-steps { gap: .2rem; }
+    .pgk-step__lbl { display: none; }
+    .pgk-syarat__id { grid-template-columns: 1fr auto; }
+    .pgk-syarat__opt { grid-template-columns: 1fr; }
 }
 </style>

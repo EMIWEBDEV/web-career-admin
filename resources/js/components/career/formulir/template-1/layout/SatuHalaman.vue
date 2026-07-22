@@ -30,6 +30,7 @@
                 :bagian="B"
                 :jawaban="jawaban"
                 :disabled="disabled"
+                :konteks-opsi="konteks"
                 :galat="galatField"
                 @ubah="setNilai"
                 @ubah-baris="setNilaiBaris"
@@ -58,6 +59,7 @@ import BagianRenderer from '../../inti/BagianRenderer.vue';
 import { bagianTampil, periksaLangkah } from '../../inti/aturan';
 
 const props = defineProps({
+    konteks: { type: Object, default: () => ({}) }, // opsi dinamis pembukaan
     skema: { type: Object, required: true },
     modelValue: { type: Object, required: true },
     judul: { type: String, default: 'Formulir Pendaftaran' },

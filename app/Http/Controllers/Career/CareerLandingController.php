@@ -4,16 +4,19 @@ namespace App\Http\Controllers\Career;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
+use Vinkla\Hashids\Facades\Hashids;
 
 /**
- * WEB CAREER — LANDING PAGE (DUMMY / FASE 1)
+ * WEB CAREER — LANDING PAGE (DB + dummy)
  * -------------------------------------------------------------
- * Halaman karir publik dummy. TIDAK terhubung ke database.
- * Semua data di bawah adalah data contoh (dummy) yang mensimulasikan
- * sumber data nyata: Career_Lowongan (dari MPP) + Career_Kegiatan (MT).
+ * Halaman karir publik. Sumber UTAMA kini DATABASE (pembukaan program yang
+ * terbit & dalam masa berlaku); data dummy lama tetap ditampilkan sebagai
+ * pelengkap agar landing tidak kosong selama data nyata belum lengkap.
+ * Lihat dbOpenings() / dbMtCards() / dbLowonganCards().
  *
- * Sengaja tanpa middleware/auth agar bisa dibuka bebas untuk demo alur.
+ * Sengaja tanpa middleware/auth agar bisa dibuka bebas.
  * Struktur data mengikuti arsitektur final Web Career:
  *   KEGIATAN (MT|REKRUTMEN) -> LOWONGAN (dari MPP) -> PIPELINE (stage dinamis)
  *
@@ -23,6 +26,9 @@ use Inertia\Inertia;
  */
 class CareerLandingController extends Controller
 {
+    /** Memoisasi pembukaan DB per-request (dipakai landing + detail + apply). */
+    private $openingsCache = null;
+
     public function index(Request $request)
     {
         $lowongan = $this->visibleLowongan();
@@ -72,8 +78,13 @@ class CareerLandingController extends Controller
         $mt = collect($this->programMt())->firstWhere('id', $id);
         if ($mt) {
             $job = ['posisi' => $mt['nama'], 'program' => trim(($mt['batch'] ?? '') . ' · ' . ($mt['perusahaan'] ?? 'EVO Group')), 'kategori' => 'MT', 'lokasi' => $mt['lokasi'] ?? '—'];
+            // ID nyata (kalau kartu ini dari DB) agar finalisasi bisa membuat lamaran.
+            $job['pembukaanId'] = $mt['pembukaanId'] ?? null;
+            $job['posisiId'] = $mt['posisiId'] ?? null;
         } elseif ($lo) {
             $job = ['posisi' => $lo['posisi'], 'program' => $lo['perusahaan'] ?? 'EVO Group', 'kategori' => 'REKRUTMEN', 'lokasi' => trim(($lo['lokasi'] ?? '') . ' · ' . ($lo['tempatKerja'] ?? ''), ' ·')];
+            $job['pembukaanId'] = $lo['pembukaanId'] ?? null;
+            $job['posisiId'] = $lo['posisiId'] ?? null;
         } else {
             $job = ['posisi' => 'Lowongan EVO Group', 'program' => 'EVO Group', 'kategori' => 'REKRUTMEN', 'lokasi' => 'Palembang'];
         }
@@ -87,7 +98,14 @@ class CareerLandingController extends Controller
             $steps = $this->rekrutmenSteps();
         }
 
-        return ['lowongan' => array_merge(['id' => $id], $job), 'form' => $form, 'steps' => $steps];
+        // Identitas kandidat dari SESI LOGIN (bukan sessionStorage) untuk prefill.
+        $kandidat = [
+            'nama' => session('career_auth.nama'),
+            'email' => session('career_auth.email'),
+            'hp' => session('career_auth.hp'),
+        ];
+
+        return ['lowongan' => array_merge(['id' => $id], $job), 'form' => $form, 'steps' => $steps, 'kandidat' => $kandidat];
     }
 
     /**
@@ -146,7 +164,7 @@ class CareerLandingController extends Controller
                 ['key' => 'nik', 'label' => 'NIK', 'tipe' => 'text', 'required' => true, 'ph' => '16 digit'],
                 ['key' => 'jkel', 'label' => 'Jenis Kelamin', 'tipe' => 'select', 'required' => true, 'opsi' => ['Laki-laki', 'Perempuan']],
                 ['key' => 'lahir', 'label' => 'Tanggal Lahir', 'tipe' => 'date', 'required' => true],
-                ['key' => 'hp', 'label' => 'No. HP / WhatsApp', 'tipe' => 'text', 'required' => true, 'ph' => '08xx'],
+                ['key' => 'hp', 'label' => 'No. HP / WhatsApp', 'tipe' => 'phone', 'required' => true, 'ph' => '628xxxxxxxxx'],
                 ['key' => 'email', 'label' => 'Email', 'tipe' => 'text', 'required' => true, 'ph' => 'nama@email.com'],
                 ['key' => 'alamat', 'label' => 'Alamat Domisili', 'tipe' => 'textarea', 'required' => true, 'full' => true],
             ]],
@@ -191,7 +209,7 @@ class CareerLandingController extends Controller
                 ['key' => 'nama', 'label' => 'Nama Lengkap Sesuai ID', 'tipe' => 'text', 'required' => true, 'ph' => 'Sesuai KTP'],
                 ['key' => 'lahir', 'label' => 'Tanggal Lahir', 'tipe' => 'date', 'required' => true],
                 ['key' => 'jkel', 'label' => 'Jenis Kelamin', 'tipe' => 'select', 'required' => true, 'opsi' => ['Laki-Laki', 'Perempuan']],
-                ['key' => 'hp', 'label' => 'No. Handphone Aktif (WA)', 'tipe' => 'text', 'required' => true, 'ph' => '08xx'],
+                ['key' => 'hp', 'label' => 'No. Handphone Aktif (WA)', 'tipe' => 'phone', 'required' => true, 'ph' => '628xxxxxxxxx'],
                 ['key' => 'email', 'label' => 'Email', 'tipe' => 'text', 'required' => true, 'ph' => 'nama@email.com'],
                 ['key' => 'statusMhs', 'label' => 'Status Kemahasiswaan', 'tipe' => 'select', 'required' => true, 'opsi' => ['Mahasiswa', 'Sudah Lulus']],
                 ['key' => 'semester', 'label' => 'Semester saat ini', 'tipe' => 'number', 'required' => true, 'ph' => 'mis. 6', 'showIf' => ['key' => 'statusMhs', 'value' => 'Mahasiswa']],
@@ -234,7 +252,7 @@ class CareerLandingController extends Controller
             ['key' => 'DARURAT', 'tipe' => 'FORM', 'judul' => 'Kontak Darurat', 'ikon' => 'bi-telephone-plus', 'fields' => [
                 ['key' => 'namaDarurat', 'label' => 'Nama Kontak Darurat', 'tipe' => 'text', 'required' => true],
                 ['key' => 'hubunganDarurat', 'label' => 'Hubungan dengan Peserta', 'tipe' => 'text', 'required' => true],
-                ['key' => 'hpDarurat', 'label' => 'No. Handphone Kontak Darurat', 'tipe' => 'text', 'required' => true, 'ph' => '08xx'],
+                ['key' => 'hpDarurat', 'label' => 'No. Handphone Kontak Darurat', 'tipe' => 'phone', 'required' => true, 'ph' => '628xxxxxxxxx'],
             ]],
             ['key' => 'KESIAPAN', 'tipe' => 'FORM', 'judul' => 'Kesiapan Penempatan & Kerja', 'ikon' => 'bi-briefcase', 'fields' => [
                 ['key' => 'plant', 'label' => 'Bersedia ditempatkan di area Plant / Pabrik', 'tipe' => 'select', 'required' => true, 'opsi' => $yn, 'full' => true],
@@ -341,7 +359,253 @@ class CareerLandingController extends Controller
         }));
     }
 
+    // ═══════════════════════ SUMBER DB (pembukaan nyata) ═══════════════════════
+
+    /**
+     * Pembukaan yang TERBIT & masih dalam masa berlaku, plus data programnya.
+     * Dimemoisasi per-request supaya landing tidak query berulang.
+     */
+    private function dbOpenings()
+    {
+        if ($this->openingsCache !== null) {
+            return $this->openingsCache;
+        }
+
+        try {
+            // Window pendaftaran presisi sampai JAM (kolom kini datetime).
+            $kini = now();
+            $pembukaan = DB::table('N_WEB_CAREERS_Pembukaan as pb')
+                ->join('N_WEB_CAREERS_Program as p', 'p.Id_Program', '=', 'pb.Program_Id')
+                ->leftJoin('N_WEB_CAREERS_Program_Batch as b', 'b.Id_Program_Batch', '=', 'pb.Program_Batch_Id')
+                ->where('pb.Status_Publish', 'TERBIT')
+                ->where('p.Status', 'BERJALAN')
+                ->where(function ($q) use ($kini) {
+                    $q->where('pb.Masa_Berlaku', 'EVERGREEN')
+                        ->orWhere(function ($w) use ($kini) {
+                            $w->where('pb.Masa_Berlaku', 'BERBATAS')
+                                ->where(function ($a) use ($kini) {
+                                    $a->whereNull('pb.Tanggal_Buka')->orWhere('pb.Tanggal_Buka', '<=', $kini);
+                                })
+                                ->where(function ($c) use ($kini) {
+                                    $c->whereNull('pb.Tanggal_Tutup')->orWhere('pb.Tanggal_Tutup', '>=', $kini);
+                                });
+                        });
+                })
+                ->orderByDesc('pb.Id_Pembukaan')
+                ->select('pb.*', 'p.Nama as ProgramNama', 'p.Kategori', 'p.Penyelenggara', 'p.Alur_Kode', 'p.Jadwal_Kode', 'b.Nama as BatchNama')
+                ->get();
+
+            $ids = $pembukaan->pluck('Program_Id')->unique();
+            $posisi = $ids->isEmpty() ? collect() : DB::table('N_WEB_CAREERS_Program_Posisi')
+                ->whereIn('Program_Id', $ids)->where('Status', 'BUKA')->get()->groupBy('Program_Id');
+
+            // JADWAL KEGIATAN nyata: agenda dari Master_Jadwal yang dirujuk program.
+            // Wajib DB (bukan dummy) — dikelompokkan per Kode jadwal.
+            $jadwalKode = $pembukaan->pluck('Jadwal_Kode')->filter()->unique();
+            $agenda = collect();
+            if ($jadwalKode->isNotEmpty()) {
+                $agenda = DB::table('N_WEB_CAREERS_Master_Jadwal_Agenda as a')
+                    ->join('N_WEB_CAREERS_Master_Jadwal as j', 'j.Id_Master_Jadwal', '=', 'a.Master_Jadwal_Id')
+                    ->whereIn('j.Kode', $jadwalKode)
+                    ->orderBy('a.Urutan')
+                    ->select('j.Kode as JadwalKode', 'a.Jenis', 'a.Label', 'a.Tanggal_Mulai', 'a.Tanggal_Selesai')
+                    ->get()->groupBy('JadwalKode');
+            }
+
+            // TAHAPAN SELEKSI nyata: tahap dari alur yang dipakai program.
+            $alurKode = $pembukaan->pluck('Alur_Kode')->filter()->unique();
+            $tahap = collect();
+            if ($alurKode->isNotEmpty()) {
+                $tahap = DB::table('N_WEB_CAREERS_Master_Alur_Tahap as t')
+                    ->join('N_WEB_CAREERS_Master_Alur as al', 'al.Id_Master_Alur', '=', 't.Master_Alur_Id')
+                    ->whereIn('al.Kode', $alurKode)
+                    ->orderBy('t.Urutan')
+                    ->select('al.Kode as AlurKode', 't.Label', 't.Tipe_Tahap_Kode', 't.Provider')
+                    ->get()->groupBy('AlurKode');
+            }
+
+            // Jumlah pelamar nyata per program — hanya yang BELUM gugur dihitung
+            // sebagai "pelamar aktif" (yang gugur tidak menempati minat kursi).
+            $pelamar = collect();
+            $terisi = collect();          // kursi TERISI per program = lamaran LULUS
+            $terisiPosisi = collect();    // kursi TERISI per posisi (lowongan)
+            try {
+                $pelamar = DB::table('N_WEB_CAREERS_Lamaran')
+                    ->where('Status', '!=', 'GUGUR')
+                    ->select('Program_Id', DB::raw('COUNT(*) as Jml'))
+                    ->groupBy('Program_Id')->pluck('Jml', 'Program_Id');
+
+                $terisi = DB::table('N_WEB_CAREERS_Lamaran')
+                    ->where('Status', 'LULUS')
+                    ->select('Program_Id', DB::raw('COUNT(*) as Jml'))
+                    ->groupBy('Program_Id')->pluck('Jml', 'Program_Id');
+
+                $terisiPosisi = DB::table('N_WEB_CAREERS_Lamaran')
+                    ->where('Status', 'LULUS')
+                    ->select('Program_Posisi_Id', DB::raw('COUNT(*) as Jml'))
+                    ->groupBy('Program_Posisi_Id')->pluck('Jml', 'Program_Posisi_Id');
+            } catch (\Throwable $e) {
+                $pelamar = collect();
+            }
+
+            $this->openingsCache = compact('pembukaan', 'posisi', 'pelamar', 'terisi', 'terisiPosisi', 'agenda', 'tahap');
+        } catch (\Throwable $e) {
+            // Landing publik tidak boleh tumbang hanya karena data DB bermasalah.
+            $this->openingsCache = ['pembukaan' => collect(), 'posisi' => collect(), 'pelamar' => collect(), 'terisi' => collect(), 'terisiPosisi' => collect(), 'agenda' => collect(), 'tahap' => collect()];
+        }
+
+        return $this->openingsCache;
+    }
+
+    /** Pembukaan REKRUTMEN/INTERNSHIP -> kartu lowongan (per posisi). */
+    public function dbLowonganCards(): array
+    {
+        $o = $this->dbOpenings();
+        $out = [];
+
+        foreach ($o['pembukaan'] as $pb) {
+            if ($pb->Kategori === 'MT') {
+                continue; // MT tampil di section-nya sendiri
+            }
+            // Tahapan seleksi WAJIB dari DB (alur program). Dipakai kartu detail lowongan.
+            $pipeline = $this->shapeTahapan($o['tahap']->get($pb->Alur_Kode, []));
+
+            foreach ($o['posisi']->get($pb->Program_Id, []) as $x) {
+                $out[] = [
+                    'id' => 'PB-' . $pb->Kode . '-' . $x->Id_Program_Posisi,
+                    // ID nyata untuk alur lamaran DB (tombol "Lamar Sekarang").
+                    'sumberDb' => true,
+                    'pembukaanId' => Hashids::encode($pb->Id_Pembukaan),
+                    'posisiId' => Hashids::encode($x->Id_Program_Posisi),
+                    'posisi' => $x->Posisi,
+                    'perusahaan' => $pb->Penyelenggara ?: 'EVO Group',
+                    'departemen' => $x->Departemen ?: '—',
+                    'lokasi' => $x->Lokasi ?: '—',
+                    'tempatKerja' => 'On-site',
+                    'tipeKerja' => $pb->Kategori === 'INTERNSHIP' ? 'Internship' : 'Full-time',
+                    'level' => $x->Level ?: 'Staff',
+                    'pengalaman' => '—',
+                    'kuota' => (int) $x->Kuota,
+                    'kuotaTerisi' => (int) ($o['terisiPosisi'][$x->Id_Program_Posisi] ?? 0),
+                    'pelamar' => (int) ($o['pelamar'][$pb->Program_Id] ?? 0),
+                    'tanggalTutup' => $pb->Masa_Berlaku === 'BERBATAS' ? ($pb->Tanggal_Tutup ? substr($pb->Tanggal_Tutup, 0, 16) : null) : null,
+                    'deskripsi' => 'Lowongan ' . $x->Posisi . ' pada program ' . $pb->ProgramNama . ' di EVO Group.',
+                    'ringkasan' => 'Lowongan ' . $pb->ProgramNama . ' di EVO Group.',
+                    // Deskriptif boleh dummy/kosong; tahapan WAJIB dari DB.
+                    'tanggungJawab' => [],
+                    'persyaratan' => [],
+                    'skill' => [],
+                    'benefit' => [],
+                    'pipeline' => $pipeline,
+                    'unggulan' => false,
+                ];
+            }
+        }
+
+        return $out;
+    }
+
+    /** Ubah agenda jadwal DB -> bentuk {label, tanggal} untuk kartu landing. */
+    private function shapeJadwal($rows): array
+    {
+        return collect($rows)->map(fn ($a) => [
+            'label' => $a->Label,
+            'jenis' => $a->Jenis,
+            'tanggal' => $this->rentangTanggal($a->Tanggal_Mulai, $a->Tanggal_Selesai),
+        ])->values()->all();
+    }
+
+    /** Ubah tahap alur DB -> bentuk {label, tipe} untuk pipeline seleksi. */
+    private function shapeTahapan($rows): array
+    {
+        return collect($rows)->map(fn ($t) => [
+            'label' => $t->Label,
+            'tipe' => $t->Tipe_Tahap_Kode,
+            'provider' => $t->Provider,
+        ])->values()->all();
+    }
+
+    private function rentangTanggal($mulai, $selesai): string
+    {
+        $f = fn ($d) => $d ? \Illuminate\Support\Carbon::parse($d)->translatedFormat('d M Y') : null;
+        $a = $f($mulai);
+        $b = $f($selesai);
+        if ($a && $b && $a !== $b) {
+            return $a . ' – ' . $b;
+        }
+
+        return $a ?: ($b ?: '—');
+    }
+
+    /** Pembukaan MT -> kartu program MT (satu kartu per pembukaan; channel sudah digabung). */
+    public function dbMtCards(): array
+    {
+        $o = $this->dbOpenings();
+        $out = [];
+
+        foreach ($o['pembukaan'] as $pb) {
+            if ($pb->Kategori !== 'MT') {
+                continue;
+            }
+            $listPosisi = collect($o['posisi']->get($pb->Program_Id, []));
+            // Jadwal & tahapan WAJIB dari DB. Kosong -> tetap kosong (kartu disembunyikan Vue).
+            $jadwal = $this->shapeJadwal($o['agenda']->get($pb->Jadwal_Kode, []));
+            $pipeline = $this->shapeTahapan($o['tahap']->get($pb->Alur_Kode, []));
+            $posisiPertama = $listPosisi->first();
+
+            $out[] = [
+                'id' => 'PB-' . $pb->Kode,
+                // ID nyata untuk alur lamaran DB (tombol "Daftar Program").
+                'sumberDb' => true,
+                'pembukaanId' => Hashids::encode($pb->Id_Pembukaan),
+                'posisiId' => $posisiPertama ? Hashids::encode($posisiPertama->Id_Program_Posisi) : null,
+                'nama' => $pb->ProgramNama,
+                'tagline' => null ?: 'Program Management Trainee EVO Group.',
+                'jenis' => 'MT',
+                'batch' => $pb->BatchNama ?: '',
+                'perusahaan' => $pb->Penyelenggara ?: 'EVO Group',
+                'status' => 'BUKA',
+                'tipeKegiatan' => 'Terbuka Umum',
+                'lokasi' => optional($listPosisi->first())->Lokasi ?: 'Palembang',
+                'penempatan' => $listPosisi->pluck('Lokasi')->filter()->unique()->implode(' & ') ?: 'Palembang & Banyuasin',
+                'durasi' => '12 bulan program akselerasi',
+                'ikatan' => 'Ikatan dinas sesuai ketentuan',
+                'kuota' => (int) $listPosisi->sum('Kuota'),
+                'kuotaTerisi' => (int) ($o['terisi'][$pb->Program_Id] ?? 0),
+                'pelamar' => (int) ($o['pelamar'][$pb->Program_Id] ?? 0),
+                'tanggalBuka' => $pb->Tanggal_Buka ? substr($pb->Tanggal_Buka, 0, 16) : null,
+                'tanggalTutup' => $pb->Masa_Berlaku === 'BERBATAS' ? ($pb->Tanggal_Tutup ? substr($pb->Tanggal_Tutup, 0, 16) : null) : null,
+                'tanggalPengumuman' => null,
+                // Kampus sasaran tak lagi whitelist per pembukaan — kelayakan kampus
+                // ditentukan lewat SYARAT auto-gugur. Kartu "Kampus Sasaran" disembunyikan.
+                'targetKampus' => [],
+                'ringkasan' => 'Program ' . $pb->ProgramNama . ' untuk calon pemimpin masa depan EVO Group.',
+                'deskripsi' => 'Program Management Trainee ' . $pb->ProgramNama . '.',
+                'catatanKegiatan' => 'Dibuka untuk umum — pendaftar memilih kampus dari daftar resmi.',
+                // Benefit & fasilitas boleh dummy (belum ada sumber DB-nya).
+                'benefit' => ['Gaji & tunjangan kompetitif', 'Rotasi lintas divisi', 'Mentoring dari manajemen', 'Jalur cepat ke posisi manajerial'],
+                'kriteria' => [],
+                'fasilitas' => ['Asuransi kesehatan', 'Laptop kerja', 'Coaching berkala'],
+                // Jadwal & tahapan WAJIB dari DB — Vue menyembunyikan kartunya bila kosong.
+                'jadwal' => $jadwal,
+                'pipeline' => $pipeline,
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * Lowongan REKRUTMEN yang tampil di landing = DB (pembukaan terbit) + dummy lama.
+     * Sumber utama DB; dummy dibiarkan agar landing tetap berisi selagi data nyata
+     * belum lengkap. Semua konsumen (landing, detail, apply) membaca dari sini.
+     */
     private function lowongan(): array
+    {
+        return array_merge($this->dbLowonganCards(), $this->lowonganDummy());
+    }
+
+    private function lowonganDummy(): array
     {
         return [
             [
@@ -663,7 +927,15 @@ class CareerLandingController extends Controller
      *  - EDP  : kegiatan khusus KAMPUS TERPILIH (by invitation), status BUKA.
      *  - STP  : kegiatan UMUM/terbuka, status PENUH (kuota sudah terisi) — contoh state penuh.
      */
+    /**
+     * Program MT yang tampil di landing = DB (pembukaan MT terbit) + dummy lama.
+     */
     private function programMt(): array
+    {
+        return array_merge($this->dbMtCards(), $this->programMtDummy());
+    }
+
+    private function programMtDummy(): array
     {
         return [
             [

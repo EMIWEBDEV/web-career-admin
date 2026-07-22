@@ -24,7 +24,7 @@
         </div>
 
         <div class="lok-grid">
-            <div v-for="l in filtered" :key="l.id" class="lok-card">
+            <div v-for="l in filtered" :key="l.pembukaanId + '-' + l.posisiId" class="lok-card">
                 <div class="lok-card__top">
                     <span class="lok-card__dot" :style="{ background: l.warna || '#4f46e5' }"></span>
                     <span class="wca-badge" :class="katBadge(l.kategori)">{{ katLabel(l.kategori) }}</span>
@@ -37,9 +37,9 @@
                     <span v-if="l.level"><i class="bi bi-bar-chart-steps"></i> {{ l.level }}</span>
                     <span><i class="bi bi-people"></i> {{ l.kuota }} kuota</span>
                 </div>
-                <button class="wca-btn wca-btn--primary lok-card__btn" :disabled="melamar === l.id" @click="lamar(l)">
-                    <i class="bi" :class="melamar === l.id ? 'bi-arrow-repeat spin' : 'bi-send'"></i>
-                    {{ melamar === l.id ? 'Memproses…' : 'Lamar Posisi Ini' }}
+                <button class="wca-btn wca-btn--primary lok-card__btn" :disabled="melamar === l.posisiId" @click="lamar(l)">
+                    <i class="bi" :class="melamar === l.posisiId ? 'bi-arrow-repeat spin' : 'bi-send'"></i>
+                    {{ melamar === l.posisiId ? 'Memproses…' : 'Lamar Posisi Ini' }}
                 </button>
             </div>
         </div>
@@ -72,9 +72,9 @@ export default {
         katBadge(k) { return { MT: 'wca-b--gold', INTERNSHIP: 'wca-b--green', REKRUTMEN: 'wca-b--sky' }[k] || 'wca-b--slate'; },
         async lamar(l) {
             if (this.melamar) return;
-            this.melamar = l.id;
+            this.melamar = l.posisiId;
             try {
-                const res = await axios.post('/api/v1/lamaran', { programId: l.programId, posisiId: l.id }, CFG);
+                const res = await axios.post('/api/v1/lamaran', { pembukaanId: l.pembukaanId, posisiId: l.posisiId }, CFG);
                 const id = res.data?.result?.lamaran;
                 this.notice(res.data?.message || 'Lamaran dibuat.');
                 // Langsung ke detail lamaran supaya kandidat bisa mengisi formulir tahap pertama.

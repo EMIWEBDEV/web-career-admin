@@ -45,9 +45,12 @@ Route::prefix('api/v1/karir')
         // OPTIONS dropdown (semua dari DB; icons dari bootstrap-icons) — dihit RefSelect/IconPicker
         Route::get('/options/{type}', [$c, 'options'])->name('options');
 
-        // Worklist admin: baca daftar & ketuk palu.
-        Route::get('/lamaran/worklist', [LamaranController::class, 'worklistList'])->name('lamaran.worklist');
+        // Worklist admin: daftar program (panel kiri) + kanban seleksi (panel kanan) & ketuk palu.
+        Route::get('/lamaran/worklist/program', [LamaranController::class, 'worklistProgram'])->name('lamaran.worklist.program');
+        Route::get('/lamaran/worklist/program/{id}', [LamaranController::class, 'worklistDetail'])->name('lamaran.worklist.detail');
         Route::get('/lamaran/pengisian/{id}', [LamaranController::class, 'lihatPengisian'])->name('lamaran.pengisian');
+        Route::get('/lamaran/berkas/{id}', [LamaranController::class, 'worklistBerkas'])->name('lamaran.berkas');
+        Route::get('/lamaran/berkas/file/{id}', [LamaranController::class, 'berkasFile'])->name('lamaran.berkas.file');
         Route::patch('/lamaran/tahap/{id}/putus', [LamaranController::class, 'putus'])->name('lamaran.putus');
 
         // CRUD master generik (master/simple, master/rich, master/akun, master/kemitraan)
@@ -77,4 +80,32 @@ Route::prefix('api/v1/lamaran')
         Route::get('/loker', [LamaranController::class, 'lokerList'])->name('loker');
         Route::post('/', [LamaranController::class, 'lamar'])->name('lamar');
         Route::post('/tahap/{id}/kirim', [LamaranController::class, 'kirimFormulir'])->name('kirim');
+        Route::delete('/{id}', [LamaranController::class, 'batalkan'])->name('batal');
     });
+
+// SEMENTARA — uji metode GcsBerkas persis di bawah Apache
+Route::get('/_test-gcs-apache', function () {
+    $g = new \App\Support\Career\GcsBerkas();
+    $out = [];
+    try {
+        $folder = $g->folderKandidat(date('Y'), date('m'), date('d'), 'Frans Bachtiar');
+        $out['folder'] = $folder;
+        $im = imagecreatetruecolor(2, 2);
+        ob_start();
+        imagejpeg($im);
+        $jpg = ob_get_clean();
+        imagedestroy($im);
+        $out['unggah_berkas'] = $g->unggah($folder, 'dok_cv', 'jpg', $jpg);
+        $out['unggah_foto'] = $g->unggahFoto($folder, $jpg);
+        $g->hapus([$out['unggah_berkas'], $out['unggah_foto']]);
+        $out['ok'] = true;
+
+        return response()->json($out);
+    } catch (\Throwable $e) {
+        $out['ok'] = false;
+        $out['msg'] = $e->getMessage();
+        $out['at'] = $e->getFile() . ':' . $e->getLine();
+
+        return response()->json($out, 500);
+    }
+});

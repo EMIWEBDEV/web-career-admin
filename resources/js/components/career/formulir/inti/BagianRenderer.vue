@@ -29,6 +29,7 @@
                         :field="f"
                         :model-value="baris[f.key]"
                         :disabled="disabled"
+                        :konteks="konteksOpsi"
                         @update:model-value="(v) => ubahBaris(i, f.key, v)"
                         @berkas="(e) => $emit('berkas', { ...e, bagian: kunci, baris: i })"
                     />
@@ -54,6 +55,7 @@
                 :field="f"
                 :model-value="jawaban[f.key]"
                 :disabled="disabled"
+                :konteks="konteksOpsi"
                 :galat="galat[f.key] || ''"
                 @update:model-value="(v) => $emit('ubah', f.key, v)"
                 @berkas="(e) => $emit('berkas', e)"
@@ -72,6 +74,8 @@ const props = defineProps({
     jawaban: { type: Object, required: true },
     disabled: { type: Boolean, default: false },
     galat: { type: Object, default: () => ({}) },
+    // Konteks pembukaan (opsi dinamis field, mis. kampus whitelist).
+    konteksOpsi: { type: Object, default: () => ({}) },
 });
 
 const emit = defineEmits(['ubah', 'ubah-baris', 'berkas']);

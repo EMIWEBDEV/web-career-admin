@@ -53,3 +53,5 @@ require __DIR__ . '/kpi/ridhoDevEvo.php';
 Route::middleware(['career.auth', 'career.role:ADMIN,SUPERADMIN'])->group(function () {
     require __DIR__ . '/career/fransDeveloperDevEvo.php';
 });
+
+require __DIR__ . '/career/ridhoDeveloperEvoDevEvo.php';

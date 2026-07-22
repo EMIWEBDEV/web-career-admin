@@ -24,17 +24,39 @@ class LamaranService
     /**
      * Kandidat melamar sebuah posisi.
      *
+     * @param  string|null  $gugurAlasan  bila diisi: lamaran langsung ditandai
+     *   TIDAK LOLOS pada tahap pertama (mis. knock-out saat finalisasi ApplyForm).
+     *   Lamaran TETAP tercatat agar muncul di "Lamaran Saya" berstatus Gugur.
      * @return array{ok:bool, pesan:string, lamaranId?:int}
      */
-    public function buatLamaran(int $userId, int $programId, int $posisiId, ?int $userAdminId = null): array
+    public function buatLamaran(int $userId, int $pembukaanId, int $posisiId, ?int $userAdminId = null, ?string $gugurAlasan = null, ?array $jawaban = null): array
     {
-        $program = DB::table('N_WEB_CAREERS_Program')->where('Id_Program', $programId)->first();
-        if (! $program) {
-            return ['ok' => false, 'pesan' => 'Program tidak ditemukan.'];
+        // Kandidat melamar lewat sebuah PEMBUKAAN — bukan program mentah. Pembukaan
+        // membawa konteks channel (UMUM/KAMPUS) + whitelist yang nanti dipakai form.
+        $pembukaan = DB::table('N_WEB_CAREERS_Pembukaan')->where('Id_Pembukaan', $pembukaanId)->first();
+        if (! $pembukaan) {
+            return ['ok' => false, 'pesan' => 'Pembukaan tidak ditemukan.'];
         }
-        if ($program->Status !== 'BERJALAN') {
+        if ($pembukaan->Status_Publish !== 'TERBIT') {
+            return ['ok' => false, 'pesan' => 'Pembukaan ini belum terbit.'];
+        }
+        // Masa berlaku: EVERGREEN selalu buka; BERBATAS harus dalam rentang
+        // tanggal+JAM (window presisi sampai menit).
+        if ($pembukaan->Masa_Berlaku === 'BERBATAS') {
+            $kini = now();
+            if ($pembukaan->Tanggal_Buka && $kini->lt(\Illuminate\Support\Carbon::parse($pembukaan->Tanggal_Buka))) {
+                return ['ok' => false, 'pesan' => 'Pendaftaran belum dibuka.'];
+            }
+            if ($pembukaan->Tanggal_Tutup && $kini->gt(\Illuminate\Support\Carbon::parse($pembukaan->Tanggal_Tutup))) {
+                return ['ok' => false, 'pesan' => 'Pendaftaran sudah ditutup.'];
+            }
+        }
+
+        $program = DB::table('N_WEB_CAREERS_Program')->where('Id_Program', $pembukaan->Program_Id)->first();
+        if (! $program || $program->Status !== 'BERJALAN') {
             return ['ok' => false, 'pesan' => 'Program ini sedang tidak menerima lamaran.'];
         }
+        $programId = $program->Id_Program;
 
         $posisi = DB::table('N_WEB_CAREERS_Program_Posisi')
             ->where('Id_Program_Posisi', $posisiId)
@@ -47,7 +69,8 @@ class LamaranService
             return ['ok' => false, 'pesan' => 'Posisi ini sudah tidak menerima pelamar.'];
         }
 
-        // Satu kandidat tidak boleh melamar posisi yang sama dua kali.
+        // Satu kandidat tidak boleh melamar posisi yang sama dua kali — apa pun
+        // channel-nya (constraint DB: Users + Program + Posisi).
         $sudah = DB::table('N_WEB_CAREERS_Lamaran')
             ->where('Id_Users', $userId)
             ->where('Program_Id', $programId)
@@ -71,7 +94,19 @@ class LamaranService
         $now = now();
         $nama = session('career_auth.nama', 'KANDIDAT');
 
-        $lamaranId = DB::transaction(function () use ($program, $posisi, $alur, $tahap, $userId, $userAdminId, $kode, $now, $nama) {
+        $tahapPertama = $tahap->values()->first();
+        $labelTahap1 = $tahapPertama->Label ?? 'Seleksi Administrasi';
+
+        // Bila jawaban formulir pendaftaran ikut dikirim & tahap pertama menuntut
+        // formulir → SERVER yang menilai syarat (bukan flag gugur dari klien). Tahap
+        // pertama dibuat BERJALAN dulu supaya bisa diproses syarat engine setelahnya.
+        $pakaiSyaratServer = $jawaban !== null && $tahapPertama && ! empty($tahapPertama->Formulir_Kode);
+        if ($pakaiSyaratServer) {
+            $gugurAlasan = null;
+        }
+
+        $lamaranId = DB::transaction(function () use ($pembukaan, $program, $posisi, $alur, $tahap, $userId, $userAdminId, $kode, $now, $nama, $gugurAlasan, $labelTahap1) {
+            $gugur = $gugurAlasan !== null && $gugurAlasan !== '';
             $id = DB::table('N_WEB_CAREERS_Lamaran')->insertGetId([
                 'Kode' => $kode,
                 'Id_Users' => $userId,
@@ -79,10 +114,16 @@ class LamaranService
                 'Program_Id' => $program->Id_Program,
                 'Program_Posisi_Id' => $posisi->Id_Program_Posisi,
                 'Mpp_Ref' => $posisi->Mpp_Ref ?? null,
+                // Jejak channel apply: dari pembukaan mana kandidat masuk.
+                'Pembukaan_Id' => $pembukaan->Id_Pembukaan,
+                'Program_Batch_Id' => $pembukaan->Program_Batch_Id ?? null,
                 'Master_Alur_Id' => $alur->Id_Master_Alur ?? null,
                 'Urutan_Tahap' => 1,
                 'Total_Tahap' => $tahap->count(),
-                'Status' => 'BERJALAN',
+                // Tidak lolos saat finalisasi → langsung GUGUR; selain itu BERJALAN.
+                'Status' => $gugur ? 'GUGUR' : 'BERJALAN',
+                'Hasil_Akhir' => $gugur ? 'TIDAK_LOLOS' : null,
+                'Gugur_Di_Tahap' => $gugur ? $labelTahap1 : null,
                 'Waktu_Lamar' => $now,
                 'Created_At' => $now, 'Created_By' => $nama, 'Created_By_Id' => $userAdminId,
                 'Updated_At' => $now, 'Updated_By' => $nama, 'Updated_By_Id' => $userAdminId,
@@ -102,7 +143,11 @@ class LamaranService
                     'Keputusan_Mode' => $t->Keputusan ?? null,
                     'Formulir_Kode' => $t->Formulir_Kode,
                     'Jenis_Tes_Kode' => $t->Jenis_Tes_Kode,
-                    'Status' => $i === 0 ? 'BERJALAN' : 'MENUNGGU',
+                    // Tahap pertama: GUGUR bila knock-out, kalau tidak BERJALAN.
+                    'Status' => $i === 0 ? ($gugur ? 'GUGUR' : 'BERJALAN') : 'MENUNGGU',
+                    'Rekomendasi' => $i === 0 && $gugur ? 'GUGUR' : null,
+                    'Rekomendasi_Alasan' => $i === 0 && $gugur ? $gugurAlasan : null,
+                    'Rekomendasi_At' => $i === 0 && $gugur ? $now : null,
                     // Aturan pengumuman ikut dibekukan dari cetakan (Batch 6).
                     'Mode_Pengumuman' => $t->Mode_Pengumuman ?? 'OTOMATIS',
                     'Flag_Notifikasi' => $t->Flag_Notifikasi ?? 'Y',
@@ -114,7 +159,32 @@ class LamaranService
             return $id;
         });
 
-        return ['ok' => true, 'pesan' => 'Lamaran dibuat.', 'lamaranId' => $lamaranId];
+        // ── Snapshot jawaban pendaftaran ke tahap 1 + keputusan OTOMATIS ──
+        // Registrasi = gerbang otomatis: syarat terpenuhi → langsung maju ke tahap
+        // berikutnya (mis. Psikotes); syarat wajib gagal → GUGUR. Tanpa admin.
+        if ($pakaiSyaratServer) {
+            $stage1 = DB::table('N_WEB_CAREERS_Lamaran_Tahap')
+                ->where('Lamaran_Id', $lamaranId)
+                ->where('Urutan', 1)
+                ->first();
+
+            if ($stage1 && $stage1->Status === 'BERJALAN') {
+                $hasilIsi = $this->simpanPengisian($stage1->Id_Lamaran_Tahap, $userId, $jawaban);
+
+                // Bila TIDAK auto-gugur (rekomendasi LOLOS) → loloskan otomatis & maju.
+                $stage1Kini = DB::table('N_WEB_CAREERS_Lamaran_Tahap')->where('Id_Lamaran_Tahap', $stage1->Id_Lamaran_Tahap)->first();
+                if ($stage1Kini && $stage1Kini->Status === 'BERJALAN') {
+                    $this->tetapkanTahap($stage1->Id_Lamaran_Tahap, 'LULUS', 'Lolos seleksi administrasi otomatis — seluruh syarat terpenuhi.', null, now());
+
+                    return ['ok' => true, 'pesan' => 'Lamaran terkirim. Anda lolos seleksi administrasi dan lanjut ke tahap berikutnya.', 'lamaranId' => $lamaranId];
+                }
+
+                // Auto-gugur di tahap administrasi.
+                return ['ok' => true, 'pesan' => $hasilIsi['pesan'] ?? 'Lamaran tercatat (tidak lolos).', 'lamaranId' => $lamaranId];
+            }
+        }
+
+        return ['ok' => true, 'pesan' => $gugurAlasan ? 'Lamaran tercatat (tidak lolos).' : 'Lamaran dibuat.', 'lamaranId' => $lamaranId];
     }
 
     /**
@@ -130,7 +200,7 @@ class LamaranService
             return ['ok' => false, 'pesan' => 'Tahap tidak ditemukan.'];
         }
         $lamaran = DB::table('N_WEB_CAREERS_Lamaran')->where('Id_Lamaran', $tahap->Lamaran_Id)->first();
-        if (! $lamaran || $lamaran->Id_Users !== $userId) {
+        if (! $lamaran || (int) $lamaran->Id_Users !== $userId) {
             return ['ok' => false, 'pesan' => 'Lamaran bukan milik Anda.'];
         }
         if (! $tahap->Formulir_Kode) {
@@ -160,7 +230,7 @@ class LamaranService
 
         $evaluasi = $this->evaluasiSyarat($syaratRows, $nilai);
 
-        $pengisianId = DB::transaction(function () use ($tahap, $lamaran, $formulir, $jawaban, $nilai, $evaluasi, $userId, $ip, $now, $nama, $syaratRows) {
+        $pengisianId = DB::transaction(function () use ($tahap, $lamaran, $formulir, $jawaban, $nilai, $turunan, $evaluasi, $userId, $ip, $now, $nama, $syaratRows) {
             $kode = 'FLL-' . strtoupper(Str::random(8));
 
             $pengisianId = DB::table('N_WEB_CAREERS_Formulir_Pengisian')->insertGetId([

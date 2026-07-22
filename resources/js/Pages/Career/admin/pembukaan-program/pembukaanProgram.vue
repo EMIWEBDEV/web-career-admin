@@ -1,11 +1,11 @@
-<!-- WEB CAREER — Admin: Pembukaan Program (publikasi program ke channel + window; detail kampus). DATA dari DB via /api/v1/pembukaan. -->
+<!-- WEB CAREER — Admin: Pembukaan Program (publikasi program ke landing + window). DATA dari DB via /api/v1/pembukaan. -->
 <template>
     <Head><title>Pembukaan Program - Web Career</title></Head>
     <div class="wca">
         <div class="wca-phead">
             <div>
                 <h1>Pembukaan Program</h1>
-                <p>Publikasikan <b>1 program</b> ke banyak channel — <b>Umum</b> (landing publik) atau <b>Kampus</b> tertentu — masing-masing punya window sendiri.</p>
+                <p>Publikasikan <b>1 program</b> ke landing publik dengan window pendaftarannya. Pembatasan kampus (bila ada) diatur lewat <b>Syarat</b> di Program Kegiatan.</p>
             </div>
             <div class="wca-phead__actions">
                 <button class="wca-btn wca-btn--primary" @click="openCreate"><i class="bi bi-plus-lg"></i> Buka Program</button>
@@ -20,7 +20,6 @@
                             <tr>
                                 <th>Kode</th>
                                 <th>Program</th>
-                                <th>Channel</th>
                                 <th>Masa Berlaku</th>
                                 <th>Periode</th>
                                 <th>Status</th>
@@ -35,12 +34,6 @@
                                     <strong>{{ b.programNama }}</strong>
                                     <span class="wca-badge" :class="katBadge(b.kategori)" style="margin-left:.3rem">{{ katShort(b.kategori) }}</span>
                                     <div v-if="b.batchNama" style="margin-top:.25rem"><span class="wca-badge wca-b--slate"><i class="bi bi-collection"></i> {{ b.batchNama }}</span></div>
-                                </td>
-                                <td>
-                                    <span class="wca-badge" :class="b.channel === 'KAMPUS' ? 'wca-b--indigo' : 'wca-b--green'"><i class="bi" :class="b.channel === 'KAMPUS' ? 'bi-mortarboard' : 'bi-globe'"></i> {{ b.channel === 'KAMPUS' ? 'Kampus' : 'Umum' }}</span>
-                                    <div v-if="b.channel === 'KAMPUS' && b.kampus && b.kampus.length" class="pbk-chips">
-                                        <span v-for="(k, i) in b.kampus" :key="i" class="pbk-chip">{{ k }}</span>
-                                    </div>
                                 </td>
                                 <td>
                                     <span class="wca-badge" :class="b.masaBerlaku === 'EVERGREEN' ? 'wca-b--green' : 'wca-b--slate'">{{ b.masaBerlaku === 'EVERGREEN' ? 'Evergreen' : 'Berbatas' }}</span>
@@ -60,7 +53,7 @@
                                     </div>
                                 </td>
                             </tr>
-                            <tr v-if="!loading && !list.length"><td colspan="8"><div class="wca-empty"><i class="bi bi-megaphone"></i><h4>Belum ada pembukaan</h4></div></td></tr>
+                            <tr v-if="!loading && !list.length"><td colspan="7"><div class="wca-empty"><i class="bi bi-megaphone"></i><h4>Belum ada pembukaan</h4></div></td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -68,36 +61,22 @@
         </div>
 
         <!-- Modal buka/ubah -->
-        <AdminModal :show="show" :title="editingId ? 'Ubah Pembukaan' : 'Buka Program'" subtitle="Publikasikan program ke sebuah channel + window" icon="bi-megaphone" :save-label="editingId ? 'Perbarui' : 'Buka'" @close="show = false" @save="save">
+        <AdminModal :show="show" :title="editingId ? 'Ubah Pembukaan' : 'Buka Program'" subtitle="Publikasikan program ke landing + window pendaftaran" icon="bi-megaphone" :save-label="editingId ? 'Perbarui' : 'Buka'" @close="show = false" @save="save">
             <div class="wca-fsection">
                 <div class="wca-fsection__label"><i class="bi bi-megaphone"></i> Detail Pembukaan</div>
                 <div class="wca-form">
                     <div><label class="wca-field-lbl">Program</label>
                         <RefSelect type="program" v-model="form.program" placeholder="Pilih program" />
                     </div>
-                    <div class="wca-frow">
-                        <div><label class="wca-field-lbl">Channel / Sumber</label>
-                            <el-select filterable v-model="form.channel" placeholder="Pilih channel" style="width:100%" @change="onChannel">
-                                <el-option label="Umum (landing publik)" value="UMUM" />
-                                <el-option label="Kampus (whitelist)" value="KAMPUS" />
-                            </el-select>
-                        </div>
-                        <div><label class="wca-field-lbl">Masa Berlaku</label>
-                            <el-select filterable v-model="form.masaBerlaku" placeholder="Pilih" style="width:100%" @change="onMasa">
-                                <el-option label="Berbatas (ada tanggal tutup)" value="BERBATAS" />
-                                <el-option label="Evergreen (tanpa tanggal)" value="EVERGREEN" />
-                            </el-select>
-                        </div>
-                    </div>
-                    <div v-if="form.channel === 'KAMPUS'"><label class="wca-field-lbl">Kampus Sasaran (whitelist)</label>
-                        <el-select v-model="form.kampusIds" multiple filterable placeholder="Pilih kampus" style="width:100%">
-                            <el-option v-for="u in kampusOptions" :key="u.value" :label="u.label" :value="u.value" />
+                    <div><label class="wca-field-lbl">Masa Berlaku</label>
+                        <el-select filterable v-model="form.masaBerlaku" placeholder="Pilih" style="width:100%" @change="onMasa">
+                            <el-option label="Berbatas (ada tanggal tutup)" value="BERBATAS" />
+                            <el-option label="Evergreen (tanpa tanggal)" value="EVERGREEN" />
                         </el-select>
-                        <small style="display:block;margin-top:.3rem;color:var(--muted);font-weight:700;font-size:.72rem"><i class="bi bi-list-check"></i> Daftar ini jadi <b>whitelist formulir pelamar</b>.</small>
                     </div>
                     <div class="wca-frow">
-                        <div><label class="wca-field-lbl">Tanggal Buka</label><el-date-picker v-model="form.buka" type="date" value-format="YYYY-MM-DD" placeholder="Pilih tanggal" style="width:100%" /></div>
-                        <div><label class="wca-field-lbl">Tanggal Tutup</label><el-date-picker v-model="form.tutup" type="date" value-format="YYYY-MM-DD" placeholder="Pilih tanggal" style="width:100%" :disabled="form.masaBerlaku === 'EVERGREEN'" /></div>
+                        <div><label class="wca-field-lbl">Tanggal &amp; Jam Buka</label><el-date-picker v-model="form.buka" type="datetime" value-format="YYYY-MM-DD HH:mm:ss" format="DD MMM YYYY HH:mm" placeholder="Pilih tanggal &amp; jam" style="width:100%" /></div>
+                        <div><label class="wca-field-lbl">Tanggal &amp; Jam Tutup</label><el-date-picker v-model="form.tutup" type="datetime" value-format="YYYY-MM-DD HH:mm:ss" format="DD MMM YYYY HH:mm" placeholder="Pilih tanggal &amp; jam" style="width:100%" :disabled="form.masaBerlaku === 'EVERGREEN'" /></div>
                     </div>
                     <div><label class="wca-field-lbl">Status Publish</label>
                         <el-select filterable v-model="form.statusPublish" placeholder="Pilih status" style="width:100%">
@@ -135,11 +114,10 @@ export default {
         return {
             list: [],
             loading: false,
-            kampusOptions: [],
             show: false,
             editingId: null,
             saving: false,
-            form: { program: '', channel: 'UMUM', masaBerlaku: 'BERBATAS', buka: null, tutup: null, statusPublish: 'DRAFT', kampusIds: [] },
+            form: { program: '', masaBerlaku: 'BERBATAS', buka: null, tutup: null, statusPublish: 'DRAFT' },
             delShow: false,
             delTarget: null,
             deleting: false,
@@ -149,7 +127,6 @@ export default {
     },
     mounted() {
         this.load();
-        this.loadKampus();
     },
     methods: {
         katBadge(k) { return { MT: 'wca-b--gold', INTERNSHIP: 'wca-b--green', REKRUTMEN: 'wca-b--sky' }[k] || 'wca-b--sky'; },
@@ -158,7 +135,8 @@ export default {
             if (!iso) return '—';
             const d = new Date(String(iso).replace(' ', 'T'));
             if (Number.isNaN(d.getTime())) return iso;
-            return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+            const jam = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+            return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()} ${jam}`;
         },
         windowLabel(b) { return b.masaBerlaku === 'EVERGREEN' ? 'Dibuka: ' + this.fmt(b.buka) + ' — tanpa batas' : `${this.fmt(b.buka)} – ${this.fmt(b.tutup)}`; },
         async load() {
@@ -172,16 +150,7 @@ export default {
                 this.loading = false;
             }
         },
-        async loadKampus() {
-            try {
-                const res = await axios.get('/api/v1/karir/options/kampus', CFG);
-                this.kampusOptions = res.data.result || [];
-            } catch (e) {
-                this.kampusOptions = [];
-            }
-        },
-        blankForm() { return { program: '', channel: 'UMUM', masaBerlaku: 'BERBATAS', buka: null, tutup: null, statusPublish: 'DRAFT', kampusIds: [] }; },
-        onChannel() { if (this.form.channel !== 'KAMPUS') this.form.kampusIds = []; },
+        blankForm() { return { program: '', masaBerlaku: 'BERBATAS', buka: null, tutup: null, statusPublish: 'DRAFT' }; },
         onMasa() { if (this.form.masaBerlaku === 'EVERGREEN') this.form.tutup = null; },
         openCreate() {
             this.editingId = null;
@@ -192,30 +161,24 @@ export default {
             this.editingId = b.id;
             this.form = {
                 program: b.program || '',
-                channel: b.channel || 'UMUM',
                 masaBerlaku: b.masaBerlaku || 'BERBATAS',
                 buka: b.buka || null,
                 tutup: b.tutup || null,
                 statusPublish: b.statusPublish || 'DRAFT',
-                kampusIds: Array.isArray(b.kampusIds) ? [...b.kampusIds] : [],
             };
             this.show = true;
         },
         async save() {
             if (this.saving) return;
             if (!this.form.program) return this.notice('Program wajib dipilih.');
-            if (!this.form.channel) return this.notice('Channel wajib dipilih.');
             if (!this.form.masaBerlaku) return this.notice('Masa berlaku wajib dipilih.');
-            if (this.form.channel === 'KAMPUS' && !this.form.kampusIds.length) return this.notice('Channel Kampus — pilih minimal 1 kampus.');
             this.saving = true;
             const payload = {
                 program: this.form.program,
-                channel: this.form.channel,
                 masaBerlaku: this.form.masaBerlaku,
                 buka: this.form.buka,
                 tutup: this.form.masaBerlaku === 'EVERGREEN' ? null : this.form.tutup,
                 statusPublish: this.form.statusPublish,
-                kampusIds: this.form.channel === 'KAMPUS' ? this.form.kampusIds : [],
             };
             try {
                 if (this.editingId) {
@@ -267,8 +230,6 @@ export default {
 </script>
 
 <style scoped>
-.pbk-chips { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .35rem; }
-.pbk-chip { display: inline-block; padding: .12rem .5rem; border-radius: 999px; background: #eef2ff; color: #4338ca; border: 1px solid rgba(79, 70, 229, .18); font: 700 .7rem 'Plus Jakarta Sans', sans-serif; }
 @media (max-width: 720px) {
     .wca-tablewrap { overflow-x: auto; }
 }
