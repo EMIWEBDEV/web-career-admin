@@ -71,7 +71,7 @@ export default defineConfig({
             // Alias lain yang mungkin sudah ada
             "@": path.resolve(__dirname, "./src"),
             // Komponen reusable Web Career (modal, dsb) — dipakai lintas halaman master.
-            "@career": path.resolve(__dirname, "./resources/js/Components/career"),
+            "@career": path.resolve(__dirname, "./resources/js/components/career"),
         },
     },
     build: {
