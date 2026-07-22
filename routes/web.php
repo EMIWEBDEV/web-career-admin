@@ -22,11 +22,14 @@ use Inertia\Inertia;
 Route::get('/', [CareerLandingController::class, 'index'])->name('career.home');
 
 // Auth REAL (DB) — komponen SAMA dengan halaman test (Career/Auth), kini nyambung DB.
-Route::get('/login', fn () => Inertia::render('Career/Auth', ['mode' => 'login']))->name('login');
-Route::get('/register', fn () => Inertia::render('Career/Auth', ['mode' => 'register']))->name('register');
+Route::get('/login', fn() => Inertia::render('Career/Auth', ['mode' => 'login']))->name('login');
+Route::get('/register', fn() => Inertia::render('Career/Auth', ['mode' => 'register']))->name('register');
 
 // Ganti / reset kata sandi (form). Email opsional dari query (alur lupa sandi).
-Route::get('/ganti-sandi', fn (Request $request) => Inertia::render('Career/GantiSandi', ['email' => (string) $request->query('email', '')]))->name('ganti-sandi');
+Route::get(
+    '/ganti-sandi',
+    fn(Request $request) => Inertia::render('Career/GantiSandi', ['email' => (string) $request->query('email', '')]),
+)->name('ganti-sandi');
 
 // Profil — SATU route untuk semua akun (admin & kandidat); shell menyesuaikan role.
 // Wajib login, tanpa gerbang peran: ini halaman milik pengguna itu sendiri.
