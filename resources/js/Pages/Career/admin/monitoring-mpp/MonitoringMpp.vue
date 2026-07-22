@@ -44,7 +44,7 @@
                 <el-option v-for="f in ['Selesai', 'Belum Selesai']" :key="f" :label="f" :value="f" />
             </el-select>
             <el-select v-model="fDivisi" placeholder="Divisi" clearable filterable class="mpp-filter" @change="reload">
-                <el-option v-for="d in divisiOptions" :key="d" :label="d" :value="d" />
+                <el-option v-for="d in divisiOptions" :key="d" :label="titleCase(d)" :value="d" />
             </el-select>
             <el-select v-model="fPeriode" placeholder="Periode" clearable class="mpp-filter" @change="reload">
                 <el-option v-for="p in periodeOptions" :key="p" :label="periodeLabel(p)" :value="p" />
@@ -103,10 +103,10 @@
                             <tbody>
                                 <tr v-for="m in list" :key="m.no_transaksi" style="cursor:pointer" @click="openDetail(m.no_transaksi)">
                                     <td><span class="mpp-no">{{ m.no_transaksi }}</span></td>
-                                    <td><strong>{{ m.jabatan }}</strong></td>
-                                    <td>{{ m.divisi }}</td>
-                                    <td>{{ m.sub_divisi }}</td>
-                                    <td>{{ m.level }}</td>
+                                    <td><strong>{{ titleCase(m.jabatan) }}</strong></td>
+                                    <td>{{ titleCase(m.divisi) }}</td>
+                                    <td>{{ titleCase(m.sub_divisi) }}</td>
+                                    <td>{{ titleCase(m.level) }}</td>
                                     <td class="mpp-num"><span class="wca-badge wca-b--slate"><i class="bi bi-people-fill"></i> {{ m.jumlah_rekruitmen }}</span></td>
                                     <td><span class="wca-badge" :class="statusBadge(m.status)">{{ m.status }}</span></td>
                                     <td><span class="mpp-flag" :class="{ 'is-done': isSelesai(m.flag_selesai) }"><span class="mpp-flag__dot"></span>{{ m.flag_selesai }}</span></td>
@@ -143,7 +143,7 @@ import { Head } from '@inertiajs/vue3';
 import MppCard from './MppCard.vue';
 import MppDetailPanel from './MppDetailPanel.vue';
 import Pagination from '../../../../components/ui/Pagination.vue';
-import { formatTanggal, namaLengkap, initials, statusBadge, flagBadge, isSelesai } from './mppHelpers';
+import { formatTanggal, namaLengkap, initials, statusBadge, flagBadge, isSelesai, titleCase } from './mppHelpers';
 
 const API = '/api/v1/monitoring-mpp';
 const CFG = { headers: { Accept: 'application/json' } };
@@ -203,6 +203,7 @@ export default {
         statusBadge,
         flagBadge,
         isSelesai,
+        titleCase,
         periodeLabel(v) {
             const [y, m] = String(v).split('-');
             return `${BULAN[parseInt(m, 10) - 1] || m} ${y}`;
@@ -319,10 +320,14 @@ export default {
     border-color: transparent;
 }
 
-/* Filter select */
+/* Filter select — samakan tinggi & radius dengan kotak search (.wca-search2 = 2.5rem). */
 .mpp-filter {
     flex: 0 1 160px;
     min-width: 130px;
+}
+.mpp-filter :deep(.el-select__wrapper) {
+    min-height: 2.5rem;
+    border-radius: 0.7rem;
 }
 
 /* Spinner kecil di kotak search saat refetch */

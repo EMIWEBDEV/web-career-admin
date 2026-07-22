@@ -28,6 +28,32 @@ export function namaLengkap(username) {
         .join(' ');
 }
 
+// Panjang maksimum token yang dianggap akronim (dibiarkan kapital: SPV, HSE, HC, GA, K3).
+const AKRONIM_MAKS = 4;
+
+function titleToken(word) {
+    // Pisah token gabungan agar tiap bagian diproses (mis. "HC-GA", "Accurate/SAP").
+    if (word.includes('-')) return word.split('-').map(titleToken).join('-');
+    if (word.includes('/')) return word.split('/').map(titleToken).join('/');
+
+    const letters = word.replace(/[^A-Za-z]/g, '');
+    // Akronim: seluruhnya huruf besar (boleh berangka) & pendek → biarkan apa adanya.
+    if (letters.length > 0 && letters.length <= AKRONIM_MAKS && word === word.toUpperCase()) {
+        return word;
+    }
+    return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+}
+
+/**
+ * Rapikan teks UPPERCASE (nama divisi/jabatan/level dari master) jadi Title Case,
+ * tapi akronim tetap kapital: "STAFF ACCOUNTING" → "Staff Accounting", "SPV HSE" → "SPV HSE",
+ * "HC-GA" → "HC-GA". Aman juga untuk teks yang sudah rapi.
+ */
+export function titleCase(str) {
+    if (str === null || str === undefined || str === '') return '-';
+    return String(str).split(' ').map(titleToken).join(' ');
+}
+
 /** Inisial 1-2 huruf dari username/nama. */
 export function initials(name) {
     const parts = String(name || '')

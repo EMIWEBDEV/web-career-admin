@@ -11,7 +11,7 @@
                     <div class="wca-drawer__head">
                         <span class="wca-avatar"><i class="bi bi-briefcase-fill"></i></span>
                         <div style="min-width:0">
-                            <h3>{{ detail?.jabatan || 'Memuat…' }}</h3>
+                            <h3>{{ detail ? titleCase(detail.jabatan) : 'Memuat…' }}</h3>
                             <p><i class="bi bi-hash"></i>{{ no }}</p>
                         </div>
                         <button ref="closeBtn" class="wca-drawer__close" aria-label="Tutup detail" @click="$emit('close')"><i class="bi bi-x-lg"></i></button>
@@ -41,9 +41,9 @@
                                 <div class="wca-dinfo">
                                     <div><small>Status</small><b><span class="wca-badge" :class="statusBadge(detail.status)">{{ detail.status }}</span></b></div>
                                     <div><small>Flag Selesai</small><b><span class="wca-badge" :class="flagBadge(detail.flag_selesai)">{{ detail.flag_selesai }}</span></b></div>
-                                    <div><small>Divisi</small><b>{{ detail.divisi }}</b></div>
-                                    <div><small>Sub Divisi</small><b>{{ detail.sub_divisi }}</b></div>
-                                    <div><small>Level</small><b>{{ detail.level }}</b></div>
+                                    <div><small>Divisi</small><b>{{ titleCase(detail.divisi) }}</b></div>
+                                    <div><small>Sub Divisi</small><b>{{ titleCase(detail.sub_divisi) }}</b></div>
+                                    <div><small>Level</small><b>{{ titleCase(detail.level) }}</b></div>
                                     <div><small>Jumlah Rekrutmen</small><b>{{ detail.jumlah_rekruitmen }} orang</b></div>
                                     <div><small>Tanggal Periode</small><b>{{ formatTanggal(detail.tanggal_periode) }}</b></div>
                                     <div><small>Penanggung Jawab</small><b>{{ namaLengkap(detail.penanggung_jawab) }}</b></div>
@@ -119,7 +119,7 @@
 <script setup>
 import { ref, watch, onBeforeUnmount, nextTick } from 'vue';
 import axios from 'axios';
-import { formatTanggal, namaLengkap, statusBadge, flagBadge } from './mppHelpers';
+import { formatTanggal, namaLengkap, statusBadge, flagBadge, titleCase } from './mppHelpers';
 
 const props = defineProps({ no: { type: String, default: null } });
 const emit = defineEmits(['close']);
@@ -129,6 +129,9 @@ const loading = ref(false);
 const error = ref(false);
 const panel = ref(null);
 const closeBtn = ref(null);
+
+// Elemen pemicu (card/row) yang fokus sebelum drawer dibuka — untuk dikembalikan saat close.
+let triggerEl = null;
 
 async function load() {
     if (!props.no) return;
@@ -145,14 +148,40 @@ async function load() {
     }
 }
 
+// Semua elemen fokusabel yang terlihat di dalam drawer.
+function focusables() {
+    if (!panel.value) return [];
+    return Array.from(
+        panel.value.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')
+    ).filter((el) => !el.disabled && el.offsetParent !== null);
+}
+
 function onKeydown(e) {
-    if (e.key === 'Escape') emit('close');
+    if (e.key === 'Escape') {
+        emit('close');
+        return;
+    }
+    // Focus trap: Tab tidak boleh keluar dari drawer.
+    if (e.key !== 'Tab') return;
+    const items = focusables();
+    if (!items.length) return;
+    const first = items[0];
+    const last = items[items.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+    }
 }
 
 watch(
     () => props.no,
     async (val) => {
         if (val) {
+            // Simpan pemicu SEBELUM memindahkan fokus ke dalam drawer.
+            triggerEl = document.activeElement;
             detail.value = null;
             load();
             document.addEventListener('keydown', onKeydown);
@@ -162,6 +191,9 @@ watch(
         } else {
             document.removeEventListener('keydown', onKeydown);
             document.body.style.overflow = '';
+            // Kembalikan fokus ke card/row yang membuka drawer (aksesibilitas).
+            if (triggerEl && typeof triggerEl.focus === 'function') triggerEl.focus();
+            triggerEl = null;
         }
     },
     { immediate: true }

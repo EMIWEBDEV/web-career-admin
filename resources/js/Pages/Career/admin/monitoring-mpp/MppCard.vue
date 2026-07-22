@@ -3,14 +3,14 @@
     <article class="mpp-card" role="button" tabindex="0" @click="$emit('open', mpp.no_transaksi)" @keydown.enter="$emit('open', mpp.no_transaksi)" @keydown.space.prevent="$emit('open', mpp.no_transaksi)">
         <!-- Header: jabatan + status -->
         <div class="mpp-card__head">
-            <h3 class="mpp-card__title">{{ mpp.jabatan }}</h3>
+            <h3 class="mpp-card__title">{{ titleCase(mpp.jabatan) }}</h3>
             <span class="wca-badge" :class="statusBadge(mpp.status)">{{ mpp.status }}</span>
         </div>
 
         <!-- Divisi / Sub Divisi -->
         <div class="mpp-card__badges">
-            <span class="wca-badge wca-b--indigo"><i class="bi bi-diagram-3"></i> {{ mpp.divisi }}</span>
-            <span v-if="mpp.sub_divisi" class="wca-badge wca-b--sky">{{ mpp.sub_divisi }}</span>
+            <span class="wca-badge wca-b--indigo"><i class="bi bi-diagram-3"></i> {{ titleCase(mpp.divisi) }}</span>
+            <span v-if="mpp.sub_divisi" class="wca-badge wca-b--sky">{{ titleCase(mpp.sub_divisi) }}</span>
         </div>
 
         <div class="mpp-card__no"><i class="bi bi-hash"></i>{{ mpp.no_transaksi }}</div>
@@ -19,7 +19,7 @@
         <div class="mpp-card__meta">
             <span title="Jumlah rekrutmen"><i class="bi bi-people-fill"></i> {{ mpp.jumlah_rekruitmen }} orang</span>
             <span title="Tanggal periode"><i class="bi bi-calendar3"></i> {{ formatTanggal(mpp.tanggal_periode) }}</span>
-            <span title="Level"><i class="bi bi-bar-chart-steps"></i> {{ mpp.level }}</span>
+            <span title="Level"><i class="bi bi-bar-chart-steps"></i> {{ titleCase(mpp.level) }}</span>
         </div>
 
         <!-- Footer: penanggung jawab + flag selesai -->
@@ -36,7 +36,7 @@
 </template>
 
 <script setup>
-import { formatTanggal, namaLengkap, initials, statusBadge, isSelesai } from './mppHelpers';
+import { formatTanggal, namaLengkap, initials, statusBadge, isSelesai, titleCase } from './mppHelpers';
 
 defineProps({ mpp: { type: Object, required: true } });
 defineEmits(['open']);

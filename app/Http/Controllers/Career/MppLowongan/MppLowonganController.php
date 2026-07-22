@@ -5,43 +5,37 @@ namespace App\Http\Controllers\Career\MppLowongan;
 use App\Helpers\ResponseHelper;
 use App\Http\Controllers\Controller;
 use App\Support\CareerShell;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 
 /**
- * WEB CAREER — MONITORING MPP (read-only, SPA + WEB, tanpa API terpisah).
+ * WEB CAREER — MONITORING MPP (read-only).
  *
- * FASE 1 (sekarang): FRONTEND. Data masih DUMMY tapi bentuk JSON-nya PERSIS
- * seperti output query asli (lihat referensi SQL di bawah), sehingga frontend
- * (Vue) tinggal mengonsumsi `res.data.result` apa adanya.
+ * Sumber data (SQL Server, koneksi sqlsrv):
+ *   HRIS_Transaksi_GForm g  (induk transaksi MPP)
+ *     JOIN  N_WEB_CAREERS_Detail_MPP d      ON d.No_Transaksi_MPP = g.No_Transaksi   (1:1)
+ *     LEFT  HRIS_Divisi / Sub_Divisi / Level / Jabatan  (ON id + Kode_Perusahaan → Keterangan)
+ *   Detail: N_WEB_CAREERS_Points_MPP (Section responsibility|requirement, urut Urutan),
+ *           Detail_Skill_MPP→Master_Skill, Detail_Benefit_MPP→Master_Benefit.
  *
- * FASE 2 (nanti): cukup ganti isi dummyData() dengan query gabungan
- * (Query Builder) — kontrak JSON & seluruh frontend TIDAK berubah.
+ * Optimasi:
+ *  - TANPA N+1: list() memakai correlated subquery untuk semua jumlah dalam SATU statement;
+ *    detail() memakai jumlah query TETAP (head + points + skill + benefit), bukan per-baris.
+ *  - ATOMIC: setiap operasi baca dibungkus DB::transaction agar snapshot konsisten.
+ *  - EFISIEN: filter periode via rentang tanggal (sargable → pakai index Tanggal_Periode),
+ *    sort pakai kolom terindeks + tie-breaker No_Transaksi (pagination stabil),
+ *    escaping wildcard LIKE, pagination OFFSET/FETCH di DB.
  *
- * - index()        : render halaman Inertia (shell admin via CareerShell).
- * - list()         : daftar MPP ringkas (+ jumlah tanggung jawab/persyaratan/skill/benefit).
- * - detail($no)    : detail satu MPP (deskripsi, tanggung jawab, persyaratan, skill, benefit).
- *
- * ── Referensi query asli (fase 2) ──────────────────────────────────────────
- * SELECT g.No_Transaksi,
- *   CASE WHEN g.Status='Y' THEN 'Dibatalkan' ELSE 'Aktif' END          AS Status_Label,
- *   CASE WHEN g.Flag_Selesai='Y' THEN 'Selesai' ELSE 'Belum Selesai' END AS Flag_Selesai_Label,
- *   dv.Keterangan AS Nama_Divisi, sd.Keterangan AS Nama_Sub_Divisi,
- *   lv.Keterangan AS Nama_Level,  jb.Keterangan AS Nama_Jabatan,
- *   g.Jumlah_Rekruitmen, d.Deskripsi, ...counts...
- * FROM HRIS_Transaksi_GForm g
- * JOIN N_WEB_CAREERS_Detail_MPP d ON d.No_Transaksi_MPP = g.No_Transaksi
- * LEFT JOIN HRIS_Divisi dv     ON dv.ID_Divisi=g.Id_Divisi        AND dv.Kode_Perusahaan=g.Kode_Perusahaan
- * LEFT JOIN HRIS_Sub_Divisi sd ON sd.ID_Sub_Divisi=g.Id_Sub_Divisi AND sd.Kode_Perusahaan=g.Kode_Perusahaan
- * LEFT JOIN HRIS_Level lv      ON lv.ID_Level=g.Id_Level          AND lv.Kode_Perusahaan=g.Kode_Perusahaan
- * LEFT JOIN HRIS_Jabatan jb    ON jb.ID_Jabatan=g.Id_Jabatan      AND jb.Kode_Perusahaan=g.Kode_Perusahaan
- * -- Points_MPP (Section responsibility|requirement, urut Urutan),
- * -- Detail_Skill_MPP->Master_Skill, Detail_Benefit_MPP->Master_Benefit.
- * ───────────────────────────────────────────────────────────────────────────
+ * Mapping label: Status 'Y' = Dibatalkan (selain itu Aktif); Flag_Selesai 'Y' = Selesai (selain itu Belum Selesai).
  */
 class MppLowonganController extends Controller
 {
+    /** Kolom sort yang diizinkan (whitelist) → cegah sort ke kolom sembarang. */
+    private const SORTABLE = ['tanggal_periode', 'status'];
+
     /** Halaman (Inertia). Data TIDAK dikirim lewat props — halaman fetch sendiri ke list()/detail(). */
     public function index()
     {
@@ -52,63 +46,79 @@ class MppLowonganController extends Controller
     }
 
     /**
-     * Daftar MPP ringkas — pencarian, filter, sort, & PAGINATION dikerjakan di SERVER.
-     *
+     * Daftar MPP ringkas — pencarian, filter, sort, & PAGINATION dikerjakan di SERVER (DB).
      * Query params: page, per_page, search, status, flag, divisi, periode, sort, dir.
-     * FASE 2: cukup terjemahkan param-param ini ke where()/orderBy()/paginate() pada
-     * query gabungan — kontrak respons (successWithPagination) tetap sama.
      */
     public function list(Request $request)
     {
         try {
             $page    = max(1, (int) $request->query('page', 1));
             $perPage = min(50, max(1, (int) $request->query('per_page', 9)));
-            $search  = trim((string) $request->query('search', ''));
-            $fStatus = trim((string) $request->query('status', ''));
-            $fFlag   = trim((string) $request->query('flag', ''));
-            $fDivisi = trim((string) $request->query('divisi', ''));
-            $fPeriode = trim((string) $request->query('periode', ''));
             $sort    = (string) $request->query('sort', 'tanggal_periode');
             $dir     = strtolower((string) $request->query('dir', 'desc')) === 'asc' ? 'asc' : 'desc';
-
-            // Whitelist kolom sort — cegah sort ke kolom sembarang.
-            if (!in_array($sort, ['tanggal_periode', 'status'], true)) {
+            if (!in_array($sort, self::SORTABLE, true)) {
                 $sort = 'tanggal_periode';
             }
 
-            $rows = collect($this->dummyData())
-                ->map(fn ($r) => $this->toSummary($r))
-                ->filter(function ($r) use ($search, $fStatus, $fFlag, $fDivisi, $fPeriode) {
-                    if ($search !== '') {
-                        $hay = mb_strtolower($r['no_transaksi'] . ' ' . $r['jabatan'] . ' ' . $r['divisi']);
-                        if (!str_contains($hay, mb_strtolower($search))) {
-                            return false;
-                        }
-                    }
-                    if ($fStatus !== '' && $r['status'] !== $fStatus) {
-                        return false;
-                    }
-                    if ($fFlag !== '' && $r['flag_selesai'] !== $fFlag) {
-                        return false;
-                    }
-                    if ($fDivisi !== '' && $r['divisi'] !== $fDivisi) {
-                        return false;
-                    }
-                    if ($fPeriode !== '' && substr((string) $r['tanggal_periode'], 0, 7) !== $fPeriode) {
-                        return false;
-                    }
+            // Atomic: total & data dibaca dalam satu boundary transaksi.
+            $result = DB::transaction(function () use ($request, $page, $perPage, $sort, $dir) {
+                $total = $this->applyFilters($this->baseQuery(), $request)->count();
 
-                    return true;
-                })
-                ->values();
+                $data = $this->applyFilters($this->baseQuery(), $request)
+                    ->select([
+                        'g.No_Transaksi as no_transaksi',
+                        'g.Kode_Perusahaan as kode_perusahaan',
+                        DB::raw("CASE WHEN g.Status = 'Y' THEN 'Dibatalkan' ELSE 'Aktif' END as status"),
+                        DB::raw("CASE WHEN g.Flag_Selesai = 'Y' THEN 'Selesai' ELSE 'Belum Selesai' END as flag_selesai"),
+                        DB::raw('CONVERT(varchar(10), g.Tanggal, 23) as tanggal'),
+                        DB::raw('CONVERT(varchar(10), g.Tanggal_Periode, 23) as tanggal_periode'),
+                        DB::raw('CONVERT(varchar(8), g.Jam, 108) as jam'),
+                        'jb.Keterangan as jabatan',
+                        'dv.Keterangan as divisi',
+                        'sd.Keterangan as sub_divisi',
+                        'lv.Keterangan as level',
+                        'g.Jumlah_Rekruitmen as jumlah_rekruitmen',
+                        DB::raw('COALESCE(k.Nama, g.User_Penganggung_Jawab) as penanggung_jawab'),
+                        // Correlated subquery = ikut satu statement (bukan N+1); ditopang index Id_Detail_MPP.
+                        DB::raw("(SELECT COUNT(*) FROM N_WEB_CAREERS_Points_MPP p WHERE p.Id_Detail_MPP = d.Id_Detail_MPP AND p.Section = 'responsibility') as jml_tanggung_jawab"),
+                        DB::raw("(SELECT COUNT(*) FROM N_WEB_CAREERS_Points_MPP p WHERE p.Id_Detail_MPP = d.Id_Detail_MPP AND p.Section = 'requirement') as jml_persyaratan"),
+                        DB::raw('(SELECT COUNT(*) FROM N_WEB_CAREERS_Detail_Skill_MPP sk WHERE sk.Id_Detail_MPP = d.Id_Detail_MPP) as jml_skill'),
+                        DB::raw('(SELECT COUNT(*) FROM N_WEB_CAREERS_Detail_Benefit_MPP bn WHERE bn.Id_Detail_MPP = d.Id_Detail_MPP) as jml_benefit'),
+                    ]);
 
-            $rows = $dir === 'asc' ? $rows->sortBy($sort) : $rows->sortByDesc($sort);
-            $rows = $rows->values();
+                if ($sort === 'status') {
+                    $data->orderByRaw("CASE WHEN g.Status = 'Y' THEN 'Dibatalkan' ELSE 'Aktif' END " . $dir);
+                } else {
+                    $data->orderBy('g.Tanggal_Periode', $dir);
+                }
+                $data->orderBy('g.No_Transaksi'); // tie-breaker → urutan & pagination stabil
 
-            $total = $rows->count();
-            $paged = $rows->slice(($page - 1) * $perPage, $perPage)->values();
+                $rows = $data->offset(($page - 1) * $perPage)->limit($perPage)->get();
 
-            return ResponseHelper::successWithPagination($paged, $page, $perPage, $total, 'Data MPP dimuat');
+                return ['total' => $total, 'rows' => $rows];
+            });
+
+            $rows = collect($result['rows'])->map(fn ($r) => [
+                'no_transaksi'       => $r->no_transaksi,
+                'kode_perusahaan'    => $r->kode_perusahaan,
+                'status'             => $r->status,
+                'flag_selesai'       => $r->flag_selesai,
+                'tanggal'            => $r->tanggal,
+                'tanggal_periode'    => $r->tanggal_periode,
+                'jam'                => $r->jam,
+                'jabatan'            => $r->jabatan,
+                'divisi'             => $r->divisi,
+                'sub_divisi'         => $r->sub_divisi,
+                'level'              => $r->level,
+                'jumlah_rekruitmen'  => (int) $r->jumlah_rekruitmen,
+                'penanggung_jawab'   => $r->penanggung_jawab,
+                'jml_tanggung_jawab' => (int) $r->jml_tanggung_jawab,
+                'jml_persyaratan'    => (int) $r->jml_persyaratan,
+                'jml_skill'          => (int) $r->jml_skill,
+                'jml_benefit'        => (int) $r->jml_benefit,
+            ])->values();
+
+            return ResponseHelper::successWithPagination($rows, $page, $perPage, (int) $result['total'], 'Data MPP dimuat');
         } catch (\Throwable $e) {
             Log::channel('web_career')->error('Gagal memuat MPP: ' . $e->getMessage());
 
@@ -116,74 +126,86 @@ class MppLowonganController extends Controller
         }
     }
 
-    /** Opsi filter (divisi, periode) + statistik ringkas — dihit sekali saat halaman mount. */
-    public function options()
-    {
-        try {
-            $data = collect($this->dummyData());
-
-            $divisi = $data->pluck('divisi')->filter()->unique()->sort()->values();
-            $periode = $data->pluck('tanggal_periode')
-                ->map(fn ($d) => substr((string) $d, 0, 7))
-                ->filter()
-                ->unique()
-                ->sortDesc()
-                ->values();
-
-            $stats = [
-                'total'      => $data->count(),
-                'aktif'      => $data->where('status', 'Aktif')->count(),
-                'selesai'    => $data->where('flag_selesai', 'Selesai')->count(),
-                'dibatalkan' => $data->where('status', 'Dibatalkan')->count(),
-            ];
-
-            return ResponseHelper::success([
-                'divisi'  => $divisi,
-                'periode' => $periode,
-                'stats'   => $stats,
-            ], 'Opsi filter dimuat');
-        } catch (\Throwable $e) {
-            Log::channel('web_career')->error('Gagal memuat opsi MPP: ' . $e->getMessage());
-
-            return ResponseHelper::error('Gagal memuat opsi filter', 500);
-        }
-    }
-
-    /** Ubah satu record penuh -> bentuk ringkas (subset + jumlah item) untuk card/table. */
-    private function toSummary(array $r): array
-    {
-        return [
-            'no_transaksi'       => $r['no_transaksi'],
-            'kode_perusahaan'    => $r['kode_perusahaan'],
-            'status'             => $r['status'],
-            'flag_selesai'       => $r['flag_selesai'],
-            'tanggal'            => $r['tanggal'],
-            'tanggal_periode'    => $r['tanggal_periode'],
-            'jam'                => $r['jam'],
-            'jabatan'            => $r['jabatan'],
-            'divisi'             => $r['divisi'],
-            'sub_divisi'         => $r['sub_divisi'],
-            'level'              => $r['level'],
-            'jumlah_rekruitmen'  => $r['jumlah_rekruitmen'],
-            'penanggung_jawab'   => $r['penanggung_jawab'],
-            'jml_tanggung_jawab' => count($r['tanggung_jawab']),
-            'jml_persyaratan'    => count($r['persyaratan']),
-            'jml_skill'          => count($r['skill']),
-            'jml_benefit'        => count($r['benefit']),
-        ];
-    }
-
-    /** Detail satu MPP (berdasarkan No_Transaksi). */
+    /** Detail satu MPP (berdasarkan No_Transaksi) — jumlah query TETAP, dibungkus transaksi (atomic). */
     public function detail(string $no)
     {
         try {
-            foreach ($this->dummyData() as $r) {
-                if ($r['no_transaksi'] === $no) {
-                    return ResponseHelper::success($r, 'Detail MPP dimuat');
-                }
+            if (!preg_match('#^[A-Za-z0-9\-/]{1,50}$#', $no)) {
+                return ResponseHelper::error('No transaksi tidak valid', 422);
             }
 
-            return ResponseHelper::error('Data MPP tidak ditemukan', 404);
+            $data = DB::transaction(function () use ($no) {
+                $head = $this->baseQuery()
+                    ->where('g.No_Transaksi', $no)
+                    ->select([
+                        'g.No_Transaksi as no_transaksi',
+                        'g.Kode_Perusahaan as kode_perusahaan',
+                        DB::raw("CASE WHEN g.Status = 'Y' THEN 'Dibatalkan' ELSE 'Aktif' END as status"),
+                        DB::raw("CASE WHEN g.Flag_Selesai = 'Y' THEN 'Selesai' ELSE 'Belum Selesai' END as flag_selesai"),
+                        DB::raw('CONVERT(varchar(10), g.Tanggal, 23) as tanggal'),
+                        DB::raw('CONVERT(varchar(10), g.Tanggal_Periode, 23) as tanggal_periode'),
+                        DB::raw('CONVERT(varchar(8), g.Jam, 108) as jam'),
+                        'jb.Keterangan as jabatan',
+                        'dv.Keterangan as divisi',
+                        'sd.Keterangan as sub_divisi',
+                        'lv.Keterangan as level',
+                        'g.Jumlah_Rekruitmen as jumlah_rekruitmen',
+                        DB::raw('COALESCE(k.Nama, g.User_Penganggung_Jawab) as penanggung_jawab'),
+                        'd.Deskripsi as deskripsi',
+                        'd.Id_Detail_MPP as id_detail_mpp',
+                    ])
+                    ->first();
+
+                if (!$head) {
+                    return null;
+                }
+                $id = $head->id_detail_mpp;
+
+                // Satu query untuk KEDUA section (responsibility & requirement) → dipisah di PHP.
+                $points = DB::table('N_WEB_CAREERS_Points_MPP')
+                    ->where('Id_Detail_MPP', $id)
+                    ->orderBy('Urutan')->orderBy('Id_Points_MPP')
+                    ->get(['Section', 'Content']);
+
+                $skill = DB::table('N_WEB_CAREERS_Detail_Skill_MPP as sk')
+                    ->join('N_WEB_CAREERS_Master_Skill as ms', 'ms.Id_Skill', '=', 'sk.Id_Skill')
+                    ->where('sk.Id_Detail_MPP', $id)
+                    ->orderBy('ms.Nama_Skill')
+                    ->pluck('ms.Nama_Skill');
+
+                $benefit = DB::table('N_WEB_CAREERS_Detail_Benefit_MPP as bn')
+                    ->join('N_WEB_CAREERS_Master_Benefit as mb', 'mb.Id_Benefit', '=', 'bn.Id_Benefit')
+                    ->where('bn.Id_Detail_MPP', $id)
+                    ->orderBy('mb.Nama_Benefit')
+                    ->pluck('mb.Nama_Benefit');
+
+                return [
+                    'no_transaksi'      => $head->no_transaksi,
+                    'kode_perusahaan'   => $head->kode_perusahaan,
+                    'status'            => $head->status,
+                    'flag_selesai'      => $head->flag_selesai,
+                    'tanggal'           => $head->tanggal,
+                    'tanggal_periode'   => $head->tanggal_periode,
+                    'jam'               => $head->jam,
+                    'jabatan'           => $head->jabatan,
+                    'divisi'            => $head->divisi,
+                    'sub_divisi'        => $head->sub_divisi,
+                    'level'             => $head->level,
+                    'jumlah_rekruitmen' => (int) $head->jumlah_rekruitmen,
+                    'penanggung_jawab'  => $head->penanggung_jawab,
+                    'deskripsi'         => $head->deskripsi,
+                    'tanggung_jawab'    => $points->where('Section', 'responsibility')->pluck('Content')->values()->all(),
+                    'persyaratan'       => $points->where('Section', 'requirement')->pluck('Content')->values()->all(),
+                    'skill'             => $skill->all(),
+                    'benefit'           => $benefit->all(),
+                ];
+            });
+
+            if (!$data) {
+                return ResponseHelper::error('Data MPP tidak ditemukan', 404);
+            }
+
+            return ResponseHelper::success($data, 'Detail MPP dimuat');
         } catch (\Throwable $e) {
             Log::channel('web_career')->error("Gagal memuat detail MPP {$no}: " . $e->getMessage());
 
@@ -191,140 +213,125 @@ class MppLowonganController extends Controller
         }
     }
 
-    // ═══════════════════════ SUMBER MPP (DUMMY — FASE 1) ═══════════════════════
+    /** Opsi filter (divisi, periode) + statistik ringkas — dihit sekali saat halaman mount. */
+    public function options()
+    {
+        try {
+            $result = DB::transaction(function () {
+                $divisi = $this->baseQuery()
+                    ->whereNotNull('dv.Keterangan')
+                    ->distinct()
+                    ->orderBy('dv.Keterangan')
+                    ->pluck('dv.Keterangan')
+                    ->values();
+
+                $periode = collect(
+                    $this->baseQuery()
+                        ->whereNotNull('g.Tanggal_Periode')
+                        ->select(DB::raw('LEFT(CONVERT(varchar(10), g.Tanggal_Periode, 23), 7) as periode'))
+                        ->distinct()
+                        ->orderByDesc('periode')
+                        ->get()
+                )->pluck('periode')->values();
+
+                // Statistik global dalam SATU query agregat.
+                $s = $this->baseQuery()
+                    ->selectRaw('COUNT(*) as total')
+                    ->selectRaw("SUM(CASE WHEN ISNULL(g.Status, '') <> 'Y' THEN 1 ELSE 0 END) as aktif")
+                    ->selectRaw("SUM(CASE WHEN g.Flag_Selesai = 'Y' THEN 1 ELSE 0 END) as selesai")
+                    ->selectRaw("SUM(CASE WHEN g.Status = 'Y' THEN 1 ELSE 0 END) as dibatalkan")
+                    ->first();
+
+                return [
+                    'divisi'  => $divisi->all(),
+                    'periode' => $periode->all(),
+                    'stats'   => [
+                        'total'      => (int) ($s->total ?? 0),
+                        'aktif'      => (int) ($s->aktif ?? 0),
+                        'selesai'    => (int) ($s->selesai ?? 0),
+                        'dibatalkan' => (int) ($s->dibatalkan ?? 0),
+                    ],
+                ];
+            });
+
+            return ResponseHelper::success($result, 'Opsi filter dimuat');
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->error('Gagal memuat opsi MPP: ' . $e->getMessage());
+
+            return ResponseHelper::error('Gagal memuat opsi filter', 500);
+        }
+    }
+
+    // ═══════════════════════ QUERY BUILDER ═══════════════════════
 
     /**
-     * Data MPP lengkap (dummy). Mencerminkan seed 6 transaksi (MPP-2026-001..006)
-     * dengan variasi Status/Flag_Selesai untuk menguji seluruh badge di UI.
-     *
-     * FASE 2: ganti isi method ini dengan hasil query gabungan (lihat referensi
-     * SQL di header kelas). Bentuk tiap item harus tetap sama seperti di bawah.
+     * Skeleton join dasar (dipakai list/detail/options) — INNER ke Detail_MPP (1:1),
+     * LEFT ke master divisi/sub/level/jabatan (nama dari kolom Keterangan, ON id + Kode_Perusahaan).
      */
-    private function dummyData(): array
+    private function baseQuery()
     {
-        return [
-            [
-                'no_transaksi' => 'MPP-2026-001', 'kode_perusahaan' => '001',
-                'status' => 'Aktif', 'flag_selesai' => 'Belum Selesai',
-                'tanggal' => '2026-07-01', 'tanggal_periode' => '2026-07-01', 'jam' => '09:00:00',
-                'jabatan' => 'Staff Accounting', 'divisi' => 'Accounting', 'sub_divisi' => 'Accounting',
-                'level' => 'Staff', 'jumlah_rekruitmen' => 2, 'penanggung_jawab' => 'budi.santoso',
-                'deskripsi' => 'Mendukung operasional keuangan perusahaan dengan memastikan pencatatan yang akurat dan pelaporan yang tepat waktu.',
-                'tanggung_jawab' => [
-                    'Mencatat dan memverifikasi transaksi keuangan harian.',
-                    'Melakukan rekonsiliasi bank dan buku besar.',
-                    'Menyiapkan dokumen perpajakan bulanan.',
-                    'Mendukung penyusunan laporan keuangan.',
-                ],
-                'persyaratan' => [
-                    'S1 Akuntansi.',
-                    'Pengalaman min. 1 tahun di bidang accounting/tax.',
-                    'Menguasai Ms. Excel dan software akuntansi.',
-                    'Teliti, jujur, dan disiplin waktu.',
-                ],
-                'skill' => ['Accounting', 'Pajak', 'Excel', 'Accurate/SAP', 'Ketelitian'],
-                'benefit' => ['Gaji + THR', 'BPJS lengkap', 'Pelatihan pajak', 'Jenjang karir'],
-            ],
-            [
-                'no_transaksi' => 'MPP-2026-002', 'kode_perusahaan' => '001',
-                'status' => 'Aktif', 'flag_selesai' => 'Belum Selesai',
-                'tanggal' => '2026-07-05', 'tanggal_periode' => '2026-07-05', 'jam' => '10:30:00',
-                'jabatan' => 'Staff Talent Acquisition', 'divisi' => 'HC-GA', 'sub_divisi' => 'Human Capital',
-                'level' => 'Staff', 'jumlah_rekruitmen' => 1, 'penanggung_jawab' => 'siti.aminah',
-                'deskripsi' => 'Mengelola proses rekrutmen end-to-end mulai dari sourcing kandidat hingga onboarding karyawan baru.',
-                'tanggung_jawab' => [
-                    'Melakukan sourcing kandidat melalui berbagai platform.',
-                    'Menjadwalkan dan melakukan interview awal kandidat.',
-                    'Mengelola proses administrasi rekrutmen hingga onboarding.',
-                ],
-                'persyaratan' => [
-                    'S1 Psikologi/Manajemen SDM.',
-                    'Pengalaman min. 2 tahun di bidang recruitment.',
-                    'Komunikatif dan mampu bekerja dengan target.',
-                ],
-                'skill' => ['Recruitment', 'Komunikasi', 'Ketelitian'],
-                'benefit' => ['Gaji + THR', 'BPJS lengkap', 'Bonus tahunan'],
-            ],
-            [
-                'no_transaksi' => 'MPP-2026-003', 'kode_perusahaan' => '001',
-                'status' => 'Aktif', 'flag_selesai' => 'Selesai',
-                'tanggal' => '2026-06-15', 'tanggal_periode' => '2026-06-15', 'jam' => '13:15:00',
-                'jabatan' => 'Staff Digital Marketing', 'divisi' => 'Business Strategy & Marketing', 'sub_divisi' => 'Marketing Development',
-                'level' => 'Staff', 'jumlah_rekruitmen' => 3, 'penanggung_jawab' => 'andi.wijaya',
-                'deskripsi' => 'Merencanakan dan mengeksekusi strategi pemasaran digital untuk meningkatkan brand awareness perusahaan.',
-                'tanggung_jawab' => [
-                    'Menyusun dan menjalankan strategi konten media sosial.',
-                    'Menganalisis performa campaign digital secara berkala.',
-                    'Berkoordinasi dengan tim kreatif untuk materi promosi.',
-                ],
-                'persyaratan' => [
-                    'S1 Marketing/Komunikasi.',
-                    'Pengalaman min. 2 tahun di digital marketing.',
-                    'Menguasai tools analitik seperti Google Analytics.',
-                ],
-                'skill' => ['Digital Marketing', 'Copywriting', 'Komunikasi'],
-                'benefit' => ['Gaji + THR', 'BPJS lengkap', 'Laptop & fasilitas kerja'],
-            ],
-            [
-                'no_transaksi' => 'MPP-2026-004', 'kode_perusahaan' => '001',
-                'status' => 'Dibatalkan', 'flag_selesai' => 'Belum Selesai',
-                'tanggal' => '2026-07-10', 'tanggal_periode' => '2026-07-10', 'jam' => '08:45:00',
-                'jabatan' => 'Staff Graphic Design', 'divisi' => 'Business Strategy & Marketing', 'sub_divisi' => 'Marketing Communication',
-                'level' => 'Staff', 'jumlah_rekruitmen' => 1, 'penanggung_jawab' => 'dewi.lestari',
-                'deskripsi' => 'Merancang materi visual dan aset grafis untuk kebutuhan pemasaran dan komunikasi perusahaan.',
-                'tanggung_jawab' => [
-                    'Merancang materi visual untuk kebutuhan promosi & sosial media.',
-                    'Menjaga konsistensi brand guideline di seluruh materi.',
-                    'Berkolaborasi dengan tim marketing untuk konsep kreatif.',
-                ],
-                'persyaratan' => [
-                    'S1 Desain Komunikasi Visual.',
-                    'Portofolio desain grafis yang relevan.',
-                    'Menguasai Adobe Illustrator dan Photoshop.',
-                ],
-                'skill' => ['Komunikasi', 'Problem Solving'],
-                'benefit' => ['Gaji + THR', 'BPJS lengkap', 'Laptop & fasilitas kerja'],
-            ],
-            [
-                'no_transaksi' => 'MPP-2026-005', 'kode_perusahaan' => '001',
-                'status' => 'Aktif', 'flag_selesai' => 'Selesai',
-                'tanggal' => '2026-06-20', 'tanggal_periode' => '2026-06-20', 'jam' => '11:00:00',
-                'jabatan' => 'SPV Production', 'divisi' => 'Production', 'sub_divisi' => 'Production',
-                'level' => 'Senior Officer', 'jumlah_rekruitmen' => 1, 'penanggung_jawab' => 'rudi.hartono',
-                'deskripsi' => 'Mengawasi jalannya proses produksi harian agar sesuai target output dan standar kualitas.',
-                'tanggung_jawab' => [
-                    'Mengawasi jalannya proses produksi harian.',
-                    'Memastikan pencapaian target output produksi.',
-                    'Melakukan koordinasi dengan tim QC untuk standar mutu.',
-                ],
-                'persyaratan' => [
-                    'S1 Teknik Industri/sejenisnya.',
-                    'Pengalaman min. 3 tahun di bidang produksi manufaktur.',
-                    'Memiliki jiwa kepemimpinan yang kuat.',
-                ],
-                'skill' => ['Leadership', 'Quality Control', 'Problem Solving', 'Maintenance Mesin'],
-                'benefit' => ['Gaji + THR', 'BPJS lengkap', 'Uang makan & transport', 'Bonus tahunan', 'Jenjang karir'],
-            ],
-            [
-                'no_transaksi' => 'MPP-2026-006', 'kode_perusahaan' => '001',
-                'status' => 'Aktif', 'flag_selesai' => 'Belum Selesai',
-                'tanggal' => '2026-07-15', 'tanggal_periode' => '2026-07-15', 'jam' => '14:20:00',
-                'jabatan' => 'SPV HSE', 'divisi' => 'Production Support', 'sub_divisi' => 'Health Safety Environment',
-                'level' => 'Senior Officer', 'jumlah_rekruitmen' => 1, 'penanggung_jawab' => 'agus.saputra',
-                'deskripsi' => 'Memastikan penerapan standar keselamatan dan kesehatan kerja di seluruh area produksi.',
-                'tanggung_jawab' => [
-                    'Menyusun dan mengawasi penerapan SOP keselamatan kerja.',
-                    'Melakukan inspeksi rutin area produksi.',
-                    'Menyusun laporan insiden dan tindak lanjut perbaikan.',
-                ],
-                'persyaratan' => [
-                    'S1 K3/Teknik Lingkungan.',
-                    'Memiliki sertifikasi Ahli K3 Umum.',
-                    'Pengalaman min. 2 tahun di bidang HSE manufaktur.',
-                ],
-                'skill' => ['K3/HSE', 'Problem Solving', 'Komunikasi'],
-                'benefit' => ['Gaji + THR', 'BPJS lengkap', 'Uang makan & transport', 'Asuransi kesehatan'],
-            ],
-        ];
+        return DB::table('HRIS_Transaksi_GForm as g')
+            ->join('N_WEB_CAREERS_Detail_MPP as d', 'd.No_Transaksi_MPP', '=', 'g.No_Transaksi')
+            ->leftJoin('HRIS_Divisi as dv', fn ($j) => $j
+                ->on('dv.ID_Divisi', '=', 'g.Id_Divisi')
+                ->on('dv.Kode_Perusahaan', '=', 'g.Kode_Perusahaan'))
+            ->leftJoin('HRIS_Sub_Divisi as sd', fn ($j) => $j
+                ->on('sd.ID_Sub_Divisi', '=', 'g.Id_Sub_Divisi')
+                ->on('sd.Kode_Perusahaan', '=', 'g.Kode_Perusahaan'))
+            ->leftJoin('HRIS_Level as lv', fn ($j) => $j
+                ->on('lv.ID_Level', '=', 'g.Id_Level')
+                ->on('lv.Kode_Perusahaan', '=', 'g.Kode_Perusahaan'))
+            ->leftJoin('HRIS_Jabatan as jb', fn ($j) => $j
+                ->on('jb.ID_Jabatan', '=', 'g.Id_Jabatan')
+                ->on('jb.Kode_Perusahaan', '=', 'g.Kode_Perusahaan'))
+            // Penanggung jawab: User_Penganggung_Jawab = Karyawan.Kode_Karyawan → ambil Nama.
+            ->leftJoin('Karyawan as k', fn ($j) => $j
+                ->on('k.Kode_Karyawan', '=', 'g.User_Penganggung_Jawab')
+                ->on('k.Kode_Perusahaan', '=', 'g.Kode_Perusahaan'));
+    }
+
+    /** Terapkan search + filter (status/flag/divisi/periode) ke query. Mengembalikan query agar bisa dirantai. */
+    private function applyFilters($q, Request $request)
+    {
+        $search = trim((string) $request->query('search', ''));
+        if ($search !== '') {
+            // Escape wildcard LIKE SQL Server ( [ % _ ) agar dianggap literal.
+            $esc = str_replace(['[', '%', '_'], ['[[]', '[%]', '[_]'], $search);
+            $like = '%' . $esc . '%';
+            $q->where(function ($w) use ($like) {
+                $w->where('g.No_Transaksi', 'like', $like)
+                    ->orWhere('jb.Keterangan', 'like', $like)
+                    ->orWhere('dv.Keterangan', 'like', $like);
+            });
+        }
+
+        $status = trim((string) $request->query('status', ''));
+        if ($status === 'Dibatalkan') {
+            $q->where('g.Status', 'Y');
+        } elseif ($status === 'Aktif') {
+            $q->whereRaw("ISNULL(g.Status, '') <> 'Y'");
+        }
+
+        $flag = trim((string) $request->query('flag', ''));
+        if ($flag === 'Selesai') {
+            $q->where('g.Flag_Selesai', 'Y');
+        } elseif ($flag === 'Belum Selesai') {
+            $q->whereRaw("ISNULL(g.Flag_Selesai, '') <> 'Y'");
+        }
+
+        $divisi = trim((string) $request->query('divisi', ''));
+        if ($divisi !== '') {
+            $q->where('dv.Keterangan', $divisi);
+        }
+
+        $periode = trim((string) $request->query('periode', ''));
+        if (preg_match('/^\d{4}-\d{2}$/', $periode)) {
+            // Rentang [awal bulan, awal bulan berikutnya) → sargable, pakai index Tanggal_Periode.
+            $start = Carbon::createFromFormat('Y-m-d', $periode . '-01')->startOfDay();
+            $end = (clone $start)->addMonthNoOverflow();
+            $q->where('g.Tanggal_Periode', '>=', $start)->where('g.Tanggal_Periode', '<', $end);
+        }
+
+        return $q;
     }
 }
