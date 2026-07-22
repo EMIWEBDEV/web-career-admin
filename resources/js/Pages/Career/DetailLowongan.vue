@@ -28,7 +28,7 @@
                         <div class="wc-dhead__meta">
                             <span><i class="bi bi-geo-alt"></i> {{ job.lokasi }} · {{ job.tempatKerja }}</span>
                             <span><i class="bi bi-bar-chart-steps"></i> {{ job.level }}</span>
-                            <span><i class="bi bi-briefcase"></i> {{ job.pengalaman }}</span>
+                            <span v-if="job.pengalaman && job.pengalaman !== '—'"><i class="bi bi-briefcase"></i> {{ job.pengalaman }}</span>
                         </div>
                     </header>
 

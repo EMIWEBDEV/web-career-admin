@@ -73,7 +73,8 @@
                 <div class="wc-job__meta">
                     <span><i class="bi bi-geo-alt"></i> {{ job.lokasi }} · {{ job.tempatKerja }}</span>
                     <span><i class="bi bi-bar-chart-steps"></i> {{ job.level }}</span>
-                    <span><i class="bi bi-briefcase"></i> {{ job.pengalaman }}</span>
+                    <!-- Baris pengalaman disembunyikan bila tak ada datanya (tidak menampilkan strip "—"). -->
+                    <span v-if="job.pengalaman && job.pengalaman !== '—'"><i class="bi bi-briefcase"></i> {{ job.pengalaman }}</span>
                 </div>
 
                 <div class="wc-tags">

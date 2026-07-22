@@ -484,7 +484,9 @@ class CareerLandingController extends Controller
                     'tempatKerja' => 'On-site',
                     'tipeKerja' => $pb->Kategori === 'INTERNSHIP' ? 'Internship' : 'Full-time',
                     'level' => $x->Level ?: 'Staff',
-                    'pengalaman' => '—',
+                    // Tak ada sumber data pengalaman dari pembukaan program → null,
+                    // sehingga baris pengalaman di kartu disembunyikan (bukan strip "—").
+                    'pengalaman' => null,
                     'kuota' => (int) $x->Kuota,
                     'kuotaTerisi' => (int) ($o['terisiPosisi'][$x->Id_Program_Posisi] ?? 0),
                     'pelamar' => (int) ($o['pelamar'][$pb->Program_Id] ?? 0),
@@ -602,7 +604,9 @@ class CareerLandingController extends Controller
      */
     private function lowongan(): array
     {
-        return array_merge($this->dbLowonganCards(), $this->lowonganDummy());
+        // SUMBER TUNGGAL: pembukaan program yang terbit & berlaku. TANPA dummy —
+        // kalau tidak ada pembukaan, landing menampilkan kosong (apa adanya).
+        return $this->dbLowonganCards();
     }
 
     private function lowonganDummy(): array
@@ -932,7 +936,8 @@ class CareerLandingController extends Controller
      */
     private function programMt(): array
     {
-        return array_merge($this->dbMtCards(), $this->programMtDummy());
+        // SUMBER TUNGGAL: pembukaan program MT yang terbit & berlaku. TANPA dummy.
+        return $this->dbMtCards();
     }
 
     private function programMtDummy(): array
