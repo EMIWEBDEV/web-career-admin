@@ -629,8 +629,8 @@ function deconstructDashboard() {
     // Deconstruction is delayed so the overlay opacity transition (0.45s)
     // has time to begin — the user sees a soft white veil descend FIRST,
     // then the dashboard elements start their graceful exit.
-    const sidebar = document.querySelector('.shell-sidebar, #sidebar');
-    const topbar = document.querySelector('.shell-topbar, #topbar, nav.topbar');
+    const sidebar = document.querySelector('.evs-rail, .shell-sidebar, #sidebar');
+    const topbar = document.querySelector('.evt-bar, .shell-topbar, #topbar, nav.topbar');
     const content = document.querySelector('.shell-content, .shell-main, main, .stage-grid');
 
     // Sidebar exits first — dramatic slide-left

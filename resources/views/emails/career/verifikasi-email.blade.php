@@ -8,7 +8,9 @@
 @section('content')
     {{-- HERO ICON --}}
     <tr><td style="padding:34px 40px 0" align="center">
-        <div style="width:74px;height:74px;border-radius:22px;background:linear-gradient(135deg,#8b5cf6,#6366f1);text-align:center;line-height:74px;font-size:34px;color:#ffffff;animation:glow 3.4s ease-in-out infinite">&#9993;</div>
+        <div style="width:74px;height:74px;border-radius:22px;background:linear-gradient(135deg,#8b5cf6,#6366f1);text-align:center;line-height:74px;animation:glow 3.4s ease-in-out infinite">
+            <img src="{{ isset($message) ? $message->embed(public_path('email-icons/envelope.png')) : rtrim(config('app.url'), '/') . '/email-icons/envelope.png' }}" width="36" height="36" alt="" style="width:36px;height:36px;vertical-align:middle;border:0">
+        </div>
     </td></tr> 
 
     {{-- HEADING + BODY --}}

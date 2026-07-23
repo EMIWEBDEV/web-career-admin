@@ -51,24 +51,23 @@ watch(
 </script>
 
 <style scoped>
+/* Latar gradasi lembut + rail 68px — selaras desain "Worklist Pelamar". */
 .app-shell {
     min-height: 100vh;
-    background: #f8fafc;
+    background: linear-gradient(180deg, #f3f2fd 0%, #eef1fb 46%, #eaf0fb 100%);
 }
 
 .shell-main {
     min-height: 100vh;
-    margin-left: 4.5rem;
+    margin-left: 68px;
+    display: flex;
+    flex-direction: column;
 }
 
 .shell-content {
+    flex: 1;
     min-height: calc(100vh - 4rem);
     padding: 1rem;
-}
-
-:deep(.shell-topbar) {
-    margin-left: 0;
-    width: 100%;
 }
 
 @media (max-width: 991.98px) {

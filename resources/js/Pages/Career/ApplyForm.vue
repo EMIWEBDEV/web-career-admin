@@ -22,24 +22,70 @@
                     <p>Kami sedang mengunggah berkas &amp; memverifikasi data Anda untuk posisi <b>{{ flow.lowongan.posisi }}</b>. Mohon tunggu sebentar, jangan tutup halaman ini.</p>
                 </div>
 
-                <!-- Hasil NYATA dari server -->
-                <div v-else-if="done" class="wca-apply__done" :class="{ 'is-fail': doneKo.length }">
-                    <div class="wca-apply__doneic"><i class="bi" :class="doneKo.length ? 'bi-x-circle-fill' : (hasilServer && hasilServer.status === 'DIPROSES' ? 'bi-hourglass-split' : 'bi-check-circle-fill')"></i></div>
+                <!-- Hasil NYATA dari server (desain "Halaman Hasil Seleksi") -->
+                <div v-else-if="done" class="wc-result">
+                    <div class="wc-result__card" :class="'is-' + hasilStatus">
+                        <div class="wc-result__strip"></div>
+                        <div class="wc-result__inner">
+                            <div class="wc-result__iconwrap">
+                                <span class="wc-result__ring"></span>
+                                <span class="wc-result__ring wc-result__ring--b"></span>
+                                <div class="wc-result__badge">
+                                    <i class="bi" :class="hasilStatus === 'lolos' ? 'bi-check-lg' : (hasilStatus === 'pending' ? 'bi-hourglass-split' : 'bi-x-lg')"></i>
+                                </div>
+                            </div>
 
-                    <template v-if="doneKo.length">
-                        <h2>Belum Memenuhi Syarat</h2>
-                        <p>Terima kasih telah melamar <b>{{ flow.lowongan.posisi }}</b>. Setelah kami verifikasi, lamaran Anda <b>belum memenuhi kualifikasi</b>: <b>{{ doneKo.join(' · ') }}</b>. Anda tetap dapat melamar posisi lain yang sesuai.</p>
-                    </template>
-                    <template v-else-if="hasilServer && hasilServer.status === 'DIPROSES'">
-                        <h2>Lamaran Terkirim</h2>
-                        <p>Lamaran untuk <b>{{ flow.lowongan.posisi }}</b> sedang diproses. Hasil seleksi administrasi akan muncul di <b>Lamaran Saya</b> beberapa saat lagi.</p>
+                            <template v-if="hasilStatus === 'lolos'">
+                                <h2 class="wc-result__title">Lolos Seleksi Administrasi! 🎉</h2>
+                                <p class="wc-result__desc">Selamat, lamaran <b>{{ flow.lowongan.posisi }}</b> lolos seleksi administrasi secara otomatis<template v-if="hasilServer && hasilServer.totalTahap"> dan lanjut ke <b style="color:#059669">tahap {{ hasilServer.tahap }} dari {{ hasilServer.totalTahap }}</b></template>. Pantau &amp; kerjakan tahap berikutnya di <b>Lamaran Saya</b>.</p>
+                            </template>
+                            <template v-else-if="hasilStatus === 'pending'">
+                                <h2 class="wc-result__title">Lamaran Sedang Ditinjau</h2>
+                                <p class="wc-result__desc">Terima kasih telah melamar <b>{{ flow.lowongan.posisi }}</b>. Lamaran Anda sedang <b style="color:#b45309">dalam proses peninjauan</b> oleh tim rekrutmen kami. Hasilnya akan diinformasikan melalui portal &amp; email.</p>
+                            </template>
+                            <template v-else>
+                                <h2 class="wc-result__title">Belum Memenuhi Syarat</h2>
+                                <p class="wc-result__desc">Terima kasih telah melamar <b>{{ flow.lowongan.posisi }}</b>. Setelah kami tinjau, untuk kesempatan kali ini Anda <b style="color:#dc2626">belum memenuhi kualifikasi</b><template v-if="doneKo.length">: <b>{{ doneKo.join(' · ') }}</b></template>. Kami menghargai minat &amp; waktu Anda — dan Anda tetap dapat melamar posisi lain yang sesuai.</p>
+                            </template>
+
+                            <div v-if="hasilStatus !== 'gagal'" class="wc-result__prog">
+                                <div class="wc-result__segs">
+                                    <span v-for="n in 5" :key="n" class="wc-result__seg" :class="segClass(n)"></span>
+                                </div>
+                                <div class="wc-result__proglbl">{{ progressLabel }}</div>
+                            </div>
+
+                            <div class="wc-result__cta">
+                                <a href="/kandidat/portal" class="wc-btn-grad"><i class="bi bi-list-check"></i> Ke Lamaran Saya</a>
+                                <a v-if="hasilStatus === 'gagal'" href="/" class="wc-btn-outline">Lihat Lowongan Lain</a>
+                            </div>
+
+                            <div v-if="hasilStatus === 'lolos'" class="wc-result__confetti" aria-hidden="true">
+                                <span v-for="n in 10" :key="n" :style="confettiStyle(n)"></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="wc-result__safety">
+                        <i class="bi bi-shield-check"></i>
+                        <span><b>EVO Group tidak pernah memungut biaya apa pun</b> dalam proses rekrutmen. Waspadai pihak yang meminta uang mengatasnamakan kami.</span>
+                    </div>
+                </div>
+
+                <!-- Sudah melamar (read-only) / tidak layak menurut aturan jalur -->
+                <div v-else-if="terkunci" class="wca-apply__done" :class="{ 'is-fail': !sudahLamar }">
+                    <div class="wca-apply__doneic"><i class="bi" :class="sudahLamar ? 'bi-clipboard-check-fill' : 'bi-shield-lock-fill'"></i></div>
+                    <template v-if="sudahLamar">
+                        <h2>Kamu Sudah Melamar Posisi Ini</h2>
+                        <p>Lamaran untuk <b>{{ flow.lowongan.posisi }}</b> sudah tercatat — kamu tidak perlu mengisi ulang formulir.</p>
+                        <p style="margin-top:.6rem;color:#64748b;font-size:.9rem;font-weight:500">Nomor Pendaftaran: <b style="color:#4f46e5">{{ sudahLamar.kode }}</b> · Status: <b>{{ statusLabelId(sudahLamar.status) }}</b><template v-if="sudahLamar.tanggal"> · Melamar: <b>{{ sudahLamar.tanggal }}</b></template></p>
+                        <a href="/kandidat/portal" class="wca-btn wca-btn--primary"><i class="bi bi-list-check"></i> Ke Lamaran Saya</a>
                     </template>
                     <template v-else>
-                        <h2>Lolos Seleksi Administrasi! 🎉</h2>
-                        <p>Selamat, lamaran <b>{{ flow.lowongan.posisi }}</b> <b>lolos seleksi administrasi</b> secara otomatis<template v-if="hasilServer && hasilServer.totalTahap"> dan lanjut ke <b>tahap {{ hasilServer.tahap }} dari {{ hasilServer.totalTahap }}</b></template>. Pantau &amp; kerjakan tahap berikutnya di <b>Lamaran Saya</b>.</p>
+                        <h2>Belum Dapat Melamar</h2>
+                        <p>{{ kelayakan.alasan }}</p>
+                        <a href="/" class="wca-btn wca-btn--primary"><i class="bi bi-search"></i> Lihat Lowongan Lain</a>
                     </template>
-
-                    <a href="/kandidat/portal" class="wca-btn wca-btn--primary"><i class="bi bi-list-check"></i> Ke Lamaran Saya</a>
                 </div>
 
                 <template v-else>
@@ -198,7 +244,7 @@
                     <div class="wca-apply__foot">
                         <button class="wca-btn wca-btn--ghost" :disabled="step === 0" @click="back"><i class="bi bi-arrow-left"></i> Kembali</button>
                         <button v-if="cur.tipe !== 'REVIEW'" class="wca-btn wca-btn--primary" @click="next">Lanjut <i class="bi bi-arrow-right"></i></button>
-                        <button v-else class="wca-btn wca-btn--dark" :disabled="!consentOk" @click="finalize"><i class="bi bi-send-check"></i> Finalisasi & Kirim</button>
+                        <button v-else class="wca-btn wca-btn--dark" :disabled="!consentOk || mengirim" @click="finalize"><i class="bi" :class="mengirim ? 'bi-hourglass-split' : 'bi-send-check'"></i> {{ mengirim ? 'Mengirim…' : 'Finalisasi & Kirim' }}</button>
                     </div>
                 </template>
             </div>
@@ -235,7 +281,7 @@ import axios from 'axios';
 import { Head, router } from '@inertiajs/vue3';
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import CareerLayout from './Layouts/CareerLayout.vue';
-import { checkKnockout, flowFor, getApp, nextActionFor, upsertApp } from './careerSession';
+import { checkKnockout, clearApps, flowFor, getApp, nextActionFor, removeApp, upsertApp } from './careerSession';
 
 defineOptions({ layout: null }); // tanpa shell HCIS — pakai CareerLayout (situs karir)
 
@@ -252,6 +298,40 @@ const cur = computed(() => steps[step.value] || {});
 const done = ref(false);
 const doneKo = ref([]); // alasan knock-out bila lamaran langsung tidak lolos
 const memproses = ref(false); // loading saat server memproses lamaran (queue)
+const mengirim = ref(false); // true sejak tombol Finalisasi ditekan → cegah double-submit
+
+// Kelayakan jalur (MT/REKRUTMEN) + status sudah-melamar → form dikunci / read-only.
+const sudahLamar = computed(() => props.flow.sudahLamar || null);
+const kelayakan = computed(() => props.flow.kelayakan || { boleh: true, alasan: null });
+const terkunci = computed(() => !!sudahLamar.value || kelayakan.value.boleh === false);
+function statusLabelId(s) { return { BERJALAN: 'Sedang Diproses', GUGUR: 'Tidak Lolos', LULUS: 'Diterima', MENUNGGU: 'Menunggu' }[s] || s; }
+
+// ── Layar hasil (desain "Halaman Hasil Seleksi"): lolos | pending | gagal ──
+const hasilStatus = computed(() => {
+    if (doneKo.value.length) return 'gagal';
+    if (hasilServer.value && hasilServer.value.status === 'DIPROSES') return 'pending';
+    return 'lolos';
+});
+const progressLabel = computed(() => {
+    if (hasilStatus.value === 'lolos') {
+        const t = (hasilServer.value && hasilServer.value.tahap) || 2;
+        const total = (hasilServer.value && hasilServer.value.totalTahap) || 5;
+        return `Tahap ${t} dari ${total} · lanjut ke tahap berikutnya`;
+    }
+    return 'Tahap 1 dari 5 · Menunggu peninjauan';
+});
+function segClass(n) {
+    if (hasilStatus.value === 'lolos') {
+        const t = (hasilServer.value && hasilServer.value.tahap) || 2;
+        return n < t ? 'done' : (n === t ? 'active' : 'idle');
+    }
+    return n === 1 ? 'active' : 'idle';
+}
+const CONFETTI = [['12%', '#34d399', '2.4s', '.05s'], ['22%', '#6366f1', '2.7s', '.3s'], ['34%', '#f59e0b', '2.2s', '.15s'], ['46%', '#8b5cf6', '2.9s', '.4s'], ['56%', '#10b981', '2.5s', '.1s'], ['66%', '#6366f1', '2.6s', '.5s'], ['76%', '#f59e0b', '2.3s', '.22s'], ['86%', '#34d399', '2.8s', '.35s'], ['40%', '#a78bfa', '3s', '.6s'], ['60%', '#f59e0b', '2.4s', '.48s']];
+function confettiStyle(n) {
+    const c = CONFETTI[(n - 1) % CONFETTI.length];
+    return { position: 'absolute', top: '0', left: c[0], width: '9px', height: n % 2 ? '14px' : '9px', borderRadius: n % 2 ? '2px' : '50%', background: c[1], animation: `wcConfetti ${c[2]} ${c[3]} ease-in forwards` };
+}
 const hasilServer = ref(null); // hasil NYATA dari server: BERJALAN / GUGUR / DIPROSES
 const err = ref('');
 const preview = ref(null);
@@ -387,8 +467,10 @@ function validateStep() {
 function next() { if (validateStep() && step.value < steps.length - 1) { step.value++; err.value = ''; persistDraft(); window.scrollTo({ top: 0, behavior: 'smooth' }); } }
 function back() { if (step.value > 0) { step.value--; err.value = ''; persistDraft(); } }
 async function finalize() {
+    if (mengirim.value) return; // sudah diproses → cegah klik ganda
     if (!consentOk.value) return;
-    for (let i = 0; i < steps.length; i++) { step.value = i; if (!validateStep()) return; }
+    mengirim.value = true; // tombol langsung nonaktif sejak ditekan
+    for (let i = 0; i < steps.length; i++) { step.value = i; if (!validateStep()) { mengirim.value = false; return; } }
     stopCamera();
     const isForm2 = props.flow.form === 2;
     const ko = !isForm2 ? checkKnockout(jenis, form) : [];
@@ -417,6 +499,7 @@ async function finalize() {
         } catch (e) {
             const st = e.response?.status;
             if (st === 401) { router.visit('/login'); return; }
+            mengirim.value = false; // gagal → aktifkan lagi tombol agar bisa diulang
             notice(e.response?.data?.message || 'Gagal mengirim lamaran ke sistem.');
             return; // JANGAN tampilkan sukses palsu bila request gagal
         }
@@ -472,6 +555,9 @@ async function pollStatus(processId) {
                 doneKo.value = lam.status === 'GUGUR' ? [lam.alasanGugur || 'Belum memenuhi kualifikasi yang dibutuhkan'] : [];
                 memproses.value = false;
                 done.value = true;
+                // Finalisasi tuntas → bersihkan draf sessionStorage lamaran ini
+                // (sumber kebenaran = DB). done=true membuat persistDraft tak menulis ulang.
+                removeApp(lowongan.id);
                 return;
             }
             if (r?.status === 'GAGAL') {
@@ -487,6 +573,7 @@ async function pollStatus(processId) {
             hasilServer.value = { status: 'DIPROSES' };
             doneKo.value = [];
             done.value = true;
+            removeApp(lowongan.id); // draf tak perlu lagi — status dipantau via DB
             return;
         }
         setTimeout(tick, 1500);
@@ -604,4 +691,44 @@ function notice(m) { toast.value = m; if (tm) clearTimeout(tm); tm = setTimeout(
 .wca-apply__spin { display: grid; place-items: center; margin-bottom: 1rem; }
 .wca-spinner { width: 46px; height: 46px; border-radius: 50%; border: 4px solid rgba(79, 70, 229, .18); border-top-color: #4f46e5; animation: wcaspin .8s linear infinite; }
 @keyframes wcaspin { to { transform: rotate(360deg); } }
+
+/* ── Kartu Hasil Seleksi (desain "Halaman Hasil Seleksi") ── */
+.wc-result { max-width: 760px; margin: 0 auto; }
+.wc-result__card { position: relative; background: #fff; border: 1px solid rgba(226, 232, 240, .9); border-radius: 28px; box-shadow: 0 30px 80px rgba(30, 27, 75, .14); overflow: hidden; animation: wcFadeUp .6s cubic-bezier(.22, 1, .36, 1) both; }
+.wc-result__card.is-lolos { --acc: #10b981; --grad: linear-gradient(135deg, #34d399, #10b981); --ring: rgba(16, 185, 129, .5); --shadow: 0 16px 36px rgba(16, 185, 129, .4); }
+.wc-result__card.is-pending { --acc: #f59e0b; --grad: linear-gradient(135deg, #fbbf24, #f59e0b); --ring: rgba(245, 158, 11, .5); --shadow: 0 16px 36px rgba(245, 158, 11, .4); }
+.wc-result__card.is-gagal { --acc: #ef4444; --grad: linear-gradient(135deg, #f87171, #ef4444); --ring: rgba(239, 68, 68, .5); --shadow: 0 16px 36px rgba(239, 68, 68, .4); }
+.wc-result__strip { height: 6px; background: var(--grad); }
+.wc-result__inner { position: relative; padding: clamp(30px, 5vw, 54px) clamp(22px, 5vw, 60px) clamp(30px, 5vw, 50px); display: flex; flex-direction: column; align-items: center; text-align: center; }
+.wc-result__iconwrap { position: relative; width: 104px; height: 104px; display: flex; align-items: center; justify-content: center; }
+.wc-result__ring { position: absolute; width: 80px; height: 80px; border-radius: 26px; background: var(--ring); animation: wcRing 2.4s 0s ease-out infinite; }
+.wc-result__ring--b { animation-delay: 1.2s; }
+.wc-result__badge { position: relative; z-index: 2; width: 80px; height: 80px; border-radius: 26px; display: flex; align-items: center; justify-content: center; background: var(--grad); box-shadow: var(--shadow); color: #fff; font-size: 40px; animation: wcPop .55s cubic-bezier(.34, 1.56, .64, 1) both; }
+.wc-result__title { margin: 24px 0 0; font-size: clamp(24px, 4.2vw, 38px); line-height: 1.16; font-weight: 900; letter-spacing: -.025em; color: #0f172a; }
+.wc-result__desc { margin: 14px 0 0; max-width: 560px; font-size: clamp(14px, 1.5vw, 16px); line-height: 1.72; color: #5b6478; }
+.wc-result__desc b { color: #334155; }
+.wc-result__prog { margin-top: 26px; width: 100%; max-width: 420px; }
+.wc-result__segs { display: flex; gap: 7px; }
+.wc-result__seg { flex: 1; height: 7px; border-radius: 999px; background: #e6e8f2; }
+.wc-result__seg.done { background: var(--grad); }
+.wc-result__seg.active { background: var(--grad); opacity: .55; }
+.wc-result__proglbl { margin-top: 10px; font-size: 12.5px; font-weight: 700; color: #8b93a7; }
+.wc-result__cta { margin-top: 28px; display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+.wc-btn-grad { display: inline-flex; align-items: center; gap: 9px; padding: 14px 28px; border-radius: 14px; font-size: 15px; font-weight: 800; color: #fff; text-decoration: none; background: linear-gradient(135deg, #7c6df2, #6366f1); box-shadow: 0 14px 30px rgba(99, 102, 241, .34); transition: transform .18s, box-shadow .18s; }
+.wc-btn-grad:hover { transform: translateY(-2px); box-shadow: 0 20px 44px rgba(99, 102, 241, .46); }
+.wc-btn-outline { display: inline-flex; align-items: center; gap: 9px; padding: 14px 24px; border-radius: 14px; font-size: 15px; font-weight: 800; color: #4f46e5; text-decoration: none; background: #fff; border: 1px solid #d6d9f7; transition: all .18s; }
+.wc-btn-outline:hover { border-color: #a5b4fc; background: #f6f5ff; }
+.wc-result__confetti { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.wc-result__confetti span { position: absolute; }
+.wc-result__safety { margin: 18px 0 0; display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; padding: 13px 20px; border-radius: 16px; background: rgba(255, 255, 255, .6); border: 1px solid rgba(226, 232, 240, .9); color: #8b93a7; font-size: 12.5px; font-weight: 600; text-align: center; }
+.wc-result__safety b { color: #64748b; }
+.wc-result__safety i { color: #94a3b8; font-size: 15px; }
+@keyframes wcFadeUp { from { opacity: 0; transform: translateY(22px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes wcPop { 0% { opacity: 0; transform: scale(.4); } 60% { transform: scale(1.12); } 100% { opacity: 1; transform: scale(1); } }
+@keyframes wcRing { 0% { transform: scale(.9); opacity: .6; } 70%, 100% { transform: scale(2.1); opacity: 0; } }
+</style>
+
+<!-- Keyframe confetti dipakai via inline :style → wajib GLOBAL (scoped me-rename keyframe). -->
+<style>
+@keyframes wcConfetti { 0% { transform: translateY(-20px) rotate(0); opacity: 1; } 100% { transform: translateY(360px) rotate(680deg); opacity: 0; } }
 </style>

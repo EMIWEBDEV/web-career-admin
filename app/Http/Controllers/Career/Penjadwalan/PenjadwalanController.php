@@ -98,28 +98,51 @@ class PenjadwalanController extends Controller
         }
     }
 
-    /** Kandidat pelamar. CATATAN: masih dari HRIS_Rekrutmen_Karyawan, akan disesuaikan
-     *  saat tabel lamaran Web Careers siap. */
+    /**
+     * Kandidat NYATA yang layak dijadwalkan tes: pelamar program terpilih yang
+     * TAHAP SAAT INI adalah tahap tes pihak ke-3 (Provider THIRD_PARTY) & masih
+     * BERJALAN. Bila jenis tes dipilih, disaring ke Jenis_Tes_Kode itu.
+     * Tanpa programId, atau tak ada pelamar di tahap tes → daftar KOSONG.
+     * Identitas peserta = Kode lamaran (LMR-...).
+     */
     public function kandidat(Request $request)
     {
         try {
+            $programId = (int) $request->query('programId', 0);
+            $jenisTesKode = trim((string) $request->query('jenisTesKode', ''));
             $cari = trim((string) $request->query('q', ''));
 
-            $rows = DB::table('HRIS_Rekrutmen_Karyawan')
+            if (! $programId) {
+                return ResponseHelper::success([], 'Pilih program terlebih dahulu.');
+            }
+
+            $rows = DB::table('N_WEB_CAREERS_Lamaran as l')
+                // Tahap SAAT INI kandidat = baris tahap dengan Urutan = Lamaran.Urutan_Tahap.
+                ->join('N_WEB_CAREERS_Lamaran_Tahap as t', fn ($j) => $j
+                    ->on('t.Lamaran_Id', '=', 'l.Id_Lamaran')
+                    ->on('t.Urutan', '=', 'l.Urutan_Tahap'))
+                ->join('N_WEB_CAREERS_Users as u', 'u.Id_Users', '=', 'l.Id_Users')
+                ->leftJoin('N_WEB_CAREERS_Program_Posisi as pos', 'pos.Id_Program_Posisi', '=', 'l.Program_Posisi_Id')
+                ->where('l.Program_Id', $programId)
+                ->where('l.Status', 'BERJALAN')
+                ->where('t.Status', 'BERJALAN')
+                ->where('t.Provider', 'THIRD_PARTY')
+                ->when($jenisTesKode !== '', fn ($q) => $q->where('t.Jenis_Tes_Kode', $jenisTesKode))
                 ->when($cari !== '', fn ($q) => $q->where(function ($w) use ($cari) {
-                    $w->where('Nama', 'like', "%{$cari}%")
-                        ->orWhere('Kode_Calon', 'like', "%{$cari}%")
-                        ->orWhere('Posisi_Dilamar', 'like', "%{$cari}%");
+                    $w->where('u.Nama', 'like', "%{$cari}%")
+                        ->orWhere('l.Kode', 'like', "%{$cari}%")
+                        ->orWhere('pos.Posisi', 'like', "%{$cari}%");
                 }))
-                ->orderBy('Nama')
-                ->limit(200)
-                ->get(['Kode_Calon', 'Nama', 'HP', 'Email_Aktif', 'Posisi_Dilamar'])
+                ->orderBy('u.Nama')
+                ->limit(500)
+                ->get(['l.Kode as kode', 'u.Nama as nama', 'u.No_Hp as hp', 'u.Email as email', 'pos.Posisi as posisi', 't.Label as tahap'])
                 ->map(fn ($r) => [
-                    'kode' => $r->Kode_Calon,
-                    'nama' => $r->Nama,
-                    'hp' => $r->HP,
-                    'email' => $r->Email_Aktif,
-                    'posisi' => $r->Posisi_Dilamar,
+                    'kode' => $r->kode,
+                    'nama' => $r->nama,
+                    'hp' => $r->hp,
+                    'email' => $r->email,
+                    'posisi' => $r->posisi,
+                    'tahap' => $r->tahap,
                 ]);
 
             return ResponseHelper::success($rows, 'Kandidat dimuat');
@@ -224,10 +247,17 @@ class PenjadwalanController extends Controller
                 return ResponseHelper::error("Alur '{$alur->Nama}' tidak punya tahap pihak ke-3 untuk jenis tes ini. Tambahkan tahapnya di Master Alur.", 422);
             }
 
-            $kandidat = DB::table('HRIS_Rekrutmen_Karyawan')->whereIn('Kode_Calon', $data['peserta'])->get()->keyBy('Kode_Calon');
+            // Peserta = lamaran NYATA (by Kode) pada program ini. Bukan lagi HRIS dummy.
+            $kandidat = DB::table('N_WEB_CAREERS_Lamaran as l')
+                ->join('N_WEB_CAREERS_Users as u', 'u.Id_Users', '=', 'l.Id_Users')
+                ->leftJoin('N_WEB_CAREERS_Program_Posisi as pos', 'pos.Id_Program_Posisi', '=', 'l.Program_Posisi_Id')
+                ->whereIn('l.Kode', $data['peserta'])
+                ->where('l.Program_Id', $program->Id_Program)
+                ->get(['l.Kode', 'u.Nama', 'u.Email', 'u.No_Hp', 'pos.Posisi'])
+                ->keyBy('Kode');
             $tidakDikenal = array_diff($data['peserta'], $kandidat->keys()->all());
             if ($tidakDikenal) {
-                return ResponseHelper::error('Kandidat tidak dikenal HCLearn: ' . implode(', ', array_slice($tidakDikenal, 0, 5)), 422);
+                return ResponseHelper::error('Kandidat tidak dikenal / bukan pelamar program ini: ' . implode(', ', array_slice($tidakDikenal, 0, 5)), 422);
             }
 
             $userId = session('career_auth.id');
@@ -288,9 +318,9 @@ class PenjadwalanController extends Controller
                         'Kode_Peserta' => $kodeCalon,
                         'Jenis_User' => 'eksternal',
                         'Nama' => $k->Nama,
-                        'Email' => $k->Email_Aktif ?? null,
-                        'No_Hp' => $k->HP ?? null,
-                        'Posisi_Dilamar' => $k->Posisi_Dilamar ?? null,
+                        'Email' => $k->Email ?? null,
+                        'No_Hp' => $k->No_Hp ?? null,
+                        'Posisi_Dilamar' => $k->Posisi ?? null,
                         'Status_Kirim' => 'MENUNGGU',
                         'Created_At' => $now, 'Created_By' => $userName, 'Created_By_Id' => $userId,
                         'Updated_At' => $now, 'Updated_By' => $userName, 'Updated_By_Id' => $userId,
