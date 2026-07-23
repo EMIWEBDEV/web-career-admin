@@ -33,7 +33,7 @@ class CareerAuth
 
         $row = DB::table('N_WEB_CAREERS_Users')
             ->where('Id_Users', $auth['id'])
-            ->select('Id_Users', 'Role', 'Status', 'Valid_Until')
+            ->select('Id_Users', 'Role', 'Status', 'Valid_Until', 'Pwd_Changed_At')
             ->first();
 
         if (! $row) {
@@ -48,6 +48,15 @@ class CareerAuth
             && Carbon::parse($row->Valid_Until)->startOfDay()->lessThan(Carbon::now()->startOfDay())) {
             return $this->keluar($request, 'Masa berlaku akun Anda telah berakhir pada '
                 . Carbon::parse($row->Valid_Until)->format('d M Y') . '.');
+        }
+
+        // Kata sandi diganti SETELAH sesi ini dibuat → sesi lama tidak lagi sah.
+        // `Pwd_Changed_At` di-bump saat reset; sesi menyimpan snapshot-nya
+        // (pwd_epoch) waktu login. NULL berarti akun belum pernah reset — jangan
+        // paksa keluar (mencegah logout massal saat kolom baru ditambahkan).
+        // Bandingkan sebagai string agar aman dari perbedaan tipe Carbon/DateTime.
+        if ($row->Pwd_Changed_At !== null && (string) ($auth['pwd_epoch'] ?? '') !== (string) $row->Pwd_Changed_At) {
+            return $this->keluar($request, 'Kata sandi akun kamu baru saja diubah. Silakan masuk kembali.');
         }
 
         // Peran diambil ULANG dari DB, bukan dari sesi. Kalau admin menurunkan

@@ -1,13 +1,11 @@
-<!-- WEB CAREER — Monitoring MPP: kartu ringkas (dipakai di Card Grid). -->
+<!-- Kartu ringkas MPP (Card Grid). Klik/Enter/Space → emit 'open'. -->
 <template>
     <article class="mpp-card" role="button" tabindex="0" @click="$emit('open', mpp.no_transaksi)" @keydown.enter="$emit('open', mpp.no_transaksi)" @keydown.space.prevent="$emit('open', mpp.no_transaksi)">
-        <!-- Header: jabatan + status -->
         <div class="mpp-card__head">
             <h3 class="mpp-card__title">{{ titleCase(mpp.jabatan) }}</h3>
             <span class="wca-badge" :class="statusBadge(mpp.status)">{{ mpp.status }}</span>
         </div>
 
-        <!-- Divisi / Sub Divisi -->
         <div class="mpp-card__badges">
             <span class="wca-badge wca-b--indigo"><i class="bi bi-diagram-3"></i> {{ titleCase(mpp.divisi) }}</span>
             <span v-if="mpp.sub_divisi" class="wca-badge wca-b--sky">{{ titleCase(mpp.sub_divisi) }}</span>
@@ -15,14 +13,12 @@
 
         <div class="mpp-card__no"><i class="bi bi-hash"></i>{{ mpp.no_transaksi }}</div>
 
-        <!-- Meta: kuota, periode, level -->
         <div class="mpp-card__meta">
             <span title="Jumlah rekrutmen"><i class="bi bi-people-fill"></i> {{ mpp.jumlah_rekruitmen }} orang</span>
             <span title="Tanggal periode"><i class="bi bi-calendar3"></i> {{ formatTanggal(mpp.tanggal_periode) }}</span>
             <span title="Level"><i class="bi bi-bar-chart-steps"></i> {{ titleCase(mpp.level) }}</span>
         </div>
 
-        <!-- Footer: penanggung jawab + flag selesai -->
         <div class="mpp-card__foot">
             <div class="mpp-card__pj">
                 <span class="wca-avatar wca-avatar--sm">{{ initials(mpp.penanggung_jawab) }}</span>
