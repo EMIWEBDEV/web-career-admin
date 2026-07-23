@@ -95,7 +95,6 @@ class CareerShell
             ['id' => 'program', 'title' => 'Operasional', 'items' => [
                 ['key' => 'program', 'label' => 'Program Kegiatan', 'icon' => 'bi bi-diagram-3-fill', 'url' => '/karir/program-kegiatan'],
                 ['key' => 'pembukaan', 'label' => 'Pembukaan Program', 'icon' => 'bi bi-megaphone', 'url' => '/karir/pembukaan'],
-                ['key' => 'lowongan', 'label' => 'Lowongan (MPP)', 'icon' => 'bi bi-briefcase', 'url' => '/karir/lowongan'],
                 ['key' => 'monitoring-mpp', 'label' => 'Monitoring MPP', 'icon' => 'bi bi-clipboard-data', 'url' => '/karir/monitoring-mpp'],
             ]],
             ['id' => 'seleksi', 'title' => 'Seleksi', 'items' => [

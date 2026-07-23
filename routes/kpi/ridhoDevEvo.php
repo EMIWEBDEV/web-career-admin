@@ -21,8 +21,8 @@ Route::prefix('karir')
         $c = CareerAdminController::class;
         Route::get('/', [$c, 'dashboard'])->name('dashboard');
         // Program Kegiatan & Pembukaan DIPINDAH ke struktur per-modul (routes/career/*).
-        // Lowongan (dari MPP, read-only accordion)
-        Route::get('/lowongan', [$c, 'lowongan_page'])->name('lowongan');
+        // Lowongan lama (/karir/lowongan) DIHAPUS — sumber lowongan kini SATU-satunya
+        // dari Monitoring MPP (routes/career/MppLowongan/MppLowonganWeb.php).
         // Seleksi — worklist pelamar ditangani modul Lamaran (mesin syarat + ketuk palu).
         Route::get('/pelamar', [LamaranController::class, 'worklist'])->name('pelamar');
         Route::get('/hasil-tes', [$c, 'hasil_page'])->name('hasil');

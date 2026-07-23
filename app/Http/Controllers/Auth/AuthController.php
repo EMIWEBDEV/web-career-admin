@@ -50,7 +50,12 @@ class AuthController extends Controller
             ]);
 
             WcSyncEmailJob::dispatch(WcSyncEmailJob::JENIS_VERIFIKASI, $userId, ['token' => $token]);
+
+            $conn = env('QUEUE_CONNECTION');
+            $queue = $conn === 'cloudtasks' ? WcSyncEmailJob::QUEUE : 'default';
+            Log::info("[EMAIL] job verifikasi DI-ANTRE user #{$userId} (conn={$conn}, queue={$queue}).");
         } catch (\Throwable $e) {
+            Log::error("[EMAIL] gagal antre verifikasi user #{$userId}: " . $e->getMessage());
             Log::channel('web_career')->error("[EMAIL] gagal antre verifikasi user #{$userId}: " . $e->getMessage());
         }
     }

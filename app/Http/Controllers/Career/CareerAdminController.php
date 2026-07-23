@@ -70,23 +70,6 @@ class CareerAdminController extends Controller
         ]));
     }
 
-    /**
-     * /karir/lowongan — posisi yang ditarik dari MPP (HRIS desktop). READ ONLY.
-     * Penambahan posisi terjadi di MPP desktop, bukan di web.
-     */
-    public function lowongan_page()
-    {
-        $lowongan = collect($this->lowonganAdmin())->map(function ($l) {
-            $l['masaBerlaku'] = $l['tutup'] ?? null;
-
-            return $l;
-        })->values();
-
-        return Inertia::render('Career/admin/Lowongan', CareerShell::props('/karir/lowongan', 'Lowongan (dari MPP)', [
-            'lowongan' => $lowongan,
-        ]));
-    }
-
     /** /karir/pelamar — worklist seleksi. Diisi mesin lamaran (Batch 9-10). */
     public function pelamar()
     {
