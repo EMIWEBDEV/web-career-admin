@@ -84,6 +84,9 @@ class MppLowonganController extends Controller
                         DB::raw("(SELECT COUNT(*) FROM N_WEB_CAREERS_Points_MPP p WHERE p.Id_Detail_MPP = d.Id_Detail_MPP AND p.Section = 'requirement') as jml_persyaratan"),
                         DB::raw('(SELECT COUNT(*) FROM N_WEB_CAREERS_Detail_Skill_MPP sk WHERE sk.Id_Detail_MPP = d.Id_Detail_MPP) as jml_skill'),
                         DB::raw('(SELECT COUNT(*) FROM N_WEB_CAREERS_Detail_Benefit_MPP bn WHERE bn.Id_Detail_MPP = d.Id_Detail_MPP) as jml_benefit'),
+                        'me.Nama_Employment as employment_type',
+                        'mw.Nama_Workplace as workplace_type',
+                        'mx.Nama_Experience_Level as experience_level',
                     ]);
 
                 if ($sort === 'status') {
@@ -116,6 +119,9 @@ class MppLowonganController extends Controller
                 'jml_persyaratan'    => (int) $r->jml_persyaratan,
                 'jml_skill'          => (int) $r->jml_skill,
                 'jml_benefit'        => (int) $r->jml_benefit,
+                'employment_type'    => $r->employment_type,
+                'workplace_type'     => $r->workplace_type,
+                'experience_level'   => $r->experience_level,
             ])->values();
 
             return ResponseHelper::successWithPagination($rows, $page, $perPage, (int) $result['total'], 'Data MPP dimuat');
@@ -153,6 +159,9 @@ class MppLowonganController extends Controller
                         DB::raw('COALESCE(k.Nama, g.User_Penganggung_Jawab) as penanggung_jawab'),
                         'd.Deskripsi as deskripsi',
                         'd.Id_Detail_MPP as id_detail_mpp',
+                        'me.Nama_Employment as employment_type',
+                        'mw.Nama_Workplace as workplace_type',
+                        'mx.Nama_Experience_Level as experience_level',
                     ])
                     ->first();
 
@@ -198,6 +207,9 @@ class MppLowonganController extends Controller
                     'persyaratan'       => $points->where('Section', 'requirement')->pluck('Content')->values()->all(),
                     'skill'             => $skill->all(),
                     'benefit'           => $benefit->all(),
+                    'employment_type'   => $head->employment_type,
+                    'workplace_type'    => $head->workplace_type,
+                    'experience_level'  => $head->experience_level,
                 ];
             });
 
@@ -287,7 +299,11 @@ class MppLowonganController extends Controller
             // Penanggung jawab: User_Penganggung_Jawab = Karyawan.Kode_Karyawan → ambil Nama.
             ->leftJoin('Karyawan as k', fn ($j) => $j
                 ->on('k.Kode_Karyawan', '=', 'g.User_Penganggung_Jawab')
-                ->on('k.Kode_Perusahaan', '=', 'g.Kode_Perusahaan'));
+                ->on('k.Kode_Perusahaan', '=', 'g.Kode_Perusahaan'))
+            // Extend Phase 2: Employment / Workplace / Experience Level.
+            ->leftJoin('N_WEB_CAREERS_Master_Employment as me', 'me.Id_Employment', '=', 'd.Employment_Type')
+            ->leftJoin('N_WEB_CAREERS_Master_Workplace as mw', 'mw.Id_Workplace', '=', 'd.Workplace_Type')
+            ->leftJoin('N_WEB_CAREERS_Master_Experience_Level as mx', 'mx.Id_Experience_Level', '=', 'd.Experience_Level');
     }
 
     /** Terapkan search + filter (status/flag/divisi/periode) ke query. Mengembalikan query agar bisa dirantai. */

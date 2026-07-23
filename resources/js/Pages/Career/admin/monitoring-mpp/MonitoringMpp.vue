@@ -81,6 +81,9 @@
                                     <th>Divisi</th>
                                     <th>Sub Divisi</th>
                                     <th>Level</th>
+                                    <th>Tipe Kerja</th>
+                                    <th>Lokasi Kerja</th>
+                                    <th>Exp. Level</th>
                                     <th class="mpp-num">Jml</th>
                                     <th class="mpp-sortable" @click="toggleSort('status')">Status <i class="bi" :class="sortIcon('status')"></i></th>
                                     <th>Flag Selesai</th>
@@ -96,6 +99,9 @@
                                     <td>{{ titleCase(m.divisi) }}</td>
                                     <td>{{ titleCase(m.sub_divisi) }}</td>
                                     <td>{{ titleCase(m.level) }}</td>
+                                    <td><span v-if="m.employment_type" class="mpp-tb-badge mpp-tb--emp">{{ m.employment_type }}</span><span v-else>—</span></td>
+                                    <td><span v-if="m.workplace_type" class="mpp-tb-badge mpp-tb--wp">{{ m.workplace_type }}</span><span v-else>—</span></td>
+                                    <td><span v-if="m.experience_level" class="mpp-tb-badge mpp-tb--exp">{{ m.experience_level }}</span><span v-else>—</span></td>
                                     <td class="mpp-num"><span class="wca-badge wca-b--slate"><i class="bi bi-people-fill"></i> {{ m.jumlah_rekruitmen }}</span></td>
                                     <td><span class="wca-badge" :class="statusBadge(m.status)">{{ m.status }}</span></td>
                                     <td><span class="mpp-flag" :class="{ 'is-done': isSelesai(m.flag_selesai) }"><span class="mpp-flag__dot"></span>{{ m.flag_selesai }}</span></td>
@@ -415,6 +421,19 @@ export default {
     background: #22c55e;
     box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.18);
 }
+
+/* Table badges (Employment / Workplace / ExpLevel) — ikut warna card */
+.mpp-tb-badge {
+    display: inline-block;
+    padding: .2rem .55rem;
+    border-radius: .5rem;
+    font-size: .72rem;
+    font-weight: 800;
+    white-space: nowrap;
+}
+.mpp-tb--emp { background: rgba(99,102,241,.1); color: #4338ca; border: 1px solid rgba(99,102,241,.15); }
+.mpp-tb--wp  { background: rgba(16,185,129,.1); color: #0f766e; border: 1px solid rgba(16,185,129,.15); }
+.mpp-tb--exp { background: rgba(245,158,11,.1); color: #b45309; border: 1px solid rgba(245,158,11,.18); }
 
 /* Skeleton */
 .mpp-skcard {
