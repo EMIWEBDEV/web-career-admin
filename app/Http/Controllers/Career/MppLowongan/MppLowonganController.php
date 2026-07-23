@@ -246,6 +246,28 @@ class MppLowonganController extends Controller
                         ->get()
                 )->pluck('periode')->values();
 
+                // Opsi filter dari master baru (Employment / Workplace / Experience).
+                $employment = $this->baseQuery()
+                    ->whereNotNull('me.Nama_Employment')
+                    ->distinct()
+                    ->orderBy('me.Nama_Employment')
+                    ->pluck('me.Nama_Employment')
+                    ->values();
+
+                $workplace = $this->baseQuery()
+                    ->whereNotNull('mw.Nama_Workplace')
+                    ->distinct()
+                    ->orderBy('mw.Nama_Workplace')
+                    ->pluck('mw.Nama_Workplace')
+                    ->values();
+
+                $experience = $this->baseQuery()
+                    ->whereNotNull('mx.Nama_Experience_Level')
+                    ->distinct()
+                    ->orderBy('mx.Nama_Experience_Level')
+                    ->pluck('mx.Nama_Experience_Level')
+                    ->values();
+
                 // Statistik global dalam SATU query agregat.
                 $s = $this->baseQuery()
                     ->selectRaw('COUNT(*) as total')
@@ -255,9 +277,12 @@ class MppLowonganController extends Controller
                     ->first();
 
                 return [
-                    'divisi'  => $divisi->all(),
-                    'periode' => $periode->all(),
-                    'stats'   => [
+                    'divisi'     => $divisi->all(),
+                    'periode'    => $periode->all(),
+                    'employment' => $employment->all(),
+                    'workplace'  => $workplace->all(),
+                    'experience' => $experience->all(),
+                    'stats'      => [
                         'total'      => (int) ($s->total ?? 0),
                         'aktif'      => (int) ($s->aktif ?? 0),
                         'selesai'    => (int) ($s->selesai ?? 0),
@@ -346,6 +371,22 @@ class MppLowonganController extends Controller
             $start = Carbon::createFromFormat('Y-m-d', $periode . '-01')->startOfDay();
             $end = (clone $start)->addMonthNoOverflow();
             $q->where('g.Tanggal_Periode', '>=', $start)->where('g.Tanggal_Periode', '<', $end);
+        }
+
+        // Filter fase 2: Employment / Workplace / Experience (by resolved name).
+        $employment = trim((string) $request->query('employment', ''));
+        if ($employment !== '') {
+            $q->where('me.Nama_Employment', $employment);
+        }
+
+        $workplace = trim((string) $request->query('workplace', ''));
+        if ($workplace !== '') {
+            $q->where('mw.Nama_Workplace', $workplace);
+        }
+
+        $experience = trim((string) $request->query('experience', ''));
+        if ($experience !== '') {
+            $q->where('mx.Nama_Experience_Level', $experience);
         }
 
         return $q;
