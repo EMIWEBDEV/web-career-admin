@@ -38,7 +38,7 @@ class AuthController extends Controller
     private const RESET_OTP_THROTTLE_MENIT = 2;
 
     /** Batas percobaan OTP salah — pada percobaan ke-N OTP dihanguskan. */
-    private const RESET_OTP_MAX_ATTEMPT = 5;
+    private const RESET_OTP_MAX_ATTEMPT = 3;
 
     /** Batas jumlah permintaan OTP dalam satu window. */
     private const RESET_OTP_MAX_KIRIM = 5;
@@ -429,7 +429,12 @@ class AuthController extends Controller
         if ($row && $row->Status === 'AKTIF' && ($row->Flag_Email_Verified ?? 'T') === 'Y') {
             $now = Carbon::now();
 
-            $kenaCooldown = $row->Reset_Otp_Sent_At
+            // Cooldown HANYA berlaku selama masih ada OTP aktif (mencegah spam
+            // kirim-ulang saat kode lama masih hidup). Bila OTP sudah hangus
+            // (terkunci karena salah berkali-kali / sudah terpakai), user berhak
+            // langsung minta kode baru — cukup dibatasi kuota per jam.
+            $kenaCooldown = $row->Reset_Otp_Hash
+                && $row->Reset_Otp_Sent_At
                 && Carbon::parse($row->Reset_Otp_Sent_At)->diffInMinutes($now) < self::RESET_OTP_THROTTLE_MENIT;
 
             $windowMasihBerlaku = $row->Reset_Otp_Window_At
@@ -456,33 +461,25 @@ class AuthController extends Controller
     }
 
     /**
-     * Reset kata sandi dengan OTP (POST api/v1/ganti-sandi, body: email+otp+password).
-     *
-     * OTP dibandingkan sebagai HASH SHA-256 (constant-time via hash_equals) dan
-     * SEKALI PAKAI (dihapus setelah sukses). Percobaan salah dibatasi
-     * (RESET_OTP_MAX_ATTEMPT) — melampaui batas menghanguskan OTP. Setelah sukses:
-     * semua sesi aktif user diinvalidasi (Pwd_Changed_At di-bump, dibaca ulang di
-     * CareerAuth), email pemberitahuan dikirim, dan peristiwa dicatat ke audit.
+     * Inti pemeriksaan OTP terhadap baris user — dipakai bersama oleh verifikasiOtp
+     * (cek dulu) dan gantiSandi (submit final). Efek samping: menaikkan counter
+     * salah & menghanguskan OTP saat kedaluwarsa/terkunci. TIDAK mengganti password
+     * dan TIDAK mengonsumsi OTP saat cocok — supaya OTP yang sudah diverifikasi
+     * masih valid untuk langkah simpan kata sandi.
+     * Return: 'ok' | 'invalid' | 'expired' | 'locked'.
      */
-    public function gantiSandi(Request $request)
+    private function statusOtp(Request $request, ?object $row, string $otp, ?string $email = null): string
     {
-        $data = $request->validate([
-            'email' => 'required|email',
-            'otp' => 'required|string',
-            'password' => 'required|string|min:6',
-        ]);
+        $emailAudit = $row?->Email ?? $email;
 
-        $row = DB::table($this->table)->where('Email', $data['email'])->first();
-
-        // Tidak ada akun / tidak ada OTP aktif → pesan generik (jangan bocorkan
-        // apakah email terdaftar; samakan dengan "OTP salah").
+        // Tidak ada akun / tidak ada OTP aktif → generik "invalid" (anti-enumerasi).
         if (! $row || ! $row->Reset_Otp_Hash) {
-            $this->catatAuditReset($request, 'WRONG', $row ? (int) $row->Id_Users : null, $data['email'], 'tanpa OTP aktif');
+            $this->catatAuditReset($request, 'WRONG', $row ? (int) $row->Id_Users : null, $emailAudit, 'tanpa OTP aktif');
 
-            return response()->json(['success' => false, 'status' => 422, 'code' => 'OTP_INVALID', 'message' => 'Kode OTP salah atau sudah tidak berlaku.'], 422);
+            return 'invalid';
         }
 
-        // OTP kedaluwarsa → hanguskan lalu minta kode baru.
+        // Kedaluwarsa → hanguskan.
         if ($row->Reset_Otp_Expired_At && Carbon::parse($row->Reset_Otp_Expired_At)->isPast()) {
             DB::table($this->table)->where('Id_Users', $row->Id_Users)->update([
                 'Reset_Otp_Hash' => null,
@@ -491,10 +488,10 @@ class AuthController extends Controller
             ]);
             $this->catatAuditReset($request, 'EXPIRED', (int) $row->Id_Users, $row->Email);
 
-            return response()->json(['success' => false, 'status' => 410, 'code' => 'OTP_EXPIRED', 'message' => 'Kode OTP sudah kedaluwarsa. Silakan minta kode baru.'], 410);
+            return 'expired';
         }
 
-        // Percobaan sudah mencapai batas → OTP terkunci.
+        // Sudah mencapai batas percobaan → terkunci.
         if ((int) ($row->Reset_Otp_Attempt ?? 0) >= self::RESET_OTP_MAX_ATTEMPT) {
             DB::table($this->table)->where('Id_Users', $row->Id_Users)->update([
                 'Reset_Otp_Hash' => null,
@@ -503,11 +500,11 @@ class AuthController extends Controller
             ]);
             $this->catatAuditReset($request, 'LOCKED', (int) $row->Id_Users, $row->Email);
 
-            return response()->json(['success' => false, 'status' => 429, 'code' => 'OTP_LOCKED', 'message' => 'Terlalu banyak percobaan. Silakan minta kode OTP baru.'], 429);
+            return 'locked';
         }
 
-        // OTP salah → tambah counter (di PHP); bila mencapai batas, hanguskan OTP.
-        if (! hash_equals($row->Reset_Otp_Hash, hash('sha256', $data['otp']))) {
+        // Salah → tambah counter (di PHP); bila mencapai batas, hanguskan OTP.
+        if (! hash_equals($row->Reset_Otp_Hash, hash('sha256', $otp))) {
             $percobaan = (int) ($row->Reset_Otp_Attempt ?? 0) + 1;
             $mencapaiBatas = $percobaan >= self::RESET_OTP_MAX_ATTEMPT;
 
@@ -519,11 +516,68 @@ class AuthController extends Controller
             ]);
             $this->catatAuditReset($request, $mencapaiBatas ? 'LOCKED' : 'WRONG', (int) $row->Id_Users, $row->Email, "attempt {$percobaan}/" . self::RESET_OTP_MAX_ATTEMPT);
 
-            if ($mencapaiBatas) {
-                return response()->json(['success' => false, 'status' => 429, 'code' => 'OTP_LOCKED', 'message' => 'Terlalu banyak percobaan. Silakan minta kode OTP baru.'], 429);
-            }
+            return $mencapaiBatas ? 'locked' : 'invalid';
+        }
 
-            return response()->json(['success' => false, 'status' => 422, 'code' => 'OTP_INVALID', 'message' => 'Kode OTP salah atau sudah tidak berlaku.'], 422);
+        return 'ok';
+    }
+
+    /** Ubah status OTP non-'ok' menjadi respons JSON ber-`code` (dibaca frontend). */
+    private function responsOtpGagal(string $status)
+    {
+        return match ($status) {
+            'expired' => response()->json(['success' => false, 'status' => 410, 'code' => 'OTP_EXPIRED', 'message' => 'Kode OTP sudah kedaluwarsa. Silakan minta kode baru.'], 410),
+            'locked' => response()->json(['success' => false, 'status' => 429, 'code' => 'OTP_LOCKED', 'message' => 'Terlalu banyak percobaan. Silakan minta kode OTP baru.'], 429),
+            default => response()->json(['success' => false, 'status' => 422, 'code' => 'OTP_INVALID', 'message' => 'Kode OTP salah atau sudah tidak berlaku.'], 422),
+        };
+    }
+
+    /**
+     * Verifikasi OTP SAJA (POST api/v1/verifikasi-otp, body: email+otp) — dipakai
+     * frontend untuk mengecek kode SEBELUM menampilkan form kata sandi baru. OTP
+     * TIDAK dikonsumsi di sini (masih dipakai saat submit gantiSandi), namun batas
+     * percobaan & kedaluwarsa tetap diberlakukan (anti brute-force).
+     */
+    public function verifikasiOtp(Request $request)
+    {
+        $data = $request->validate([
+            'email' => 'required|email',
+            'otp' => 'required|string',
+        ]);
+
+        $row = DB::table($this->table)->where('Email', $data['email'])->first();
+        $status = $this->statusOtp($request, $row, $data['otp'], $data['email']);
+
+        if ($status !== 'ok') {
+            return $this->responsOtpGagal($status);
+        }
+
+        $this->catatAuditReset($request, 'VERIFIED', (int) $row->Id_Users, $row->Email);
+
+        return ResponseHelper::success(['email' => $data['email']], 'Kode OTP benar. Silakan buat kata sandi baru.');
+    }
+
+    /**
+     * Reset kata sandi dengan OTP (POST api/v1/ganti-sandi, body: email+otp+password).
+     *
+     * OTP diperiksa ulang via statusOtp (constant-time, batas percobaan, kedaluwarsa)
+     * lalu SEKALI PAKAI (dihapus setelah sukses). Setelah sukses: semua sesi aktif
+     * user diinvalidasi (Pwd_Changed_At di-bump, dibaca ulang di CareerAuth), email
+     * pemberitahuan dikirim, dan peristiwa dicatat ke audit.
+     */
+    public function gantiSandi(Request $request)
+    {
+        $data = $request->validate([
+            'email' => 'required|email',
+            'otp' => 'required|string',
+            'password' => 'required|string|min:6',
+        ]);
+
+        $row = DB::table($this->table)->where('Email', $data['email'])->first();
+        $status = $this->statusOtp($request, $row, $data['otp'], $data['email']);
+
+        if ($status !== 'ok') {
+            return $this->responsOtpGagal($status);
         }
 
         // OTP benar → ganti kata sandi, OTP SEKALI PAKAI (dihapus), dan bump

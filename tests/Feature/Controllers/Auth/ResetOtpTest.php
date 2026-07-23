@@ -129,8 +129,8 @@ class ResetOtpTest extends TestCase
     {
         $this->setOtp('123456');
 
-        // Empat percobaan pertama → OTP_INVALID.
-        for ($i = 1; $i <= 4; $i++) {
+        // Dua percobaan pertama → OTP_INVALID.
+        for ($i = 1; $i <= 2; $i++) {
             $this->postJson('/api/v1/ganti-sandi', [
                 'email' => 'kandidat@contoh.test',
                 'otp' => '000000',
@@ -138,7 +138,7 @@ class ResetOtpTest extends TestCase
             ])->assertStatus(422)->assertJsonPath('code', 'OTP_INVALID');
         }
 
-        // Percobaan ke-5 → terkunci & OTP dihanguskan.
+        // Percobaan ke-3 → terkunci & OTP dihanguskan.
         $this->postJson('/api/v1/ganti-sandi', [
             'email' => 'kandidat@contoh.test',
             'otp' => '000000',
@@ -210,5 +210,75 @@ class ResetOtpTest extends TestCase
         Bus::assertDispatchedTimes(WcSyncEmailJob::class, 1);
         $this->assertDatabaseHas('N_WEB_CAREERS_Reset_Audit', ['Event' => 'REQUEST', 'Id_Users' => $this->userId]);
         $this->assertDatabaseHas('N_WEB_CAREERS_Reset_Audit', ['Event' => 'REQUEST', 'Email' => 'entah@contoh.test']);
+    }
+
+    /** VERIFIKASI: OTP salah ditolak, TIDAK dikonsumsi (hash tetap ada), counter naik. */
+    public function test_verifikasi_otp_salah_ditolak_tanpa_konsumsi(): void
+    {
+        $this->setOtp('123456');
+
+        $this->postJson('/api/v1/verifikasi-otp', [
+            'email' => 'kandidat@contoh.test',
+            'otp' => '000000',
+        ])->assertStatus(422)->assertJsonPath('code', 'OTP_INVALID');
+
+        $row = DB::table('N_WEB_CAREERS_Users')->where('Id_Users', $this->userId)->first();
+        $this->assertNotNull($row->Reset_Otp_Hash, 'OTP tidak boleh dikonsumsi saat verifikasi gagal.');
+        $this->assertSame(1, (int) $row->Reset_Otp_Attempt, 'Percobaan salah harus tercatat.');
+    }
+
+    /** VERIFIKASI: OTP benar → 200 & TIDAK dikonsumsi; lalu ganti-sandi tetap berhasil. */
+    public function test_verifikasi_otp_benar_lalu_reset_dua_langkah(): void
+    {
+        $this->setOtp('123456');
+
+        // Langkah cek OTP dulu → sukses, password belum berubah, OTP masih ada.
+        $this->postJson('/api/v1/verifikasi-otp', [
+            'email' => 'kandidat@contoh.test',
+            'otp' => '123456',
+        ])->assertOk();
+
+        $row = DB::table('N_WEB_CAREERS_Users')->where('Id_Users', $this->userId)->first();
+        $this->assertNotNull($row->Reset_Otp_Hash, 'Verifikasi tidak boleh mengonsumsi OTP.');
+        $this->assertTrue(Hash::check('oldpass', $row->Password), 'Password belum boleh berubah setelah verifikasi.');
+        $this->assertDatabaseHas('N_WEB_CAREERS_Reset_Audit', ['Event' => 'VERIFIED', 'Id_Users' => $this->userId]);
+
+        // Langkah simpan password → sukses, OTP baru dikonsumsi di sini.
+        $this->postJson('/api/v1/ganti-sandi', [
+            'email' => 'kandidat@contoh.test',
+            'otp' => '123456',
+            'password' => 'newpass123',
+        ])->assertOk();
+
+        $this->assertTrue(Hash::check('newpass123', $this->passwordUser()), 'Password harus berganti setelah langkah kedua.');
+    }
+
+    /** COOLDOWN: masih ada OTP aktif + baru dikirim → minta ulang diblokir (tidak kirim). */
+    public function test_minta_ulang_diblokir_cooldown_saat_otp_masih_aktif(): void
+    {
+        $this->setOtp('123456'); // OTP masih hidup
+        DB::table('N_WEB_CAREERS_Users')->where('Id_Users', $this->userId)->update(['Reset_Otp_Sent_At' => now()]);
+
+        $this->postJson('/api/v1/lupa-sandi', ['email' => 'kandidat@contoh.test'])->assertOk();
+
+        Bus::assertNotDispatched(WcSyncEmailJob::class); // cooldown → tidak kirim
+        $this->assertDatabaseHas('N_WEB_CAREERS_Reset_Audit', ['Event' => 'REQUEST', 'Keterangan' => 'cooldown']);
+    }
+
+    /** COOLDOWN: OTP sudah hangus (terkunci/terpakai) → minta ulang TETAP terkirim. */
+    public function test_minta_ulang_setelah_otp_hangus_tetap_terkirim(): void
+    {
+        // Simulasi habis terkunci: OTP hangus tapi baru saja pernah dikirim.
+        DB::table('N_WEB_CAREERS_Users')->where('Id_Users', $this->userId)->update([
+            'Reset_Otp_Hash' => null,
+            'Reset_Otp_Expired_At' => null,
+            'Reset_Otp_Sent_At' => now(),
+        ]);
+
+        $this->postJson('/api/v1/lupa-sandi', ['email' => 'kandidat@contoh.test'])->assertOk();
+
+        Bus::assertDispatched(WcSyncEmailJob::class); // tidak kena cooldown → kirim
+        $row = DB::table('N_WEB_CAREERS_Users')->where('Id_Users', $this->userId)->first();
+        $this->assertNotNull($row->Reset_Otp_Hash, 'OTP baru harus dibuat.');
     }
 }

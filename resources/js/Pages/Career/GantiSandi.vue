@@ -78,6 +78,10 @@
                             <i v-if="!processing" class="bi bi-send"></i>
                         </button>
 
+                        <p v-if="form.email && form.email === cooldownEmail && resendCooldown > 0" class="otp-meta">
+                            <i class="bi bi-clock"></i> Kode sudah dikirim ke email ini — bisa minta lagi dalam {{ resendCooldown }}s
+                        </p>
+
                         <p class="switch-row">Ingat kata sandimu? <Link href="/login" class="switch-link">Masuk di sini</Link></p>
                         <div class="ver-row"><span>EVO <b>Career</b></span><span>© 2026 EVO Group</span></div>
                     </form>
@@ -109,16 +113,18 @@
                             <span v-else class="otp-expired"><i class="bi bi-clock-history"></i> Kode kedaluwarsa — silakan kirim ulang</span>
                         </p>
 
-                        <button type="submit" class="btn-login" :disabled="otpValue.length !== 6">
-                            Lanjutkan <i class="bi bi-arrow-right"></i>
+                        <button type="submit" class="btn-login" :disabled="processing || otpValue.length !== 6">
+                            <span v-if="processing" class="spinner" aria-hidden="true"></span>
+                            {{ processing ? 'Memeriksa…' : 'Lanjutkan' }}
+                            <i v-if="!processing" class="bi bi-arrow-right"></i>
                         </button>
 
                         <p class="switch-row">
                             Tidak menerima kode?
-                            <button v-if="resendCooldown <= 0" type="button" class="switch-link as-btn" :disabled="processing" @click="mintaOtp(true)">Kirim ulang</button>
+                            <button v-if="resendCooldown <= 0" type="button" class="switch-link as-btn" :disabled="processing" @click="mintaOtp()">Kirim ulang</button>
                             <span v-else class="switch-muted">Kirim ulang dalam {{ resendCooldown }}s</span>
                         </p>
-                        <p class="switch-row"><button type="button" class="switch-link" @click="kembaliKeMinta"><i class="bi bi-arrow-left"></i> Ganti email</button></p>
+                        <p class="switch-row"><button type="button" class="switch-link" @click="kembaliKeMinta()"><i class="bi bi-arrow-left"></i> Ganti email</button></p>
                         <div class="ver-row"><span>EVO <b>Career</b></span><span>© 2026 EVO Group</span></div>
                     </form>
 
@@ -149,7 +155,7 @@
                             <i v-if="!processing" class="bi bi-check-lg"></i>
                         </button>
 
-                        <p class="switch-row"><button type="button" class="switch-link" @click="step = 'otp'"><i class="bi bi-arrow-left"></i> Kembali ke kode OTP</button></p>
+                        <p class="switch-row">Ingat kata sandimu? <Link href="/login" class="switch-link">Masuk di sini</Link></p>
                         <div class="ver-row"><span>EVO <b>Career</b></span><span>© 2026 EVO Group</span></div>
                     </form>
                 </div>
@@ -194,6 +200,7 @@ export default {
             noticeTimer: null,
             resendCooldown: 0,
             otpCountdown: 0,
+            cooldownEmail: '', // email tujuan OTP terakhir (untuk info cooldown kirim-ulang)
             tickTimer: null,
             subsidiaries: [
                 { src: '/logo/EMI.png', alt: 'PT EVO Manufacturing Indonesia' },
@@ -281,26 +288,42 @@ export default {
                 if (this.resendCooldown <= 0 && this.otpCountdown <= 0) clearInterval(this.tickTimer);
             }, 1000);
         },
+        // Nyalakan cooldown kirim-ulang untuk email saat ini + jalankan hitung mundur.
+        mulaiCooldown() {
+            this.cooldownEmail = this.form.email;
+            this.resendCooldown = RESEND_COOLDOWN;
+            this.startTick();
+        },
+        // Cooldown kirim-ulang SENGAJA dipertahankan (termasuk setelah terkunci 3x)
+        // agar user melihat sisa waktu tunggu sebelum boleh minta kode baru —
+        // mencegah spam permintaan. tickTimer tetap jalan untuk hitung mundur dan
+        // berhenti sendiri saat cooldown habis.
         kembaliKeMinta() {
             this.step = 'minta';
             this.resetOtpBoxes();
             this.errors = {};
-            clearInterval(this.tickTimer);
+            this.processing = false;
+            this.otpCountdown = 0;
         },
         // Fase 1 / kirim ulang: minta kode OTP. Respons SELALU generik (anti-enumerasi).
-        async mintaOtp(isResend = false) {
+        async mintaOtp() {
             this.errors = {};
             if (!this.form.email) {
                 this.errors.email = 'Email wajib diisi.';
                 return;
             }
-            if (isResend && this.resendCooldown > 0) return;
+            // Cooldown untuk email yang SAMA → beri tahu user, jangan kirim ulang.
+            if (this.form.email === this.cooldownEmail && this.resendCooldown > 0) {
+                this.flashNotice('info', `Kode OTP baru saja dikirim ke email ini. Silakan cek kotak masuk/spam, atau minta lagi dalam ${this.resendCooldown} detik.`);
+                return;
+            }
 
             this.processing = true;
             try {
                 const res = await axios.post('/api/v1/lupa-sandi', { email: this.form.email }, { headers: { Accept: 'application/json' } });
                 this.step = 'otp';
                 this.resetOtpBoxes();
+                this.cooldownEmail = this.form.email;
                 this.resendCooldown = RESEND_COOLDOWN;
                 this.otpCountdown = OTP_BERLAKU;
                 this.startTick();
@@ -317,14 +340,37 @@ export default {
                 this.processing = false;
             }
         },
-        // Fase 2 → 3: setelah 6 digit terisi, tampilkan input kata sandi.
-        lanjutKeReset() {
+        // Fase 2 → 3: VERIFIKASI OTP ke server dulu. Kalau salah → tolak & tetap di
+        // langkah OTP. Kalau benar → baru tampilkan form kata sandi baru.
+        async lanjutKeReset() {
             if (this.otpValue.length !== 6) {
                 this.errors = { otp: 'Masukkan 6 digit kode OTP.' };
                 return;
             }
             this.errors = {};
-            this.step = 'reset';
+            this.processing = true;
+            try {
+                await axios.post('/api/v1/verifikasi-otp', { email: this.form.email, otp: this.otpValue }, { headers: { Accept: 'application/json' } });
+                this.step = 'reset';
+            } catch (e) {
+                const r = e.response;
+                const code = r && r.data && r.data.code;
+                const pesan = (r && r.data && r.data.message) || 'Kode OTP tidak valid. Silakan coba lagi.';
+                this.resetOtpBoxes();
+                // Terkunci (salah melebihi batas) → OTP hangus, balik ke halaman awal
+                // (minta kode baru). Kedaluwarsa/salah biasa → tetap di langkah OTP.
+                if (code === 'OTP_LOCKED') {
+                    this.kembaliKeMinta();
+                    this.mulaiCooldown(); // tampilkan hitung mundur di halaman minta
+                    this.flashNotice('error', pesan);
+                } else {
+                    this.focusOtp(0);
+                    if (code === 'OTP_EXPIRED') this.otpCountdown = 0;
+                    this.errors = { otp: pesan };
+                }
+            } finally {
+                this.processing = false;
+            }
         },
         // Fase 3: kirim OTP + kata sandi baru BERSAMAAN (satu request ke backend).
         async submitReset() {
@@ -352,14 +398,20 @@ export default {
                 this.processing = false;
                 const r = e.response;
                 const code = r && r.data && r.data.code;
-                // Masalah pada OTP → kembali ke langkah kode, kosongkan kotak.
-                if (code === 'OTP_INVALID' || code === 'OTP_EXPIRED' || code === 'OTP_LOCKED') {
+                const pesanOtp = (r && r.data && r.data.message) || 'Kode OTP tidak valid. Silakan coba lagi.';
+                // Terkunci → OTP hangus, balik ke halaman awal untuk minta kode baru.
+                if (code === 'OTP_LOCKED') {
+                    this.resetOtpBoxes();
+                    this.kembaliKeMinta();
+                    this.mulaiCooldown(); // tampilkan hitung mundur di halaman minta
+                    this.flashNotice('error', pesanOtp);
+                } else if (code === 'OTP_INVALID' || code === 'OTP_EXPIRED') {
+                    // Kembali ke langkah kode, kosongkan kotak.
                     this.step = 'otp';
                     this.resetOtpBoxes();
                     this.focusOtp(0);
                     if (code === 'OTP_EXPIRED') this.otpCountdown = 0;
-                    if (code === 'OTP_LOCKED') this.otpCountdown = 0;
-                    this.errors = { otp: (r.data && r.data.message) || 'Kode OTP tidak valid. Silakan coba lagi.' };
+                    this.errors = { otp: pesanOtp };
                 } else if (r && r.status === 422 && r.data.errors) {
                     Object.keys(r.data.errors).forEach((k) => (this.errors[k] = Array.isArray(r.data.errors[k]) ? r.data.errors[k][0] : r.data.errors[k]));
                     if (this.errors.otp) this.step = 'otp';
