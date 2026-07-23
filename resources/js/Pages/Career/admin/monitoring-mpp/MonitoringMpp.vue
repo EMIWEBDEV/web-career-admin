@@ -26,23 +26,21 @@
             <div class="wca-stat"><div class="wca-stat__top"><span class="wca-stat__ico" style="background:rgba(239,68,68,.12);color:#b91c1c"><i class="bi bi-x-circle"></i></span></div><div class="wca-stat__num">{{ stats.dibatalkan }}</div><div class="wca-stat__label">Dibatalkan</div></div>
         </div>
 
-        <div class="wca-toolbar">
-            <div class="wca-search2">
+        <!-- Toolbar: satu baris inline flex-wrap, tinggi & radius seragam -->
+        <div class="mpp-tb">
+            <div class="wca-search2 mpp-tb__srch">
                 <i class="bi" :class="loading && ready ? 'bi-arrow-repeat mpp-spin' : 'bi-search'"></i>
                 <input v-model="q" type="text" placeholder="Cari No Transaksi / Jabatan / Divisi…" @input="onSearchInput" />
             </div>
-            <el-select v-model="fStatus" placeholder="Status" clearable class="mpp-filter" @change="reload">
-                <el-option v-for="s in ['Aktif', 'Dibatalkan']" :key="s" :label="s" :value="s" />
-            </el-select>
-            <el-select v-model="fFlag" placeholder="Flag Selesai" clearable class="mpp-filter" @change="reload">
-                <el-option v-for="f in ['Selesai', 'Belum Selesai']" :key="f" :label="f" :value="f" />
-            </el-select>
-            <el-select v-model="fDivisi" placeholder="Divisi" clearable filterable class="mpp-filter" @change="reload">
-                <el-option v-for="d in divisiOptions" :key="d" :label="titleCase(d)" :value="d" />
-            </el-select>
-            <el-select v-model="fPeriode" placeholder="Periode" clearable class="mpp-filter" @change="reload">
-                <el-option v-for="p in periodeOptions" :key="p" :label="periodeLabel(p)" :value="p" />
-            </el-select>
+            <button v-for="s in ['Aktif','Dibatalkan']" :key="s" class="mpp-chip" :class="{ active: fStatus === s }" @click="toggleChip('fStatus', s)">{{ s }}</button>
+            <span class="mpp-div"></span>
+            <button v-for="f in ['Selesai','Belum Selesai']" :key="'f'+f" class="mpp-chip" :class="{ active: fFlag === f }" @click="toggleChip('fFlag', f)">{{ f }}</button>
+            <span class="mpp-sel"><el-select v-model="fDivisi" placeholder="Divisi" clearable filterable @change="reload"><el-option v-for="d in divisiOptions" :key="d" :label="titleCase(d)" :value="d" /></el-select></span>
+            <span class="mpp-sel"><el-select v-model="fPeriode" placeholder="Periode" clearable @change="reload"><el-option v-for="p in periodeOptions" :key="p" :label="periodeLabel(p)" :value="p" /></el-select></span>
+            <span class="mpp-sel"><el-select v-model="fEmployment" placeholder="Tipe Kerja" clearable @change="reload"><el-option v-for="e in employmentOptions" :key="e" :label="e" :value="e" /></el-select></span>
+            <span class="mpp-sel"><el-select v-model="fWorkplace" placeholder="Lokasi" clearable @change="reload"><el-option v-for="w in workplaceOptions" :key="w" :label="w" :value="w" /></el-select></span>
+            <span class="mpp-sel"><el-select v-model="fExperience" placeholder="Exp. Level" clearable @change="reload"><el-option v-for="x in experienceOptions" :key="x" :label="x" :value="x" /></el-select></span>
+            <button v-if="hasFilter" class="wca-iconbtn mpp-tb__rst" title="Reset" @click="resetFilter"><i class="bi bi-x-lg"></i></button>
         </div>
 
         <!-- Skeleton hanya saat load pertama; refetch berikutnya memakai dim halus (.mpp-busy). -->
@@ -81,6 +79,9 @@
                                     <th>Divisi</th>
                                     <th>Sub Divisi</th>
                                     <th>Level</th>
+                                    <th>Tipe Kerja</th>
+                                    <th>Lokasi Kerja</th>
+                                    <th>Exp. Level</th>
                                     <th class="mpp-num">Jml</th>
                                     <th class="mpp-sortable" @click="toggleSort('status')">Status <i class="bi" :class="sortIcon('status')"></i></th>
                                     <th>Flag Selesai</th>
@@ -96,6 +97,9 @@
                                     <td>{{ titleCase(m.divisi) }}</td>
                                     <td>{{ titleCase(m.sub_divisi) }}</td>
                                     <td>{{ titleCase(m.level) }}</td>
+                                    <td><span v-if="m.employment_type" class="mpp-tb-badge mpp-tb--emp">{{ m.employment_type }}</span><span v-else>—</span></td>
+                                    <td><span v-if="m.workplace_type" class="mpp-tb-badge mpp-tb--wp">{{ m.workplace_type }}</span><span v-else>—</span></td>
+                                    <td><span v-if="m.experience_level" class="mpp-tb-badge mpp-tb--exp">{{ m.experience_level }}</span><span v-else>—</span></td>
                                     <td class="mpp-num"><span class="wca-badge wca-b--slate"><i class="bi bi-people-fill"></i> {{ m.jumlah_rekruitmen }}</span></td>
                                     <td><span class="wca-badge" :class="statusBadge(m.status)">{{ m.status }}</span></td>
                                     <td><span class="mpp-flag" :class="{ 'is-done': isSelesai(m.flag_selesai) }"><span class="mpp-flag__dot"></span>{{ m.flag_selesai }}</span></td>
@@ -151,6 +155,9 @@ export default {
             fFlag: '',
             fDivisi: '',
             fPeriode: '',
+            fEmployment: '',
+            fWorkplace: '',
+            fExperience: '',
             view: 'grid',
             sortKey: 'tanggal_periode',
             sortDir: 'desc',
@@ -160,6 +167,9 @@ export default {
             totalData: 0,
             divisiOptions: [],
             periodeOptions: [],
+            employmentOptions: [],
+            workplaceOptions: [],
+            experienceOptions: [],
             stats: { total: 0, aktif: 0, selesai: 0, dibatalkan: 0 },
             selectedNo: null,
             searchTimer: null,
@@ -168,7 +178,7 @@ export default {
     },
     computed: {
         hasFilter() {
-            return !!(this.q.trim() || this.fStatus || this.fFlag || this.fDivisi || this.fPeriode);
+            return !!(this.q.trim() || this.fStatus || this.fFlag || this.fDivisi || this.fPeriode || this.fEmployment || this.fWorkplace || this.fExperience);
         },
     },
     mounted() {
@@ -196,6 +206,9 @@ export default {
                 const r = res.data.result || {};
                 this.divisiOptions = r.divisi || [];
                 this.periodeOptions = r.periode || [];
+                this.employmentOptions = r.employment || [];
+                this.workplaceOptions = r.workplace || [];
+                this.experienceOptions = r.experience || [];
                 this.stats = r.stats || this.stats;
             } catch (e) {
                 // Opsi filter gagal dimuat — biarkan kosong, list utama tetap jalan.
@@ -217,6 +230,9 @@ export default {
             if (this.fFlag) params.flag = this.fFlag;
             if (this.fDivisi) params.divisi = this.fDivisi;
             if (this.fPeriode) params.periode = this.fPeriode;
+            if (this.fEmployment) params.employment = this.fEmployment;
+            if (this.fWorkplace) params.workplace = this.fWorkplace;
+            if (this.fExperience) params.experience = this.fExperience;
 
             try {
                 const res = await axios.get(API, { ...CFG, params });
@@ -273,12 +289,19 @@ export default {
         openDetail(no) {
             this.selectedNo = no;
         },
+        toggleChip(field, value) {
+            this[field] = this[field] === value ? '' : value;
+            this.reload();
+        },
         resetFilter() {
             this.q = '';
             this.fStatus = '';
             this.fFlag = '';
             this.fDivisi = '';
             this.fPeriode = '';
+            this.fEmployment = '';
+            this.fWorkplace = '';
+            this.fExperience = '';
             this.reload();
         },
     },
@@ -300,26 +323,31 @@ export default {
     border-color: transparent;
 }
 
-/* Filter select — samakan tinggi & radius dengan kotak search (.wca-search2 = 2.5rem). */
-.mpp-filter {
-    flex: 0 1 160px;
-    min-width: 130px;
+/* ── Toolbar: 1 baris inline, tinggi + radius seragam mengikuti el-select global ── */
+.mpp-tb {
+    display: flex; flex-wrap: wrap; align-items: center; gap: .4rem;
+    margin-bottom: .9rem;
 }
-.mpp-filter :deep(.el-select__wrapper) {
-    min-height: 2.5rem;
-    border-radius: 0.7rem;
+/* search: tinggi & radius diseragamkan dgn el-select (2.7rem / 0.72rem) */
+.mpp-tb__srch { flex: 1 1 200px; max-width: 360px; min-height: 2.7rem; border-radius: .72rem; }
+/* chip: tinggi & radius seragam */
+.mpp-chip {
+    display: inline-flex; align-items: center;
+    height: 2.7rem; padding: 0 .75rem;
+    border: 1px solid var(--line); background: #fff; border-radius: .72rem;
+    font-size: .82rem; font-weight: 800; color: var(--slate);
+    cursor: pointer; transition: all .15s ease; user-select: none; white-space: nowrap;
 }
-
-/* Spinner kecil di kotak search saat refetch */
-.mpp-spin {
-    display: inline-block;
-    animation: mppSpin 0.8s linear infinite;
+.mpp-chip:hover { border-color: #c7d2fe; color: var(--primary); }
+.mpp-chip.active {
+    background: linear-gradient(120deg, #4f46e5, #7c3aed); color: #fff; border-color: transparent;
+    box-shadow: 0 2px 8px rgba(79,70,229,.25);
 }
-@keyframes mppSpin {
-    to {
-        transform: rotate(360deg);
-    }
-}
+/* separator vertikal antar grup chip */
+.mpp-div { width: 1px; height: 1.4rem; background: var(--line); margin: 0 .1rem; }
+/* wrapper pembatas lebar — el-select global width:100%!important, span batasi ke 128px */
+.mpp-sel { display: inline-flex; width: 128px; }
+.mpp-tb__rst { margin-left: auto; }
 
 /* Card grid responsif: 3 kolom desktop / 2 tablet / 1 mobile */
 .mpp-grid {
@@ -415,6 +443,19 @@ export default {
     background: #22c55e;
     box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.18);
 }
+
+/* Table badges (Employment / Workplace / ExpLevel) — ikut warna card */
+.mpp-tb-badge {
+    display: inline-block;
+    padding: .2rem .55rem;
+    border-radius: .5rem;
+    font-size: .72rem;
+    font-weight: 800;
+    white-space: nowrap;
+}
+.mpp-tb--emp { background: rgba(99,102,241,.1); color: #4338ca; border: 1px solid rgba(99,102,241,.15); }
+.mpp-tb--wp  { background: rgba(16,185,129,.1); color: #0f766e; border: 1px solid rgba(16,185,129,.15); }
+.mpp-tb--exp { background: rgba(245,158,11,.1); color: #b45309; border: 1px solid rgba(245,158,11,.18); }
 
 /* Skeleton */
 .mpp-skcard {

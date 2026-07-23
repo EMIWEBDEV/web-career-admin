@@ -84,6 +84,9 @@ class MppLowonganController extends Controller
                         DB::raw("(SELECT COUNT(*) FROM N_WEB_CAREERS_Points_MPP p WHERE p.Id_Detail_MPP = d.Id_Detail_MPP AND p.Section = 'requirement') as jml_persyaratan"),
                         DB::raw('(SELECT COUNT(*) FROM N_WEB_CAREERS_Detail_Skill_MPP sk WHERE sk.Id_Detail_MPP = d.Id_Detail_MPP) as jml_skill'),
                         DB::raw('(SELECT COUNT(*) FROM N_WEB_CAREERS_Detail_Benefit_MPP bn WHERE bn.Id_Detail_MPP = d.Id_Detail_MPP) as jml_benefit'),
+                        'me.Nama_Employment as employment_type',
+                        'mw.Nama_Workplace as workplace_type',
+                        'mx.Nama_Experience_Level as experience_level',
                     ]);
 
                 if ($sort === 'status') {
@@ -116,6 +119,9 @@ class MppLowonganController extends Controller
                 'jml_persyaratan'    => (int) $r->jml_persyaratan,
                 'jml_skill'          => (int) $r->jml_skill,
                 'jml_benefit'        => (int) $r->jml_benefit,
+                'employment_type'    => $r->employment_type,
+                'workplace_type'     => $r->workplace_type,
+                'experience_level'   => $r->experience_level,
             ])->values();
 
             return ResponseHelper::successWithPagination($rows, $page, $perPage, (int) $result['total'], 'Data MPP dimuat');
@@ -153,6 +159,9 @@ class MppLowonganController extends Controller
                         DB::raw('COALESCE(k.Nama, g.User_Penganggung_Jawab) as penanggung_jawab'),
                         'd.Deskripsi as deskripsi',
                         'd.Id_Detail_MPP as id_detail_mpp',
+                        'me.Nama_Employment as employment_type',
+                        'mw.Nama_Workplace as workplace_type',
+                        'mx.Nama_Experience_Level as experience_level',
                     ])
                     ->first();
 
@@ -198,6 +207,9 @@ class MppLowonganController extends Controller
                     'persyaratan'       => $points->where('Section', 'requirement')->pluck('Content')->values()->all(),
                     'skill'             => $skill->all(),
                     'benefit'           => $benefit->all(),
+                    'employment_type'   => $head->employment_type,
+                    'workplace_type'    => $head->workplace_type,
+                    'experience_level'  => $head->experience_level,
                 ];
             });
 
@@ -234,6 +246,28 @@ class MppLowonganController extends Controller
                         ->get()
                 )->pluck('periode')->values();
 
+                // Opsi filter dari master baru (Employment / Workplace / Experience).
+                $employment = $this->baseQuery()
+                    ->whereNotNull('me.Nama_Employment')
+                    ->distinct()
+                    ->orderBy('me.Nama_Employment')
+                    ->pluck('me.Nama_Employment')
+                    ->values();
+
+                $workplace = $this->baseQuery()
+                    ->whereNotNull('mw.Nama_Workplace')
+                    ->distinct()
+                    ->orderBy('mw.Nama_Workplace')
+                    ->pluck('mw.Nama_Workplace')
+                    ->values();
+
+                $experience = $this->baseQuery()
+                    ->whereNotNull('mx.Nama_Experience_Level')
+                    ->distinct()
+                    ->orderBy('mx.Nama_Experience_Level')
+                    ->pluck('mx.Nama_Experience_Level')
+                    ->values();
+
                 // Statistik global dalam SATU query agregat.
                 $s = $this->baseQuery()
                     ->selectRaw('COUNT(*) as total')
@@ -243,9 +277,12 @@ class MppLowonganController extends Controller
                     ->first();
 
                 return [
-                    'divisi'  => $divisi->all(),
-                    'periode' => $periode->all(),
-                    'stats'   => [
+                    'divisi'     => $divisi->all(),
+                    'periode'    => $periode->all(),
+                    'employment' => $employment->all(),
+                    'workplace'  => $workplace->all(),
+                    'experience' => $experience->all(),
+                    'stats'      => [
                         'total'      => (int) ($s->total ?? 0),
                         'aktif'      => (int) ($s->aktif ?? 0),
                         'selesai'    => (int) ($s->selesai ?? 0),
@@ -287,7 +324,11 @@ class MppLowonganController extends Controller
             // Penanggung jawab: User_Penganggung_Jawab = Karyawan.Kode_Karyawan → ambil Nama.
             ->leftJoin('Karyawan as k', fn ($j) => $j
                 ->on('k.Kode_Karyawan', '=', 'g.User_Penganggung_Jawab')
-                ->on('k.Kode_Perusahaan', '=', 'g.Kode_Perusahaan'));
+                ->on('k.Kode_Perusahaan', '=', 'g.Kode_Perusahaan'))
+            // Extend Phase 2: Employment / Workplace / Experience Level.
+            ->leftJoin('N_WEB_CAREERS_Master_Employment as me', 'me.Id_Employment', '=', 'd.Employment_Type')
+            ->leftJoin('N_WEB_CAREERS_Master_Workplace as mw', 'mw.Id_Workplace', '=', 'd.Workplace_Type')
+            ->leftJoin('N_WEB_CAREERS_Master_Experience_Level as mx', 'mx.Id_Experience_Level', '=', 'd.Experience_Level');
     }
 
     /** Terapkan search + filter (status/flag/divisi/periode) ke query. Mengembalikan query agar bisa dirantai. */
@@ -330,6 +371,22 @@ class MppLowonganController extends Controller
             $start = Carbon::createFromFormat('Y-m-d', $periode . '-01')->startOfDay();
             $end = (clone $start)->addMonthNoOverflow();
             $q->where('g.Tanggal_Periode', '>=', $start)->where('g.Tanggal_Periode', '<', $end);
+        }
+
+        // Filter fase 2: Employment / Workplace / Experience (by resolved name).
+        $employment = trim((string) $request->query('employment', ''));
+        if ($employment !== '') {
+            $q->where('me.Nama_Employment', $employment);
+        }
+
+        $workplace = trim((string) $request->query('workplace', ''));
+        if ($workplace !== '') {
+            $q->where('mw.Nama_Workplace', $workplace);
+        }
+
+        $experience = trim((string) $request->query('experience', ''));
+        if ($experience !== '') {
+            $q->where('mx.Nama_Experience_Level', $experience);
         }
 
         return $q;
