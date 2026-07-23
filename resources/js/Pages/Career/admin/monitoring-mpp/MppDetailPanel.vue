@@ -45,6 +45,28 @@
                                 </div>
                             </div>
 
+                            <!-- Section card: Employment / Workplace / Experience (fase 2) -->
+                            <div v-if="detail.employment_type || detail.workplace_type || detail.experience_level" class="wca-seccard mpp-detail-row">
+                                <div class="wca-seccard__top">
+                                    <span class="wca-seccard__ico" style="background:rgba(139,92,246,.1);color:#7c3aed"><i class="bi bi-info-circle"></i></span>
+                                    <strong>Detail Pekerjaan</strong>
+                                </div>
+                                <div class="mpp-dpills">
+                                    <span v-if="detail.employment_type" class="mpp-dpill mpp-dpill--emp" :title="'Tipe Kerja'">
+                                        <span class="mpp-dpill__ico"><i class="bi bi-briefcase-fill"></i></span>
+                                        <span class="mpp-dpill__body"><small>Tipe Kerja</small><strong>{{ detail.employment_type }}</strong></span>
+                                    </span>
+                                    <span v-if="detail.workplace_type" class="mpp-dpill mpp-dpill--wp" :title="'Lokasi Kerja'">
+                                        <span class="mpp-dpill__ico"><i class="bi bi-geo-alt-fill"></i></span>
+                                        <span class="mpp-dpill__body"><small>Lokasi Kerja</small><strong>{{ detail.workplace_type }}</strong></span>
+                                    </span>
+                                    <span v-if="detail.experience_level" class="mpp-dpill mpp-dpill--exp" :title="'Level Pengalaman'">
+                                        <span class="mpp-dpill__ico"><i class="bi bi-stars"></i></span>
+                                        <span class="mpp-dpill__body"><small>Level Pengalaman</small><strong>{{ detail.experience_level }}</strong></span>
+                                    </span>
+                                </div>
+                            </div>
+
                             <div class="wca-seccard sec-data">
                                 <div class="wca-seccard__top">
                                     <span class="wca-seccard__ico"><i class="bi bi-file-earmark-text"></i></span>
@@ -335,4 +357,34 @@ onBeforeUnmount(() => {
         grid-template-columns: 1fr;
     }
 }
+
+/* ── Detail pills: Employment / Workplace / ExpLevel (fase 2) ── */
+.mpp-detail-row { border-left-color: #7c3aed; }
+.mpp-dpills {
+    display: flex; flex-wrap: wrap; gap: .6rem;
+}
+.mpp-dpill {
+    display: flex; align-items: flex-start; gap: .55rem;
+    padding: .55rem .7rem; border-radius: .75rem;
+    flex: 1 1 150px; min-width: 140px;
+    transition: transform .12s ease;
+}
+.mpp-dpill:hover { transform: translateY(-1px); }
+.mpp-dpill--emp { background: linear-gradient(135deg, rgba(99,102,241,.08), rgba(139,92,246,.04)); border: 1px solid rgba(99,102,241,.15); }
+.mpp-dpill--wp  { background: linear-gradient(135deg, rgba(16,185,129,.08), rgba(6,182,212,.04)); border: 1px solid rgba(16,185,129,.15); }
+.mpp-dpill--exp { background: linear-gradient(135deg, rgba(245,158,11,.08), rgba(251,191,36,.04)); border: 1px solid rgba(245,158,11,.18); }
+.mpp-dpill__ico {
+    width: 2rem; height: 2rem; border-radius: .55rem;
+    display: grid; place-items: center; flex: none;
+    font-size: .88rem;
+}
+.mpp-dpill--emp .mpp-dpill__ico { background: rgba(99,102,241,.15); color: #4338ca; }
+.mpp-dpill--wp  .mpp-dpill__ico { background: rgba(16,185,129,.15); color: #0f766e; }
+.mpp-dpill--exp .mpp-dpill__ico { background: rgba(245,158,11,.15); color: #b45309; }
+.mpp-dpill__body { display: flex; flex-direction: column; gap: .1rem; min-width: 0; }
+.mpp-dpill__body small {
+    font-size: .68rem; font-weight: 800; text-transform: uppercase; letter-spacing: .03em;
+    color: var(--muted); line-height: 1;
+}
+.mpp-dpill__body strong { font-size: .84rem; font-weight: 900; color: var(--ink); line-height: 1.2; }
 </style>
