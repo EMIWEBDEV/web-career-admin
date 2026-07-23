@@ -24,7 +24,7 @@
             </div>
 
             <div class="plw-panel__list">
-                <div v-if="loadingProg" class="plw-empty">Memuat…</div>
+                <div v-if="loadingProg" class="plw-load"><span class="plw-spin"></span> Memuat program…</div>
                 <div v-else-if="!programs.length" class="plw-empty">Tidak ada program</div>
                 <button
                     v-for="p in programs"
@@ -113,7 +113,7 @@
                         </button>
                     </div>
 
-                    <div v-if="loadingDetail" class="plw-empty" style="padding: 3rem 0">Memuat papan seleksi…</div>
+                    <div v-if="loadingDetail" class="plw-load" style="padding: 3rem 0"><span class="plw-spin"></span> Memuat papan seleksi…</div>
 
                     <!-- KANBAN -->
                     <div v-else class="plw-kanban">
@@ -212,7 +212,7 @@
                             <span class="plw-seccount">{{ profil.formulir.length }} formulir</span>
                         </div>
 
-                        <div v-if="loadingProfil" class="plw-empty" style="padding: 1.5rem 0">Memuat berkas…</div>
+                        <div v-if="loadingProfil" class="plw-load" style="padding: 1.5rem 0"><span class="plw-spin"></span> Memuat berkas…</div>
                         <div v-else-if="!profil.formulir.length" class="plw-empty" style="padding: 1.5rem 0">Belum ada formulir terisi.</div>
 
                         <div v-else class="plw-forms">
@@ -290,9 +290,18 @@
                     </button>
                 </div>
                 <div class="plw-lb__card">
-                    <img :src="lightbox.url" :alt="lightbox.nama" />
+                    <div v-if="lbLoading" class="plw-lb__state">
+                        <span class="plw-spin plw-spin--lg"></span>
+                        <span>Memuat berkas…</span>
+                    </div>
+                    <div v-else-if="lbError" class="plw-lb__state">
+                        <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 8v5" /><path d="M12 16h.01" /></svg>
+                        <span>Gagal memuat berkas.</span>
+                        <button type="button" class="plw-lb__retry" @click="lbCoba">Coba lagi</button>
+                    </div>
+                    <img v-show="!lbLoading && !lbError" :src="lbSrc" :alt="lightbox.nama" @load="lbLoading = false" @error="lbLoading = false; lbError = true" />
                     <div class="plw-lb__foot">
-                        <div style="font-size: 12px; color: #8b93a7">Berkas hanya dapat dilihat · tidak dapat diunduh</div>
+                        <div style="font-size: 12px; color: #8b93a7" class="plw-ell">{{ lightbox.nama }}</div>
                         <div v-if="lightbox.status === 'TERVERIFIKASI'" class="plw-lb__ok">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5" /></svg>
                             Terverifikasi
@@ -350,6 +359,9 @@ export default {
             loadingProfil: false,
             openForm: 0,
             lightbox: null,
+            lbSrc: '',
+            lbLoading: false,
+            lbError: false,
             konfirmShow: false,
             putusTarget: null,
             putusHasil: '',
@@ -459,8 +471,21 @@ export default {
         },
         tutupKandidat() { this.detailKandidat = null; this.lightbox = null; },
         bukaDok(b) {
-            if (b.isImage) this.lightbox = b;
-            else window.open(b.url, '_blank', 'noopener');
+            if (b.isImage) {
+                this.lightbox = b;
+                this.lbSrc = b.url;
+                this.lbLoading = true;
+                this.lbError = false;
+            } else {
+                window.open(b.url, '_blank', 'noopener');
+            }
+        },
+        // Muat ulang gambar (signed URL bisa kedaluwarsa) — cache-buster kecil.
+        lbCoba() {
+            if (!this.lightbox) return;
+            this.lbError = false;
+            this.lbLoading = true;
+            this.lbSrc = this.lightbox.url + (this.lightbox.url.includes('?') ? '&' : '?') + 'r=' + Date.now();
         },
         /* ── Keputusan ── */
         askPutus(r, hasil) { this.putusTarget = r; this.putusHasil = hasil; this.putusCatatan = ''; this.konfirmShow = true; },
@@ -510,6 +535,12 @@ export default {
 .plw-chip.is-on { border-color: transparent; background: linear-gradient(135deg, #8b5cf6, #6366f1); color: #fff; }
 .plw-panel__list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 11px; padding: 6px 14px 16px; }
 .plw-empty { text-align: center; color: #94a3b8; font-size: 13px; padding: 1rem 0; }
+
+/* ═══ INDIKATOR LOADING ═══ */
+.plw-load { display: flex; align-items: center; justify-content: center; gap: 9px; color: #8b93a7; font-size: 13px; font-weight: 600; padding: 1rem 0; }
+.plw-spin { width: 18px; height: 18px; border-radius: 50%; border: 2.5px solid rgba(99, 102, 241, 0.18); border-top-color: #6366f1; animation: plwSpin 0.7s linear infinite; flex: 0 0 auto; }
+.plw-spin--lg { width: 30px; height: 30px; border-width: 3px; }
+@keyframes plwSpin { to { transform: rotate(360deg); } }
 
 .plw-prog { position: relative; appearance: none; cursor: pointer; text-align: left; font-family: inherit; width: 100%; padding: 14px 15px 14px 18px; border-radius: 16px; background: #fff; transition: all 0.18s; border: 1px solid #eef0f7; box-shadow: 0 2px 8px rgba(15, 23, 42, 0.03); display: flex; flex-direction: column; }
 .plw-prog:hover { box-shadow: 0 8px 20px rgba(15, 23, 42, 0.07); }
@@ -681,6 +712,9 @@ export default {
 .plw-lb__close:hover { background: rgba(255, 255, 255, 0.18); }
 .plw-lb__card { background: #fff; border-radius: 18px; overflow: hidden; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5); }
 .plw-lb__card img { display: block; width: 100%; max-height: 420px; object-fit: contain; background: #0f172a; }
+.plw-lb__state { width: 100%; height: 300px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; background: linear-gradient(135deg, #f1f2f9, #e8eaf6); color: #64748b; font-size: 13.5px; font-weight: 700; }
+.plw-lb__retry { appearance: none; cursor: pointer; font-family: inherit; font-size: 12.5px; font-weight: 800; color: #fff; border: none; padding: 9px 18px; border-radius: 11px; background: linear-gradient(135deg, #8b5cf6, #6366f1); box-shadow: 0 8px 20px rgba(99, 102, 241, 0.28); transition: transform 0.16s; }
+.plw-lb__retry:hover { transform: translateY(-1px); }
 .plw-lb__foot { padding: 14px 18px; display: flex; align-items: center; justify-content: space-between; gap: 10px; border-top: 1px solid #eef0f7; }
 .plw-lb__ok { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 800; color: #059669; flex: 0 0 auto; }
 

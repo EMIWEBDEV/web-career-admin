@@ -8,14 +8,15 @@
     <div class="evs-scrim" :class="{ 'is-on': shell.state.isMobile && shell.state.mobileSidebarOpen }" @click="shell.closeMobileSidebar()"></div>
 
     <!-- ═══ RAIL IKON ═══ -->
-    <nav class="evs-rail" aria-label="Navigasi modul">
-        <button type="button" class="evs-rail__logo" :class="{ 'is-pinned': shell.state.sidebarLocked }" title="Klik untuk mengunci sidebar" @click="togglePin" @mouseenter="hoverOpen">
+    <!-- Hover DI MANA PUN pada rail (logo, menu, area kosong, avatar) membuka sidebar. -->
+    <nav class="evs-rail" aria-label="Navigasi modul" @mouseenter="hoverOpen" @mouseleave="hoverClose">
+        <button type="button" class="evs-rail__logo" :class="{ 'is-pinned': shell.state.sidebarLocked }" title="Klik untuk mengunci sidebar" @click="togglePin">
             <img v-if="!imgErr.mainLogo" :src="brand.mainLogo" :alt="brand.mainLogoAlt || 'EVO Group'" @error="imgErr.mainLogo = true" />
             <span v-else class="evs-rail__logofb">EVO</span>
         </button>
         <div style="height: 16px"></div>
 
-        <a class="evs-rail__btn" :class="{ 'is-active': homeLink.isActive }" :href="homeLink.url || '#'" :title="homeLink.title || 'Dashboard'" @mouseenter="hoverOpen" @click="visit($event, homeLink.url)">
+        <a class="evs-rail__btn" :class="{ 'is-active': homeLink.isActive }" :href="homeLink.url || '#'" :title="homeLink.title || 'Dashboard'" @click="visit($event, homeLink.url)">
             <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5L12 3l9 7.5" /><path d="M5 9.5V21h14V9.5" /></svg>
         </a>
 
@@ -26,7 +27,6 @@
             class="evs-rail__btn"
             :class="{ 'is-active': m.id === openModule }"
             :title="m.label || m.name"
-            @mouseenter="hoverOpen"
             @click="railModule(m.id)"
         >
             <i :class="m.icon || 'bi bi-grid'" style="font-size: 19px"></i>

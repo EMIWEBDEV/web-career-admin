@@ -5,11 +5,13 @@ namespace App\Http\Controllers\Career\Lamaran;
 use App\Helpers\ResponseHelper;
 use App\Http\Controllers\Controller;
 use App\Jobs\Career\WcApplyFormJob;
+use App\Support\Career\GcsBerkas;
 use App\Support\Career\LamaranService;
 use App\Support\CareerShell;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Vinkla\Hashids\Facades\Hashids;
@@ -956,7 +958,7 @@ class LamaranController extends Controller
         ], 'Profil kandidat');
     }
 
-    /** GET stream 1 berkas (PDF/gambar/dll) untuk pratinjau/unduh di offcanvas. */
+    /** GET pratinjau 1 berkas (PDF/gambar/dll) untuk offcanvas/lightbox. */
     public function berkasFile(string $id)
     {
         $realId = Hashids::decode($id)[0] ?? null;
@@ -965,7 +967,20 @@ class LamaranController extends Controller
             abort(404);
         }
 
-        // Path_File bisa relatif (disk storage) atau absolut — coba lokasi umum.
+        // Berkas apply-form tersimpan di GCS (bucket PRIVAT) — akses lewat
+        // SIGNED URL berumur pendek (redirect 302), bukan baca file lokal.
+        if ($b->Path_File) {
+            try {
+                $gcs = Storage::disk(GcsBerkas::DISK);
+                if ($gcs->exists($b->Path_File)) {
+                    return redirect()->away($gcs->temporaryUrl($b->Path_File, now()->addMinutes(15)));
+                }
+            } catch (\Throwable $e) {
+                Log::channel('web_career')->warning('Signed URL GCS gagal untuk berkas ' . $b->Id_Formulir_Berkas . ': ' . $e->getMessage());
+            }
+        }
+
+        // Fallback lokal (data lama / lingkungan dev tanpa GCS).
         foreach ([storage_path('app/' . $b->Path_File), public_path($b->Path_File), $b->Path_File] as $kandidat) {
             if ($kandidat && is_file($kandidat)) {
                 return response()->file($kandidat, ['Content-Type' => $b->Mime ?: 'application/octet-stream']);
