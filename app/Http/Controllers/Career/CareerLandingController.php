@@ -105,7 +105,27 @@ class CareerLandingController extends Controller
             'hp' => session('career_auth.hp'),
         ];
 
-        return ['lowongan' => array_merge(['id' => $id], $job), 'form' => $form, 'steps' => $steps, 'kandidat' => $kandidat];
+        // ── KELAYAKAN (aturan jalur) + status SUDAH-MELAMAR (form read-only) ──
+        $userId = (int) session('career_auth.id');
+        $kelayakan = ['boleh' => true, 'alasan' => null, 'kode' => null];
+        $sudahLamar = null;
+        if ($userId) {
+            $kelayakan = (new \App\Support\Career\KelayakanLamaran())->cek($userId, $job['kategori'] ?? null);
+            $posEnc = $mt['posisiId'] ?? ($lo['posisiId'] ?? null);
+            $posId = $posEnc ? (Hashids::decode($posEnc)[0] ?? null) : null;
+            if ($posId) {
+                $lam = DB::table('N_WEB_CAREERS_Lamaran')->where('Id_Users', $userId)->where('Program_Posisi_Id', $posId)->first();
+                if ($lam) {
+                    $sudahLamar = [
+                        'kode' => $lam->Kode,
+                        'status' => $lam->Status,
+                        'tanggal' => $lam->Waktu_Lamar ? \Illuminate\Support\Carbon::parse($lam->Waktu_Lamar)->translatedFormat('d M Y') : null,
+                    ];
+                }
+            }
+        }
+
+        return ['lowongan' => array_merge(['id' => $id], $job), 'form' => $form, 'steps' => $steps, 'kandidat' => $kandidat, 'kelayakan' => $kelayakan, 'sudahLamar' => $sudahLamar];
     }
 
     /**
@@ -427,7 +447,7 @@ class CareerLandingController extends Controller
             // Jumlah pelamar nyata per program — hanya yang BELUM gugur dihitung
             // sebagai "pelamar aktif" (yang gugur tidak menempati minat kursi).
             $pelamar = collect();
-            $terisi = collect();          // kursi TERISI per program = lamaran LULUS
+            $terisi = collect();          // kursi TERISI per program = lamaran AKTIF (non-GUGUR)
             $terisiPosisi = collect();    // kursi TERISI per posisi (lowongan)
             try {
                 $pelamar = DB::table('N_WEB_CAREERS_Lamaran')
@@ -435,13 +455,16 @@ class CareerLandingController extends Controller
                     ->select('Program_Id', DB::raw('COUNT(*) as Jml'))
                     ->groupBy('Program_Id')->pluck('Jml', 'Program_Id');
 
+                // Kursi TERISI = kandidat yang masih dalam proses ATAU sudah diterima
+                // (non-GUGUR). Begitu kandidat lolos administrasi, kursinya terhitung;
+                // bila kemudian gugur, kursinya otomatis kembali kosong.
                 $terisi = DB::table('N_WEB_CAREERS_Lamaran')
-                    ->where('Status', 'LULUS')
+                    ->where('Status', '!=', 'GUGUR')
                     ->select('Program_Id', DB::raw('COUNT(*) as Jml'))
                     ->groupBy('Program_Id')->pluck('Jml', 'Program_Id');
 
                 $terisiPosisi = DB::table('N_WEB_CAREERS_Lamaran')
-                    ->where('Status', 'LULUS')
+                    ->where('Status', '!=', 'GUGUR')
                     ->select('Program_Posisi_Id', DB::raw('COUNT(*) as Jml'))
                     ->groupBy('Program_Posisi_Id')->pluck('Jml', 'Program_Posisi_Id');
             } catch (\Throwable $e) {

@@ -157,6 +157,18 @@ class LamaranController extends Controller
             return ResponseHelper::error('Anda sudah melamar posisi ini.', 422);
         }
 
+        // ── KELAYAKAN JALUR (aturan MT/REKRUTMEN + cooldown, master DB) ──
+        // Feedback INSTAN sebelum unggah berkas (hindari berkas GCS yatim). Job &
+        // service tetap cek ulang (defense-in-depth).
+        $kategoriProgram = DB::table('N_WEB_CAREERS_Pembukaan as pb')
+            ->join('N_WEB_CAREERS_Program as p', 'p.Id_Program', '=', 'pb.Program_Id')
+            ->where('pb.Id_Pembukaan', (int) $pembukaanId)
+            ->value('p.Kategori');
+        $kelayakan = (new \App\Support\Career\KelayakanLamaran())->cek($userId, $kategoriProgram);
+        if (! $kelayakan['boleh']) {
+            return ResponseHelper::error($kelayakan['alasan'], 422);
+        }
+
         // jawaban dikirim sebagai JSON string di multipart.
         $jawaban = $request->input('jawaban');
         if (is_string($jawaban)) {
@@ -340,8 +352,19 @@ class LamaranController extends Controller
     /** /kandidat/portal — lamaran milik kandidat yang sedang login. */
     public function portalIndex()
     {
+        $lamaran = $this->lamaranSaya();
+
+        // Statistik REAL untuk strip widget dashboard (bukan hardcode di Vue).
+        $stats = [
+            'total' => count($lamaran),
+            'berjalan' => count(array_filter($lamaran, fn ($l) => $l['status'] === 'BERJALAN')),
+            'lulus' => count(array_filter($lamaran, fn ($l) => $l['status'] === 'LULUS')),
+            'gugur' => count(array_filter($lamaran, fn ($l) => in_array($l['status'], ['GUGUR', 'MUNDUR'], true))),
+        ];
+
         return Inertia::render('Career/portal/LamaranSaya', CareerShell::props('/kandidat/portal', 'Lamaran Saya', [
-            'lamaran' => $this->lamaranSaya(),
+            'lamaran' => $lamaran,
+            'stats' => $stats,
         ]));
     }
 
@@ -363,12 +386,31 @@ class LamaranController extends Controller
         $petaMt = collect($landing->dbMtCards())->keyBy('pembukaanId');
         $petaRek = collect($landing->dbLowonganCards())->keyBy(fn ($c) => ($c['pembukaanId'] ?? '') . '|' . ($c['posisiId'] ?? ''));
 
-        return $rows->map(function ($l) use ($petaMt, $petaRek) {
+        // TAHAPAN nyata tiap lamaran (nama + status per urutan) — dipakai stepper
+        // "PROGRES SELEKSI" pada kartu Lamaran Aktif, sekali kueri untuk semuanya.
+        $tahapPeta = collect();
+        if ($rows->isNotEmpty()) {
+            $tahapPeta = DB::table('N_WEB_CAREERS_Lamaran_Tahap')
+                ->whereIn('Lamaran_Id', $rows->pluck('Id_Lamaran')->all())
+                ->orderBy('Urutan')
+                ->select('Lamaran_Id', 'Urutan', 'Label', 'Status', 'Hasil')
+                ->get()
+                ->groupBy('Lamaran_Id');
+        }
+
+        return $rows->map(function ($l) use ($petaMt, $petaRek, $tahapPeta) {
             $pbHash = $l->Pembukaan_Id ? Hashids::encode($l->Pembukaan_Id) : null;
             $posHash = $l->Program_Posisi_Id ? Hashids::encode($l->Program_Posisi_Id) : null;
             $kartu = $l->Kategori === 'MT'
                 ? ($petaMt[$pbHash] ?? null)
                 : ($petaRek[$pbHash . '|' . $posHash] ?? null);
+
+            $tahapan = ($tahapPeta[$l->Id_Lamaran] ?? collect())->map(fn ($t) => [
+                'urutan' => (int) $t->Urutan,
+                'label' => $t->Label,
+                'status' => $t->Status,
+                'hasil' => $t->Hasil,
+            ])->values()->all();
 
             return [
                 'id' => Hashids::encode($l->Id_Lamaran),
@@ -384,6 +426,7 @@ class LamaranController extends Controller
                 'totalTahap' => (int) $l->Total_Tahap,
                 'gugurDi' => $l->Gugur_Di_Tahap,
                 'waktuLamar' => $l->Waktu_Lamar,
+                'tahapan' => $tahapan,
                 // Data kartu gaya-landing (bisa null bila pembukaan sudah tak terbit).
                 'kartu' => $kartu,
             ];
