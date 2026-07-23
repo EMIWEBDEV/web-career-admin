@@ -80,6 +80,13 @@ class LamaranService
             return ['ok' => true, 'pesan' => 'Anda sudah melamar posisi ini.', 'lamaranId' => $sudah->Id_Lamaran];
         }
 
+        // ── KELAYAKAN (aturan jalur MT/REKRUTMEN + cooldown, master DB) ──
+        // Dinilai berdasarkan RIWAYAT akun. Blok sebelum lamaran dibuat.
+        $kelayakan = (new KelayakanLamaran())->cek($userId, $program->Kategori);
+        if (! $kelayakan['boleh']) {
+            return ['ok' => false, 'pesan' => $kelayakan['alasan'], 'kode' => $kelayakan['kode'] ?? 'TIDAK_LAYAK'];
+        }
+
         // Alur seleksi yang BERLAKU SAAT MELAMAR — di-snapshot supaya perubahan
         // alur program tidak mengacak proses kandidat yang sudah berjalan.
         $alur = DB::table('N_WEB_CAREERS_Master_Alur')->where('Kode', $program->Alur_Kode)->first();

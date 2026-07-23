@@ -37,7 +37,7 @@
                     </el-form-item>
 
                     <el-form-item label="Jenis Tes (pihak ke-3)">
-                        <el-select v-model="form.jenisTesKode" filterable placeholder="Pilih jenis tes" class="wca-w" @change="muatPaket()">
+                        <el-select v-model="form.jenisTesKode" filterable placeholder="Pilih jenis tes" class="wca-w" @change="onJenisTes">
                             <el-option v-for="j in opsi.jenisTes" :key="j.kode" :label="j.nama" :value="j.kode">
                                 <span>{{ j.nama }}</span>
                                 <span class="wca-opttag">{{ j.pelaksana }}</span>
@@ -291,6 +291,11 @@ export default {
         },
         onProgram() {
             this.form.peserta = [];
+            this.muatKandidat();
+        },
+        onJenisTes() {
+            this.muatPaket();
+            this.muatKandidat();
         },
         async muatPaket() {
             this.memuatPaket = true;
@@ -318,13 +323,18 @@ export default {
             this.form.namaUjian = p.Nama_Ujian;
         },
         async muatKandidat() {
+            // Kandidat = pelamar NYATA program terpilih yang di tahap tes pihak-3.
+            // Tanpa program → daftar kosong (tidak ada dummy).
+            if (!this.form.programId) { this.kandidat = []; this.form.peserta = []; return; }
             this.memuatKandidat = true;
             try {
-                const res = await axios.get('/api/v1/penjadwalan/kandidat', {
-                    params: this.cariKandidat ? { q: this.cariKandidat } : {},
-                    headers: { Accept: 'application/json' },
-                });
+                const params = { programId: this.form.programId };
+                if (this.form.jenisTesKode) params.jenisTesKode = this.form.jenisTesKode;
+                if (this.cariKandidat) params.q = this.cariKandidat;
+                const res = await axios.get('/api/v1/penjadwalan/kandidat', { params, headers: { Accept: 'application/json' } });
                 this.kandidat = res.data.result || [];
+                // Buang peserta terpilih yang tak lagi ada di daftar terbaru.
+                this.form.peserta = this.form.peserta.filter((k) => this.kandidat.some((c) => c.kode === k));
             } catch (e) {
                 this.beritahu('Gagal memuat kandidat', 'error');
             } finally {

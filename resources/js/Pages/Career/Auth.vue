@@ -28,9 +28,6 @@ export default {
             notice: { visible: false, type: 'info', message: '' },
             noticeTimer: null,
             redirectTimer: null,
-            forgotOpen: false,
-            forgotEmail: '',
-            forgotErr: '',
             // Email yang masih menunggu verifikasi (dari register / login ditolak)
             // → memunculkan baris "kirim ulang email verifikasi".
             pendingVerifEmail: '',
@@ -93,18 +90,10 @@ export default {
             this.form.phone = d.slice(0, 15);
             this.clearErr('phone');
         },
-        /* ── Lupa sandi (popup email → redirect ke form ganti sandi) ── */
-        openForgot() {
-            this.forgotEmail = this.form.email || '';
-            this.forgotErr = '';
-            this.forgotOpen = true;
-        },
-        submitForgot() {
-            if (!this.forgotEmail || !EMAIL_RE.test(this.forgotEmail)) {
-                this.forgotErr = 'Email tidak valid.';
-                return;
-            }
-            router.visit('/ganti-sandi?email=' + encodeURIComponent(this.forgotEmail));
+        /* ── Lupa sandi → langsung ke halaman Lupa Kata Sandi (tanpa modal) ── */
+        goForgot() {
+            const email = this.form.email && EMAIL_RE.test(this.form.email) ? this.form.email : '';
+            router.visit('/ganti-sandi' + (email ? '?email=' + encodeURIComponent(email) : ''));
         },
         /* ── Kirim ulang email verifikasi (setelah register / login ditolak) ── */
         async resendVerif() {
@@ -314,7 +303,7 @@ export default {
                         <div class="field">
                             <label for="c-pass">
                                 <span class="lbl-text"><i class="bi bi-key"></i> {{ isLogin ? 'Password' : 'Buat Password' }}</span>
-                                <button v-if="isLogin" type="button" class="forgot-link" @click="openForgot">Lupa sandi?</button>
+                                <button v-if="isLogin" type="button" class="forgot-link" @click="goForgot">Lupa sandi?</button>
                             </label>
                             <div class="input-wrap" :class="{ 'is-error': errors.password }">
                                 <input
@@ -380,24 +369,6 @@ export default {
             <span class="lbl">Group of Companies</span>
         </div>
 
-        <!-- Popup lupa sandi -->
-        <transition name="v3-toast">
-            <div v-if="forgotOpen" class="forgot-mask" @click.self="forgotOpen = false">
-                <div class="forgot-card">
-                    <div class="forgot-head">
-                        <h4><i class="bi bi-key"></i> Lupa Kata Sandi</h4>
-                        <button type="button" class="forgot-x" @click="forgotOpen = false"><i class="bi bi-x-lg"></i></button>
-                    </div>
-                    <p class="forgot-desc">Masukkan email akunmu. Kamu akan diarahkan untuk membuat kata sandi baru.</p>
-                    <div class="forgot-field" :class="{ err: forgotErr }">
-                        <i class="bi bi-envelope"></i>
-                        <input v-model="forgotEmail" type="email" placeholder="nama@email.com" @input="forgotErr = ''" @keyup.enter="submitForgot" />
-                    </div>
-                    <p v-if="forgotErr" class="forgot-help">{{ forgotErr }}</p>
-                    <button type="button" class="forgot-btn" @click="submitForgot"><i class="bi bi-arrow-right-circle"></i> Lanjutkan</button>
-                </div>
-            </div>
-        </transition>
     </div>
 </template>
 
@@ -759,110 +730,6 @@ export default {
 .forgot-link:hover {
     color: var(--violet);
     text-decoration: underline;
-}
-/* Popup lupa sandi */
-.forgot-mask {
-    position: fixed;
-    inset: 0;
-    z-index: 60;
-    display: grid;
-    place-items: center;
-    padding: 1.5rem;
-    background: rgba(11, 16, 51, 0.35);
-    backdrop-filter: blur(4px);
-}
-.forgot-card {
-    width: 100%;
-    max-width: 24rem;
-    background: #fff;
-    border-radius: 20px;
-    padding: 1.5rem 1.6rem 1.6rem;
-    box-shadow: 0 40px 80px -20px rgba(11, 16, 51, 0.4);
-}
-.forgot-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 0.5rem;
-}
-.forgot-head h4 {
-    margin: 0;
-    font-size: 1.05rem;
-    font-weight: 900;
-    color: var(--ink);
-    display: flex;
-    align-items: center;
-    gap: 0.45rem;
-}
-.forgot-head h4 i {
-    color: var(--indigo);
-}
-.forgot-x {
-    border: none;
-    background: #f1f5f9;
-    width: 1.9rem;
-    height: 1.9rem;
-    border-radius: 0.5rem;
-    color: var(--text-soft);
-    cursor: pointer;
-}
-.forgot-desc {
-    margin: 0 0 1rem;
-    font-size: 0.85rem;
-    color: var(--text-soft);
-    line-height: 1.5;
-}
-.forgot-field {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.8rem 1rem;
-    border: 1.5px solid rgba(11, 16, 51, 0.15);
-    border-radius: 14px;
-    transition: border-color 0.2s ease, box-shadow 0.2s ease;
-}
-.forgot-field:focus-within {
-    border-color: var(--indigo);
-    box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.12);
-}
-.forgot-field.err {
-    border-color: #ef4444;
-    box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.12);
-}
-.forgot-field i {
-    color: #8a8fb8;
-}
-.forgot-field input {
-    flex: 1;
-    border: none;
-    outline: none;
-    background: none;
-    font: 500 14.5px 'Plus Jakarta Sans';
-    color: var(--ink);
-}
-.forgot-help {
-    margin: 6px 2px 0;
-    font-size: 12px;
-    color: #dc2626;
-}
-.forgot-btn {
-    width: 100%;
-    margin-top: 1rem;
-    padding: 0.85rem;
-    border: none;
-    border-radius: 14px;
-    background: linear-gradient(135deg, var(--indigo) 0%, var(--violet) 100%);
-    color: #fff;
-    font: 700 14px 'Plus Jakarta Sans';
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    box-shadow: 0 14px 30px -10px rgba(124, 58, 237, 0.5);
-}
-.forgot-btn:hover {
-    transform: translateY(-2px);
 }
 .btn-login {
     width: 100%;
