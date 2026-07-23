@@ -3,6 +3,8 @@
 namespace App\Jobs\Career;
 
 use App\Jobs\Career\Concerns\CatatGagalWebCareers;
+use App\Mail\Career\ResetOtpMail;
+use App\Mail\Career\ResetSelesaiMail;
 use App\Mail\Career\VerifikasiEmailMail;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -30,6 +32,10 @@ class WcSyncEmailJob implements ShouldQueue
     public const QUEUE = 'wc-syncemailjob';
 
     public const JENIS_VERIFIKASI = 'VERIFIKASI';
+
+    public const JENIS_RESET_OTP = 'RESET_OTP';
+
+    public const JENIS_RESET_SELESAI = 'RESET_SELESAI';
 
     public $timeout = 120;
 
@@ -76,6 +82,8 @@ class WcSyncEmailJob implements ShouldQueue
         try {
             match ($this->jenis) {
                 self::JENIS_VERIFIKASI => $this->kirimVerifikasi($user),
+                self::JENIS_RESET_OTP => $this->kirimResetOtp($user),
+                self::JENIS_RESET_SELESAI => $this->kirimResetSelesai($user),
                 default => Log::warning("[EMAIL] jenis '{$this->jenis}' belum dikenal — dilewati."),
             };
         } catch (\Throwable $e) {
@@ -122,5 +130,48 @@ class WcSyncEmailJob implements ShouldQueue
 
         Log::info("[EMAIL] verifikasi terkirim ke {$user->Email} (user #{$this->userId}).");
         Log::channel('web_career')->info("[EMAIL] verifikasi terkirim ke {$user->Email} (user #{$this->userId}).");
+    }
+
+    /**
+     * Kirim email OTP reset kata sandi. OTP ASLI hanya lewat payload job ini —
+     * DB cuma menyimpan hash. Guard: bila OTP sudah terpakai (hash di-null-kan
+     * saat sukses reset), jangan kirim OTP basi. `Reset_Otp_Sent_At` diset di
+     * SINI (setelah kirim) agar cooldown baru berjalan begitu email keluar.
+     */
+    protected function kirimResetOtp(object $user): void
+    {
+        // OTP sudah dipakai/dihanguskan sebelum job jalan → tak perlu kirim.
+        if (empty($user->Reset_Otp_Hash)) {
+            return;
+        }
+
+        $otp = (string) ($this->data['otp'] ?? '');
+        if ($otp === '') {
+            Log::channel('web_career')->warning("[EMAIL] reset OTP #{$this->userId} tanpa kode — dilewati.");
+
+            return;
+        }
+
+        $menit = (int) ($this->data['menit'] ?? 10);
+
+        Mail::to($user->Email)->send(new ResetOtpMail($user->Nama, $otp, $menit));
+
+        DB::table('N_WEB_CAREERS_Users')->where('Id_Users', $this->userId)->update([
+            'Reset_Otp_Sent_At' => now(),
+            'Updated_At' => now(),
+        ]);
+
+        // OTP TIDAK PERNAH di-log.
+        Log::info("[EMAIL] OTP reset terkirim ke {$user->Email} (user #{$this->userId}).");
+        Log::channel('web_career')->info("[EMAIL] OTP reset terkirim ke {$user->Email} (user #{$this->userId}).");
+    }
+
+    /** Kirim email pemberitahuan bahwa kata sandi berhasil diubah (tanpa rahasia). */
+    protected function kirimResetSelesai(object $user): void
+    {
+        Mail::to($user->Email)->send(new ResetSelesaiMail($user->Nama));
+
+        Log::info("[EMAIL] notifikasi ganti sandi terkirim ke {$user->Email} (user #{$this->userId}).");
+        Log::channel('web_career')->info("[EMAIL] notifikasi ganti sandi terkirim ke {$user->Email} (user #{$this->userId}).");
     }
 }

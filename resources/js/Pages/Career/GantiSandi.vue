@@ -56,11 +56,14 @@
             <aside class="stage-side animate-fade-left" style="animation-delay: 0.1s">
                 <div class="float-card">
                     <div class="card-head">
-                        <h3>Ganti Kata Sandi</h3>
+                        <h3>{{ stepTitle }}</h3>
                         <span class="tag">Keamanan</span>
                     </div>
 
-                    <form @submit.prevent="submit" novalidate>
+                    <!-- FASE 1: minta kode OTP (email) -->
+                    <form v-if="step === 'minta'" @submit.prevent="mintaOtp" novalidate>
+                        <p class="step-hint">Masukkan email akunmu. Kami akan mengirim kode OTP 6 digit untuk mengatur ulang kata sandi.</p>
+
                         <div class="field">
                             <label for="g-email"><span class="lbl-text"><i class="bi bi-envelope"></i> Email</span></label>
                             <div class="input-wrap" :class="{ 'is-error': errors.email }">
@@ -68,6 +71,60 @@
                             </div>
                             <p v-if="errors.email" class="help">{{ errors.email }}</p>
                         </div>
+
+                        <button type="submit" class="btn-login" :disabled="processing || !form.email">
+                            <span v-if="processing" class="spinner" aria-hidden="true"></span>
+                            {{ processing ? 'Mengirim…' : 'Kirim Kode OTP' }}
+                            <i v-if="!processing" class="bi bi-send"></i>
+                        </button>
+
+                        <p class="switch-row">Ingat kata sandimu? <Link href="/login" class="switch-link">Masuk di sini</Link></p>
+                        <div class="ver-row"><span>EVO <b>Career</b></span><span>© 2026 EVO Group</span></div>
+                    </form>
+
+                    <!-- FASE 2: masukkan 6 digit OTP -->
+                    <form v-else-if="step === 'otp'" @submit.prevent="lanjutKeReset" novalidate>
+                        <p class="step-hint">Kami mengirim kode OTP 6 digit ke <b>{{ form.email }}</b>. Masukkan kodenya untuk melanjutkan.</p>
+
+                        <div class="otp-boxes" :class="{ 'is-error': errors.otp }" @paste="onPaste">
+                            <input
+                                v-for="(d, i) in otpDigits"
+                                :key="i"
+                                ref="otpInputs"
+                                class="otp-box"
+                                type="text"
+                                inputmode="numeric"
+                                maxlength="1"
+                                :value="otpDigits[i]"
+                                :aria-label="`Digit ${i + 1}`"
+                                @input="onDigit(i, $event)"
+                                @keydown="onKeydown(i, $event)"
+                                @focus="$event.target.select()"
+                            />
+                        </div>
+                        <p v-if="errors.otp" class="help help-center">{{ errors.otp }}</p>
+
+                        <p class="otp-meta">
+                            <span v-if="otpCountdown > 0"><i class="bi bi-clock"></i> Kode berlaku {{ otpCountdownText }}</span>
+                            <span v-else class="otp-expired"><i class="bi bi-clock-history"></i> Kode kedaluwarsa — silakan kirim ulang</span>
+                        </p>
+
+                        <button type="submit" class="btn-login" :disabled="otpValue.length !== 6">
+                            Lanjutkan <i class="bi bi-arrow-right"></i>
+                        </button>
+
+                        <p class="switch-row">
+                            Tidak menerima kode?
+                            <button v-if="resendCooldown <= 0" type="button" class="switch-link as-btn" :disabled="processing" @click="mintaOtp(true)">Kirim ulang</button>
+                            <span v-else class="switch-muted">Kirim ulang dalam {{ resendCooldown }}s</span>
+                        </p>
+                        <p class="switch-row"><button type="button" class="switch-link" @click="kembaliKeMinta"><i class="bi bi-arrow-left"></i> Ganti email</button></p>
+                        <div class="ver-row"><span>EVO <b>Career</b></span><span>© 2026 EVO Group</span></div>
+                    </form>
+
+                    <!-- FASE 3: kata sandi baru (OTP + password dikirim bersamaan) -->
+                    <form v-else @submit.prevent="submitReset" novalidate>
+                        <p class="step-hint">Kode diterima untuk <b>{{ form.email }}</b>. Sekarang buat kata sandi barumu.</p>
 
                         <div class="field">
                             <label for="g-pass"><span class="lbl-text"><i class="bi bi-key"></i> Kata Sandi Baru</span></label>
@@ -92,7 +149,7 @@
                             <i v-if="!processing" class="bi bi-check-lg"></i>
                         </button>
 
-                        <p class="switch-row">Ingat kata sandimu? <Link href="/login" class="switch-link">Masuk di sini</Link></p>
+                        <p class="switch-row"><button type="button" class="switch-link" @click="step = 'otp'"><i class="bi bi-arrow-left"></i> Kembali ke kode OTP</button></p>
                         <div class="ver-row"><span>EVO <b>Career</b></span><span>© 2026 EVO Group</span></div>
                     </form>
                 </div>
@@ -116,6 +173,9 @@
 import axios from 'axios';
 import { Head, Link, router } from '@inertiajs/vue3';
 
+const RESEND_COOLDOWN = 120; // detik — selaras RESET_OTP_THROTTLE_MENIT (2 menit) di backend
+const OTP_BERLAKU = 10 * 60; // detik — selaras RESET_OTP_BERLAKU_MENIT (10 menit)
+
 export default {
     layout: null,
     components: { Head, Link },
@@ -124,12 +184,17 @@ export default {
     },
     data() {
         return {
+            step: 'minta', // 'minta' → 'otp' → 'reset'
             form: { email: this.email || '', password: '', confirm: '' },
+            otpDigits: ['', '', '', '', '', ''],
             show: false,
             processing: false,
             errors: {},
             notice: { visible: false, type: 'info', message: '' },
             noticeTimer: null,
+            resendCooldown: 0,
+            otpCountdown: 0,
+            tickTimer: null,
             subsidiaries: [
                 { src: '/logo/EMI.png', alt: 'PT EVO Manufacturing Indonesia' },
                 { src: '/logo/ENB.png', alt: 'PT EVO Nusa Bersaudara' },
@@ -138,12 +203,24 @@ export default {
         };
     },
     computed: {
+        stepTitle() {
+            return this.step === 'minta' ? 'Lupa Kata Sandi' : this.step === 'otp' ? 'Verifikasi OTP' : 'Reset Kata Sandi';
+        },
+        otpValue() {
+            return this.otpDigits.join('');
+        },
         canSubmit() {
-            return !this.processing && !!this.form.email && !!this.form.password && !!this.form.confirm;
+            return !this.processing && this.otpValue.length === 6 && !!this.form.password && !!this.form.confirm;
+        },
+        otpCountdownText() {
+            const m = Math.floor(this.otpCountdown / 60);
+            const s = this.otpCountdown % 60;
+            return `${m}:${String(s).padStart(2, '0')}`;
         },
     },
     beforeUnmount() {
         clearTimeout(this.noticeTimer);
+        clearInterval(this.tickTimer);
     },
     methods: {
         flashNotice(type, message) {
@@ -157,24 +234,135 @@ export default {
         clearErr(key) {
             if (this.errors[key]) delete this.errors[key];
         },
-        async submit() {
+        /* ── 6-kotak OTP: fokus, ketik, hapus, tempel ── */
+        focusOtp(i) {
+            this.$nextTick(() => {
+                const els = this.$refs.otpInputs;
+                if (els && els[i]) els[i].focus();
+            });
+        },
+        resetOtpBoxes() {
+            this.otpDigits = ['', '', '', '', '', ''];
+        },
+        onDigit(i, e) {
+            const v = (e.target.value || '').replace(/\D/g, '');
+            const digit = v ? v[v.length - 1] : '';
+            this.otpDigits.splice(i, 1, digit);
+            e.target.value = digit; // pastikan karakter non-digit tidak tersisa
+            this.clearErr('otp');
+            if (digit && i < 5) this.focusOtp(i + 1);
+        },
+        onKeydown(i, e) {
+            if (e.key === 'Backspace' && !this.otpDigits[i] && i > 0) {
+                this.otpDigits.splice(i - 1, 1, '');
+                this.focusOtp(i - 1);
+            } else if (e.key === 'ArrowLeft' && i > 0) {
+                this.focusOtp(i - 1);
+            } else if (e.key === 'ArrowRight' && i < 5) {
+                this.focusOtp(i + 1);
+            }
+        },
+        onPaste(e) {
+            e.preventDefault();
+            const txt = (e.clipboardData ? e.clipboardData.getData('text') : '') || '';
+            const digits = txt.replace(/\D/g, '').slice(0, 6).split('');
+            if (!digits.length) return;
+            const next = ['', '', '', '', '', ''];
+            digits.forEach((d, idx) => (next[idx] = d));
+            this.otpDigits = next;
+            this.clearErr('otp');
+            this.focusOtp(Math.min(digits.length, 6) - 1);
+        },
+        startTick() {
+            clearInterval(this.tickTimer);
+            this.tickTimer = setInterval(() => {
+                if (this.resendCooldown > 0) this.resendCooldown -= 1;
+                if (this.otpCountdown > 0) this.otpCountdown -= 1;
+                if (this.resendCooldown <= 0 && this.otpCountdown <= 0) clearInterval(this.tickTimer);
+            }, 1000);
+        },
+        kembaliKeMinta() {
+            this.step = 'minta';
+            this.resetOtpBoxes();
             this.errors = {};
-            if (!this.form.email) this.errors.email = 'Email wajib diisi.';
-            if (!this.form.password) this.errors.password = 'Kata sandi wajib diisi.';
-            else if (this.form.password.length < 6) this.errors.password = 'Minimal 6 karakter.';
-            if (this.form.password && this.form.password !== this.form.confirm) this.errors.confirm = 'Konfirmasi tidak cocok.';
-            if (Object.keys(this.errors).length) return;
+            clearInterval(this.tickTimer);
+        },
+        // Fase 1 / kirim ulang: minta kode OTP. Respons SELALU generik (anti-enumerasi).
+        async mintaOtp(isResend = false) {
+            this.errors = {};
+            if (!this.form.email) {
+                this.errors.email = 'Email wajib diisi.';
+                return;
+            }
+            if (isResend && this.resendCooldown > 0) return;
 
             this.processing = true;
             try {
-                await axios.post('/api/v1/ganti-sandi', { email: this.form.email, password: this.form.password }, { headers: { Accept: 'application/json' } });
+                const res = await axios.post('/api/v1/lupa-sandi', { email: this.form.email }, { headers: { Accept: 'application/json' } });
+                this.step = 'otp';
+                this.resetOtpBoxes();
+                this.resendCooldown = RESEND_COOLDOWN;
+                this.otpCountdown = OTP_BERLAKU;
+                this.startTick();
+                this.focusOtp(0);
+                this.flashNotice('info', (res.data && res.data.message) || 'Jika email terdaftar, kode OTP telah dikirim.');
+            } catch (e) {
+                const r = e.response;
+                if (r && r.status === 422 && r.data.errors) {
+                    Object.keys(r.data.errors).forEach((k) => (this.errors[k] = Array.isArray(r.data.errors[k]) ? r.data.errors[k][0] : r.data.errors[k]));
+                } else {
+                    this.flashNotice('error', (r && r.data && r.data.message) || 'Tidak dapat mengirim kode OTP. Coba lagi.');
+                }
+            } finally {
+                this.processing = false;
+            }
+        },
+        // Fase 2 → 3: setelah 6 digit terisi, tampilkan input kata sandi.
+        lanjutKeReset() {
+            if (this.otpValue.length !== 6) {
+                this.errors = { otp: 'Masukkan 6 digit kode OTP.' };
+                return;
+            }
+            this.errors = {};
+            this.step = 'reset';
+        },
+        // Fase 3: kirim OTP + kata sandi baru BERSAMAAN (satu request ke backend).
+        async submitReset() {
+            this.errors = {};
+            if (this.otpValue.length !== 6) this.errors.otp = 'Kode OTP harus 6 digit.';
+            if (!this.form.password) this.errors.password = 'Kata sandi wajib diisi.';
+            else if (this.form.password.length < 6) this.errors.password = 'Minimal 6 karakter.';
+            if (this.form.password && this.form.password !== this.form.confirm) this.errors.confirm = 'Konfirmasi tidak cocok.';
+            if (Object.keys(this.errors).length) {
+                if (this.errors.otp) this.step = 'otp';
+                return;
+            }
+
+            this.processing = true;
+            try {
+                await axios.post(
+                    '/api/v1/ganti-sandi',
+                    { email: this.form.email, otp: this.otpValue, password: this.form.password },
+                    { headers: { Accept: 'application/json' } },
+                );
+                clearInterval(this.tickTimer);
                 this.flashNotice('info', 'Kata sandi diperbarui — mengalihkan ke halaman masuk…');
                 setTimeout(() => router.visit('/login'), 900);
             } catch (e) {
                 this.processing = false;
                 const r = e.response;
-                if (r && r.status === 422 && r.data.errors) {
+                const code = r && r.data && r.data.code;
+                // Masalah pada OTP → kembali ke langkah kode, kosongkan kotak.
+                if (code === 'OTP_INVALID' || code === 'OTP_EXPIRED' || code === 'OTP_LOCKED') {
+                    this.step = 'otp';
+                    this.resetOtpBoxes();
+                    this.focusOtp(0);
+                    if (code === 'OTP_EXPIRED') this.otpCountdown = 0;
+                    if (code === 'OTP_LOCKED') this.otpCountdown = 0;
+                    this.errors = { otp: (r.data && r.data.message) || 'Kode OTP tidak valid. Silakan coba lagi.' };
+                } else if (r && r.status === 422 && r.data.errors) {
                     Object.keys(r.data.errors).forEach((k) => (this.errors[k] = Array.isArray(r.data.errors[k]) ? r.data.errors[k][0] : r.data.errors[k]));
+                    if (this.errors.otp) this.step = 'otp';
                 } else {
                     this.flashNotice('error', (r && r.data && r.data.message) || 'Tidak dapat memperbarui kata sandi.');
                 }
@@ -248,6 +436,25 @@ export default {
 .switch-row { margin: 16px 0 0; text-align: center; font-size: 13px; font-weight: 500; color: var(--text-soft); }
 .switch-link { border: none; background: transparent; padding: 0; color: var(--indigo); font: 700 13px 'Plus Jakarta Sans'; cursor: pointer; text-decoration: none; }
 .switch-link:hover { color: var(--violet); text-decoration: underline; }
+.switch-link.as-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.switch-muted { color: #9ca0c6; font-weight: 600; }
+.step-hint { margin: 0 0 16px; font-size: 13px; line-height: 1.55; color: var(--text-soft); }
+.step-hint b { color: var(--ink); font-weight: 700; }
+.lbl-timer { font-size: 11.5px; font-weight: 600; color: var(--indigo); background: rgba(79, 70, 229, 0.1); padding: 2px 8px; border-radius: 6px; }
+.help-center { text-align: center; }
+/* 6-kotak OTP */
+.otp-boxes { display: flex; gap: 10px; justify-content: center; margin: 8px 0 4px; }
+.otp-box { width: 48px; height: 56px; text-align: center; font: 800 24px 'Plus Jakarta Sans'; color: var(--ink); background: #fff; border: 1.5px solid rgba(11, 16, 51, 0.15); border-radius: 14px; box-shadow: 0 2px 10px rgba(11, 16, 51, 0.03); outline: none; transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease; }
+.otp-box:focus { border-color: var(--indigo); box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.14); transform: translateY(-1px); }
+.otp-boxes.is-error .otp-box { border-color: #ef4444; box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1); }
+.otp-meta { margin: 14px 0 4px; text-align: center; font-size: 12.5px; font-weight: 500; color: var(--text-soft); }
+.otp-meta i { color: var(--indigo); margin-right: 4px; }
+.otp-expired { color: #dc2626; }
+.otp-expired i { color: #dc2626; }
+@media (max-width: 767px) {
+    .otp-boxes { gap: 7px; }
+    .otp-box { width: 42px; height: 50px; font-size: 20px; }
+}
 .ver-row { margin-top: 14px; display: flex; justify-content: space-between; align-items: center; font-size: 11.5px; color: var(--text-soft); }
 .ver-row b { color: var(--ink); font-weight: 700; letter-spacing: 0.05em; }
 .subs { position: relative; z-index: 3; display: flex; align-items: center; justify-content: space-between; padding: 16px 28px; margin: 0 56px 24px; background: rgba(255, 255, 255, 0.65); backdrop-filter: blur(25px); border: 1px solid rgba(255, 255, 255, 0.8); border-radius: 24px; box-shadow: 0 12px 36px -12px rgba(11, 16, 51, 0.1); }

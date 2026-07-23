@@ -8,6 +8,8 @@ Route::prefix('api/v1')->name('career.auth.')->group(function () {
     Route::post('/register', [AuthController::class, 'register'])->name('register');
     Route::post('/login', [AuthController::class, 'login'])->name('login');
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
+    // Reset kata sandi via OTP: minta kode (lupa-sandi) → kirim OTP+password baru (ganti-sandi).
+    Route::post('/lupa-sandi', [AuthController::class, 'mintaOtpReset'])->name('lupa-sandi');
     Route::post('/ganti-sandi', [AuthController::class, 'gantiSandi'])->name('ganti-sandi');
     Route::post('/kirim-verifikasi', [AuthController::class, 'kirimUlangVerifikasi'])->name('kirim-verifikasi');
     // Cek status verifikasi (polling halaman tunggu) + verifikasi via tempel token.
