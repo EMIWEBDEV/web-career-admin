@@ -71,6 +71,23 @@ class WcSyncEmailJob implements ShouldQueue
         }
     }
 
+    /**
+     * Kirim email auth (verifikasi/reset) SECEPAT email apply.
+     *  - cloudtasks (produksi) → antrean Cloud Tasks (andal + retry).
+     *  - selain itu (lokal/database) → dispatch SETELAH RESPONSE: dikirim dalam
+     *    proses yang sama begitu response terkirim ke browser, jadi TIDAK perlu
+     *    menunggu worker `queue:work` yang mungkin idle/mati (dulu bisa ~3 menit).
+     */
+    public static function kirim(string $jenis, int $userId, array $data = []): void
+    {
+        if (config('queue.default') === 'cloudtasks') {
+            self::dispatch($jenis, $userId, $data);
+
+            return;
+        }
+        self::dispatch($jenis, $userId, $data)->afterResponse();
+    }
+
     public function handle(): void
     {
         // Log ke channel default (stack → stderr) supaya TERLIHAT di Cloud Run /

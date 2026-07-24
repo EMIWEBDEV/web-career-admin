@@ -256,6 +256,12 @@ return [
         'pdf_cache_max_files' => (int) env('LMS_PDF_CACHE_MAX_FILES', 200),
     ],
 
+    // Cloudflare Turnstile (CAPTCHA halaman login Web Careers).
+    'cloudflare' => [
+        'turnstile_sitekey' => env('CLOUDFLARE_TURNSTILE_SITEKEY'),
+        'turnstile_secret' => env('CLOUDFLARE_TURNSTILE_SECRET'),
+    ],
+
     // DEVELOPMENT CONFIGS
     'ridho' => require __DIR__ . '/dev/ridhoDev.php',
     'frans' => require __DIR__ . '/dev/fransDev.php',

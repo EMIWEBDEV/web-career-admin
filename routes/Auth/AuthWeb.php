@@ -5,6 +5,8 @@ use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
 Route::prefix('api/v1')->name('career.auth.')->group(function () {
+    // Langkah 1 register: cek ketersediaan KTP sebelum form identitas ditampilkan.
+    Route::post('/cek-ktp', [AuthController::class, 'cekKtp'])->name('cek-ktp');
     Route::post('/register', [AuthController::class, 'register'])->name('register');
     Route::post('/login', [AuthController::class, 'login'])->name('login');
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');

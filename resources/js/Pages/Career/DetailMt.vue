@@ -1,4 +1,4 @@
-<!-- WEB CAREER — Halaman Detail Management Trainee (route: /test/karir/landing-page/mt/{id}) -->
+<!-- WEB CAREER — Halaman Detail Management Trainee (route: /karir/landing-page/mt/{id}) -->
 <template>
     <Head>
         <title>{{ mt.nama }} - EVO Group Career</title>
@@ -13,14 +13,14 @@
                     <header class="wc-dhead wc-dhead--mt wc-reveal">
                         <div class="wc-dhead__pattern" aria-hidden="true"></div>
                         <div class="wc-dhead__badges">
-                            <span class="wc-badge wc-badge--gold"><i class="bi bi-mortarboard-fill"></i> Management Trainee</span>
-                            <span class="wc-badge wc-badge--glass">{{ mt.batch }}</span>
+                            <span class="wc-badge wc-badge--violet"><i class="bi bi-mortarboard-fill"></i> Management Trainee</span>
+                            <span class="wc-badge wc-badge--muted">{{ mt.batch }}</span>
                             <span class="wc-badge" :class="statusClass(mt.status)">{{ statusLabel(mt.status) }}</span>
                         </div>
                         <h1>{{ mt.nama }}</h1>
                         <p class="wc-dhead__tag">{{ mt.tagline }}</p>
                         <div class="wc-dhead__meta">
-                            <span><i class="bi bi-building"></i> {{ mt.perusahaan }}</span>
+                            <span><i class="bi bi-geo-alt"></i> {{ mt.penempatan }}</span>
                             <span><i class="bi bi-mortarboard"></i> {{ mt.tipeKegiatan }}</span>
                             <span><i class="bi bi-hourglass-split"></i> {{ mt.durasi }}</span>
                         </div>
@@ -110,7 +110,7 @@
                             <li><span><i class="bi bi-megaphone"></i> Pengumuman</span><b>{{ formatDate(mt.tanggalPengumuman) }}</b></li>
                             <li><span><i class="bi bi-clock"></i> Sisa waktu</span><b :class="{ 'wc-danger': isFull(mt) || daysLeft(mt.tanggalTutup) <= 7 }">{{ isFull(mt) ? 'Ditutup' : deadlineLabel(mt.tanggalTutup) }}</b></li>
                         </ul>
-                        <button v-if="!isFull(mt)" type="button" class="wc-btn wc-btn--gold wc-btn--full" @click="goApply(mt)"><i class="bi bi-send-fill"></i> Daftar Program</button>
+                        <button v-if="!isFull(mt)" type="button" class="wc-btn wc-btn--primary wc-btn--full" @click="goApply(mt)"><i class="bi bi-send-fill"></i> Daftar Program</button>
                         <button v-else type="button" class="wc-btn wc-btn--disabled wc-btn--full" disabled><i class="bi bi-lock-fill"></i> Kuota Telah Penuh</button>
                     </div>
                 </aside>

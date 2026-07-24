@@ -17,7 +17,7 @@
                     <h1 class="lms-h1">Lamaran Saya</h1>
                     <p class="lms-sub">Pantau progres seleksimu di EVO Group. Klik lamaran untuk melihat detail &amp; mengisi formulir tahap.</p>
                 </div>
-                <Link href="/test/karir/landing-page" class="lms-btn-cari">
+                <Link href="/karir/landing-page" class="lms-btn-cari">
                     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>
                     Cari Lowongan
                 </Link>
@@ -41,7 +41,7 @@
                 </div>
                 <div style="font-size: 18px; font-weight: 800; color: #0f172a; margin-top: 16px">Belum ada lamaran</div>
                 <div style="font-size: 13.5px; color: #8792a6; margin-top: 6px">Mulai dengan mencari lowongan yang cocok untukmu.</div>
-                <Link href="/test/karir/landing-page" class="lms-btn-cari" style="margin-top: 18px">
+                <Link href="/karir/landing-page" class="lms-btn-cari" style="margin-top: 18px">
                     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>
                     Cari Lowongan
                 </Link>
@@ -186,7 +186,7 @@
                         <div class="lms-rec__matchbar"><div :style="{ width: r.match + '%' }"></div></div>
                         <span style="font-size: 12px; font-weight: 800; color: #059669; white-space: nowrap">{{ r.match }}% cocok</span>
                     </div>
-                    <Link href="/test/karir/landing-page" class="lms-rec__btn">
+                    <Link href="/karir/landing-page" class="lms-rec__btn">
                         Lamar Sekarang
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
                     </Link>
@@ -580,7 +580,8 @@ export default {
 .lms-sec-label { font-size: 12px; font-weight: 800; letter-spacing: 0.14em; color: #8b93a7; }
 
 /* ═══ HALAMAN: fluid penuh (container-fluid), latar dari shell ═══ */
-.lms { position: relative; margin: -1rem; padding: 28px 34px 48px; min-height: calc(100vh - 68px); overflow-x: hidden; }
+/* clip (bukan hidden) agar tidak jadi scroll container → hindari scrollbar ganda. */
+.lms { position: relative; margin: -1rem; padding: 28px 34px 48px; min-height: calc(100vh - 68px); overflow-x: clip; }
 .lms-blob { position: absolute; border-radius: 50%; filter: blur(8px); pointer-events: none; z-index: 0; }
 .lms-blob--a { top: -120px; right: 12%; width: 440px; height: 440px; background: radial-gradient(circle at 30% 30%, rgba(139, 92, 246, 0.14), rgba(139, 92, 246, 0) 70%); animation: lmsFloatA 16s ease-in-out infinite; }
 .lms-blob--b { bottom: -160px; left: 6%; width: 460px; height: 460px; background: radial-gradient(circle at 60% 40%, rgba(99, 102, 241, 0.1), rgba(99, 102, 241, 0) 70%); animation: lmsFloatB 19s ease-in-out infinite; }

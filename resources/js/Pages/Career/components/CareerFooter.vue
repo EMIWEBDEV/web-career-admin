@@ -11,31 +11,25 @@
                         <small>Career Portal</small>
                     </span>
                 </div>
-                <p>Bergabunglah dengan ekosistem people, pet, &amp; manufacturing EVO Group. Naik level bersama kami.</p>
-                <div class="wc-footer__social">
-                    <a href="#" @click.prevent aria-label="Instagram"><i class="bi bi-instagram"></i></a>
-                    <a href="#" @click.prevent aria-label="LinkedIn"><i class="bi bi-linkedin"></i></a>
-                    <a href="#" @click.prevent aria-label="Website"><i class="bi bi-globe"></i></a>
-                </div>
+                <p>Ekosistem people, pet &amp; manufacturing terkemuka di Sumatera Selatan. Naik level bersama kami.</p>
             </div>
             <div class="wc-footer__cols">
                 <div class="wc-footer__col">
                     <strong>Karier</strong>
                     <button type="button" @click="goToSection('lowongan')">Lowongan</button>
                     <button v-if="hasMt" type="button" @click="goToSection('mt')">Management Trainee</button>
-                    <button type="button" @click="goToSection('lokasi')">Lokasi Kami</button>
+                    <a href="/karir/lowongan">Semua Lowongan</a>
                 </div>
                 <div class="wc-footer__col">
-                    <strong>Perusahaan</strong>
-                    <a href="/about">Tentang Kami</a>
-                    <button type="button" @click="goToSection('achievement')">Pencapaian</button>
-                    <a href="#" @click.prevent>Budaya Kerja</a>
-                </div>
-                <div class="wc-footer__col">
-                    <strong>Portal &amp; Bantuan</strong>
+                    <strong>Akses</strong>
+                    <a href="/login">Masuk</a>
+                    <a href="/register">Daftar Akun</a>
                     <a href="/kandidat/portal">Portal Kandidat</a>
-                    <a href="/karir">Panel Admin</a>
-                    <a href="#" @click.prevent>FAQ Rekrutmen</a>
+                </div>
+                <div class="wc-footer__col">
+                    <strong>Tentang</strong>
+                    <button type="button" @click="goToSection('achievement')">Pencapaian</button>
+                    <button type="button" @click="goToSection('lokasi')">Lokasi Kami</button>
                 </div>
                 <div class="wc-footer__col wc-footer__col--office">
                     <strong>Kantor Kami</strong>
@@ -49,8 +43,8 @@
         <!-- Tingkat 2 -->
         <div class="wc-footer__bar">
             <div class="wc-footer__bar-inner">
-                <span>&copy; 2026 EVO Group Career. Halaman demo (dummy).</span>
-                <span class="wc-footer__credit">Dibuat dengan <i class="bi bi-heart-fill"></i> oleh <b>Tim Technology</b></span>
+                <span>&copy; {{ tahun }} EVO Group. Seluruh hak cipta.</span>
+                <span class="wc-footer__credit">Dikelola oleh <b>Tim Technology EVO Group</b></span>
             </div>
         </div>
     </footer>
@@ -63,4 +57,6 @@ defineProps({
     hasMt: { type: Boolean, default: false },
     offices: { type: Array, default: () => [] },
 });
+
+const tahun = new Date().getFullYear();
 </script>

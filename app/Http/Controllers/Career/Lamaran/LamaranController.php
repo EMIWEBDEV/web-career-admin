@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Career\Lamaran;
 
 use App\Helpers\ResponseHelper;
 use App\Http\Controllers\Controller;
+use App\Jobs\Career\WcApplyEmailJob;
 use App\Jobs\Career\WcApplyFormJob;
 use App\Support\Career\GcsBerkas;
 use App\Support\Career\LamaranService;
@@ -445,10 +446,11 @@ class LamaranController extends Controller
             ->join('N_WEB_CAREERS_Program as p', 'p.Id_Program', '=', 'l.Program_Id')
             ->leftJoin('N_WEB_CAREERS_Program_Posisi as x', 'x.Id_Program_Posisi', '=', 'l.Program_Posisi_Id')
             ->leftJoin('N_WEB_CAREERS_Program_Batch as b', 'b.Id_Program_Batch', '=', 'l.Program_Batch_Id')
+            ->leftJoin('N_WEB_CAREERS_Pembukaan as pb', 'pb.Id_Pembukaan', '=', 'l.Pembukaan_Id')
             ->where('l.Id_Lamaran', $realId)
             ->where('l.Id_Users', $userId)
             ->select('l.*', 'p.Nama as ProgramNama', 'p.Kategori as ProgramKategori', 'p.Penyelenggara',
-                'x.Posisi', 'x.Lokasi', 'x.Departemen', 'b.Nama as BatchNama')
+                'x.Posisi', 'x.Lokasi', 'x.Departemen', 'b.Nama as BatchNama', 'pb.Kode as PembukaanKode')
             ->first();
 
         if (! $lamaran) {
@@ -559,6 +561,35 @@ class LamaranController extends Controller
                 ->all(),
         ];
 
+        // FORMULIR & BERKAS yang SUDAH kandidat kirim (panel "Formulir & Berkas Saya").
+        $formulir = $this->formulirTerkirim($realId, '/kandidat/lamaran/berkas/file/');
+
+        // URL detail lowongan/program publik (tombol "Lihat Detail Lowongan").
+        // Kartu landing ber-id 'PB-{PembukaanKode}[-{Program_Posisi_Id}]'.
+        $lowonganUrl = null;
+        if ($lamaran->PembukaanKode) {
+            $lowonganUrl = $lamaran->ProgramKategori === 'MT'
+                ? '/karir/landing-page/mt/PB-' . $lamaran->PembukaanKode
+                : '/karir/landing-page/lowongan/PB-' . $lamaran->PembukaanKode . '-' . $lamaran->Program_Posisi_Id;
+        }
+
+        // KARTU lowongan (info kaya: tanggung jawab, syarat, skill, benefit, tipe
+        // kerja, tempat kerja, pengalaman) — sumber sama dengan landing/MPP.
+        $kartu = null;
+        try {
+            $landing = app(\App\Http\Controllers\Career\CareerLandingController::class);
+            if ($lamaran->ProgramKategori === 'MT') {
+                $pbHash = $lamaran->Pembukaan_Id ? Hashids::encode($lamaran->Pembukaan_Id) : null;
+                $kartu = collect($landing->dbMtCards())->firstWhere('pembukaanId', $pbHash);
+            } else {
+                $pbHash = $lamaran->Pembukaan_Id ? Hashids::encode($lamaran->Pembukaan_Id) : null;
+                $posHash = $lamaran->Program_Posisi_Id ? Hashids::encode($lamaran->Program_Posisi_Id) : null;
+                $kartu = collect($landing->dbLowonganCards())->first(fn ($c) => ($c['pembukaanId'] ?? null) === $pbHash && ($c['posisiId'] ?? null) === $posHash);
+            }
+        } catch (\Throwable $e) {
+            $kartu = null;
+        }
+
         return Inertia::render('Career/portal/LamaranDetail', CareerShell::props('/kandidat/portal', 'Detail Lamaran', [
             'lamaran' => [
                 'id' => $id,
@@ -581,6 +612,9 @@ class LamaranController extends Controller
             'tahap' => $tahap,
             'tugas' => $tugas,
             'konteks' => $konteks,
+            'formulir' => $formulir,
+            'lowonganUrl' => $lowonganUrl,
+            'kartu' => $kartu,
             // Profil untuk prefill field bertipe "terisi otomatis".
             'profil' => [
                 'nama' => session('career_auth.nama'),
@@ -588,6 +622,201 @@ class LamaranController extends Controller
                 'hp' => session('career_auth.hp'),
             ],
         ]));
+    }
+
+    /**
+     * Bentuk daftar formulir yang SUDAH dikirim untuk sebuah lamaran (jawaban +
+     * berkas). $urlBerkasPrefix menentukan basis URL berkas (admin vs kandidat).
+     */
+    private function formulirTerkirim(int $lamaranId, string $urlBerkasPrefix): array
+    {
+        $pengisian = DB::table('N_WEB_CAREERS_Formulir_Pengisian as fp')
+            ->leftJoin('N_WEB_CAREERS_Lamaran_Tahap as t', 't.Id_Lamaran_Tahap', '=', 'fp.Lamaran_Tahap_Id')
+            ->where('fp.Lamaran_Id', $lamaranId)
+            ->orderBy('t.Urutan')
+            ->select('fp.*', 't.Urutan as TahapUrutan', 't.Label as TahapLabel')
+            ->get();
+
+        $berkasPer = DB::table('N_WEB_CAREERS_Formulir_Berkas')
+            ->whereIn('Formulir_Pengisian_Id', $pengisian->pluck('Id_Formulir_Pengisian')->all() ?: [0])
+            ->orderBy('Urutan')
+            ->get()
+            ->groupBy('Formulir_Pengisian_Id');
+
+        return $pengisian->values()->map(function ($fp, $i) use ($berkasPer, $urlBerkasPrefix) {
+            $jawaban = json_decode($fp->Jawaban_Json ?: '{}', true) ?: [];
+
+            $berkas = collect($berkasPer->get($fp->Id_Formulir_Pengisian, []))->map(function ($b) use ($urlBerkasPrefix) {
+                $ext = strtolower($b->Ekstensi ?: pathinfo($b->Nama_Asli, PATHINFO_EXTENSION));
+
+                return [
+                    'field' => $b->Field_Key,
+                    'nama' => $b->Nama_Asli,
+                    'url' => url($urlBerkasPrefix . Hashids::encode($b->Id_Formulir_Berkas)),
+                    'ext' => $ext,
+                    'isPdf' => $ext === 'pdf' || $b->Mime === 'application/pdf',
+                    'isImage' => in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'gif'], true),
+                    'ukuran' => (int) $b->Ukuran_Byte,
+                    'status' => $b->Status_Verifikasi,
+                ];
+            })->values();
+
+            return [
+                'no' => $i + 1,
+                'urutan' => (int) ($fp->TahapUrutan ?? 0),
+                'label' => $fp->TahapLabel ?: ($fp->Sumber === 'PENDAFTARAN' ? 'Formulir Pendaftaran' : 'Formulir Tahap'),
+                'sumber' => $fp->Sumber,
+                'waktuKirim' => optional($fp->Waktu_Kirim)->__toString(),
+                'jawaban' => collect($jawaban)->map(fn ($v, $k) => [
+                    'key' => $k,
+                    'label' => ucwords(str_replace(['_', '-'], ' ', $k)),
+                    'nilai' => is_array($v) ? implode(', ', $v) : (is_bool($v) ? ($v ? 'Ya' : 'Tidak') : $v),
+                ])->values(),
+                'berkas' => $berkas,
+            ];
+        })->all();
+    }
+
+    /** GET pratinjau berkas MILIK kandidat login (cek kepemilikan lamaran). */
+    public function portalBerkasFile(string $id)
+    {
+        $userId = (int) session('career_auth.id');
+        $realId = Hashids::decode($id)[0] ?? null;
+
+        $b = DB::table('N_WEB_CAREERS_Formulir_Berkas as fb')
+            ->join('N_WEB_CAREERS_Formulir_Pengisian as fp', 'fp.Id_Formulir_Pengisian', '=', 'fb.Formulir_Pengisian_Id')
+            ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'fp.Lamaran_Id')
+            ->where('fb.Id_Formulir_Berkas', $realId)
+            ->where('l.Id_Users', $userId) // hanya berkas milik kandidat sendiri
+            ->select('fb.*')
+            ->first();
+        if (! $b) {
+            abort(404);
+        }
+
+        if ($b->Path_File) {
+            try {
+                $gcs = Storage::disk(GcsBerkas::DISK);
+                if ($gcs->exists($b->Path_File)) {
+                    return redirect()->away($gcs->temporaryUrl($b->Path_File, now()->addMinutes(15)));
+                }
+            } catch (\Throwable $e) {
+                Log::channel('web_career')->warning('Signed URL GCS gagal (portal) berkas ' . $b->Id_Formulir_Berkas . ': ' . $e->getMessage());
+            }
+        }
+
+        foreach ([storage_path('app/' . $b->Path_File), public_path($b->Path_File), $b->Path_File] as $kandidat) {
+            if ($kandidat && is_file($kandidat)) {
+                return response()->file($kandidat, ['Content-Type' => $b->Mime ?: 'application/octet-stream']);
+            }
+        }
+
+        abort(404, 'File tidak ditemukan.');
+    }
+
+    /**
+     * WEBHOOK CAT/HCLearn — hasil tes pihak ke-3 (server-to-server, guard secret).
+     * Dipanggil CAT saat tes difinalisasi → WC memperbarui nilai peserta lalu
+     * MENGGERAKKAN tahap otomatis: LULUS → tahap berikutnya, GUGUR → ditutup.
+     * Idempoten: bila peserta sudah 'selesai', abaikan (balas ok).
+     */
+    public function hasilUjianCallback(Request $request)
+    {
+        // Guard: cocokkan secret (header X-WC-Secret). Tanpa login.
+        $secret = (string) config('hclearn.callback_secret');
+        if (! $secret || ! hash_equals($secret, (string) $request->header('X-WC-Secret'))) {
+            return ResponseHelper::error('Secret tidak valid.', 401);
+        }
+
+        $data = $request->validate([
+            'Id_WC_Penjadwalan_Peserta' => 'required|integer',
+            'Status_Kelulusan' => 'nullable|string|max:30',
+            'lulus' => 'nullable|boolean',
+            'Total_Nilai' => 'nullable|numeric',
+            'Total_Soal' => 'nullable|integer',
+            'Ambang_Batas_Nilai' => 'nullable|numeric',
+            'Status_Pengerjaan' => 'nullable|string|max:30',
+        ]);
+
+        $peserta = DB::table('N_WEB_CAREERS_Penjadwalan_Peserta')
+            ->where('Id_Penjadwalan_Peserta', (int) $data['Id_WC_Penjadwalan_Peserta'])
+            ->first();
+        if (! $peserta) {
+            return ResponseHelper::error('Peserta penjadwalan tidak ditemukan.', 404);
+        }
+
+        // Verdict LULUS/GUGUR dari CAT (bool 'lulus' diprioritaskan; fallback teks).
+        $teks = strtoupper((string) ($data['Status_Kelulusan'] ?? ''));
+        $lulus = array_key_exists('lulus', $data) && $data['lulus'] !== null
+            ? (bool) $data['lulus']
+            : in_array($teks, ['LULUS', 'LOLOS', 'PASS', 'ACCEPT'], true);
+        $hasil = $lulus ? 'LULUS' : 'GUGUR';
+
+        // Rekam nilai apa pun keputusannya (untuk tampil di worklist admin).
+        DB::table('N_WEB_CAREERS_Penjadwalan_Peserta')
+            ->where('Id_Penjadwalan_Peserta', $peserta->Id_Penjadwalan_Peserta)
+            ->update(array_filter([
+                'Total_Nilai' => $data['Total_Nilai'] ?? null,
+                'Total_Soal' => $data['Total_Soal'] ?? null,
+                'Ambang_Batas_Nilai' => $data['Ambang_Batas_Nilai'] ?? null,
+                'Status_Kelulusan' => $data['Status_Kelulusan'] ?? $hasil,
+                'Status_Pengerjaan' => $data['Status_Pengerjaan'] ?? 'selesai',
+                'Flag_Selesai' => 'Y',
+                'Waktu_Callback' => now(),
+                'Updated_At' => now(),
+            ], fn ($v) => $v !== null));
+
+        // Tahap lamaran yang tertaut penjadwalan tahap ini & masih BERJALAN.
+        $tahap = DB::table('N_WEB_CAREERS_Lamaran_Tahap')
+            ->where('Lamaran_Id', $peserta->Lamaran_Id)
+            ->where('Penjadwalan_Tahap_Id', $peserta->Penjadwalan_Tahap_Id)
+            ->first();
+
+        if (! $tahap || $tahap->Status !== 'BERJALAN') {
+            // Sudah diproses sebelumnya (idempoten) — cukup balas ok.
+            return ResponseHelper::success(['diproses' => false], 'Hasil diterima (tahap sudah final).');
+        }
+
+        // GERAKKAN tahap otomatis (LULUS → berikutnya, GUGUR → tutup).
+        $catatan = $lulus
+            ? ('Lulus tes ' . ($tahap->Label ?? '') . ' (otomatis dari HCLearn).')
+            : ('Tidak lolos tes ' . ($tahap->Label ?? '') . ' (otomatis dari HCLearn).');
+        $this->svc->ketukPalu((int) $tahap->Id_Lamaran_Tahap, $hasil, trim($catatan), null);
+
+        // Kirim email hasil ke kandidat (LOLOS bila lamaran selesai diterima,
+        // MENUNGGU bila lolos & lanjut tahap berikut, GUGUR bila tidak lolos).
+        $this->kirimEmailHasilTahap((int) $peserta->Lamaran_Id, $lulus);
+
+        Log::channel('web_career')->info("[CALLBACK] hasil tes peserta #{$peserta->Id_Penjadwalan_Peserta} = {$hasil} → tahap {$tahap->Label} digerakkan.");
+
+        return ResponseHelper::success(['diproses' => true, 'hasil' => $hasil], 'Hasil tes diproses.');
+    }
+
+    /** Kirim email hasil setelah tahap tes diputus otomatis. */
+    private function kirimEmailHasilTahap(int $lamaranId, bool $lulus): void
+    {
+        try {
+            $l = DB::table('N_WEB_CAREERS_Lamaran as l')
+                ->join('N_WEB_CAREERS_Program as p', 'p.Id_Program', '=', 'l.Program_Id')
+                ->leftJoin('N_WEB_CAREERS_Program_Posisi as x', 'x.Id_Program_Posisi', '=', 'l.Program_Posisi_Id')
+                ->where('l.Id_Lamaran', $lamaranId)
+                ->select('l.Id_Users', 'l.Kode', 'l.Status', 'l.Hasil_Akhir', 'p.Nama as ProgramNama', 'x.Posisi')
+                ->first();
+            if (! $l || ! $l->Id_Users) {
+                return;
+            }
+
+            // LULUS + lamaran DITERIMA (tahap terakhir) → LOLOS; LULUS + lanjut → MENUNGGU.
+            $status = ! $lulus ? 'GUGUR' : ($l->Status === 'LULUS' ? 'LOLOS' : 'MENUNGGU');
+
+            WcApplyEmailJob::dispatch((int) $l->Id_Users, $status, [
+                'kode' => $l->Kode,
+                'posisi' => $l->Posisi ?: $l->ProgramNama,
+                'program' => $l->ProgramNama,
+            ]);
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->error("[CALLBACK] gagal antre email hasil lamaran #{$lamaranId}: " . $e->getMessage());
+        }
     }
 
     /** POST /api/v1/lamaran/tahap/{id}/kirim — kandidat mengirim formulir tahap. */
@@ -793,8 +1022,11 @@ class LamaranController extends Controller
             $tAktif = $l->Status === 'BERJALAN' ? $tahapList->firstWhere('Status', 'BERJALAN') : null;
             $skor = $tk->Skor ?? null;
             $isTes = ($tk->Provider ?? null) === 'THIRD_PARTY';
-            $butuhKeputusan = $tAktif && $tAktif->Provider === 'INTERNAL' && $tAktif->Formulir_Pengisian_Id && $tAktif->Status === 'BERJALAN';
+            // BUTUH KEPUTUSAN admin = tahap BERJALAN yang BUKAN digerakkan sistem
+            // (THIRD_PARTY di-auto lewat callback HCLearn). Termasuk tahap manual
+            // tanpa formulir (wawancara, penawaran) — admin bisa Loloskan/Tidak Lolos.
             $nungguSistem = $tAktif && $tAktif->Provider === 'THIRD_PARTY';
+            $butuhKeputusan = $tAktif && $tAktif->Status === 'BERJALAN' && $tAktif->Provider !== 'THIRD_PARTY';
 
             if ($l->Status === 'GUGUR') {
                 $badge = ['tone' => 'gugur', 'teks' => 'Tidak Lolos'];

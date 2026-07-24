@@ -22,7 +22,8 @@ use Inertia\Inertia;
 Route::get('/', [CareerLandingController::class, 'index'])->name('career.home');
 
 // Auth REAL (DB) — komponen SAMA dengan halaman test (Career/Auth), kini nyambung DB.
-Route::get('/login', fn() => Inertia::render('Career/Auth', ['mode' => 'login']))->name('login');
+// Turnstile hanya dipakai di LOGIN; sitekey dibagikan ke frontend (kosong = fitur mati).
+Route::get('/login', fn() => Inertia::render('Career/Auth', ['mode' => 'login', 'turnstileSiteKey' => config('services.cloudflare.turnstile_sitekey')]))->name('login');
 Route::get('/register', fn() => Inertia::render('Career/Auth', ['mode' => 'register']))->name('register');
 
 // Ganti / reset kata sandi (form). Email opsional dari query (alur lupa sandi).

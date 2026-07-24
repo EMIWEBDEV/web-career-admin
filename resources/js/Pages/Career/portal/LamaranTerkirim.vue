@@ -184,7 +184,7 @@
                         </div>
 
                         <!-- FORM2 aktif → formulir tahap lanjut -->
-                        <Link v-if="showForm2" :href="`/test/karir/apply/${programId}?form=2`" class="wca-btn wca-btn--primary wca-btn--full">
+                        <Link v-if="showForm2" :href="`/karir/apply/${programId}?form=2`" class="wca-btn wca-btn--primary wca-btn--full">
                             <i class="bi bi-pencil-square"></i> Isi Formulir Tahap Lanjut (Form 2)
                         </Link>
                         <small v-if="showForm2" class="wct-hint2">Lengkapi data & dokumen tambahan agar bisa lanjut ke tahap berikutnya.</small>

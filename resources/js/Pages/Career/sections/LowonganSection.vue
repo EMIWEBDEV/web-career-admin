@@ -1,109 +1,76 @@
-<!-- WEB CAREER — Section 3: Lowongan (search + filter + kartu) -->
+<!-- WEB CAREER — Section 3: Lowongan Terbuka (LIGHT, 1:1 desain "EVO Career Landing") -->
 <template>
-    <section id="lowongan" class="wc-section">
+    <section id="lowongan" class="rek">
         <div class="wc-sec-head wc-reveal">
-            <span class="wc-eyebrow"><span class="wc-dot"></span> Lowongan Terbuka</span>
+            <span class="rek__eyebrow">✦ Lowongan Terbuka</span>
             <h2>Temukan peran <span class="wc-grad">terbaikmu</span>.</h2>
-            <p>Cari berdasarkan posisi, departemen, atau lokasi. {{ lowongan.length }} peluang menanti.</p>
+            <p>Cari berdasarkan posisi, skill, atau lokasi. {{ lowongan.length }} peluang menanti.</p>
         </div>
 
-        <!-- Filter toolbar -->
-        <div class="wc-toolbar">
-            <div class="wc-toolbar__search">
-                <i class="bi bi-search"></i>
-                <input v-model="search" type="text" placeholder="Cari posisi, skill, atau departemen…" />
-                <button v-if="search" type="button" class="wc-toolbar__clear" @click="search = ''"><i class="bi bi-x-lg"></i></button>
-            </div>
-            <div class="wc-toolbar__filters">
-                <div v-for="f in filterDefs" :key="f.key" class="wc-select">
-                    <button
-                        type="button"
-                        class="wc-select__btn"
-                        :class="{ 'is-active': f.value, 'is-open': openFilter === f.key }"
-                        @click.stop="toggleFilter(f.key)"
-                    >
-                        <i class="bi" :class="f.icon"></i>
-                        <span class="wc-select__val">{{ f.value || f.label }}</span>
-                        <i class="bi bi-chevron-down wc-select__chev"></i>
-                    </button>
-                    <transition name="wc-pop">
-                        <div v-if="openFilter === f.key" class="wc-select__menu" @click.stop>
-                            <button type="button" class="wc-select__opt" :class="{ 'is-sel': !f.value }" @click="chooseFilter(f.key, '')">
-                                <span>{{ f.all }}</span><i v-if="!f.value" class="bi bi-check2"></i>
-                            </button>
-                            <button
-                                v-for="o in f.options"
-                                :key="o"
-                                type="button"
-                                class="wc-select__opt"
-                                :class="{ 'is-sel': f.value === o }"
-                                @click="chooseFilter(f.key, o)"
-                            >
-                                <span>{{ o }}</span><i v-if="f.value === o" class="bi bi-check2"></i>
-                            </button>
-                        </div>
-                    </transition>
+        <div v-if="tampil.length" class="rek__grid">
+            <Link
+                v-for="(job, i) in tampil"
+                :key="job.id"
+                class="rek__card wc-reveal"
+                :class="{ 'is-full': isFull(job) }"
+                :style="{ '--d': i * 70 + 'ms' }"
+                :href="lowonganUrl(job.id)"
+            >
+                <div v-if="isFull(job)" class="rek__ribbon">PENUH</div>
+
+                <div class="rek__top">
+                    <span class="rek__type" :class="{ 'is-contract': job.tipeKerja === 'Contract', 'is-intern': job.tipeKerja === 'Internship' }">{{ job.tipeKerja }}</span>
+                    <span v-if="job.unggulan" class="rek__star"><i class="bi bi-star-fill"></i> Unggulan</span>
                 </div>
-            </div>
-        </div>
 
-        <div class="wc-result-head">
-            <span><strong>{{ filtered.length }}</strong> dari {{ lowongan.length }} lowongan</span>
-            <div v-if="hasActiveFilter" class="wc-active">
-                <button v-if="search" type="button" class="wc-pill" @click="search = ''"><i class="bi bi-search"></i> {{ truncate(search) }} <i class="bi bi-x-lg"></i></button>
-                <button v-if="filterDept" type="button" class="wc-pill" @click="filterDept = ''">{{ filterDept }} <i class="bi bi-x-lg"></i></button>
-                <button v-if="filterLoc" type="button" class="wc-pill" @click="filterLoc = ''">{{ filterLoc }} <i class="bi bi-x-lg"></i></button>
-                <button v-if="filterType" type="button" class="wc-pill" @click="filterType = ''">{{ filterType }} <i class="bi bi-x-lg"></i></button>
-                <button type="button" class="wc-reset" @click="resetFilters"><i class="bi bi-arrow-counterclockwise"></i> Reset semua</button>
-            </div>
-        </div>
+                <h3 class="rek__title">{{ job.posisi }}</h3>
 
-        <TransitionGroup v-if="filtered.length" name="wc-jobs" tag="div" class="wc-job-grid" appear>
-            <Link v-for="job in filtered" :key="job.id" class="wc-job" :class="{ 'is-full': isFull(job) }" :href="lowonganUrl(job.id)">
-                <div class="wc-job__glow"></div>
-                <div v-if="isFull(job)" class="wc-job__ribbon"><i class="bi bi-lock-fill"></i> Penuh</div>
-                <div class="wc-job__top">
-                    <span class="wc-badge" :class="typeClass(job.tipeKerja)">{{ job.tipeKerja }}</span>
-                    <span v-if="job.unggulan" class="wc-badge wc-badge--star"><i class="bi bi-star-fill"></i> Unggulan</span>
+                <div v-if="(job.benefit || []).length" class="rek__salary">
+                    <i class="bi bi-gift"></i>
+                    {{ job.benefit[0] }}<template v-if="job.benefit.length > 1"> · +{{ job.benefit.length - 1 }} benefit</template>
                 </div>
-                <h3>{{ job.posisi }}</h3>
-                <p class="wc-job__co"><i class="bi bi-building"></i> {{ job.perusahaan }}</p>
-                <p class="wc-job__sum">{{ job.ringkasan }}</p>
 
-                <div class="wc-job__meta">
+                <p class="rek__desc">{{ job.ringkasan }}</p>
+
+                <div class="rek__meta">
                     <span><i class="bi bi-geo-alt"></i> {{ job.lokasi }} · {{ job.tempatKerja }}</span>
-                    <span><i class="bi bi-bar-chart-steps"></i> {{ job.level }}</span>
-                    <!-- Baris pengalaman disembunyikan bila tak ada datanya (tidak menampilkan strip "—"). -->
                     <span v-if="job.pengalaman && job.pengalaman !== '—'"><i class="bi bi-briefcase"></i> {{ job.pengalaman }}</span>
                 </div>
 
-                <div class="wc-tags">
-                    <span v-for="s in job.skill.slice(0, 3)" :key="s">{{ s }}</span>
-                    <span v-if="job.skill.length > 3" class="wc-tags__more">+{{ job.skill.length - 3 }}</span>
+                <div class="rek__tags">
+                    <span v-for="s in (job.skill || []).slice(0, 3)" :key="s">{{ s }}</span>
+                    <span v-if="(job.skill || []).length > 3" class="rek__tags-more">+{{ job.skill.length - 3 }}</span>
                 </div>
 
-                <div class="wc-job__foot">
-                    <span class="wc-job__quota"><i class="bi bi-people"></i> {{ job.kuotaTerisi }}/{{ job.kuota }} terisi · {{ job.pelamar }} pelamar</span>
-                    <span v-if="isFull(job)" class="wc-deadline soon"><i class="bi bi-lock-fill"></i> Kuota penuh</span>
-                    <span v-else class="wc-deadline" :class="{ soon: daysLeft(job.tanggalTutup) <= 7 }"><i class="bi bi-clock"></i> {{ deadlineLabel(job.tanggalTutup) }}</span>
+                <div class="rek__foot">
+                    <span class="rek__people">
+                        <i class="bi bi-people"></i> <b>{{ job.kuotaTerisi }}/{{ job.kuota }}</b> · {{ job.pelamar }} pelamar
+                    </span>
+                    <span class="rek__cta">Lihat detail <i class="bi bi-arrow-right"></i></span>
                 </div>
-                <span class="wc-job__cta">Lihat detail <i class="bi bi-arrow-right"></i></span>
             </Link>
-        </TransitionGroup>
+        </div>
 
-        <div v-else class="wc-empty">
+        <div v-else class="rek__empty">
             <i class="bi bi-clipboard-x"></i>
-            <h4>Tidak ada lowongan yang cocok</h4>
-            <p>Coba ubah kata kunci atau reset filter pencarian.</p>
-            <button type="button" @click="resetFilters"><i class="bi bi-arrow-counterclockwise"></i> Reset filter</button>
+            <h4>Belum ada lowongan terbuka</h4>
+            <p>Nantikan peluang karier terbaru dari EVO Group.</p>
+        </div>
+
+        <!-- Landing hanya cuplikan 6 — pencarian & filter lengkap ada di halaman "Semua Lowongan". -->
+        <div v-if="lowongan.length > MAKS" class="rek__seeall">
+            <Link href="/karir/lowongan" class="rek__seeall-btn">
+                Lihat Semua {{ lowongan.length }} Lowongan
+                <i class="bi bi-arrow-right"></i>
+            </Link>
         </div>
     </section>
 </template>
 
 <script setup>
 import { Link } from '@inertiajs/vue3';
-import { computed, onMounted, onUnmounted, ref } from 'vue';
-import { daysLeft, deadlineLabel, isFull, lowonganUrl, typeClass } from '../careerData';
+import { computed } from 'vue';
+import { isFull, lowonganUrl } from '../careerData';
 
 const props = defineProps({
     lowongan: { type: Array, default: () => [] },
@@ -111,63 +78,241 @@ const props = defineProps({
     locations: { type: Array, default: () => [] },
 });
 
-const search = ref('');
-const filterDept = ref('');
-const filterLoc = ref('');
-const filterType = ref('');
-const openFilter = ref(null);
-
-const workTypes = computed(() => [...new Set(props.lowongan.map((j) => j.tipeKerja))]);
-const hasActiveFilter = computed(() => !!(search.value || filterDept.value || filterLoc.value || filterType.value));
-
-const filterDefs = computed(() => [
-    { key: 'dept', label: 'Divisi', all: 'Semua Divisi', icon: 'bi-diagram-3', options: props.departments, value: filterDept.value },
-    { key: 'loc', label: 'Lokasi', all: 'Semua Lokasi', icon: 'bi-geo-alt', options: props.locations, value: filterLoc.value },
-    { key: 'type', label: 'Tipe Kerja', all: 'Semua Tipe', icon: 'bi-clock-history', options: workTypes.value, value: filterType.value },
-]);
-
-const filtered = computed(() => {
-    const q = search.value.trim().toLowerCase();
-    return props.lowongan.filter((job) => {
-        if (filterDept.value && job.departemen !== filterDept.value) return false;
-        if (filterLoc.value && job.lokasi !== filterLoc.value) return false;
-        if (filterType.value && job.tipeKerja !== filterType.value) return false;
-        if (!q) return true;
-        return [job.posisi, job.departemen, job.perusahaan, job.ringkasan, ...(job.skill || [])].join(' ').toLowerCase().includes(q);
-    });
-});
-
-function toggleFilter(key) {
-    openFilter.value = openFilter.value === key ? null : key;
-}
-function chooseFilter(key, val) {
-    if (key === 'dept') filterDept.value = val;
-    else if (key === 'loc') filterLoc.value = val;
-    else if (key === 'type') filterType.value = val;
-    openFilter.value = null;
-}
-function resetFilters() {
-    search.value = '';
-    filterDept.value = '';
-    filterLoc.value = '';
-    filterType.value = '';
-}
-function truncate(s, n = 18) {
-    return s && s.length > n ? s.slice(0, n) + '…' : s;
-}
-function closeFilters() {
-    openFilter.value = null;
-}
-function onKeydown(e) {
-    if (e.key === 'Escape') openFilter.value = null;
-}
-
-onMounted(() => {
-    document.addEventListener('click', closeFilters);
-    document.addEventListener('keydown', onKeydown);
-});
-onUnmounted(() => {
-    document.removeEventListener('click', closeFilters);
-    document.removeEventListener('keydown', onKeydown);
-});
+// Landing menampilkan MAKSIMAL 6 kartu; sisanya lewat tombol "Lihat Semua".
+const MAKS = 6;
+const tampil = computed(() => props.lowongan.slice(0, MAKS));
 </script>
+
+<style scoped>
+.rek {
+    width: min(1180px, calc(100vw - 2rem));
+    margin: 0 auto;
+    padding: clamp(2.75rem, 6vw, 4rem) 0 0;
+}
+.rek__eyebrow {
+    display: inline-block;
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: #8b5cf6;
+}
+.rek__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1.05rem;
+}
+.rek__card {
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    background: rgba(255, 255, 255, 0.9);
+    border: 1px solid rgba(226, 232, 240, 0.9);
+    border-radius: 20px;
+    padding: 20px;
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.05);
+    text-decoration: none;
+    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+.rek__card:hover {
+    transform: translateY(-5px);
+    border-color: rgba(99, 102, 241, 0.38);
+    box-shadow: 0 22px 46px rgba(79, 70, 229, 0.16);
+}
+.rek__card.is-full {
+    opacity: 0.92;
+}
+.rek__ribbon {
+    position: absolute;
+    top: 15px;
+    right: -36px;
+    transform: rotate(45deg);
+    background: linear-gradient(135deg, #fb7185, #e11d48);
+    color: #fff;
+    font-size: 0.62rem;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    padding: 5px 42px;
+    box-shadow: 0 8px 18px rgba(225, 29, 72, 0.34);
+    z-index: 3;
+}
+.rek__top {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.rek__type {
+    font-size: 0.66rem;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    padding: 5px 11px;
+    border-radius: 8px;
+    color: #4f46e5;
+    background: rgba(99, 102, 241, 0.1);
+}
+.rek__type.is-contract {
+    color: #b45309;
+    background: rgba(245, 158, 11, 0.13);
+}
+.rek__type.is-intern {
+    color: #059669;
+    background: rgba(16, 185, 129, 0.12);
+}
+.rek__star {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.64rem;
+    font-weight: 800;
+    color: #b45309;
+    background: rgba(245, 158, 11, 0.13);
+    border-radius: 8px;
+    padding: 5px 9px;
+}
+.rek__title {
+    margin: 13px 0 0;
+    font-size: 1.06rem;
+    font-weight: 800;
+    color: #1e293b;
+    letter-spacing: -0.01em;
+    line-height: 1.25;
+    text-wrap: pretty;
+}
+.rek__salary {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #b45309;
+    margin-top: 7px;
+}
+.rek__desc {
+    margin: 10px 0 0;
+    font-size: 0.8rem;
+    line-height: 1.55;
+    color: #64748b;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+.rek__meta {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 13px;
+}
+.rek__meta span {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 0.76rem;
+    color: #64748b;
+}
+.rek__meta i {
+    color: #8b5cf6;
+    font-size: 0.84rem;
+}
+.rek__tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 13px;
+}
+.rek__tags span {
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: #4f46e5;
+    background: rgba(99, 102, 241, 0.08);
+    border-radius: 7px;
+    padding: 4px 9px;
+}
+.rek__tags-more {
+    color: #94a3b8 !important;
+    background: #f1f5f9 !important;
+}
+.rek__foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 15px;
+    padding-top: 14px;
+    border-top: 1px solid #f1f2f9;
+}
+.rek__people {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.68rem;
+    color: #94a3b8;
+}
+.rek__people b {
+    color: #6366f1;
+}
+.rek__cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.76rem;
+    font-weight: 800;
+    color: #4f46e5;
+    white-space: nowrap;
+}
+.rek__cta i {
+    transition: transform 0.18s ease;
+}
+.rek__card:hover .rek__cta i {
+    transform: translateX(4px);
+}
+.rek__empty {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: #94a3b8;
+}
+.rek__empty i {
+    font-size: 2.4rem;
+    color: #c4b5fd;
+}
+.rek__empty h4 {
+    margin: 0.8rem 0 0.3rem;
+    color: #475569;
+    font-weight: 800;
+}
+.rek__empty p {
+    margin: 0;
+    font-size: 0.85rem;
+}
+.rek__seeall {
+    display: flex;
+    justify-content: center;
+    margin-top: 1.9rem;
+}
+.rek__seeall-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 0.875rem;
+    font-weight: 800;
+    color: #fff;
+    padding: 14px 26px;
+    border-radius: 14px;
+    text-decoration: none;
+    background: linear-gradient(135deg, #8b5cf6, #6366f1);
+    box-shadow: 0 14px 32px rgba(99, 102, 241, 0.32);
+    transition: transform 0.16s ease, box-shadow 0.16s ease;
+}
+.rek__seeall-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 20px 42px rgba(99, 102, 241, 0.42);
+    color: #fff;
+}
+.rek__seeall-btn i {
+    transition: transform 0.18s ease;
+}
+.rek__seeall-btn:hover i {
+    transform: translateX(4px);
+}
+</style>

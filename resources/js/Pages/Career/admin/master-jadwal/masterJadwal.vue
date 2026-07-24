@@ -2,50 +2,65 @@
 <template>
     <Head><title>Master Jadwal Kegiatan - Web Career</title></Head>
     <div class="wca">
-        <div class="wca-phead">
-            <div>
-                <h1>Master Jadwal Kegiatan</h1>
+        <div class="pkg-head">
+            <div class="pkg-head__l">
+                <div class="pkg-head__title">
+                    <span class="pkg-head__ico"><i class="bi bi-calendar3-range"></i></span>
+                    <h1>Master Jadwal Kegiatan</h1>
+                </div>
                 <p>Timeline satu gelombang: aktivitas pendukung (rapat, campaign, evaluasi) <b>+ tahapan seleksi</b>. Tiap agenda bertanggal.</p>
             </div>
-            <div class="wca-phead__actions">
-                <button class="wca-btn wca-btn--primary" @click="openCreate"><i class="bi bi-plus-lg"></i> Jadwal Baru</button>
-            </div>
+            <button class="pkg-newbtn" @click="openCreate"><i class="bi bi-plus-lg"></i> Jadwal Baru</button>
         </div>
 
-        <div v-loading="loading" class="wca-acc">
-            <div v-for="j in list" :key="j.id" class="wca-acc__item" :class="{ open: open === j.id }">
-                <button class="wca-acc__head" @click="open = (open === j.id ? null : j.id)">
-                    <span class="wca-acc__chev"><i class="bi bi-chevron-right"></i></span>
-                    <span class="wca-acc__title">
-                        <strong>{{ j.kegiatan }}</strong>
-                        <small>{{ j.kode }} · Alur {{ j.alurNama || j.alur || '—' }}</small>
-                    </span>
-                    <span class="wca-acc__tags">
-                        <span class="wca-badge wca-b--indigo">{{ katLabel(j.kategori) }}</span>
-                        <span class="wca-badge" :class="j.status === 'AKTIF' ? 'wca-b--green' : 'wca-b--slate'">{{ j.status }}</span>
-                        <span class="wca-badge wca-b--slate">{{ j.agenda.length }} agenda</span>
-                    </span>
-                    <span class="jdw-head-act" @click.stop>
+        <div v-loading="loading" class="pkg-list">
+            <div v-for="j in list" :key="j.id" class="pkg-card" :class="{ open: open === j.id }">
+                <!-- header row (pola standar "Program Kegiatan") -->
+                <div class="pkg-row">
+                    <button type="button" class="pkg-chev" :class="{ open: open === j.id }" title="Buka detail" @click="open = (open === j.id ? null : j.id)"><i class="bi bi-chevron-right"></i></button>
+                    <div class="pkg-row__main">
+                        <button type="button" class="pkg-row__titlebtn" @click="open = (open === j.id ? null : j.id)">
+                            <span class="pkg-row__title">{{ j.kegiatan }}</span>
+                        </button>
+                        <div class="pkg-row__meta">
+                            <span class="pkg-code">{{ j.kode }}</span>
+                            <span class="pkg-sep"></span>
+                            <span class="pkg-mi"><i class="bi bi-diagram-2"></i> {{ j.alurNama || j.alur || '—' }}</span>
+                        </div>
+                        <div class="pkg-pills">
+                            <span class="pkg-pill pkg-pill--violet"><i class="bi bi-tags"></i> {{ katLabel(j.kategori) }}</span>
+                            <span class="pkg-pill pkg-pill--struct"><i class="bi bi-list-ol"></i> {{ j.agenda.length }} agenda</span>
+                            <span class="pkg-pill" :class="j.status === 'AKTIF' ? 'pkg-pill--green' : 'pkg-pill--slate'"><span class="pkg-pill__dot"></span> {{ j.status }}</span>
+                        </div>
+                    </div>
+                    <div class="pkg-row__act" @click.stop>
                         <el-switch :model-value="j.status === 'AKTIF'" @change="(v) => setStatus(j, v)" />
-                        <button class="wca-iconbtn" title="Ubah" @click="openEdit(j)"><i class="bi bi-pencil"></i></button>
-                        <button class="wca-iconbtn wca-iconbtn--danger" title="Hapus" @click="askRemove(j)"><i class="bi bi-trash"></i></button>
-                    </span>
-                </button>
-                <div class="wca-acc__body">
-                    <div class="wca-acc__inner">
-                        <div class="jdw-meta"><AuditStamp :by="j.createdBy" :at="j.createdAt" /></div>
-                        <ol class="wca-jlist">
-                            <li v-for="(a, i) in j.agenda" :key="i">
-                                <span class="wca-jtag" :style="{ color: jenisWarna(a.jenis), background: jenisWarna(a.jenis) + '1a' }"><i class="bi" :class="jenisIkon(a.jenis)"></i> {{ jenisLabel(a.jenis) }}</span>
-                                <span class="wca-jlist__lbl">{{ a.label }}</span>
-                                <span class="wca-jlist__date"><i class="bi bi-calendar3"></i> {{ fmt(a.mulai) }} – {{ fmt(a.selesai) }}</span>
-                            </li>
-                            <li v-if="!j.agenda.length" class="jdw-empty-agenda">Belum ada agenda.</li>
-                        </ol>
+                        <button class="pkg-ibtn" title="Ubah" @click="openEdit(j)"><i class="bi bi-pencil"></i></button>
+                        <button class="pkg-ibtn pkg-ibtn--danger" title="Hapus" @click="askRemove(j)"><i class="bi bi-trash"></i></button>
                     </div>
                 </div>
+
+                <!-- creator strip -->
+                <div class="pkg-creator">
+                    <span class="pkg-creator__av" style="background:#6366f1">{{ initials(j.createdBy) }}</span>
+                    <span class="pkg-creator__name">{{ j.createdBy || 'Sistem' }}</span>
+                    <span class="pkg-creator__at"><i class="bi bi-clock"></i> {{ j.createdAt || '—' }}</span>
+                </div>
+
+                <!-- expanded detail -->
+                <div v-if="open === j.id" class="pkg-detail">
+                    <div class="pkg-dhead pkg-dhead--indigo"><i class="bi bi-calendar3-range"></i> AGENDA ({{ j.agenda.length }})</div>
+                    <ol class="wca-jlist">
+                        <li v-for="(a, i) in j.agenda" :key="i">
+                            <span class="wca-jtag" :style="{ color: jenisWarna(a.jenis), background: jenisWarna(a.jenis) + '1a' }"><i class="bi" :class="jenisIkon(a.jenis)"></i> {{ jenisLabel(a.jenis) }}</span>
+                            <span class="wca-jlist__lbl">{{ a.label }}</span>
+                            <span class="wca-jlist__date"><i class="bi bi-calendar3"></i> {{ fmt(a.mulai) }} – {{ fmt(a.selesai) }}</span>
+                        </li>
+                        <li v-if="!j.agenda.length" class="jdw-empty-agenda">Belum ada agenda.</li>
+                    </ol>
+                </div>
             </div>
-            <div v-if="!loading && !list.length" class="wca-empty"><i class="bi bi-calendar3-range"></i><h4>Belum ada jadwal</h4></div>
+            <div v-if="!loading && !list.length" class="pkg-empty"><i class="bi bi-calendar3-range"></i> Belum ada jadwal.</div>
         </div>
 
         <!-- Modal buat/ubah jadwal -->
@@ -154,6 +169,11 @@ export default {
     },
     methods: {
         katLabel(k) { return { REKRUTMEN: 'Rekrutmen', MT: 'Management Trainee', INTERNSHIP: 'Internship' }[k] || k; },
+        initials(name) {
+            if (!name) return 'SY';
+            const p = String(name).trim().split(/\s+/);
+            return ((p[0]?.[0] || '') + (p[1]?.[0] || p[0]?.[1] || '')).toUpperCase() || 'SY';
+        },
         async loadJenis() {
             try {
                 const res = await axios.get('/api/v1/karir/options/jenis-agenda', CFG);

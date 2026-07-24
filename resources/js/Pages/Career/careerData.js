@@ -6,7 +6,7 @@
 import { router } from '@inertiajs/vue3';
 
 export const CAREER_HOME = '/'; // halaman utama (landing) — route root
-export const CAREER_LANDING = '/test/karir/landing-page'; // basis sub-route detail (lowongan/mt)
+export const CAREER_LANDING = '/karir/landing-page'; // basis sub-route detail (lowongan/mt)
 export const lowonganUrl = (id) => `${CAREER_LANDING}/lowongan/${id}`;
 export const mtUrl = (id) => `${CAREER_LANDING}/mt/${id}`;
 
@@ -165,7 +165,7 @@ export function goHome() {
 export function goApply(card) {
     // Formulir pendaftaran memakai DESAIN WIZARD di ApplyForm
     // (Data Diri → Pendidikan → Verifikasi foto → Finalisasi). Route:
-    // /test/karir/apply/{id}. Menerima objek kartu ATAU id langsung.
+    // /karir/apply/{id}. Menerima objek kartu ATAU id langsung.
     const id = card && typeof card === 'object' ? card.id : card;
-    router.visit(id ? `/test/karir/apply/${id}` : '/test/karir/apply/RC-2026-001');
+    router.visit(id ? `/karir/apply/${id}` : '/karir/apply/RC-2026-001');
 }

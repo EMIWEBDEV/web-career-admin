@@ -1,4 +1,4 @@
-<!-- WEB CAREER — Halaman Detail Lowongan (route: /test/karir/landing-page/lowongan/{id}) -->
+<!-- WEB CAREER — Halaman Detail Lowongan (route: /karir/landing-page/lowongan/{id}) -->
 <template>
     <Head>
         <title>{{ job.posisi }} - EVO Group Career</title>
@@ -19,15 +19,15 @@
                             <span v-if="job.unggulan" class="wc-badge wc-badge--star"
                                 ><i class="bi bi-star-fill"></i> Unggulan</span
                             >
-                            <span class="wc-badge wc-badge--muted"
-                                ><i class="bi bi-diagram-3"></i> {{ job.departemen }}</span
+                            <span v-if="job.pengalaman && job.pengalaman !== '—'" class="wc-badge wc-badge--muted"
+                                ><i class="bi bi-briefcase"></i> {{ job.pengalaman }}</span
                             >
                         </div>
                         <h1>{{ job.posisi }}</h1>
-                        <p class="wc-dhead__co"><i class="bi bi-building"></i> {{ job.perusahaan }}</p>
+                        <!-- TANPA info perusahaan/divisi — sorot benefit teratas dari MPP. -->
+                        <p v-if="(job.benefit || []).length" class="wc-dhead__co"><i class="bi bi-gift"></i> {{ job.benefit[0] }}<template v-if="job.benefit.length > 1"> · +{{ job.benefit.length - 1 }} benefit lain</template></p>
                         <div class="wc-dhead__meta">
                             <span><i class="bi bi-geo-alt"></i> {{ job.lokasi }} · {{ job.tempatKerja }}</span>
-                            <span><i class="bi bi-bar-chart-steps"></i> {{ job.level }}</span>
                             <span v-if="job.pengalaman && job.pengalaman !== '—'"><i class="bi bi-briefcase"></i> {{ job.pengalaman }}</span>
                         </div>
                     </header>
