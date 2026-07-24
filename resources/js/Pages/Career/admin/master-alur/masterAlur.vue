@@ -2,14 +2,15 @@
 <template>
     <Head><title>Master Tahapan Seleksi - Web Career</title></Head>
     <div class="wca">
-        <div class="wca-phead">
-            <div>
-                <h1>Master Tahapan Seleksi</h1>
+        <div class="pkg-head">
+            <div class="pkg-head__l">
+                <div class="pkg-head__title">
+                    <span class="pkg-head__ico"><i class="bi bi-signpost-split"></i></span>
+                    <h1>Master Tahapan Seleksi</h1>
+                </div>
                 <p>Susun urutan tahap seleksi (alur) per kategori. Tahap <b>pihak ke-3</b> keputusannya otomatis sistem. Tahap "Tes Online" mengambil dari <b>Master Jenis Tes</b>.</p>
             </div>
-            <div class="wca-phead__actions">
-                <button class="wca-btn wca-btn--primary" @click="openCreate"><i class="bi bi-plus-lg"></i> Alur Baru</button>
-            </div>
+            <button class="pkg-newbtn" @click="openCreate"><i class="bi bi-plus-lg"></i> Alur Baru</button>
         </div>
 
         <div class="wca-legend">
@@ -17,29 +18,42 @@
             <span><i class="bi bi-robot" style="color:#d97706"></i> Pihak ke-3 — konfirmasi otomatis sistem</span>
         </div>
 
-        <div v-loading="loading" class="wca-acc">
-            <div v-for="a in list" :key="a.id" class="wca-acc__item" :class="{ open: open === a.id }">
-                <button class="wca-acc__head" @click="open = (open === a.id ? null : a.id)">
-                    <span class="wca-acc__chev"><i class="bi bi-chevron-right"></i></span>
-                    <span class="wca-acc__title">
-                        <strong>{{ a.nama }}</strong>
-                        <small>{{ a.kode }}<template v-if="a.deskripsi"> · {{ a.deskripsi }}</template></small>
-                    </span>
-                    <span class="wca-acc__tags">
-                        <span class="wca-badge wca-b--indigo">{{ katLabel(a.kategori) }}</span>
-                        <span class="wca-badge" :class="a.status === 'AKTIF' ? 'wca-b--green' : 'wca-b--slate'">{{ a.status }}</span>
-                        <span class="wca-badge wca-b--slate">{{ a.stages.length }} tahap</span>
-                    </span>
-                    <span class="alr-head-act" @click.stop>
+        <div v-loading="loading" class="pkg-list">
+            <div v-for="a in list" :key="a.id" class="pkg-card" :class="{ open: open === a.id }">
+                <!-- header row (pola standar "Program Kegiatan") -->
+                <div class="pkg-row">
+                    <button type="button" class="pkg-chev" :class="{ open: open === a.id }" title="Buka detail" @click="open = (open === a.id ? null : a.id)"><i class="bi bi-chevron-right"></i></button>
+                    <div class="pkg-row__main">
+                        <button type="button" class="pkg-row__titlebtn" @click="open = (open === a.id ? null : a.id)">
+                            <span class="pkg-row__title">{{ a.nama }}</span>
+                        </button>
+                        <div class="pkg-row__meta">
+                            <span class="pkg-code">{{ a.kode }}</span>
+                            <template v-if="a.deskripsi"><span class="pkg-sep"></span><span class="pkg-mi">{{ a.deskripsi }}</span></template>
+                        </div>
+                        <div class="pkg-pills">
+                            <span class="pkg-pill pkg-pill--violet"><i class="bi bi-tags"></i> {{ katLabel(a.kategori) }}</span>
+                            <span class="pkg-pill pkg-pill--struct"><i class="bi bi-list-ol"></i> {{ a.stages.length }} tahap</span>
+                            <span class="pkg-pill" :class="a.status === 'AKTIF' ? 'pkg-pill--green' : 'pkg-pill--slate'"><span class="pkg-pill__dot"></span> {{ a.status }}</span>
+                        </div>
+                    </div>
+                    <div class="pkg-row__act" @click.stop>
                         <el-switch :model-value="a.status === 'AKTIF'" @change="(v) => setStatus(a, v)" />
-                        <button class="wca-iconbtn" title="Ubah" @click="openEdit(a)"><i class="bi bi-pencil"></i></button>
-                        <button class="wca-iconbtn wca-iconbtn--danger" title="Hapus" @click="askRemove(a)"><i class="bi bi-trash"></i></button>
-                    </span>
-                </button>
+                        <button class="pkg-ibtn" title="Ubah" @click="openEdit(a)"><i class="bi bi-pencil"></i></button>
+                        <button class="pkg-ibtn pkg-ibtn--danger" title="Hapus" @click="askRemove(a)"><i class="bi bi-trash"></i></button>
+                    </div>
+                </div>
 
-                <div class="wca-acc__body">
-                    <div class="wca-acc__inner">
-                        <div class="alr-meta"><AuditStamp :by="a.createdBy" :at="a.createdAt" /></div>
+                <!-- creator strip -->
+                <div class="pkg-creator">
+                    <span class="pkg-creator__av" style="background:#6366f1">{{ initials(a.createdBy) }}</span>
+                    <span class="pkg-creator__name">{{ a.createdBy || 'Sistem' }}</span>
+                    <span class="pkg-creator__at"><i class="bi bi-clock"></i> {{ a.createdAt || '—' }}</span>
+                </div>
+
+                <!-- expanded detail -->
+                <div v-if="open === a.id" class="pkg-detail">
+                    <div class="pkg-dhead pkg-dhead--indigo"><i class="bi bi-list-ol"></i> TAHAPAN SELEKSI ({{ a.stages.length }})</div>
                         <ol class="wca-flow">
                             <li v-for="(s, i) in a.stages" :key="i" class="wca-flow__step" :class="{ 'is-system': s.keputusan === 'SYSTEM' }">
                                 <span class="wca-flow__num">{{ i + 1 }}</span>
@@ -72,10 +86,9 @@
                             </li>
                             <li v-if="!a.stages.length" class="alr-empty-stage">Belum ada tahap.</li>
                         </ol>
-                    </div>
                 </div>
             </div>
-            <div v-if="!loading && !list.length" class="wca-empty"><i class="bi bi-signpost-split"></i><h4>Belum ada alur</h4></div>
+            <div v-if="!loading && !list.length" class="pkg-empty"><i class="bi bi-signpost-split"></i> Belum ada alur.</div>
         </div>
 
         <!-- Modal buat/ubah alur — builder tahapan -->
@@ -206,6 +219,11 @@ export default {
     },
     methods: {
         katLabel(k) { return { REKRUTMEN: 'Rekrutmen', MT: 'Management Trainee', INTERNSHIP: 'Internship' }[k] || k; },
+        initials(name) {
+            if (!name) return 'SY';
+            const p = String(name).trim().split(/\s+/);
+            return ((p[0]?.[0] || '') + (p[1]?.[0] || p[0]?.[1] || '')).toUpperCase() || 'SY';
+        },
         async load() {
             this.loading = true;
             try {

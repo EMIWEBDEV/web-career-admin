@@ -68,7 +68,15 @@ Route::prefix('kandidat')
         Route::get('/loker', [LamaranController::class, 'loker'])->name('loker');
         Route::get('/portal', [LamaranController::class, 'portalIndex'])->name('index');
         Route::get('/lamaran/{id}', [LamaranController::class, 'portalDetail'])->name('detail');
+        // Pratinjau berkas milik kandidat sendiri (signed URL GCS).
+        Route::get('/lamaran/berkas/file/{id}', [LamaranController::class, 'portalBerkasFile'])->name('berkas.file');
     });
+
+// ── WEBHOOK hasil tes dari CAT/HCLearn (server-to-server, TANPA login) ──
+// Guard: header X-WC-Secret dicocokkan di controller. CAT memanggil ini saat
+// tes pihak ke-3 difinalisasi → WC auto gerakkan tahap (lulus/gugur) real-time.
+Route::post('/api/v1/webhook/hclearn-hasil', [LamaranController::class, 'hasilUjianCallback'])
+    ->name('career.webhook.hclearn-hasil');
 
 // ── API Lamaran kandidat (login saja, TANPA gerbang peran admin) ──
 // Dipisah dari api/v1/karir yang khusus admin, supaya kandidat bisa melamar

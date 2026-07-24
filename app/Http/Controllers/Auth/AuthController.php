@@ -8,6 +8,7 @@ use App\Jobs\Career\WcSyncEmailJob;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -66,7 +67,7 @@ class AuthController extends Controller
                 'Updated_At' => $now,
             ]);
 
-            WcSyncEmailJob::dispatch(WcSyncEmailJob::JENIS_VERIFIKASI, $userId, ['token' => $token]);
+            WcSyncEmailJob::kirim(WcSyncEmailJob::JENIS_VERIFIKASI, $userId, ['token' => $token]);
 
             $conn = env('QUEUE_CONNECTION');
             $queue = $conn === 'cloudtasks' ? WcSyncEmailJob::QUEUE : 'default';
@@ -77,16 +78,60 @@ class AuthController extends Controller
         }
     }
 
+    /**
+     * LANGKAH 1 REGISTER — cek ketersediaan KTP sebelum form identitas dibuka.
+     * KTP wajib 16 digit; bila sudah dipakai akun lain → tolak + email ter-mask.
+     */
+    public function cekKtp(Request $request)
+    {
+        $data = $request->validate([
+            'nik' => 'required|digits:16',
+        ], [
+            'nik.required' => 'Nomor KTP (NIK) wajib diisi.',
+            'nik.digits' => 'Nomor KTP harus tepat 16 digit angka.',
+        ]);
+
+        $pemilik = DB::table($this->table)->where('NIK', $data['nik'])->first();
+        if ($pemilik) {
+            return ResponseHelper::error(
+                'Nomor KTP ini sudah terdaftar pada akun dengan email ' . $this->maskEmail($pemilik->Email)
+                    . '. Satu KTP hanya untuk satu akun — silakan masuk memakai akun tersebut.',
+                422
+            );
+        }
+
+        return ResponseHelper::success(['tersedia' => true], 'KTP tersedia — silakan lengkapi data diri.');
+    }
+
     public function register(Request $request)
     {
         $data = $request->validate([
             'nama' => 'required|string|max:150',
             'email' => 'required|email|max:150',
             'phone' => 'nullable|string|max:30',
+            // KTP/NIK: WAJIB tepat 16 digit (tidak boleh kurang / lebih).
+            'nik' => 'required|digits:16',
             'password' => 'required|string|min:6',
+        ], [
+            'nik.required' => 'Nomor KTP (NIK) wajib diisi.',
+            'nik.digits' => 'Nomor KTP harus tepat 16 digit angka.',
         ]);
 
         $now = Carbon::now();
+
+        // ── CEK KTP (ulang, defense-in-depth): satu NIK hanya SATU akun kandidat.
+        //    Bila NIK sudah terpakai akun lain, tolak & tunjukkan emailnya (mask). ──
+        $pemilikNik = DB::table($this->table)
+            ->where('NIK', $data['nik'])
+            ->where('Email', '!=', $data['email'])
+            ->first();
+        if ($pemilikNik) {
+            return ResponseHelper::error(
+                'Nomor KTP ini sudah terdaftar pada akun dengan email ' . $this->maskEmail($pemilikNik->Email)
+                    . '. Satu KTP hanya untuk satu akun — silakan masuk memakai akun tersebut.',
+                422
+            );
+        }
 
         // Masa berlaku registrasi diambil dari tabel config (TIDAK hardcode).
         $klas = DB::table($this->klasTable)->where('Is_Default_Register', 'Y')->where('Flag_Aktif', 'Y')->first();
@@ -121,6 +166,7 @@ class AuthController extends Controller
             DB::table($this->table)->where('Id_Users', $existing->Id_Users)->update([
                 'Nama' => $data['nama'],
                 'No_Hp' => $data['phone'] ?? $existing->No_Hp,
+                'NIK' => $data['nik'],
                 'Password' => Hash::make($data['password']),
                 'Klasifikasi' => $kode,
                 'Status' => 'AKTIF',
@@ -129,6 +175,9 @@ class AuthController extends Controller
                 'Updated_At' => $now,
                 'Updated_By' => $data['email'],
             ]);
+
+            // Sinkron identitas ke HRIS_Rekrutmen (sumber HCLearn) — buat/lengkapi.
+            $this->daftarkanHrisRekrutmen((int) $existing->Id_Users, $data['nama'], $data['email'], $data['phone'] ?? $existing->No_Hp, $data['nik'], $existing->Created_At ?? $now);
 
             $this->kirimEmailVerifikasi((int) $existing->Id_Users);
 
@@ -147,6 +196,7 @@ class AuthController extends Controller
             'Nama' => $data['nama'],
             'Email' => $data['email'],
             'No_Hp' => $data['phone'] ?? null,
+            'NIK' => $data['nik'],
             'Password' => Hash::make($data['password']),
             'Role' => 'KANDIDAT',
             'Klasifikasi' => $kode,
@@ -159,6 +209,9 @@ class AuthController extends Controller
             'Updated_By' => $data['email'],
         ], 'Id_Users');
 
+        // Daftarkan ke HRIS_Rekrutmen_Karyawan + set Kode_Calon (identitas HCLearn).
+        $this->daftarkanHrisRekrutmen((int) $id, $data['nama'], $data['email'], $data['phone'] ?? null, $data['nik'], $now);
+
         $this->kirimEmailVerifikasi((int) $id);
 
         // TIDAK auto-login: kandidat wajib verifikasi email dulu baru bisa masuk.
@@ -167,6 +220,74 @@ class AuthController extends Controller
             'Registrasi berhasil! Kami telah mengirim tautan verifikasi ke email kamu (berlaku ' . self::VERIF_BERLAKU_MENIT . ' menit). Setelah verifikasi, silakan masuk.',
             201
         );
+    }
+
+    /**
+     * Kode Calon Web Careers — TIDAK memakai prefix "CK" (milik HRIS lama).
+     *   Kode_Calon = 'WC' + yymmdd(daftar) + '-' + Id_Users(6 digit) → unik per user.
+     */
+    private function kodeCalon(int $idUsers, Carbon $tglDaftar): string
+    {
+        return 'WC' . $tglDaftar->format('ymd') . '-' . str_pad((string) $idUsers, 6, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * Daftarkan kandidat ke HRIS_Rekrutmen_Karyawan (sumber data HCLearn) + isi
+     * Users.Kode_Calon. Idempoten: kalau baris HRIS/Kode_Calon sudah ada, cukup
+     * diperbarui. PK HRIS = (Kode_Perusahaan, No_Faktur); No_Faktur unik per user.
+     * Best-effort — kegagalan HRIS tidak boleh menggagalkan registrasi kandidat.
+     */
+    private function daftarkanHrisRekrutmen(int $idUsers, string $nama, string $email, ?string $hp, string $nik, $tglDaftar): void
+    {
+        try {
+            $tgl = $tglDaftar instanceof Carbon ? $tglDaftar : Carbon::parse((string) $tglDaftar);
+            $kodeCalon = $this->kodeCalon($idUsers, $tgl);
+            $noFaktur = 'W' . str_pad((string) $idUsers, 8, '0', STR_PAD_LEFT);
+
+            DB::table($this->table)->where('Id_Users', $idUsers)->update(['Kode_Calon' => $kodeCalon]);
+
+            $ada = DB::table('HRIS_Rekrutmen_Karyawan')->where('Kode_Calon', $kodeCalon)->exists();
+            if ($ada) {
+                DB::table('HRIS_Rekrutmen_Karyawan')->where('Kode_Calon', $kodeCalon)->update([
+                    'Nama' => $nama, 'Email' => $email, 'HP' => $hp, 'NIK' => $nik,
+                ]);
+
+                return;
+            }
+
+            DB::table('HRIS_Rekrutmen_Karyawan')->insert([
+                'Kode_Perusahaan' => '001',
+                'No_Faktur' => $noFaktur,
+                'Kode_Calon' => $kodeCalon,
+                'Nama' => $nama,
+                'Email' => $email,
+                'HP' => $hp,
+                'NIK' => $nik,
+                'Tanggal' => $tgl,
+                'Aktif' => 'Y',
+                'id_tahapan' => 1,
+            ]);
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->error("Gagal daftarkan kandidat #{$idUsers} ke HRIS_Rekrutmen: " . $e->getMessage());
+        }
+    }
+
+    /** Samarkan email untuk pesan publik: fransbachtiar4@gmail.com → f***********4@gmail.com */
+    private function maskEmail(?string $email): string
+    {
+        $email = (string) $email;
+        $at = strpos($email, '@');
+        if ($at === false) {
+            return '***';
+        }
+        $lokal = substr($email, 0, $at);
+        $domain = substr($email, $at);
+        $len = strlen($lokal);
+        if ($len <= 2) {
+            return $lokal[0] . '***' . $domain;
+        }
+
+        return $lokal[0] . str_repeat('*', max(3, $len - 2)) . $lokal[$len - 1] . $domain;
     }
 
     /**
@@ -303,12 +424,37 @@ class AuthController extends Controller
         return ResponseHelper::success(null, 'Email verifikasi telah dikirim ulang. Silakan cek kotak masuk atau folder spam.');
     }
 
+    /** Verifikasi token Cloudflare Turnstile ke server siteverify. Return true bila valid. */
+    private function verifyTurnstile(string $secret, string $token, ?string $ip): bool
+    {
+        try {
+            $res = Http::asForm()->timeout(6)->post('https://challenges.cloudflare.com/turnstile/v0/siteverify', [
+                'secret' => $secret,
+                'response' => $token,
+                'remoteip' => $ip,
+            ]);
+
+            return $res->ok() && ($res->json('success') === true);
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
     public function login(Request $request)
     {
         $data = $request->validate([
             'email' => 'required|email',
             'password' => 'required|string',
         ]);
+
+        // Turnstile (opsional): bila secret dikonfigurasi, token WAJIB & harus lolos verifikasi.
+        $secret = config('services.cloudflare.turnstile_secret');
+        if (! empty($secret)) {
+            $token = (string) $request->input('turnstile_token', '');
+            if ($token === '' || ! $this->verifyTurnstile($secret, $token, $request->ip())) {
+                return ResponseHelper::error('Verifikasi keamanan gagal. Selesaikan captcha lalu coba lagi.', 400);
+            }
+        }
 
         $row = DB::table($this->table)->where('Email', $data['email'])->first();
 
@@ -402,7 +548,7 @@ class AuthController extends Controller
                 'Updated_At' => $now,
             ]);
 
-            WcSyncEmailJob::dispatch(WcSyncEmailJob::JENIS_RESET_OTP, $userId, [
+            WcSyncEmailJob::kirim(WcSyncEmailJob::JENIS_RESET_OTP, $userId, [
                 'otp' => $otp,
                 'menit' => self::RESET_OTP_BERLAKU_MENIT,
             ]);
@@ -594,7 +740,7 @@ class AuthController extends Controller
             'Updated_By' => $row->Email,
         ]);
 
-        WcSyncEmailJob::dispatch(WcSyncEmailJob::JENIS_RESET_SELESAI, (int) $row->Id_Users);
+        WcSyncEmailJob::kirim(WcSyncEmailJob::JENIS_RESET_SELESAI, (int) $row->Id_Users);
 
         $this->catatAuditReset($request, 'SUCCESS', (int) $row->Id_Users, $row->Email);
         Log::channel('web_career')->info("[RESET] user #{$row->Id_Users} ({$row->Email}) berhasil reset kata sandi.");

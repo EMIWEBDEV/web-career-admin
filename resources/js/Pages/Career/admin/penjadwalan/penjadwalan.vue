@@ -164,7 +164,8 @@
                         </div>
                         <div class="wca-jadwalact">
                             <el-tag :type="j.status === 'BERJALAN' ? 'success' : 'info'" effect="light">{{ j.status }}</el-tag>
-                            <el-button text type="danger" @click="konfirmHapus(j)"><i class="bi bi-trash"></i></el-button>
+                            <el-button v-if="tahapTerjadwal(j)" text type="primary" title="Ubah jadwal tes" @click="bukaEdit(j)"><i class="bi bi-pencil-square"></i></el-button>
+                            <el-button text type="danger" title="Hapus penjadwalan" @click="konfirmHapus(j)"><i class="bi bi-trash"></i></el-button>
                         </div>
                     </div>
 
@@ -209,6 +210,22 @@
             @confirm="hapus"
             @cancel="hapusTampil = false"
         />
+
+        <!-- Edit jendela waktu tes -->
+        <el-dialog v-model="editTampil" title="Ubah Jadwal Tes" width="440px" align-center>
+            <div v-if="editTarget" class="wca-editbox">
+                <p class="wca-editnama"><b>{{ editTarget.kode }}</b> — {{ editTarget.namaUjian || editTarget.nama }}</p>
+                <p class="wca-editnote"><i class="bi bi-info-circle"></i> Jendela waktu kandidat & token ujian di HCLearn ikut diperbarui. Tidak bisa diubah bila peserta sudah mengerjakan.</p>
+                <label class="wca-editlbl">Waktu Mulai</label>
+                <el-date-picker v-model="editMulai" type="datetime" placeholder="Tanggal & jam mulai" format="DD MMM YYYY HH:mm" value-format="YYYY-MM-DD HH:mm:ss" style="width: 100%" />
+                <label class="wca-editlbl">Waktu Berakhir</label>
+                <el-date-picker v-model="editAkhir" type="datetime" placeholder="Tanggal & jam berakhir" format="DD MMM YYYY HH:mm" value-format="YYYY-MM-DD HH:mm:ss" style="width: 100%" />
+            </div>
+            <template #footer>
+                <el-button @click="editTampil = false">Batal</el-button>
+                <el-button type="primary" :loading="editSibuk" :disabled="!editMulai || !editAkhir" @click="simpanEdit">Simpan Perubahan</el-button>
+            </template>
+        </el-dialog>
     </div>
 </template>
 
@@ -236,6 +253,11 @@ export default {
             timerKandidat: null,
             hapusTampil: false,
             target: null,
+            editTampil: false,
+            editTarget: null,
+            editMulai: '',
+            editAkhir: '',
+            editSibuk: false,
             notice: '',
             noticeType: 'success',
             form: { programId: null, jenisTesKode: '', idMasterUjian: null, namaUjian: '', waktuMulai: '', waktuAkhir: '', peserta: [] },
@@ -377,6 +399,40 @@ export default {
                 this.menyimpan = false;
             }
         },
+        // Tahap tes yang dijadwalkan (ber-namaUjian) — target edit jendela waktu.
+        tahapTerjadwal(j) {
+            return (j.tahap || []).find((t) => t.namaUjian) || null;
+        },
+        bukaEdit(j) {
+            const t = this.tahapTerjadwal(j);
+            if (!t) return;
+            this.editTarget = { ...j, namaUjian: t.namaUjian };
+            this.editMulai = this.normalWaktu(t.waktuMulai);
+            this.editAkhir = this.normalWaktu(t.waktuAkhir);
+            this.editTampil = true;
+        },
+        // Samakan format waktu dari server (ISO / 'YYYY-MM-DD HH:mm:ss') ke value-format picker.
+        normalWaktu(v) {
+            if (!v) return '';
+            return String(v).replace('T', ' ').slice(0, 19);
+        },
+        async simpanEdit() {
+            if (this.editSibuk || !this.editTarget) return;
+            this.editSibuk = true;
+            try {
+                const res = await axios.put(`/api/v1/penjadwalan/${this.editTarget.id}`, {
+                    waktuMulai: this.editMulai,
+                    waktuAkhir: this.editAkhir,
+                }, { headers: { Accept: 'application/json' } });
+                this.beritahu(res.data.message || 'Jadwal diperbarui');
+                this.editTampil = false;
+                this.muat();
+            } catch (e) {
+                this.beritahu(e.response?.data?.message || 'Gagal memperbarui jadwal', 'error');
+            } finally {
+                this.editSibuk = false;
+            }
+        },
         konfirmHapus(j) {
             this.target = j;
             this.hapusTampil = true;
@@ -402,6 +458,12 @@ export default {
 <style scoped>
 .wca-page { padding: 1.25rem; }
 .wca-alert { margin-bottom: 1rem; }
+.wca-editbox { display: flex; flex-direction: column; }
+.wca-editnama { margin: 0 0 .5rem; font-size: .95rem; color: #1e293b; }
+.wca-editnote { display: flex; gap: .5rem; margin: 0 0 1rem; padding: .6rem .75rem; border-radius: 10px; background: rgba(245, 158, 11, .1); border: 1px solid rgba(245, 158, 11, .24); font-size: .78rem; line-height: 1.5; color: #92660a; }
+.wca-editnote .bi { flex: 0 0 auto; margin-top: 1px; color: #d97706; }
+.wca-editlbl { font-size: .82rem; font-weight: 700; color: #334155; margin: .75rem 0 .35rem; }
+.wca-editlbl:first-of-type { margin-top: 0; }
 .wca-segtab { display: inline-flex; gap: .25rem; padding: .25rem; background: var(--el-fill-color-light); border-radius: 12px; margin-bottom: 1rem; }
 .wca-segtab__btn { border: 0; background: transparent; padding: .5rem 1rem; border-radius: 9px; font-weight: 600; font-size: .9rem; color: var(--el-text-color-secondary); cursor: pointer; }
 .wca-segtab__btn.is-active { background: #fff; color: #4f46e5; box-shadow: 0 1px 3px rgba(0,0,0,.08); }

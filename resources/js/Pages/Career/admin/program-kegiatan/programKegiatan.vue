@@ -2,115 +2,161 @@
 <template>
     <Head><title>Program Kegiatan - Web Career</title></Head>
     <div class="wca">
-        <div class="wca-phead">
-            <div>
-                <h1>Program Kegiatan</h1>
-                <p>Definisi program (isi + alur + jadwal + posisi + kriteria). Satu program menampung <b>batch</b>, <b>posisi/lowongan</b>, dan <b>syarat auto-gugur</b>.</p>
+        <div class="pkg-head">
+            <div class="pkg-head__l">
+                <div class="pkg-head__title">
+                    <span class="pkg-head__ico"><i class="bi bi-calendar2-week"></i></span>
+                    <h1>Program Kegiatan</h1>
+                </div>
+                <p>Definisikan program secara menyeluruh — isi, alur seleksi, jadwal, posisi, dan kriteria. Satu program menampung <b>batch</b>, <b>posisi/lowongan</b>, dan <b>syarat auto-gugur</b>.</p>
             </div>
-            <div class="wca-phead__actions">
-                <button class="wca-btn wca-btn--primary" @click="openCreate"><i class="bi bi-plus-lg"></i> Buat Program</button>
+            <button class="pkg-newbtn" @click="openCreate"><i class="bi bi-plus-lg"></i> Buat Program</button>
+        </div>
+
+        <!-- Stat cards -->
+        <div class="pkg-stats">
+            <div class="pkg-stat">
+                <span class="pkg-stat__glow" style="background:radial-gradient(circle,rgba(99,102,241,.2),transparent 70%)"></span>
+                <span class="pkg-stat__ico" style="background:rgba(99,102,241,.12);color:#6366f1"><i class="bi bi-diagram-3-fill"></i></span>
+                <div class="pkg-stat__num">{{ filtered.length }}</div>
+                <div class="pkg-stat__label">Program</div>
+            </div>
+            <div class="pkg-stat">
+                <span class="pkg-stat__glow" style="background:radial-gradient(circle,rgba(16,185,129,.2),transparent 70%)"></span>
+                <span class="pkg-stat__ico" style="background:rgba(16,185,129,.12);color:#059669"><i class="bi bi-broadcast"></i></span>
+                <div class="pkg-stat__num">{{ aktif }}</div>
+                <div class="pkg-stat__label">Berjalan</div>
+            </div>
+            <div class="pkg-stat">
+                <span class="pkg-stat__glow" style="background:radial-gradient(circle,rgba(139,92,246,.2),transparent 70%)"></span>
+                <span class="pkg-stat__ico" style="background:rgba(139,92,246,.12);color:#7c3aed"><i class="bi bi-people"></i></span>
+                <div class="pkg-stat__num">{{ totalKuotaPosisi }}</div>
+                <div class="pkg-stat__label">Total Kuota Posisi</div>
             </div>
         </div>
 
-        <!-- Tab kategori -->
-        <div class="wca-segt">
-            <button class="wca-segt__it" :class="{ on: tab === '' }" @click="tab = ''"><i class="bi bi-grid"></i> Semua</button>
-            <button class="wca-segt__it" :class="{ on: tab === 'REKRUTMEN' }" @click="tab = 'REKRUTMEN'"><i class="bi bi-briefcase"></i> Rekrutmen</button>
-            <button class="wca-segt__it" :class="{ on: tab === 'MT' }" @click="tab = 'MT'"><i class="bi bi-mortarboard"></i> Management Trainee</button>
-            <button class="wca-segt__it" :class="{ on: tab === 'INTERNSHIP' }" @click="tab = 'INTERNSHIP'"><i class="bi bi-backpack"></i> Internship</button>
+        <!-- Toolbar: tabs + search -->
+        <div class="pkg-toolbar">
+            <div class="pkg-tabs">
+                <button class="pkg-tab" :class="{ on: tab === '' }" @click="tab = ''"><i class="bi bi-grid"></i> Semua <span class="pkg-tab__n">{{ list.length }}</span></button>
+                <button class="pkg-tab" :class="{ on: tab === 'REKRUTMEN' }" @click="tab = 'REKRUTMEN'"><i class="bi bi-briefcase"></i> Rekrutmen <span class="pkg-tab__n">{{ countKat('REKRUTMEN') }}</span></button>
+                <button class="pkg-tab" :class="{ on: tab === 'MT' }" @click="tab = 'MT'"><i class="bi bi-mortarboard"></i> Management Trainee <span class="pkg-tab__n">{{ countKat('MT') }}</span></button>
+                <button class="pkg-tab" :class="{ on: tab === 'INTERNSHIP' }" @click="tab = 'INTERNSHIP'"><i class="bi bi-backpack"></i> Internship <span class="pkg-tab__n">{{ countKat('INTERNSHIP') }}</span></button>
+            </div>
+            <div class="pkg-search">
+                <i class="bi bi-search"></i>
+                <input v-model="query" type="text" placeholder="Cari program atau kode..." />
+                <button v-if="query" type="button" class="pkg-search__x" @click="query = ''"><i class="bi bi-x-lg"></i></button>
+            </div>
         </div>
 
-        <!-- Stats -->
-        <div class="wca-stats">
-            <div class="wca-stat"><div class="wca-stat__top"><span class="wca-stat__ico"><i class="bi bi-diagram-3-fill"></i></span></div><div class="wca-stat__num">{{ filtered.length }}</div><div class="wca-stat__label">Program</div></div>
-            <div class="wca-stat"><div class="wca-stat__top"><span class="wca-stat__ico" style="background:rgba(16,185,129,.12);color:#059669"><i class="bi bi-broadcast"></i></span></div><div class="wca-stat__num">{{ aktif }}</div><div class="wca-stat__label">Berjalan</div></div>
-            <div class="wca-stat"><div class="wca-stat__top"><span class="wca-stat__ico" style="background:rgba(139,92,246,.12);color:#7c3aed"><i class="bi bi-people"></i></span></div><div class="wca-stat__num">{{ totalKuotaPosisi }}</div><div class="wca-stat__label">Total Kuota Posisi</div></div>
-        </div>
-
-        <!-- Accordion -->
-        <div v-loading="loading" class="wca-acc">
-            <div v-for="p in filtered" :key="p.id" class="wca-acc__item" :class="{ open: open === p.id }">
-                <button class="wca-acc__head" @click="open = (open === p.id ? null : p.id)">
-                    <span class="wca-acc__chev"><i class="bi bi-chevron-right"></i></span>
-                    <span class="wca-acc__title">
-                        <strong><span class="wca-dot" :style="{ background: p.warna || '#4f46e5' }"></span> {{ p.nama }}</strong>
-                        <small>{{ p.kode }} · {{ p.penyelenggara || '—' }} · Alur {{ p.alurNama || p.alur || '—' }}</small>
-                    </span>
-                    <span class="wca-acc__tags">
-                        <span class="wca-badge" :class="katBadge(p.kategori)">{{ katLabel(p.kategori) }}</span>
-                        <span class="wca-badge" :class="p.mode === 'TERSTRUKTUR' ? 'wca-b--indigo' : 'wca-b--slate'">{{ modeLabel(p.mode) }}</span>
-                        <span class="wca-badge" :class="statusBadge(p.status)"><i class="bi" :class="statusIkon(p.status)"></i> {{ statusLabel(p.status) }}</span>
-                    </span>
-                    <span class="pgk-head-act" @click.stop>
+        <!-- Program list -->
+        <div v-loading="loading" class="pkg-list">
+            <div v-for="p in paged" :key="p.id" class="pkg-card" :class="{ open: open === p.id }">
+                <!-- header row -->
+                <div class="pkg-row">
+                    <button type="button" class="pkg-chev" :class="{ open: open === p.id }" title="Buka detail" @click="open = (open === p.id ? null : p.id)"><i class="bi bi-chevron-right"></i></button>
+                    <div class="pkg-row__main">
+                        <button type="button" class="pkg-row__titlebtn" @click="open = (open === p.id ? null : p.id)">
+                            <span class="pkg-dot" :style="{ background: p.warna || '#4f46e5' }"></span>
+                            <span class="pkg-row__title">{{ p.nama }}</span>
+                        </button>
+                        <div class="pkg-row__meta">
+                            <span class="pkg-code">{{ p.kode }}</span>
+                            <span class="pkg-sep"></span>
+                            <span class="pkg-mi"><i class="bi bi-person"></i> {{ p.penyelenggara || '—' }}</span>
+                            <span class="pkg-sep"></span>
+                            <span class="pkg-mi pkg-flow"><i class="bi bi-diagram-2"></i> {{ p.alurNama || p.alur || '—' }}</span>
+                        </div>
+                        <div class="pkg-pills">
+                            <span class="pkg-pill" :class="katPill(p.kategori)"><i class="bi" :class="katIkon(p.kategori)"></i> {{ katLabel(p.kategori) }}</span>
+                            <span class="pkg-pill pkg-pill--struct"><i class="bi bi-list"></i> {{ modeLabel(p.mode) }}</span>
+                            <span class="pkg-pill" :class="statusPill(p.status)"><span class="pkg-pill__dot"></span> {{ statusLabel(p.status) }}</span>
+                        </div>
+                    </div>
+                    <div class="pkg-row__act" @click.stop>
                         <el-switch :model-value="p.status === 'BERJALAN'" @change="(v) => setStatus(p, v)" />
-                        <button class="wca-iconbtn" title="Ubah" @click="openEdit(p)"><i class="bi bi-pencil"></i></button>
-                        <button class="wca-iconbtn wca-iconbtn--danger" title="Hapus" @click="askRemove(p)"><i class="bi bi-trash"></i></button>
-                    </span>
-                </button>
+                        <button class="pkg-ibtn" title="Ubah" @click="openEdit(p)"><i class="bi bi-pencil"></i></button>
+                        <button class="pkg-ibtn pkg-ibtn--danger" title="Hapus" @click="askRemove(p)"><i class="bi bi-trash"></i></button>
+                    </div>
+                </div>
 
-                <div class="wca-acc__body">
-                    <div class="wca-acc__inner">
-                        <div class="pgk-meta"><AuditStamp :by="p.createdBy" :at="p.createdAt" /></div>
+                <!-- creator strip -->
+                <div class="pkg-creator">
+                    <span class="pkg-creator__av" :style="{ background: p.warna || '#6366f1' }">{{ initials(p.createdBy) }}</span>
+                    <span class="pkg-creator__name">{{ p.createdBy || 'Sistem' }}</span>
+                    <span class="pkg-creator__at"><i class="bi bi-clock"></i> {{ p.createdAt || '—' }}</span>
+                </div>
 
-                        <!-- Syarat auto-gugur -->
-                        <div v-if="p.syarat && p.syarat.length" style="margin-bottom:1rem">
-                            <div class="wca-fsection__label" style="margin-bottom:.5rem"><i class="bi bi-sliders2"></i> Syarat Auto-Gugur ({{ p.syarat.length }})</div>
-                            <div v-for="(s, i) in p.syarat" :key="i" class="pgk-syarat-ro">
-                                <div class="pgk-syarat-ro__top">
-                                    <strong>{{ s.nama }}</strong>
-                                    <span class="wca-badge" :class="s.aksi === 'GUGUR' ? 'wca-b--red' : 'wca-b--indigo'">
+                <!-- expanded detail -->
+                <div v-if="open === p.id" class="pkg-detail">
+                    <!-- syarat auto-gugur -->
+                    <template v-if="p.syarat && p.syarat.length">
+                        <div class="pkg-dhead pkg-dhead--amber"><i class="bi bi-sliders2"></i> SYARAT AUTO-GUGUR ({{ p.syarat.length }})</div>
+                        <div class="pkg-rules">
+                            <div v-for="(s, i) in p.syarat" :key="i" class="pkg-rule">
+                                <span class="pkg-rule__bar"></span>
+                                <div class="pkg-rule__top">
+                                    <span class="pkg-rule__name">{{ s.nama }}</span>
+                                    <span class="pkg-rule__act" :class="s.aksi === 'GUGUR' ? 'is-gugur' : 'is-mark'">
                                         <i class="bi" :class="s.aksi === 'GUGUR' ? 'bi-x-octagon' : 'bi-hand-index-thumb'"></i>
-                                        {{ s.aksi === 'GUGUR' ? 'Gugur langsung' : 'Tandai — admin ketuk palu' }}
+                                        {{ s.aksi === 'GUGUR' ? 'Gugur langsung' : 'Tandai — ketuk palu' }}
                                     </span>
-                                    <span v-if="s.uji" class="wca-badge wca-b--amber"><i class="bi bi-flask"></i> Mode uji</span>
-                                    <span v-if="!s.aktif" class="wca-badge wca-b--slate">Nonaktif</span>
+                                    <span class="pkg-rule__match">{{ s.aturan?.penghubung === 'ATAU' ? 'SALAH SATU' : 'SEMUA' }}</span>
+                                    <span v-if="!s.aktif" class="pkg-rule__match pkg-rule__match--off">Nonaktif</span>
                                 </div>
-                                <div class="wca-krset">
-                                    <span class="pgk-gab">{{ s.aturan?.penghubung === 'ATAU' ? 'SALAH SATU' : 'SEMUA' }}</span>
-                                    <span v-for="(r, j) in s.aturan?.aturan || []" :key="j" class="wca-krrule wca-krrule--ro">
-                                        <i class="bi bi-funnel"></i> {{ r.field }} {{ r.operator }} {{ r.nilai }}
-                                    </span>
+                                <div v-if="(s.aturan?.aturan || []).length" class="pkg-conds">
+                                    <span v-for="(r, j) in s.aturan.aturan" :key="j" class="pkg-cond"><i class="bi bi-funnel"></i> <span class="pkg-mono">{{ r.field }} {{ r.operator }} {{ r.nilai }}</span></span>
                                 </div>
                             </div>
                         </div>
+                    </template>
 
-                        <!-- Batch -->
-                        <div v-if="p.batch && p.batch.length" style="margin-bottom:1rem">
-                            <div class="wca-fsection__label" style="margin-bottom:.5rem"><i class="bi bi-collection"></i> Batch ({{ p.batch.length }})</div>
-                            <div class="wca-tagset">
-                                <span v-for="(b, i) in p.batch" :key="i"><i class="bi bi-people"></i> {{ b.nama }} · {{ b.terisi }}/{{ b.kuota }} kursi<template v-if="b.status"> · {{ b.status }}</template></span>
-                            </div>
+                    <!-- batch (opsional) -->
+                    <template v-if="p.batch && p.batch.length">
+                        <div class="pkg-dhead"><i class="bi bi-collection"></i> BATCH ({{ p.batch.length }})</div>
+                        <div class="pkg-batchset">
+                            <span v-for="(b, i) in p.batch" :key="i" class="pkg-batch"><i class="bi bi-people"></i> {{ b.nama }} · {{ b.terisi }}/{{ b.kuota }} kursi<template v-if="b.status"> · {{ b.status }}</template></span>
                         </div>
+                    </template>
 
-                        <!-- Posisi -->
-                        <div class="wca-fsection__label" style="margin-bottom:.6rem;display:flex;align-items:center;justify-content:space-between">
-                            <span><i class="bi bi-briefcase"></i> Posisi / Lowongan ({{ (p.posisi || []).length }})</span>
-                            <span class="wca-badge wca-b--indigo"><i class="bi bi-people"></i> Total kuota {{ totalKuota(p) }}</span>
+                    <!-- posisi / lowongan -->
+                    <div class="pkg-poshead">
+                        <span class="pkg-dhead pkg-dhead--indigo"><i class="bi bi-briefcase"></i> POSISI / LOWONGAN ({{ (p.posisi || []).length }})</span>
+                        <span class="pkg-totalq"><i class="bi bi-people"></i> Total Kuota {{ totalKuota(p) }}</span>
+                    </div>
+                    <div class="pkg-tbl">
+                        <div class="pkg-tbl__head">
+                            <span>POSISI</span><span>NO. MPP</span><span>DEPARTEMEN</span><span>LOKASI</span><span class="pkg-c">KUOTA</span><span class="pkg-c">STATUS</span>
                         </div>
-                        <div class="wca-tablewrap">
-                            <table class="wca-table">
-                                <thead><tr><th>Posisi</th><th>No. MPP</th><th>Departemen</th><th>Lokasi</th><th>Kuota</th><th>Status</th></tr></thead>
-                                <tbody>
-                                    <tr v-for="(l, i) in p.posisi" :key="i">
-                                        <td><strong>{{ l.posisi }}</strong><small v-if="l.level" style="display:block;color:#94a3b8">{{ l.level }}</small></td>
-                                        <td><code v-if="l.mppRef" class="pgk-mpp">{{ l.mppRef }}</code><span v-else style="color:#b45309" title="Diinput manual sebelum aturan wajib-MPP">manual</span></td>
-                                        <td>{{ l.departemen || '—' }}</td>
-                                        <td><i class="bi bi-geo-alt" style="color:var(--indigo)"></i> {{ l.lokasi || '—' }}</td>
-                                        <td>{{ l.kuota }}</td>
-                                        <td><span class="wca-badge wca-b--slate">{{ l.status || '—' }}</span></td>
-                                    </tr>
-                                    <tr v-if="!(p.posisi || []).length"><td colspan="6" style="color:#94a3b8">Belum ada posisi.</td></tr>
-                                </tbody>
-                            </table>
+                        <div v-for="(l, i) in p.posisi" :key="i" class="pkg-tbl__row">
+                            <span class="pkg-pos"><span class="pkg-pos__dot"></span><span class="pkg-pos__txt"><span class="pkg-pos__title">{{ l.posisi }}</span><span v-if="l.level" class="pkg-pos__lvl">{{ l.level }}</span></span></span>
+                            <span><code v-if="l.mppRef" class="pkg-mpp">{{ l.mppRef }}</code><span v-else class="pkg-manual" title="Diinput manual sebelum aturan wajib-MPP">manual</span></span>
+                            <span class="pkg-td">{{ l.departemen || '—' }}</span>
+                            <span class="pkg-td pkg-td--loc"><i class="bi bi-geo-alt"></i> {{ l.lokasi || '—' }}</span>
+                            <span class="pkg-c pkg-q">{{ l.kuota }}</span>
+                            <span class="pkg-c"><span class="pkg-pill pkg-pill--slate pkg-pill--sm">{{ l.status || '—' }}</span></span>
                         </div>
+                        <div v-if="!(p.posisi || []).length" class="pkg-tbl__empty">Belum ada posisi.</div>
                     </div>
                 </div>
             </div>
-            <div v-if="!loading && !filtered.length" class="wca-empty"><i class="bi bi-diagram-3"></i><h4>Belum ada program pada kategori ini</h4></div>
+
+            <div v-if="!loading && !searched.length" class="pkg-empty"><i class="bi bi-diagram-3"></i> Tidak ada program pada filter atau pencarian ini.</div>
+        </div>
+
+        <!-- Pagination -->
+        <div v-if="totalPages > 1" class="pkg-pager">
+            <span class="pkg-pager__info">Menampilkan <b>{{ pageFrom }}–{{ pageTo }}</b> dari <b>{{ searched.length }}</b> program</span>
+            <div class="pkg-pager__nav">
+                <button type="button" class="pkg-pager__btn" :disabled="page <= 1" @click="page = Math.max(1, page - 1)"><i class="bi bi-chevron-left"></i></button>
+                <button v-for="n in totalPages" :key="n" type="button" class="pkg-pager__btn" :class="{ on: n === page }" @click="page = n">{{ n }}</button>
+                <button type="button" class="pkg-pager__btn" :disabled="page >= totalPages" @click="page = Math.min(totalPages, page + 1)"><i class="bi bi-chevron-right"></i></button>
+            </div>
         </div>
 
         <!-- Modal buat/ubah program -->
-        <AdminModal :show="show" :title="editingId ? 'Ubah Program' : 'Buat Program Kegiatan'" :subtitle="langkahMeta[langkah].sub" icon="bi-diagram-3-fill" lg @close="show = false">
+        <AdminModal :show="show" :title="editingId ? 'Ubah Program' : 'Buat Program Kegiatan'" :subtitle="langkahMeta[langkah].sub" icon="bi-diagram-3-fill" xl @close="show = false">
             <!-- ── Stepper ── -->
             <nav class="pgk-steps">
                 <button
@@ -127,54 +173,74 @@
                 </button>
             </nav>
 
-            <!-- ══════════ LANGKAH 1 — IDENTITAS ══════════ -->
+            <!-- ══════════ LANGKAH 1 — IDENTITAS ══════════
+                 Progressive disclosure: HANYA Kategori yang tampil dulu.
+                 Field lain baru muncul setelah kategori dipilih (bukan disabled). -->
             <div v-show="langkah === 0" class="pgk-panel">
                 <div class="wca-form">
-                    <div class="wca-frow">
+                    <div class="wca-frow wca-frow--single">
                         <div>
                             <label class="wca-field-lbl">Kategori <span class="pgk-req">wajib</span></label>
                             <RefSelect type="talent" v-model="form.kategori" placeholder="Pilih kategori dulu" @picked="onKategori" />
-                            <div class="pgk-hint">Menentukan mode, alur & jadwal di bawah.</div>
-                        </div>
-                        <div>
-                            <label class="wca-field-lbl">Nama Program <span class="pgk-req">wajib</span></label>
-                            <el-input v-model="form.nama" :disabled="terkunci" :placeholder="terkunci ? 'Pilih kategori dulu' : 'mis. Rekrutmen Reguler Q4 2026'" />
+                            <div class="pgk-hint">Menentukan alur & jadwal yang tersedia di bawah.</div>
                         </div>
                     </div>
-                    <div class="wca-frow">
-                        <div><label class="wca-field-lbl">Mode</label><RefSelect type="mode" v-model="form.mode" :disabled="terkunci" :placeholder="terkunci ? 'Pilih kategori dulu' : 'Pilih mode'" /></div>
-                        <div>
-                            <label class="wca-field-lbl">Warna Label</label>
-                            <div><el-color-picker v-model="form.warna" :predefine="palette" :disabled="terkunci" /></div>
+
+                    <!-- Muncul setelah kategori dipilih -->
+                    <template v-if="form.kategori">
+                        <div class="wca-frow">
+                            <div>
+                                <label class="wca-field-lbl">Nama Program <span class="pgk-req">wajib</span></label>
+                                <el-input v-model="form.nama" placeholder="mis. Rekrutmen Reguler Q4 2026" />
+                            </div>
+                            <div>
+                                <label class="wca-field-lbl">Warna Label</label>
+                                <!-- Swatch langsung klik — bukan color-picker mungil dengan ruang kosong. -->
+                                <div class="pgk-swatches">
+                                    <button
+                                        v-for="c in palette"
+                                        :key="c"
+                                        type="button"
+                                        class="pgk-swatch"
+                                        :class="{ on: form.warna === c }"
+                                        :style="{ background: c }"
+                                        :title="c"
+                                        @click="form.warna = c"
+                                    ><i v-if="form.warna === c" class="bi bi-check-lg"></i></button>
+                                    <el-color-picker v-model="form.warna" size="default" title="Warna kustom" />
+                                </div>
+                            </div>
                         </div>
-                    </div>
-                    <div class="wca-frow">
-                        <div>
-                            <label class="wca-field-lbl">Alur Seleksi</label>
-                            <RefSelect type="alur" v-model="form.alur" :params="{ kategori: form.kategori }" :disabled="terkunci" :placeholder="terkunci ? 'Pilih kategori dulu' : 'Pilih alur'" no-data-text="Belum ada alur untuk kategori ini" clearable @picked="onAlurGanti" />
+                        <div class="wca-frow">
+                            <div>
+                                <label class="wca-field-lbl">Alur Seleksi</label>
+                                <RefSelect type="alur" v-model="form.alur" :params="{ kategori: form.kategori }" placeholder="Pilih alur" no-data-text="Belum ada alur untuk kategori ini" clearable @picked="onAlurGanti" />
+                            </div>
+                            <div>
+                                <label class="wca-field-lbl">Jadwal</label>
+                                <RefSelect type="jadwal" v-model="form.jadwal" :params="{ kategori: form.kategori, alur: form.alur }" placeholder="Pilih jadwal" no-data-text="Belum ada jadwal untuk alur ini" clearable />
+                            </div>
                         </div>
-                        <div>
-                            <label class="wca-field-lbl">Jadwal</label>
-                            <RefSelect type="jadwal" v-model="form.jadwal" :params="{ kategori: form.kategori, alur: form.alur }" :disabled="terkunci" :placeholder="terkunci ? 'Pilih kategori dulu' : 'Pilih jadwal'" no-data-text="Belum ada jadwal untuk alur ini" clearable />
+                        <div class="wca-frow">
+                            <div>
+                                <label class="wca-field-lbl">Penyelenggara</label>
+                                <el-input v-model="form.penyelenggara" placeholder="mis. Tim Rekrutmen" />
+                            </div>
+                            <div v-if="editingId">
+                                <label class="wca-field-lbl">Status</label>
+                                <el-select filterable v-model="form.status" placeholder="Status" style="width:100%">
+                                    <el-option label="Draft" value="DRAFT" />
+                                    <el-option label="Berjalan" value="BERJALAN" />
+                                    <el-option label="Selesai" value="SELESAI" />
+                                </el-select>
+                            </div>
                         </div>
-                    </div>
-                    <div class="wca-frow">
-                        <div>
-                            <label class="wca-field-lbl">Penyelenggara</label>
-                            <el-input v-model="form.penyelenggara" :disabled="terkunci" :placeholder="terkunci ? 'Pilih kategori dulu' : 'mis. Tim Rekrutmen'" />
-                        </div>
-                        <div v-if="editingId">
-                            <label class="wca-field-lbl">Status</label>
-                            <el-select filterable v-model="form.status" placeholder="Status" style="width:100%">
-                                <el-option label="Draft" value="DRAFT" />
-                                <el-option label="Berjalan" value="BERJALAN" />
-                                <el-option label="Selesai" value="SELESAI" />
-                            </el-select>
-                        </div>
-                        <div v-else class="pgk-statusnote">
-                            <i class="bi bi-play-circle-fill"></i>
-                            <span>Program langsung <strong>Berjalan</strong> setelah dibuat.</span>
-                        </div>
+                    </template>
+
+                    <!-- Sebelum kategori dipilih: ajakan, bukan form kosong terkunci -->
+                    <div v-else class="pgk-waitkat">
+                        <i class="bi bi-arrow-up-circle"></i>
+                        <span>Pilih <strong>kategori</strong> dulu — form identitas, alur & jadwal akan muncul setelahnya.</span>
                     </div>
                 </div>
             </div>
@@ -186,37 +252,108 @@
                         <div class="pgk-panel__title"><i class="bi bi-briefcase"></i> Posisi / Lowongan</div>
                         <div class="pgk-panel__note">Diambil dari MPP yang sudah disetujui — tidak diketik manual.</div>
                     </div>
-                    <button class="wca-btn wca-btn--primary wca-btn--sm" type="button" :disabled="terkunci" @click="addPosisi"><i class="bi bi-plus-circle"></i> Ambil dari MPP</button>
                 </div>
 
+                <!-- Pilih MPP lewat KARTU (ala Monitoring MPP) — klik kartu = pilih, klik lagi = buang.
+                     Ikon info membuka popover detail TANPA menutup modal. -->
+                <div class="pgk-mpppick">
+                    <div class="pgk-mpppick__head">
+                        <label class="wca-field-lbl">Pilih Posisi dari MPP <span class="pgk-req">klik kartu — bisa banyak</span></label>
+                        <div class="pgk-mppsearch">
+                            <i class="bi bi-search"></i>
+                            <input v-model="mppCari" type="text" placeholder="Cari posisi / departemen / nomor MPP…" />
+                            <button v-if="mppCari" type="button" @click="mppCari = ''"><i class="bi bi-x-lg"></i></button>
+                        </div>
+                    </div>
+                    <div v-if="mppOptions.length" class="pgk-mppgrid">
+                        <div
+                            v-for="o in mppTersaring"
+                            :key="o.value"
+                            class="pgk-mppcard"
+                            :class="{ on: mppTerpilih.includes(o.value) }"
+                            role="button"
+                            @click="toggleMpp(o)"
+                        >
+                            <div class="pgk-mppcard__head">
+                                <span class="pgk-mppcard__check"><i class="bi bi-check-lg"></i></span>
+                                <h5 class="pgk-mppcard__title">{{ tc(o.posisi) }}</h5>
+                                <el-popover placement="top" :width="280" trigger="click">
+                                    <template #reference>
+                                        <button type="button" class="pgk-mppcard__info" title="Lihat detail MPP" @click.stop><i class="bi bi-info-circle"></i></button>
+                                    </template>
+                                    <div class="pgk-mppdetail">
+                                        <strong>{{ tc(o.posisi) }}</strong>
+                                        <div><i class="bi bi-upc-scan"></i> {{ o.value }}</div>
+                                        <div><i class="bi bi-diagram-3"></i> {{ o.departemen || '—' }}</div>
+                                        <div><i class="bi bi-bar-chart-steps"></i> Level {{ o.level || '—' }}</div>
+                                        <div><i class="bi bi-briefcase"></i> {{ o.employment || '—' }}</div>
+                                        <div><i class="bi bi-geo-alt"></i> {{ o.workplace || '—' }}</div>
+                                        <div><i class="bi bi-stars"></i> {{ o.experience || '—' }}</div>
+                                        <div><i class="bi bi-people"></i> Kuota {{ o.kuota }} orang</div>
+                                    </div>
+                                </el-popover>
+                            </div>
+                            <div class="pgk-mppcard__badges">
+                                <span class="pgk-bdg pgk-bdg--indigo"><i class="bi bi-diagram-3"></i> {{ tc(o.divisi) || '—' }}</span>
+                                <span v-if="o.sub" class="pgk-bdg pgk-bdg--sky">{{ tc(o.sub) }}</span>
+                            </div>
+                            <div class="pgk-mppcard__no"><i class="bi bi-hash"></i>{{ o.value }}</div>
+                            <div v-if="o.employment || o.workplace || o.experience" class="pgk-mppcard__tags">
+                                <span v-if="o.employment" class="mppt mppt--emp"><span class="mppt__dot mppt__dot--emp"></span><i class="bi bi-briefcase-fill"></i> {{ o.employment }}</span>
+                                <span v-if="o.workplace" class="mppt mppt--wp"><span class="mppt__dot mppt__dot--wp"></span><i class="bi bi-geo-alt-fill"></i> {{ o.workplace }}</span>
+                                <span v-if="o.experience" class="mppt mppt--exp"><span class="mppt__dot mppt__dot--exp"></span><i class="bi bi-stars"></i> {{ o.experience }}</span>
+                            </div>
+                            <div class="pgk-mppcard__meta">
+                                <span><i class="bi bi-people-fill"></i> {{ o.kuota }} orang</span>
+                                <span v-if="o.level"><i class="bi bi-bar-chart-steps"></i> {{ tc(o.level) }}</span>
+                            </div>
+                        </div>
+                        <div v-if="!mppTersaring.length" class="pgk-empty" style="grid-column:1/-1">Tidak ada MPP yang cocok dengan pencarian.</div>
+                    </div>
+                    <div v-else class="pgk-empty">Tidak ada MPP untuk kategori ini.</div>
+                </div>
+
+                <!-- Panel SUDAH DIPILIH — area sendiri dengan scrollbar sendiri. -->
+                <div class="pgk-selpanel">
+                    <div class="pgk-selpanel__hd">
+                        <i class="bi bi-check2-circle"></i> Sudah Dipilih ({{ form.posisi.length }})
+                        <span v-if="form.posisi.length" class="pgk-selpanel__tot"><i class="bi bi-people"></i> Total kuota {{ kuotaMpp }}</span>
+                        <span class="pgk-selpanel__hint">Ikon <i class="bi bi-info-circle"></i> pada kartu menampilkan detail tanpa menutup modal</span>
+                    </div>
+                    <div class="pgk-selpanel__body">
                 <div class="pgk-rows">
-                    <div v-for="(l, i) in form.posisi" :key="i" class="pgk-row pgk-row--stack">
-                        <div class="pgk-row__pick">
-                            <label class="wca-field-lbl">Posisi (dari MPP)</label>
-                            <RefSelect type="mpp" v-model="l.mppRef" :params="{ kategori: form.kategori }" :placeholder="form.kategori ? 'Cari nomor / nama posisi MPP' : 'Pilih kategori dulu'" no-data-text="Tidak ada MPP untuk kategori ini" @picked="(o) => onMpp(l, o)" />
-                            <div v-if="!l.mppRef" class="pgk-hint pgk-hint--warn"><i class="bi bi-exclamation-triangle"></i> Baris ini belum tertaut MPP — pilih dulu sebelum menyimpan.</div>
-                        </div>
-                        <div class="pgk-row__grid pgk-row__grid--posisi" :class="{ 'is-edit': mengubah }">
-                            <div><label class="wca-field-lbl">Departemen</label><el-input :model-value="l.departemen" disabled placeholder="—" /></div>
-                            <div><label class="wca-field-lbl">Lokasi</label><el-input :model-value="l.lokasi" disabled placeholder="—" /></div>
-                            <div><label class="wca-field-lbl">Level</label><el-input :model-value="l.level" disabled placeholder="—" /></div>
-                            <div>
-                                <label class="wca-field-lbl">Kuota <small v-if="l.kuotaMpp">/ MPP {{ l.kuotaMpp }}</small></label>
-                                <el-input-number v-model="l.kuota" :min="0" :max="l.kuotaMpp || undefined" controls-position="right" style="width:100%" />
+                    <!-- Baris posisi terpilih: info sebagai chip elegan (bukan input mati), kuota bisa disetel. -->
+                    <div v-for="(l, i) in form.posisi" :key="l.mppRef || i" class="pgk-posrow">
+                        <span class="pgk-posrow__accent"></span>
+                        <div class="pgk-posrow__main">
+                            <div class="pgk-posrow__title">
+                                <strong>{{ l.posisi || 'Posisi manual (lama)' }}</strong>
+                                <code v-if="l.mppRef" class="pgk-mpp">{{ l.mppRef }}</code>
                             </div>
-                            <div v-if="mengubah">
-                                <label class="wca-field-lbl">Status</label>
-                                <el-select v-model="l.status" style="width:100%">
-                                    <el-option label="Buka" value="BUKA" />
-                                    <el-option label="Penuh" value="PENUH" />
-                                    <el-option label="Tutup" value="TUTUP" />
-                                </el-select>
+                            <div class="pgk-posrow__meta">
+                                <span v-if="l.departemen"><i class="bi bi-diagram-3"></i> {{ l.departemen }}</span>
+                                <span v-if="l.level"><i class="bi bi-person-badge"></i> {{ l.level }}</span>
+                                <span v-if="l.lokasi"><i class="bi bi-building"></i> {{ l.lokasi }}</span>
                             </div>
                         </div>
-                        <button class="wca-iconbtn wca-iconbtn--danger pgk-row__del" type="button" title="Hapus posisi" @click="form.posisi.splice(i, 1)"><i class="bi bi-trash"></i></button>
+                        <div class="pgk-posrow__kuota">
+                            <label>Kuota <small v-if="l.kuotaMpp">dari MPP {{ l.kuotaMpp }}</small></label>
+                            <el-input-number v-model="l.kuota" :min="0" :max="l.kuotaMpp || undefined" controls-position="right" style="width:130px" />
+                        </div>
+                        <div v-if="mengubah" class="pgk-posrow__status">
+                            <label>Status</label>
+                            <el-select v-model="l.status" style="width:110px">
+                                <el-option label="Buka" value="BUKA" />
+                                <el-option label="Penuh" value="PENUH" />
+                                <el-option label="Tutup" value="TUTUP" />
+                            </el-select>
+                        </div>
+                        <button class="pgk-posrow__del" type="button" title="Hapus posisi" @click="form.posisi.splice(i, 1)"><i class="bi bi-trash"></i></button>
                     </div>
                     <div v-if="!form.posisi.length" class="pgk-empty">
-                        Tanpa posisi — program tetap bisa dibuat. Klik <b>Ambil dari MPP</b> untuk menautkan lowongan.
+                        Tanpa posisi — program tetap bisa dibuat. Klik kartu MPP di atas, barisnya terbuat otomatis.
+                    </div>
+                </div>
                     </div>
                 </div>
             </div>
@@ -321,10 +458,13 @@
                                     <span>kondisi terpenuhi</span>
                                 </div>
 
+                                <!-- BINDING TIPE FIELD: operator & input Nilai mengikuti tipe field dari skema
+                                     formulir (angka -> input angka, pilihan -> dropdown dari sumber yang sama
+                                     dengan formulirnya, teks -> bebas). Seperti formula: tipe menentukan bentuk. -->
                                 <div v-for="(K, j) in S.aturan.aturan" :key="j" class="pgk-kondisi">
                                     <div class="pgk-kondisi__f">
                                         <label class="wca-field-lbl">Field</label>
-                                        <el-select v-model="K.field" filterable placeholder="Pilih field" style="width:100%" :no-data-text="S.tahapId ? 'Formulir tahap ini tidak punya field' : 'Pilih tahap dulu'">
+                                        <el-select v-model="K.field" filterable placeholder="Pilih field" style="width:100%" :no-data-text="S.tahapId ? 'Formulir tahap ini tidak punya field' : 'Pilih tahap dulu'" @change="onFieldGanti(S, K)">
                                             <el-option-group label="Dari formulir">
                                                 <el-option v-for="f in fieldTahap(S.tahapId)" :key="f.key" :value="f.key" :label="f.label" />
                                             </el-option-group>
@@ -334,14 +474,61 @@
                                         </el-select>
                                     </div>
                                     <div class="pgk-kondisi__o">
-                                        <label class="wca-field-lbl">Syarat</label>
-                                        <el-select v-model="K.operator" style="width:100%">
-                                            <el-option v-for="o in operatorOptions" :key="o.value" :value="o.value" :label="o.label" />
+                                        <label class="wca-field-lbl">
+                                            Syarat
+                                            <el-tooltip content="Daftar operator otomatis menyesuaikan tipe field yang dipilih." placement="top">
+                                                <i class="bi bi-info-circle pgk-lblinfo"></i>
+                                            </el-tooltip>
+                                        </label>
+                                        <el-select v-model="K.operator" style="width:100%" @change="K.nilai = ''">
+                                            <el-option v-for="o in operatorUntuk(S, K)" :key="o.value" :value="o.value" :label="o.label">
+                                                <div class="pgk-opdesc"><span>{{ o.label }}</span><small>{{ o.desc }}</small></div>
+                                            </el-option>
                                         </el-select>
                                     </div>
                                     <div class="pgk-kondisi__v">
                                         <label class="wca-field-lbl">Nilai</label>
-                                        <el-input v-model="K.nilai" :placeholder="phNilai(K.operator)" />
+                                        <!-- angka + ANTARA: dua kotak rentang -->
+                                        <div v-if="tipeField(S, K.field) === 'number' && K.operator === 'ANTARA'" class="pgk-antara">
+                                            <el-input-number :model-value="antaraVal(K, 0)" :controls="false" placeholder="dari" @update:model-value="(v) => setAntara(K, 0, v)" />
+                                            <span class="pgk-antara__sep">—</span>
+                                            <el-input-number :model-value="antaraVal(K, 1)" :controls="false" placeholder="sampai" @update:model-value="(v) => setAntara(K, 1, v)" />
+                                        </div>
+                                        <!-- angka biasa -->
+                                        <el-input-number
+                                            v-else-if="tipeField(S, K.field) === 'number'"
+                                            :model-value="angkaVal(K)"
+                                            controls-position="right"
+                                            style="width:100%"
+                                            :placeholder="phNilai(K.operator)"
+                                            @update:model-value="(v) => (K.nilai = v === null || v === undefined ? '' : String(v))"
+                                        />
+                                        <!-- pilihan, operator daftar: PANEL CHECKLIST (bukan select sempit) —
+                                             muat banyak nilai (mis. puluhan kampus) tetap jelas & bisa dicari -->
+                                        <div v-else-if="adaOpsi(S, K.field) && (K.operator === 'ADA_DI' || K.operator === 'TIDAK_ADA_DI')" class="pgk-multichk">
+                                            <div class="pgk-multichk__search">
+                                                <i class="bi bi-search"></i>
+                                                <input :value="K._cari || ''" type="text" placeholder="Cari nilai…" @input="(e) => (K._cari = e.target.value)" />
+                                            </div>
+                                            <div class="pgk-multichk__list">
+                                                <label v-for="o in opsiTersaring(S, K)" :key="o" class="pgk-multichk__item" :class="{ on: listVal(K).includes(o) }">
+                                                    <input type="checkbox" :checked="listVal(K).includes(o)" @change="toggleNilai(K, o)" />
+                                                    <span>{{ o }}</span>
+                                                    <i v-if="listVal(K).includes(o)" class="bi bi-check-lg"></i>
+                                                </label>
+                                                <div v-if="!opsiTersaring(S, K).length" class="pgk-multichk__empty">Tidak ada nilai yang cocok.</div>
+                                            </div>
+                                            <div class="pgk-multichk__foot">
+                                                <span><b>{{ listVal(K).length }}</b> nilai dipilih</span>
+                                                <button v-if="listVal(K).length" type="button" @click="K.nilai = ''"><i class="bi bi-x-circle"></i> Bersihkan</button>
+                                            </div>
+                                        </div>
+                                        <!-- pilihan tunggal -->
+                                        <el-select v-else-if="adaOpsi(S, K.field)" v-model="K.nilai" filterable style="width:100%" placeholder="Pilih nilai">
+                                            <el-option v-for="o in opsiField(S, K.field)" :key="o" :value="o" :label="o" />
+                                        </el-select>
+                                        <!-- teks bebas (fallback) -->
+                                        <el-input v-else v-model="K.nilai" :placeholder="phNilai(K.operator)" />
                                     </div>
                                     <button class="wca-iconbtn wca-iconbtn--danger pgk-kondisi__del" type="button" title="Hapus kondisi" @click="S.aturan.aturan.splice(j, 1)"><i class="bi bi-x-lg"></i></button>
                                 </div>
@@ -350,7 +537,7 @@
                                 <div v-if="!S.aturan.aturan.length" class="pgk-kondisi-kosong">Belum ada kondisi — syarat ini akan diabaikan mesin.</div>
                             </div>
 
-                            <!-- Aksi + pesan -->
+                            <!-- Aksi bila tidak lolos (Mode Uji dihapus — mulai dari TANDAI dulu bila ragu) -->
                             <div class="pgk-syarat__opt">
                                 <div>
                                     <label class="wca-field-lbl">Bila tidak lolos</label>
@@ -359,10 +546,6 @@
                                         <el-option value="GUGUR" label="Gugurkan langsung tanpa admin" />
                                     </el-select>
                                 </div>
-                                <label class="pgk-syarat__uji">
-                                    <el-checkbox v-model="S.uji">Mode uji</el-checkbox>
-                                    <small>Hitung saja, jangan pengaruhi pelamar.</small>
-                                </label>
                             </div>
 
                             <div class="pgk-pesan">
@@ -376,6 +559,86 @@
                         </div>
 
                         <div v-if="!form.syarat.length" class="pgk-empty" style="padding:.6rem">Klik "Tambah Syarat" untuk mulai menyaring pelamar.</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ══════════ LANGKAH 4 — PRATINJAU ══════════ -->
+            <div v-show="langkah === 3" class="pgk-panel">
+                <div class="pgk-prev">
+                    <!-- HERO ringkasan program -->
+                    <div class="pgk-prev__hero">
+                        <span class="pgk-prev__heroBar" :style="{ background: form.warna || '#4f46e5' }"></span>
+                        <div class="pgk-prev__heroMain">
+                            <div class="pgk-prev__heroTop">
+                                <h4>{{ form.nama || '—' }}</h4>
+                                <span class="pgk-prev__tag pgk-prev__tag--vio">{{ katLabel(form.kategori) }}</span>
+                                <span v-if="editingId" class="pgk-prev__tag pgk-prev__tag--ind">{{ statusLabel(form.status) }}</span>
+                            </div>
+                            <div class="pgk-prev__heroChips">
+                                <span><i class="bi bi-signpost-split"></i> Alur <code>{{ form.alur || '—' }}</code></span>
+                                <span><i class="bi bi-calendar3-range"></i> Jadwal <code>{{ form.jadwal || '—' }}</code></span>
+                                <span><i class="bi bi-person"></i> {{ form.penyelenggara || '—' }}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Stat mini -->
+                    <div class="pgk-prev__stats">
+                        <div><span class="pgk-prev__sico" style="background:rgba(99,102,241,.12);color:#6366f1"><i class="bi bi-briefcase-fill"></i></span><b>{{ form.posisi.length }}</b><span>Posisi</span></div>
+                        <div><span class="pgk-prev__sico" style="background:rgba(16,185,129,.12);color:#059669"><i class="bi bi-people-fill"></i></span><b>{{ kuotaMpp }}</b><span>Total Kuota</span></div>
+                        <div><span class="pgk-prev__sico" style="background:rgba(139,92,246,.12);color:#7c3aed"><i class="bi bi-collection-fill"></i></span><b>{{ form.batch.length }}</b><span>Batch</span></div>
+                        <div><span class="pgk-prev__sico" style="background:rgba(245,158,11,.14);color:#b45309"><i class="bi bi-sliders2"></i></span><b>{{ form.syarat.length }}</b><span>Syarat</span></div>
+                    </div>
+
+                    <!-- Posisi -->
+                    <div class="pgk-prev__card">
+                        <div class="pgk-prev__hd">
+                            <i class="bi bi-briefcase"></i> Posisi / Lowongan ({{ form.posisi.length }})
+                            <span v-if="form.posisi.length" class="pgk-prev__tag pgk-prev__tag--ind"><i class="bi bi-people"></i> Total kuota {{ kuotaMpp }}</span>
+                        </div>
+                        <div v-if="form.posisi.length" class="pgk-prev__list">
+                            <div v-for="(l, i) in form.posisi" :key="i" class="pgk-prev__item">
+                                <span class="pgk-prev__dot"></span>
+                                <span class="pgk-prev__nm">{{ l.posisi }}</span>
+                                <code v-if="l.mppRef" class="pgk-mpp">{{ l.mppRef }}</code>
+                                <span class="pgk-prev__kt">{{ l.kuota }} kuota</span>
+                            </div>
+                        </div>
+                        <div v-else class="pgk-prev__none">Tanpa posisi — program dibuat tanpa lowongan tertaut.</div>
+                    </div>
+
+                    <!-- Batch -->
+                    <div v-if="form.batch.length" class="pgk-prev__card">
+                        <div class="pgk-prev__hd"><i class="bi bi-collection"></i> Batch ({{ form.batch.length }})</div>
+                        <div class="pgk-prev__list">
+                            <div v-for="(b, i) in form.batch" :key="i" class="pgk-prev__item">
+                                <span class="pgk-prev__dot"></span>
+                                <span class="pgk-prev__nm">{{ b.nama || '(tanpa nama)' }}</span>
+                                <span class="pgk-prev__kt">{{ b.kuota }} kursi</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Syarat -->
+                    <div v-if="form.syarat.length" class="pgk-prev__card">
+                        <div class="pgk-prev__hd"><i class="bi bi-sliders2"></i> Syarat Auto-Gugur ({{ form.syarat.length }})</div>
+                        <div v-for="(S, i) in form.syarat" :key="i" class="pgk-prev__syarat">
+                            <div class="pgk-prev__srow">
+                                <b>{{ S.nama || 'Syarat ' + (i + 1) }}</b>
+                                <span class="pgk-prev__tag pgk-prev__tag--vio">{{ S.aturan.penghubung === 'ATAU' ? 'SALAH SATU' : 'SEMUA' }}</span>
+                                <span class="pgk-prev__tag" :class="S.aksi === 'GUGUR' ? 'pgk-prev__tag--red' : 'pgk-prev__tag--ind'">
+                                    <i class="bi" :class="S.aksi === 'GUGUR' ? 'bi-x-octagon' : 'bi-hand-index-thumb'"></i>
+                                    {{ S.aksi === 'GUGUR' ? 'Gugur langsung' : 'Tandai — ketuk palu' }}
+                                </span>
+                            </div>
+                            <div class="pgk-prev__conds">
+                                <span v-for="(K, j) in S.aturan.aturan" :key="j" class="pgk-prev__cond">
+                                    <i class="bi bi-funnel"></i> {{ labelField(S, K.field) }} <b>{{ opLabel(K.operator) }}</b> {{ K.nilai || '—' }}
+                                </span>
+                                <span v-if="!S.aturan.aturan.length" class="pgk-prev__none">Belum ada kondisi — syarat diabaikan mesin.</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -406,6 +669,7 @@ import ConfirmModal from '@career/ConfirmModal.vue';
 import AuditStamp from '@career/AuditStamp.vue';
 import RefSelect from '@career/RefSelect.vue';
 import { skemaFormulir, semuaField } from '@career/formulir';
+import { titleCase } from '../monitoring-mpp/mppHelpers';
 
 const API = '/api/v1/program-kegiatan';
 const CFG = { headers: { Accept: 'application/json' } };
@@ -418,31 +682,39 @@ export default {
             loading: false,
             open: null,
             tab: '',
+            query: '',
+            page: 1,
+            perPage: 6,
             show: false,
             editingId: null,
             // Wizard: langkah aktif + apakah seksi opsional diaktifkan.
             langkah: 0,
             langkahMeta: [
-                { judul: 'Identitas', ikon: 'bi-tags', sub: 'Kategori dulu — mode, alur & jadwal mengikutinya.' },
+                { judul: 'Identitas', ikon: 'bi-tags', sub: 'Kategori dulu — alur & jadwal mengikutinya.' },
                 { judul: 'Posisi', ikon: 'bi-briefcase', sub: 'Tautkan lowongan dari MPP yang sudah disetujui.' },
                 { judul: 'Tambahan', ikon: 'bi-sliders', opsional: true, sub: 'Batch & syarat auto-gugur — boleh dilewati.' },
+                { judul: 'Pratinjau', ikon: 'bi-eye', sub: 'Periksa ringkasan akhir sebelum disimpan.' },
             ],
             pakaiBatch: false,
             pakaiSyarat: false,
             form: { nama: '', kategori: '', warna: '#4f46e5', mode: 'ROLLING', alur: '', jadwal: '', penyelenggara: '', status: 'DRAFT', batch: [], posisi: [], syarat: [] },
             tahapFormulir: [],
             fieldTurunan: [],
+            // Kartu MPP (langkah Posisi) + cache opsi dinamis field pilihan (mis. kampus).
+            mppOptions: [],
+            mppCari: '',
+            opsiSumber: {},
             palette: ['#4f46e5', '#7c3aed', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#64748b'],
             operatorOptions: [
-                { value: '>=', label: 'minimal (>=)' },
-                { value: '<=', label: 'maksimal (<=)' },
-                { value: '=', label: 'sama dengan' },
-                { value: '!=', label: 'tidak sama dengan' },
-                { value: '>', label: 'lebih dari' },
-                { value: '<', label: 'kurang dari' },
-                { value: 'ANTARA', label: 'antara' },
-                { value: 'ADA_DI', label: 'salah satu dari' },
-                { value: 'TIDAK_ADA_DI', label: 'bukan salah satu dari' },
+                { value: '>=', label: 'minimal (>=)', desc: 'Jawaban harus ≥ angka ini' },
+                { value: '<=', label: 'maksimal (<=)', desc: 'Jawaban harus ≤ angka ini' },
+                { value: '=', label: 'sama dengan', desc: 'Jawaban persis sama dengan nilai' },
+                { value: '!=', label: 'tidak sama dengan', desc: 'Jawaban apa pun selain nilai ini' },
+                { value: '>', label: 'lebih dari', desc: 'Lebih besar, tanpa termasuk nilainya' },
+                { value: '<', label: 'kurang dari', desc: 'Lebih kecil, tanpa termasuk nilainya' },
+                { value: 'ANTARA', label: 'antara', desc: 'Berada dalam rentang dari–sampai' },
+                { value: 'ADA_DI', label: 'salah satu dari', desc: 'Jawaban termasuk daftar yang dicentang' },
+                { value: 'TIDAK_ADA_DI', label: 'bukan salah satu dari', desc: 'Jawaban di luar daftar yang dicentang' },
             ],
             presets: [],
             // Contoh pesan penolakan bernada hangat — tombol "Pakai contoh" mengisi ini.
@@ -460,6 +732,17 @@ export default {
         aktif() { return this.filtered.filter((p) => p.status === 'BERJALAN').length; },
         totalKuotaPosisi() { return this.filtered.reduce((n, p) => n + this.totalKuota(p), 0); },
 
+        /** Filter tab + pencarian nama/kode/penyelenggara/alur. */
+        searched() {
+            const q = (this.query || '').trim().toLowerCase();
+            if (!q) return this.filtered;
+            return this.filtered.filter((p) => [p.nama, p.kode, p.penyelenggara, p.alurNama, p.alur].join(' ').toLowerCase().includes(q));
+        },
+        totalPages() { return Math.max(1, Math.ceil(this.searched.length / this.perPage)); },
+        paged() { const s = (this.page - 1) * this.perPage; return this.searched.slice(s, s + this.perPage); },
+        pageFrom() { return this.searched.length ? (this.page - 1) * this.perPage + 1 : 0; },
+        pageTo() { return Math.min(this.page * this.perPage, this.searched.length); },
+
         /** Semua field selain Kategori terkunci sampai kategori dipilih. */
         terkunci() { return !this.form.kategori; },
 
@@ -472,8 +755,23 @@ export default {
 
         /** Pagu kursi = total kuota posisi yang ditarik dari MPP. */
         kuotaMpp() { return this.form.posisi.reduce((n, l) => n + (Number(l.kuota) || 0), 0); },
+
+        /** MPP yang sedang dipakai baris posisi — sumber kebenaran tetap form.posisi. */
+        mppTerpilih() { return this.form.posisi.filter((l) => l.mppRef).map((l) => l.mppRef); },
+
+        /** Kartu MPP tersaring kotak cari (posisi/departemen/lokasi/nomor). */
+        mppTersaring() {
+            const q = this.mppCari.trim().toLowerCase();
+            if (!q) return this.mppOptions;
+            return this.mppOptions.filter((o) =>
+                [o.value, o.posisi, o.departemen, o.lokasi, o.level].join(' ').toLowerCase().includes(q));
+        },
         kuotaBatch() { return this.form.batch.reduce((n, b) => n + (Number(b.kuota) || 0), 0); },
         kuotaBatchLebih() { return this.kuotaMpp > 0 && this.kuotaBatch > this.kuotaMpp; },
+    },
+    watch: {
+        tab() { this.page = 1; },
+        query() { this.page = 1; },
     },
     mounted() {
         this.load();
@@ -488,6 +786,17 @@ export default {
         statusBadge(s) { return { DRAFT: 'wca-b--amber', BERJALAN: 'wca-b--green', SELESAI: 'wca-b--slate' }[s] || 'wca-b--slate'; },
         statusIkon(s) { return { DRAFT: 'bi-pencil-square', BERJALAN: 'bi-play-circle', SELESAI: 'bi-lock-fill' }[s] || 'bi-dot'; },
         totalKuota(p) { return (p.posisi || []).reduce((n, x) => n + (Number(x.kuota) || 0), 0); },
+
+        // ── Desain "Program Kegiatan": hitung per kategori, pil warna, inisial pembuat ──
+        countKat(k) { return this.list.filter((p) => p.kategori === k).length; },
+        katIkon(k) { return { REKRUTMEN: 'bi-briefcase', MT: 'bi-mortarboard', INTERNSHIP: 'bi-backpack' }[k] || 'bi-diagram-3'; },
+        katPill(k) { return { MT: 'pkg-pill--gold', INTERNSHIP: 'pkg-pill--green', REKRUTMEN: 'pkg-pill--sky' }[k] || 'pkg-pill--slate'; },
+        statusPill(s) { return { DRAFT: 'pkg-pill--amber', BERJALAN: 'pkg-pill--green', SELESAI: 'pkg-pill--slate' }[s] || 'pkg-pill--slate'; },
+        initials(name) {
+            if (!name) return 'SY';
+            const parts = String(name).trim().split(/\s+/);
+            return ((parts[0]?.[0] || '') + (parts[1]?.[0] || parts[0]?.[1] || '')).toUpperCase() || 'SY';
+        },
 
         // ── Penyusun syarat ────────────────────────────────────────────
         /**
@@ -512,13 +821,81 @@ export default {
                 this.fieldTurunan = [];
             }
         },
-        /** Field milik formulir yang dipasang di tahap tsb — dibaca dari skema di kode. */
+        /** Field milik formulir yang dipasang di tahap tsb — dibaca dari skema di kode,
+         *  LENGKAP dengan tipe & sumber opsi. Skema formulir = satu-satunya "master syarat":
+         *  dari sinilah binding operator + bentuk input Nilai diturunkan otomatis. */
         fieldTahap(tahapId) {
             const t = this.tahapFormulir.find((x) => x.tahapId === tahapId);
             if (!t || !t.komponen) return [];
             return semuaField(skemaFormulir(t.komponen))
                 .filter((f) => f.tipe !== 'file' && f.tipe !== 'consent')
-                .map((f) => ({ key: f.key, label: f.label }));
+                .map((f) => ({ key: f.key, label: f.label, tipe: f.tipe || 'text', opsi: f.opsi || [], sumber_opsi: f.sumber_opsi || null }));
+        },
+
+        // ── Binding tipe field → operator + bentuk input Nilai ─────────────
+        metaField(S, key) {
+            if (!key) return null;
+            return this.fieldTahap(S.tahapId).find((f) => f.key === key)
+                || this.fieldTurunan.find((f) => f.key === key)
+                || null;
+        },
+        tipeField(S, key) {
+            const m = this.metaField(S, key);
+            if (!m) return 'text';
+            // Field turunan (usia dst) bertipe dari definisinya; date dibanding sbg angka tidak — biarkan number saja.
+            return m.tipe === 'number' ? 'number' : (m.tipe || 'text');
+        },
+        adaOpsi(S, key) {
+            const m = this.metaField(S, key);
+            return !!(m && (((m.opsi || []).length) || m.sumber_opsi));
+        },
+        opsiField(S, key) {
+            const m = this.metaField(S, key);
+            if (!m) return [];
+            if (m.sumber_opsi) return this.opsiSumber[m.sumber_opsi] || [];
+            return m.opsi || [];
+        },
+        /** Operator yang masuk akal per tipe — aturan tetap, bukan master DB. */
+        operatorUntuk(S, K) {
+            if (!K.field) return this.operatorOptions;
+            const t = this.tipeField(S, K.field);
+            const izin = t === 'number'
+                ? ['>=', '<=', '=', '!=', '>', '<', 'ANTARA']
+                : ['=', '!=', 'ADA_DI', 'TIDAK_ADA_DI'];
+            return this.operatorOptions.filter((o) => izin.includes(o.value));
+        },
+        /** Field berganti → operator disesuaikan, nilai dikosongkan, opsi sumber dimuat. */
+        onFieldGanti(S, K) {
+            const boleh = this.operatorUntuk(S, K).map((o) => o.value);
+            if (!boleh.includes(K.operator)) K.operator = boleh[0] || '=';
+            K.nilai = '';
+            const m = this.metaField(S, K.field);
+            if (m && m.sumber_opsi) this.loadOpsiSumber(m.sumber_opsi);
+        },
+        /** Opsi dinamis (mis. kampus dari Master Kampus) — pakai LABEL karena jawaban formulir menyimpan nama. */
+        async loadOpsiSumber(sumber) {
+            if (this.opsiSumber[sumber]) return;
+            try {
+                const res = await axios.get(`/api/v1/karir/options/${sumber}`, CFG);
+                this.opsiSumber[sumber] = (res.data.result || []).map((o) => o.label ?? o.value);
+            } catch (e) {
+                this.opsiSumber[sumber] = [];
+            }
+        },
+        /** Title Case ala Monitoring MPP (jabatan/divisi tersimpan UPPERCASE). */
+        tc(s) { return titleCase(s || ''); },
+        /** Label ramah untuk pratinjau. */
+        labelField(S, key) { const m = this.metaField(S, key); return (m && m.label) || key || '—'; },
+        opLabel(op) { const o = this.operatorOptions.find((x) => x.value === op); return o ? o.label : op; },
+
+        // Konversi nilai (disimpan sebagai string, ANTARA/daftar dipisah koma).
+        angkaVal(K) { const n = parseFloat(K.nilai); return Number.isFinite(n) ? n : undefined; },
+        listVal(K) { return String(K.nilai || '').split(',').map((s) => s.trim()).filter(Boolean); },
+        antaraVal(K, idx) { const p = String(K.nilai || '').split(','); const n = parseFloat(p[idx]); return Number.isFinite(n) ? n : undefined; },
+        setAntara(K, idx, v) {
+            const p = String(K.nilai || '').split(',');
+            p[idx] = v === null || v === undefined ? '' : String(v);
+            K.nilai = [p[0] ?? '', p[1] ?? ''].join(',');
         },
         /** Alur berganti -> tahap berformulir berubah, syarat lama tidak berlaku lagi. */
         onAlurGanti() {
@@ -606,27 +983,7 @@ export default {
             if (preset.warna) this.form.warna = preset.warna;
             if (preset.alur) this.form.alur = preset.alur;
             this.loadTahapFormulir();
-        },
-
-        /** Satu MPP dipilih -> salin field turunannya. Nilai-nilai ini dikunci di UI. */
-        onMpp(baris, opt) {
-            if (!opt) {
-                Object.assign(baris, { posisi: '', departemen: '', lokasi: '', level: '', kuota: 0, kuotaMpp: 0 });
-                return;
-            }
-            const kembar = this.form.posisi.filter((x) => x.mppRef === opt.value).length > 1;
-            if (kembar) {
-                baris.mppRef = '';
-                return this.notice(`"${opt.posisi}" sudah ada di daftar posisi.`);
-            }
-            Object.assign(baris, {
-                posisi: opt.posisi,
-                departemen: opt.departemen,
-                lokasi: opt.lokasi,
-                level: opt.level,
-                kuotaMpp: opt.kuota,
-                kuota: opt.kuota,
-            });
+            this.loadMppOptions();
         },
 
         async loadPresets() {
@@ -652,7 +1009,7 @@ export default {
                 // kuotaMpp diisi dari kuota tersimpan supaya batas atas input tetap
                 // masuk akal sebelum admin memilih ulang MPP-nya.
                 posisi: (p.posisi || []).map((l) => ({ mppRef: l.mppRef || '', posisi: l.posisi, departemen: l.departemen, lokasi: l.lokasi, level: l.level || '', kuota: l.kuota, kuotaMpp: l.kuota, status: l.status || 'BUKA' })),
-                syarat: (p.syarat || []).map((s) => ({ nama: s.nama, tahapId: s.tahapId, formulir: s.formulir, aturan: s.aturan && s.aturan.aturan ? s.aturan : { penghubung: 'DAN', aturan: [] }, aksi: s.aksi || 'TANDAI', pesanGugur: s.pesanGugur || '', uji: !!s.uji, aktif: s.aktif !== false })),
+                syarat: (p.syarat || []).map((s) => ({ nama: s.nama, tahapId: s.tahapId, formulir: s.formulir, aturan: s.aturan && s.aturan.aturan ? s.aturan : { penghubung: 'DAN', aturan: [] }, aksi: s.aksi || 'TANDAI', pesanGugur: s.pesanGugur || '', uji: false, aktif: s.aktif !== false })),
             };
             this.langkah = 0;
             // Seksi opsional otomatis menyala kalau datanya sudah ada.
@@ -660,6 +1017,7 @@ export default {
             this.pakaiSyarat = this.form.syarat.length > 0;
             this.show = true;
             this.loadTahapFormulir();
+            this.loadMppOptions();
         },
         addBatch() { this.form.batch.push({ nama: '', kuota: 0, terisi: 0, status: 'AKTIF' }); },
 
@@ -672,7 +1030,46 @@ export default {
             const lain = this.form.batch.reduce((n, b, j) => (j === i ? n : n + (Number(b.kuota) || 0)), 0);
             return Math.max(0, this.kuotaMpp - lain);
         },
-        addPosisi() { this.form.posisi.push({ mppRef: '', posisi: '', departemen: '', lokasi: '', level: '', kuota: 0, kuotaMpp: 0, status: 'BUKA' }); },
+        /** Muat opsi MPP untuk kategori aktif — dipakai multi-pilih langkah Posisi. */
+        async loadMppOptions() {
+            if (!this.form.kategori) { this.mppOptions = []; return; }
+            try {
+                const res = await axios.get('/api/v1/karir/options/mpp', { ...CFG, params: { kategori: this.form.kategori } });
+                this.mppOptions = res.data.result || [];
+            } catch (e) {
+                this.mppOptions = [];
+            }
+        },
+        /** Klik kartu MPP → baris posisi dibuat; klik lagi → dibuang. */
+        toggleMpp(o) {
+            const i = this.form.posisi.findIndex((l) => l.mppRef === o.value);
+            if (i >= 0) { this.form.posisi.splice(i, 1); return; }
+            this.form.posisi.push({
+                mppRef: o.value,
+                posisi: o.posisi || '',
+                departemen: o.departemen || '',
+                lokasi: o.lokasi || '',
+                level: o.level || '',
+                kuotaMpp: o.kuota || 0,
+                kuota: o.kuota || 0,
+                status: 'BUKA',
+            });
+        },
+
+        /** Opsi checklist Nilai tersaring kotak carinya sendiri (K._cari). */
+        opsiTersaring(S, K) {
+            const semua = this.opsiField(S, K.field);
+            const q = String(K._cari || '').trim().toLowerCase();
+            if (!q) return semua;
+            return semua.filter((o) => String(o).toLowerCase().includes(q));
+        },
+        /** Centang/lepas satu nilai pada operator daftar (disimpan koma-terpisah). */
+        toggleNilai(K, o) {
+            const list = this.listVal(K);
+            const i = list.indexOf(o);
+            if (i >= 0) list.splice(i, 1); else list.push(o);
+            K.nilai = list.join(',');
+        },
         addSyarat() { this.form.syarat.push({ nama: '', tahapId: null, formulir: '', aturan: { penghubung: 'DAN', aturan: [] }, aksi: 'TANDAI', pesanGugur: '', uji: false, aktif: true }); },
         addKondisi(S) { S.aturan.aturan.push({ field: '', operator: '>=', nilai: '' }); },
         async save() {
@@ -743,7 +1140,288 @@ export default {
 </script>
 
 <style scoped>
+/* ═══════════ DESAIN "PROGRAM KEGIATAN" (1:1) ═══════════ */
+/* Page header */
+.pkg-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; flex-wrap: wrap; margin-bottom: 22px; }
+.pkg-head__l { min-width: 0; }
+.pkg-head__title { display: flex; align-items: center; gap: 10px; }
+.pkg-head__ico { width: 38px; height: 38px; border-radius: 12px; background: linear-gradient(135deg, #8b5cf6, #6366f1); color: #fff; display: flex; align-items: center; justify-content: center; flex: 0 0 auto; font-size: 1.05rem; box-shadow: 0 10px 24px rgba(99, 102, 241, .3); }
+.pkg-head h1 { margin: 0; font-size: 27px; font-weight: 800; color: #0f172a; letter-spacing: -.025em; }
+.pkg-head__l p { margin: 9px 0 0; font-size: 14px; color: #64748b; line-height: 1.6; max-width: 620px; text-wrap: pretty; }
+.pkg-head__l p b { color: #475569; }
+.pkg-newbtn { appearance: none; cursor: pointer; font-family: inherit; font-size: 14px; font-weight: 800; color: #fff; padding: 13px 22px; border-radius: 14px; border: none; background: linear-gradient(135deg, #8b5cf6, #6366f1); box-shadow: 0 14px 30px rgba(99, 102, 241, .34); display: inline-flex; align-items: center; gap: 9px; flex: 0 0 auto; transition: transform .16s; }
+.pkg-newbtn:hover { transform: translateY(-2px); }
+
+/* Stat cards */
+.pkg-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.pkg-stat { position: relative; overflow: hidden; background: rgba(255, 255, 255, .9); border: 1px solid rgba(226, 232, 240, .9); border-radius: 20px; padding: 20px 22px; box-shadow: 0 10px 30px rgba(15, 23, 42, .05); }
+.pkg-stat__glow { position: absolute; right: -24px; top: -24px; width: 96px; height: 96px; border-radius: 50%; pointer-events: none; }
+.pkg-stat__ico { position: relative; width: 42px; height: 42px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.15rem; }
+.pkg-stat__num { position: relative; font-size: 34px; font-weight: 800; color: #0f172a; letter-spacing: -.03em; margin-top: 14px; line-height: 1; }
+.pkg-stat__label { position: relative; font-size: 13px; font-weight: 700; color: #64748b; margin-top: 5px; }
+
+/* Toolbar */
+.pkg-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin: 26px 0 16px; }
+.pkg-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+.pkg-tab { appearance: none; cursor: pointer; font-family: inherit; font-size: 13px; font-weight: 700; padding: 10px 15px; border-radius: 12px; border: 1px solid #e6e9f3; background: rgba(255, 255, 255, .9); color: #64748b; transition: all .16s; display: inline-flex; align-items: center; gap: 7px; }
+.pkg-tab:hover { border-color: #c7cdf0; color: #4f46e5; }
+.pkg-tab.on { border-color: transparent; background: linear-gradient(135deg, #8b5cf6, #6366f1); color: #fff; box-shadow: 0 10px 24px rgba(99, 102, 241, .28); }
+.pkg-tab__n { font-size: 11px; font-weight: 800; padding: 1px 7px; border-radius: 7px; background: #eef0f7; color: #94a3b8; }
+.pkg-tab.on .pkg-tab__n { background: rgba(255, 255, 255, .24); color: #fff; }
+.pkg-search { position: relative; flex: 1; min-width: 200px; max-width: 320px; display: flex; align-items: center; }
+.pkg-search .bi-search { position: absolute; left: 14px; color: #94a3b8; font-size: 14px; }
+.pkg-search input { width: 100%; padding: 11px 34px 11px 40px; border-radius: 13px; border: 1px solid #e6e9f3; background: rgba(255, 255, 255, .9); font-family: inherit; font-size: 13.5px; color: #334155; outline: none; transition: all .18s; }
+.pkg-search input:focus { border-color: #a5b4fc; background: #fff; box-shadow: 0 0 0 4px rgba(99, 102, 241, .12); }
+.pkg-search__x { position: absolute; right: 9px; appearance: none; border: none; background: #eef0f7; width: 22px; height: 22px; border-radius: 7px; color: #64748b; cursor: pointer; font-size: 10px; display: flex; align-items: center; justify-content: center; }
+
+/* Program list */
+.pkg-list { display: flex; flex-direction: column; gap: 14px; min-height: 60px; }
+.pkg-card { background: rgba(255, 255, 255, .92); border: 1px solid rgba(226, 232, 240, .9); border-radius: 18px; box-shadow: 0 10px 30px rgba(15, 23, 42, .05); transition: border-color .16s, box-shadow .16s; }
+.pkg-card.open { border-color: rgba(99, 102, 241, .3); box-shadow: 0 18px 44px rgba(79, 70, 229, .12); }
+.pkg-row { display: flex; align-items: flex-start; gap: 14px; padding: 18px 20px; }
+.pkg-chev { appearance: none; cursor: pointer; flex: 0 0 auto; width: 34px; height: 34px; border-radius: 10px; border: 1px solid #e6e9f3; background: #fff; color: #94a3b8; display: flex; align-items: center; justify-content: center; transition: all .18s; }
+.pkg-chev:hover { color: #4f46e5; border-color: #c7cdf0; }
+.pkg-chev i { transition: transform .2s; }
+.pkg-chev.open { color: #4f46e5; border-color: #c7cdf0; background: rgba(99, 102, 241, .08); }
+.pkg-chev.open i { transform: rotate(90deg); }
+.pkg-row__main { flex: 1; min-width: 0; }
+.pkg-row__titlebtn { appearance: none; border: none; background: transparent; cursor: pointer; padding: 0; text-align: left; display: flex; align-items: center; gap: 9px; width: 100%; }
+.pkg-dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; }
+.pkg-row__title { font-size: 16.5px; font-weight: 800; color: #0f172a; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pkg-row__meta { display: flex; align-items: center; gap: 8px; margin-top: 6px; flex-wrap: wrap; font-size: 12px; color: #8792a6; }
+.pkg-code { font-family: 'JetBrains Mono', ui-monospace, monospace; font-weight: 700; color: #94a3b8; }
+.pkg-sep { width: 3px; height: 3px; border-radius: 50%; background: #cbd2e0; }
+.pkg-mi { display: inline-flex; align-items: center; gap: 5px; }
+.pkg-mi i { color: #a2a9ba; }
+.pkg-flow { min-width: 0; }
+.pkg-pills { display: flex; align-items: center; gap: 8px; margin-top: 11px; flex-wrap: wrap; }
+.pkg-pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; border-radius: 8px; padding: 4px 10px; }
+.pkg-pill--struct { color: #4f46e5; background: rgba(99, 102, 241, .1); }
+.pkg-pill--gold { color: #b45309; background: rgba(245, 158, 11, .14); }
+.pkg-pill--sky { color: #0369a1; background: rgba(14, 165, 233, .12); }
+.pkg-pill--green { color: #059669; background: rgba(16, 185, 129, .12); }
+.pkg-pill--amber { color: #b45309; background: rgba(245, 158, 11, .14); }
+.pkg-pill--slate { color: #64748b; background: #eef0f7; }
+.pkg-pill__dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.pkg-pill--sm { font-size: 10.5px; padding: 3px 9px; }
+.pkg-row__act { display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.pkg-ibtn { appearance: none; border: 1px solid #e6e9f3; background: #fff; width: 38px; height: 38px; border-radius: 11px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #64748b; transition: all .16s; flex: 0 0 auto; }
+.pkg-ibtn:hover { color: #4f46e5; border-color: #c7cdf0; }
+.pkg-ibtn--danger { border-color: #f4d0d0; color: #dc2626; }
+.pkg-ibtn--danger:hover { background: #fef2f2; border-color: #f4d0d0; color: #dc2626; }
+
+/* creator strip */
+.pkg-creator { display: flex; align-items: center; gap: 9px; padding: 0 20px 16px 54px; }
+.pkg-creator__av { width: 26px; height: 26px; border-radius: 8px; color: #fff; font-size: 10px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+.pkg-creator__name { font-size: 12px; font-weight: 700; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pkg-creator__at { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: #a2a9ba; flex: 0 0 auto; }
+
+/* expanded detail */
+.pkg-detail { border-top: 1px solid #eef0f7; padding: 20px; background: linear-gradient(180deg, #fbfbfe, #fff); animation: pkgIn .3s cubic-bezier(.22, 1, .36, 1) both; }
+@keyframes pkgIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+.pkg-dhead { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 800; letter-spacing: .1em; color: #64748b; margin-bottom: 12px; }
+.pkg-dhead--amber { color: #b45309; }
+.pkg-dhead--amber i { color: #d97706; }
+.pkg-dhead--indigo { color: #4338ca; }
+.pkg-dhead--indigo i { color: #6366f1; }
+.pkg-rules { display: flex; flex-direction: column; gap: 10px; }
+.pkg-rule { position: relative; border: 1px solid #f0e6d0; border-radius: 14px; background: linear-gradient(135deg, #fffdf7, #fff8ec); padding: 14px 16px 14px 18px; overflow: hidden; }
+.pkg-rule__bar { position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: linear-gradient(180deg, #fbbf24, #f59e0b); }
+.pkg-rule__top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.pkg-rule__name { font-size: 13.5px; font-weight: 800; color: #1e293b; }
+.pkg-rule__act { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 800; border-radius: 7px; padding: 3px 9px; }
+.pkg-rule__act.is-gugur { color: #dc2626; background: rgba(239, 68, 68, .1); }
+.pkg-rule__act.is-mark { color: #4f46e5; background: rgba(99, 102, 241, .1); }
+.pkg-rule__match { font-size: 10px; font-weight: 800; letter-spacing: .06em; color: #7c74b0; background: rgba(139, 92, 246, .12); border-radius: 7px; padding: 3px 9px; }
+.pkg-rule__match--amber { color: #b45309; background: rgba(245, 158, 11, .14); }
+.pkg-rule__match--off { color: #64748b; background: #eef0f7; }
+.pkg-conds { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 11px; }
+.pkg-cond { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 700; color: #475569; background: #fff; border: 1px solid #eae1cb; border-radius: 9px; padding: 5px 11px; }
+.pkg-cond i { color: #8b5cf6; }
+.pkg-mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+.pkg-batchset { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 4px; }
+.pkg-batch { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: #475569; background: #f1f5f9; border-radius: 9px; padding: 6px 11px; }
+.pkg-batch i { color: #8b5cf6; }
+.pkg-poshead { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin: 22px 0 12px; }
+.pkg-totalq { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 800; color: #4f46e5; background: rgba(99, 102, 241, .1); border: 1px solid rgba(99, 102, 241, .2); border-radius: 999px; padding: 6px 13px; }
+
+/* posisi table (grid, flat) */
+.pkg-tbl { width: 100%; overflow-x: auto; }
+.pkg-tbl__head, .pkg-tbl__row { display: grid; grid-template-columns: 2.4fr 1.3fr 1.6fr 1.2fr .7fr .9fr; gap: 12px; align-items: center; min-width: 640px; }
+.pkg-tbl__head { padding: 0 2px 12px; font-size: 10.5px; font-weight: 800; letter-spacing: .08em; color: #a2a9ba; border-bottom: 1px solid #eef0f7; }
+.pkg-tbl__row { padding: 15px 2px; border-bottom: 1px solid #f4f5fb; transition: background .14s; }
+.pkg-tbl__row:hover { background: #f7f8fc; }
+.pkg-c { text-align: center; justify-self: center; }
+.pkg-pos { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.pkg-pos__dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; background: linear-gradient(135deg, #8b5cf6, #6366f1); }
+.pkg-pos__txt { min-width: 0; }
+.pkg-pos__title { display: block; font-size: 13.5px; font-weight: 800; color: #1e293b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pkg-pos__lvl { display: block; font-size: 11px; color: #94a3b8; margin-top: 1px; }
+.pkg-mpp { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; font-weight: 700; color: #7c74b0; background: rgba(139, 92, 246, .1); border-radius: 6px; padding: 3px 8px; }
+.pkg-manual { color: #b45309; font-size: 12px; }
+.pkg-td { font-size: 12.5px; color: #475569; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pkg-td--loc { display: inline-flex; align-items: center; gap: 5px; }
+.pkg-td--loc i { color: #8b5cf6; flex: 0 0 auto; }
+.pkg-q { font-size: 15px; font-weight: 800; color: #0f172a; }
+.pkg-tbl__empty { padding: 15px 2px; color: #94a3b8; font-size: 13px; }
+.pkg-empty { padding: 40px; text-align: center; color: #a2a9ba; font-size: 13.5px; background: rgba(255, 255, 255, .7); border: 1px dashed #d9def0; border-radius: 18px; }
+.pkg-empty i { font-size: 1.6rem; display: block; margin-bottom: .4rem; color: #c4b5fd; }
+
+/* pagination */
+.pkg-pager { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin-top: 20px; }
+.pkg-pager__info { font-size: 12.5px; color: #8792a6; }
+.pkg-pager__info b { color: #475569; }
+.pkg-pager__nav { display: flex; align-items: center; gap: 6px; }
+.pkg-pager__btn { appearance: none; cursor: pointer; min-width: 38px; height: 38px; padding: 0 10px; border-radius: 11px; border: 1px solid #e6e9f3; background: #fff; color: #64748b; font-family: inherit; font-size: 13.5px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; transition: all .16s; }
+.pkg-pager__btn:hover:not(:disabled):not(.on) { border-color: #a5b4fc; color: #4f46e5; }
+.pkg-pager__btn.on { background: linear-gradient(135deg, #8b5cf6, #6366f1); border-color: transparent; color: #fff; box-shadow: 0 10px 22px rgba(99, 102, 241, .3); }
+.pkg-pager__btn:disabled { opacity: .4; cursor: not-allowed; }
+
+@media (max-width: 767.98px) {
+    .pkg-stats { grid-template-columns: 1fr; }
+    .pkg-row { flex-wrap: wrap; }
+    .pkg-row__act { width: 100%; justify-content: flex-end; }
+}
+
 .pgk-head-act { display: inline-flex; align-items: center; gap: .4rem; margin-left: auto; }
+/* Langkah 1: kategori dulu — baris tunggal + ajakan sebelum kategori dipilih */
+.wca-frow--single { grid-template-columns: 1fr !important; }
+.pgk-waitkat { display: flex; align-items: center; gap: 10px; margin-top: .9rem; padding: 14px 16px; border: 1px dashed #d9def0; border-radius: 14px; background: #fbfbfe; color: #64748b; font-size: 13px; }
+.pgk-waitkat i { font-size: 1.1rem; color: #8b5cf6; flex: 0 0 auto; }
+.pgk-waitkat strong { color: #4f46e5; }
+/* Warna label: baris swatch klik-langsung (mengisi ruang, bukan kotak mungil) */
+.pgk-swatches { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; min-height: 40px; }
+.pgk-swatch { appearance: none; border: none; cursor: pointer; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-size: .8rem; box-shadow: inset 0 0 0 1px rgba(15, 23, 42, .08); transition: transform .14s, box-shadow .14s; }
+.pgk-swatch:hover { transform: scale(1.12); }
+.pgk-swatch.on { box-shadow: 0 0 0 2px #fff, 0 0 0 4px #6366f1, 0 6px 14px rgba(99, 102, 241, .3); transform: scale(1.08); }
+/* ── Pemilih MPP model KARTU (ala Monitoring MPP) ── */
+.pgk-mpppick { margin-bottom: .9rem; }
+.pgk-mpppick__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: .6rem; }
+.pgk-mppsearch { position: relative; display: flex; align-items: center; flex: 1; min-width: 220px; max-width: 340px; }
+.pgk-mppsearch .bi-search { position: absolute; left: 12px; color: #94a3b8; font-size: .8rem; }
+.pgk-mppsearch input { width: 100%; padding: 9px 32px 9px 34px; border-radius: 11px; border: 1px solid #e6e9f3; background: #fff; font: inherit; font-size: .8rem; color: #334155; outline: none; transition: all .18s; }
+.pgk-mppsearch input:focus { border-color: #a5b4fc; box-shadow: 0 0 0 4px rgba(99, 102, 241, .12); }
+.pgk-mppsearch button { position: absolute; right: 8px; appearance: none; border: none; background: #eef0f7; width: 20px; height: 20px; border-radius: 6px; color: #64748b; cursor: pointer; font-size: .6rem; display: flex; align-items: center; justify-content: center; }
+/* Grid 3 kolom + scrollbar sendiri; kartu meniru persis MppCard Monitoring MPP. */
+.pgk-mppgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; max-height: 350px; overflow-y: auto; padding: 3px 6px 6px 3px; }
+@media (max-width: 900px) { .pgk-mppgrid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 620px) { .pgk-mppgrid { grid-template-columns: 1fr; } }
+.pgk-mppcard { position: relative; overflow: hidden; display: flex; flex-direction: column; gap: .55rem; cursor: pointer; background: #fff; border: 1px solid #e6e9f3; border-radius: 1.15rem; padding: 1rem 1.05rem; box-shadow: 0 6px 20px rgba(15, 23, 42, .04); transition: transform .2s cubic-bezier(.22, 1, .36, 1), box-shadow .2s ease, border-color .2s ease; }
+.pgk-mppcard::after { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, #6366f1, #8b5cf6, #6366f1); opacity: 0; transition: opacity .25s ease; }
+.pgk-mppcard:hover::after, .pgk-mppcard.on::after { opacity: 1; }
+.pgk-mppcard:hover { transform: translateY(-4px); border-color: #c7d2fe; box-shadow: 0 18px 36px rgba(79, 70, 229, .14), 0 6px 12px rgba(15, 23, 42, .05); }
+.pgk-mppcard.on { border-color: #6366f1; background: linear-gradient(135deg, #fbfaff, #f5f4ff); box-shadow: 0 12px 28px rgba(99, 102, 241, .18); }
+.pgk-mppcard__head { display: flex; align-items: flex-start; gap: 8px; }
+.pgk-mppcard__check { margin-top: 2px; width: 20px; height: 20px; border-radius: 7px; border: 1.5px solid #d9def0; background: #fff; color: transparent; font-size: .7rem; display: flex; align-items: center; justify-content: center; flex: 0 0 auto; transition: all .16s; }
+.pgk-mppcard.on .pgk-mppcard__check { border-color: transparent; background: linear-gradient(135deg, #8b5cf6, #6366f1); color: #fff; }
+.pgk-mppcard__title { flex: 1; min-width: 0; margin: 0; font-size: .95rem; font-weight: 900; line-height: 1.25; color: #0f172a; }
+.pgk-mppcard__info { appearance: none; border: none; background: transparent; cursor: pointer; color: #94a3b8; font-size: .85rem; padding: 2px; flex: 0 0 auto; transition: color .16s; }
+.pgk-mppcard__info:hover { color: #4f46e5; }
+.pgk-mppcard__badges { display: flex; flex-wrap: wrap; gap: .35rem; }
+.pgk-bdg { display: inline-flex; align-items: center; gap: .35rem; font-size: .68rem; font-weight: 800; border-radius: .55rem; padding: .24rem .55rem; }
+.pgk-bdg--indigo { color: #4338ca; background: rgba(99, 102, 241, .12); }
+.pgk-bdg--sky { color: #0369a1; background: rgba(14, 165, 233, .12); }
+.pgk-mppcard__no { display: inline-flex; align-items: center; gap: .15rem; font-size: .74rem; font-weight: 800; color: #94a3b8; font-family: 'JetBrains Mono', monospace; }
+.pgk-mppcard__tags { display: flex; flex-wrap: wrap; gap: .4rem; }
+.mppt { display: inline-flex; align-items: center; gap: .35rem; font-size: .68rem; font-weight: 800; white-space: nowrap; padding: .26rem .55rem; border-radius: .6rem; }
+.mppt--emp { background: linear-gradient(135deg, rgba(99, 102, 241, .12), rgba(139, 92, 246, .08)); color: #4338ca; border: 1px solid rgba(99, 102, 241, .18); }
+.mppt--wp { background: linear-gradient(135deg, rgba(16, 185, 129, .1), rgba(6, 182, 212, .06)); color: #0f766e; border: 1px solid rgba(16, 185, 129, .18); }
+.mppt--exp { background: linear-gradient(135deg, rgba(245, 158, 11, .1), rgba(251, 191, 36, .06)); color: #b45309; border: 1px solid rgba(245, 158, 11, .2); }
+.mppt__dot { width: .42rem; height: .42rem; border-radius: 50%; flex: none; }
+.mppt__dot--emp { background: #6366f1; box-shadow: 0 0 0 3px rgba(99, 102, 241, .2); }
+.mppt__dot--wp { background: #10b981; box-shadow: 0 0 0 3px rgba(16, 185, 129, .2); }
+.mppt__dot--exp { background: #f59e0b; box-shadow: 0 0 0 3px rgba(245, 158, 11, .2); }
+.pgk-mppcard__meta { display: flex; flex-wrap: wrap; gap: .35rem .9rem; padding-top: .45rem; border-top: 1px dashed #e6e9f3; margin-top: auto; }
+.pgk-mppcard__meta span { display: inline-flex; align-items: center; gap: .35rem; font-size: .72rem; font-weight: 700; color: #475569; }
+.pgk-mppcard__meta i { color: #6366f1; }
+/* Panel "Sudah Dipilih" — scrollbar sendiri */
+.pgk-selpanel { margin-top: 1rem; border: 1px solid #e6e9f3; border-radius: 14px; background: #fbfbfe; overflow: hidden; }
+.pgk-selpanel__hd { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 14px; border-bottom: 1px solid #eef0f7; background: #fff; font-size: .8rem; font-weight: 800; color: #1e293b; }
+.pgk-selpanel__hd > i { color: #059669; }
+.pgk-selpanel__tot { display: inline-flex; align-items: center; gap: 6px; font-size: .68rem; font-weight: 800; color: #4f46e5; background: rgba(99, 102, 241, .1); border-radius: 999px; padding: 4px 11px; }
+.pgk-selpanel__hint { margin-left: auto; font-size: .68rem; font-weight: 600; color: #94a3b8; }
+.pgk-selpanel__body { max-height: 280px; overflow-y: auto; padding: 12px; }
+/* ── Panel checklist Nilai (operator daftar) ── */
+.pgk-multichk { border: 1px solid #e6e9f3; border-radius: 12px; background: #fff; overflow: hidden; }
+.pgk-multichk__search { position: relative; display: flex; align-items: center; border-bottom: 1px solid #eef0f7; }
+.pgk-multichk__search .bi-search { position: absolute; left: 11px; color: #94a3b8; font-size: .72rem; }
+.pgk-multichk__search input { width: 100%; border: none; outline: none; padding: 8px 10px 8px 30px; font: inherit; font-size: .76rem; color: #334155; background: transparent; }
+.pgk-multichk__list { max-height: 170px; overflow-y: auto; padding: 4px; }
+.pgk-multichk__item { display: flex; align-items: center; gap: 8px; padding: 6px 9px; border-radius: 8px; cursor: pointer; font-size: .78rem; color: #475569; transition: background .12s; }
+.pgk-multichk__item:hover { background: #f7f8fc; }
+.pgk-multichk__item.on { background: rgba(99, 102, 241, .07); color: #4338ca; font-weight: 700; }
+.pgk-multichk__item input { accent-color: #6366f1; }
+.pgk-multichk__item span { flex: 1; min-width: 0; }
+.pgk-multichk__item .bi-check-lg { color: #6366f1; font-size: .72rem; }
+.pgk-multichk__empty { padding: 12px; text-align: center; color: #94a3b8; font-size: .74rem; }
+.pgk-multichk__foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 11px; border-top: 1px solid #eef0f7; background: #fbfbfe; font-size: .72rem; color: #64748b; }
+.pgk-multichk__foot b { color: #4f46e5; }
+.pgk-multichk__foot button { appearance: none; border: none; background: transparent; cursor: pointer; color: #dc2626; font: inherit; font-size: .72rem; font-weight: 700; display: inline-flex; align-items: center; gap: 4px; }
+.pgk-lblinfo { color: #a5b4fc; font-size: .74rem; cursor: help; margin-left: 3px; }
+/* ── Baris posisi terpilih (elegan: chip info, bukan input mati) ── */
+.pgk-posrow { position: relative; display: flex; align-items: center; gap: 16px; background: #fff; border: 1px solid #e6e9f3; border-radius: 14px; padding: 13px 14px 13px 20px; overflow: hidden; transition: box-shadow .16s, border-color .16s; }
+.pgk-posrow:hover { border-color: #c7cdf0; box-shadow: 0 8px 20px rgba(15, 23, 42, .06); }
+.pgk-posrow__accent { position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: linear-gradient(180deg, #8b5cf6, #6366f1); }
+.pgk-posrow__main { flex: 1; min-width: 0; }
+.pgk-posrow__title { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.pgk-posrow__title strong { font-size: .9rem; font-weight: 800; color: #1e293b; }
+.pgk-posrow__meta { display: flex; flex-wrap: wrap; gap: 5px 14px; margin-top: 6px; }
+.pgk-posrow__meta span { display: inline-flex; align-items: center; gap: 5px; font-size: .72rem; color: #64748b; }
+.pgk-posrow__meta i { color: #8b5cf6; }
+.pgk-posrow__kuota, .pgk-posrow__status { display: flex; flex-direction: column; gap: 4px; flex: 0 0 auto; }
+.pgk-posrow__kuota label, .pgk-posrow__status label { font-size: .66rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: #94a3b8; }
+.pgk-posrow__kuota label small { font-weight: 600; text-transform: none; letter-spacing: 0; color: #b9c0d4; }
+.pgk-posrow__del { appearance: none; border: 1px solid #f4d0d0; background: #fff; width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #dc2626; flex: 0 0 auto; transition: background .16s; }
+.pgk-posrow__del:hover { background: #fef2f2; }
+@media (max-width: 640px) { .pgk-posrow { flex-wrap: wrap; } }
+/* ── Pratinjau (langkah 4) ── */
+.pgk-prev { display: flex; flex-direction: column; gap: 12px; }
+/* Hero ringkasan */
+.pgk-prev__hero { position: relative; overflow: hidden; display: flex; background: linear-gradient(135deg, #fbfaff, #f3f2ff 60%, #eef2ff); border: 1px solid rgba(99, 102, 241, .16); border-radius: 16px; }
+.pgk-prev__heroBar { width: 6px; flex: 0 0 auto; }
+.pgk-prev__heroMain { flex: 1; min-width: 0; padding: 16px 18px; }
+.pgk-prev__heroTop { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.pgk-prev__heroTop h4 { margin: 0; font-size: 1.05rem; font-weight: 900; color: #1e1b4b; letter-spacing: -.01em; min-width: 0; overflow-wrap: anywhere; }
+.pgk-prev__heroChips { display: flex; flex-wrap: wrap; gap: 7px 16px; margin-top: 10px; }
+.pgk-prev__heroChips span { display: inline-flex; align-items: center; gap: 6px; font-size: .74rem; font-weight: 600; color: #64748b; min-width: 0; }
+.pgk-prev__heroChips i { color: #8b5cf6; }
+.pgk-prev__heroChips code { font-family: 'JetBrains Mono', monospace; font-size: .68rem; font-weight: 700; color: #4338ca; background: rgba(99, 102, 241, .09); border-radius: 6px; padding: 2px 7px; overflow-wrap: anywhere; }
+/* Stat mini */
+.pgk-prev__stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+@media (max-width: 640px) { .pgk-prev__stats { grid-template-columns: repeat(2, 1fr); } }
+.pgk-prev__stats > div { display: flex; align-items: center; gap: 10px; background: #fff; border: 1px solid #e6e9f3; border-radius: 13px; padding: 11px 13px; }
+.pgk-prev__sico { width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: .9rem; flex: 0 0 auto; }
+.pgk-prev__stats b { font-size: 1.15rem; font-weight: 900; color: #0f172a; }
+.pgk-prev__stats > div > span:last-child { font-size: .7rem; font-weight: 700; color: #94a3b8; }
+.pgk-prev__card { background: #fff; border: 1px solid #e6e9f3; border-radius: 14px; padding: 15px 17px; }
+.pgk-prev__hd { display: flex; align-items: center; gap: 8px; font-size: .82rem; font-weight: 800; color: #1e293b; margin-bottom: 11px; flex-wrap: wrap; }
+.pgk-prev__hd i { color: #6366f1; }
+.pgk-prev__list { display: flex; flex-direction: column; }
+.pgk-prev__item { display: flex; align-items: center; gap: 9px; padding: 8px 2px; border-bottom: 1px solid #f4f5fb; }
+.pgk-prev__item:last-child { border-bottom: none; }
+.pgk-prev__dot { width: 7px; height: 7px; border-radius: 50%; background: linear-gradient(135deg, #8b5cf6, #6366f1); flex: 0 0 auto; }
+.pgk-prev__nm { font-size: .82rem; font-weight: 700; color: #334155; min-width: 0; }
+.pgk-prev__kt { margin-left: auto; font-size: .72rem; font-weight: 800; color: #4f46e5; background: rgba(99, 102, 241, .08); border-radius: 8px; padding: 3px 10px; flex: 0 0 auto; }
+.pgk-prev__tag { display: inline-flex; align-items: center; gap: 5px; font-size: .64rem; font-weight: 800; border-radius: 7px; padding: 3px 9px; }
+.pgk-prev__tag--ind { color: #4f46e5; background: rgba(99, 102, 241, .1); }
+.pgk-prev__tag--vio { color: #7c3aed; background: rgba(139, 92, 246, .12); }
+.pgk-prev__tag--red { color: #dc2626; background: rgba(239, 68, 68, .1); }
+.pgk-prev__syarat { border-top: 1px solid #f4f5fb; padding-top: 10px; margin-top: 10px; }
+.pgk-prev__syarat:first-of-type { border-top: none; padding-top: 0; margin-top: 0; }
+.pgk-prev__srow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pgk-prev__srow > b { font-size: .82rem; color: #1e293b; }
+.pgk-prev__conds { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.pgk-prev__cond { display: inline-flex; align-items: center; gap: 6px; font-size: .72rem; color: #475569; background: #f7f8fc; border: 1px solid #eef0f7; border-radius: 8px; padding: 5px 10px; }
+.pgk-prev__cond i { color: #8b5cf6; }
+.pgk-prev__cond b { color: #4338ca; }
+.pgk-prev__none { font-size: .76rem; color: #94a3b8; }
+.pgk-mppline { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.pgk-mppline__dot { width: 9px; height: 9px; border-radius: 50%; background: linear-gradient(135deg, #8b5cf6, #6366f1); flex: 0 0 auto; }
+.pgk-mppline strong { font-size: .9rem; color: #1e293b; font-weight: 800; }
+/* Nilai rentang (ANTARA) */
+.pgk-antara { display: flex; align-items: center; gap: 7px; }
+.pgk-antara .el-input-number { flex: 1; width: auto; }
+.pgk-antara__sep { color: #94a3b8; font-weight: 700; }
 .pgk-meta { margin-bottom: .8rem; }
 .pgk-empty { color: #94a3b8; font-size: 13px; padding: .8rem; }
 .pgk-rows { display: flex; flex-direction: column; gap: .6rem; }
@@ -764,10 +1442,13 @@ export default {
 .pgk-row__del { position: absolute; top: .7rem; right: .7rem; margin-top: 0 !important; }
 
 /* ── Stepper wizard ─────────────────────────────────────────── */
-.pgk-steps { display: flex; gap: .4rem; margin-bottom: 1.1rem; padding-bottom: .9rem; border-bottom: 1px solid rgba(11, 16, 51, .09); }
-.pgk-step { flex: 1; display: flex; align-items: center; gap: .5rem; border: 0; background: transparent; cursor: pointer; padding: .3rem .2rem; font: inherit; text-align: left; }
-.pgk-step:disabled { cursor: not-allowed; opacity: .5; }
-.pgk-step__dot { flex: none; width: 1.9rem; height: 1.9rem; display: grid; place-items: center; border-radius: 50%; background: #eef2f7; color: #94a3b8; font-size: .8rem; transition: all 200ms ease; }
+/* Stepper: dot di atas, label di bawah — garis penghubung lewat PUSAT antar-dot. */
+.pgk-steps { display: flex; margin-bottom: 1.15rem; padding-bottom: .9rem; border-bottom: 1px solid rgba(11, 16, 51, .09); }
+.pgk-step { position: relative; flex: 1; display: flex; flex-direction: column; align-items: center; gap: .45rem; border: 0; background: transparent; cursor: pointer; padding: .2rem .4rem; font: inherit; text-align: center; }
+.pgk-step:not(:first-child)::before { content: ''; position: absolute; top: calc(.2rem + .95rem - 1px); left: calc(-50% + 1.35rem); right: calc(50% + 1.35rem); height: 2px; border-radius: 99px; background: #e6e9f3; }
+.pgk-step.done::before, .pgk-step.cur::before { background: linear-gradient(90deg, #a5b4fc, #8b5cf6); }
+.pgk-step:disabled { cursor: not-allowed; opacity: .55; }
+.pgk-step__dot { position: relative; z-index: 1; flex: none; width: 1.9rem; height: 1.9rem; display: grid; place-items: center; border-radius: 50%; background: #eef2f7; color: #94a3b8; font-size: .8rem; transition: all 200ms ease; box-shadow: 0 0 0 4px #fff; }
 .pgk-step.done .pgk-step__dot { background: rgba(16, 185, 129, .15); color: #059669; }
 .pgk-step.cur .pgk-step__dot { background: linear-gradient(140deg, #4f46e5, #7c3aed); color: #fff; box-shadow: 0 6px 14px -6px rgba(79, 70, 229, .9); }
 .pgk-step__lbl { font-size: 12.5px; font-weight: 600; color: #94a3b8; line-height: 1.25; }
@@ -849,4 +1530,15 @@ export default {
     .pgk-syarat__id { grid-template-columns: 1fr auto; }
     .pgk-syarat__opt { grid-template-columns: 1fr; }
 }
+</style>
+
+<!-- Konten el-popover & el-option di-teleport ke <body>, jadi butuh style TIDAK ber-scope. -->
+<style>
+.pgk-mppdetail { display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; color: #475569; }
+.pgk-mppdetail strong { font-size: 13.5px; color: #1e293b; margin-bottom: 2px; }
+.pgk-mppdetail div { display: flex; align-items: center; gap: 8px; }
+.pgk-mppdetail i { color: #8b5cf6; width: 14px; text-align: center; }
+.pgk-opdesc { display: flex; flex-direction: column; line-height: 1.3; padding: 3px 0; }
+.pgk-opdesc span { font-size: 13px; font-weight: 600; }
+.pgk-opdesc small { font-size: 11px; color: #94a3b8; }
 </style>

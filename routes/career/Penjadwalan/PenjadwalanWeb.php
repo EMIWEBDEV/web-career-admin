@@ -12,6 +12,7 @@ Route::get('/karir/penjadwalan', [PenjadwalanController::class, 'index'])->name(
 Route::prefix('api/v1')->name('career.api.penjadwalan.')->group(function () {
     Route::get('/penjadwalan', [PenjadwalanController::class, 'list'])->name('list');
     Route::post('/penjadwalan', [PenjadwalanController::class, 'store'])->name('store');
+    Route::put('/penjadwalan/{id}', [PenjadwalanController::class, 'update'])->name('update');
     Route::delete('/penjadwalan/{id}', [PenjadwalanController::class, 'destroy'])->name('destroy');
 
     Route::get('/penjadwalan/opsi', [PenjadwalanController::class, 'opsi'])->name('opsi');

@@ -12,19 +12,18 @@
 <template>
     <Head><title>Master Formulir - Web Career</title></Head>
     <div class="wca">
-        <div class="wca-phead">
-            <div>
-                <h1>Master Formulir</h1>
+        <div class="pkg-head">
+            <div class="pkg-head__l">
+                <div class="pkg-head__title">
+                    <span class="pkg-head__ico"><i class="bi bi-input-cursor-text"></i></span>
+                    <h1>Master Formulir</h1>
+                </div>
                 <p>
                     Daftarkan formulir dan pilih komponennya. Formulir dipilih di <b>tahap alur seleksi</b>, lalu
                     terpakai otomatis oleh program yang memakai alur itu.
                 </p>
             </div>
-            <div class="wca-phead__actions">
-                <button class="wca-btn wca-btn--primary" @click="openCreate">
-                    <i class="bi bi-plus-lg"></i> Formulir Baru
-                </button>
-            </div>
+            <button class="pkg-newbtn" @click="openCreate"><i class="bi bi-plus-lg"></i> Formulir Baru</button>
         </div>
 
         <div class="wca-note" style="margin-bottom: 1rem">
@@ -35,42 +34,42 @@
             </span>
         </div>
 
-        <div v-loading="loading" class="wca-acc">
-            <div v-for="f in list" :key="f.id" class="wca-acc__item" :class="{ open: open === f.id }">
-                <button class="wca-acc__head" @click="open = open === f.id ? null : f.id">
-                    <span class="wca-acc__chev"><i class="bi bi-chevron-right"></i></span>
-                    <span class="wca-acc__title">
-                        <strong>{{ f.nama }}</strong>
-                        <small
-                            >{{ f.kode }}<template v-if="f.deskripsi"> · {{ f.deskripsi }}</template></small
-                        >
-                    </span>
-                    <span class="wca-acc__tags">
-                        <span v-if="f.kategori" class="wca-badge wca-b--indigo">{{ katLabel(f.kategori) }}</span>
-                        <span class="wca-badge" :class="f.status === 'AKTIF' ? 'wca-b--green' : 'wca-b--slate'">{{
-                            f.status
-                        }}</span>
-                        <span v-if="info(f)" class="wca-badge wca-b--green">
-                            <i class="bi bi-code-square"></i> {{ info(f).nama }}
-                        </span>
-                        <span v-else class="wca-badge wca-b--amber">
-                            <i class="bi bi-exclamation-triangle"></i> Komponen belum dipilih
-                        </span>
-                    </span>
-                    <span class="mfr-head-act" @click.stop>
+        <div v-loading="loading" class="pkg-list">
+            <div v-for="f in list" :key="f.id" class="pkg-card" :class="{ open: open === f.id }">
+                <!-- header row (pola standar "Program Kegiatan") -->
+                <div class="pkg-row">
+                    <button type="button" class="pkg-chev" :class="{ open: open === f.id }" title="Buka detail" @click="open = open === f.id ? null : f.id"><i class="bi bi-chevron-right"></i></button>
+                    <div class="pkg-row__main">
+                        <button type="button" class="pkg-row__titlebtn" @click="open = open === f.id ? null : f.id">
+                            <span class="pkg-row__title">{{ f.nama }}</span>
+                        </button>
+                        <div class="pkg-row__meta">
+                            <span class="pkg-code">{{ f.kode }}</span>
+                            <template v-if="f.deskripsi"><span class="pkg-sep"></span><span class="pkg-mi">{{ f.deskripsi }}</span></template>
+                        </div>
+                        <div class="pkg-pills">
+                            <span v-if="f.kategori" class="pkg-pill pkg-pill--violet"><i class="bi bi-tags"></i> {{ katLabel(f.kategori) }}</span>
+                            <span v-if="info(f)" class="pkg-pill pkg-pill--green"><i class="bi bi-code-square"></i> {{ info(f).nama }}</span>
+                            <span v-else class="pkg-pill pkg-pill--amber"><i class="bi bi-exclamation-triangle"></i> Komponen belum dipilih</span>
+                            <span class="pkg-pill" :class="f.status === 'AKTIF' ? 'pkg-pill--green' : 'pkg-pill--slate'"><span class="pkg-pill__dot"></span> {{ f.status }}</span>
+                        </div>
+                    </div>
+                    <div class="pkg-row__act" @click.stop>
                         <el-switch :model-value="f.status === 'AKTIF'" @change="(v) => setStatus(f, v)" />
-                        <button class="wca-iconbtn" title="Ubah" @click="openEdit(f)">
-                            <i class="bi bi-pencil"></i>
-                        </button>
-                        <button class="wca-iconbtn wca-iconbtn--danger" title="Hapus" @click="askRemove(f)">
-                            <i class="bi bi-trash"></i>
-                        </button>
-                    </span>
-                </button>
+                        <button class="pkg-ibtn" title="Ubah" @click="openEdit(f)"><i class="bi bi-pencil"></i></button>
+                        <button class="pkg-ibtn pkg-ibtn--danger" title="Hapus" @click="askRemove(f)"><i class="bi bi-trash"></i></button>
+                    </div>
+                </div>
 
-                <div class="wca-acc__body">
-                    <div class="wca-acc__inner">
-                        <div class="mfr-meta"><AuditStamp :by="f.createdBy" :at="f.createdAt" /></div>
+                <!-- creator strip -->
+                <div class="pkg-creator">
+                    <span class="pkg-creator__av" style="background:#6366f1">{{ initials(f.createdBy) }}</span>
+                    <span class="pkg-creator__name">{{ f.createdBy || 'Sistem' }}</span>
+                    <span class="pkg-creator__at"><i class="bi bi-clock"></i> {{ f.createdAt || '—' }}</span>
+                </div>
+
+                <!-- expanded detail -->
+                <div v-if="open === f.id" class="pkg-detail">
 
                         <!-- Formulir tanpa komponen tidak bisa dirender kandidat,
                              jadi sengaja tidak ditawarkan di pilihan tahap alur. -->
@@ -122,13 +121,10 @@
                                 </div>
                             </div>
                         </template>
-                    </div>
                 </div>
             </div>
-            <div v-if="!loading && !list.length" class="wca-empty">
-                <i class="bi bi-input-cursor-text"></i>
-                <h4>Belum ada formulir</h4>
-                <p>Daftarkan formulir pertama, lalu pilih komponennya.</p>
+            <div v-if="!loading && !list.length" class="pkg-empty">
+                <i class="bi bi-input-cursor-text"></i> Belum ada formulir — daftarkan formulir pertama, lalu pilih komponennya.
             </div>
         </div>
 
@@ -412,6 +408,11 @@ export default {
         this.load();
     },
     methods: {
+        initials(name) {
+            if (!name) return 'SY';
+            const p = String(name).trim().split(/\s+/);
+            return ((p[0]?.[0] || '') + (p[1]?.[0] || p[0]?.[1] || '')).toUpperCase() || 'SY';
+        },
         katLabel(k) {
             return { REKRUTMEN: 'Rekrutmen', MT: 'Management Trainee', INTERNSHIP: 'Internship' }[k] || k;
         },

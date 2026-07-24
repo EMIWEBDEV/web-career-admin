@@ -191,7 +191,6 @@ class CareerAdminController extends Controller
             'mode' => ['N_WEB_CAREERS_Master_Mode_Pelaksanaan', 'Kode', 'Nama', 'Flag_Aktif'],
             'sumber' => ['N_WEB_CAREERS_Master_Sumber_Kandidat', 'Kode', 'Nama', 'Flag_Aktif'],
             'tipe' => ['N_WEB_CAREERS_Master_Tipe_Tahap', 'Kode', 'Nama', 'Flag_Aktif'],
-            'kriteria' => ['N_WEB_CAREERS_Master_Kriteria', 'Kode', 'Nama', 'Flag_Aktif'],
             'kategori' => ['N_WEB_CAREERS_Master_Kategori', 'Kode', 'Nama', 'Flag_Aktif'],
             'kampus' => ['N_WEB_CAREERS_Master_Kampus', 'Id_Master_Kampus', 'Nama', 'Flag_Aktif'],
             'alur' => ['N_WEB_CAREERS_Master_Alur', 'Kode', 'Nama', 'Flag_Aktif'],
@@ -272,23 +271,65 @@ class CareerAdminController extends Controller
      */
     public function options_mpp()
     {
-        $kategori = request()->query('kategori');
+        // REAL (2026-07-23): sumber = Monitoring MPP (HRIS_Transaksi_GForm ⋈ N_WEB_CAREERS_Detail_MPP),
+        // bukan dummy lowonganAdmin() lagi. Hanya MPP AKTIF & BELUM SELESAI yang bisa ditautkan program.
+        // Catatan: MPP tidak menyimpan kota — kolom 'lokasi' diisi tempat kerja (Onsite/Hybrid/...).
+        $rows = DB::table('HRIS_Transaksi_GForm as g')
+            ->join('N_WEB_CAREERS_Detail_MPP as d', 'd.No_Transaksi_MPP', '=', 'g.No_Transaksi')
+            ->leftJoin('HRIS_Divisi as dv', function ($j) {
+                $j->on('dv.ID_Divisi', '=', 'g.Id_Divisi')->on('dv.Kode_Perusahaan', '=', 'g.Kode_Perusahaan');
+            })
+            ->leftJoin('HRIS_Sub_Divisi as sd', function ($j) {
+                $j->on('sd.ID_Sub_Divisi', '=', 'g.Id_Sub_Divisi')->on('sd.Kode_Perusahaan', '=', 'g.Kode_Perusahaan');
+            })
+            ->leftJoin('HRIS_Level as lv', function ($j) {
+                $j->on('lv.ID_Level', '=', 'g.Id_Level')->on('lv.Kode_Perusahaan', '=', 'g.Kode_Perusahaan');
+            })
+            ->leftJoin('HRIS_Jabatan as jb', function ($j) {
+                $j->on('jb.ID_Jabatan', '=', 'g.Id_Jabatan')->on('jb.Kode_Perusahaan', '=', 'g.Kode_Perusahaan');
+            })
+            ->leftJoin('N_WEB_CAREERS_Master_Employment as me', 'me.Id_Employment', '=', 'd.Employment_Type')
+            ->leftJoin('N_WEB_CAREERS_Master_Workplace as mw', 'mw.Id_Workplace', '=', 'd.Workplace_Type')
+            ->leftJoin('N_WEB_CAREERS_Master_Experience_Level as mx', 'mx.Id_Experience_Level', '=', 'd.Experience_Level')
+            ->whereRaw("ISNULL(g.Status, '') <> 'Y'")
+            ->whereRaw("ISNULL(g.Flag_Selesai, '') <> 'Y'")
+            ->orderByDesc('g.Tanggal_Periode')
+            ->orderBy('g.No_Transaksi')
+            ->get([
+                'g.No_Transaksi as no',
+                'jb.Keterangan as jabatan',
+                'dv.Keterangan as divisi',
+                'sd.Keterangan as sub',
+                'lv.Keterangan as level',
+                'g.Jumlah_Rekruitmen as kuota',
+                'me.Nama_Employment as employment',
+                'mw.Nama_Workplace as workplace',
+                'mx.Nama_Experience_Level as experience',
+            ]);
 
-        $rows = collect($this->lowonganAdmin())
-            ->when($kategori, fn ($c) => $c->where('kategori', $kategori))
-            ->map(fn ($l) => [
-                'value' => $l['mppRef'],
-                'label' => $l['posisi'] . ' — ' . $l['departemen'] . ' (' . $l['lokasi'] . ')',
-                'posisi' => $l['posisi'],
-                'departemen' => $l['departemen'],
-                'lokasi' => $l['lokasi'],
-                'kuota' => (int) ($l['kuota'] ?? 0),
-                'level' => $l['level'] ?? null,
-                'kategori' => $l['kategori'] ?? null,
-            ])
-            ->values();
+        $rows = collect($rows)->map(function ($r) {
+            $dept = trim(implode(' · ', array_filter([trim((string) $r->divisi), trim((string) $r->sub)])));
+            // Label sebelum "/" saja (mis. "Full-time / Purnawaktu" -> "Full-time").
+            $emp = trim(explode('/', (string) $r->employment)[0]);
 
-        return ResponseHelper::success($rows, 'Opsi MPP');
+            return [
+                'value' => $r->no,
+                'label' => ($r->jabatan ?: $r->no) . ' — ' . ($dept ?: '—'),
+                'posisi' => $r->jabatan ?: ('Posisi ' . $r->no),
+                'divisi' => trim((string) $r->divisi),
+                'sub' => trim((string) $r->sub),
+                'departemen' => $dept,
+                'lokasi' => $r->workplace ?: '',
+                'level' => $r->level,
+                'kuota' => (int) ($r->kuota ?? 0),
+                'employment' => $emp,
+                'workplace' => $r->workplace,
+                'experience' => $r->experience,
+                'kategori' => null,
+            ];
+        })->values();
+
+        return ResponseHelper::success($rows, 'Opsi MPP (Monitoring MPP)');
     }
 
     /**

@@ -15,8 +15,6 @@ require base_path('routes/career/MasterTipe/MasterTipeWeb.php');
 require base_path('routes/career/MasterTipe/MasterTipeApi.php');
 require base_path('routes/career/MasterKampus/MasterKampusWeb.php');
 require base_path('routes/career/MasterKampus/MasterKampusApi.php');
-require base_path('routes/career/MasterKriteria/MasterKriteriaWeb.php');
-require base_path('routes/career/MasterKriteria/MasterKriteriaApi.php');
 require base_path('routes/career/MasterKategori/MasterKategoriWeb.php');
 require base_path('routes/career/MasterKategori/MasterKategoriApi.php');
 require base_path('routes/career/MasterKemitraan/MasterKemitraanWeb.php');

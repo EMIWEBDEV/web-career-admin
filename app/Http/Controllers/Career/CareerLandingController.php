@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Career;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Vinkla\Hashids\Facades\Hashids;
 
@@ -22,7 +23,7 @@ use Vinkla\Hashids\Facades\Hashids;
  *
  * Lokasi grup: Palembang (Head Office) & Banyuasin (Pabrik).
  *
- * Route: GET /test/karir/landing-page  (name: career.landing)
+ * Route: GET /karir/landing-page  (name: career.landing)
  */
 class CareerLandingController extends Controller
 {
@@ -43,6 +44,18 @@ class CareerLandingController extends Controller
             'achievements' => $this->achievements(),
             'offices' => $this->offices(),
             'benefits' => $this->benefits(),
+        ]);
+    }
+
+    /** /karir/lowongan — halaman KUMPULAN SELURUH lowongan (rekrutmen + MT). */
+    public function semuaLowongan()
+    {
+        return Inertia::render('Career/SemuaLowongan', [
+            'lowongan' => $this->visibleLowongan(),
+            'programMt' => $this->programMt(),
+            'departments' => $this->departments(),
+            'locations' => $this->locations(),
+            'offices' => $this->offices(),
         ]);
     }
 
@@ -480,10 +493,16 @@ class CareerLandingController extends Controller
         return $this->openingsCache;
     }
 
-    /** Pembukaan REKRUTMEN/INTERNSHIP -> kartu lowongan (per posisi). */
+    /**
+     * Pembukaan REKRUTMEN/INTERNSHIP -> kartu lowongan (per posisi).
+     * Posisi ber-Mpp_Ref DIPERKAYA dari Monitoring MPP (deskripsi, tanggung jawab,
+     * persyaratan, skill, benefit, exp level, employment & workplace) — informasi
+     * kartu landing = informasi MPP. Nama perusahaan TIDAK ditampilkan (EVO Group).
+     */
     public function dbLowonganCards(): array
     {
         $o = $this->dbOpenings();
+        $mpp = $this->mppPeta($o['posisi']);
         $out = [];
 
         foreach ($o['pembukaan'] as $pb) {
@@ -494,6 +513,13 @@ class CareerLandingController extends Controller
             $pipeline = $this->shapeTahapan($o['tahap']->get($pb->Alur_Kode, []));
 
             foreach ($o['posisi']->get($pb->Program_Id, []) as $x) {
+                $m = ($x->Mpp_Ref ?? null) ? ($mpp[$x->Mpp_Ref] ?? null) : null;
+
+                // Employment MPP → label kartu ("Full-time", "Contract / PKWT" → "Contract").
+                $tipeKerja = $m && $m['employment']
+                    ? trim(explode('/', $m['employment'])[0])
+                    : ($pb->Kategori === 'INTERNSHIP' ? 'Internship' : 'Full-time');
+
                 $out[] = [
                     'id' => 'PB-' . $pb->Kode . '-' . $x->Id_Program_Posisi,
                     // ID nyata untuk alur lamaran DB (tombol "Lamar Sekarang").
@@ -501,26 +527,26 @@ class CareerLandingController extends Controller
                     'pembukaanId' => Hashids::encode($pb->Id_Pembukaan),
                     'posisiId' => Hashids::encode($x->Id_Program_Posisi),
                     'posisi' => $x->Posisi,
-                    'perusahaan' => $pb->Penyelenggara ?: 'EVO Group',
+                    // Nama perusahaan internal DISEMBUNYIKAN — cukup grup.
+                    'perusahaan' => 'EVO Group',
                     'departemen' => $x->Departemen ?: '—',
                     'lokasi' => $x->Lokasi ?: '—',
-                    'tempatKerja' => 'On-site',
-                    'tipeKerja' => $pb->Kategori === 'INTERNSHIP' ? 'Internship' : 'Full-time',
+                    'tempatKerja' => $m['workplace'] ?? 'On-site',
+                    'tipeKerja' => $tipeKerja,
                     'level' => $x->Level ?: 'Staff',
-                    // Tak ada sumber data pengalaman dari pembukaan program → null,
-                    // sehingga baris pengalaman di kartu disembunyikan (bukan strip "—").
-                    'pengalaman' => null,
+                    // Exp level MPP ("Min. 1 - 2 Tahun" / "Fresh Graduate"); null → baris disembunyikan.
+                    'pengalaman' => $m['pengalaman'] ?? null,
                     'kuota' => (int) $x->Kuota,
                     'kuotaTerisi' => (int) ($o['terisiPosisi'][$x->Id_Program_Posisi] ?? 0),
                     'pelamar' => (int) ($o['pelamar'][$pb->Program_Id] ?? 0),
                     'tanggalTutup' => $pb->Masa_Berlaku === 'BERBATAS' ? ($pb->Tanggal_Tutup ? substr($pb->Tanggal_Tutup, 0, 16) : null) : null,
-                    'deskripsi' => 'Lowongan ' . $x->Posisi . ' pada program ' . $pb->ProgramNama . ' di EVO Group.',
-                    'ringkasan' => 'Lowongan ' . $pb->ProgramNama . ' di EVO Group.',
-                    // Deskriptif boleh dummy/kosong; tahapan WAJIB dari DB.
-                    'tanggungJawab' => [],
-                    'persyaratan' => [],
-                    'skill' => [],
-                    'benefit' => [],
+                    'deskripsi' => $m['deskripsi'] ?? ('Lowongan ' . $x->Posisi . ' pada program ' . $pb->ProgramNama . ' di EVO Group.'),
+                    'ringkasan' => $m ? Str::limit($m['deskripsi'] ?: 'Lowongan ' . $x->Posisi . ' di EVO Group.', 130) : ('Lowongan ' . $pb->ProgramNama . ' di EVO Group.'),
+                    // Konten kaya dari MPP; kosong bila posisi tak tertaut MPP.
+                    'tanggungJawab' => $m['tanggungJawab'] ?? [],
+                    'persyaratan' => $m['persyaratan'] ?? [],
+                    'skill' => $m['skill'] ?? [],
+                    'benefit' => $m['benefit'] ?? [],
                     'pipeline' => $pipeline,
                     'unggulan' => false,
                 ];
@@ -528,6 +554,59 @@ class CareerLandingController extends Controller
         }
 
         return $out;
+    }
+
+    /**
+     * Peta konten MPP per No_Transaksi untuk seluruh posisi ber-Mpp_Ref —
+     * jumlah kueri TETAP (head + points + skill + benefit), bukan per-posisi.
+     */
+    private function mppPeta($posisiPerProgram): array
+    {
+        $refs = collect($posisiPerProgram)->flatten(1)->pluck('Mpp_Ref')->filter()->unique()->values();
+        if ($refs->isEmpty()) {
+            return [];
+        }
+
+        try {
+            $head = DB::table('N_WEB_CAREERS_Detail_MPP as d')
+                ->leftJoin('N_WEB_CAREERS_Master_Employment as me', 'me.Id_Employment', '=', 'd.Employment_Type')
+                ->leftJoin('N_WEB_CAREERS_Master_Workplace as mw', 'mw.Id_Workplace', '=', 'd.Workplace_Type')
+                ->leftJoin('N_WEB_CAREERS_Master_Experience_Level as mx', 'mx.Id_Experience_Level', '=', 'd.Experience_Level')
+                ->whereIn('d.No_Transaksi_MPP', $refs)
+                ->select('d.Id_Detail_MPP', 'd.No_Transaksi_MPP', 'd.Deskripsi',
+                    'me.Nama_Employment', 'mw.Nama_Workplace', 'mx.Nama_Experience_Level')
+                ->get();
+
+            $ids = $head->pluck('Id_Detail_MPP');
+            $points = DB::table('N_WEB_CAREERS_Points_MPP')
+                ->whereIn('Id_Detail_MPP', $ids)->orderBy('Urutan')->get()->groupBy('Id_Detail_MPP');
+            $skill = DB::table('N_WEB_CAREERS_Detail_Skill_MPP as sk')
+                ->join('N_WEB_CAREERS_Master_Skill as ms', 'ms.Id_Skill', '=', 'sk.Id_Skill')
+                ->whereIn('sk.Id_Detail_MPP', $ids)
+                ->select('sk.Id_Detail_MPP', 'ms.Nama_Skill')->get()->groupBy('Id_Detail_MPP');
+            $benefit = DB::table('N_WEB_CAREERS_Detail_Benefit_MPP as bn')
+                ->join('N_WEB_CAREERS_Master_Benefit as mb', 'mb.Id_Benefit', '=', 'bn.Id_Benefit')
+                ->whereIn('bn.Id_Detail_MPP', $ids)
+                ->select('bn.Id_Detail_MPP', 'mb.Nama_Benefit')->get()->groupBy('Id_Detail_MPP');
+
+            return $head->mapWithKeys(function ($h) use ($points, $skill, $benefit) {
+                $p = collect($points->get($h->Id_Detail_MPP, []));
+
+                return [$h->No_Transaksi_MPP => [
+                    'deskripsi' => $h->Deskripsi,
+                    'employment' => $h->Nama_Employment,
+                    'workplace' => $h->Nama_Workplace,
+                    'pengalaman' => $h->Nama_Experience_Level,
+                    'tanggungJawab' => $p->where('Section', 'responsibility')->pluck('Content')->values()->all(),
+                    'persyaratan' => $p->where('Section', 'requirement')->pluck('Content')->values()->all(),
+                    'skill' => collect($skill->get($h->Id_Detail_MPP, []))->pluck('Nama_Skill')->values()->all(),
+                    'benefit' => collect($benefit->get($h->Id_Detail_MPP, []))->pluck('Nama_Benefit')->values()->all(),
+                ]];
+            })->all();
+        } catch (\Throwable $e) {
+            // Landing tidak boleh tumbang karena pengayaan MPP gagal.
+            return [];
+        }
     }
 
     /** Ubah agenda jadwal DB -> bentuk {label, tanggal} untuk kartu landing. */
@@ -588,7 +667,8 @@ class CareerLandingController extends Controller
                 'tagline' => null ?: 'Program Management Trainee EVO Group.',
                 'jenis' => 'MT',
                 'batch' => $pb->BatchNama ?: '',
-                'perusahaan' => $pb->Penyelenggara ?: 'EVO Group',
+                // Nama perusahaan/tim internal disembunyikan — cukup grup.
+                'perusahaan' => 'EVO Group',
                 'status' => 'BUKA',
                 'tipeKegiatan' => 'Terbuka Umum',
                 'lokasi' => optional($listPosisi->first())->Lokasi ?: 'Palembang',

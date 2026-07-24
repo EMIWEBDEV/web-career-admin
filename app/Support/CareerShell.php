@@ -65,7 +65,7 @@ class CareerShell
         return [
             ['id' => 'lamaran', 'title' => 'Lamaran Saya', 'items' => [
                 ['key' => 'portal', 'label' => 'Lamaran Saya', 'icon' => 'bi bi-file-earmark-text', 'url' => '/kandidat/portal'],
-                ['key' => 'loker', 'label' => 'Cari Lowongan', 'icon' => 'bi bi-search', 'url' => '/test/karir/landing-page'],
+                ['key' => 'loker', 'label' => 'Cari Lowongan', 'icon' => 'bi bi-search', 'url' => '/karir/landing-page'],
             ]],
             ['id' => 'akun', 'title' => 'Akun', 'items' => [
                 ['key' => 'profil', 'label' => 'Profil Saya', 'icon' => 'bi bi-person-circle', 'url' => '/profil'],
@@ -87,7 +87,6 @@ class CareerShell
                 ['key' => 'master-tes', 'label' => 'Master Jenis Tes', 'icon' => 'bi bi-ui-checks-grid', 'url' => '/master-tes'],
                 ['key' => 'master-kampus', 'label' => 'Master Kampus', 'icon' => 'bi bi-mortarboard', 'url' => '/master-kampus'],
                 ['key' => 'master-kemitraan', 'label' => 'Master Kemitraan / MoU', 'icon' => 'bi bi-file-earmark-medical', 'url' => '/master-kemitraan'],
-                ['key' => 'master-kriteria', 'label' => 'Master Kriteria', 'icon' => 'bi bi-sliders2', 'url' => '/master-kriteria'],
                 ['key' => 'master-alur', 'label' => 'Master Tahapan Seleksi', 'icon' => 'bi bi-signpost-split', 'url' => '/master-alur'],
                 ['key' => 'master-klasifikasi', 'label' => 'Master Kategori', 'icon' => 'bi bi-tags', 'url' => '/master-kategori'],
                 ['key' => 'master-jadwal', 'label' => 'Master Jadwal Kegiatan', 'icon' => 'bi bi-calendar3-range', 'url' => '/master-jadwal'],

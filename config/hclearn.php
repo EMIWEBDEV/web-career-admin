@@ -27,6 +27,14 @@ return [
 
     'prefix' => 'api/v1/web-careers',
 
+    // ── CALLBACK HASIL (CAT → Web Careers) ──
+    // URL publik Web Careers yang bisa dijangkau CAT untuk push hasil tes.
+    // Dikirim sebagai Url_Callback saat penjadwalan; CAT memanggilnya saat tes
+    // difinalisasi. Guard: header X-WC-Secret dicocokkan ke callback_secret.
+    'public_url' => rtrim(env('WC_PUBLIC_URL', env('APP_URL', 'http://localhost')), '/'),
+    'callback_path' => 'api/v1/webhook/hclearn-hasil',
+    'callback_secret' => env('WC_CALLBACK_SECRET', env('HCLEARN_WC_API_SECRET')),
+
     'timeout' => (int) env('HCLEARN_TIMEOUT', 30),
     'retry' => (int) env('HCLEARN_RETRY', 2),
 

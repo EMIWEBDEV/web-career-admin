@@ -1,8 +1,8 @@
 <!-- WEB CAREER — Section 2: Pencapaian (animated counters) -->
 <template>
-    <section id="achievement" class="wc-section">
+    <section id="achievement" class="wc-section ach">
         <div class="wc-sec-head wc-reveal">
-            <span class="wc-eyebrow"><span class="wc-dot"></span> Pencapaian Kami</span>
+            <span class="ach__eyebrow">✦ Pencapaian Kami</span>
             <h2>Angka yang berbicara tentang <span class="wc-grad">pertumbuhan</span>.</h2>
             <p>Dampak nyata dari kolaborasi ribuan karyawan di seluruh ekosistem EVO Group.</p>
         </div>
@@ -61,3 +61,33 @@ onMounted(() => {
 });
 onUnmounted(() => observer?.disconnect());
 </script>
+
+<style scoped>
+/* Selaras 1:1 desain "EVO Career Landing" — eyebrow teks polos, angka solid, ikon flat */
+.ach__eyebrow {
+    display: inline-block;
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: #8b5cf6;
+}
+.ach .wc-ach-card {
+    background: rgba(255, 255, 255, 0.86);
+    border-radius: 20px;
+}
+.ach .wc-ach-card__ico {
+    background: rgba(99, 102, 241, 0.1);
+    color: #6366f1;
+    border-radius: 14px;
+}
+.ach .wc-ach-card__num {
+    background: none;
+    -webkit-text-fill-color: currentColor;
+    color: #4f46e5;
+    font-size: 1.9rem;
+}
+.ach .wc-ach-card__num span {
+    color: #4f46e5;
+}
+</style>

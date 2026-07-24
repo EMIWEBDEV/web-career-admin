@@ -1,8 +1,9 @@
 <script>
-// WEB CAREER — Auth kandidat (login/register). Standalone: opt out of AppShell.
-// Desain MENGIKUTI halaman /login HCIS (Auth/Login.vue) — hanya kalimat & field yang berbeda.
+// WEB CAREER — Auth kandidat (login / register / cek KTP). Memakai AuthShell
+// bersama seluruh halaman auth lain — hanya isi kartu yang berbeda.
 import axios from 'axios';
-import { Head, Link, router } from '@inertiajs/vue3';
+import { Link, router } from '@inertiajs/vue3';
+import AuthShell from './components/AuthShell.vue';
 import { logout as clearSession, syncFromServer } from './careerSession';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -13,18 +14,26 @@ function readRedirect() {
 
 export default {
     layout: null,
-    components: { Head, Link },
+    components: { AuthShell, Link },
     props: {
         mode: { type: String, default: 'login' },
+        turnstileSiteKey: { type: String, default: '' },
     },
     data() {
         return {
             tab: this.mode === 'register' ? 'register' : 'login',
+            // Cloudflare Turnstile (khusus login). state: idle | ok | error.
+            tsToken: '',
+            tsState: 'idle',
+            tsWidgetId: null,
             redirectTarget: readRedirect(),
             showPassword: false,
             processing: false,
+            // Register 2 langkah: 1 = cek KTP, 2 = form identitas lengkap.
+            regStep: 1,
+            checkingKtp: false,
             errors: {},
-            form: { nama: '', email: '', phone: '', password: '' },
+            form: { nama: '', email: '', phone: '', nik: '', password: '' },
             notice: { visible: false, type: 'info', message: '' },
             noticeTimer: null,
             redirectTimer: null,
@@ -32,15 +41,14 @@ export default {
             // → memunculkan baris "kirim ulang email verifikasi".
             pendingVerifEmail: '',
             resendingVerif: false,
-            subsidiaries: [
-                { src: '/logo/EMI.png', alt: 'PT EVO Manufacturing Indonesia' },
-                { src: '/logo/ENB.png', alt: 'PT EVO Nusa Bersaudara' },
-                { src: '/logo/GMN.png', alt: 'PT Graha Maju Nusantara' },
-            ],
         };
     },
     computed: {
         isLogin() { return this.tab === 'login'; },
+        pageTitle() { return this.isLogin ? 'Masuk - EVO Group Career' : 'Daftar - EVO Group Career'; },
+        ledeText() {
+            return `Satu akun untuk melamar lowongan, mengikuti program Management Trainee, dan memantau progres seleksimu. Silakan ${this.isLogin ? 'masuk' : 'daftar'} untuk melanjutkan.`;
+        },
         // Navigasi antar halaman auth (bukan tab) — pertahankan ?redirect=.
         redirectQuery() {
             return this.redirectTarget && this.redirectTarget !== '/kandidat/portal'
@@ -52,26 +60,78 @@ export default {
             if (this.processing) return false;
             if (!this.form.email || !this.form.password) return false;
             if (!this.isLogin && (!this.form.nama || !this.form.phone)) return false;
+            // Login: bila Turnstile aktif, wajib lolos captcha dulu.
+            if (this.isLogin && this.turnstileSiteKey && !this.tsToken) return false;
             return true;
         },
     },
     watch: {
         // Bila route berpindah (/login ↔ /register), sinkronkan tab dari prop mode.
-        mode(m) { this.tab = m === 'register' ? 'register' : 'login'; },
+        mode(m) {
+            this.tab = m === 'register' ? 'register' : 'login';
+            this.regStep = 1;
+            if (this.tab === 'login') this.$nextTick(() => this.renderTurnstile());
+        },
     },
     mounted() {
         // Bila datang dari logout, bersihkan sesi klien (sessionStorage).
-        // (Hasil verifikasi email kini punya halamannya sendiri: /verifikasi-email.)
         try {
             if (new URLSearchParams(window.location.search).get('loggedout')) clearSession();
         } catch (e) { /* noop */ }
+        if (this.isLogin) this.renderTurnstile();
     },
     beforeUnmount() {
         clearTimeout(this.noticeTimer);
         clearTimeout(this.redirectTimer);
+        if (this.tsWidgetId !== null && window.turnstile) { try { window.turnstile.remove(this.tsWidgetId); } catch (e) { /* noop */ } }
     },
     methods: {
-        /* ── Flash / notice toast (mirip HCIS) ── */
+        /* ── Cloudflare Turnstile (login only) ── */
+        loadTurnstileScript() {
+            return new Promise((resolve) => {
+                if (window.turnstile) return resolve();
+                const existing = document.getElementById('cf-turnstile-script');
+                if (existing) {
+                    const t = setInterval(() => { if (window.turnstile) { clearInterval(t); resolve(); } }, 100);
+                    return;
+                }
+                const s = document.createElement('script');
+                s.id = 'cf-turnstile-script';
+                s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+                s.async = true;
+                s.defer = true;
+                s.onload = () => resolve();
+                s.onerror = () => resolve();
+                document.head.appendChild(s);
+            });
+        },
+        async renderTurnstile() {
+            if (!this.isLogin || !this.turnstileSiteKey) return;
+            await this.loadTurnstileScript();
+            await this.$nextTick();
+            const el = this.$refs.tsWidget;
+            if (!el || !window.turnstile) return;
+            if (this.tsWidgetId !== null) { try { window.turnstile.remove(this.tsWidgetId); } catch (e) { /* noop */ } this.tsWidgetId = null; }
+            this.tsToken = '';
+            this.tsState = 'idle';
+            try {
+                this.tsWidgetId = window.turnstile.render(el, {
+                    sitekey: this.turnstileSiteKey,
+                    theme: 'light',
+                    size: 'flexible',
+                    callback: (token) => { this.tsToken = token; this.tsState = 'ok'; },
+                    'error-callback': () => { this.tsToken = ''; this.tsState = 'error'; },
+                    'expired-callback': () => { this.tsToken = ''; this.tsState = 'idle'; },
+                    'timeout-callback': () => { this.tsToken = ''; this.tsState = 'idle'; },
+                });
+            } catch (e) { /* noop */ }
+        },
+        resetTurnstile() {
+            if (this.tsWidgetId !== null && window.turnstile) { try { window.turnstile.reset(this.tsWidgetId); } catch (e) { /* noop */ } }
+            this.tsToken = '';
+            this.tsState = 'idle';
+        },
+        /* ── Flash / notice toast ── */
         flashNotice(type, message) {
             if (!message) return;
             this.notice.type = type;
@@ -90,12 +150,44 @@ export default {
             this.form.phone = d.slice(0, 15);
             this.clearErr('phone');
         },
-        /* ── Lupa sandi → langsung ke halaman Lupa Kata Sandi (tanpa modal) ── */
+        // KTP hanya angka, maksimal 16 digit.
+        onNikInput() {
+            this.form.nik = (this.form.nik || '').replace(/\D/g, '').slice(0, 16);
+            this.clearErr('nik');
+        },
+        /* ── Langkah 1 register: cek KTP dulu, baru buka form identitas ── */
+        async cekKtp() {
+            this.clearErr('nik');
+            if (!/^\d{16}$/.test(this.form.nik)) {
+                this.errors.nik = 'Nomor KTP harus tepat 16 digit angka.';
+                return;
+            }
+            this.checkingKtp = true;
+            try {
+                await axios.post('/api/v1/cek-ktp', { nik: this.form.nik }, { headers: { Accept: 'application/json' } });
+                this.regStep = 2; // KTP tersedia → tampilkan form identitas.
+            } catch (e) {
+                const r = e.response;
+                if (r && r.status === 422 && r.data && r.data.errors && r.data.errors.nik) {
+                    this.errors.nik = Array.isArray(r.data.errors.nik) ? r.data.errors.nik[0] : r.data.errors.nik;
+                } else {
+                    this.errors.nik = (r && r.data && r.data.message) || 'Gagal memeriksa KTP. Coba lagi.';
+                }
+            } finally {
+                this.checkingKtp = false;
+            }
+        },
+        // Kembali ke langkah 1 untuk mengubah KTP.
+        gantiKtp() {
+            this.regStep = 1;
+            this.clearErr('nik');
+        },
+        /* ── Lupa sandi → langsung ke halaman Lupa Kata Sandi ── */
         goForgot() {
             const email = this.form.email && EMAIL_RE.test(this.form.email) ? this.form.email : '';
             router.visit('/ganti-sandi' + (email ? '?email=' + encodeURIComponent(email) : ''));
         },
-        /* ── Kirim ulang email verifikasi (setelah register / login ditolak) ── */
+        /* ── Kirim ulang email verifikasi ── */
         async resendVerif() {
             if (this.resendingVerif || !this.pendingVerifEmail) return;
             this.resendingVerif = true;
@@ -119,6 +211,8 @@ export default {
                 if (!this.form.nama) this.errors.nama = 'Nama wajib diisi.';
                 if (!this.form.phone) this.errors.phone = 'No. HP wajib diisi.';
                 else if (!/^62\d{8,13}$/.test(this.form.phone)) this.errors.phone = 'No. HP harus format 62 (mis. 62812xxxxxxx).';
+                if (!this.form.nik) this.errors.nik = 'Nomor KTP (NIK) wajib diisi.';
+                else if (!/^\d{16}$/.test(this.form.nik)) this.errors.nik = 'Nomor KTP harus tepat 16 digit angka.';
             }
             return Object.keys(this.errors).length === 0;
         },
@@ -128,22 +222,17 @@ export default {
             try {
                 const url = this.isLogin ? '/api/v1/login' : '/api/v1/register';
                 const payload = this.isLogin
-                    ? { email: this.form.email, password: this.form.password }
-                    : { nama: this.form.nama, email: this.form.email, phone: this.form.phone, password: this.form.password };
+                    ? { email: this.form.email, password: this.form.password, turnstile_token: this.tsToken }
+                    : { nama: this.form.nama, email: this.form.email, phone: this.form.phone, nik: this.form.nik, password: this.form.password };
                 const res = await axios.post(url, payload, { headers: { Accept: 'application/json' } });
 
                 if (!this.isLogin) {
-                    // REGISTER: TIDAK auto-login — kandidat wajib verifikasi email
-                    // dulu. Alihkan ke halaman "menunggu verifikasi" (tab yang sama).
                     router.visit('/menunggu-verifikasi?email=' + encodeURIComponent(this.form.email));
                     return;
                 }
 
-                // LOGIN: ResponseHelper membungkus data akun di key `result`.
                 const user = res.data && res.data.result;
                 if (user) syncFromServer(user);
-                // Tujuan sesuai peran: admin/superadmin → dashboard /karir, kandidat → portal.
-                // Hormati ?redirect= eksplisit (mis. balik ke formulir apply) bila bukan default.
                 let dest = this.redirectTarget;
                 if (dest === '/kandidat/portal' && user && ['ADMIN', 'SUPERADMIN'].includes(user.role)) {
                     dest = '/karir';
@@ -152,11 +241,12 @@ export default {
                 this.redirectTimer = setTimeout(() => router.visit(dest), 600);
             } catch (e) {
                 this.processing = false;
+                // Token Turnstile sekali pakai → reset agar user bisa mencoba lagi.
+                if (this.isLogin) this.resetTurnstile();
                 const r = e.response;
                 if (r && r.status === 422 && r.data.errors) {
                     Object.keys(r.data.errors).forEach((k) => (this.errors[k] = Array.isArray(r.data.errors[k]) ? r.data.errors[k][0] : r.data.errors[k]));
                 } else if (r && r.status === 403 && r.data && r.data.code === 'BELUM_VERIFIKASI') {
-                    // Login ditolak karena email belum diverifikasi → tawarkan kirim ulang.
                     this.pendingVerifEmail = this.form.email;
                     this.flashNotice('error', r.data.message || 'Email kamu belum diverifikasi.');
                 } else {
@@ -169,994 +259,264 @@ export default {
 </script>
 
 <template>
-    <Head :title="isLogin ? 'Masuk - EVO Group Career' : 'Daftar - EVO Group Career'">
-        <meta name="robots" content="noindex, nofollow" />
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-        <link
-            href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500&display=swap"
-            rel="stylesheet"
-        />
-    </Head>
-
-    <div class="shell">
-        <!-- BACKDROP — flowing morph blobs -->
-        <div class="stage" aria-hidden="true">
-            <svg class="blob-svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice">
-                <defs>
-                    <radialGradient id="cg1" cx="50%" cy="50%" r="50%">
-                        <stop offset="0%" stop-color="#7C3AED" stop-opacity="0.65" />
-                        <stop offset="100%" stop-color="#7C3AED" stop-opacity="0" />
-                    </radialGradient>
-                    <radialGradient id="cg2" cx="50%" cy="50%" r="50%">
-                        <stop offset="0%" stop-color="#3B82F6" stop-opacity="0.55" />
-                        <stop offset="100%" stop-color="#3B82F6" stop-opacity="0" />
-                    </radialGradient>
-                    <radialGradient id="cg3" cx="50%" cy="50%" r="50%">
-                        <stop offset="0%" stop-color="#C9A24A" stop-opacity="0.35" />
-                        <stop offset="100%" stop-color="#C9A24A" stop-opacity="0" />
-                    </radialGradient>
-                    <filter id="cgoo"><feGaussianBlur stdDeviation="60" /></filter>
-                </defs>
-                <g filter="url(#cgoo)">
-                    <circle cx="200" cy="200" r="280" fill="url(#cg1)">
-                        <animate attributeName="cx" values="200;350;200" dur="22s" repeatCount="indefinite" />
-                        <animate attributeName="cy" values="200;320;200" dur="18s" repeatCount="indefinite" />
-                    </circle>
-                    <circle cx="1300" cy="700" r="360" fill="url(#cg2)">
-                        <animate attributeName="cx" values="1300;1150;1300" dur="24s" repeatCount="indefinite" />
-                        <animate attributeName="cy" values="700;580;700" dur="20s" repeatCount="indefinite" />
-                    </circle>
-                    <circle cx="900" cy="200" r="240" fill="url(#cg3)">
-                        <animate attributeName="cx" values="900;1050;900" dur="26s" repeatCount="indefinite" />
-                        <animate attributeName="cy" values="200;350;200" dur="22s" repeatCount="indefinite" />
-                    </circle>
-                </g>
-            </svg>
-            <div class="grid"></div>
-        </div>
-
-        <!-- Floating flash notice -->
-        <transition name="v3-toast">
-            <div v-if="notice.visible" class="v3-toast" :class="`v3-toast--${notice.type}`" role="alert">
-                <i :class="notice.type === 'error' ? 'bi bi-exclamation-triangle-fill' : 'bi bi-info-circle-fill'"></i>
-                <span>{{ notice.message }}</span>
-                <button class="v3-toast__close" type="button" aria-label="Tutup" @click="notice.visible = false">
-                    <i class="bi bi-x-lg"></i>
-                </button>
-            </div>
-        </transition>
-
-        <!-- TOP -->
-        <nav class="topbar animate-fade-down">
-            <Link href="/" class="mark-login">
-                <img src="/logo/EVOGROUP.png" alt="EVO Group" class="brand-logo" />
-                <div class="mark-login-text">
-                    <b>EVO Career</b>
-                    <small>Portal Kandidat</small>
+    <AuthShell
+        :page-title="pageTitle"
+        eyebrow="Portal Career"
+        title="Karier Impian"
+        title-accent="Dimulai di Sini."
+        :lede="ledeText"
+        sub-mobile="Satu akun untuk lamaran & Management Trainee EVO Group"
+        :card-title="isLogin ? 'Selamat Datang' : 'Buat Akun'"
+        :card-subtitle="isLogin ? 'Masuk untuk melanjutkan perjalanan karirmu.' : 'Lengkapi data untuk membuat akun kandidat.'"
+        :card-tag="isLogin ? 'Autentikasi' : 'Registrasi'"
+        :show-ver="false"
+        :notice="notice"
+        @close-notice="notice.visible = false"
+    >
+        <!-- ═══ LANGKAH 1 REGISTER — CEK KTP ═══ -->
+        <form v-if="!isLogin && regStep === 1" @submit.prevent="cekKtp" novalidate>
+            <div class="ktp-intro">
+                <span class="ktp-intro__ico"><i class="bi bi-person-vcard"></i></span>
+                <div>
+                    <div class="ktp-intro__title">Verifikasi KTP dulu</div>
+                    <div class="ktp-intro__sub">Masukkan 16 digit NIK. Kami cek ketersediaannya sebelum kamu mengisi data diri.</div>
                 </div>
-            </Link>
-            <div class="top-right">
-                <Link href="/" class="top-link"><i class="bi bi-arrow-left"></i> Kembali ke Karir</Link>
-                <span class="v-pill">
-                    <span class="desktop-only">
-                        <i class="bi bi-shield-fill-check" style="color: var(--indigo); font-size: 11px; margin-right: 5px; vertical-align: middle"></i>
-                        Portal Karir Kandidat <span style="color: rgba(11, 16, 51, 0.15)">|</span>
-                        <b style="color: var(--indigo); font-weight: 700">EVO Group</b>
-                    </span>
-                    <span class="mobile-only"><span class="status-dot"></span> Portal Karir</span>
-                </span>
             </div>
-        </nav>
 
-        <!-- MAIN -->
-        <main class="stage-grid">
-            <section class="statement animate-fade-right">
-                <span class="eyebrow"><span class="dot"></span>Portal Karir Kandidat</span>
-                <h1 class="display">
-                    Karier Impian<br />
-                    <span>Dimulai di Sini.</span>
-                </h1>
-                <p class="lede">
-                    Satu akun untuk melamar lowongan, mengikuti program Management Trainee, dan memantau progres
-                    seleksimu. Silakan {{ isLogin ? 'masuk' : 'daftar' }} untuk melanjutkan.
-                </p>
-                <p class="sub-mobile">Satu akun untuk lamaran &amp; Management Trainee EVO Group</p>
-            </section>
+            <div class="field">
+                <label for="c-nik"><span class="lbl-text"><i class="bi bi-person-vcard"></i> Nomor KTP (NIK)</span></label>
+                <div class="input-wrap" :class="{ 'is-error': errors.nik }">
+                    <input id="c-nik" v-model="form.nik" type="text" inputmode="numeric" maxlength="16" placeholder="16 digit sesuai KTP" autocomplete="off" autofocus @input="onNikInput" @keyup.enter="cekKtp" />
+                    <span class="nik-count" :class="{ 'is-ok': form.nik.length === 16 }">{{ form.nik.length }}/16</span>
+                </div>
+                <p v-if="errors.nik" class="help">{{ errors.nik }}</p>
+                <p v-else class="help help--muted">Digunakan sebagai identitas peserta seleksi. Satu KTP untuk satu akun.</p>
+            </div>
 
-            <aside class="stage-side animate-fade-left" style="animation-delay: 0.1s">
-                <div class="float-card">
-                    <div class="card-head">
-                        <h3>{{ isLogin ? 'Selamat Datang' : 'Buat Akun' }}</h3>
-                        <span class="tag">{{ isLogin ? 'Autentikasi' : 'Registrasi' }}</span>
+            <button type="submit" class="btn-login" :disabled="form.nik.length !== 16 || checkingKtp">
+                <span v-if="checkingKtp" class="spinner" aria-hidden="true"></span>
+                {{ checkingKtp ? 'Memeriksa…' : 'Cek KTP & Lanjutkan' }}
+                <i v-if="!checkingKtp" class="bi bi-arrow-right"></i>
+            </button>
+
+            <p class="switch-row">Sudah punya akun? <Link :href="loginUrl" class="switch-link">Masuk di sini</Link></p>
+            <div class="ver-row"><span>EVO <b>Career</b></span><span>© 2026 EVO Group</span></div>
+        </form>
+
+        <!-- ═══ LANGKAH 2 REGISTER (form lengkap) & LOGIN ═══ -->
+        <form v-else @submit.prevent="submit" novalidate>
+            <!-- Ringkasan KTP terverifikasi (register step 2) -->
+            <div v-if="!isLogin" class="ktp-ok">
+                <span class="ktp-ok__ico"><i class="bi bi-patch-check-fill"></i></span>
+                <div class="ktp-ok__body">
+                    <span class="ktp-ok__label">KTP terverifikasi</span>
+                    <span class="ktp-ok__nik">{{ form.nik }}</span>
+                </div>
+                <button type="button" class="ktp-ok__edit" @click="gantiKtp"><i class="bi bi-pencil"></i> Ubah</button>
+            </div>
+
+            <!-- Nama (register) -->
+            <div v-if="!isLogin" class="field">
+                <label for="c-nama"><span class="lbl-text"><i class="bi bi-person"></i> Nama Lengkap</span></label>
+                <div class="input-wrap" :class="{ 'is-error': errors.nama }">
+                    <input id="c-nama" v-model="form.nama" type="text" placeholder="Nama sesuai KTP" autocomplete="name" autofocus @input="clearErr('nama')" />
+                </div>
+                <p v-if="errors.nama" class="help">{{ errors.nama }}</p>
+            </div>
+
+            <!-- Email -->
+            <div class="field">
+                <label for="c-email"><span class="lbl-text"><i class="bi bi-envelope"></i> Email</span></label>
+                <div class="input-wrap" :class="{ 'is-error': errors.email }">
+                    <input id="c-email" v-model="form.email" type="email" placeholder="nama@email.com" autocomplete="email" :autofocus="isLogin" @input="clearErr('email')" />
+                </div>
+                <p v-if="errors.email" class="help">{{ errors.email }}</p>
+            </div>
+
+            <!-- No. HP (register) -->
+            <div v-if="!isLogin" class="field">
+                <label for="c-phone"><span class="lbl-text"><i class="bi bi-telephone"></i> No. HP</span></label>
+                <div class="input-wrap" :class="{ 'is-error': errors.phone }">
+                    <input id="c-phone" v-model="form.phone" type="tel" inputmode="numeric" placeholder="62812xxxxxxx" autocomplete="tel" @input="onPhoneInput" />
+                </div>
+                <p v-if="errors.phone" class="help">{{ errors.phone }}</p>
+            </div>
+
+            <!-- Password -->
+            <div class="field">
+                <label for="c-pass">
+                    <span class="lbl-text"><i class="bi bi-key"></i> {{ isLogin ? 'Password' : 'Buat Password' }}</span>
+                    <button v-if="isLogin" type="button" class="forgot-link" @click="goForgot">Lupa sandi?</button>
+                </label>
+                <div class="input-wrap" :class="{ 'is-error': errors.password }">
+                    <input
+                        id="c-pass"
+                        v-model="form.password"
+                        :type="showPassword ? 'text' : 'password'"
+                        :placeholder="isLogin ? 'Masukan Password' : 'Minimal 6 karakter'"
+                        :autocomplete="isLogin ? 'current-password' : 'new-password'"
+                        @input="clearErr('password')"
+                    />
+                    <button type="button" class="toggle-eye" :aria-label="showPassword ? 'Sembunyikan' : 'Tampilkan'" @click="showPassword = !showPassword">
+                        <i :class="showPassword ? 'bi bi-eye-slash' : 'bi bi-eye'"></i>
+                    </button>
+                </div>
+                <p v-if="errors.password" class="help">{{ errors.password }}</p>
+            </div>
+
+            <!-- Cloudflare Turnstile (login) — tampilan custom, ruang tetap (anti-geser). -->
+            <div v-if="isLogin && turnstileSiteKey" class="ts2">
+                <!-- Widget asli Cloudflare: tampil HANYA saat idle (menunggu). Saat ok/error
+                     widget disembunyikan total → tidak menumpuk dengan kartu custom. -->
+                <div v-show="tsState === 'idle'" ref="tsWidget" class="ts2__widget"></div>
+
+                <!-- Kartu sukses -->
+                <div v-if="tsState === 'ok'" class="ts2__card ts2__card--ok">
+                    <span class="ts2__ico ts2__ico--ok"><i class="bi bi-check-lg"></i></span>
+                    <div class="ts2__txt">
+                        <b>Verifikasi keamanan lolos</b>
+                        <small>Anti-bot &amp; perangkat tepercaya</small>
                     </div>
-
-                    <form @submit.prevent="submit" novalidate>
-                        <!-- Nama (register) -->
-                        <div v-if="!isLogin" class="field">
-                            <label for="c-nama"><span class="lbl-text"><i class="bi bi-person"></i> Nama Lengkap</span></label>
-                            <div class="input-wrap" :class="{ 'is-error': errors.nama }">
-                                <input id="c-nama" v-model="form.nama" type="text" placeholder="Nama sesuai KTP" autocomplete="name" @input="clearErr('nama')" />
-                            </div>
-                            <p v-if="errors.nama" class="help">{{ errors.nama }}</p>
-                        </div>
-
-                        <!-- Email -->
-                        <div class="field">
-                            <label for="c-email"><span class="lbl-text"><i class="bi bi-envelope"></i> Email</span></label>
-                            <div class="input-wrap" :class="{ 'is-error': errors.email }">
-                                <input id="c-email" v-model="form.email" type="email" placeholder="nama@email.com" autocomplete="email" autofocus @input="clearErr('email')" />
-                            </div>
-                            <p v-if="errors.email" class="help">{{ errors.email }}</p>
-                        </div>
-
-                        <!-- No. HP (register) -->
-                        <div v-if="!isLogin" class="field">
-                            <label for="c-phone"><span class="lbl-text"><i class="bi bi-telephone"></i> No. HP</span></label>
-                            <div class="input-wrap" :class="{ 'is-error': errors.phone }">
-                                <input id="c-phone" v-model="form.phone" type="tel" inputmode="numeric" placeholder="62812xxxxxxx" autocomplete="tel" @input="onPhoneInput" />
-                            </div>
-                            <p v-if="errors.phone" class="help">{{ errors.phone }}</p>
-                        </div>
-
-                        <!-- Password -->
-                        <div class="field">
-                            <label for="c-pass">
-                                <span class="lbl-text"><i class="bi bi-key"></i> {{ isLogin ? 'Password' : 'Buat Password' }}</span>
-                                <button v-if="isLogin" type="button" class="forgot-link" @click="goForgot">Lupa sandi?</button>
-                            </label>
-                            <div class="input-wrap" :class="{ 'is-error': errors.password }">
-                                <input
-                                    id="c-pass"
-                                    v-model="form.password"
-                                    :type="showPassword ? 'text' : 'password'"
-                                    :placeholder="isLogin ? 'Masukan Password' : 'Minimal 6 karakter'"
-                                    :autocomplete="isLogin ? 'current-password' : 'new-password'"
-                                    @input="clearErr('password')"
-                                />
-                                <button type="button" class="toggle-eye" :aria-label="showPassword ? 'Sembunyikan' : 'Tampilkan'" @click="showPassword = !showPassword">
-                                    <i :class="showPassword ? 'bi bi-eye-slash' : 'bi bi-eye'"></i>
-                                </button>
-                            </div>
-                            <p v-if="errors.password" class="help">{{ errors.password }}</p>
-                        </div>
-
-                        <button type="submit" class="btn-login" :disabled="!canSubmit">
-                            <span v-if="processing" class="spinner" aria-hidden="true"></span>
-                            {{ processing ? 'Memproses…' : isLogin ? 'Login Akses' : 'Daftar Sekarang' }}
-                            <i v-if="!processing" class="bi bi-arrow-right"></i>
-                        </button>
-
-                        <p class="switch-row">
-                            <template v-if="isLogin">
-                                Belum punya akun?
-                                <Link :href="registerUrl" class="switch-link">Daftar sekarang</Link>
-                            </template>
-                            <template v-else>
-                                Sudah punya akun?
-                                <Link :href="loginUrl" class="switch-link">Masuk di sini</Link>
-                            </template>
-                        </p>
-
-                        <!-- Baris kirim ulang verifikasi (muncul setelah register /
-                             login ditolak karena email belum diverifikasi) -->
-                        <p v-if="pendingVerifEmail" class="verif-pending">
-                            <i class="bi bi-envelope-exclamation"></i>
-                            Belum menerima email verifikasi?
-                            <button type="button" class="switch-link" :disabled="resendingVerif" @click="resendVerif">
-                                {{ resendingVerif ? 'Mengirim…' : 'Kirim ulang' }}
-                            </button>
-                        </p>
-
-                        <div class="ver-row">
-                            <span>EVO <b>Career</b></span>
-                            <span>© 2026 EVO Group</span>
-                        </div>
-                    </form>
+                    <span class="ts2__secure"><i class="bi bi-shield-lock"></i> SECURE</span>
                 </div>
-            </aside>
-        </main>
 
-        <!-- SUBS -->
-        <div class="subs animate-fade-up">
-            <span class="lbl">Supported By</span>
-            <div class="logos">
-                <template v-for="(co, i) in subsidiaries" :key="co.alt">
-                    <img :src="co.src" :alt="co.alt" loading="lazy" decoding="async" />
-                    <span v-if="i < subsidiaries.length - 1" class="dv"></span>
-                </template>
+                <!-- Kartu error (bersih — widget Cloudflare disembunyikan) -->
+                <div v-else-if="tsState === 'error'" class="ts2__card ts2__card--err">
+                    <span class="ts2__ico ts2__ico--err"><i class="bi bi-exclamation-lg"></i></span>
+                    <div class="ts2__txt">
+                        <b>Verifikasi gagal</b>
+                        <small>Tidak dapat terhubung — coba muat ulang</small>
+                    </div>
+                    <button type="button" class="ts2__reload" @click="renderTurnstile"><i class="bi bi-arrow-clockwise"></i> Muat ulang</button>
+                </div>
             </div>
-            <span class="lbl">Group of Companies</span>
-        </div>
 
-    </div>
+            <button type="submit" class="btn-login" :disabled="!canSubmit">
+                <span v-if="processing" class="spinner" aria-hidden="true"></span>
+                {{ processing ? 'Memproses…' : isLogin ? 'Login Akses' : 'Daftar Sekarang' }}
+                <i v-if="!processing" class="bi bi-arrow-right"></i>
+            </button>
+
+            <p class="switch-row">
+                <template v-if="isLogin">Belum punya akun? <Link :href="registerUrl" class="switch-link">Daftar sekarang</Link></template>
+                <template v-else>Sudah punya akun? <Link :href="loginUrl" class="switch-link">Masuk di sini</Link></template>
+            </p>
+
+            <p v-if="pendingVerifEmail" class="verif-pending">
+                <i class="bi bi-envelope-exclamation"></i>
+                Belum menerima email verifikasi?
+                <button type="button" class="switch-link" :disabled="resendingVerif" @click="resendVerif">
+                    {{ resendingVerif ? 'Mengirim…' : 'Kirim ulang' }}
+                </button>
+            </p>
+
+            <div class="ver-row"><span>EVO <b>Career</b></span><span>© 2026 EVO Group</span></div>
+        </form>
+    </AuthShell>
 </template>
 
 <style scoped>
-* {
-    box-sizing: border-box;
-}
-.bi {
-    display: contents;
-}
-.sub-mobile {
-    display: none;
-}
-.desktop-only {
-    display: inline-flex;
-    align-items: center;
-    gap: 3px;
-}
-.mobile-only {
-    display: none;
-}
-
-.shell {
-    --bg-0: #eef0ff;
-    --ink: #0b1033;
-    --indigo: #4f46e5;
-    --indigo-2: #6366f1;
-    --violet: #7c3aed;
-    --gold: #c9a24a;
-    --text: #0f1235;
-    --text-soft: #5b5f86;
-    --line: rgba(11, 16, 51, 0.1);
-    position: fixed;
-    inset: 0;
-    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
-    color: var(--text);
-    background: var(--bg-0);
-    overflow-y: auto;
-    overflow-x: hidden;
+/* Turnstile custom — ruang tetap (min-height) supaya widget/kartu tidak menggeser layout. */
+.ts2 {
+    margin: 6px 0 14px;
+    min-height: 70px;
     display: flex;
     flex-direction: column;
-    -webkit-font-smoothing: antialiased;
-}
-
-/* BACKDROP */
-.stage {
-    position: fixed;
-    inset: 0;
-    overflow: hidden;
-    z-index: 0;
-}
-.blob-svg {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    animation: ambientFade 2s ease-out forwards;
-    opacity: 0;
-    will-change: transform, opacity;
-}
-.grid {
-    position: absolute;
-    inset: 0;
-    background-image:
-        linear-gradient(rgba(79, 70, 229, 0.05) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(79, 70, 229, 0.05) 1px, transparent 1px);
-    background-size: 56px 56px;
-    -webkit-mask-image: radial-gradient(ellipse at 70% 50%, #000 30%, transparent 75%);
-    mask-image: radial-gradient(ellipse at 70% 50%, #000 30%, transparent 75%);
-}
-
-/* TOP NAV */
-.topbar {
-    position: relative;
-    z-index: 3;
-    padding: 24px 56px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-shrink: 0;
-}
-.mark-login {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    text-decoration: none;
-    color: inherit;
-}
-.brand-logo {
-    height: 48px;
-    width: auto;
-    object-fit: contain;
-    filter: drop-shadow(0 4px 12px rgba(11, 16, 51, 0.15));
-    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-.brand-logo:hover {
-    transform: scale(1.08) rotate(-2deg);
-}
-.mark-login-text {
-    display: flex;
-    flex-direction: column;
-}
-.mark-login b {
-    font-weight: 700;
-    font-size: 16px;
-    letter-spacing: -0.01em;
-}
-.mark-login small {
-    display: block;
-    font-size: 11px;
-    color: var(--text-soft);
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    margin-top: 2px;
-}
-.top-right {
-    display: flex;
-    align-items: center;
-    gap: 24px;
-}
-.top-link {
-    font-size: 13px;
-    color: var(--text-soft);
-    text-decoration: none;
-    font-weight: 600;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    transition: color 0.3s ease, transform 0.3s ease;
-}
-.top-link:hover {
-    color: var(--ink);
-    transform: translateY(-1px);
-}
-.v-pill {
-    display: inline-flex;
-    align-items: center;
+    gap: 8px;
     justify-content: center;
-    gap: 6px;
-    padding: 5px 14px;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.45);
-    border: 1px solid rgba(255, 255, 255, 0.65);
-    font-size: 10px;
-    color: #475569;
-    font-weight: 500;
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    box-shadow: 0 4px 12px rgba(11, 16, 51, 0.03);
-    letter-spacing: 0.02em;
 }
-
-/* MAIN STAGE */
-.stage-grid {
-    position: relative;
-    z-index: 2;
-    flex: 1 0 auto;
-    padding: 0 56px 24px;
-    display: grid;
-    grid-template-columns: 1fr 460px;
-    align-items: center;
-    gap: 40px;
-    max-width: 1360px;
-    margin: 0 auto;
+.ts2__widget {
     width: 100%;
+    min-height: 62px;
 }
-.statement {
-    position: relative;
-}
-.eyebrow {
-    display: inline-flex;
-    align-items: center;
-    gap: 10px;
-    padding: 8px 14px;
-    border-radius: 999px;
-    background: rgba(79, 70, 229, 0.1);
-    color: var(--indigo);
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    margin-bottom: 24px;
-}
-.eyebrow .dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--indigo);
-    box-shadow: 0 0 12px var(--indigo);
-}
-.display {
-    margin: 0;
-    font-family: 'Plus Jakarta Sans', sans-serif;
-    font-size: clamp(48px, 5.6vw, 84px);
-    line-height: 1.02;
-    font-weight: 700;
-    letter-spacing: -0.035em;
-    color: var(--ink);
-}
-.display span {
-    display: inline-block;
-    font-family: 'Fraunces', serif;
-    font-style: italic;
-    font-weight: 400;
-    background: linear-gradient(120deg, var(--violet) 0%, var(--indigo) 45%, #2a6fdb 75%, var(--gold) 110%);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    padding-right: 0.04em;
-}
-.lede {
-    margin-top: 24px;
-    max-width: 460px;
-    color: var(--text-soft);
-    font-size: 15px;
-    line-height: 1.55;
-}
-
-/* FLOATING GLASS CARD */
-.float-card {
-    position: relative;
-    background: linear-gradient(145deg, rgba(255, 255, 255, 0.85) 0%, rgba(255, 255, 255, 0.45) 100%);
-    backdrop-filter: blur(24px) saturate(200%);
-    -webkit-backdrop-filter: blur(24px) saturate(200%);
-    border: 1px solid rgba(255, 255, 255, 0.9);
-    border-radius: 36px;
-    padding: 38px 44px 32px;
-    box-shadow:
-        inset 0 2px 4px rgba(255, 255, 255, 0.8),
-        inset 0 -2px 10px rgba(255, 255, 255, 0.3),
-        0 40px 80px -20px rgba(11, 16, 51, 0.25),
-        0 16px 40px -10px rgba(79, 70, 229, 0.15);
-    transform: translateY(-12px);
-    will-change: transform;
-    transition: transform 0.4s ease, box-shadow 0.4s ease;
-}
-.float-card:hover {
-    transform: translateY(-18px);
-    box-shadow:
-        inset 0 2px 4px rgba(255, 255, 255, 0.8),
-        inset 0 -2px 10px rgba(255, 255, 255, 0.3),
-        0 50px 100px -20px rgba(11, 16, 51, 0.3),
-        0 20px 50px -10px rgba(79, 70, 229, 0.2);
-}
-.card-head {
+/* Kartu status (sukses & error) — satu bentuk, warna berbeda. */
+.ts2__card {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    margin-bottom: 30px;
-}
-.card-head h3 {
-    font-size: 24px;
-    font-weight: 800;
-    margin: 0;
-    letter-spacing: -0.02em;
-    background: linear-gradient(135deg, var(--ink) 20%, var(--indigo) 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    color: transparent;
-}
-.card-head .tag {
-    font-size: 10.5px;
-    font-weight: 800;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: var(--indigo);
-    background: rgba(79, 70, 229, 0.1);
-    padding: 6px 12px;
-    border-radius: 8px;
-}
-.field {
-    margin-bottom: 14px;
-}
-.field label {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--ink);
-    margin-bottom: 8px;
-}
-.field label .lbl-text {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-.field label .lbl-text i {
-    font-size: 13px;
-    color: var(--indigo);
-}
-.input-wrap {
-    position: relative;
-    display: flex;
-    align-items: center;
-    background: #ffffff;
-    border: 1.5px solid rgba(11, 16, 51, 0.15);
+    gap: 13px;
+    padding: 12px 15px;
     border-radius: 16px;
-    box-shadow: 0 2px 10px rgba(11, 16, 51, 0.03);
-    transition: border-color 0.3s ease, background-color 0.3s ease, box-shadow 0.3s ease;
-    transform: translateZ(0);
-    overflow: hidden;
+    border: 1.5px solid;
+    animation: tsPop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
-.input-wrap:focus-within {
-    border-color: var(--indigo);
-    box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.12), 0 4px 12px rgba(11, 16, 51, 0.05);
+.ts2__card--ok {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(16, 185, 129, 0.05));
+    border-color: rgba(16, 185, 129, 0.35);
+    box-shadow: 0 10px 24px -10px rgba(16, 185, 129, 0.45);
 }
-.input-wrap.is-error {
-    border-color: #ef4444;
-    box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.12);
+.ts2__card--err {
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.1), rgba(239, 68, 68, 0.04));
+    border-color: rgba(239, 68, 68, 0.35);
+    box-shadow: 0 10px 24px -10px rgba(239, 68, 68, 0.4);
 }
-.input-wrap input {
-    flex: 1;
-    border: 0;
-    background: transparent;
-    padding: 16px 20px;
-    font: 500 15px 'Plus Jakarta Sans';
-    color: var(--ink);
-    outline: none;
-    border-radius: inherit;
-}
-.input-wrap input::placeholder {
-    color: #9ca0c6;
-    font-weight: 400;
-}
-.input-wrap input:-webkit-autofill,
-.input-wrap input:-webkit-autofill:hover,
-.input-wrap input:-webkit-autofill:focus {
-    -webkit-box-shadow: 0 0 0 1000px #ffffff inset !important;
-    -webkit-text-fill-color: var(--ink) !important;
-    caret-color: var(--ink);
-    transition: background-color 50000s ease-in-out 0s;
-}
-.toggle-eye {
-    background: none;
-    border: 0;
-    padding: 0 14px;
-    color: #8a8fb8;
-    cursor: pointer;
-    font-size: 15px;
-    transition: color 0.3s ease, transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-.toggle-eye:hover {
-    color: var(--indigo);
-    transform: scale(1.15);
-}
-.help {
-    margin: 6px 2px 0;
-    font-size: 12px;
-    color: #dc2626;
-}
-.forgot-link {
-    border: none;
-    background: none;
-    padding: 0;
-    color: var(--indigo);
-    font: 700 11.5px 'Plus Jakarta Sans';
-    cursor: pointer;
-}
-.forgot-link:hover {
-    color: var(--violet);
-    text-decoration: underline;
-}
-.btn-login {
-    width: 100%;
-    margin-top: 4px;
-    padding: 16px 20px;
-    border: 0;
-    cursor: pointer;
-    border-radius: 16px;
-    background: linear-gradient(135deg, var(--indigo) 0%, var(--violet) 100%); /* selaras CTA admin: indigo → violet */
-    color: #fff;
-    font: 700 15px 'Plus Jakarta Sans';
-    letter-spacing: 0.03em;
-    box-shadow: 0 16px 36px -10px rgba(124, 58, 237, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.25);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 12px;
-    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease, opacity 0.6s ease;
-    position: relative;
-    overflow: hidden;
-}
-.btn-login:hover:not(:disabled) {
-    transform: translateY(-3px) scale(1.015);
-    box-shadow: 0 24px 48px -10px rgba(79, 70, 229, 0.6);
-}
-.btn-login:active:not(:disabled) {
-    transform: translateY(1px) scale(0.98);
-}
-.btn-login:disabled {
-    opacity: 0.55;
-    cursor: not-allowed;
-    box-shadow: none;
-}
-.spinner {
-    width: 18px;
-    height: 18px;
-    border: 2.5px solid rgba(255, 255, 255, 0.45);
-    border-top-color: #fff;
+.ts2__ico {
+    flex: 0 0 auto;
+    width: 38px;
+    height: 38px;
     border-radius: 50%;
-    animation: spin 0.7s linear infinite;
-}
-@keyframes spin {
-    to {
-        transform: rotate(360deg);
-    }
-}
-.switch-row {
-    margin: 16px 0 0;
-    text-align: center;
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--text-soft);
-}
-.switch-link {
-    border: none;
-    background: transparent;
-    padding: 0;
-    color: var(--indigo);
-    font: 700 13px 'Plus Jakarta Sans';
-    cursor: pointer;
-}
-.switch-link:hover {
-    color: var(--violet);
-    text-decoration: underline;
-}
-.verif-pending {
-    margin: 12px 0 0;
-    padding: 10px 14px;
-    text-align: center;
-    font-size: 12.5px;
-    font-weight: 500;
-    color: var(--text-soft);
-    background: rgba(79, 70, 229, 0.08);
-    border: 1px solid rgba(79, 70, 229, 0.18);
-    border-radius: 12px;
-}
-.verif-pending i {
-    color: var(--indigo);
-}
-.verif-pending .switch-link:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-}
-.ver-row {
-    margin-top: 14px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-size: 11.5px;
-    color: var(--text-soft);
-}
-.ver-row b {
-    color: var(--ink);
-    font-weight: 700;
-    letter-spacing: 0.05em;
-}
-
-/* BOTTOM SUBSIDIARIES */
-.subs {
-    position: relative;
-    z-index: 3;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 16px 28px;
-    margin: 0 56px 24px;
-    background: rgba(255, 255, 255, 0.65);
-    backdrop-filter: blur(25px);
-    border: 1px solid rgba(255, 255, 255, 0.8);
-    border-radius: 24px;
-    box-shadow: 0 12px 36px -12px rgba(11, 16, 51, 0.1);
-    transition: transform 0.3s ease, box-shadow 0.3s ease;
-}
-.subs:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 16px 42px -12px rgba(11, 16, 51, 0.15);
-}
-.subs .lbl {
-    font-size: 10.5px;
-    color: var(--text-soft);
-    letter-spacing: 0.22em;
-    text-transform: uppercase;
-    font-weight: 600;
-}
-.subs .logos {
-    display: flex;
-    align-items: center;
-    gap: 32px;
-}
-.subs .logos img {
-    height: 30px;
-    opacity: 0.88;
-    transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-.subs .logos img:hover {
-    opacity: 1;
-    transform: scale(1.1) translateY(-2px);
-}
-.subs .logos .dv {
-    width: 1px;
-    height: 22px;
-    background: var(--line);
-}
-
-/* Toast */
-.v3-toast {
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    z-index: 50;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    max-width: min(92vw, 380px);
-    padding: 14px 16px;
-    border-radius: 14px;
-    font-size: 0.9rem;
-    font-weight: 500;
-    color: #fff;
-    box-shadow: 0 18px 40px -12px rgba(0, 0, 0, 0.35);
-    backdrop-filter: blur(10px);
-}
-.v3-toast--error {
-    background: linear-gradient(120deg, #ef4444, #dc2626);
-}
-.v3-toast--info {
-    background: linear-gradient(120deg, var(--indigo), var(--violet));
-}
-.v3-toast span {
-    flex: 1;
-}
-.v3-toast__close {
-    border: none;
-    background: rgba(255, 255, 255, 0.18);
-    color: #fff;
-    width: 26px;
-    height: 26px;
-    border-radius: 8px;
-    cursor: pointer;
     display: grid;
     place-items: center;
+    color: #fff;
+    font-size: 20px;
 }
-.v3-toast-enter-active,
-.v3-toast-leave-active {
-    transition: opacity 0.3s ease, transform 0.3s ease;
+.ts2__ico--ok {
+    background: linear-gradient(135deg, #10b981, #059669);
+    box-shadow: 0 8px 18px -4px rgba(16, 185, 129, 0.55);
 }
-.v3-toast-enter-from,
-.v3-toast-leave-to {
-    opacity: 0;
-    transform: translateX(40px);
+.ts2__ico--err {
+    background: linear-gradient(135deg, #f87171, #dc2626);
+    box-shadow: 0 8px 18px -4px rgba(239, 68, 68, 0.55);
 }
-
-/* Entrance animations */
-@keyframes ambientFade {
-    0% {
-        opacity: 0;
-        transform: scale(0.95) translateY(10px);
-    }
-    100% {
-        opacity: 1;
-        transform: scale(1) translateY(0);
-    }
+.ts2__card--err .ts2__txt b { color: #991b1b; }
+.ts2__card--err .ts2__txt small { color: #b45c5c; }
+.ts2__reload {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid rgba(239, 68, 68, 0.4);
+    background: #fff;
+    color: #dc2626;
+    font: 700 11.5px 'Inter', sans-serif;
+    padding: 7px 12px;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background 0.18s ease;
 }
-@keyframes revealDown {
-    0% {
-        opacity: 0;
-        transform: translateY(-20px);
-    }
-    100% {
-        opacity: 1;
-        transform: translateY(0);
-    }
+.ts2__reload:hover { background: rgba(239, 68, 68, 0.08); }
+.ts2__txt {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    line-height: 1.25;
 }
-@keyframes revealUp {
-    0% {
-        opacity: 0;
-        transform: translateY(20px) scale(0.98);
-    }
-    100% {
-        opacity: 1;
-        transform: translateY(0) scale(1);
-    }
+.ts2__txt b {
+    font-size: 14px;
+    font-weight: 800;
+    color: #065f46;
 }
-@keyframes revealRight {
-    0% {
-        opacity: 0;
-        transform: translateX(-50px);
-    }
-    100% {
-        opacity: 1;
-        transform: translateX(0);
-    }
+.ts2__txt small {
+    font-size: 12px;
+    color: #4b8a76;
+    margin-top: 1px;
 }
-@keyframes revealPop {
-    0% {
-        opacity: 0;
-        transform: translateX(60px) scale(0.95);
-    }
-    100% {
-        opacity: 1;
-        transform: translateX(0) scale(1);
-    }
+.ts2__secure {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    color: #059669;
 }
-.animate-fade-down {
-    animation: revealDown 1s cubic-bezier(0.22, 1, 0.36, 1) forwards;
-    opacity: 0;
-    will-change: transform, opacity;
+@keyframes tsPop {
+    from { opacity: 0; transform: scale(0.94); }
+    to { opacity: 1; transform: scale(1); }
 }
-.animate-fade-up {
-    animation: revealUp 1s cubic-bezier(0.22, 1, 0.36, 1) forwards;
-    animation-delay: 0.5s;
-    opacity: 0;
-    will-change: transform, opacity;
-}
-.animate-fade-right {
-    animation: revealRight 1s cubic-bezier(0.22, 1, 0.36, 1) forwards;
-    animation-delay: 0.15s;
-    opacity: 0;
-    will-change: transform, opacity;
-}
-.animate-fade-left {
-    animation: revealPop 1.2s cubic-bezier(0.22, 1, 0.36, 1) forwards;
-    animation-delay: 0.25s;
-    opacity: 0;
-    will-change: transform, opacity;
-}
-
-/* TABLET */
-@media (max-width: 1099px) {
-    .topbar {
-        padding: 22px 36px;
-    }
-    .stage-grid {
-        grid-template-columns: 1fr;
-        gap: 32px;
-        padding: 20px 36px 24px;
-        align-items: center;
-    }
-    .display {
-        font-size: clamp(48px, 6.5vw, 68px);
-        line-height: 1.05;
-    }
-    .lede {
-        margin-top: 18px;
-        font-size: 14.5px;
-        max-width: 100%;
-    }
-    .float-card {
-        transform: none;
-        max-width: 440px;
-        margin: 0 auto;
-        padding: 32px 30px 24px;
-    }
-    .subs {
-        margin: 0 36px 24px;
-        padding: 14px 22px;
-    }
-    .subs .logos {
-        gap: 22px;
-    }
-    .subs .logos img {
-        height: 24px;
-    }
-}
-
-/* MOBILE */
-@media (max-width: 767px) {
-    .topbar {
-        padding: 12px 18px;
-        flex-wrap: wrap;
-        gap: 8px;
-    }
-    .mark-login .brand-logo {
-        height: 28px;
-    }
-    .mark-login b {
-        font-size: 13px;
-    }
-    .mark-login small {
-        font-size: 8.5px;
-        letter-spacing: 0.1em;
-    }
-    .top-right {
-        gap: 8px;
-    }
-    .top-link {
-        display: none;
-    }
-    .v-pill {
-        padding: 3px 8px;
-        font-size: 8px;
-        gap: 4px;
-    }
-    .statement {
-        text-align: center;
-    }
-    .eyebrow {
-        display: none !important;
-    }
-    .display {
-        font-size: clamp(26px, 7.5vw, 32px);
-        line-height: 1.1;
-    }
-    .lede {
-        display: none !important;
-    }
-    .stage-grid {
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        flex: 1 1 auto;
-        padding: 8px 18px 12px;
-        gap: 16px;
-    }
-    .stage-side {
-        width: 100%;
-    }
-    .float-card {
-        transform: none;
-        max-width: 100%;
-        padding: 22px 20px 18px;
-        border-radius: 22px;
-    }
-    .card-head {
-        margin-bottom: 16px;
-    }
-    .card-head h3 {
-        font-size: 18px;
-    }
-    .field {
-        margin-bottom: 10px;
-    }
-    .input-wrap input {
-        font-size: 14px;
-        padding: 13px 16px;
-    }
-    .subs {
-        margin: 0 18px 12px;
-        padding: 8px 14px;
-        flex-direction: column;
-        gap: 4px;
-        text-align: center;
-        border-radius: 14px;
-    }
-    .subs .lbl {
-        font-size: 8px;
-    }
-    .subs .logos {
-        gap: 12px;
-        flex-wrap: wrap;
-        justify-content: center;
-    }
-    .subs .logos img {
-        height: 18px;
-    }
-    .subs .logos .dv {
-        display: none;
-    }
-    .sub-mobile {
-        display: block;
-        font-size: 12.5px;
-        color: var(--text-soft);
-        font-weight: 500;
-        margin-top: 8px;
-    }
-    .desktop-only {
-        display: none !important;
-    }
-    .mobile-only {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-    }
-    .status-dot {
-        width: 6px;
-        height: 6px;
-        border-radius: 50%;
-        background: #10b981;
-        box-shadow: 0 0 8px #10b981;
-    }
-}
-</style>
-
-<style>
-html,
-body,
-#app {
-    background: #eef0ff !important;
+@media (max-width: 420px) {
+    .ts2__secure span, .ts2__secure { font-size: 10px; }
+    .ts2__txt small { display: none; }
 }
 </style>

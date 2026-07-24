@@ -94,7 +94,7 @@ class HasilLamaranMail extends Mailable
     public function content(): Content
     {
         $portalUrl = rtrim(config('app.url'), '/') . '/kandidat/portal';
-        $karirUrl = rtrim(config('app.url'), '/') . '/test/karir/landing-page';
+        $karirUrl = rtrim(config('app.url'), '/') . '/karir/landing-page';
 
         $preheader = match ($this->status) {
             'LOLOS' => 'Selamat! Kamu lolos seleksi administrasi. Simpan nomor pendaftaranmu.',

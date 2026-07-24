@@ -122,8 +122,8 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown));
     align-items: center;
     justify-content: center;
     padding: 1.25rem;
-    background: rgba(19, 17, 46, 0.42);
-    backdrop-filter: blur(6px);
+    background: rgba(30, 27, 75, 0.5);
+    backdrop-filter: blur(7px);
 }
 
 .cs-dialog {
@@ -131,7 +131,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown));
     width: 100%;
     max-width: 26rem;
     background: var(--cs-surface);
-    border-radius: 1.25rem;
+    border-radius: 26px;
     overflow: hidden;
     box-shadow:
         0 1px 0 rgba(255, 255, 255, 0.6) inset,
