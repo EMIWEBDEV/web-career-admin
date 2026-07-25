@@ -114,8 +114,8 @@
                                             <label class="wca-field-lbl" style="margin-top:20px">Pertanyaan</label>
                                             <el-input v-model="p.Label" placeholder="Tulis pertanyaan yang akan ditampilkan ke kandidat..." size="large" />
 
-                                            <!-- Scale range for numeric types -->
-                                            <div v-if="['RATING','NPS','LIKERT'].includes(p.Tipe)" class="fb-scale-row">
+                                            <!-- Scale range for RATING & NPS only (Likert is fixed 1-5) -->
+                                            <div v-if="['RATING','NPS'].includes(p.Tipe)" class="fb-scale-row">
                                                 <label class="wca-field-lbl">Rentang Skala</label>
                                                 <div class="fb-scale-inputs">
                                                     <span class="fb-scale-label">Dari</span>
@@ -432,7 +432,9 @@ export default {
             }
         },
         ensureDefaults(p) {
-            if (['RATING','NPS','LIKERT'].includes(p.Tipe)) {
+            if (p.Tipe === 'LIKERT') {
+                p.Skala_Min = 1; p.Skala_Max = 5; // Likert selalu 1-5
+            } else if (['RATING','NPS'].includes(p.Tipe)) {
                 if (p.Skala_Min == null) p.Skala_Min = this.defaultMin(p.Tipe);
                 if (p.Skala_Max == null) p.Skala_Max = this.defaultMax(p.Tipe);
             }
