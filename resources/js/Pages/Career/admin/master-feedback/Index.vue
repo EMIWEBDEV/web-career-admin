@@ -179,9 +179,18 @@
                                                     </div>
                                                 </div>
 
-                                                <!-- Likert: always 5 options with proper labels -->
-                                                <div v-if="p.Tipe === 'LIKERT'" class="fb-preview-likert">
-                                                    <span v-for="(lik, li) in likertLabels" :key="li" class="fb-preview-likert__opt">{{ lik }}</span>
+                                                <!-- Likert: matches LikertInput.vue exactly -->
+                                                <div v-if="p.Tipe === 'LIKERT'" class="fb-preview-likert-wrap">
+                                                    <div class="fb-preview-likert__opts">
+                                                        <span v-for="(lik, li) in likertLabels" :key="li"
+                                                              :class="['fb-preview-likert__opt', { 'fb-preview-likert__opt--on': li === 2 }]">
+                                                            {{ lik }}
+                                                        </span>
+                                                    </div>
+                                                    <div class="fb-preview-likert__labels">
+                                                        <span>Sangat Tidak Setuju</span>
+                                                        <span>Sangat Setuju</span>
+                                                    </div>
                                                 </div>
 
                                                 <!-- Textarea -->
@@ -190,22 +199,23 @@
                                                     <div class="fb-preview-ta__counter">0/500</div>
                                                 </div>
 
-                                                <!-- Radio -->
-                                                <div v-if="p.Tipe === 'RADIO'" class="fb-preview-opts">
-                                                    <div v-for="(opt, oi) in (p._opsiList || [])" :key="oi" class="fb-preview-opts__radio">
-                                                        <span class="fb-preview-opts__circle"></span>
-                                                        <span>{{ opt }}</span>
-                                                    </div>
-                                                    <div v-if="!p._opsiList || !p._opsiList.length" class="fb-preview__empty">Tambahkan opsi di panel kiri</div>
+                                                <!-- Radio: matches RadioCards.vue — first option selected -->
+                                                <div v-if="p.Tipe === 'RADIO'" class="fb-preview-pills">
+                                                    <span v-for="(opt, oi) in (p._opsiList || [])" :key="oi"
+                                                          :class="['fb-preview-pills__item', { 'fb-preview-pills__item--on': oi === 0 }]">
+                                                        {{ opt }}
+                                                    </span>
+                                                    <span v-if="!p._opsiList || !p._opsiList.length" class="fb-preview__empty">Tambahkan opsi di panel kiri</span>
                                                 </div>
 
-                                                <!-- Checkbox -->
-                                                <div v-if="p.Tipe === 'CHECKBOX'" class="fb-preview-opts">
-                                                    <div v-for="(opt, oi) in (p._opsiList || [])" :key="oi" class="fb-preview-opts__check">
-                                                        <span class="fb-preview-opts__box"></span>
-                                                        <span>{{ opt }}</span>
-                                                    </div>
-                                                    <div v-if="!p._opsiList || !p._opsiList.length" class="fb-preview__empty">Tambahkan opsi di panel kiri</div>
+                                                <!-- Checkbox: matches CheckboxCards.vue — first 2 selected with ✓ -->
+                                                <div v-if="p.Tipe === 'CHECKBOX'" class="fb-preview-pills">
+                                                    <span v-for="(opt, oi) in (p._opsiList || [])" :key="oi"
+                                                          :class="['fb-preview-pills__item fb-preview-pills__item--check', { 'fb-preview-pills__item--on': oi < 2 }]">
+                                                        <i v-if="oi < 2" class="bi bi-check-lg fb-preview-pills__check"></i>
+                                                        {{ opt }}
+                                                    </span>
+                                                    <span v-if="!p._opsiList || !p._opsiList.length" class="fb-preview__empty">Tambahkan opsi di panel kiri</span>
                                                 </div>
 
                                                 <!-- Dropdown: realistic select box + option menu -->
@@ -716,12 +726,21 @@ export default {
 .fb-preview-rate__star--on { color: #f59e0b; }
 .fb-preview-rate__range { margin-top: 8px; font-size: .72rem; color: #94a3b8; font-weight: 600; }
 
-/* Likert preview: 5 horizontal options matching LikertInput */
-.fb-preview-likert { display: flex; gap: 6px; justify-content: center; }
+/* ── Likert Preview (matches LikertInput.vue) ── */
+.fb-preview-likert-wrap { text-align: center; }
+.fb-preview-likert__opts { display: flex; gap: 8px; justify-content: center; }
 .fb-preview-likert__opt {
-    padding: 10px 16px; border: 2px solid #e2e8f0; border-radius: 10px;
-    font-size: .82rem; font-weight: 700; color: #94a3b8; background: #fff;
-    text-align: center; min-width: 48px;
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    padding: 10px 14px; border: 2px solid #e2e8f0; border-radius: 10px;
+    font-size: .8rem; font-weight: 600; color: #94a3b8; background: #fff;
+    cursor: default; user-select: none; min-width: 44px;
+}
+.fb-preview-likert__opt--on {
+    border-color: #6366f1; background: rgba(99,102,241,.06); color: #6366f1;
+}
+.fb-preview-likert__labels {
+    display: flex; justify-content: space-between; margin-top: 8px;
+    font-size: .68rem; color: #94a3b8;
 }
 
 /* ── NPS Preview ── */
@@ -744,19 +763,17 @@ export default {
 }
 .fb-preview-ta__counter { text-align: right; font-size: .7rem; color: #cbd5e1; margin-top: 4px; }
 
-/* Options preview (radio/checkbox/dropdown) */
-.fb-preview-opts { display: flex; flex-direction: column; gap: 10px; }
-.fb-preview-opts__radio, .fb-preview-opts__check {
-    display: flex; align-items: center; gap: 10px; padding: 10px 14px;
-    border: 1.5px solid #e2e8f0; border-radius: 10px; font-size: .85rem;
-    color: #475569; background: #fff; cursor: default;
+/* ── Radio / Checkbox Preview (matches RadioCards & CheckboxCards) ── */
+.fb-preview-pills { display: flex; flex-wrap: wrap; gap: 8px; }
+.fb-preview-pills__item {
+    display: flex; align-items: center; gap: 6px; padding: 10px 18px;
+    border: 1.5px solid #e2e8f0; border-radius: 10px; background: #fff;
+    font-size: .85rem; color: #475569; cursor: default; user-select: none;
 }
-.fb-preview-opts__circle {
-    width: 18px; height: 18px; border-radius: 50%; border: 2px solid #cbd5e1; flex-shrink: 0;
+.fb-preview-pills__item--on {
+    border-color: #6366f1; background: rgba(99,102,241,.06); color: #6366f1; font-weight: 600;
 }
-.fb-preview-opts__box {
-    width: 18px; height: 18px; border-radius: 4px; border: 2px solid #cbd5e1; flex-shrink: 0;
-}
+.fb-preview-pills__check { font-size: .75rem; color: #6366f1; font-weight: 700; }
 /* Dropdown preview — realistic select */
 .fb-preview-dd__box {
     display: flex; justify-content: space-between; align-items: center;
