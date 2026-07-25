@@ -160,4 +160,27 @@
     <tr><td style="padding:6px 44px 0" align="center">
         <p style="margin:0;font-size:12.5px;line-height:1.6;color:#8b93a7;font-family:'Inter',Arial,sans-serif">Pantau perkembangan &amp; tahap selanjutnya melalui Portal Kandidat di situs EVO Career.</p>
     </td></tr>
+
+    {{-- [feat/feedback] Feedback CTA — subtle, secondary, di bawah CTA utama --}}
+    @if ($feedbackUrl ?? false)
+        <tr><td style="padding:20px 44px 0" align="center">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"
+                   style="width:100%;background:#faf9ff;border:1px dashed #ddd6fe;border-radius:12px"><tr>
+                <td style="padding:14px 18px" align="center">
+                    <div style="font-size:10.5px;font-weight:700;letter-spacing:.12em;color:#a78bfa;font-family:'Inter',Arial,sans-serif">
+                        BANTU KAMI LEBIH BAIK
+                    </div>
+                    <div style="margin-top:4px;font-size:12.5px;color:#8b83a9;font-family:'Inter',Arial,sans-serif;line-height:1.5">
+                        Isi feedback singkat tentang pengalamanmu — hanya butuh 1-2 menit.
+                    </div>
+                    <a href="{{ $feedbackUrl }}" target="_blank"
+                       style="display:inline-block;margin-top:10px;padding:8px 22px;background:transparent;color:#6366f1;
+                              font-size:13px;font-weight:600;text-decoration:none;border:1.5px solid #c4b5fd;border-radius:8px;
+                              font-family:'Inter',Arial,sans-serif;letter-spacing:.02em">
+                        Isi Feedback &rarr;
+                    </a>
+                </td>
+            </tr></table>
+        </td></tr>
+    @endif
 @endsection
