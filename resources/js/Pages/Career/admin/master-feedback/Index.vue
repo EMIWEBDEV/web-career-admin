@@ -104,32 +104,72 @@
             :save-label="editingId ? 'Perbarui' : 'Simpan Form'"
             @close="show = false" @save="saveForm"
         >
+            <!-- Identitas Form -->
             <div class="wca-fsection">
-                <div class="wca-fsection__label"><i class="bi bi-chat-dots"></i> Detail Form</div>
+                <div class="wca-fsection__label"><i class="bi bi-pencil-square"></i> Identitas Form</div>
                 <div class="wca-form">
                     <div class="wca-frow">
-                        <div><label class="wca-field-lbl">Nama Form</label><el-input v-model="form.Nama" placeholder="mis. Feedback Rekrutmen 2026" /></div>
-                    </div>
-                    <div class="wca-frow">
-                        <div><label class="wca-field-lbl">Deskripsi</label><el-input v-model="form.Deskripsi" placeholder="Ringkasan singkat (opsional)" /></div>
-                    </div>
-                    <div class="wca-frow">
-                        <div><label class="wca-field-lbl">Mode Tampilan</label>
-                            <el-select v-model="form.Mode_Tampilan" style="width:100%">
-                                <el-option label="Single Page Scroll — semua pertanyaan dalam satu halaman" value="SCROLL" />
-                                <el-option label="Step-by-Step Wizard — satu pertanyaan per langkah" value="WIZARD" />
-                            </el-select>
+                        <div style="flex:2">
+                            <label class="wca-field-lbl"><i class="bi bi-tag"></i> Nama Form <span style="color:var(--danger)">*</span></label>
+                            <el-input v-model="form.Nama" placeholder="mis. Feedback Rekrutmen Reguler 2026" size="large" />
+                            <small style="display:block;margin-top:.3rem;color:var(--muted);font-weight:600;font-size:.72rem">Nama form yang mudah dikenali admin saat assign ke program.</small>
                         </div>
-                        <div><label class="wca-field-lbl">Durasi (hari) — kosongkan untuk unlimited</label>
-                            <el-input-number v-model="form.Durasi_Hari" :min="1" placeholder="Unlimited" style="width:100%" />
+                        <div style="flex:1">
+                            <label class="wca-field-lbl"><i class="bi bi-text-paragraph"></i> Deskripsi</label>
+                            <el-input v-model="form.Deskripsi" type="textarea" :rows="3" placeholder="Jelaskan tujuan form ini (opsional)" />
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <!-- Pengaturan Tampilan & Durasi -->
+            <div class="wca-fsection">
+                <div class="wca-fsection__label"><i class="bi bi-sliders"></i> Pengaturan Tampilan & Durasi</div>
+                <div class="wca-form">
+                    <div class="wca-frow">
+                        <div style="flex:3">
+                            <label class="wca-field-lbl"><i class="bi bi-layout-text-window-reverse"></i> Mode Tampilan <span style="color:var(--danger)">*</span></label>
+                            <div class="wca-radio-cards">
+                                <label :class="['wca-radio-card', { 'is-active': form.Mode_Tampilan === 'SCROLL' }]">
+                                    <input type="radio" value="SCROLL" v-model="form.Mode_Tampilan" />
+                                    <span class="wca-radio-card__icon"><i class="bi bi-file-earmark-text"></i></span>
+                                    <span class="wca-radio-card__label">Single Page</span>
+                                    <span class="wca-radio-card__desc">Semua pertanyaan dalam satu halaman scroll</span>
+                                </label>
+                                <label :class="['wca-radio-card', { 'is-active': form.Mode_Tampilan === 'WIZARD' }]">
+                                    <input type="radio" value="WIZARD" v-model="form.Mode_Tampilan" />
+                                    <span class="wca-radio-card__icon"><i class="bi bi-chevron-double-right"></i></span>
+                                    <span class="wca-radio-card__label">Step-by-Step</span>
+                                    <span class="wca-radio-card__desc">Satu pertanyaan per langkah dengan progress bar</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div style="flex:1">
+                            <label class="wca-field-lbl"><i class="bi bi-hourglass-split"></i> Durasi Pengisian</label>
+                            <el-input-number v-model="form.Durasi_Hari" :min="1" :max="30" placeholder="Unlimited" style="width:100%" />
+                            <small style="display:block;margin-top:.3rem;color:var(--muted);font-weight:600;font-size:.72rem">
+                                {{ form.Durasi_Hari ? form.Durasi_Hari + ' hari sejak email dikirim' : 'Tidak ada batas waktu (unlimited)' }}
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Status -->
+            <div class="wca-fsection">
+                <div class="wca-fsection__label"><i class="bi bi-toggle-on"></i> Status</div>
+                <div class="wca-form">
                     <div class="wca-frow">
                         <div>
-                            <label class="wca-field-lbl">Status Aktif</label>
-                            <div style="display:flex;align-items:center;gap:8px;margin-top:4px">
-                                <el-switch v-model="form.Flag_Aktif" active-value="Y" inactive-value="T" />
-                                <span style="font-size:.82rem;color:var(--muted);font-weight:600">{{ form.Flag_Aktif === 'Y' ? 'Aktif' : 'Nonaktif' }}</span>
+                            <div :class="['wca-status-card', form.Flag_Aktif === 'Y' ? 'wca-status-card--on' : 'wca-status-card--off']">
+                                <span class="wca-status-card__icon">
+                                    <i class="bi" :class="form.Flag_Aktif === 'Y' ? 'bi-check-circle-fill' : 'bi-pause-circle'"></i>
+                                </span>
+                                <div class="wca-status-card__body">
+                                    <strong>{{ form.Flag_Aktif === 'Y' ? 'Aktif' : 'Nonaktif' }}</strong>
+                                    <small>{{ form.Flag_Aktif === 'Y' ? 'Form dapat digunakan oleh kandidat' : 'Form tidak akan muncul untuk kandidat' }}</small>
+                                </div>
+                                <el-switch v-model="form.Flag_Aktif" active-value="Y" inactive-value="T" size="large" />
                             </div>
                         </div>
                     </div>
@@ -247,3 +287,119 @@ export default {
     },
 };
 </script>
+
+<style scoped>
+/* ── Radio Cards (Mode Tampilan) ── */
+.wca-radio-cards {
+    display: flex;
+    gap: 12px;
+}
+
+.wca-radio-card {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 16px 12px;
+    border: 2px solid var(--border-light, #e2e8f0);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: center;
+    background: #fff;
+}
+
+.wca-radio-card:hover {
+    border-color: #a5b4fc;
+    background: rgba(99, 102, 241, 0.03);
+}
+
+.wca-radio-card.is-active {
+    border-color: #6366f1;
+    background: rgba(99, 102, 241, 0.06);
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+}
+
+.wca-radio-card input[type="radio"] {
+    display: none;
+}
+
+.wca-radio-card__icon {
+    font-size: 1.5rem;
+    color: var(--muted, #94a3b8);
+    line-height: 1;
+}
+
+.wca-radio-card.is-active .wca-radio-card__icon {
+    color: #6366f1;
+}
+
+.wca-radio-card__label {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: #334155;
+}
+
+.wca-radio-card.is-active .wca-radio-card__label {
+    color: #6366f1;
+}
+
+.wca-radio-card__desc {
+    font-size: 0.7rem;
+    color: var(--muted, #94a3b8);
+    line-height: 1.35;
+}
+
+/* ── Status Card ── */
+.wca-status-card {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px 18px;
+    border: 1.5px solid var(--border-light, #e2e8f0);
+    border-radius: 12px;
+    background: #fff;
+    width: 100%;
+}
+
+.wca-status-card--on {
+    border-color: rgba(16, 185, 129, 0.3);
+    background: rgba(16, 185, 129, 0.04);
+}
+
+.wca-status-card--off {
+    border-color: rgba(148, 163, 184, 0.25);
+    background: rgba(148, 163, 184, 0.03);
+}
+
+.wca-status-card__icon {
+    font-size: 1.6rem;
+    line-height: 1;
+}
+
+.wca-status-card--on .wca-status-card__icon {
+    color: #10b981;
+}
+
+.wca-status-card--off .wca-status-card__icon {
+    color: #94a3b8;
+}
+
+.wca-status-card__body {
+    flex: 1;
+}
+
+.wca-status-card__body strong {
+    display: block;
+    font-size: 0.85rem;
+    color: #1e293b;
+}
+
+.wca-status-card__body small {
+    display: block;
+    font-size: 0.73rem;
+    color: var(--muted, #94a3b8);
+    margin-top: 2px;
+}
+</style>
