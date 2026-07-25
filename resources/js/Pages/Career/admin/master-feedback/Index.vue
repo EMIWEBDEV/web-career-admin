@@ -149,18 +149,34 @@
                                             <div class="fb-preview__card">
                                                 <div class="fb-preview__q">{{ p.Label || 'Pertanyaan Anda...' }}</div>
 
-                                                <!-- Rating: scale-aware stars -->
-                                                <div v-if="p.Tipe === 'RATING'" class="fb-preview-rate">
-                                                    <span v-for="s in (p.Skala_Max || 5)" :key="s" class="fb-preview-rate__star">{{ s <= (p.Skala_Max || 5) ? '★' : '☆' }}</span>
+                                                <!-- Rating: realistic stars preview -->
+                                                <div v-if="p.Tipe === 'RATING'" class="fb-preview-rate-wrap">
+                                                    <div class="fb-preview-rate__stars">
+                                                        <span v-for="s in (p.Skala_Max || 5)" :key="s"
+                                                              class="fb-preview-rate__star"
+                                                              :class="{ 'fb-preview-rate__star--on': s <= rateDemo(p) }">
+                                                            {{ s <= rateDemo(p) ? '★' : '☆' }}
+                                                        </span>
+                                                    </div>
+                                                    <div class="fb-preview-rate__range">
+                                                        Skala {{ p.Skala_Min || 1 }} – {{ p.Skala_Max || 5 }}
+                                                    </div>
                                                 </div>
 
-                                                <!-- NPS: scale-aware buttons -->
-                                                <div v-if="p.Tipe === 'NPS'" class="fb-preview-nps">
-                                                    <span v-for="n in ((p.Skala_Max || 10) - (p.Skala_Min || 0) + 1)" :key="n"
-                                                          class="fb-preview-nps__btn"
-                                                          :style="{ background: npsPreviewColor((p.Skala_Min || 0) + n - 1) }">
-                                                        {{ (p.Skala_Min || 0) + n - 1 }}
-                                                    </span>
+                                                <!-- NPS: realistic scale-aware buttons with labels -->
+                                                <div v-if="p.Tipe === 'NPS'" class="fb-preview-nps-wrap">
+                                                    <div class="fb-preview-nps__btns">
+                                                        <span v-for="n in npsRange(p)" :key="n"
+                                                              class="fb-preview-nps__btn"
+                                                              :class="{ 'fb-preview-nps__btn--demo': n === npsDemo(p) }"
+                                                              :style="{ background: npsPreviewColor(n) }">
+                                                            {{ n }}
+                                                        </span>
+                                                    </div>
+                                                    <div class="fb-preview-nps__labels">
+                                                        <span>Tidak mungkin</span>
+                                                        <span>Sangat mungkin</span>
+                                                    </div>
                                                 </div>
 
                                                 <!-- Likert: always 5 options with proper labels -->
@@ -505,9 +521,26 @@ export default {
             return map[tipe] || '<i class="bi bi-question-circle"></i>';
         },
         npsPreviewColor(n) {
-            if (n <= 6) return 'rgba(239,68,68,0.8)';
-            if (n <= 8) return 'rgba(245,158,11,0.7)';
-            return 'rgba(34,197,94,0.7)';
+            if (n <= 2) return 'rgba(239,68,68,0.85)';
+            if (n <= 4) return 'rgba(239,68,68,0.55)';
+            if (n <= 6) return 'rgba(245,158,11,0.55)';
+            if (n <= 8) return 'rgba(34,197,94,0.55)';
+            return 'rgba(34,197,94,0.85)';
+        },
+        npsRange(p) {
+            const min = p.Skala_Min ?? 0;
+            const max = p.Skala_Max ?? 10;
+            const result = [];
+            for (let i = min; i <= max; i++) result.push(i);
+            return result;
+        },
+        npsDemo(p) {
+            const max = p.Skala_Max ?? 10;
+            return Math.floor(max * 0.7); // realistic demo: 70th percentile
+        },
+        rateDemo(p) {
+            const max = p.Skala_Max || 5;
+            return Math.ceil(max * 0.6); // realistic demo: 60% filled
         },
     },
 };
@@ -674,9 +707,15 @@ export default {
 }
 .fb-preview__q { font-size: .9rem; font-weight: 600; color: #1e293b; margin-bottom: 18px; line-height: 1.5; }
 
-/* Rating preview */
-.fb-preview-rate { display: flex; gap: 4px; }
-.fb-preview-rate__star { font-size: 2rem; color: #f59e0b; line-height: 1; cursor: default; }
+/* ── Rating Preview ── */
+.fb-preview-rate-wrap { text-align: center; }
+.fb-preview-rate__stars { display: flex; gap: 6px; justify-content: center; }
+.fb-preview-rate__star {
+    font-size: 34px; line-height: 1; cursor: default; color: #cbd5e1; transition: none; user-select: none;
+}
+.fb-preview-rate__star--on { color: #f59e0b; }
+.fb-preview-rate__range { margin-top: 8px; font-size: .72rem; color: #94a3b8; font-weight: 600; }
+
 /* Likert preview: 5 horizontal options matching LikertInput */
 .fb-preview-likert { display: flex; gap: 6px; justify-content: center; }
 .fb-preview-likert__opt {
@@ -685,12 +724,18 @@ export default {
     text-align: center; min-width: 48px;
 }
 
-/* NPS preview */
-.fb-preview-nps { display: flex; gap: 3px; flex-wrap: wrap; }
+/* ── NPS Preview ── */
+.fb-preview-nps-wrap { text-align: center; }
+.fb-preview-nps__btns { display: flex; gap: 4px; flex-wrap: wrap; justify-content: center; }
 .fb-preview-nps__btn {
-    width: 30px; height: 30px; border-radius: 8px; color: #fff; font-size: .73rem;
-    font-weight: 700; display: flex; align-items: center; justify-content: center; cursor: default;
+    width: 34px; height: 34px; border-radius: 8px; color: #fff; font-size: .8rem;
+    font-weight: 700; display: flex; align-items: center; justify-content: center;
+    opacity: 0.6; cursor: default; user-select: none;
 }
+.fb-preview-nps__btn--demo {
+    opacity: 1; transform: scale(1.12); box-shadow: 0 3px 10px rgba(0,0,0,.2); position: relative; z-index: 1;
+}
+.fb-preview-nps__labels { display: flex; justify-content: space-between; margin-top: 8px; font-size: .7rem; color: #94a3b8; font-weight: 600; }
 
 /* Textarea preview */
 .fb-preview-ta__box {
