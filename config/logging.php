@@ -110,6 +110,13 @@ return [
             'path' => storage_path('logs/web_career.log'),
             'level' => env('LOG_LEVEL', 'debug'),
             'days' => 30,
+
+        // [feat/feedback] Channel terpisah untuk log fitur feedback
+        'feedback' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/feedback.log'),
+            'level' => env('LOG_LEVEL', 'debug'),
+            'days' => 30,
         ],
         'ticket_log' => [
             'driver' => 'daily',
