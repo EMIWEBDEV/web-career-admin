@@ -960,8 +960,12 @@ export default {
     .fb-q-expanded__body { flex-direction: column; gap: 0; padding: 12px; }
     .fb-q-editor { width: 100%; }
     .wca-radio-cards { flex-direction: column; gap: 6px; }
-    .fb-scale-card__body { flex-direction: column; gap: 8px; }
+    /* Scale card: each field full-width, proper sizing */
+    .fb-scale-card__body { flex-direction: column; gap: 10px; padding: 14px; }
     .fb-scale-card__sep { display: none; }
+    .fb-scale-card__field { width: 100%; }
+    .fb-scale-card__field .el-input-number { width: 100% !important; }
+    .fb-scale-card__foot { flex-direction: column; gap: 6px; align-items: flex-start; }
     .fb-q-footer { flex-direction: column; gap: 8px; align-items: stretch; }
     .pkg-row__act { flex-wrap: wrap; }
 }
