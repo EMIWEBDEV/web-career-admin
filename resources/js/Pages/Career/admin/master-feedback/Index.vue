@@ -163,9 +163,9 @@
                                                     </span>
                                                 </div>
 
-                                                <!-- Likert -->
-                                                <div v-if="p.Tipe === 'LIKERT'" class="fb-preview-rate">
-                                                    <span v-for="l in (p.Skala_Max || 5)" :key="l" class="fb-preview-rate__likert">{{ ['','STS','TS','N','S','SS'][l] || l }}</span>
+                                                <!-- Likert: always 5 options with proper labels -->
+                                                <div v-if="p.Tipe === 'LIKERT'" class="fb-preview-likert">
+                                                    <span v-for="(lik, li) in likertLabels" :key="li" class="fb-preview-likert__opt">{{ lik }}</span>
                                                 </div>
 
                                                 <!-- Textarea -->
@@ -326,6 +326,7 @@ export default {
             removeTarget: null,
             savingQ: {},
             form: { Nama: '', Deskripsi: '', Mode_Tampilan: 'SCROLL', Durasi_Hari: null, Flag_Aktif: 'Y' },
+            likertLabels: ['STS', 'TS', 'N', 'S', 'SS'],
             questionTypes: [
                 { value: 'RATING', label: 'Rating', icon: '<i class="bi bi-star-fill"></i>' },
                 { value: 'NPS', label: 'NPS', icon: '<i class="bi bi-0-circle"></i>' },
@@ -665,9 +666,12 @@ export default {
 /* Rating preview */
 .fb-preview-rate { display: flex; gap: 4px; }
 .fb-preview-rate__star { font-size: 2rem; color: #f59e0b; line-height: 1; cursor: default; }
-.fb-preview-rate__likert {
-    padding: 8px 14px; border: 2px solid #e2e8f0; border-radius: 10px;
-    font-size: .78rem; font-weight: 700; color: #94a3b8; background: #fff;
+/* Likert preview: 5 horizontal options matching LikertInput */
+.fb-preview-likert { display: flex; gap: 6px; justify-content: center; }
+.fb-preview-likert__opt {
+    padding: 10px 16px; border: 2px solid #e2e8f0; border-radius: 10px;
+    font-size: .82rem; font-weight: 700; color: #94a3b8; background: #fff;
+    text-align: center; min-width: 48px;
 }
 
 /* NPS preview */
