@@ -146,38 +146,28 @@
                                                 </div>
                                             </div>
 
-                                            <!-- Options with individual chips -->
+                                            <!-- Options row -->
                                             <div v-if="['RADIO','CHECKBOX','DROPDOWN'].includes(p.Tipe)" class="fb-options-row">
                                                 <label class="wca-field-lbl">
                                                     <i class="bi bi-list-ul"></i> Opsi Pilihan
-                                                    <span style="color:var(--danger)">*</span>
                                                 </label>
-                                                <div class="fb-option-chips">
-                                                    <div v-for="(opt, oi) in (p._opsiList || [])" :key="oi" class="fb-option-chip">
-                                                        <div class="fb-option-chip__left">
-                                                            <span class="fb-option-chip__idx">{{ oi + 1 }}</span>
-                                                        </div>
-                                                        <div class="fb-option-chip__center">
-                                                            <el-input
-                                                                v-model="p._opsiList[oi]"
-                                                                :placeholder="'Opsi pilihan ke-' + (oi + 1)"
-                                                                size="large"
-                                                            />
-                                                        </div>
-                                                        <div class="fb-option-chip__right">
-                                                            <button
-                                                                class="fb-option-chip__del"
-                                                                @click="removeOption(p, oi)"
-                                                                title="Hapus opsi"
-                                                                :disabled="(p._opsiList || []).length <= 1"
-                                                            >
-                                                                <i class="bi bi-trash"></i>
-                                                            </button>
-                                                        </div>
+                                                <div class="fb-option-list">
+                                                    <div v-for="(opt, oi) in (p._opsiList || [])" :key="oi" class="fb-option-row">
+                                                        <span class="fb-option-row__num">{{ oi + 1 }}</span>
+                                                        <input
+                                                            v-model="p._opsiList[oi]"
+                                                            :placeholder="'Opsi ' + (oi + 1)"
+                                                            class="fb-option-row__input"
+                                                        />
+                                                        <button
+                                                            v-if="(p._opsiList || []).length > 1"
+                                                            class="fb-option-row__del"
+                                                            @click="removeOption(p, oi)"
+                                                        ><i class="bi bi-x"></i></button>
                                                     </div>
                                                 </div>
                                                 <button class="fb-option-add" @click="addOption(p)">
-                                                    <i class="bi bi-plus-lg"></i> Tambah Opsi
+                                                    <i class="bi bi-plus"></i> Tambah Opsi
                                                 </button>
                                             </div>
                                         </div>
@@ -789,54 +779,40 @@ export default {
 .fb-scale-card__info { font-size: .72rem; color: #94a3b8; font-weight: 600; }
 .fb-scale-card__info i { margin-right: 4px; }
 
-/* ── Option Chips ── */
-.fb-options-row { margin-top: 18px; }
-.fb-option-chips { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
-.fb-option-chip {
-    display: flex; align-items: stretch; gap: 0;
-    background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
-    overflow: hidden; transition: border-color .15s;
+/* ── Option Rows (clean, minimal) ── */
+.fb-options-row { margin-top: 20px; }
+.fb-option-list { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.fb-option-row {
+    display: flex; align-items: center; gap: 10px;
 }
-.fb-option-chip:focus-within { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.1); }
-.fb-option-chip:hover { border-color: #c4b5fd; }
-
-.fb-option-chip__left {
-    display: flex; align-items: center; padding: 0 6px 0 14px;
-    border-right: 1px solid #f1f5f9; flex-shrink: 0;
-}
-.fb-option-chip__idx {
-    width: 22px; height: 22px; border-radius: 6px;
-    background: linear-gradient(135deg, #6366f1, #4f46e5);
-    color: #fff; font-size: .68rem; font-weight: 700;
+.fb-option-row__num {
+    width: 26px; height: 26px; border-radius: 50%;
+    background: #f1f5f9; color: #64748b;
+    font-size: .72rem; font-weight: 700;
     display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
 }
-
-.fb-option-chip__center { flex: 1; }
-.fb-option-chip__center :deep(.el-input__wrapper) {
-    border: none !important; box-shadow: none !important; background: transparent !important;
-    border-radius: 0; padding: 6px 14px;
+.fb-option-row__input {
+    flex: 1; padding: 10px 14px; border: 1.5px solid #e2e8f0; border-radius: 10px;
+    font-size: .88rem; font-family: 'Inter', sans-serif; color: #334155;
+    outline: none; transition: border-color .15s; background: #fff;
 }
-.fb-option-chip__center :deep(.el-input__inner) { font-size: .88rem; }
-
-.fb-option-chip__right {
-    display: flex; align-items: center; padding: 0 8px 0 4px;
-    border-left: 1px solid #f1f5f9; flex-shrink: 0;
-}
-.fb-option-chip__del {
+.fb-option-row__input:focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.08); }
+.fb-option-row__input::placeholder { color: #cbd5e1; }
+.fb-option-row__del {
     border: none; background: none; color: #cbd5e1; cursor: pointer;
-    padding: 8px 10px; border-radius: 8px; font-size: .85rem;
-    transition: all .15s;
+    padding: 6px 8px; border-radius: 8px; font-size: 1rem; flex-shrink: 0;
+    transition: all .15s; line-height: 1;
 }
-.fb-option-chip__del:hover:not(:disabled) { background: rgba(239,68,68,.08); color: #ef4444; }
-.fb-option-chip__del:disabled { opacity: .3; cursor: not-allowed; }
+.fb-option-row__del:hover { background: rgba(239,68,68,.08); color: #ef4444; }
 
 .fb-option-add {
-    display: inline-flex; align-items: center; gap: 8px; margin-top: 10px;
-    border: 1.5px dashed #c4b5fd; border-radius: 12px; background: none;
-    padding: 12px 20px; color: #6366f1; font-weight: 700; font-size: .84rem;
-    cursor: pointer; transition: all .15s;
+    display: inline-flex; align-items: center; gap: 8px; margin-top: 12px;
+    border: none; background: none; padding: 8px 4px;
+    color: #6366f1; font-weight: 600; font-size: .84rem;
+    cursor: pointer; transition: opacity .15s;
 }
-.fb-option-add:hover { background: rgba(99,102,241,.05); border-color: #6366f1; }
+.fb-option-add:hover { opacity: .8; }
 
 /* ── Preview Panel ── */
 .fb-preview { flex: 2; min-width: 240px; }
