@@ -132,7 +132,7 @@
                                                 <div class="fb-option-chips">
                                                     <div v-for="(opt, oi) in (p._opsiList || [])" :key="oi" class="fb-option-chip">
                                                         <span class="fb-option-chip__num">{{ oi + 1 }}</span>
-                                                        <el-input v-model="p._opsiList[oi]" placeholder="Opsi {{ oi + 1 }}" size="large" />
+                                                        <el-input v-model="p._opsiList[oi]" :placeholder="'Tulis opsi ke-' + (oi + 1) + '...'" size="large" />
                                                         <button class="fb-option-chip__del" @click="removeOption(p, oi)" title="Hapus opsi"><i class="bi bi-x-lg"></i></button>
                                                     </div>
                                                 </div>
@@ -265,17 +265,28 @@
                                                         <span>Pilih salah satu</span>
                                                         <i class="bi bi-chevron-down"></i>
                                                     </div>
-                                                    <div class="fb-preview-dd__menu">
-                                                        <div v-for="(opt, oi) in (p._opsiList || [])" :key="oi"
-                                                             class="fb-preview-dd__item"
-                                                             :class="{ 'fb-preview-dd__item--sel': oi === 0 }">
-                                                            {{ opt }}
-                                                            <i v-if="oi === 0" class="bi bi-check-lg"></i>
+                                                    <template v-if="(p._opsiList || []).filter(o => o.trim()).length">
+                                                        <div class="fb-preview-dd__menu">
+                                                            <div v-for="(opt, oi) in (p._opsiList || [])" :key="oi"
+                                                                 v-show="opt.trim()"
+                                                                 class="fb-preview-dd__item"
+                                                                 :class="{ 'fb-preview-dd__item--sel': oi === 0 }">
+                                                                {{ opt }}
+                                                                <i v-if="oi === 0" class="bi bi-check-lg"></i>
+                                                            </div>
                                                         </div>
-                                                    </div>
-                                                    <div v-if="!p._opsiList || !p._opsiList.length" class="fb-preview__empty">
-                                                        Tambahkan opsi di panel kiri
-                                                    </div>
+                                                    </template>
+                                                    <template v-else>
+                                                        <div class="fb-preview-dd__menu fb-preview-dd__menu--ph">
+                                                            <div class="fb-preview-dd__item fb-preview-dd__item--ph fb-preview-dd__item--sel">
+                                                                Opsi pilihan 1
+                                                                <i class="bi bi-check-lg"></i>
+                                                            </div>
+                                                            <div class="fb-preview-dd__item fb-preview-dd__item--ph">Opsi pilihan 2</div>
+                                                            <div class="fb-preview-dd__item fb-preview-dd__item--ph">Opsi pilihan 3</div>
+                                                        </div>
+                                                        <small class="fb-pv-hint"><i class="bi bi-arrow-left"></i> Isi opsi di panel kiri</small>
+                                                    </template>
                                                 </div>
                                             </div>
                                         </div>
@@ -871,6 +882,8 @@ export default {
 .fb-preview-dd__item:last-child { border-bottom: none; }
 .fb-preview-dd__item--sel { color: #6366f1; background: rgba(99,102,241,.05); font-weight: 600; }
 .fb-preview-dd__item--sel i { font-size: .8rem; }
+.fb-preview-dd__item--ph { opacity: 0.5; }
+.fb-preview-dd__menu--ph { border-style: dashed; }
 .fb-preview__empty { font-size: .8rem; color: #cbd5e1; font-style: italic; padding: 8px 0; }
 
 /* ── Footer ── */
