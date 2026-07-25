@@ -11,6 +11,21 @@
         <div class="ld-blob ld-blob--b"></div>
 
         <div class="ld-wrap">
+            <!-- [feat/feedback] Banner feedback -->
+            <div v-if="showFeedbackBanner" :class="['ld-feedback-banner', feedbackPending.Hasil_Akhir === 'DITERIMA' ? 'ld-feedback-banner--wajib' : 'ld-feedback-banner--optional']">
+                <div class="ld-feedback-banner__content">
+                    <div class="ld-feedback-banner__text">
+                        <strong v-if="feedbackPending.Hasil_Akhir === 'DITERIMA'">Selamat! Mohon isi feedback untuk menyelesaikan proses.</strong>
+                        <strong v-else>Bantu kami menjadi lebih baik dengan mengisi feedback.</strong>
+                        <span>{{ feedbackPending.Hasil_Akhir === 'DITERIMA' ? 'Feedback wajib diisi.' : 'Hanya butuh 1-2 menit.' }}</span>
+                    </div>
+                    <div class="ld-feedback-banner__actions">
+                        <a :href="feedbackPending.feedback_url" class="ld-feedback-banner__btn ld-feedback-banner__btn--fill">Isi Feedback →</a>
+                        <button v-if="feedbackPending.Hasil_Akhir !== 'DITERIMA'" class="ld-feedback-banner__btn ld-feedback-banner__btn--ghost" @click="showFeedbackBanner = false">Nanti Saja</button>
+                    </div>
+                </div>
+            </div>
+
             <Link href="/kandidat/portal" class="ld-back">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 18l-6-6 6-6" /></svg>
                 Lamaran Saya
@@ -383,9 +398,13 @@ export default {
             tm: null,
             now: Date.now(),
             jam: null,
+            // [feat/feedback]
+            showFeedbackBanner: true,
         };
     },
     computed: {
+        // [feat/feedback]
+        feedbackPending() { return this.$page.props.feedbackPending; },
         komponen() { return this.tugas ? komponenFormulir(this.tugas.komponen) : null; },
         totalTahap() { return this.lamaran.totalTahap || this.tahap.length || 0; },
         stKey() { return { BERJALAN: 'berjalan', LULUS: 'lolos', GUGUR: 'gugur' }[this.lamaran.status] || 'berjalan'; },
