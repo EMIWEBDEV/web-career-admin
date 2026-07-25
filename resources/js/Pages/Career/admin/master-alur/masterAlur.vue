@@ -8,15 +8,55 @@
                     <span class="pkg-head__ico"><i class="bi bi-signpost-split"></i></span>
                     <h1>Master Tahapan Seleksi</h1>
                 </div>
-                <p>Susun urutan tahap seleksi (alur) per kategori. Tahap <b>pihak ke-3</b> keputusannya otomatis sistem. Tahap "Tes Online" mengambil dari <b>Master Jenis Tes</b>.</p>
+                <p>Susun urutan tahap seleksi per kategori — tes, mode keputusan, dan pengumuman diatur di tiap tahap.</p>
             </div>
             <button class="pkg-newbtn" @click="openCreate"><i class="bi bi-plus-lg"></i> Alur Baru</button>
         </div>
 
-        <div class="wca-legend">
-            <span><i class="bi bi-person-workspace" style="color:var(--indigo)"></i> Internal — keputusan admin (loloskan/tolak)</span>
-            <span><i class="bi bi-robot" style="color:#d97706"></i> Pihak ke-3 — konfirmasi otomatis sistem</span>
+        <!-- FILTER PANEL — semua saringan dikirim ke backend (bukan disaring di browser). -->
+        <div v-if="sheetOpen" class="alr-sheetbg" @click="sheetOpen = false"></div>
+        <div class="alr-filter" :class="{ 'is-open': sheetOpen }">
+            <div class="alr-filter__head">
+                <span class="alr-filter__title"><i class="bi bi-funnel"></i> Filter Panel</span>
+                <div class="alr-filter__act">
+                    <button v-if="adaFilter" class="alr-filter__reset" type="button" @click="resetFilter"><i class="bi bi-arrow-counterclockwise"></i> Reset</button>
+                    <button class="alr-filter__close" type="button" aria-label="Tutup filter" @click="sheetOpen = false"><i class="bi bi-x-lg"></i></button>
+                </div>
+            </div>
+            <div class="alr-filter__grid">
+                <div>
+                    <label class="wca-field-lbl">Cari</label>
+                    <el-input v-model="filters.q" placeholder="Nama / kode / deskripsi" clearable @input="cariDebounce">
+                        <template #prefix><i class="bi bi-search"></i></template>
+                    </el-input>
+                </div>
+                <div>
+                    <label class="wca-field-lbl">Kategori</label>
+                    <RefSelect type="talent" v-model="filters.kategori" placeholder="Semua kategori" clearable />
+                </div>
+                <div>
+                    <label class="wca-field-lbl">Status</label>
+                    <el-select v-model="filters.status" placeholder="Semua status" clearable style="width:100%" @change="load">
+                        <el-option label="Aktif" value="AKTIF" />
+                        <el-option label="Nonaktif" value="NONAKTIF" />
+                    </el-select>
+                </div>
+                <div>
+                    <label class="wca-field-lbl">Tanggal Dibuat</label>
+                    <el-date-picker
+                        v-model="filters.rentang" type="daterange" value-format="YYYY-MM-DD"
+                        start-placeholder="Dari" end-placeholder="Sampai" range-separator="—"
+                        style="width:100%" @change="load"
+                    />
+                </div>
+            </div>
         </div>
+
+        <!-- FAB filter (mobile) -->
+        <button class="alr-fab" type="button" aria-label="Buka filter" @click="sheetOpen = true">
+            <i class="bi bi-funnel-fill"></i>
+            <span v-if="jumlahFilter" class="alr-fab__badge">{{ jumlahFilter }}</span>
+        </button>
 
         <div v-loading="loading" class="pkg-list">
             <div v-for="a in list" :key="a.id" class="pkg-card" :class="{ open: open === a.id }">
@@ -67,32 +107,41 @@
                                     </div>
                                     <div class="wca-flow__meta">
                                         <span><i class="bi bi-tag"></i> {{ s.tipe }}</span>
-                                        <span v-if="s.tesId"><i class="bi bi-cpu"></i> {{ s.tesId }}</span>
                                         <span v-if="s.formulirId"><i class="bi bi-input-cursor-text"></i> {{ s.formulirId }}</span>
-                                        <span v-if="s.sla"><i class="bi bi-hourglass-split"></i> SLA {{ s.sla }}</span>
+                                        <span class="alr-pill is-mode"><i class="bi bi-diagram-3"></i> {{ namaMode(s.mode) }}</span>
                                         <span class="wca-flow__dec" :class="s.keputusan === 'SYSTEM' ? 'sys' : 'man'">
                                             <i class="bi" :class="s.keputusan === 'SYSTEM' ? 'bi-cpu' : 'bi-hand-index-thumb'"></i>
                                             {{ s.keputusan === 'SYSTEM' ? 'Konfirmasi Sistem' : 'Keputusan Admin' }}
                                         </span>
                                         <span class="alr-pill" :class="`is-${(s.pengumuman || 'OTOMATIS').toLowerCase()}`">
                                             <i class="bi" :class="ikonPengumuman(s.pengumuman)"></i>
-                                            {{ labelPengumuman(s.pengumuman) }}<template v-if="s.pengumuman === 'TERJADWAL' && s.jedaHari != null"> +{{ s.jedaHari }} hr</template>
+                                            {{ labelPengumuman(s.pengumuman) }}<template v-if="modeButuhJeda(s.pengumuman) && s.jedaHari != null"> +{{ s.jedaHari }} hr</template>
                                         </span>
                                         <span v-if="s.notifikasi === false" class="alr-pill is-mute" title="Kandidat tidak dikirimi notifikasi saat hasil terbit">
                                             <i class="bi bi-bell-slash"></i> Tanpa notifikasi
                                         </span>
                                     </div>
+                                    <!-- Sub-tes tahap: inilah yang dinilai mesin keputusan. -->
+                                    <ul v-if="(s.tests || []).length" class="alr-subtes">
+                                        <li v-for="(t, k) in s.tests" :key="k" :class="t.peran === 'INFORMATIF' ? 'is-info' : 'is-penentu'">
+                                            <i class="bi" :class="t.jenisTes ? 'bi-robot' : 'bi-person-workspace'"></i>
+                                            <b>{{ t.label }}</b>
+                                            <span v-if="t.jenisTes" class="alr-subtes__tes">{{ t.jenisTes }}</span>
+                                            <span class="alr-subtes__peran">{{ t.peran === 'INFORMATIF' ? 'informatif' : 'penentu' }}</span>
+                                            <span v-if="!t.wajib" class="alr-subtes__opt">opsional</span>
+                                        </li>
+                                    </ul>
                                 </div>
                             </li>
                             <li v-if="!a.stages.length" class="alr-empty-stage">Belum ada tahap.</li>
                         </ol>
                 </div>
             </div>
-            <div v-if="!loading && !list.length" class="pkg-empty"><i class="bi bi-signpost-split"></i> Belum ada alur.</div>
+            <div v-if="!loading && !list.length" class="pkg-empty"><i class="bi bi-signpost-split"></i> {{ adaFilter ? 'Tidak ada alur yang cocok dengan filter.' : 'Belum ada alur.' }}</div>
         </div>
 
         <!-- Modal buat/ubah alur — builder tahapan -->
-        <AdminModal :show="show" :title="editingId ? 'Ubah Alur Seleksi' : 'Buat Alur Seleksi'" subtitle="Pilih kategori & identitas, lalu susun tahapan (klik Tambah Tahap)." icon="bi-signpost-split" lg :save-label="editingId ? 'Perbarui' : 'Simpan Alur'" @close="show = false" @save="save">
+        <AdminModal :show="show" :title="editingId ? 'Ubah Alur Seleksi' : 'Buat Alur Seleksi'" subtitle="Identitas alur & susunan tahapan." icon="bi-signpost-split" lg :save-label="editingId ? 'Perbarui' : 'Simpan Alur'" @close="show = false" @save="save">
             <div class="wca-fsection">
                 <div class="wca-fsection__label"><i class="bi bi-signpost-split"></i> Detail Alur</div>
                 <div class="wca-form">
@@ -124,18 +173,54 @@
                             </div>
                         </div>
                         <div class="wca-frow">
-                            <div><label class="wca-field-lbl">Penyedia</label>
-                                <RefSelect type="provider" v-model="s.provider" placeholder="Pilih penyedia" />
+                            <div><label class="wca-field-lbl">Mode Keputusan</label>
+                                <RefSelect type="mode-keputusan" v-model="s.mode" placeholder="Pilih mode" @picked="(o) => (s.modeInfo = o)" />
+                                <small v-if="modeInfo(s)" class="alr-mode-note">
+                                    <i class="bi" :class="modeInfo(s).ikon || 'bi-diagram-3'"></i> {{ modeInfo(s).deskripsi }}
+                                </small>
                             </div>
-                            <div v-if="s.provider === 'THIRD_PARTY'"><label class="wca-field-lbl">Jenis Tes (pihak ke-3)</label>
-                                <RefSelect type="tes" v-model="s.tesId" placeholder="Pilih jenis tes" clearable />
-                            </div>
-                            <div v-if="s.tipe === 'FORM' || s.tipe === 'DOCUMENT'"><label class="wca-field-lbl">Formulir yang Diisi</label>
+                            <div v-if="butuhFormulir(s)"><label class="wca-field-lbl">Formulir yang Diisi</label>
                                 <RefSelect type="formulir" v-model="s.formulirId" placeholder="Pilih formulir (Master Formulir)" clearable />
                             </div>
                         </div>
-                        <div class="wca-frow">
-                            <div><label class="wca-field-lbl">SLA (opsional)</label><el-input v-model="s.sla" placeholder="mis. 3 hari" /></div>
+
+                        <!-- DAFTAR TES / AKTIVITAS — satu tahap bisa berisi banyak tes.
+                             Ada Jenis Tes = tes HC Learn (otomatis); kosong = aktivitas
+                             manual (wawancara/FGD). Peran INFORMATIF tidak menentukan lulus. -->
+                        <div class="alr-tests">
+                            <div class="alr-tests__head">
+                                <span><i class="bi bi-list-check"></i> Daftar Tes / Aktivitas ({{ (s.tests || []).length }})</span>
+                                <button class="wca-btn wca-btn--soft wca-btn--sm" type="button" @click="addTest(s)"><i class="bi bi-plus-circle"></i> Tambah Tes</button>
+                            </div>
+                            <div v-if="!(s.tests || []).length" class="alr-tests__empty">
+                                <i class="bi bi-info-circle"></i> Belum ada tes — sistem akan membuat <b>1 aktivitas default</b> dari tahap ini.
+                            </div>
+                            <div v-for="(t, k) in s.tests" :key="k" class="alr-test">
+                                <span class="alr-test__no">{{ k + 1 }}</span>
+                                <div class="alr-test__body">
+                                    <div class="wca-frow">
+                                        <div><label class="wca-field-lbl">Nama Tes / Aktivitas</label><el-input v-model="t.label" placeholder="mis. Papi Kostick" /></div>
+                                        <div><label class="wca-field-lbl">Jenis Tes (kosong = manual)</label>
+                                            <RefSelect type="tes" v-model="t.jenisTes" placeholder="Pilih jenis tes HC Learn" clearable />
+                                        </div>
+                                    </div>
+                                    <div class="wca-frow">
+                                        <div><label class="wca-field-lbl">Peran</label>
+                                            <el-select v-model="t.peran" style="width:100%">
+                                                <el-option label="Penentu — menentukan lulus/tidak" value="PENENTU" />
+                                                <el-option label="Informatif — data saja, tidak menentukan" value="INFORMATIF" />
+                                            </el-select>
+                                        </div>
+                                        <div class="alr-test__flags">
+                                            <span class="alr-test__prov" :class="t.jenisTes ? 'is-sys' : 'is-man'">
+                                                <i class="bi" :class="t.jenisTes ? 'bi-robot' : 'bi-person-workspace'"></i>
+                                                {{ t.jenisTes ? 'Pihak ke-3 (otomatis)' : 'Internal (manual)' }}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <button class="wca-iconbtn wca-iconbtn--danger" type="button" title="Hapus tes" @click="removeTest(s, k)"><i class="bi bi-trash"></i></button>
+                            </div>
                         </div>
 
                         <!-- PENGUMUMAN HASIL — kapan hasil tahap ini boleh dilihat kandidat.
@@ -146,27 +231,22 @@
                             <div class="wca-frow">
                                 <div>
                                     <label class="wca-field-lbl">Kapan hasil terlihat kandidat</label>
-                                    <el-select v-model="s.pengumuman" style="width:100%">
-                                        <el-option label="Otomatis — begitu keputusan dibuat" value="OTOMATIS" />
-                                        <el-option label="Terjadwal — tunggu tanggal pengumuman" value="TERJADWAL" />
-                                        <el-option label="Manual — admin yang menerbitkan" value="MANUAL" />
+                                    <!-- Opsi DIAMBIL DARI Master Mode Pengumuman (Flag_Aktif) — tak hardcode. -->
+                                    <el-select v-model="s.pengumuman" style="width:100%" placeholder="Pilih mode" no-data-text="Tidak ada mode aktif">
+                                        <el-option v-for="m in modePengumuman" :key="m.value" :label="m.label" :value="m.value" />
                                     </el-select>
                                 </div>
-                                <div v-if="s.pengumuman === 'TERJADWAL'">
+                                <div v-if="modeButuhJeda(s.pengumuman)">
                                     <label class="wca-field-lbl">Saran jeda (hari)</label>
                                     <el-input-number v-model="s.jedaHari" :min="0" :max="3650" controls-position="right" style="width:100%" />
                                 </div>
                             </div>
                             <label class="alr-ann__check">
-                                <el-checkbox v-model="s.notifikasi">Beri tahu kandidat (email/WA) saat hasil terbit</el-checkbox>
+                                <el-checkbox v-model="s.notifikasi">Beri tahu kandidat lewat email saat hasil terbit</el-checkbox>
                             </label>
                             <p class="alr-ann__note">{{ catatanPengumuman(s) }}</p>
                         </div>
 
-                        <span class="wca-flow__dec" :class="s.provider === 'THIRD_PARTY' ? 'sys' : 'man'" style="align-self:flex-start">
-                            <i class="bi" :class="s.provider === 'THIRD_PARTY' ? 'bi-cpu' : 'bi-hand-index-thumb'"></i>
-                            {{ s.provider === 'THIRD_PARTY' ? 'Konfirmasi Sistem' : 'Keputusan Admin' }}
-                        </span>
                     </div>
                     <div class="wca-stagecard__actions">
                         <button class="wca-iconbtn" type="button" title="Naik" :disabled="i === 0" @click="moveStage(i, -1)"><i class="bi bi-chevron-up"></i></button>
@@ -205,6 +285,14 @@ export default {
             open: null,
             show: false,
             editingId: null,
+            // Filter Panel — semua nilai dikirim ke backend saat berubah.
+            filters: { q: '', kategori: null, status: null, rentang: null },
+            sheetOpen: false,
+            cariTimer: null,
+            // Mode pengumuman AKTIF dari Master Mode Pengumuman (bukan hardcode).
+            modePengumuman: [],
+            // Mode keputusan AKTIF — bagaimana tahap menyimpulkan (multi-tes).
+            modeKeputusan: [],
             form: { nama: '', kategori: '', deskripsi: '', stages: [] },
             delShow: false,
             delTarget: null,
@@ -214,11 +302,61 @@ export default {
             tm: null,
         };
     },
+    watch: {
+        // RefSelect hanya emit update:modelValue — pantau nilainya langsung.
+        'filters.kategori'() { this.load(); },
+    },
     mounted() {
         this.load();
+        this.loadModePengumuman();
+        this.loadModeKeputusan();
+    },
+    computed: {
+        // Peta Kode Mode -> objek mode, untuk render label/ikon/catatan di daftar.
+        modeMap() {
+            const map = {};
+            this.modePengumuman.forEach((m) => { map[m.value] = m; });
+            return map;
+        },
+        adaFilter() {
+            return !!(this.filters.q || this.filters.kategori || this.filters.status || (this.filters.rentang && this.filters.rentang.length));
+        },
+        jumlahFilter() {
+            return [this.filters.q, this.filters.kategori, this.filters.status, this.filters.rentang?.length ? 1 : null].filter(Boolean).length;
+        },
     },
     methods: {
         katLabel(k) { return { REKRUTMEN: 'Rekrutmen', MT: 'Management Trainee', INTERNSHIP: 'Internship' }[k] || k; },
+
+        /** Tipe pengumpulan formulir/berkas menempelkan Master Formulir. */
+        butuhFormulir(s) { return s.tipe === 'FORM' || s.tipe === 'DOCUMENT'; },
+
+        /** Muat mode keputusan AKTIF (bagaimana tahap menyimpulkan). */
+        async loadModeKeputusan() {
+            try {
+                this.modeKeputusan = (await axios.get('/api/v1/karir/options/mode-keputusan', CFG)).data.result || [];
+            } catch (e) { this.modeKeputusan = []; }
+        },
+        /** Info mode terpilih (untuk kalimat efek di bawah dropdown). */
+        modeInfo(s) { return this.modeKeputusan.find((m) => m.value === s.mode) || null; },
+        /** Nama pendek mode untuk pil di daftar alur. */
+        namaMode(kode) { return this.modeKeputusan.find((m) => m.value === kode)?.nama || kode || 'Manual'; },
+
+        addTest(s) {
+            if (!Array.isArray(s.tests)) s.tests = [];
+            s.tests.push({ label: '', jenisTes: null, peran: 'PENENTU', ambang: null });
+        },
+        removeTest(s, k) { s.tests.splice(k, 1); },
+
+        /** Muat mode pengumuman AKTIF dari master (Flag_Aktif). */
+        async loadModePengumuman() {
+            try {
+                const res = await axios.get('/api/v1/karir/options/mode-pengumuman', CFG);
+                this.modePengumuman = res.data.result || [];
+            } catch (e) { this.modePengumuman = []; }
+        },
+        /** Mode memakai input jeda hari? (mis. TERJADWAL) — dari flag master. */
+        modeButuhJeda(kode) { return !!this.modeMap[kode]?.butuhJeda; },
         initials(name) {
             if (!name) return 'SY';
             const p = String(name).trim().split(/\s+/);
@@ -227,13 +365,30 @@ export default {
         async load() {
             this.loading = true;
             try {
-                const res = await axios.get(API, CFG);
+                // Filter dikirim ke backend — daftar yang kembali sudah tersaring.
+                const params = {
+                    q: this.filters.q || undefined,
+                    kategori: this.filters.kategori || undefined,
+                    status: this.filters.status || undefined,
+                    dari: this.filters.rentang?.[0] || undefined,
+                    sampai: this.filters.rentang?.[1] || undefined,
+                };
+                const res = await axios.get(API, { ...CFG, params });
                 this.list = res.data.result || [];
             } catch (e) {
                 this.notice('Gagal memuat data alur.');
             } finally {
                 this.loading = false;
             }
+        },
+        /** Ketik di kolom cari → tunggu 400ms lalu request backend. */
+        cariDebounce() {
+            if (this.cariTimer) clearTimeout(this.cariTimer);
+            this.cariTimer = setTimeout(() => this.load(), 400);
+        },
+        resetFilter() {
+            this.filters = { q: '', kategori: null, status: null, rentang: null };
+            this.load();
         },
         openCreate() {
             this.editingId = null;
@@ -249,10 +404,14 @@ export default {
                 stages: (a.stages || []).map((s) => ({
                     label: s.label,
                     tipe: s.tipe,
-                    provider: s.provider || 'INTERNAL',
-                    tesId: s.tesId ?? null,
+                    mode: s.mode || 'MANUAL_REVIEW',
                     formulirId: s.formulirId ?? null,
-                    sla: s.sla || '',
+                    tests: (s.tests || []).map((t) => ({
+                        label: t.label,
+                        jenisTes: t.jenisTes ?? null,
+                        peran: t.peran || 'PENENTU',
+                        ambang: t.ambang ?? null,
+                    })),
                     pengumuman: s.pengumuman || 'OTOMATIS',
                     jedaHari: s.jedaHari ?? null,
                     notifikasi: s.notifikasi !== false,
@@ -260,23 +419,23 @@ export default {
             };
             this.show = true;
         },
-        addStage() { this.form.stages.push({ label: '', tipe: '', provider: 'INTERNAL', tesId: null, formulirId: null, sla: '', pengumuman: 'OTOMATIS', jedaHari: null, notifikasi: true }); },
+        addStage() { this.form.stages.push({ label: '', tipe: '', mode: 'MANUAL_REVIEW', formulirId: null, tests: [], pengumuman: 'OTOMATIS', jedaHari: null, notifikasi: true }); },
         removeStage(i) { this.form.stages.splice(i, 1); },
 
-        labelPengumuman(m) { return { OTOMATIS: 'Umumkan otomatis', TERJADWAL: 'Umumkan terjadwal', MANUAL: 'Umumkan manual' }[m] || 'Umumkan otomatis'; },
-        ikonPengumuman(m) { return { OTOMATIS: 'bi-lightning-charge-fill', TERJADWAL: 'bi-calendar-event-fill', MANUAL: 'bi-hand-index-thumb-fill' }[m] || 'bi-lightning-charge-fill'; },
+        // Label & ikon pil diambil dari master (fallback ke kode bila belum termuat).
+        labelPengumuman(kode) { return this.modeMap[kode]?.nama || this.modeMap[kode]?.label || kode || 'Otomatis'; },
+        ikonPengumuman(kode) { return this.modeMap[kode]?.ikon || 'bi-megaphone'; },
 
-        /** Kalimat konsekuensi, supaya admin paham akibat pilihannya tanpa menebak. */
+        /** Kalimat konsekuensi — deskripsi diambil dari master, jeda dari flag. */
         catatanPengumuman(s) {
-            const notif = s.notifikasi !== false ? 'Kandidat dikirimi notifikasi.' : 'Kandidat TIDAK dikirimi notifikasi.';
-            if (s.pengumuman === 'TERJADWAL') {
+            const notif = s.notifikasi !== false ? 'Kandidat diberi tahu lewat email.' : 'Kandidat TIDAK diberi tahu.';
+            const mode = this.modeMap[s.pengumuman];
+            const dasar = mode?.deskripsi || 'Atur kapan hasil tahap ini terlihat kandidat.';
+            if (this.modeButuhJeda(s.pengumuman)) {
                 const jeda = s.jedaHari != null && s.jedaHari !== '' ? ` Saat menjadwalkan angkatan, tanggal disarankan ${s.jedaHari} hari setelah tahap selesai — tetap bisa diubah.` : ' Tanggal pastinya diisi saat menjadwalkan angkatan.';
-                return `Hasil ditahan sampai tanggal pengumuman terlewati.${jeda} ${notif}`;
+                return `${dasar}${jeda} ${notif}`;
             }
-            if (s.pengumuman === 'MANUAL') {
-                return `Hasil ditahan sampai admin menekan tombol umumkan — tidak ada tanggal otomatis. ${notif}`;
-            }
-            return `Hasil langsung terlihat kandidat begitu keputusan tahap dibuat. ${notif}`;
+            return `${dasar} ${notif}`;
         },
         moveStage(i, dir) {
             const j = i + dir;
@@ -298,13 +457,18 @@ export default {
                 stages: this.form.stages.map((s) => ({
                     label: s.label,
                     tipe: s.tipe,
-                    provider: s.provider,
-                    formulirId: (s.tipe === 'FORM' || s.tipe === 'DOCUMENT') ? (s.formulirId || null) : null,
-                    tesId: s.provider === 'THIRD_PARTY' ? (s.tesId || null) : null,
-                    sla: s.sla || '',
+                    mode: s.mode || null,
+                    // Provider tak dikirim — backend menurunkannya dari sub-tes.
+                    formulirId: this.butuhFormulir(s) ? (s.formulirId || null) : null,
+                    tests: (s.tests || []).filter((t) => (t.label || '').trim()).map((t) => ({
+                        label: t.label,
+                        jenisTes: t.jenisTes || null,
+                        peran: t.peran || 'PENENTU',
+                        ambang: t.ambang ?? null,
+                    })),
                     pengumuman: s.pengumuman || 'OTOMATIS',
-                    // Jeda hanya bermakna untuk TERJADWAL; mode lain kirim null.
-                    jedaHari: s.pengumuman === 'TERJADWAL' ? (s.jedaHari ?? null) : null,
+                    // Jeda hanya bermakna untuk mode ber-flag butuhJeda; lainnya null.
+                    jedaHari: this.modeButuhJeda(s.pengumuman) ? (s.jedaHari ?? null) : null,
                     notifikasi: s.notifikasi !== false,
                 })),
             };
@@ -359,8 +523,59 @@ export default {
 
 <style scoped>
 .alr-head-act { display: inline-flex; align-items: center; gap: .4rem; margin-left: auto; }
+
+/* ── FILTER PANEL — card di desktop, bottom-sheet via FAB di mobile ── */
+.alr-filter { background: #fff; border: 1px solid rgba(15, 23, 42, .08); border-radius: 16px; padding: .9rem 1rem 1rem; margin-bottom: 1rem; box-shadow: 0 8px 24px rgba(15, 23, 42, .04); }
+.alr-filter__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: .65rem; }
+.alr-filter__title { display: inline-flex; align-items: center; gap: .45rem; font-size: 12px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #4338ca; }
+.alr-filter__act { display: inline-flex; align-items: center; gap: .4rem; }
+.alr-filter__reset { display: inline-flex; align-items: center; gap: .3rem; border: 1px solid rgba(79, 70, 229, .25); background: #eef2ff; color: #4338ca; font-size: 11.5px; font-weight: 700; border-radius: 9px; padding: 4px 10px; cursor: pointer; }
+.alr-filter__reset:hover { background: #e0e7ff; }
+.alr-filter__close { display: none; border: none; background: transparent; color: #64748b; font-size: 15px; cursor: pointer; padding: 4px; }
+.alr-filter__grid { display: grid; grid-template-columns: minmax(200px, 1.4fr) 1fr 1fr 1.4fr; gap: .7rem; align-items: end; }
+@media (max-width: 960px) { .alr-filter__grid { grid-template-columns: 1fr 1fr; } }
+
+/* FAB — hanya mobile */
+.alr-fab { display: none; position: fixed; right: 18px; bottom: 20px; z-index: 70; width: 52px; height: 52px; border-radius: 50%; border: none; background: linear-gradient(135deg, #8b5cf6, #6366f1); color: #fff; font-size: 19px; cursor: pointer; box-shadow: 0 12px 28px rgba(99, 102, 241, .45); }
+.alr-fab__badge { position: absolute; top: -4px; right: -4px; min-width: 19px; height: 19px; border-radius: 999px; background: #ef4444; color: #fff; font-size: 10.5px; font-weight: 800; display: grid; place-items: center; padding: 0 5px; border: 2px solid #fff; }
+.alr-sheetbg { display: none; }
+
+@media (max-width: 640px) {
+    /* Panel disembunyikan; FAB membukanya sebagai bottom-sheet. */
+    .alr-filter { display: none; }
+    .alr-filter.is-open { display: block; position: fixed; left: 0; right: 0; bottom: 0; z-index: 80; margin: 0; border-radius: 18px 18px 0 0; box-shadow: 0 -18px 40px rgba(15, 23, 42, .25); max-height: 78vh; overflow-y: auto; }
+    .alr-filter__grid { grid-template-columns: 1fr; }
+    .alr-filter__close { display: inline-flex; }
+    .alr-fab { display: grid; place-items: center; }
+    .alr-sheetbg { display: block; position: fixed; inset: 0; z-index: 75; background: rgba(15, 23, 42, .45); }
+}
 .alr-meta { margin-bottom: .8rem; }
 .alr-empty-stage { color: #94a3b8; font-size: 13px; }
+
+/* Kalimat efek mode keputusan di bawah dropdown-nya. */
+.alr-mode-note { display: block; margin-top: .35rem; font-size: 11.5px; line-height: 1.5; color: #64748b; font-weight: 600; }
+
+/* Blok daftar tes (sub-tes) di dalam kartu tahap pada modal builder. */
+.alr-tests { border: 1px solid rgba(15, 23, 42, .1); border-radius: 12px; padding: .7rem .8rem; margin-top: .5rem; background: #f8fafc; }
+.alr-tests__head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; font-size: 11.5px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: #334155; margin-bottom: .55rem; }
+.alr-tests__empty { font-size: 11.5px; color: #64748b; padding: .3rem 0 .1rem; }
+.alr-test { display: flex; gap: .55rem; align-items: flex-start; padding: .6rem; border: 1px solid rgba(15, 23, 42, .08); border-radius: 10px; background: #fff; margin-bottom: .5rem; }
+.alr-test__no { flex: none; width: 1.4rem; height: 1.4rem; border-radius: 50%; background: #e0e7ff; color: #4338ca; font-size: 11px; font-weight: 800; display: grid; place-items: center; }
+.alr-test__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .45rem; }
+.alr-test__flags { display: flex; align-items: center; gap: .7rem; flex-wrap: wrap; padding-top: 1.35rem; }
+.alr-test__prov { display: inline-flex; align-items: center; gap: .3rem; font-size: 11px; font-weight: 700; }
+.alr-test__prov.is-sys { color: #b45309; }
+.alr-test__prov.is-man { color: #4338ca; }
+
+/* Daftar sub-tes ringkas di tampilan daftar alur (read-only). */
+.alr-subtes { list-style: none; margin: .5rem 0 0; padding: 0; display: flex; flex-direction: column; gap: .25rem; }
+.alr-subtes li { display: flex; align-items: center; gap: .4rem; font-size: 11.5px; color: #475569; flex-wrap: wrap; }
+.alr-subtes li.is-info { color: #64748b; }
+.alr-subtes__tes { background: #eef2ff; color: #4338ca; border-radius: 999px; padding: .05rem .4rem; font-weight: 700; font-size: 10.5px; }
+.alr-subtes__peran { background: #f1f5f9; color: #475569; border-radius: 999px; padding: .05rem .4rem; font-size: 10.5px; font-weight: 700; }
+.alr-subtes li.is-info .alr-subtes__peran { background: #f8fafc; color: #94a3b8; }
+.alr-subtes__opt { color: #94a3b8; font-size: 10.5px; font-style: italic; }
+.alr-pill.is-mode { color: #4338ca; background: rgba(79, 70, 229, .1); }
 
 /* Blok pengumuman di dalam kartu tahap — dibedakan agar terbaca sebagai
    aturan perilaku, bukan sekadar field tambahan. */

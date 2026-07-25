@@ -88,6 +88,8 @@ class CareerShell
                 ['key' => 'master-kampus', 'label' => 'Master Kampus', 'icon' => 'bi bi-mortarboard', 'url' => '/master-kampus'],
                 ['key' => 'master-kemitraan', 'label' => 'Master Kemitraan / MoU', 'icon' => 'bi bi-file-earmark-medical', 'url' => '/master-kemitraan'],
                 ['key' => 'master-alur', 'label' => 'Master Tahapan Seleksi', 'icon' => 'bi bi-signpost-split', 'url' => '/master-alur'],
+                ['key' => 'master-mode-pengumuman', 'label' => 'Master Mode Pengumuman', 'icon' => 'bi bi-megaphone', 'url' => '/master-mode-pengumuman'],
+                ['key' => 'master-mode-keputusan', 'label' => 'Master Mode Keputusan', 'icon' => 'bi bi-diagram-3', 'url' => '/master-mode-keputusan'],
                 ['key' => 'master-klasifikasi', 'label' => 'Master Kategori', 'icon' => 'bi bi-tags', 'url' => '/master-kategori'],
                 ['key' => 'master-jadwal', 'label' => 'Master Jadwal Kegiatan', 'icon' => 'bi bi-calendar3-range', 'url' => '/master-jadwal'],
             ]],

@@ -777,19 +777,34 @@ class LamaranController extends Controller
             return ResponseHelper::success(['diproses' => false], 'Hasil diterima (tahap sudah final).');
         }
 
-        // GERAKKAN tahap otomatis (LULUS → berikutnya, GUGUR → tutup).
-        $catatan = $lulus
-            ? ('Lulus tes ' . ($tahap->Label ?? '') . ' (otomatis dari HCLearn).')
-            : ('Tidak lolos tes ' . ($tahap->Label ?? '') . ' (otomatis dari HCLearn).');
-        $this->svc->ketukPalu((int) $tahap->Id_Lamaran_Tahap, $hasil, trim($catatan), null);
+        // Jenis tes diambil dari JADWAL yang memicu hasil ini (bukan kolom level
+        // tahap) — pada baterai multi-tes, tiap jadwal menunjuk sub-tes berbeda.
+        $jenisTesJadwal = DB::table('N_WEB_CAREERS_Penjadwalan_Tahap')
+            ->where('Id_Penjadwalan_Tahap', $peserta->Penjadwalan_Tahap_Id)
+            ->value('Jenis_Tes_Kode');
 
-        // Kirim email hasil ke kandidat (LOLOS bila lamaran selesai diterima,
-        // MENUNGGU bila lolos & lanjut tahap berikut, GUGUR bila tidak lolos).
-        $this->kirimEmailHasilTahap((int) $peserta->Lamaran_Id, $lulus);
+        // MESIN KEPUTUSAN: rekam hasil SUB-TES ini, lalu evaluasi mode tahap.
+        // Tahap 1-tes → identik dgn perilaku lama (maju/gugur). Tahap multi-tes →
+        // tahap hanya maju/gugur bila kondisi mode terpenuhi; selain itu menunggu.
+        $eval = $this->svc->rekamHasilTesEksternal(
+            (int) $tahap->Id_Lamaran_Tahap,
+            $jenisTesJadwal ?: ($tahap->Jenis_Tes_Kode ?? null),
+            $hasil,
+            isset($data['Total_Nilai']) ? (float) $data['Total_Nilai'] : null,
+            isset($data['Total_Soal']) ? (int) $data['Total_Soal'] : null,
+            (int) $peserta->Penjadwalan_Tahap_Id
+        );
+        $outcome = $eval['outcome'] ?? 'TUNGGU';
 
-        Log::channel('web_career')->info("[CALLBACK] hasil tes peserta #{$peserta->Id_Penjadwalan_Peserta} = {$hasil} → tahap {$tahap->Label} digerakkan.");
+        // Email hanya saat tahap BENAR-BENAR menyimpulkan (bukan per sub-tes) —
+        // supaya baterai tes tidak membanjiri kandidat dgn email tiap hasil.
+        if (in_array($outcome, ['LANJUT', 'GUGUR'], true)) {
+            $this->kirimEmailHasilTahap((int) $peserta->Lamaran_Id, $outcome === 'LANJUT');
+        }
 
-        return ResponseHelper::success(['diproses' => true, 'hasil' => $hasil], 'Hasil tes diproses.');
+        Log::channel('web_career')->info("[CALLBACK] hasil tes peserta #{$peserta->Id_Penjadwalan_Peserta} = {$hasil} → tahap {$tahap->Label}: {$outcome}.");
+
+        return ResponseHelper::success(['diproses' => true, 'hasil' => $hasil, 'outcome' => $outcome], 'Hasil tes diproses.');
     }
 
     /** Kirim email hasil setelah tahap tes diputus otomatis. */
@@ -1008,7 +1023,14 @@ class LamaranController extends Controller
             ->get()
             ->groupBy('Lamaran_Id');
 
-        $pelamar = $lamaran->map(function ($l) use ($tahapPer) {
+        // Rapor sub-tes per tahap (baterai multi-tes) — dasar admin memutuskan.
+        $subPer = DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')
+            ->whereIn('Lamaran_Tahap_Id', $tahapPer->flatten(1)->pluck('Id_Lamaran_Tahap')->all() ?: [0])
+            ->orderBy('Urutan')
+            ->get()
+            ->groupBy('Lamaran_Tahap_Id');
+
+        $pelamar = $lamaran->map(function ($l) use ($tahapPer, $subPer) {
             $tahapList = collect($tahapPer->get($l->Id_Lamaran, []));
 
             if ($l->Status === 'GUGUR') {
@@ -1022,16 +1044,20 @@ class LamaranController extends Controller
             $tAktif = $l->Status === 'BERJALAN' ? $tahapList->firstWhere('Status', 'BERJALAN') : null;
             $skor = $tk->Skor ?? null;
             $isTes = ($tk->Provider ?? null) === 'THIRD_PARTY';
-            // BUTUH KEPUTUSAN admin = tahap BERJALAN yang BUKAN digerakkan sistem
-            // (THIRD_PARTY di-auto lewat callback HCLearn). Termasuk tahap manual
-            // tanpa formulir (wawancara, penawaran) — admin bisa Loloskan/Tidak Lolos.
-            $nungguSistem = $tAktif && $tAktif->Provider === 'THIRD_PARTY';
-            $butuhKeputusan = $tAktif && $tAktif->Status === 'BERJALAN' && $tAktif->Provider !== 'THIRD_PARTY';
+            // BUTUH KEPUTUSAN = berbasis STATE mesin, bukan sekadar provider:
+            //  - Siap_Diputus='Y' → mesin sudah mengumpulkan semua hasil (multi-tes),
+            //    admin tinggal memutuskan — termasuk pada tahap pihak ke-3.
+            //  - Tahap manual (bukan THIRD_PARTY) tetap bisa diputus kapan pun.
+            $siap = $tAktif && ($tAktif->Siap_Diputus ?? 'N') === 'Y';
+            $nungguSistem = $tAktif && $tAktif->Provider === 'THIRD_PARTY' && ! $siap;
+            $butuhKeputusan = $tAktif && $tAktif->Status === 'BERJALAN' && ($siap || $tAktif->Provider !== 'THIRD_PARTY');
 
             if ($l->Status === 'GUGUR') {
                 $badge = ['tone' => 'gugur', 'teks' => 'Tidak Lolos'];
             } elseif ($l->Status === 'LULUS') {
                 $badge = ['tone' => 'lolos', 'teks' => 'Diterima'];
+            } elseif ($siap) {
+                $badge = ['tone' => 'perlu', 'teks' => 'Siap Diputus'];
             } elseif ($isTes && $skor !== null) {
                 $badge = ['tone' => 'skor', 'teks' => (string) $skor];
             } elseif ($nungguSistem) {
@@ -1057,10 +1083,25 @@ class LamaranController extends Controller
                 'badge' => $badge,
                 'butuhKeputusan' => (bool) $butuhKeputusan,
                 'nungguSistem' => (bool) $nungguSistem,
+                'siapDiputus' => (bool) $siap,
                 'skor' => $skor,
                 'rekomendasi' => $tAktif->Rekomendasi ?? null,
                 'alasan' => $tAktif->Rekomendasi_Alasan ?? $l->Alasan_Gugur,
                 'pengisianId' => ($tAktif && $tAktif->Formulir_Pengisian_Id) ? Hashids::encode($tAktif->Formulir_Pengisian_Id) : null,
+                // RAPOR sub-tes tahap yang ditampilkan (baterai multi-tes): admin
+                // melihat semua skor — termasuk tes informatif — sebelum memutus.
+                'tests' => collect($subPer->get($tk->Id_Lamaran_Tahap ?? 0, []))->map(fn ($x) => [
+                    'id' => Hashids::encode($x->Id_Lamaran_Tahap_Tes),
+                    'label' => $x->Label,
+                    'jenisTes' => $x->Jenis_Tes_Kode,
+                    'provider' => $x->Provider,
+                    'peran' => $x->Peran,
+                    'wajib' => $x->Wajib === 'Y',
+                    'status' => $x->Status,
+                    'hasil' => $x->Hasil,
+                    'nilai' => $x->Nilai !== null ? (float) $x->Nilai : null,
+                    'catatan' => $x->Catatan ?? null,
+                ])->values(),
             ];
         })->all();
 
@@ -1100,6 +1141,121 @@ class LamaranController extends Controller
             Log::channel('web_career')->error('Gagal ketuk palu: ' . $e->getMessage());
 
             return ResponseHelper::error('Gagal memproses keputusan.', 500);
+        }
+    }
+
+    /**
+     * PATCH /api/v1/lamaran/sub-tes/{id}/tidak-hadir — ESCAPE HATCH admin.
+     * Sub-tes yang kandidatnya tidak hadir / token hangus ditandai TIDAK_HADIR
+     * supaya tahap tidak menggantung menunggu hasil yang tak akan datang; mesin
+     * langsung dievaluasi ulang (bisa berujung SIAP_DIPUTUS / GUGUR sesuai mode).
+     */
+    public function subTesTidakHadir(Request $request, string $id)
+    {
+        $realId = Hashids::decode($id)[0] ?? null;
+        if (! $realId) {
+            return ResponseHelper::error('Sub-tes tidak valid.', 422);
+        }
+
+        try {
+            $sub = DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')->where('Id_Lamaran_Tahap_Tes', $realId)->first();
+            if (! $sub) {
+                return ResponseHelper::error('Sub-tes tidak ditemukan.', 404);
+            }
+            if ($sub->Flag_Selesai === 'Y') {
+                return ResponseHelper::error('Sub-tes ini sudah final.', 422);
+            }
+
+            DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')->where('Id_Lamaran_Tahap_Tes', $realId)->update([
+                'Status' => 'TIDAK_HADIR',
+                // PENENTU yang tak hadir dinilai GAGAL (mode Auto_Gugur akan
+                // menggugurkan); INFORMATIF cukup ditandai selesai tanpa hasil.
+                'Hasil' => $sub->Peran === 'PENENTU' ? 'GAGAL' : null,
+                'Flag_Selesai' => 'Y',
+                'Waktu_Selesai' => now(),
+                'Updated_At' => now(),
+            ]);
+
+            $eval = $this->svc->evaluasiTahap((int) $sub->Lamaran_Tahap_Id, (int) session('career_auth.id'));
+            Log::channel('web_career')->info("Sub-tes #{$realId} ditandai TIDAK_HADIR → evaluasi: " . ($eval['outcome'] ?? '-'));
+
+            return ResponseHelper::success(['outcome' => $eval['outcome'] ?? null], 'Sub-tes ditandai tidak hadir.');
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->error("Gagal tandai sub-tes #{$id}: " . $e->getMessage());
+
+            return ResponseHelper::error('Gagal memproses.', 500);
+        }
+    }
+
+    /**
+     * PATCH /api/v1/lamaran/sub-tes/{id}/catat-hasil — admin merekam hasil
+     * SUB-TES MANUAL (wawancara/FGD) di tahap campuran. Hasilnya masuk ke mesin
+     * keputusan yang SAMA dengan callback HCLearn, sehingga tahap "psikotes 3×
+     * + wawancara" bisa menyimpulkan (auto-maju / Siap Diputus) tanpa dipaksa.
+     * Sub-tes pihak ke-3 ditolak — hasilnya hanya boleh datang dari HCLearn.
+     */
+    public function subTesCatatHasil(Request $request, string $id)
+    {
+        $realId = Hashids::decode($id)[0] ?? null;
+        if (! $realId) {
+            return ResponseHelper::error('Sub-tes tidak valid.', 422);
+        }
+
+        $data = $request->validate([
+            'hasil' => 'nullable|in:LULUS,GAGAL',
+            'nilai' => 'nullable|numeric|min:0|max:1000',
+            'catatan' => 'nullable|string|max:500',
+        ]);
+
+        try {
+            $sub = DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')->where('Id_Lamaran_Tahap_Tes', $realId)->first();
+            if (! $sub) {
+                return ResponseHelper::error('Sub-tes tidak ditemukan.', 404);
+            }
+            if ($sub->Flag_Selesai === 'Y') {
+                return ResponseHelper::error('Sub-tes ini sudah final.', 422);
+            }
+            if ($sub->Provider === 'THIRD_PARTY') {
+                return ResponseHelper::error('Hasil tes pihak ke-3 hanya boleh datang dari HCLearn — gunakan "Tidak hadir" bila kandidat absen.', 422);
+            }
+            // Sub-tes PENENTU wajib membawa verdict; INFORMATIF cukup selesai + nilai.
+            if ($sub->Peran === 'PENENTU' && empty($data['hasil'])) {
+                return ResponseHelper::error('Pilih hasil (Lulus / Gagal) untuk aktivitas penentu.', 422);
+            }
+
+            DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')->where('Id_Lamaran_Tahap_Tes', $realId)->update([
+                'Status' => 'SELESAI',
+                'Hasil' => $sub->Peran === 'INFORMATIF' ? null : $data['hasil'],
+                'Nilai' => $data['nilai'] ?? null,
+                'Catatan' => $data['catatan'] ?? null,
+                'Flag_Selesai' => 'Y',
+                'Waktu_Selesai' => now(),
+                'Updated_At' => now(),
+                'Updated_By' => session('career_auth.nama', 'ADMIN'),
+                'Updated_By_Id' => session('career_auth.id'),
+            ]);
+
+            $eval = $this->svc->evaluasiTahap((int) $sub->Lamaran_Tahap_Id, (int) session('career_auth.id'));
+            $outcome = $eval['outcome'] ?? null;
+
+            // Tahap menyimpulkan otomatis (mode auto) → kabari kandidat via email,
+            // konsisten dengan jalur callback. SIAP_DIPUTUS tidak berkirim email.
+            if (in_array($outcome, ['LANJUT', 'GUGUR'], true)) {
+                $lamaranId = (int) DB::table('N_WEB_CAREERS_Lamaran_Tahap')->where('Id_Lamaran_Tahap', $sub->Lamaran_Tahap_Id)->value('Lamaran_Id');
+                if ($lamaranId) {
+                    $this->kirimEmailHasilTahap($lamaranId, $outcome === 'LANJUT');
+                }
+            }
+
+            Log::channel('web_career')->info("Sub-tes #{$realId} dicatat " . ($data['hasil'] ?? 'SELESAI') . " → evaluasi: " . ($outcome ?? '-'));
+
+            return ResponseHelper::success(['outcome' => $outcome], 'Hasil dicatat.');
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->error("Gagal catat hasil sub-tes #{$id}: " . $e->getMessage());
+
+            return ResponseHelper::error('Gagal memproses.', 500);
         }
     }
 
