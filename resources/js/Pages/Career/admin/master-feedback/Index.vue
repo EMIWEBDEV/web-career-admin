@@ -199,30 +199,64 @@
                                                     <div class="fb-preview-ta__counter">0/500</div>
                                                 </div>
 
-                                                <!-- Radio: realistic card pills — one selected with radio dot -->
+                                                <!-- Radio: proper preview with radio buttons -->
                                                 <div v-if="p.Tipe === 'RADIO'" class="fb-pv-radio">
-                                                    <div v-for="(opt, oi) in (p._opsiList || [])" :key="oi"
-                                                          class="fb-pv-radio__card"
-                                                          :class="{ 'fb-pv-radio__card--sel': oi === 0 }">
-                                                        <span class="fb-pv-radio__dot">
-                                                            <span v-if="oi === 0" class="fb-pv-radio__dot--fill"></span>
-                                                        </span>
-                                                        <span class="fb-pv-radio__text">{{ opt }}</span>
-                                                    </div>
-                                                    <span v-if="!p._opsiList || !p._opsiList.length" class="fb-preview__empty">Tambahkan opsi di panel kiri</span>
+                                                    <template v-if="(p._opsiList || []).filter(o => o.trim()).length">
+                                                        <div v-for="(opt, oi) in (p._opsiList || [])" :key="oi"
+                                                              v-show="opt.trim()"
+                                                              class="fb-pv-radio__card"
+                                                              :class="{ 'fb-pv-radio__card--sel': oi === 0 }">
+                                                            <span class="fb-pv-radio__dot">
+                                                                <span v-if="oi === 0" class="fb-pv-radio__dot--fill"></span>
+                                                            </span>
+                                                            <span class="fb-pv-radio__text">{{ opt }}</span>
+                                                        </div>
+                                                    </template>
+                                                    <template v-else>
+                                                        <div class="fb-pv-radio__card fb-pv-radio__card--ph">
+                                                            <span class="fb-pv-radio__dot"><span class="fb-pv-radio__dot--fill"></span></span>
+                                                            <span class="fb-pv-radio__text">Opsi pilihan 1</span>
+                                                        </div>
+                                                        <div class="fb-pv-radio__card fb-pv-radio__card--ph">
+                                                            <span class="fb-pv-radio__dot"></span>
+                                                            <span class="fb-pv-radio__text">Opsi pilihan 2</span>
+                                                        </div>
+                                                        <div class="fb-pv-radio__card fb-pv-radio__card--ph">
+                                                            <span class="fb-pv-radio__dot"></span>
+                                                            <span class="fb-pv-radio__text">Opsi pilihan 3</span>
+                                                        </div>
+                                                        <small class="fb-pv-hint"><i class="bi bi-arrow-left"></i> Isi opsi di panel kiri</small>
+                                                    </template>
                                                 </div>
 
-                                                <!-- Checkbox: realistic card pills — 2 selected with checkmarks -->
+                                                <!-- Checkbox: proper preview with checkboxes -->
                                                 <div v-if="p.Tipe === 'CHECKBOX'" class="fb-pv-check">
-                                                    <div v-for="(opt, oi) in (p._opsiList || [])" :key="oi"
-                                                          class="fb-pv-check__card"
-                                                          :class="{ 'fb-pv-check__card--sel': oi < 2 }">
-                                                        <span class="fb-pv-check__box">
-                                                            <i v-if="oi < 2" class="bi bi-check-lg"></i>
-                                                        </span>
-                                                        <span class="fb-pv-check__text">{{ opt }}</span>
-                                                    </div>
-                                                    <span v-if="!p._opsiList || !p._opsiList.length" class="fb-preview__empty">Tambahkan opsi di panel kiri</span>
+                                                    <template v-if="(p._opsiList || []).filter(o => o.trim()).length">
+                                                        <div v-for="(opt, oi) in (p._opsiList || [])" :key="oi"
+                                                              v-show="opt.trim()"
+                                                              class="fb-pv-check__card"
+                                                              :class="{ 'fb-pv-check__card--sel': oi < 2 }">
+                                                            <span class="fb-pv-check__box">
+                                                                <i v-if="oi < 2" class="bi bi-check-lg"></i>
+                                                            </span>
+                                                            <span class="fb-pv-check__text">{{ opt }}</span>
+                                                        </div>
+                                                    </template>
+                                                    <template v-else>
+                                                        <div class="fb-pv-check__card fb-pv-check__card--ph fb-pv-check__card--sel">
+                                                            <span class="fb-pv-check__box"><i class="bi bi-check-lg"></i></span>
+                                                            <span class="fb-pv-check__text">Opsi pilihan 1</span>
+                                                        </div>
+                                                        <div class="fb-pv-check__card fb-pv-check__card--ph fb-pv-check__card--sel">
+                                                            <span class="fb-pv-check__box"><i class="bi bi-check-lg"></i></span>
+                                                            <span class="fb-pv-check__text">Opsi pilihan 2</span>
+                                                        </div>
+                                                        <div class="fb-pv-check__card fb-pv-check__card--ph">
+                                                            <span class="fb-pv-check__box"></span>
+                                                            <span class="fb-pv-check__text">Opsi pilihan 3</span>
+                                                        </div>
+                                                        <small class="fb-pv-hint"><i class="bi bi-arrow-left"></i> Isi opsi di panel kiri</small>
+                                                    </template>
                                                 </div>
 
                                                 <!-- Dropdown: realistic select box + option menu -->
@@ -811,6 +845,13 @@ export default {
 }
 .fb-pv-check__text { font-size: .88rem; color: #475569; }
 .fb-pv-check__card--sel .fb-pv-check__text { color: #6366f1; font-weight: 600; }
+
+/* Placeholder state */
+.fb-pv-radio__card--ph, .fb-pv-check__card--ph { opacity: 0.5; border-style: dashed; }
+.fb-pv-hint {
+    display: block; margin-top: 8px; font-size: .7rem; color: #94a3b8;
+    font-weight: 600; text-align: right;
+}
 /* Dropdown preview — realistic select */
 .fb-preview-dd__box {
     display: flex; justify-content: space-between; align-items: center;
