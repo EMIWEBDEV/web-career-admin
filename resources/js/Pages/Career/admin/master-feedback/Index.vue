@@ -114,15 +114,35 @@
                                             <label class="wca-field-lbl" style="margin-top:20px">Pertanyaan</label>
                                             <el-input v-model="p.Label" placeholder="Tulis pertanyaan yang akan ditampilkan ke kandidat..." size="large" />
 
-                                            <!-- Scale range for RATING & NPS only (Likert is fixed 1-5) -->
+                                            <!-- Scale range for RATING & NPS only -->
                                             <div v-if="['RATING','NPS'].includes(p.Tipe)" class="fb-scale-row">
-                                                <label class="wca-field-lbl">Rentang Skala</label>
-                                                <div class="fb-scale-inputs">
-                                                    <span class="fb-scale-label">Dari</span>
-                                                    <el-input-number v-model="p.Skala_Min" :min="0" :max="10" size="large" style="width:100px" />
-                                                    <span class="fb-scale-label">sampai</span>
-                                                    <el-input-number v-model="p.Skala_Max" :min="1" :max="10" size="large" style="width:100px" />
-                                                    <el-button size="small" text @click="p.Skala_Min = defaultMin(p.Tipe); p.Skala_Max = defaultMax(p.Tipe)">Reset default</el-button>
+                                                <label class="wca-field-lbl">
+                                                    <i class="bi bi-sliders2-vertical"></i> Rentang Skala
+                                                    <span style="color:var(--danger)">*</span>
+                                                </label>
+                                                <div class="fb-scale-card">
+                                                    <div class="fb-scale-card__body">
+                                                        <div class="fb-scale-card__field">
+                                                            <span class="fb-scale-card__lbl">Nilai Minimum</span>
+                                                            <el-input-number v-model="p.Skala_Min" :min="0" :max="10" size="large" style="width:100%" />
+                                                        </div>
+                                                        <div class="fb-scale-card__sep">
+                                                            <span class="fb-scale-card__arrow">→</span>
+                                                        </div>
+                                                        <div class="fb-scale-card__field">
+                                                            <span class="fb-scale-card__lbl">Nilai Maksimum</span>
+                                                            <el-input-number v-model="p.Skala_Max" :min="1" :max="10" size="large" style="width:100%" />
+                                                        </div>
+                                                    </div>
+                                                    <div class="fb-scale-card__foot">
+                                                        <span class="fb-scale-card__info">
+                                                            <i class="bi bi-info-circle"></i>
+                                                            {{ p.Tipe === 'RATING' ? 'Kandidat akan memberikan rating dalam rentang ini menggunakan bintang.' : 'Kandidat akan memilih skor NPS dalam rentang ini.' }}
+                                                        </span>
+                                                        <el-button size="small" text type="primary" @click="p.Skala_Min = defaultMin(p.Tipe); p.Skala_Max = defaultMax(p.Tipe)">
+                                                            <i class="bi bi-arrow-counterclockwise"></i> Kembalikan ke default
+                                                        </el-button>
+                                                    </div>
                                                 </div>
                                             </div>
 
@@ -724,10 +744,31 @@ export default {
 .fb-type-pill__icon { font-size: .95rem; line-height: 1; }
 .fb-type-pill__label { white-space: nowrap; }
 
-/* Scale row */
-.fb-scale-row { margin-top: 18px; }
-.fb-scale-inputs { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
-.fb-scale-label { color: var(--muted); font-weight: 600; font-size: .82rem; }
+/* ── Scale Range Card ── */
+.fb-scale-row { margin-top: 20px; }
+.fb-scale-card {
+    margin-top: 6px; border: 1.5px solid #e2e8f0; border-radius: 14px;
+    background: #fff; overflow: hidden;
+}
+.fb-scale-card__body {
+    display: flex; align-items: center; gap: 0; padding: 18px 20px 14px;
+}
+.fb-scale-card__field { flex: 1; }
+.fb-scale-card__lbl {
+    display: block; font-size: .7rem; font-weight: 700; color: #94a3b8;
+    text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px;
+}
+.fb-scale-card__sep {
+    display: flex; align-items: center; justify-content: center;
+    padding: 0 14px; margin-top: 18px;
+}
+.fb-scale-card__arrow { font-size: 1.3rem; color: #c4b5fd; font-weight: 700; }
+.fb-scale-card__foot {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 20px; background: #f8fafc; border-top: 1px solid #f1f5f9;
+}
+.fb-scale-card__info { font-size: .72rem; color: #94a3b8; font-weight: 600; }
+.fb-scale-card__info i { margin-right: 4px; }
 
 /* ── Option Chips ── */
 .fb-options-row { margin-top: 18px; }
