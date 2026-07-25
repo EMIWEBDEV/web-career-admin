@@ -105,67 +105,101 @@
                                             <div class="fb-type-pills">
                                                 <button v-for="t in questionTypes" :key="t.value"
                                                     :class="['fb-type-pill', { 'fb-type-pill--active': p.Tipe === t.value }]"
-                                                    @click="p.Tipe = t.value; ensureDefaults(p)">
+                                                    @click="onTypeChange(p, t.value)">
                                                     <span class="fb-type-pill__icon" v-html="t.icon"></span>
                                                     <span class="fb-type-pill__label">{{ t.label }}</span>
                                                 </button>
                                             </div>
 
-                                            <label class="wca-field-lbl" style="margin-top:18px">Pertanyaan</label>
-                                            <el-input v-model="p.Label" placeholder="Tulis pertanyaan..." size="large" />
+                                            <label class="wca-field-lbl" style="margin-top:20px">Pertanyaan</label>
+                                            <el-input v-model="p.Label" placeholder="Tulis pertanyaan yang akan ditampilkan ke kandidat..." size="large" />
 
-                                            <!-- Scale -->
+                                            <!-- Scale range for numeric types -->
                                             <div v-if="['RATING','NPS','LIKERT'].includes(p.Tipe)" class="fb-scale-row">
                                                 <label class="wca-field-lbl">Rentang Skala</label>
                                                 <div class="fb-scale-inputs">
-                                                    <el-input-number v-model="p.Skala_Min" :min="0" :max="10" />
-                                                    <span>sampai</span>
-                                                    <el-input-number v-model="p.Skala_Max" :min="1" :max="10" />
-                                                    <small>default: {{ defaultMin(p.Tipe) }}–{{ defaultMax(p.Tipe) }}</small>
+                                                    <span class="fb-scale-label">Dari</span>
+                                                    <el-input-number v-model="p.Skala_Min" :min="0" :max="10" size="large" style="width:100px" />
+                                                    <span class="fb-scale-label">sampai</span>
+                                                    <el-input-number v-model="p.Skala_Max" :min="1" :max="10" size="large" style="width:100px" />
+                                                    <el-button size="small" text @click="p.Skala_Min = defaultMin(p.Tipe); p.Skala_Max = defaultMax(p.Tipe)">Reset default</el-button>
                                                 </div>
                                             </div>
 
-                                            <!-- Options -->
+                                            <!-- Options with individual chips (not comma!) -->
                                             <div v-if="['RADIO','CHECKBOX','DROPDOWN'].includes(p.Tipe)" class="fb-options-row">
                                                 <label class="wca-field-lbl">Opsi Pilihan</label>
-                                                <el-input v-model="p._opsiText" placeholder="LinkedIn, Instagram, Website, Lainnya" />
-                                                <small>Pisahkan dengan koma</small>
+                                                <div class="fb-option-chips">
+                                                    <div v-for="(opt, oi) in (p._opsiList || [])" :key="oi" class="fb-option-chip">
+                                                        <span class="fb-option-chip__num">{{ oi + 1 }}</span>
+                                                        <el-input v-model="p._opsiList[oi]" placeholder="Opsi {{ oi + 1 }}" size="large" />
+                                                        <button class="fb-option-chip__del" @click="removeOption(p, oi)" title="Hapus opsi"><i class="bi bi-x-lg"></i></button>
+                                                    </div>
+                                                </div>
+                                                <button class="fb-option-add" @click="addOption(p)">
+                                                    <i class="bi bi-plus-circle"></i> Tambah Opsi
+                                                </button>
+                                                <small v-if="!p._opsiList || !p._opsiList.length" style="display:block;margin-top:6px;color:var(--muted)">Tambahkan minimal 2 opsi pilihan untuk kandidat.</small>
                                             </div>
                                         </div>
 
-                                        <!-- Right: live preview -->
+                                        <!-- Right: proper preview -->
                                         <div class="fb-preview">
-                                            <div class="fb-preview__label">Pratinjau Kandidat</div>
+                                            <div class="fb-preview__label">Pratinjau — Tampilan Kandidat</div>
                                             <div class="fb-preview__card">
-                                                <div class="fb-preview__q">{{ p.Label || 'Pertanyaan...' }}</div>
-                                                <!-- Rating preview -->
-                                                <div v-if="p.Tipe === 'RATING'" class="fb-preview__stars">★★★★★</div>
-                                                <!-- NPS preview -->
-                                                <div v-if="p.Tipe === 'NPS'" class="fb-preview__nps">
-                                                    <span v-for="n in 11" :key="n" class="fb-preview__nps-num" :style="{ background: npsPreviewColor(n-1) }">{{ n-1 }}</span>
+                                                <div class="fb-preview__q">{{ p.Label || 'Pertanyaan Anda...' }}</div>
+
+                                                <!-- Rating: scale-aware stars -->
+                                                <div v-if="p.Tipe === 'RATING'" class="fb-preview-rate">
+                                                    <span v-for="s in (p.Skala_Max || 5)" :key="s" class="fb-preview-rate__star">{{ s <= (p.Skala_Max || 5) ? '★' : '☆' }}</span>
                                                 </div>
-                                                <!-- Likert preview -->
-                                                <div v-if="p.Tipe === 'LIKERT'" class="fb-preview__likert">
-                                                    <span v-for="l in ['STS','TS','N','S','SS']" :key="l" class="fb-preview__likert-opt">{{ l }}</span>
+
+                                                <!-- NPS: scale-aware buttons -->
+                                                <div v-if="p.Tipe === 'NPS'" class="fb-preview-nps">
+                                                    <span v-for="n in ((p.Skala_Max || 10) - (p.Skala_Min || 0) + 1)" :key="n"
+                                                          class="fb-preview-nps__btn"
+                                                          :style="{ background: npsPreviewColor((p.Skala_Min || 0) + n - 1) }">
+                                                        {{ (p.Skala_Min || 0) + n - 1 }}
+                                                    </span>
                                                 </div>
-                                                <!-- Textarea preview -->
-                                                <div v-if="p.Tipe === 'TEXTAREA'" class="fb-preview__textarea">
-                                                    <span>Tulis jawaban di sini...</span>
+
+                                                <!-- Likert -->
+                                                <div v-if="p.Tipe === 'LIKERT'" class="fb-preview-rate">
+                                                    <span v-for="l in (p.Skala_Max || 5)" :key="l" class="fb-preview-rate__likert">{{ ['','STS','TS','N','S','SS'][l] || l }}</span>
                                                 </div>
-                                                <!-- Radio preview -->
-                                                <div v-if="p.Tipe === 'RADIO'" class="fb-preview__choices">
-                                                    <span v-for="(o, oi) in (p._opsiText || '').split(',').filter(Boolean).slice(0, 4)" :key="oi" class="fb-preview__radio">○ {{ o.trim() }}</span>
-                                                    <span v-if="!p._opsiText" class="fb-preview__placeholder">○ Opsi akan muncul di sini...</span>
+
+                                                <!-- Textarea -->
+                                                <div v-if="p.Tipe === 'TEXTAREA'" class="fb-preview-ta">
+                                                    <div class="fb-preview-ta__box">Tulis jawaban kamu di sini...</div>
+                                                    <div class="fb-preview-ta__counter">0/500</div>
                                                 </div>
-                                                <!-- Checkbox preview -->
-                                                <div v-if="p.Tipe === 'CHECKBOX'" class="fb-preview__choices">
-                                                    <span v-for="(o, oi) in (p._opsiText || '').split(',').filter(Boolean).slice(0, 4)" :key="oi" class="fb-preview__check">☐ {{ o.trim() }}</span>
-                                                    <span v-if="!p._opsiText" class="fb-preview__placeholder">☐ Opsi akan muncul di sini...</span>
+
+                                                <!-- Radio -->
+                                                <div v-if="p.Tipe === 'RADIO'" class="fb-preview-opts">
+                                                    <div v-for="(opt, oi) in (p._opsiList || [])" :key="oi" class="fb-preview-opts__radio">
+                                                        <span class="fb-preview-opts__circle"></span>
+                                                        <span>{{ opt }}</span>
+                                                    </div>
+                                                    <div v-if="!p._opsiList || !p._opsiList.length" class="fb-preview__empty">Tambahkan opsi di panel kiri</div>
                                                 </div>
-                                                <!-- Dropdown preview -->
-                                                <div v-if="p.Tipe === 'DROPDOWN'" class="fb-preview__choices">
-                                                    <span class="fb-preview__dropdown">▾ Pilih salah satu...</span>
-                                                    <span v-for="(o, oi) in (p._opsiText || '').split(',').filter(Boolean).slice(0, 4)" :key="oi" class="fb-preview__dd-opt">{{ o.trim() }}</span>
+
+                                                <!-- Checkbox -->
+                                                <div v-if="p.Tipe === 'CHECKBOX'" class="fb-preview-opts">
+                                                    <div v-for="(opt, oi) in (p._opsiList || [])" :key="oi" class="fb-preview-opts__check">
+                                                        <span class="fb-preview-opts__box"></span>
+                                                        <span>{{ opt }}</span>
+                                                    </div>
+                                                    <div v-if="!p._opsiList || !p._opsiList.length" class="fb-preview__empty">Tambahkan opsi di panel kiri</div>
+                                                </div>
+
+                                                <!-- Dropdown -->
+                                                <div v-if="p.Tipe === 'DROPDOWN'" class="fb-preview-opts">
+                                                    <div class="fb-preview-opts__dd">
+                                                        <span>Pilih salah satu...</span>
+                                                        <i class="bi bi-chevron-down"></i>
+                                                    </div>
+                                                    <div v-for="(opt, oi) in (p._opsiList || [])" :key="oi" class="fb-preview-opts__dd-item">{{ opt }}</div>
+                                                    <div v-if="!p._opsiList || !p._opsiList.length" class="fb-preview__empty">Tambahkan opsi di panel kiri</div>
                                                 </div>
                                             </div>
                                         </div>
@@ -334,7 +368,7 @@ export default {
                 f._pertanyaan = (data.result?.pertanyaan || []).map(p => ({
                     ...p,
                     _key: 'q_' + (p.Id_Master_Feedback_Pertanyaan || Math.random().toString(36).slice(2, 10)),
-                    _opsiText: (p.Opsi || []).join(', '),
+                    _opsiList: (p.Opsi && p.Opsi.length) ? [...p.Opsi] : [],
                 }));
                 f._editIdx = null;
                 f.Jumlah_Pertanyaan = f._pertanyaan.length;
@@ -377,7 +411,7 @@ export default {
         showTypePicker(f) {
             if (!f._pertanyaan) f._pertanyaan = [];
             const key = 'q_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
-            f._pertanyaan.push({ _key: key, Tipe: 'RATING', Label: '', Skala_Min: 1, Skala_Max: 5, _opsiText: '' });
+            f._pertanyaan.push({ _key: key, Tipe: 'RATING', Label: '', Skala_Min: 1, Skala_Max: 5, _opsiList: [] });
             f._editIdx = f._pertanyaan.length - 1;
             this.$nextTick(() => {
                 const el = this.$el.querySelector('.fb-q-card--expanded');
@@ -389,11 +423,29 @@ export default {
             if (!f._pertanyaan) return;
             f._pertanyaan.forEach((p, i) => { p.Urutan = i + 1; });
         },
+        onTypeChange(p, newType) {
+            p.Tipe = newType;
+            this.ensureDefaults(p);
+            if (['RADIO','CHECKBOX','DROPDOWN'].includes(newType)) {
+                if (!p._opsiList || !p._opsiList.length) p._opsiList = ['', ''];
+            }
+        },
         ensureDefaults(p) {
             if (['RATING','NPS','LIKERT'].includes(p.Tipe)) {
-                if (!p.Skala_Min) p.Skala_Min = this.defaultMin(p.Tipe);
-                if (!p.Skala_Max) p.Skala_Max = this.defaultMax(p.Tipe);
+                if (p.Skala_Min == null) p.Skala_Min = this.defaultMin(p.Tipe);
+                if (p.Skala_Max == null) p.Skala_Max = this.defaultMax(p.Tipe);
             }
+            if (['RADIO','CHECKBOX','DROPDOWN'].includes(p.Tipe)) {
+                if (!p._opsiList) p._opsiList = [];
+            }
+        },
+        addOption(p) {
+            if (!p._opsiList) p._opsiList = [];
+            p._opsiList.push('');
+        },
+        removeOption(p, idx) {
+            if (!p._opsiList) return;
+            p._opsiList.splice(idx, 1);
         },
         removeQuestion(f, i) { f._pertanyaan.splice(i, 1); },
         async saveQuestions(f) {
@@ -401,7 +453,7 @@ export default {
             const pertanyaan = (f._pertanyaan || []).map((p, i) => ({
                 urutan: i + 1, tipe: p.Tipe, label: p.Label,
                 skala_min: p.Skala_Min ?? null, skala_max: p.Skala_Max ?? null,
-                opsi: p._opsiText ? p._opsiText.split(',').map(o => o.trim()).filter(Boolean) : null,
+                opsi: (p._opsiList && p._opsiList.length) ? p._opsiList.filter(o => o.trim()) : null,
             }));
             await axios.post(`/api/v1/karir/master-feedback/${f.Id_Master_Feedback_Form}/pertanyaan`, { pertanyaan });
             this.savingQ = { ...this.savingQ, [f.Id_Master_Feedback_Form]: false };
@@ -566,48 +618,94 @@ export default {
 .fb-type-pill__label { white-space: nowrap; }
 
 /* Scale row */
-.fb-scale-row { margin-top: 14px; }
-.fb-scale-inputs { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
-.fb-scale-inputs span { color: var(--muted); font-weight: 600; font-size: .82rem; }
-.fb-scale-inputs small { color: var(--muted); font-size: .72rem; }
+.fb-scale-row { margin-top: 18px; }
+.fb-scale-inputs { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+.fb-scale-label { color: var(--muted); font-weight: 600; font-size: .82rem; }
 
-/* Options row */
-.fb-options-row { margin-top: 14px; }
-.fb-options-row small { display: block; margin-top: 4px; color: var(--muted); font-weight: 600; font-size: .72rem; }
+/* ── Option Chips ── */
+.fb-options-row { margin-top: 18px; }
+.fb-option-chips { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+.fb-option-chip {
+    display: flex; align-items: center; gap: 8px;
+    background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px;
+    padding: 6px 8px 6px 6px; transition: border-color .15s;
+}
+.fb-option-chip:hover { border-color: #a5b4fc; }
+.fb-option-chip__num {
+    width: 24px; height: 24px; border-radius: 6px; background: #6366f1;
+    color: #fff; font-size: .68rem; font-weight: 700; display: flex; align-items: center;
+    justify-content: center; flex-shrink: 0;
+}
+.fb-option-chip__del {
+    border: none; background: none; color: #94a3b8; cursor: pointer;
+    padding: 4px 6px; border-radius: 6px; font-size: .85rem; flex-shrink: 0; transition: all .15s;
+}
+.fb-option-chip__del:hover { background: rgba(239,68,68,.1); color: #ef4444; }
+.fb-option-add {
+    display: inline-flex; align-items: center; gap: 6px; margin-top: 10px;
+    border: 1.5px dashed #c4b5fd; border-radius: 10px; background: none;
+    padding: 10px 18px; color: #6366f1; font-weight: 700; font-size: .82rem;
+    cursor: pointer; transition: all .15s;
+}
+.fb-option-add:hover { background: rgba(99,102,241,.05); border-color: #6366f1; }
 
-/* ── Preview (right) ── */
-.fb-preview { flex: 2; min-width: 220px; }
+/* ── Preview Panel ── */
+.fb-preview { flex: 2; min-width: 240px; }
 .fb-preview__label {
     font-size: .68rem; font-weight: 800; letter-spacing: .1em; color: #a78bfa;
-    text-transform: uppercase; margin-bottom: 10px;
+    text-transform: uppercase; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;
 }
+.fb-preview__label::before { content: '👁️'; font-size: .75rem; }
 .fb-preview__card {
-    background: linear-gradient(135deg,#faf9ff,#f5f3ff); border: 1px solid #e9e3ff;
-    border-radius: 14px; padding: 20px; min-height: 100px;
+    background: #fff; border: 1.5px solid #e2e8f0; border-radius: 16px;
+    padding: 24px 22px; min-height: 120px; box-shadow: 0 4px 20px rgba(0,0,0,.04);
 }
-.fb-preview__q { font-size: .85rem; font-weight: 600; color: #334155; margin-bottom: 14px; line-height: 1.4; }
-.fb-preview__stars { font-size: 1.8rem; color: #f59e0b; letter-spacing: 4px; }
-.fb-preview__nps { display: flex; gap: 3px; flex-wrap: wrap; }
-.fb-preview__nps-num {
-    width: 26px; height: 26px; border-radius: 6px; color: #fff;
-    font-size: .7rem; font-weight: 700; display: flex; align-items: center; justify-content: center;
+.fb-preview__q { font-size: .9rem; font-weight: 600; color: #1e293b; margin-bottom: 18px; line-height: 1.5; }
+
+/* Rating preview */
+.fb-preview-rate { display: flex; gap: 4px; }
+.fb-preview-rate__star { font-size: 2rem; color: #f59e0b; line-height: 1; cursor: default; }
+.fb-preview-rate__likert {
+    padding: 8px 14px; border: 2px solid #e2e8f0; border-radius: 10px;
+    font-size: .78rem; font-weight: 700; color: #94a3b8; background: #fff;
 }
-.fb-preview__likert { display: flex; gap: 4px; }
-.fb-preview__likert-opt {
-    padding: 5px 10px; border: 1px solid #c4b5fd; border-radius: 6px;
-    font-size: .68rem; font-weight: 700; color: #6366f1; background: #fff;
+
+/* NPS preview */
+.fb-preview-nps { display: flex; gap: 3px; flex-wrap: wrap; }
+.fb-preview-nps__btn {
+    width: 30px; height: 30px; border-radius: 8px; color: #fff; font-size: .73rem;
+    font-weight: 700; display: flex; align-items: center; justify-content: center; cursor: default;
 }
-.fb-preview__textarea { padding: 10px 12px; border: 1px dashed #cbd5e1; border-radius: 8px; font-size: .78rem; color: #94a3b8; }
-.fb-preview__choices { display: flex; flex-direction: column; gap: 6px; }
-.fb-preview__radio, .fb-preview__check {
-    font-size: .8rem; color: #64748b; display: flex; align-items: center; gap: 6px;
+
+/* Textarea preview */
+.fb-preview-ta__box {
+    padding: 14px 16px; border: 1.5px solid #e2e8f0; border-radius: 10px;
+    font-size: .85rem; color: #94a3b8; min-height: 80px; background: #fafafa;
 }
-.fb-preview__dropdown {
-    padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px;
-    font-size: .78rem; color: #64748b; margin-bottom: 8px; background: #fff;
+.fb-preview-ta__counter { text-align: right; font-size: .7rem; color: #cbd5e1; margin-top: 4px; }
+
+/* Options preview (radio/checkbox/dropdown) */
+.fb-preview-opts { display: flex; flex-direction: column; gap: 10px; }
+.fb-preview-opts__radio, .fb-preview-opts__check {
+    display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+    border: 1.5px solid #e2e8f0; border-radius: 10px; font-size: .85rem;
+    color: #475569; background: #fff; cursor: default;
 }
-.fb-preview__dd-opt { font-size: .75rem; color: #94a3b8; padding-left: 8px; }
-.fb-preview__placeholder { font-size: .78rem; color: #cbd5e1; font-style: italic; }
+.fb-preview-opts__circle {
+    width: 18px; height: 18px; border-radius: 50%; border: 2px solid #cbd5e1; flex-shrink: 0;
+}
+.fb-preview-opts__box {
+    width: 18px; height: 18px; border-radius: 4px; border: 2px solid #cbd5e1; flex-shrink: 0;
+}
+.fb-preview-opts__dd {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 14px; border: 1.5px solid #e2e8f0; border-radius: 10px;
+    font-size: .85rem; color: #94a3b8; background: #fff; margin-bottom: 4px;
+}
+.fb-preview-opts__dd-item {
+    padding: 6px 14px; font-size: .82rem; color: #475569;
+}
+.fb-preview__empty { font-size: .8rem; color: #cbd5e1; font-style: italic; padding: 8px 0; }
 
 /* ── Footer ── */
 .fb-q-footer {
