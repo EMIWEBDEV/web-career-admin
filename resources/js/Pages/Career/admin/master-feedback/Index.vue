@@ -102,22 +102,21 @@
             :show="show" :title="editingId ? 'Ubah Form Feedback' : 'Buat Form Feedback'"
             subtitle="Atur nama, mode tampilan, durasi, dan status form." icon="bi-chat-dots"
             :save-label="editingId ? 'Perbarui' : 'Simpan Form'"
+            lg
             @close="show = false" @save="saveForm"
         >
             <!-- Identitas Form -->
             <div class="wca-fsection">
                 <div class="wca-fsection__label"><i class="bi bi-pencil-square"></i> Identitas Form</div>
                 <div class="wca-form">
-                    <div class="wca-frow">
-                        <div style="flex:2">
-                            <label class="wca-field-lbl"><i class="bi bi-tag"></i> Nama Form <span style="color:var(--danger)">*</span></label>
-                            <el-input v-model="form.Nama" placeholder="mis. Feedback Rekrutmen Reguler 2026" size="large" />
-                            <small style="display:block;margin-top:.3rem;color:var(--muted);font-weight:600;font-size:.72rem">Nama form yang mudah dikenali admin saat assign ke program.</small>
-                        </div>
-                        <div style="flex:1">
-                            <label class="wca-field-lbl"><i class="bi bi-text-paragraph"></i> Deskripsi</label>
-                            <el-input v-model="form.Deskripsi" type="textarea" :rows="3" placeholder="Jelaskan tujuan form ini (opsional)" />
-                        </div>
+                    <div>
+                        <label class="wca-field-lbl"><i class="bi bi-tag"></i> Nama Form <span style="color:var(--danger)">*</span></label>
+                        <el-input v-model="form.Nama" placeholder="mis. Feedback Rekrutmen Reguler 2026" size="large" />
+                        <small style="display:block;margin-top:.35rem;color:var(--muted);font-weight:600;font-size:.72rem">Nama form yang mudah dikenali admin saat assign ke program.</small>
+                    </div>
+                    <div style="margin-top:16px">
+                        <label class="wca-field-lbl"><i class="bi bi-text-paragraph"></i> Deskripsi <span style="color:var(--muted);font-weight:400">(opsional)</span></label>
+                        <el-input v-model="form.Deskripsi" type="textarea" :rows="3" placeholder="Jelaskan tujuan dan konteks form feedback ini..." />
                     </div>
                 </div>
             </div>
@@ -126,31 +125,29 @@
             <div class="wca-fsection">
                 <div class="wca-fsection__label"><i class="bi bi-sliders"></i> Pengaturan Tampilan & Durasi</div>
                 <div class="wca-form">
-                    <div class="wca-frow">
-                        <div style="flex:3">
-                            <label class="wca-field-lbl"><i class="bi bi-layout-text-window-reverse"></i> Mode Tampilan <span style="color:var(--danger)">*</span></label>
-                            <div class="wca-radio-cards">
-                                <label :class="['wca-radio-card', { 'is-active': form.Mode_Tampilan === 'SCROLL' }]">
-                                    <input type="radio" value="SCROLL" v-model="form.Mode_Tampilan" />
-                                    <span class="wca-radio-card__icon"><i class="bi bi-file-earmark-text"></i></span>
-                                    <span class="wca-radio-card__label">Single Page</span>
-                                    <span class="wca-radio-card__desc">Semua pertanyaan dalam satu halaman scroll</span>
-                                </label>
-                                <label :class="['wca-radio-card', { 'is-active': form.Mode_Tampilan === 'WIZARD' }]">
-                                    <input type="radio" value="WIZARD" v-model="form.Mode_Tampilan" />
-                                    <span class="wca-radio-card__icon"><i class="bi bi-chevron-double-right"></i></span>
-                                    <span class="wca-radio-card__label">Step-by-Step</span>
-                                    <span class="wca-radio-card__desc">Satu pertanyaan per langkah dengan progress bar</span>
-                                </label>
-                            </div>
+                    <div>
+                        <label class="wca-field-lbl"><i class="bi bi-layout-text-window-reverse"></i> Mode Tampilan <span style="color:var(--danger)">*</span></label>
+                        <div class="wca-radio-cards">
+                            <label :class="['wca-radio-card', { 'is-active': form.Mode_Tampilan === 'SCROLL' }]">
+                                <input type="radio" value="SCROLL" v-model="form.Mode_Tampilan" />
+                                <span class="wca-radio-card__icon"><i class="bi bi-file-earmark-text"></i></span>
+                                <span class="wca-radio-card__label">Single Page Scroll</span>
+                                <span class="wca-radio-card__desc">Semua pertanyaan ditampilkan dalam satu halaman yang bisa di-scroll</span>
+                            </label>
+                            <label :class="['wca-radio-card', { 'is-active': form.Mode_Tampilan === 'WIZARD' }]">
+                                <input type="radio" value="WIZARD" v-model="form.Mode_Tampilan" />
+                                <span class="wca-radio-card__icon"><i class="bi bi-chevron-double-right"></i></span>
+                                <span class="wca-radio-card__label">Step-by-Step Wizard</span>
+                                <span class="wca-radio-card__desc">Satu pertanyaan per langkah dengan progress bar dan navigasi</span>
+                            </label>
                         </div>
-                        <div style="flex:1">
-                            <label class="wca-field-lbl"><i class="bi bi-hourglass-split"></i> Durasi Pengisian</label>
-                            <el-input-number v-model="form.Durasi_Hari" :min="1" :max="30" placeholder="Unlimited" style="width:100%" />
-                            <small style="display:block;margin-top:.3rem;color:var(--muted);font-weight:600;font-size:.72rem">
-                                {{ form.Durasi_Hari ? form.Durasi_Hari + ' hari sejak email dikirim' : 'Tidak ada batas waktu (unlimited)' }}
-                            </small>
-                        </div>
+                    </div>
+                    <div style="margin-top:20px">
+                        <label class="wca-field-lbl"><i class="bi bi-hourglass-split"></i> Durasi Pengisian</label>
+                        <el-input-number v-model="form.Durasi_Hari" :min="1" :max="30" placeholder="Unlimited" size="large" style="width:100%" />
+                        <small style="display:block;margin-top:.35rem;color:var(--muted);font-weight:600;font-size:.72rem">
+                            {{ form.Durasi_Hari ? 'Kandidat punya waktu ' + form.Durasi_Hari + ' hari sejak email dikirim untuk mengisi feedback' : 'Tidak ada batas waktu — kandidat bisa mengisi kapan saja (maks. 30 hari)' }}
+                        </small>
                     </div>
                 </div>
             </div>
@@ -159,18 +156,16 @@
             <div class="wca-fsection">
                 <div class="wca-fsection__label"><i class="bi bi-toggle-on"></i> Status</div>
                 <div class="wca-form">
-                    <div class="wca-frow">
-                        <div>
-                            <div :class="['wca-status-card', form.Flag_Aktif === 'Y' ? 'wca-status-card--on' : 'wca-status-card--off']">
-                                <span class="wca-status-card__icon">
-                                    <i class="bi" :class="form.Flag_Aktif === 'Y' ? 'bi-check-circle-fill' : 'bi-pause-circle'"></i>
-                                </span>
-                                <div class="wca-status-card__body">
-                                    <strong>{{ form.Flag_Aktif === 'Y' ? 'Aktif' : 'Nonaktif' }}</strong>
-                                    <small>{{ form.Flag_Aktif === 'Y' ? 'Form dapat digunakan oleh kandidat' : 'Form tidak akan muncul untuk kandidat' }}</small>
-                                </div>
-                                <el-switch v-model="form.Flag_Aktif" active-value="Y" inactive-value="T" size="large" />
+                    <div>
+                        <div :class="['wca-status-card', form.Flag_Aktif === 'Y' ? 'wca-status-card--on' : 'wca-status-card--off']">
+                            <span class="wca-status-card__icon">
+                                <i class="bi" :class="form.Flag_Aktif === 'Y' ? 'bi-check-circle-fill' : 'bi-pause-circle'"></i>
+                            </span>
+                            <div class="wca-status-card__body">
+                                <strong>{{ form.Flag_Aktif === 'Y' ? 'Aktif' : 'Nonaktif' }}</strong>
+                                <small>{{ form.Flag_Aktif === 'Y' ? 'Form dapat digunakan — kandidat akan menerima link feedback' : 'Form tidak akan muncul — kandidat tidak akan diminta mengisi feedback' }}</small>
                             </div>
+                            <el-switch v-model="form.Flag_Aktif" active-value="Y" inactive-value="T" size="large" />
                         </div>
                     </div>
                 </div>
