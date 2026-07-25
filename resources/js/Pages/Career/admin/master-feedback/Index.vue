@@ -325,14 +325,25 @@
                         </template>
                     </draggable>
 
-                    <!-- Bottom actions -->
+                    <!-- Bottom action bar — sticky when questions exist -->
                     <div v-if="(f._pertanyaan || []).length" class="fb-q-footer">
-                        <span class="fb-q-footer__info"><i class="bi bi-info-circle"></i> Geser <span class="fb-q-drag-inline"><i class="bi bi-grip-vertical"></i></span> untuk mengurutkan. Klik kartu untuk mengedit. </span>
-                        <div class="fb-q-footer__btns">
-                            <button class="wca-btn wca-btn--soft" type="button" @click="showTypePicker(f)"><i class="bi bi-plus-circle"></i> Tambah</button>
-                            <button class="wca-btn wca-btn--primary" type="button" @click="saveQuestions(f)" :disabled="savingQ[f.Id_Master_Feedback_Form]">
+                        <div class="fb-q-footer__left">
+                            <button class="fb-q-footer__add" type="button" @click="showTypePicker(f)">
+                                <i class="bi bi-plus-lg"></i> Tambah Pertanyaan
+                            </button>
+                        </div>
+                        <div class="fb-q-footer__right">
+                            <span class="fb-q-footer__info">
+                                <span class="fb-q-drag-inline"><i class="bi bi-grip-vertical"></i></span> Geser untuk urutkan
+                            </span>
+                            <button
+                                class="wca-btn wca-btn--primary"
+                                type="button"
+                                @click="saveQuestions(f)"
+                                :disabled="savingQ[f.Id_Master_Feedback_Form]"
+                            >
                                 <i class="bi" :class="savingQ[f.Id_Master_Feedback_Form] ? 'bi-hourglass-split' : 'bi-check-lg'"></i>
-                                {{ savingQ[f.Id_Master_Feedback_Form] ? 'Menyimpan...' : 'Simpan Semua' }}
+                                {{ savingQ[f.Id_Master_Feedback_Form] ? 'Menyimpan...' : 'Simpan Perubahan' }}
                             </button>
                         </div>
                     </div>
@@ -955,11 +966,20 @@ export default {
     .pkg-row__act { flex-wrap: wrap; }
 }
 
-/* ── Footer ── */
+/* ── Footer Action Bar ── */
 .fb-q-footer {
-    display: flex; justify-content: space-between; align-items: center;
-    padding: 14px 0 0; border-top: 1px solid #e2e8f0; margin-top: 16px;
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    padding: 12px 16px; background: #fafbfc; border: 1px solid #e2e8f0;
+    border-radius: 12px; margin-top: 16px; flex-wrap: wrap;
 }
-.fb-q-footer__info { font-size: .73rem; color: var(--muted); font-weight: 600; }
-.fb-q-footer__btns { display: flex; gap: 10px; }
+.fb-q-footer__left { flex-shrink: 0; }
+.fb-q-footer__add {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 16px; border: 1.5px solid #e2e8f0; border-radius: 8px;
+    background: #fff; color: #64748b; font-size: .82rem; font-weight: 600;
+    cursor: pointer; transition: all .15s;
+}
+.fb-q-footer__add:hover { border-color: #6366f1; color: #6366f1; background: rgba(99,102,241,.03); }
+.fb-q-footer__right { display: flex; align-items: center; gap: 14px; }
+.fb-q-footer__info { font-size: .72rem; color: #94a3b8; font-weight: 600; white-space: nowrap; }
 </style>
