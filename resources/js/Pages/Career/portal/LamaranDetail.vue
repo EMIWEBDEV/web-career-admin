@@ -12,7 +12,7 @@
 
         <div class="ld-wrap">
             <!-- [feat/feedback] Banner feedback -->
-            <div v-if="showFeedbackBanner" :class="['ld-feedback-banner', feedbackPending.Hasil_Akhir === 'DITERIMA' ? 'ld-feedback-banner--wajib' : 'ld-feedback-banner--optional']">
+            <div v-if="showFeedbackBanner && feedbackPending" :class="['ld-feedback-banner', feedbackPending.Hasil_Akhir === 'DITERIMA' ? 'ld-feedback-banner--wajib' : 'ld-feedback-banner--optional']">
                 <div class="ld-feedback-banner__content">
                     <div class="ld-feedback-banner__text">
                         <strong v-if="feedbackPending.Hasil_Akhir === 'DITERIMA'">Selamat! Mohon isi feedback untuk menyelesaikan proses.</strong>
