@@ -54,78 +54,137 @@
                 <!-- Expanded detail: questions -->
                 <div v-if="open === f.Id_Master_Feedback_Form" class="pkg-detail">
                     <div class="pkg-dhead pkg-dhead--indigo">
-                        <span><i class="bi bi-list-ol"></i> DAFTAR PERTANYAAN ({{ (f._pertanyaan || []).length }})</span>
-                        <button class="wca-btn wca-btn--soft wca-btn--sm" type="button" @click="addQuestion(f)"><i class="bi bi-plus-circle"></i> Tambah Pertanyaan</button>
+                        <span><i class="bi bi-list-ol"></i> PERTANYAAN FORM — {{ (f._pertanyaan || []).length }} butir</span>
+                        <button class="wca-btn wca-btn--soft wca-btn--sm" type="button" @click="showTypePicker(f)"><i class="bi bi-plus-circle"></i> Tambah Pertanyaan</button>
                     </div>
 
-                    <div v-if="!f._pertanyaan || !f._pertanyaan.length" class="wca-hint" style="margin:0 0 .6rem"><i class="bi bi-info-circle"></i> Belum ada pertanyaan. Klik <b>Tambah Pertanyaan</b> untuk mulai menyusun form.</div>
+                    <div v-if="!f._pertanyaan || !f._pertanyaan.length" class="fb-empty-questions">
+                        <div class="fb-empty-questions__icon"><i class="bi bi-lightbulb"></i></div>
+                        <h4>Belum ada pertanyaan</h4>
+                        <p>Klik <b>Tambah Pertanyaan</b> lalu pilih tipe pertanyaan — Rating, NPS, Likert, Teks, atau Pilihan Ganda.</p>
+                    </div>
 
-                    <!-- Question Cards -->
-                    <div v-for="(p, i) in (f._pertanyaan || [])" :key="i" class="wca-stagecard">
-                        <div class="wca-stagecard__num">{{ i + 1 }}</div>
-                        <div class="wca-stagecard__body">
-                            <!-- Top bar: type selector + delete -->
-                            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
-                                <div style="display:flex;align-items:center;gap:10px">
-                                    <label class="wca-field-lbl" style="margin:0;white-space:nowrap">Tipe:</label>
-                                    <el-select v-model="p.Tipe" style="width:160px">
-                                        <el-option v-for="t in ['RATING','NPS','LIKERT','TEXTAREA','RADIO','CHECKBOX','DROPDOWN']" :key="t" :label="t" :value="t" />
-                                    </el-select>
-                                    <!-- Type badge -->
-                                    <span :class="['wca-badge', typeBadgeClass(p.Tipe)]">{{ typeLabel(p.Tipe) }}</span>
+                    <!-- DRAG-DROP QUESTION LIST -->
+                    <draggable
+                        v-else
+                        v-model="f._pertanyaan"
+                        item-key="_key"
+                        handle=".fb-q-drag"
+                        ghost-class="fb-q-ghost"
+                        @end="onReorder(f)"
+                    >
+                        <template #item="{ element: p, index: i }">
+                            <div :class="['fb-q-card', { 'fb-q-card--expanded': f._editIdx === i }]">
+                                <!-- COLLAPSED STATE -->
+                                <div v-if="f._editIdx !== i" class="fb-q-collapsed" @click="f._editIdx = i">
+                                    <span class="fb-q-drag" @click.stop><i class="bi bi-grip-vertical"></i></span>
+                                    <span class="fb-q-collapsed__num">{{ i + 1 }}</span>
+                                    <span class="fb-q-collapsed__icon" v-html="typeIcon(p.Tipe)"></span>
+                                    <span class="fb-q-collapsed__text">
+                                        <strong>{{ p.Label || 'Pertanyaan tanpa judul' }}</strong>
+                                        <small>{{ typeLabel(p.Tipe) }}</small>
+                                    </span>
+                                    <span :class="['wca-badge', typeBadgeClass(p.Tipe)]" style="margin-right:8px">{{ p.Tipe }}</span>
+                                    <button class="fb-q-collapsed__edit" @click.stop="f._editIdx = i"><i class="bi bi-pencil"></i></button>
+                                    <button class="fb-q-collapsed__del" @click.stop="removeQuestion(f, i)"><i class="bi bi-trash"></i></button>
                                 </div>
-                                <button class="pkg-ibtn pkg-ibtn--danger" title="Hapus pertanyaan" @click="removeQuestion(f, i)"><i class="bi bi-trash"></i></button>
-                            </div>
 
-                            <!-- Label -->
-                            <div style="margin-bottom:12px">
-                                <label class="wca-field-lbl">Pertanyaan</label>
-                                <el-input v-model="p.Label" placeholder="Tulis pertanyaan yang akan ditampilkan ke kandidat..." />
-                            </div>
+                                <!-- EXPANDED STATE -->
+                                <div v-else class="fb-q-expanded">
+                                    <div class="fb-q-expanded__head">
+                                        <span class="fb-q-drag"><i class="bi bi-grip-vertical"></i></span>
+                                        <span class="fb-q-expanded__num">{{ i + 1 }}</span>
+                                        <span class="fb-q-expanded__title">Edit Pertanyaan</span>
+                                        <button class="fb-q-expanded__close" @click="f._editIdx = null"><i class="bi bi-check-lg"></i> Selesai</button>
+                                    </div>
 
-                            <!-- Numeric: Scale range -->
-                            <div v-if="['RATING','NPS','LIKERT'].includes(p.Tipe)" style="margin-bottom:12px">
-                                <label class="wca-field-lbl">Rentang Skala</label>
-                                <div style="display:flex;align-items:center;gap:10px">
-                                    <el-input-number v-model="p.Skala_Min" :min="0" :max="10" style="width:110px" />
-                                    <span style="color:var(--muted);font-weight:600;font-size:.82rem">sampai</span>
-                                    <el-input-number v-model="p.Skala_Max" :min="1" :max="10" style="width:110px" />
-                                    <small style="color:var(--muted);font-weight:600;font-size:.72rem">
-                                        (default: {{ defaultMin(p.Tipe) }} – {{ defaultMax(p.Tipe) }})
-                                    </small>
+                                    <div class="fb-q-expanded__body">
+                                        <!-- Left: editor -->
+                                        <div class="fb-q-editor">
+                                            <label class="wca-field-lbl">Tipe Pertanyaan</label>
+                                            <div class="fb-type-pills">
+                                                <button v-for="t in questionTypes" :key="t.value"
+                                                    :class="['fb-type-pill', { 'fb-type-pill--active': p.Tipe === t.value }]"
+                                                    @click="p.Tipe = t.value; ensureDefaults(p)">
+                                                    <span class="fb-type-pill__icon" v-html="t.icon"></span>
+                                                    <span class="fb-type-pill__label">{{ t.label }}</span>
+                                                </button>
+                                            </div>
+
+                                            <label class="wca-field-lbl" style="margin-top:18px">Pertanyaan</label>
+                                            <el-input v-model="p.Label" placeholder="Tulis pertanyaan..." size="large" />
+
+                                            <!-- Scale -->
+                                            <div v-if="['RATING','NPS','LIKERT'].includes(p.Tipe)" class="fb-scale-row">
+                                                <label class="wca-field-lbl">Rentang Skala</label>
+                                                <div class="fb-scale-inputs">
+                                                    <el-input-number v-model="p.Skala_Min" :min="0" :max="10" />
+                                                    <span>sampai</span>
+                                                    <el-input-number v-model="p.Skala_Max" :min="1" :max="10" />
+                                                    <small>default: {{ defaultMin(p.Tipe) }}–{{ defaultMax(p.Tipe) }}</small>
+                                                </div>
+                                            </div>
+
+                                            <!-- Options -->
+                                            <div v-if="['RADIO','CHECKBOX','DROPDOWN'].includes(p.Tipe)" class="fb-options-row">
+                                                <label class="wca-field-lbl">Opsi Pilihan</label>
+                                                <el-input v-model="p._opsiText" placeholder="LinkedIn, Instagram, Website, Lainnya" />
+                                                <small>Pisahkan dengan koma</small>
+                                            </div>
+                                        </div>
+
+                                        <!-- Right: live preview -->
+                                        <div class="fb-preview">
+                                            <div class="fb-preview__label">Pratinjau Kandidat</div>
+                                            <div class="fb-preview__card">
+                                                <div class="fb-preview__q">{{ p.Label || 'Pertanyaan...' }}</div>
+                                                <!-- Rating preview -->
+                                                <div v-if="p.Tipe === 'RATING'" class="fb-preview__stars">★★★★★</div>
+                                                <!-- NPS preview -->
+                                                <div v-if="p.Tipe === 'NPS'" class="fb-preview__nps">
+                                                    <span v-for="n in 11" :key="n" class="fb-preview__nps-num" :style="{ background: npsPreviewColor(n-1) }">{{ n-1 }}</span>
+                                                </div>
+                                                <!-- Likert preview -->
+                                                <div v-if="p.Tipe === 'LIKERT'" class="fb-preview__likert">
+                                                    <span v-for="l in ['STS','TS','N','S','SS']" :key="l" class="fb-preview__likert-opt">{{ l }}</span>
+                                                </div>
+                                                <!-- Textarea preview -->
+                                                <div v-if="p.Tipe === 'TEXTAREA'" class="fb-preview__textarea">
+                                                    <span>Tulis jawaban di sini...</span>
+                                                </div>
+                                                <!-- Radio preview -->
+                                                <div v-if="p.Tipe === 'RADIO'" class="fb-preview__choices">
+                                                    <span v-for="(o, oi) in (p._opsiText || '').split(',').filter(Boolean).slice(0, 4)" :key="oi" class="fb-preview__radio">○ {{ o.trim() }}</span>
+                                                    <span v-if="!p._opsiText" class="fb-preview__placeholder">○ Opsi akan muncul di sini...</span>
+                                                </div>
+                                                <!-- Checkbox preview -->
+                                                <div v-if="p.Tipe === 'CHECKBOX'" class="fb-preview__choices">
+                                                    <span v-for="(o, oi) in (p._opsiText || '').split(',').filter(Boolean).slice(0, 4)" :key="oi" class="fb-preview__check">☐ {{ o.trim() }}</span>
+                                                    <span v-if="!p._opsiText" class="fb-preview__placeholder">☐ Opsi akan muncul di sini...</span>
+                                                </div>
+                                                <!-- Dropdown preview -->
+                                                <div v-if="p.Tipe === 'DROPDOWN'" class="fb-preview__choices">
+                                                    <span class="fb-preview__dropdown">▾ Pilih salah satu...</span>
+                                                    <span v-for="(o, oi) in (p._opsiText || '').split(',').filter(Boolean).slice(0, 4)" :key="oi" class="fb-preview__dd-opt">{{ o.trim() }}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
+                        </template>
+                    </draggable>
 
-                            <!-- Choice-based: Options -->
-                            <div v-if="['RADIO','CHECKBOX','DROPDOWN'].includes(p.Tipe)" style="margin-bottom:12px">
-                                <label class="wca-field-lbl">Daftar Opsi Pilihan</label>
-                                <el-input v-model="p._opsiText" placeholder="Pisahkan setiap opsi dengan koma. Contoh: LinkedIn, Instagram, Website, Lainnya" />
-                                <small style="display:block;margin-top:.3rem;color:var(--muted);font-weight:600;font-size:.72rem">Tulis opsi dipisahkan koma. Kandidat akan melihat ini sebagai pilihan.</small>
-                            </div>
-
-                            <!-- Bottom info -->
-                            <div style="padding-top:10px;border-top:1px solid var(--border-light,#f1f5f9);display:flex;justify-content:space-between;align-items:center">
-                                <span style="font-size:.73rem;color:var(--muted);font-weight:600">
-                                    <i class="bi bi-info-circle"></i>
-                                    <template v-if="p.Tipe === 'RATING'">Rating bintang 1-5</template>
-                                    <template v-else-if="p.Tipe === 'NPS'">Net Promoter Score 0-10</template>
-                                    <template v-else-if="p.Tipe === 'LIKERT'">Skala Likert (STS – SS)</template>
-                                    <template v-else-if="p.Tipe === 'TEXTAREA'">Jawaban teks bebas (max 500 karakter)</template>
-                                    <template v-else-if="p.Tipe === 'RADIO'">Pilih satu dari beberapa opsi</template>
-                                    <template v-else-if="p.Tipe === 'CHECKBOX'">Bisa pilih lebih dari satu opsi</template>
-                                    <template v-else-if="p.Tipe === 'DROPDOWN'">Dropdown pilihan tunggal</template>
-                                </span>
-                                <span style="font-size:.72rem;color:var(--muted)">Pertanyaan ke-{{ i + 1 }}</span>
-                            </div>
+                    <!-- Bottom actions -->
+                    <div v-if="(f._pertanyaan || []).length" class="fb-q-footer">
+                        <span class="fb-q-footer__info"><i class="bi bi-info-circle"></i> Geser <span class="fb-q-drag-inline"><i class="bi bi-grip-vertical"></i></span> untuk mengurutkan. Klik kartu untuk mengedit. </span>
+                        <div class="fb-q-footer__btns">
+                            <button class="wca-btn wca-btn--soft" type="button" @click="showTypePicker(f)"><i class="bi bi-plus-circle"></i> Tambah</button>
+                            <button class="wca-btn wca-btn--primary" type="button" @click="saveQuestions(f)" :disabled="savingQ[f.Id_Master_Feedback_Form]">
+                                <i class="bi" :class="savingQ[f.Id_Master_Feedback_Form] ? 'bi-hourglass-split' : 'bi-check-lg'"></i>
+                                {{ savingQ[f.Id_Master_Feedback_Form] ? 'Menyimpan...' : 'Simpan Semua' }}
+                            </button>
                         </div>
-                    </div>
-
-                    <div v-if="(f._pertanyaan || []).length" style="margin-top:16px;display:flex;justify-content:flex-end;gap:10px">
-                        <button class="wca-btn wca-btn--soft wca-btn--sm" type="button" @click="addQuestion(f)"><i class="bi bi-plus-circle"></i> Tambah Lagi</button>
-                        <button class="wca-btn wca-btn--primary" type="button" @click="saveQuestions(f)" :disabled="savingQ[f.Id_Master_Feedback_Form]">
-                            <i class="bi" :class="savingQ[f.Id_Master_Feedback_Form] ? 'bi-hourglass-split' : 'bi-check-lg'"></i>
-                            {{ savingQ[f.Id_Master_Feedback_Form] ? 'Menyimpan...' : 'Simpan Semua Pertanyaan' }}
-                        </button>
                     </div>
                 </div>
             </div>
@@ -219,9 +278,10 @@ import axios from 'axios';
 import { Head } from '@inertiajs/vue3';
 import AdminModal from '@career/AdminModal.vue';
 import ConfirmModal from '@career/ConfirmModal.vue';
+import draggable from 'vuedraggable';
 
 export default {
-    components: { Head, AdminModal, ConfirmModal },
+    components: { Head, AdminModal, ConfirmModal, draggable },
     data() {
         return {
             list: [],
@@ -232,6 +292,15 @@ export default {
             removeTarget: null,
             savingQ: {},
             form: { Nama: '', Deskripsi: '', Mode_Tampilan: 'SCROLL', Durasi_Hari: null, Flag_Aktif: 'Y' },
+            questionTypes: [
+                { value: 'RATING', label: 'Rating', icon: '<i class="bi bi-star-fill"></i>' },
+                { value: 'NPS', label: 'NPS', icon: '<i class="bi bi-0-circle"></i>' },
+                { value: 'LIKERT', label: 'Likert', icon: '<i class="bi bi-ui-radios"></i>' },
+                { value: 'TEXTAREA', label: 'Teks', icon: '<i class="bi bi-text-paragraph"></i>' },
+                { value: 'RADIO', label: 'Pilih Satu', icon: '<i class="bi bi-record-circle"></i>' },
+                { value: 'CHECKBOX', label: 'Multi-Pilih', icon: '<i class="bi bi-check2-square"></i>' },
+                { value: 'DROPDOWN', label: 'Dropdown', icon: '<i class="bi bi-chevron-down"></i>' },
+            ],
         };
     },
     computed: {
@@ -264,8 +333,10 @@ export default {
                 const { data } = await axios.get(`/api/v1/karir/master-feedback/${f.Id_Master_Feedback_Form}`);
                 f._pertanyaan = (data.result?.pertanyaan || []).map(p => ({
                     ...p,
+                    _key: 'q_' + (p.Id_Master_Feedback_Pertanyaan || Math.random().toString(36).slice(2, 10)),
                     _opsiText: (p.Opsi || []).join(', '),
                 }));
+                f._editIdx = null;
                 f.Jumlah_Pertanyaan = f._pertanyaan.length;
                 f._questionsLoaded = true;
             } catch (e) {
@@ -303,15 +374,26 @@ export default {
             await axios.put(`/api/v1/karir/master-feedback/${f.Id_Master_Feedback_Form}`, { nama: f.Nama, deskripsi: f.Deskripsi, mode_tampilan: f.Mode_Tampilan, durasi_hari: f.Durasi_Hari, flag_aktif: active ? 'Y' : 'T' });
             this.load();
         },
-        addQuestion(f) {
+        showTypePicker(f) {
             if (!f._pertanyaan) f._pertanyaan = [];
-            f._pertanyaan.push({ Tipe: 'RATING', Label: '', Skala_Min: 1, Skala_Max: 5, _opsiText: '' });
-            // Scroll to new question after render
+            const key = 'q_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+            f._pertanyaan.push({ _key: key, Tipe: 'RATING', Label: '', Skala_Min: 1, Skala_Max: 5, _opsiText: '' });
+            f._editIdx = f._pertanyaan.length - 1;
             this.$nextTick(() => {
-                const cards = this.$el.querySelectorAll('.wca-stagecard');
-                const last = cards[cards.length - 1];
-                if (last) last.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                const el = this.$el.querySelector('.fb-q-card--expanded');
+                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
             });
+        },
+        addQuestion(f) { this.showTypePicker(f); },
+        onReorder(f) {
+            if (!f._pertanyaan) return;
+            f._pertanyaan.forEach((p, i) => { p.Urutan = i + 1; });
+        },
+        ensureDefaults(p) {
+            if (['RATING','NPS','LIKERT'].includes(p.Tipe)) {
+                if (!p.Skala_Min) p.Skala_Min = this.defaultMin(p.Tipe);
+                if (!p.Skala_Max) p.Skala_Max = this.defaultMax(p.Tipe);
+            }
         },
         removeQuestion(f, i) { f._pertanyaan.splice(i, 1); },
         async saveQuestions(f) {
@@ -346,122 +428,192 @@ export default {
             const map = { RATING: 5, NPS: 10, LIKERT: 5 };
             return map[tipe] ?? 5;
         },
+        typeIcon(tipe) {
+            const map = {
+                RATING: '<i class="bi bi-star-fill"></i>',
+                NPS: '<i class="bi bi-0-circle"></i>',
+                LIKERT: '<i class="bi bi-ui-radios"></i>',
+                TEXTAREA: '<i class="bi bi-text-paragraph"></i>',
+                RADIO: '<i class="bi bi-record-circle"></i>',
+                CHECKBOX: '<i class="bi bi-check2-square"></i>',
+                DROPDOWN: '<i class="bi bi-chevron-down"></i>',
+            };
+            return map[tipe] || '<i class="bi bi-question-circle"></i>';
+        },
+        npsPreviewColor(n) {
+            if (n <= 6) return 'rgba(239,68,68,0.8)';
+            if (n <= 8) return 'rgba(245,158,11,0.7)';
+            return 'rgba(34,197,94,0.7)';
+        },
     },
 };
 </script>
 
 <style scoped>
 /* ── Radio Cards (Mode Tampilan) ── */
-.wca-radio-cards {
-    display: flex;
-    gap: 12px;
-}
-
+.wca-radio-cards { display: flex; gap: 12px; }
 .wca-radio-card {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 6px;
-    padding: 16px 12px;
-    border: 2px solid var(--border-light, #e2e8f0);
-    border-radius: 12px;
-    cursor: pointer;
-    transition: all 0.2s;
-    text-align: center;
-    background: #fff;
+    flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px;
+    padding: 16px 12px; border: 2px solid var(--border-light, #e2e8f0); border-radius: 12px;
+    cursor: pointer; transition: all 0.2s; text-align: center; background: #fff;
 }
-
-.wca-radio-card:hover {
-    border-color: #a5b4fc;
-    background: rgba(99, 102, 241, 0.03);
-}
-
-.wca-radio-card.is-active {
-    border-color: #6366f1;
-    background: rgba(99, 102, 241, 0.06);
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
-}
-
-.wca-radio-card input[type="radio"] {
-    display: none;
-}
-
-.wca-radio-card__icon {
-    font-size: 1.5rem;
-    color: var(--muted, #94a3b8);
-    line-height: 1;
-}
-
-.wca-radio-card.is-active .wca-radio-card__icon {
-    color: #6366f1;
-}
-
-.wca-radio-card__label {
-    font-size: 0.82rem;
-    font-weight: 700;
-    color: #334155;
-}
-
-.wca-radio-card.is-active .wca-radio-card__label {
-    color: #6366f1;
-}
-
-.wca-radio-card__desc {
-    font-size: 0.7rem;
-    color: var(--muted, #94a3b8);
-    line-height: 1.35;
-}
+.wca-radio-card:hover { border-color: #a5b4fc; background: rgba(99,102,241,.03); }
+.wca-radio-card.is-active { border-color: #6366f1; background: rgba(99,102,241,.06); box-shadow: 0 0 0 3px rgba(99,102,241,.1); }
+.wca-radio-card input[type="radio"] { display: none; }
+.wca-radio-card__icon { font-size: 1.5rem; color: var(--muted,#94a3b8); line-height: 1; }
+.wca-radio-card.is-active .wca-radio-card__icon { color: #6366f1; }
+.wca-radio-card__label { font-size: .82rem; font-weight: 700; color: #334155; }
+.wca-radio-card.is-active .wca-radio-card__label { color: #6366f1; }
+.wca-radio-card__desc { font-size: .7rem; color: var(--muted,#94a3b8); line-height: 1.35; }
 
 /* ── Status Card ── */
 .wca-status-card {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    padding: 16px 18px;
-    border: 1.5px solid var(--border-light, #e2e8f0);
-    border-radius: 12px;
-    background: #fff;
-    width: 100%;
+    display: flex; align-items: center; gap: 14px; padding: 16px 18px;
+    border: 1.5px solid var(--border-light,#e2e8f0); border-radius: 12px; background: #fff; width: 100%;
 }
+.wca-status-card--on { border-color: rgba(16,185,129,.3); background: rgba(16,185,129,.04); }
+.wca-status-card--off { border-color: rgba(148,163,184,.25); background: rgba(148,163,184,.03); }
+.wca-status-card__icon { font-size: 1.6rem; line-height: 1; }
+.wca-status-card--on .wca-status-card__icon { color: #10b981; }
+.wca-status-card--off .wca-status-card__icon { color: #94a3b8; }
+.wca-status-card__body { flex: 1; }
+.wca-status-card__body strong { display: block; font-size: .85rem; color: #1e293b; }
+.wca-status-card__body small { display: block; font-size: .73rem; color: var(--muted,#94a3b8); margin-top: 2px; }
 
-.wca-status-card--on {
-    border-color: rgba(16, 185, 129, 0.3);
-    background: rgba(16, 185, 129, 0.04);
+/* ── Empty Questions State ── */
+.fb-empty-questions {
+    text-align: center; padding: 40px 20px;
+    background: linear-gradient(135deg, #f8f7ff 0%, #f0f0ff 100%);
+    border: 2px dashed #c4b5fd; border-radius: 14px; margin-bottom: 8px;
 }
+.fb-empty-questions__icon { font-size: 2.5rem; color: #a78bfa; margin-bottom: 12px; }
+.fb-empty-questions h4 { margin: 0 0 6px; font-size: 1rem; color: #4f46e5; }
+.fb-empty-questions p { margin: 0; font-size: .82rem; color: #8b83a9; line-height: 1.5; }
 
-.wca-status-card--off {
-    border-color: rgba(148, 163, 184, 0.25);
-    background: rgba(148, 163, 184, 0.03);
+/* ── Question Card ── */
+.fb-q-card {
+    background: #fff; border: 1.5px solid #e2e8f0; border-radius: 12px;
+    margin-bottom: 10px; transition: all .2s; overflow: hidden;
 }
+.fb-q-card:hover { border-color: #c4b5fd; }
+.fb-q-card--expanded { border-color: #6366f1; box-shadow: 0 0 0 4px rgba(99,102,241,.08); }
 
-.wca-status-card__icon {
-    font-size: 1.6rem;
-    line-height: 1;
-}
+/* Drag handle */
+.fb-q-drag { cursor: grab; color: #cbd5e1; font-size: 1.1rem; padding: 0 4px; user-select: none; flex-shrink: 0; }
+.fb-q-drag:hover { color: #6366f1; }
+.fb-q-drag-inline { display: inline-flex; vertical-align: middle; color: #6366f1; }
+.fb-q-ghost { opacity: 0.4; background: #f0f0ff; border: 2px dashed #6366f1; border-radius: 12px; }
 
-.wca-status-card--on .wca-status-card__icon {
-    color: #10b981;
+/* ── Collapsed State ── */
+.fb-q-collapsed {
+    display: flex; align-items: center; gap: 10px; padding: 14px 16px; cursor: pointer;
+    transition: background .15s;
 }
+.fb-q-collapsed:hover { background: rgba(99,102,241,.03); }
+.fb-q-collapsed__num {
+    width: 28px; height: 28px; border-radius: 8px; background: linear-gradient(135deg,#6366f1,#4f46e5);
+    color: #fff; font-size: .75rem; font-weight: 700; display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+}
+.fb-q-collapsed__icon { font-size: 1rem; color: #94a3b8; flex-shrink: 0; line-height: 1; }
+.fb-q-collapsed__text { flex: 1; min-width: 0; }
+.fb-q-collapsed__text strong { display: block; font-size: .84rem; color: #334155; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fb-q-collapsed__text small { display: block; font-size: .7rem; color: #94a3b8; margin-top: 1px; }
+.fb-q-collapsed__edit, .fb-q-collapsed__del {
+    border: none; background: none; cursor: pointer; font-size: .9rem; padding: 6px; border-radius: 6px;
+    transition: all .15s; flex-shrink: 0;
+}
+.fb-q-collapsed__edit { color: #6366f1; }
+.fb-q-collapsed__edit:hover { background: rgba(99,102,241,.1); }
+.fb-q-collapsed__del { color: #94a3b8; }
+.fb-q-collapsed__del:hover { background: rgba(239,68,68,.1); color: #ef4444; }
 
-.wca-status-card--off .wca-status-card__icon {
-    color: #94a3b8;
+/* ── Expanded State ── */
+.fb-q-expanded__head {
+    display: flex; align-items: center; gap: 10px; padding: 12px 16px;
+    background: linear-gradient(135deg, #f5f3ff, #ede9fe); border-bottom: 1px solid #ddd6fe;
 }
+.fb-q-expanded__num {
+    width: 26px; height: 26px; border-radius: 7px; background: linear-gradient(135deg,#6366f1,#4f46e5);
+    color: #fff; font-size: .73rem; font-weight: 700; display: flex; align-items: center; justify-content: center;
+}
+.fb-q-expanded__title { flex: 1; font-size: .82rem; font-weight: 700; color: #4f46e5; }
+.fb-q-expanded__close {
+    border: none; background: linear-gradient(135deg,#10b981,#059669); color: #fff;
+    padding: 6px 14px; border-radius: 8px; font-size: .78rem; font-weight: 700; cursor: pointer;
+    transition: opacity .15s;
+}
+.fb-q-expanded__close:hover { opacity: .9; }
 
-.wca-status-card__body {
-    flex: 1;
-}
+.fb-q-expanded__body { display: flex; gap: 20px; padding: 20px; }
 
-.wca-status-card__body strong {
-    display: block;
-    font-size: 0.85rem;
-    color: #1e293b;
-}
+/* ── Editor (left) ── */
+.fb-q-editor { flex: 3; min-width: 0; }
 
-.wca-status-card__body small {
-    display: block;
-    font-size: 0.73rem;
-    color: var(--muted, #94a3b8);
-    margin-top: 2px;
+/* Type pills */
+.fb-type-pills { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.fb-type-pill {
+    display: flex; align-items: center; gap: 6px; padding: 8px 14px;
+    border: 1.5px solid #e2e8f0; border-radius: 10px; background: #fff;
+    cursor: pointer; transition: all .15s; font-size: .78rem; font-weight: 600; color: #64748b;
 }
+.fb-type-pill:hover { border-color: #a5b4fc; }
+.fb-type-pill--active {
+    border-color: #6366f1; background: rgba(99,102,241,.08); color: #4f46e5;
+    box-shadow: 0 2px 8px rgba(99,102,241,.15);
+}
+.fb-type-pill__icon { font-size: .95rem; line-height: 1; }
+.fb-type-pill__label { white-space: nowrap; }
+
+/* Scale row */
+.fb-scale-row { margin-top: 14px; }
+.fb-scale-inputs { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
+.fb-scale-inputs span { color: var(--muted); font-weight: 600; font-size: .82rem; }
+.fb-scale-inputs small { color: var(--muted); font-size: .72rem; }
+
+/* Options row */
+.fb-options-row { margin-top: 14px; }
+.fb-options-row small { display: block; margin-top: 4px; color: var(--muted); font-weight: 600; font-size: .72rem; }
+
+/* ── Preview (right) ── */
+.fb-preview { flex: 2; min-width: 220px; }
+.fb-preview__label {
+    font-size: .68rem; font-weight: 800; letter-spacing: .1em; color: #a78bfa;
+    text-transform: uppercase; margin-bottom: 10px;
+}
+.fb-preview__card {
+    background: linear-gradient(135deg,#faf9ff,#f5f3ff); border: 1px solid #e9e3ff;
+    border-radius: 14px; padding: 20px; min-height: 100px;
+}
+.fb-preview__q { font-size: .85rem; font-weight: 600; color: #334155; margin-bottom: 14px; line-height: 1.4; }
+.fb-preview__stars { font-size: 1.8rem; color: #f59e0b; letter-spacing: 4px; }
+.fb-preview__nps { display: flex; gap: 3px; flex-wrap: wrap; }
+.fb-preview__nps-num {
+    width: 26px; height: 26px; border-radius: 6px; color: #fff;
+    font-size: .7rem; font-weight: 700; display: flex; align-items: center; justify-content: center;
+}
+.fb-preview__likert { display: flex; gap: 4px; }
+.fb-preview__likert-opt {
+    padding: 5px 10px; border: 1px solid #c4b5fd; border-radius: 6px;
+    font-size: .68rem; font-weight: 700; color: #6366f1; background: #fff;
+}
+.fb-preview__textarea { padding: 10px 12px; border: 1px dashed #cbd5e1; border-radius: 8px; font-size: .78rem; color: #94a3b8; }
+.fb-preview__choices { display: flex; flex-direction: column; gap: 6px; }
+.fb-preview__radio, .fb-preview__check {
+    font-size: .8rem; color: #64748b; display: flex; align-items: center; gap: 6px;
+}
+.fb-preview__dropdown {
+    padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px;
+    font-size: .78rem; color: #64748b; margin-bottom: 8px; background: #fff;
+}
+.fb-preview__dd-opt { font-size: .75rem; color: #94a3b8; padding-left: 8px; }
+.fb-preview__placeholder { font-size: .78rem; color: #cbd5e1; font-style: italic; }
+
+/* ── Footer ── */
+.fb-q-footer {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 14px 0 0; border-top: 1px solid #e2e8f0; margin-top: 16px;
+}
+.fb-q-footer__info { font-size: .73rem; color: var(--muted); font-weight: 600; }
+.fb-q-footer__btns { display: flex; gap: 10px; }
 </style>
