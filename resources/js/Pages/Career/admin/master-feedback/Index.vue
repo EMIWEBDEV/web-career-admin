@@ -1,194 +1,243 @@
+<!-- WEB CAREER — Master Feedback Form (induk-detail: Form + Pertanyaan). DATA dari DB via /api/v1/karir/master-feedback. -->
 <template>
-  <div class="wca-page">
-    <div class="wca-page__header">
-      <h1>Master Feedback Form</h1>
-      <el-button type="primary" @click="openCreate">+ Tambah Form</el-button>
-    </div>
-
-    <div class="wca-split">
-      <!-- Left: List -->
-      <div class="wca-split__left">
-        <el-input v-model="search" placeholder="Cari form..." clearable size="small" class="wca-search" />
-        <el-table :data="filteredForms" highlight-current-row @row-click="selectForm" size="small" v-loading="loading">
-          <el-table-column prop="Nama" label="Nama Form" />
-          <el-table-column prop="Mode_Tampilan" label="Mode" width="80" />
-          <el-table-column label="Aktif" width="60">
-            <template #default="{ row }">
-              <span :style="{ color: row.Flag_Aktif === 'Y' ? '#10b981' : '#94a3b8' }">
-                {{ row.Flag_Aktif === 'Y' ? '✓' : '—' }}
-              </span>
-            </template>
-          </el-table-column>
-          <el-table-column label="Aksi" width="100">
-            <template #default="{ row }">
-              <el-button size="small" type="danger" text @click="deleteForm(row.Id_Master_Feedback_Form)">🗑</el-button>
-            </template>
-          </el-table-column>
-        </el-table>
-      </div>
-
-      <!-- Right: Edit Form -->
-      <div class="wca-split__right" v-if="selectedId">
-        <h3>{{ editing ? 'Edit' : 'Detail' }} Form</h3>
-        <el-form :model="form" label-position="top" size="small">
-          <el-form-item label="Nama">
-            <el-input v-model="form.Nama" />
-          </el-form-item>
-          <el-form-item label="Deskripsi">
-            <el-input v-model="form.Deskripsi" type="textarea" :rows="2" />
-          </el-form-item>
-          <el-form-item label="Mode Tampilan">
-            <el-radio-group v-model="form.Mode_Tampilan">
-              <el-radio value="SCROLL">Single Page Scroll</el-radio>
-              <el-radio value="WIZARD">Step-by-Step Wizard</el-radio>
-            </el-radio-group>
-          </el-form-item>
-          <el-form-item label="Durasi (hari)">
-            <el-input-number v-model="form.Durasi_Hari" :min="1" placeholder="Kosong = unlimited" />
-          </el-form-item>
-          <el-form-item label="Status Aktif">
-            <el-switch v-model="form.Flag_Aktif" active-value="Y" inactive-value="T" />
-          </el-form-item>
-          <el-button type="primary" @click="saveForm" :loading="saving">Simpan Form</el-button>
-        </el-form>
-
-        <!-- Questions -->
-        <h4 style="margin-top:24px">Pertanyaan</h4>
-        <draggable v-model="form.pertanyaan" item-key="Urutan" handle=".drag-handle" @end="reorderQuestions">
-          <template #item="{ element, index }">
-            <div class="fb-q-item">
-              <span class="drag-handle">⠿</span>
-              <div class="fb-q-item__content">
-                <div class="fb-q-item__header">
-                  <span class="fb-q-num">{{ index + 1 }}</span>
-                  <el-select v-model="element.Tipe" size="small" style="width:120px">
-                    <el-option v-for="t in ['RATING','NPS','LIKERT','TEXTAREA','RADIO','CHECKBOX','DROPDOWN']" :key="t" :label="t" :value="t" />
-                  </el-select>
-                  <el-button size="small" type="danger" text @click="removeQuestion(index)">✕</el-button>
+    <Head><title>Master Feedback Form - Web Career</title></Head>
+    <div class="wca">
+        <div class="pkg-head">
+            <div class="pkg-head__l">
+                <div class="pkg-head__title">
+                    <span class="pkg-head__ico"><i class="bi bi-chat-dots"></i></span>
+                    <h1>Master Feedback Form</h1>
                 </div>
-                <el-input v-model="element.Label" placeholder="Label pertanyaan" size="small" style="margin-top:6px" />
-                <div v-if="['RADIO','CHECKBOX','DROPDOWN'].includes(element.Tipe)" style="margin-top:6px">
-                  <el-input v-model="opsiText[index]" placeholder="Opsi (pisahkan dengan koma)" size="small" />
-                </div>
-              </div>
+                <p>Buat template formulir feedback — atur pertanyaan dengan berbagai tipe (rating, NPS, Likert, teks, pilihan ganda).</p>
             </div>
-          </template>
-        </draggable>
-        <el-button size="small" @click="addQuestion" style="margin-top:8px">+ Tambah Pertanyaan</el-button>
-        <el-button type="success" size="small" @click="saveQuestions" :loading="savingQ" style="margin-top:8px;margin-left:8px">Simpan Pertanyaan</el-button>
-      </div>
+            <button class="pkg-newbtn" @click="openCreate"><i class="bi bi-plus-lg"></i> Form Baru</button>
+        </div>
+
+        <div v-loading="loading" class="pkg-list">
+            <div v-for="f in list" :key="f.Id_Master_Feedback_Form" class="pkg-card" :class="{ open: open === f.Id_Master_Feedback_Form }">
+                <!-- Header row -->
+                <div class="pkg-row">
+                    <button type="button" class="pkg-chev" :class="{ open: open === f.Id_Master_Feedback_Form }" title="Buka detail" @click="open = (open === f.Id_Master_Feedback_Form ? null : f.Id_Master_Feedback_Form)">
+                        <i class="bi bi-chevron-right"></i>
+                    </button>
+                    <div class="pkg-row__main">
+                        <button type="button" class="pkg-row__titlebtn" @click="open = (open === f.Id_Master_Feedback_Form ? null : f.Id_Master_Feedback_Form)">
+                            <span class="pkg-row__title">{{ f.Nama }}</span>
+                        </button>
+                        <div class="pkg-row__meta">
+                            <span class="pkg-code">{{ f.Mode_Tampilan === 'WIZARD' ? 'Step-by-Step' : 'Single Page' }}</span>
+                            <template v-if="f.Deskripsi"><span class="pkg-sep"></span><span class="pkg-mi">{{ f.Deskripsi }}</span></template>
+                        </div>
+                        <div class="pkg-pills">
+                            <span class="pkg-pill pkg-pill--violet"><i class="bi bi-question-circle"></i> {{ f.Jumlah_Pertanyaan ?? '?' }} pertanyaan</span>
+                            <span v-if="f.Durasi_Hari" class="pkg-pill pkg-pill--struct"><i class="bi bi-hourglass-split"></i> {{ f.Durasi_Hari }} hari</span>
+                            <span v-else class="pkg-pill pkg-pill--struct"><i class="bi bi-infinity"></i> Unlimited</span>
+                            <span class="pkg-pill" :class="f.Flag_Aktif === 'Y' ? 'pkg-pill--green' : 'pkg-pill--slate'">
+                                <span class="pkg-pill__dot"></span> {{ f.Flag_Aktif === 'Y' ? 'Aktif' : 'Nonaktif' }}
+                            </span>
+                        </div>
+                    </div>
+                    <div class="pkg-row__act" @click.stop>
+                        <el-switch :model-value="f.Flag_Aktif === 'Y'" @change="(v) => setStatus(f, v)" />
+                        <button class="pkg-ibtn" title="Ubah" @click="openEdit(f)"><i class="bi bi-pencil"></i></button>
+                        <button class="pkg-ibtn pkg-ibtn--danger" title="Hapus" @click="askRemove(f)"><i class="bi bi-trash"></i></button>
+                    </div>
+                </div>
+
+                <!-- Creator strip -->
+                <div class="pkg-creator">
+                    <span class="pkg-creator__av" style="background:#6366f1">{{ initials(f.Created_By) }}</span>
+                    <span class="pkg-creator__name">{{ f.Created_By || 'Sistem' }}</span>
+                    <span class="pkg-creator__at"><i class="bi bi-clock"></i> {{ f.Created_At || '—' }}</span>
+                </div>
+
+                <!-- Expanded detail: questions -->
+                <div v-if="open === f.Id_Master_Feedback_Form" class="pkg-detail">
+                    <div class="pkg-dhead pkg-dhead--indigo">
+                        <span><i class="bi bi-list-ol"></i> DAFTAR PERTANYAAN ({{ (f._pertanyaan || []).length }})</span>
+                        <button class="wca-btn wca-btn--soft wca-btn--sm" type="button" @click="addQuestion(f)"><i class="bi bi-plus-circle"></i> Tambah</button>
+                    </div>
+                    <div v-if="!f._pertanyaan || !f._pertanyaan.length" class="wca-hint"><i class="bi bi-info-circle"></i> Belum ada pertanyaan. Klik <b>Tambah</b> untuk mulai.</div>
+                    <div v-for="(p, i) in (f._pertanyaan || [])" :key="i" class="wca-stagecard">
+                        <div class="wca-stagecard__num">{{ i + 1 }}</div>
+                        <div class="wca-stagecard__body">
+                            <div class="wca-frow">
+                                <div style="flex:1"><label class="wca-field-lbl">Tipe</label>
+                                    <el-select v-model="p.Tipe" size="small" style="width:100%">
+                                        <el-option v-for="t in ['RATING','NPS','LIKERT','TEXTAREA','RADIO','CHECKBOX','DROPDOWN']" :key="t" :label="t" :value="t" />
+                                    </el-select>
+                                </div>
+                                <div style="flex:3"><label class="wca-field-lbl">Label Pertanyaan</label>
+                                    <el-input v-model="p.Label" size="small" placeholder="Tulis pertanyaan..." />
+                                </div>
+                            </div>
+                            <div v-if="['RATING','NPS','LIKERT'].includes(p.Tipe)" class="wca-frow" style="margin-top:10px">
+                                <div><label class="wca-field-lbl">Skala Min</label><el-input-number v-model="p.Skala_Min" size="small" :min="0" :max="10" /></div>
+                                <div><label class="wca-field-lbl">Skala Max</label><el-input-number v-model="p.Skala_Max" size="small" :min="1" :max="10" /></div>
+                            </div>
+                            <div v-if="['RADIO','CHECKBOX','DROPDOWN'].includes(p.Tipe)" style="margin-top:10px">
+                                <label class="wca-field-lbl">Opsi (pisahkan dengan koma)</label>
+                                <el-input v-model="p._opsiText" size="small" placeholder="Opsi A, Opsi B, Opsi C" />
+                            </div>
+                            <div style="margin-top:10px;display:flex;justify-content:space-between;align-items:center">
+                                <el-button size="small" type="danger" text @click="removeQuestion(f, i)"><i class="bi bi-trash"></i> Hapus</el-button>
+                                <span style="font-size:.72rem;color:var(--muted)">Urutan: {{ i + 1 }}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div v-if="(f._pertanyaan || []).length" style="margin-top:12px;text-align:right">
+                        <el-button type="primary" size="small" @click="saveQuestions(f)" :loading="savingQ[f.Id_Master_Feedback_Form]">
+                            <i class="bi bi-check-lg"></i> Simpan Pertanyaan
+                        </el-button>
+                    </div>
+                </div>
+            </div>
+            <div v-if="!loading && !list.length" class="pkg-empty">
+                <i class="bi bi-chat-dots"></i> Belum ada form feedback. Klik <b>Form Baru</b> untuk membuat.
+            </div>
+        </div>
+
+        <!-- Modal create/edit -->
+        <AdminModal
+            :show="show" :title="editingId ? 'Ubah Form Feedback' : 'Buat Form Feedback'"
+            subtitle="Atur nama, mode tampilan, durasi, dan status form." icon="bi-chat-dots"
+            :save-label="editingId ? 'Perbarui' : 'Simpan Form'"
+            @close="show = false" @save="saveForm"
+        >
+            <div class="wca-fsection">
+                <div class="wca-fsection__label"><i class="bi bi-chat-dots"></i> Detail Form</div>
+                <div class="wca-form">
+                    <div class="wca-frow">
+                        <div><label class="wca-field-lbl">Nama Form</label><el-input v-model="form.Nama" placeholder="mis. Feedback Rekrutmen 2026" /></div>
+                    </div>
+                    <div class="wca-frow">
+                        <div><label class="wca-field-lbl">Deskripsi</label><el-input v-model="form.Deskripsi" placeholder="Ringkasan singkat (opsional)" /></div>
+                    </div>
+                    <div class="wca-frow">
+                        <div><label class="wca-field-lbl">Mode Tampilan</label>
+                            <el-select v-model="form.Mode_Tampilan" style="width:100%">
+                                <el-option label="Single Page Scroll — semua pertanyaan dalam satu halaman" value="SCROLL" />
+                                <el-option label="Step-by-Step Wizard — satu pertanyaan per langkah" value="WIZARD" />
+                            </el-select>
+                        </div>
+                        <div><label class="wca-field-lbl">Durasi (hari) — kosongkan untuk unlimited</label>
+                            <el-input-number v-model="form.Durasi_Hari" :min="1" placeholder="Unlimited" style="width:100%" />
+                        </div>
+                    </div>
+                    <div class="wca-frow">
+                        <div>
+                            <label class="wca-field-lbl">Status Aktif</label>
+                            <div style="display:flex;align-items:center;gap:8px;margin-top:4px">
+                                <el-switch v-model="form.Flag_Aktif" active-value="Y" inactive-value="T" />
+                                <span style="font-size:.82rem;color:var(--muted);font-weight:600">{{ form.Flag_Aktif === 'Y' ? 'Aktif' : 'Nonaktif' }}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </AdminModal>
+
+        <!-- Confirm remove -->
+        <ConfirmModal :show="!!removeTarget" title="Hapus Form Feedback" :message="'Yakin hapus \"' + (removeTarget?.Nama ?? '') + '\"? Pertanyaan di dalamnya juga akan dihapus.'" icon="bi-trash" @confirm="doRemove" @close="removeTarget = null" />
     </div>
-  </div>
 </template>
 
-<script setup>
-import { ref, computed, onMounted } from 'vue'
-import axios from 'axios'
-import draggable from 'vuedraggable'
+<script>
+import axios from 'axios';
+import { Head } from '@inertiajs/vue3';
+import AdminModal from '@career/AdminModal.vue';
+import ConfirmModal from '@career/ConfirmModal.vue';
 
-const forms = ref([])
-const selectedId = ref(null)
-const form = ref({ Nama: '', Deskripsi: '', Mode_Tampilan: 'SCROLL', Durasi_Hari: null, Flag_Aktif: 'Y', pertanyaan: [] })
-const opsiText = ref({})
-const search = ref('')
-const loading = ref(false)
-const saving = ref(false)
-const savingQ = ref(false)
-const editing = ref(false)
-
-const filteredForms = computed(() => {
-    if (!search.value) return forms.value
-    return forms.value.filter(f => f.Nama.toLowerCase().includes(search.value.toLowerCase()))
-})
-
-async function loadForms() {
-    loading.value = true
-    const { data } = await axios.get('/api/v1/karir/master-feedback')
-    forms.value = data.result || []
-    loading.value = false
-}
-
-async function selectForm(row) {
-    selectedId.value = row.Id_Master_Feedback_Form
-    editing.value = true
-    const { data } = await axios.get(`/api/v1/karir/master-feedback/${row.Id_Master_Feedback_Form}`)
-    form.value = data.result
-    form.value.pertanyaan = form.value.pertanyaan || []
-    opsiText.value = {}
-    form.value.pertanyaan.forEach((p, i) => {
-        if (p.Opsi) opsiText.value[i] = p.Opsi.join(', ')
-    })
-}
-
-function openCreate() {
-    selectedId.value = null
-    editing.value = true
-    form.value = { Nama: '', Deskripsi: '', Mode_Tampilan: 'SCROLL', Durasi_Hari: null, Flag_Aktif: 'Y', pertanyaan: [] }
-    opsiText.value = {}
-}
-
-async function saveForm() {
-    saving.value = true
-    const payload = {
-        nama: form.value.Nama,
-        deskripsi: form.value.Deskripsi,
-        mode_tampilan: form.value.Mode_Tampilan,
-        durasi_hari: form.value.Durasi_Hari,
-        flag_aktif: form.value.Flag_Aktif,
-    }
-    if (selectedId.value) {
-        await axios.put(`/api/v1/karir/master-feedback/${selectedId.value}`, payload)
-    } else {
-        const { data } = await axios.post('/api/v1/karir/master-feedback', payload)
-        selectedId.value = data.result.id
-    }
-    saving.value = false
-    loadForms()
-}
-
-async function deleteForm(id) {
-    if (!confirm('Hapus form ini?')) return
-    await axios.delete(`/api/v1/karir/master-feedback/${id}`)
-    if (selectedId.value === id) { selectedId.value = null; form.value = { pertanyaan: [] } }
-    loadForms()
-}
-
-function addQuestion() {
-    form.value.pertanyaan.push({ Tipe: 'RATING', Label: '', Urutan: form.value.pertanyaan.length + 1 })
-}
-
-function removeQuestion(idx) { form.value.pertanyaan.splice(idx, 1) }
-
-function reorderQuestions() {
-    form.value.pertanyaan.forEach((p, i) => p.Urutan = i + 1)
-}
-
-async function saveQuestions() {
-    savingQ.value = true
-    const pertanyaan = form.value.pertanyaan.map((p, i) => ({
-        ...p,
-        urutan: i + 1,
-        opsi: opsiText.value[i] ? opsiText.value[i].split(',').map(o => o.trim()).filter(Boolean) : (p.Opsi || null),
-    }))
-    await axios.post(`/api/v1/karir/master-feedback/${selectedId.value}/pertanyaan`, { pertanyaan })
-    savingQ.value = false
-    selectForm({ Id_Master_Feedback_Form: selectedId.value })
-}
-
-onMounted(loadForms)
+export default {
+    components: { Head, AdminModal, ConfirmModal },
+    data() {
+        return {
+            list: [],
+            loading: false,
+            open: null,
+            show: false,
+            editingId: null,
+            removeTarget: null,
+            savingQ: {},
+            form: { Nama: '', Deskripsi: '', Mode_Tampilan: 'SCROLL', Durasi_Hari: null, Flag_Aktif: 'Y' },
+        };
+    },
+    mounted() { this.load(); },
+    methods: {
+        async load() {
+            this.loading = true;
+            try {
+                const { data } = await axios.get('/api/v1/karir/master-feedback');
+                this.list = (data.result || []).map(f => ({ ...f, _pertanyaan: [], _questionsLoaded: false }));
+            } catch (e) { /* silent */ }
+            this.loading = false;
+        },
+        async loadQuestions(f) {
+            if (f._questionsLoaded) return;
+            try {
+                const { data } = await axios.get(`/api/v1/karir/master-feedback/${f.Id_Master_Feedback_Form}`);
+                f._pertanyaan = (data.result?.pertanyaan || []).map(p => ({
+                    ...p,
+                    _opsiText: (p.Opsi || []).join(', '),
+                }));
+                f.Jumlah_Pertanyaan = f._pertanyaan.length;
+                f._questionsLoaded = true;
+            } catch (e) {
+                f._pertanyaan = [];
+                f._questionsLoaded = true;
+            }
+        },
+        openCreate() { this.editingId = null; this.form = { Nama: '', Deskripsi: '', Mode_Tampilan: 'SCROLL', Durasi_Hari: null, Flag_Aktif: 'Y' }; this.show = true; },
+        async openEdit(f) {
+            await this.loadQuestions(f);
+            this.editingId = f.Id_Master_Feedback_Form;
+            this.form = {
+                Nama: f.Nama, Deskripsi: f.Deskripsi || '', Mode_Tampilan: f.Mode_Tampilan || 'SCROLL',
+                Durasi_Hari: f.Durasi_Hari, Flag_Aktif: f.Flag_Aktif || 'T',
+            };
+            this.show = true;
+        },
+        async saveForm() {
+            const payload = { nama: this.form.Nama, deskripsi: this.form.Deskripsi, mode_tampilan: this.form.Mode_Tampilan, durasi_hari: this.form.Durasi_Hari, flag_aktif: this.form.Flag_Aktif };
+            if (this.editingId) {
+                await axios.put(`/api/v1/karir/master-feedback/${this.editingId}`, payload);
+            } else {
+                await axios.post('/api/v1/karir/master-feedback', payload);
+            }
+            this.show = false; this.load();
+        },
+        askRemove(f) { this.removeTarget = f; },
+        async doRemove() {
+            if (!this.removeTarget) return;
+            await axios.delete(`/api/v1/karir/master-feedback/${this.removeTarget.Id_Master_Feedback_Form}`);
+            if (this.open === this.removeTarget.Id_Master_Feedback_Form) this.open = null;
+            this.removeTarget = null; this.load();
+        },
+        async setStatus(f, active) {
+            await axios.put(`/api/v1/karir/master-feedback/${f.Id_Master_Feedback_Form}`, { nama: f.Nama, deskripsi: f.Deskripsi, mode_tampilan: f.Mode_Tampilan, durasi_hari: f.Durasi_Hari, flag_aktif: active ? 'Y' : 'T' });
+            this.load();
+        },
+        addQuestion(f) {
+            if (!f._pertanyaan) f._pertanyaan = [];
+            f._pertanyaan.push({ Tipe: 'RATING', Label: '', Skala_Min: 1, Skala_Max: 5, _opsiText: '' });
+        },
+        removeQuestion(f, i) { f._pertanyaan.splice(i, 1); },
+        async saveQuestions(f) {
+            this.savingQ = { ...this.savingQ, [f.Id_Master_Feedback_Form]: true };
+            const pertanyaan = (f._pertanyaan || []).map((p, i) => ({
+                urutan: i + 1, tipe: p.Tipe, label: p.Label,
+                skala_min: p.Skala_Min ?? null, skala_max: p.Skala_Max ?? null,
+                opsi: p._opsiText ? p._opsiText.split(',').map(o => o.trim()).filter(Boolean) : null,
+            }));
+            await axios.post(`/api/v1/karir/master-feedback/${f.Id_Master_Feedback_Form}/pertanyaan`, { pertanyaan });
+            this.savingQ = { ...this.savingQ, [f.Id_Master_Feedback_Form]: false };
+            f._questionsLoaded = false;
+            await this.loadQuestions(f);
+        },
+        initials(name) {
+            if (!name) return '?';
+            return name.split(' ').filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase();
+        },
+    },
+};
 </script>
-
-<style scoped>
-.wca-page { padding: 20px; }
-.wca-page__header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-.wca-page__header h1 { margin: 0; font-size: 20px; }
-.wca-split { display: flex; gap: 20px; }
-.wca-split__left { flex: 1; min-width: 0; }
-.wca-split__right { flex: 1; min-width: 0; background: #fff; border-radius: 12px; padding: 20px; border: 1px solid #e2e8f0; }
-.wca-search { margin-bottom: 10px; }
-.fb-q-item { display: flex; align-items: flex-start; gap: 8px; padding: 10px 0; border-bottom: 1px solid #f1f5f9; }
-.drag-handle { cursor: grab; color: #94a3b8; font-size: 18px; padding-top: 2px; }
-.fb-q-item__content { flex: 1; }
-.fb-q-item__header { display: flex; align-items: center; gap: 8px; }
-.fb-q-num { width: 22px; height: 22px; border-radius: 6px; background: #6366f1; color: #fff; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
-</style>
