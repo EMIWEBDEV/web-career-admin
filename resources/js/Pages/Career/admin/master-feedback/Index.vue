@@ -55,40 +55,77 @@
                 <div v-if="open === f.Id_Master_Feedback_Form" class="pkg-detail">
                     <div class="pkg-dhead pkg-dhead--indigo">
                         <span><i class="bi bi-list-ol"></i> DAFTAR PERTANYAAN ({{ (f._pertanyaan || []).length }})</span>
-                        <button class="wca-btn wca-btn--soft wca-btn--sm" type="button" @click="addQuestion(f)"><i class="bi bi-plus-circle"></i> Tambah</button>
+                        <button class="wca-btn wca-btn--soft wca-btn--sm" type="button" @click="addQuestion(f)"><i class="bi bi-plus-circle"></i> Tambah Pertanyaan</button>
                     </div>
-                    <div v-if="!f._pertanyaan || !f._pertanyaan.length" class="wca-hint"><i class="bi bi-info-circle"></i> Belum ada pertanyaan. Klik <b>Tambah</b> untuk mulai.</div>
+
+                    <div v-if="!f._pertanyaan || !f._pertanyaan.length" class="wca-hint" style="margin:0 0 .6rem"><i class="bi bi-info-circle"></i> Belum ada pertanyaan. Klik <b>Tambah Pertanyaan</b> untuk mulai menyusun form.</div>
+
+                    <!-- Question Cards -->
                     <div v-for="(p, i) in (f._pertanyaan || [])" :key="i" class="wca-stagecard">
                         <div class="wca-stagecard__num">{{ i + 1 }}</div>
                         <div class="wca-stagecard__body">
-                            <div class="wca-frow">
-                                <div style="flex:1"><label class="wca-field-lbl">Tipe</label>
-                                    <el-select v-model="p.Tipe" size="small" style="width:100%">
+                            <!-- Top bar: type selector + delete -->
+                            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
+                                <div style="display:flex;align-items:center;gap:10px">
+                                    <label class="wca-field-lbl" style="margin:0;white-space:nowrap">Tipe:</label>
+                                    <el-select v-model="p.Tipe" style="width:160px">
                                         <el-option v-for="t in ['RATING','NPS','LIKERT','TEXTAREA','RADIO','CHECKBOX','DROPDOWN']" :key="t" :label="t" :value="t" />
                                     </el-select>
+                                    <!-- Type badge -->
+                                    <span :class="['wca-badge', typeBadgeClass(p.Tipe)]">{{ typeLabel(p.Tipe) }}</span>
                                 </div>
-                                <div style="flex:3"><label class="wca-field-lbl">Label Pertanyaan</label>
-                                    <el-input v-model="p.Label" size="small" placeholder="Tulis pertanyaan..." />
+                                <button class="pkg-ibtn pkg-ibtn--danger" title="Hapus pertanyaan" @click="removeQuestion(f, i)"><i class="bi bi-trash"></i></button>
+                            </div>
+
+                            <!-- Label -->
+                            <div style="margin-bottom:12px">
+                                <label class="wca-field-lbl">Pertanyaan</label>
+                                <el-input v-model="p.Label" placeholder="Tulis pertanyaan yang akan ditampilkan ke kandidat..." />
+                            </div>
+
+                            <!-- Numeric: Scale range -->
+                            <div v-if="['RATING','NPS','LIKERT'].includes(p.Tipe)" style="margin-bottom:12px">
+                                <label class="wca-field-lbl">Rentang Skala</label>
+                                <div style="display:flex;align-items:center;gap:10px">
+                                    <el-input-number v-model="p.Skala_Min" :min="0" :max="10" style="width:110px" />
+                                    <span style="color:var(--muted);font-weight:600;font-size:.82rem">sampai</span>
+                                    <el-input-number v-model="p.Skala_Max" :min="1" :max="10" style="width:110px" />
+                                    <small style="color:var(--muted);font-weight:600;font-size:.72rem">
+                                        (default: {{ defaultMin(p.Tipe) }} – {{ defaultMax(p.Tipe) }})
+                                    </small>
                                 </div>
                             </div>
-                            <div v-if="['RATING','NPS','LIKERT'].includes(p.Tipe)" class="wca-frow" style="margin-top:10px">
-                                <div><label class="wca-field-lbl">Skala Min</label><el-input-number v-model="p.Skala_Min" size="small" :min="0" :max="10" /></div>
-                                <div><label class="wca-field-lbl">Skala Max</label><el-input-number v-model="p.Skala_Max" size="small" :min="1" :max="10" /></div>
+
+                            <!-- Choice-based: Options -->
+                            <div v-if="['RADIO','CHECKBOX','DROPDOWN'].includes(p.Tipe)" style="margin-bottom:12px">
+                                <label class="wca-field-lbl">Daftar Opsi Pilihan</label>
+                                <el-input v-model="p._opsiText" placeholder="Pisahkan setiap opsi dengan koma. Contoh: LinkedIn, Instagram, Website, Lainnya" />
+                                <small style="display:block;margin-top:.3rem;color:var(--muted);font-weight:600;font-size:.72rem">Tulis opsi dipisahkan koma. Kandidat akan melihat ini sebagai pilihan.</small>
                             </div>
-                            <div v-if="['RADIO','CHECKBOX','DROPDOWN'].includes(p.Tipe)" style="margin-top:10px">
-                                <label class="wca-field-lbl">Opsi (pisahkan dengan koma)</label>
-                                <el-input v-model="p._opsiText" size="small" placeholder="Opsi A, Opsi B, Opsi C" />
-                            </div>
-                            <div style="margin-top:10px;display:flex;justify-content:space-between;align-items:center">
-                                <el-button size="small" type="danger" text @click="removeQuestion(f, i)"><i class="bi bi-trash"></i> Hapus</el-button>
-                                <span style="font-size:.72rem;color:var(--muted)">Urutan: {{ i + 1 }}</span>
+
+                            <!-- Bottom info -->
+                            <div style="padding-top:10px;border-top:1px solid var(--border-light,#f1f5f9);display:flex;justify-content:space-between;align-items:center">
+                                <span style="font-size:.73rem;color:var(--muted);font-weight:600">
+                                    <i class="bi bi-info-circle"></i>
+                                    <template v-if="p.Tipe === 'RATING'">Rating bintang 1-5</template>
+                                    <template v-else-if="p.Tipe === 'NPS'">Net Promoter Score 0-10</template>
+                                    <template v-else-if="p.Tipe === 'LIKERT'">Skala Likert (STS – SS)</template>
+                                    <template v-else-if="p.Tipe === 'TEXTAREA'">Jawaban teks bebas (max 500 karakter)</template>
+                                    <template v-else-if="p.Tipe === 'RADIO'">Pilih satu dari beberapa opsi</template>
+                                    <template v-else-if="p.Tipe === 'CHECKBOX'">Bisa pilih lebih dari satu opsi</template>
+                                    <template v-else-if="p.Tipe === 'DROPDOWN'">Dropdown pilihan tunggal</template>
+                                </span>
+                                <span style="font-size:.72rem;color:var(--muted)">Pertanyaan ke-{{ i + 1 }}</span>
                             </div>
                         </div>
                     </div>
-                    <div v-if="(f._pertanyaan || []).length" style="margin-top:12px;text-align:right">
-                        <el-button type="primary" size="small" @click="saveQuestions(f)" :loading="savingQ[f.Id_Master_Feedback_Form]">
-                            <i class="bi bi-check-lg"></i> Simpan Pertanyaan
-                        </el-button>
+
+                    <div v-if="(f._pertanyaan || []).length" style="margin-top:16px;display:flex;justify-content:flex-end;gap:10px">
+                        <button class="wca-btn wca-btn--soft wca-btn--sm" type="button" @click="addQuestion(f)"><i class="bi bi-plus-circle"></i> Tambah Lagi</button>
+                        <button class="wca-btn wca-btn--primary" type="button" @click="saveQuestions(f)" :disabled="savingQ[f.Id_Master_Feedback_Form]">
+                            <i class="bi" :class="savingQ[f.Id_Master_Feedback_Form] ? 'bi-hourglass-split' : 'bi-check-lg'"></i>
+                            {{ savingQ[f.Id_Master_Feedback_Form] ? 'Menyimpan...' : 'Simpan Semua Pertanyaan' }}
+                        </button>
                     </div>
                 </div>
             </div>
@@ -269,6 +306,12 @@ export default {
         addQuestion(f) {
             if (!f._pertanyaan) f._pertanyaan = [];
             f._pertanyaan.push({ Tipe: 'RATING', Label: '', Skala_Min: 1, Skala_Max: 5, _opsiText: '' });
+            // Scroll to new question after render
+            this.$nextTick(() => {
+                const cards = this.$el.querySelectorAll('.wca-stagecard');
+                const last = cards[cards.length - 1];
+                if (last) last.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            });
         },
         removeQuestion(f, i) { f._pertanyaan.splice(i, 1); },
         async saveQuestions(f) {
@@ -286,6 +329,22 @@ export default {
         initials(name) {
             if (!name) return '?';
             return name.split(' ').filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase();
+        },
+        typeBadgeClass(tipe) {
+            const map = { RATING: 'wca-b--amber', NPS: 'wca-b--indigo', LIKERT: 'wca-b--indigo', TEXTAREA: 'wca-b--slate', RADIO: 'wca-b--green', CHECKBOX: 'wca-b--green', DROPDOWN: 'wca-b--slate' };
+            return map[tipe] || 'wca-b--slate';
+        },
+        typeLabel(tipe) {
+            const map = { RATING: 'Bintang 1-5', NPS: 'NPS 0-10', LIKERT: 'Likert', TEXTAREA: 'Teks Bebas', RADIO: 'Pilih Satu', CHECKBOX: 'Multi-Pilih', DROPDOWN: 'Dropdown' };
+            return map[tipe] || tipe;
+        },
+        defaultMin(tipe) {
+            const map = { RATING: 1, NPS: 0, LIKERT: 1 };
+            return map[tipe] ?? 1;
+        },
+        defaultMax(tipe) {
+            const map = { RATING: 5, NPS: 10, LIKERT: 5 };
+            return map[tipe] ?? 5;
         },
     },
 };
