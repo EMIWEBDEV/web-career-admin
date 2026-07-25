@@ -944,82 +944,90 @@ export default {
 .fb-preview-dd__menu--ph { border-style: dashed; }
 .fb-preview__empty { font-size: .8rem; color: #cbd5e1; font-style: italic; padding: 8px 0; }
 
-/* ── Mobile Responsive ── */
+/* ── Mobile: compact & efficient ── */
 @media (max-width: 768px) {
-    /* Card actions wrap */
-    .pkg-row__act { flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+    /* Card list: tighter */
+    .pkg-card { margin-bottom: 6px; }
+    .pkg-row { padding: 0; }
+    .pkg-row__main { padding: 8px 0; }
+    .pkg-row__act { flex-wrap: wrap; gap: 2px; }
+    .pkg-creator { padding: 4px 0 8px; }
+    .pkg-detail { padding: 8px 0 0; }
 
-    /* Expanded body: editor + preview stack vertically */
-    .fb-q-expanded__body { flex-direction: column; gap: 16px; padding: 14px; }
+    /* Expanded question: stack, zero waste */
+    .fb-q-expanded__body { flex-direction: column; gap: 0; padding: 0; }
+    .fb-q-editor { padding: 12px; }
+    .fb-preview { min-width: 100%; padding: 0 12px 12px; }
+    .fb-preview__card { padding: 14px 12px; }
 
-    /* Preview gets full width below editor */
-    .fb-preview { min-width: 100%; }
-    .fb-preview__card { padding: 16px 14px; }
+    /* Type pills: compact grid */
+    .fb-type-pills { gap: 4px; }
+    .fb-type-pill { flex: 1 1 auto; padding: 7px 8px; font-size: .73rem; gap: 4px; }
 
-    /* Type pills: full width */
-    .fb-type-pill { flex: 1; justify-content: center; min-width: 80px; }
-
-    /* Scale card: stack fields vertically */
-    .fb-scale-card__body { flex-direction: column; gap: 12px; padding: 14px; }
+    /* Scale card: compact */
+    .fb-scale-card__body { flex-direction: column; gap: 8px; padding: 10px 12px; }
     .fb-scale-card__sep { display: none; }
-    .fb-scale-card__foot { flex-direction: column; gap: 8px; align-items: flex-start; }
+    .fb-scale-card__foot { flex-direction: column; gap: 4px; padding: 8px 12px; align-items: flex-start; }
+    .fb-scale-card__lbl { font-size: .65rem; margin-bottom: 3px; }
 
-    /* Radio cards (Mode Tampilan): stack */
-    .wca-radio-cards { flex-direction: column; }
+    /* Radio cards: compact stack */
+    .wca-radio-cards { flex-direction: column; gap: 6px; }
+    .wca-radio-card { flex-direction: row; gap: 10px; padding: 10px 12px; align-items: center; text-align: left; }
+    .wca-radio-card__icon { font-size: 1.2rem; flex-shrink: 0; }
+    .wca-radio-card__desc { display: none; }
+    .wca-radio-card__label { font-size: .78rem; }
 
-    /* Status card: better mobile layout */
-    .wca-status-card { flex-wrap: wrap; gap: 10px; }
-    .wca-status-card__body { min-width: 180px; }
+    /* Status card: compact row */
+    .wca-status-card { gap: 8px; padding: 10px 12px; }
+    .wca-status-card__icon { font-size: 1.3rem; }
+    .wca-status-card__body strong { font-size: .78rem; }
+    .wca-status-card__body small { font-size: .68rem; }
 
-    /* Option rows: full width */
-    .fb-option-row { gap: 8px; }
-    .fb-option-row__input { min-width: 0; }
+    /* Option rows: compact */
+    .fb-options-row { margin-top: 12px; }
+    .fb-option-list { gap: 4px; margin-top: 4px; }
+    .fb-option-row { gap: 6px; }
+    .fb-option-row__num { width: 22px; height: 22px; font-size: .65rem; }
+    .fb-option-row__input { padding: 8px 10px; font-size: .82rem; border-radius: 8px; }
 
-    /* Footer actions */
-    .fb-q-footer { flex-direction: column; gap: 10px; align-items: stretch; }
-    .fb-q-footer__btns { justify-content: flex-end; }
+    /* Footer: compact row */
+    .fb-q-footer { flex-direction: column; gap: 6px; align-items: stretch; padding: 8px 0 0; margin-top: 10px; }
+    .fb-q-footer__info { font-size: .67rem; }
+    .fb-q-footer__btns { justify-content: space-between; }
+    .fb-q-footer__btns .wca-btn { font-size: .75rem; padding: 7px 14px; }
 
-    /* Collapsed card: better touch targets */
-    .fb-q-collapsed { padding: 12px 10px; gap: 8px; }
-    .fb-q-collapsed__edit, .fb-q-collapsed__del { padding: 8px 10px; font-size: 1rem; }
+    /* Collapsed card: compact single line */
+    .fb-q-collapsed { padding: 8px 6px; gap: 6px; }
+    .fb-q-collapsed__num { width: 22px; height: 22px; font-size: .65rem; border-radius: 6px; }
+    .fb-q-collapsed__text strong { font-size: .78rem; }
+    .fb-q-collapsed__text small { font-size: .65rem; }
+    .fb-q-collapsed__edit, .fb-q-collapsed__del { padding: 6px 8px; font-size: .9rem; }
 
-    /* Expander header */
-    .fb-q-expanded__head { padding: 10px 12px; gap: 6px; }
-    .fb-q-expanded__close { padding: 5px 10px; font-size: .75rem; }
+    /* Expanded head: compact */
+    .fb-q-expanded__head { padding: 8px 10px; gap: 6px; }
+    .fb-q-expanded__title { font-size: .76rem; }
+    .fb-q-expanded__close { padding: 4px 8px; font-size: .7rem; }
 
-    /* Drag handle: bigger touch target */
-    .fb-q-drag { padding: 4px 8px; font-size: 1.2rem; }
+    /* Drag handle */
+    .fb-q-drag { padding: 2px 6px; font-size: 1.1rem; }
+    .fb-q-ghost { border-radius: 8px; }
 
-    /* Scale card arrow hidden */
-    .fb-scale-card__arrow { display: none; }
+    /* Question cards: tighter */
+    .fb-q-card { margin-bottom: 6px; border-radius: 10px; }
+    .fb-q-card--expanded { box-shadow: 0 0 0 2px rgba(99,102,241,.06); }
 
-    /* Rating preview stars: smaller on mobile */
-    .fb-preview-rate__star { font-size: 28px; }
+    /* Empty state */
+    .fb-empty-questions { padding: 24px 14px; }
 
-    /* NPS buttons: smaller */
-    .fb-preview-nps__btn { width: 28px; height: 28px; font-size: .7rem; }
-}
-
-@media (max-width: 480px) {
-    /* Even smaller screens: card meta wrap */
-    .pkg-row { flex-wrap: wrap; }
-    .pkg-row__act { width: 100%; margin-top: 8px; }
-
-    /* Hide some labels */
-    .fb-preview__label { font-size: .62rem; }
-    .wca-field-lbl { font-size: .76rem; }
-
-    /* Type pills: minimal */
-    .fb-type-pill { padding: 6px 10px; font-size: .72rem; gap: 4px; }
-    .fb-type-pill__label { display: none; }
-
-    /* Preview hidden on very small screens? No, just reduce */
-    .fb-preview__card { padding: 12px 10px; font-size: .8rem; }
-    .fb-preview__q { font-size: .8rem; margin-bottom: 12px; }
-
-    /* Likert preview smaller */
-    .fb-preview-likert__opt { padding: 8px 10px; font-size: .72rem; min-width: 36px; }
-    .fb-preview-likert__labels { font-size: .6rem; }
+    /* Preview components: smaller */
+    .fb-preview-rate__star { font-size: 26px; }
+    .fb-preview-nps__btn { width: 26px; height: 26px; font-size: .68rem; border-radius: 6px; }
+    .fb-preview-likert__opt { padding: 7px 8px; font-size: .7rem; min-width: 36px; }
+    .fb-preview-likert__labels { font-size: .62rem; margin-top: 4px; }
+    .fb-pv-radio__card, .fb-pv-check__card { padding: 9px 12px; border-radius: 10px; }
+    .fb-pv-radio__text, .fb-pv-check__text { font-size: .82rem; }
+    .fb-preview-dd__box { padding: 9px 12px; }
+    .fb-preview-dd__item { padding: 8px 12px; font-size: .78rem; }
 }
 
 /* ── Footer ── */
