@@ -242,7 +242,16 @@ class PenjadwalanController extends Controller
                 ->orderBy('Urutan')
                 ->get();
 
-            $tahapTes = $semuaTahap->first(fn ($t) => $t->Provider === 'THIRD_PARTY' && $t->Jenis_Tes_Kode === $data['jenisTesKode']);
+            // Cari tahap pemilik jenis tes ini lewat SUB-TES (1 tahap bisa punya
+            // banyak tes). Fallback ke kolom lama demi alur yang belum bermigrasi.
+            $idTahapTes = DB::table('N_WEB_CAREERS_Master_Alur_Tahap_Tes')
+                ->whereIn('Master_Alur_Tahap_Id', $semuaTahap->pluck('Id_Master_Alur_Tahap')->all())
+                ->where('Jenis_Tes_Kode', $data['jenisTesKode'])
+                ->orderBy('Urutan')
+                ->value('Master_Alur_Tahap_Id');
+
+            $tahapTes = $idTahapTes ? $semuaTahap->firstWhere('Id_Master_Alur_Tahap', $idTahapTes) : null;
+            $tahapTes ??= $semuaTahap->first(fn ($t) => $t->Provider === 'THIRD_PARTY' && $t->Jenis_Tes_Kode === $data['jenisTesKode']);
             if (! $tahapTes) {
                 return ResponseHelper::error("Alur '{$alur->Nama}' tidak punya tahap pihak ke-3 untuk jenis tes ini. Tambahkan tahapnya di Master Alur.", 422);
             }
@@ -301,7 +310,9 @@ class PenjadwalanController extends Controller
                         'Tipe_Tahap_Kode' => $t->Tipe_Tahap_Kode,
                         'Provider' => $t->Provider,
                         'Keputusan' => $t->Keputusan,
-                        'Jenis_Tes_Kode' => $t->Jenis_Tes_Kode,
+                        // Tahap terpilih menyimpan jenis tes yang BENAR-BENAR dijadwalkan
+                        // (multi-tes: bisa berbeda dari kolom default level tahap).
+                        'Jenis_Tes_Kode' => $dipilih ? $data['jenisTesKode'] : $t->Jenis_Tes_Kode,
                         'Formulir_Kode' => $t->Formulir_Kode,
                         'Flag_Kirim_Hclearn' => $t->Provider === 'THIRD_PARTY' ? 'Y' : 'T',
                         'Nama_Ujian' => $dipilih ? $data['namaUjian'] : null,
@@ -344,6 +355,20 @@ class PenjadwalanController extends Controller
                     ->whereIn('Lamaran_Id', $kandidat->pluck('Id_Lamaran')->all())
                     ->where('Urutan', $tahapTes->Urutan)
                     ->update(['Penjadwalan_Tahap_Id' => $tahapTerpilihId, 'Updated_At' => $now]);
+
+                // Tandai SUB-TES yang dijadwalkan (baterai multi-tes: hanya sub-tes
+                // ber-jenis ini yang berubah; sub-tes lain menunggu jadwalnya sendiri).
+                $lamaranTahapIds = DB::table('N_WEB_CAREERS_Lamaran_Tahap')
+                    ->whereIn('Lamaran_Id', $kandidat->pluck('Id_Lamaran')->all())
+                    ->where('Urutan', $tahapTes->Urutan)
+                    ->pluck('Id_Lamaran_Tahap')->all();
+                if ($lamaranTahapIds) {
+                    DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')
+                        ->whereIn('Lamaran_Tahap_Id', $lamaranTahapIds)
+                        ->where('Jenis_Tes_Kode', $data['jenisTesKode'])
+                        ->where('Flag_Selesai', 'N')
+                        ->update(['Status' => 'DIJADWALKAN', 'Penjadwalan_Tahap_Id' => $tahapTerpilihId, 'Updated_At' => $now]);
+                }
 
                 return ['penjadwalan' => $penjadwalanId, 'tahap' => $tahapTerpilihId];
             });

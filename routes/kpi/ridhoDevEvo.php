@@ -52,6 +52,10 @@ Route::prefix('api/v1/karir')
         Route::get('/lamaran/berkas/{id}', [LamaranController::class, 'worklistBerkas'])->name('lamaran.berkas');
         Route::get('/lamaran/berkas/file/{id}', [LamaranController::class, 'berkasFile'])->name('lamaran.berkas.file');
         Route::patch('/lamaran/tahap/{id}/putus', [LamaranController::class, 'putus'])->name('lamaran.putus');
+        // Escape hatch multi-tes: tandai sub-tes tidak hadir → mesin evaluasi ulang.
+        Route::patch('/lamaran/sub-tes/{id}/tidak-hadir', [LamaranController::class, 'subTesTidakHadir'])->name('lamaran.subtes.tidakhadir');
+        // Catat hasil sub-tes MANUAL (wawancara/FGD di tahap campuran) → mesin yang sama.
+        Route::patch('/lamaran/sub-tes/{id}/catat-hasil', [LamaranController::class, 'subTesCatatHasil'])->name('lamaran.subtes.catathasil');
 
         // CRUD master generik (master/simple, master/rich, master/akun, master/kemitraan)
         // DIHAPUS: halaman gaya lama yang memakainya sudah tidak punya route —

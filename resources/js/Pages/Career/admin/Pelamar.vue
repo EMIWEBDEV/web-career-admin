@@ -194,11 +194,59 @@
                         </div>
                         <div v-if="detailKandidat.nungguSistem" class="plw-sysnote">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2.2" stroke-linecap="round" style="flex: 0 0 auto; margin-top: 1px"><path d="M5 3h14l-6 8v7l-2 1v-8L5 3z" /></svg>
-                            <div><b>Tahap ini digerakkan sistem</b> (tes pihak ke-3). Tidak bisa diputus manual — kandidat maju otomatis setelah nilai masuk.</div>
+                            <div><b>Tahap ini digerakkan sistem</b> (tes pihak ke-3). Kandidat bergerak otomatis setelah seluruh hasil tesnya masuk — pantau rapor tes di bawah.</div>
+                        </div>
+                        <div v-else-if="detailKandidat.siapDiputus" class="plw-sysnote is-ready">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2.2" stroke-linecap="round" style="flex: 0 0 auto; margin-top: 1px"><path d="M20 6L9 17l-5-5" /></svg>
+                            <div><b>Semua hasil sudah masuk.</b> Tinjau rapor tes di bawah, lalu putuskan Loloskan / Tidak Lolos.</div>
                         </div>
                         <div v-else-if="detailKandidat.alasan" class="plw-sysnote">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2.2" stroke-linecap="round" style="flex: 0 0 auto; margin-top: 1px"><circle cx="12" cy="12" r="9" /><path d="M12 8v5" /><path d="M12 16h.01" /></svg>
                             <div><b>Catatan sistem:</b> {{ detailKandidat.alasan }}</div>
+                        </div>
+                    </div>
+
+                    <!-- RAPOR TES — sub-tes tahap ini (baterai multi-tes). Skor informatif
+                         ikut tampil sebagai bahan pertimbangan; ia tak menentukan lulus. -->
+                    <div v-if="(detailKandidat.tests || []).length">
+                        <div class="plw-secrow">
+                            <div class="plw-sectitle">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
+                                Rapor Tes Tahap Ini
+                            </div>
+                            <span class="plw-seccount">{{ detailKandidat.tests.length }} tes</span>
+                        </div>
+                        <div class="plw-tests">
+                            <div v-for="t in detailKandidat.tests" :key="t.id" class="plw-test">
+                                <span class="plw-test__ico" :class="t.provider === 'THIRD_PARTY' ? 'is-sys' : 'is-man'">
+                                    <i class="bi" :class="t.provider === 'THIRD_PARTY' ? 'bi-robot' : 'bi-person-workspace'"></i>
+                                </span>
+                                <div class="plw-test__main">
+                                    <div class="plw-test__name">
+                                        {{ t.label }}
+                                        <span v-if="t.peran === 'INFORMATIF'" class="plw-test__tag is-info" title="Skor hanya bahan pertimbangan — tidak menentukan lulus">informatif</span>
+                                        <span v-if="!t.wajib" class="plw-test__tag">opsional</span>
+                                    </div>
+                                    <div class="plw-test__sub">{{ t.jenisTes || 'Aktivitas internal' }}</div>
+                                    <div v-if="t.catatan" class="plw-test__cat"><i class="bi bi-chat-left-text"></i> {{ t.catatan }}</div>
+                                </div>
+                                <span v-if="t.nilai != null" class="plw-test__score">{{ t.nilai }}</span>
+                                <span class="plw-test__pill" :class="pillTes(t)">{{ labelTes(t) }}</span>
+                                <button
+                                    v-if="bisaCatat(t)"
+                                    type="button" class="plw-test__rec" title="Rekam hasil aktivitas manual ini (wawancara/FGD) — mesin langsung mengevaluasi tahap"
+                                    @click="askCatat(t)"
+                                >
+                                    <i class="bi bi-pencil-square"></i> Catat Hasil
+                                </button>
+                                <button
+                                    v-if="detailKandidat.statusLamaran === 'BERJALAN' && t.status !== 'SELESAI' && t.status !== 'TIDAK_HADIR'"
+                                    type="button" class="plw-test__skip" title="Tandai kandidat tidak hadir pada tes ini (tahap tidak lagi menunggu hasilnya)"
+                                    @click="tandaiTidakHadir(t)"
+                                >
+                                    <i class="bi bi-person-x"></i> Tidak hadir
+                                </button>
+                            </div>
                         </div>
                     </div>
 
@@ -324,6 +372,32 @@
             <el-input v-model="putusCatatan" type="textarea" :rows="2" placeholder="Catatan (mis. sesuai rekomendasi sistem / alasan khusus)" />
         </ConfirmModal>
 
+        <!-- Catat hasil sub-tes MANUAL (wawancara/FGD) — masuk mesin keputusan yang sama. -->
+        <ConfirmModal
+            :show="catatShow"
+            title="Catat Hasil Aktivitas"
+            :subtitle="catatTarget ? `${catatTarget.label} — ${detailKandidat?.pelamar || ''}` : ''"
+            confirm-label="Simpan Hasil"
+            :busy="sibuk"
+            @confirm="konfirmCatat"
+            @cancel="catatShow = false"
+        >
+            <div class="plw-catat">
+                <template v-if="catatTarget && catatTarget.peran !== 'INFORMATIF'">
+                    <div class="plw-catat__lbl">Hasil</div>
+                    <el-radio-group v-model="catatHasil">
+                        <el-radio-button label="LULUS">Lulus</el-radio-button>
+                        <el-radio-button label="GAGAL">Gagal</el-radio-button>
+                    </el-radio-group>
+                </template>
+                <div v-else class="plw-catat__info"><i class="bi bi-info-circle"></i> Aktivitas informatif — cukup nilai/catatan, tidak menentukan lulus.</div>
+                <div class="plw-catat__lbl">Nilai (opsional)</div>
+                <el-input-number v-model="catatNilai" :min="0" :max="1000" controls-position="right" style="width:100%" />
+                <div class="plw-catat__lbl">Catatan penilai</div>
+                <el-input v-model="catatCatatan" type="textarea" :rows="2" placeholder="mis. Komunikatif, hasil FGD baik — direkomendasikan lanjut" />
+            </div>
+        </ConfirmModal>
+
         <transition name="plw-toast"><div v-if="toast" class="plw-toast" :class="{ 'is-err': toastErr }"><i class="bi" :class="toastErr ? 'bi-exclamation-circle-fill' : 'bi-check-circle-fill'"></i> {{ toast }}</div></transition>
     </div>
 </template>
@@ -366,6 +440,11 @@ export default {
             putusTarget: null,
             putusHasil: '',
             putusCatatan: '',
+            catatShow: false,
+            catatTarget: null,
+            catatHasil: 'LULUS',
+            catatNilai: null,
+            catatCatatan: '',
             sibuk: false,
             toast: '',
             toastErr: false,
@@ -487,6 +566,68 @@ export default {
             this.lbLoading = true;
             this.lbSrc = this.lightbox.url + (this.lightbox.url.includes('?') ? '&' : '?') + 'r=' + Date.now();
         },
+        /* ── Rapor tes (multi-tes) ── */
+        pillTes(t) {
+            if (t.status === 'TIDAK_HADIR') return 'is-absent';
+            if (t.status !== 'SELESAI') return t.status === 'DIJADWALKAN' ? 'is-sched' : 'is-wait';
+            if (t.peran === 'INFORMATIF') return 'is-done';
+            return t.hasil === 'LULUS' ? 'is-pass' : 'is-fail';
+        },
+        labelTes(t) {
+            if (t.status === 'TIDAK_HADIR') return 'Tidak hadir';
+            if (t.status === 'DIJADWALKAN') return 'Dijadwalkan';
+            if (t.status !== 'SELESAI') return 'Menunggu';
+            if (t.peran === 'INFORMATIF') return 'Selesai';
+            return t.hasil === 'LULUS' ? 'Lulus' : 'Gagal';
+        },
+        /** Sub-tes manual yang belum final → boleh dicatat hasilnya. */
+        bisaCatat(t) {
+            return this.detailKandidat?.statusLamaran === 'BERJALAN'
+                && t.provider !== 'THIRD_PARTY'
+                && t.status !== 'SELESAI' && t.status !== 'TIDAK_HADIR';
+        },
+        askCatat(t) {
+            this.catatTarget = t;
+            this.catatHasil = 'LULUS';
+            this.catatNilai = null;
+            this.catatCatatan = '';
+            this.catatShow = true;
+        },
+        async konfirmCatat() {
+            if (this.sibuk || !this.catatTarget) return;
+            this.sibuk = true;
+            try {
+                const res = await axios.patch(`/api/v1/karir/lamaran/sub-tes/${this.catatTarget.id}/catat-hasil`, {
+                    hasil: this.catatTarget.peran === 'INFORMATIF' ? null : this.catatHasil,
+                    nilai: this.catatNilai,
+                    catatan: this.catatCatatan || null,
+                }, CFG);
+                this.notice(res.data?.message || 'Hasil dicatat.');
+                this.catatShow = false;
+                this.catatTarget = null;
+                await this.muatDetail(this.selectedId);
+            } catch (e) {
+                this.notice(e.response?.data?.message || 'Gagal mencatat hasil.', true);
+            } finally {
+                this.sibuk = false;
+            }
+        },
+
+        /** ESCAPE HATCH: kandidat tak hadir — tahap berhenti menunggu tes ini. */
+        async tandaiTidakHadir(t) {
+            if (this.sibuk) return;
+            this.sibuk = true;
+            try {
+                const res = await axios.patch(`/api/v1/karir/lamaran/sub-tes/${t.id}/tidak-hadir`, {}, CFG);
+                this.notice(res.data?.message || 'Sub-tes ditandai tidak hadir.');
+                await this.muatDetail(this.selectedId);
+            } catch (e) {
+                this.notice(e.response?.data?.message || 'Gagal memproses.', true);
+            } finally {
+                this.sibuk = false;
+            }
+        },
+
         /* ── Keputusan ── */
         askPutus(r, hasil) { this.putusTarget = r; this.putusHasil = hasil; this.putusCatatan = ''; this.konfirmShow = true; },
         async konfirmPutus() {
@@ -653,6 +794,38 @@ export default {
 .plw-seg.is-fail { background: linear-gradient(90deg, #f87171, #ef4444); }
 .plw-sysnote { display: flex; gap: 12px; margin-top: 16px; padding: 13px 15px; border-radius: 14px; background: linear-gradient(135deg, #fffbeb, #fff8ec); border: 1px solid #f5e0a3; font-size: 12.5px; line-height: 1.6; color: #8a6d29; }
 .plw-sysnote b { color: #92660a; }
+.plw-sysnote.is-ready { background: linear-gradient(135deg, #ecfdf5, #f0fdf9); border-color: #a7f3d0; color: #065f46; }
+.plw-sysnote.is-ready b { color: #047857; }
+
+/* ── Rapor tes tahap (baterai multi-tes) ── */
+.plw-tests { display: flex; flex-direction: column; gap: 8px; }
+.plw-test { display: flex; align-items: center; gap: 11px; padding: 11px 13px; border: 1px solid #e8eaf3; border-radius: 13px; background: #fff; }
+.plw-test__ico { flex: none; width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; font-size: 15px; }
+.plw-test__ico.is-sys { background: rgba(217, 119, 6, .1); color: #b45309; }
+.plw-test__ico.is-man { background: rgba(99, 102, 241, .1); color: #4f46e5; }
+.plw-test__main { flex: 1; min-width: 0; }
+.plw-test__name { font-size: 13px; font-weight: 700; color: #1e2447; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.plw-test__tag { font-size: 10px; font-weight: 700; border-radius: 999px; padding: 1px 7px; background: #f1f5f9; color: #64748b; }
+.plw-test__tag.is-info { background: #eef2ff; color: #4338ca; }
+.plw-test__sub { font-size: 11px; color: #94a3b8; margin-top: 1px; }
+.plw-test__score { font-size: 15px; font-weight: 800; color: #4f46e5; font-variant-numeric: tabular-nums; }
+.plw-test__pill { flex: none; font-size: 11px; font-weight: 700; border-radius: 999px; padding: 3px 10px; }
+.plw-test__pill.is-pass { background: rgba(16, 185, 129, .13); color: #047857; }
+.plw-test__pill.is-fail { background: rgba(239, 68, 68, .12); color: #b91c1c; }
+.plw-test__pill.is-done { background: rgba(99, 102, 241, .12); color: #4338ca; }
+.plw-test__pill.is-sched { background: rgba(14, 165, 233, .12); color: #0369a1; }
+.plw-test__pill.is-wait { background: #f1f5f9; color: #64748b; }
+.plw-test__pill.is-absent { background: rgba(148, 163, 184, .18); color: #475569; }
+.plw-test__skip { flex: none; display: inline-flex; align-items: center; gap: 5px; border: 1px solid #fca5a5; background: #fff; color: #b91c1c; font-size: 11px; font-weight: 700; border-radius: 9px; padding: 5px 9px; cursor: pointer; transition: background .15s; }
+.plw-test__skip:hover { background: #fef2f2; }
+.plw-test__rec { flex: none; display: inline-flex; align-items: center; gap: 5px; border: 1px solid #a5b4fc; background: #eef2ff; color: #4338ca; font-size: 11px; font-weight: 700; border-radius: 9px; padding: 5px 9px; cursor: pointer; transition: background .15s; }
+.plw-test__rec:hover { background: #e0e7ff; }
+.plw-test__cat { margin-top: 3px; font-size: 11px; color: #64748b; display: flex; align-items: flex-start; gap: 5px; line-height: 1.45; }
+
+/* Modal catat hasil */
+.plw-catat { display: flex; flex-direction: column; gap: 6px; }
+.plw-catat__lbl { font-size: 11.5px; font-weight: 700; color: #475569; margin-top: 6px; }
+.plw-catat__info { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #4338ca; background: #eef2ff; border-radius: 9px; padding: 8px 10px; }
 
 .plw-secrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
 .plw-sectitle { display: flex; align-items: center; gap: 9px; font-size: 15px; font-weight: 800; color: #1e293b; }

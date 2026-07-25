@@ -183,6 +183,63 @@ class CareerAdminController extends Controller
         if ($type === 'jenis-agenda') {
             return ResponseHelper::success($this->jenisAgenda(), 'Jenis agenda');
         }
+        // Tipe tahap membawa 'perilaku' (aksi) yang sudah di-bind di masternya —
+        // builder Alur memakainya untuk menurunkan Provider/Keputusan otomatis
+        // (tanpa memilih Penyedia lagi). Sumber tunggal: kolom Perilaku_Kode.
+        if ($type === 'tipe') {
+            $rows = DB::table('N_WEB_CAREERS_Master_Tipe_Tahap')
+                ->where('Flag_Aktif', 'Y')
+                ->orderBy('Nama')
+                ->get()
+                ->map(fn ($r) => ['value' => $r->Kode, 'label' => $r->Nama, 'perilaku' => $r->Perilaku_Kode])
+                ->values();
+
+            return ResponseHelper::success($rows, 'Opsi tipe');
+        }
+        // Mode pengumuman hasil tahap — hanya yang AKTIF (mis. TERJADWAL bisa
+        // dinonaktifkan). Bawa ikon/deskripsi/butuhJeda supaya builder Alur tak
+        // perlu memetakan label/aturan secara hardcode.
+        if ($type === 'mode-pengumuman') {
+            $rows = DB::table('N_WEB_CAREERS_Master_Mode_Pengumuman')
+                ->where('Flag_Aktif', 'Y')
+                ->orderBy('Urutan')
+                ->get()
+                ->map(fn ($r) => [
+                    'value' => $r->Kode,
+                    'label' => $r->Label,
+                    'nama' => $r->Nama,
+                    'ikon' => $r->Ikon,
+                    'warna' => $r->Warna,
+                    'deskripsi' => $r->Deskripsi,
+                    'butuhJeda' => $r->Butuh_Jeda === 'Y',
+                ])
+                ->values();
+
+            return ResponseHelper::success($rows, 'Opsi mode pengumuman');
+        }
+        // Mode keputusan tahap (bagaimana tahap menyimpulkan) — hanya yang AKTIF.
+        // Bawa flag perilaku supaya builder bisa menjelaskan efeknya ke admin.
+        if ($type === 'mode-keputusan') {
+            $rows = DB::table('N_WEB_CAREERS_Master_Mode_Keputusan')
+                ->where('Flag_Aktif', 'Y')
+                ->orderBy('Urutan')
+                ->get()
+                ->map(fn ($r) => [
+                    'value' => $r->Kode,
+                    'label' => $r->Label,
+                    'nama' => $r->Nama,
+                    'ikon' => $r->Ikon,
+                    'warna' => $r->Warna,
+                    'deskripsi' => $r->Deskripsi,
+                    'tunggu' => $r->Tunggu,
+                    'autoLanjut' => $r->Auto_Lanjut === 'Y',
+                    'syaratLulus' => $r->Syarat_Lulus,
+                    'autoGugur' => $r->Auto_Gugur === 'Y',
+                ])
+                ->values();
+
+            return ResponseHelper::success($rows, 'Opsi mode keputusan');
+        }
 
         // type => [tabel, kolom value, kolom label, kolom flag aktif (atau null)]
         $map = [

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Auth;
 use App\Helpers\ResponseHelper;
 use App\Http\Controllers\Controller;
 use App\Jobs\Career\WcSyncEmailJob;
+use App\Services\WebCareers\HclClient;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -176,8 +177,8 @@ class AuthController extends Controller
                 'Updated_By' => $data['email'],
             ]);
 
-            // Sinkron identitas ke HRIS_Rekrutmen (sumber HCLearn) — buat/lengkapi.
-            $this->daftarkanHrisRekrutmen((int) $existing->Id_Users, $data['nama'], $data['email'], $data['phone'] ?? $existing->No_Hp, $data['nik'], $existing->Created_At ?? $now);
+            // Sinkron identitas ke HCLearn via API (buat/lengkapi calon).
+            $this->daftarkanHrisRekrutmen((int) $existing->Id_Users, $data['nama'], $data['email'], $data['phone'] ?? $existing->No_Hp, $data['nik']);
 
             $this->kirimEmailVerifikasi((int) $existing->Id_Users);
 
@@ -209,8 +210,8 @@ class AuthController extends Controller
             'Updated_By' => $data['email'],
         ], 'Id_Users');
 
-        // Daftarkan ke HRIS_Rekrutmen_Karyawan + set Kode_Calon (identitas HCLearn).
-        $this->daftarkanHrisRekrutmen((int) $id, $data['nama'], $data['email'], $data['phone'] ?? null, $data['nik'], $now);
+        // Daftarkan ke HCLearn via API + set Kode_Calon (identitas HCLearn, prefix CK).
+        $this->daftarkanHrisRekrutmen((int) $id, $data['nama'], $data['email'], $data['phone'] ?? null, $data['nik']);
 
         $this->kirimEmailVerifikasi((int) $id);
 
@@ -223,52 +224,40 @@ class AuthController extends Controller
     }
 
     /**
-     * Kode Calon Web Careers — TIDAK memakai prefix "CK" (milik HRIS lama).
-     *   Kode_Calon = 'WC' + yymmdd(daftar) + '-' + Id_Users(6 digit) → unik per user.
+     * Daftarkan kandidat ke HCLearn LEWAT API (POST api/v1/web-careers/kandidat)
+     * — TIDAK lagi insert langsung ke HRIS_Rekrutmen_Karyawan. Kode_Calon dibuat
+     * oleh CAT memakai aturan internalnya (prefix 'CK', sama dengan insert data
+     * calon), lalu disimpan ke Users.Kode_Calon.
+     *
+     * Idempoten di sisi CAT (kunci Id_WC_Users): registrasi ulang mengembalikan
+     * Kode_Calon lama. Best-effort — kegagalan API tidak menggagalkan registrasi;
+     * Kode_Calon menyusul (kandidat tanpa kode tertahan saat penjadwalan tes,
+     * dengan pesan yang sudah ada di modul Penjadwalan).
      */
-    private function kodeCalon(int $idUsers, Carbon $tglDaftar): string
-    {
-        return 'WC' . $tglDaftar->format('ymd') . '-' . str_pad((string) $idUsers, 6, '0', STR_PAD_LEFT);
-    }
-
-    /**
-     * Daftarkan kandidat ke HRIS_Rekrutmen_Karyawan (sumber data HCLearn) + isi
-     * Users.Kode_Calon. Idempoten: kalau baris HRIS/Kode_Calon sudah ada, cukup
-     * diperbarui. PK HRIS = (Kode_Perusahaan, No_Faktur); No_Faktur unik per user.
-     * Best-effort — kegagalan HRIS tidak boleh menggagalkan registrasi kandidat.
-     */
-    private function daftarkanHrisRekrutmen(int $idUsers, string $nama, string $email, ?string $hp, string $nik, $tglDaftar): void
+    private function daftarkanHrisRekrutmen(int $idUsers, string $nama, string $email, ?string $hp, string $nik): void
     {
         try {
-            $tgl = $tglDaftar instanceof Carbon ? $tglDaftar : Carbon::parse((string) $tglDaftar);
-            $kodeCalon = $this->kodeCalon($idUsers, $tgl);
-            $noFaktur = 'W' . str_pad((string) $idUsers, 8, '0', STR_PAD_LEFT);
-
-            DB::table($this->table)->where('Id_Users', $idUsers)->update(['Kode_Calon' => $kodeCalon]);
-
-            $ada = DB::table('HRIS_Rekrutmen_Karyawan')->where('Kode_Calon', $kodeCalon)->exists();
-            if ($ada) {
-                DB::table('HRIS_Rekrutmen_Karyawan')->where('Kode_Calon', $kodeCalon)->update([
-                    'Nama' => $nama, 'Email' => $email, 'HP' => $hp, 'NIK' => $nik,
-                ]);
-
-                return;
-            }
-
-            DB::table('HRIS_Rekrutmen_Karyawan')->insert([
-                'Kode_Perusahaan' => '001',
-                'No_Faktur' => $noFaktur,
-                'Kode_Calon' => $kodeCalon,
+            $hasil = app(HclClient::class)->post('kandidat', [
+                'Id_WC_Users' => $idUsers,
                 'Nama' => $nama,
                 'Email' => $email,
                 'HP' => $hp,
                 'NIK' => $nik,
-                'Tanggal' => $tgl,
-                'Aktif' => 'Y',
-                'id_tahapan' => 1,
+            ], [
+                'Jenis_Event' => 'REGISTRASI_KANDIDAT',
             ]);
+
+            $kodeCalon = $hasil['result']['Kode_Calon'] ?? null;
+            if (! $hasil['sukses'] || ! $kodeCalon) {
+                Log::channel('web_career')->error("Registrasi kandidat #{$idUsers} ke HCLearn gagal: " . ($hasil['message'] ?? 'tanpa pesan'));
+
+                return;
+            }
+
+            DB::table($this->table)->where('Id_Users', $idUsers)->update(['Kode_Calon' => $kodeCalon]);
+            Log::channel('web_career')->info("Kandidat #{$idUsers} terdaftar di HCLearn: {$kodeCalon}");
         } catch (\Throwable $e) {
-            Log::channel('web_career')->error("Gagal daftarkan kandidat #{$idUsers} ke HRIS_Rekrutmen: " . $e->getMessage());
+            Log::channel('web_career')->error("Gagal daftarkan kandidat #{$idUsers} ke HCLearn: " . $e->getMessage());
         }
     }
 

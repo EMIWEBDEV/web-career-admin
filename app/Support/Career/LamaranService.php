@@ -3,6 +3,7 @@
 namespace App\Support\Career;
 
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 /**
@@ -139,7 +140,7 @@ class LamaranService
             // Salin tiap tahap alur jadi baris perjalanan. Tahap pertama langsung
             // BERJALAN; sisanya MENUNGGU sampai tahap sebelumnya diputus.
             foreach ($tahap->values() as $i => $t) {
-                DB::table('N_WEB_CAREERS_Lamaran_Tahap')->insert([
+                $lamaranTahapId = DB::table('N_WEB_CAREERS_Lamaran_Tahap')->insertGetId([
                     'Lamaran_Id' => $id,
                     'Master_Alur_Tahap_Id' => $t->Id_Master_Alur_Tahap,
                     'Urutan' => $t->Urutan,
@@ -160,7 +161,10 @@ class LamaranService
                     'Flag_Notifikasi' => $t->Flag_Notifikasi ?? 'Y',
                     'Created_At' => $now, 'Created_By' => $nama, 'Created_By_Id' => $userAdminId,
                     'Updated_At' => $now, 'Updated_By' => $nama, 'Updated_By_Id' => $userAdminId,
-                ]);
+                ], 'Id_Lamaran_Tahap');
+
+                // Bekukan sub-tes tahap (snapshot) — dipakai mesin keputusan.
+                $this->snapshotSubTes($lamaranTahapId, $t->Id_Master_Alur_Tahap, $now, $nama, $userAdminId);
             }
 
             return $id;
@@ -474,6 +478,208 @@ class LamaranService
                 'Waktu_Selesai' => $now,
                 'Updated_At' => $now, 'Updated_By' => $nama, 'Updated_By_Id' => $adminId,
             ]);
+        }
+    }
+
+    // ═══════════════════ MESIN KEPUTUSAN TAHAP (multi-tes) ═══════════════════
+    // Satu tahap bisa punya banyak sub-tes. Cara tahap MENYIMPULKAN dibaca dari
+    // Master_Mode_Keputusan (kolom perilaku), bukan hardcode. Untuk tahap 1-tes
+    // hasilnya identik dengan perilaku lama.
+
+    /** Bekukan sub-tes master → runtime (dipakai saat lamaran dibuat). */
+    private function snapshotSubTes(int $lamaranTahapId, int $masterAlurTahapId, $now, string $nama, ?int $adminId): void
+    {
+        $tes = DB::table('N_WEB_CAREERS_Master_Alur_Tahap_Tes')
+            ->where('Master_Alur_Tahap_Id', $masterAlurTahapId)
+            ->orderBy('Urutan')
+            ->get();
+
+        foreach ($tes as $x) {
+            DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')->insert([
+                'Lamaran_Tahap_Id' => $lamaranTahapId,
+                'Master_Alur_Tahap_Tes_Id' => $x->Id_Master_Alur_Tahap_Tes,
+                'Urutan' => $x->Urutan,
+                'Jenis_Tes_Kode' => $x->Jenis_Tes_Kode,
+                'Provider' => $x->Provider,
+                'Peran' => $x->Peran,
+                'Wajib' => $x->Wajib,
+                'Ambang_Dipakai' => $x->Ambang_Batas,
+                'Label' => $x->Label,
+                'Status' => 'BELUM',
+                'Created_At' => $now, 'Created_By' => $nama, 'Created_By_Id' => $adminId,
+                'Updated_At' => $now, 'Updated_By' => $nama, 'Updated_By_Id' => $adminId,
+            ]);
+        }
+    }
+
+    /** Pastikan tahap punya sub-tes (self-heal lamaran lama pra-mesin). */
+    private function pastikanSubTes(int $lamaranTahapId): void
+    {
+        if (DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')->where('Lamaran_Tahap_Id', $lamaranTahapId)->exists()) {
+            return;
+        }
+        $t = DB::table('N_WEB_CAREERS_Lamaran_Tahap')->where('Id_Lamaran_Tahap', $lamaranTahapId)->first();
+        if (! $t) {
+            return;
+        }
+        if ($t->Master_Alur_Tahap_Id) {
+            $this->snapshotSubTes($lamaranTahapId, (int) $t->Master_Alur_Tahap_Id, now(), 'SISTEM', null);
+        }
+        // Master tak punya sub-tes (data lama) → buat 1 dari tahap itu sendiri.
+        if (! DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')->where('Lamaran_Tahap_Id', $lamaranTahapId)->exists()) {
+            DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')->insert([
+                'Lamaran_Tahap_Id' => $lamaranTahapId, 'Urutan' => 1,
+                'Jenis_Tes_Kode' => $t->Jenis_Tes_Kode, 'Provider' => $t->Provider ?? 'INTERNAL',
+                'Peran' => 'PENENTU', 'Wajib' => 'Y', 'Label' => $t->Label, 'Status' => 'BELUM',
+                'Created_At' => now(), 'Created_By' => 'SISTEM', 'Updated_At' => now(), 'Updated_By' => 'SISTEM',
+            ]);
+        }
+    }
+
+    /**
+     * Rekam hasil satu tes pihak ke-3 (dipanggil callback HCLearn) lalu evaluasi
+     * mode tahap. Idempoten via Flag_Selesai per sub-tes.
+     *
+     * @return array{outcome:string}
+     */
+    public function rekamHasilTesEksternal(int $lamaranTahapId, ?string $jenisTesKode, string $hasil, ?float $nilai, ?int $totalSoal, ?int $penjadwalanTahapId = null): array
+    {
+        $this->pastikanSubTes($lamaranTahapId);
+
+        $base = DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')
+            ->where('Lamaran_Tahap_Id', $lamaranTahapId)
+            ->where('Flag_Selesai', 'N');
+
+        // Arahkan ke sub-tes yang cocok: jenis tes → THIRD_PARTY → apa saja.
+        $sub = $jenisTesKode ? (clone $base)->where('Jenis_Tes_Kode', $jenisTesKode)->orderBy('Urutan')->first() : null;
+        $sub ??= (clone $base)->where('Provider', 'THIRD_PARTY')->orderBy('Urutan')->first();
+        $sub ??= (clone $base)->orderBy('Urutan')->first();
+
+        if (! $sub) {
+            return ['outcome' => 'NOOP']; // semua sub-tes sudah final (idempoten)
+        }
+
+        DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')->where('Id_Lamaran_Tahap_Tes', $sub->Id_Lamaran_Tahap_Tes)->update([
+            'Status' => 'SELESAI',
+            // Tes INFORMATIF tidak menyatakan lulus — Hasil dibiarkan NULL.
+            'Hasil' => $sub->Peran === 'INFORMATIF' ? null : ($hasil === 'LULUS' ? 'LULUS' : 'GAGAL'),
+            'Nilai' => $nilai,
+            'Total_Soal' => $totalSoal,
+            'Penjadwalan_Tahap_Id' => $penjadwalanTahapId,
+            'Flag_Selesai' => 'Y',
+            'Waktu_Selesai' => now(),
+            'Updated_At' => now(),
+        ]);
+
+        return $this->evaluasiTahap($lamaranTahapId, null);
+    }
+
+    /**
+     * MESIN: evaluasi apakah tahap gugur / maju / menunggu / siap diputus,
+     * berdasarkan sub-tes yang sudah masuk + Mode_Keputusan. Transisi ATOMIK
+     * (lock baris tahap + compare-and-set) supaya callback bersamaan tak maju dobel.
+     *
+     * @return array{outcome:string}
+     */
+    public function evaluasiTahap(int $lamaranTahapId, ?int $adminId = null): array
+    {
+        return DB::transaction(function () use ($lamaranTahapId, $adminId) {
+            $tahap = DB::table('N_WEB_CAREERS_Lamaran_Tahap')
+                ->where('Id_Lamaran_Tahap', $lamaranTahapId)
+                ->lockForUpdate()
+                ->first();
+            if (! $tahap || $tahap->Status !== 'BERJALAN') {
+                return ['outcome' => 'NOOP'];
+            }
+
+            $subs = DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')->where('Lamaran_Tahap_Id', $lamaranTahapId)->get();
+            if ($subs->isEmpty()) {
+                return ['outcome' => 'NOOP'];
+            }
+
+            $mode = $this->modeKeputusan((int) $tahap->Master_Alur_Tahap_Id);
+            $selesai = fn ($x) => in_array($x->Status, ['SELESAI', 'TIDAK_HADIR'], true);
+            $penentu = $subs->where('Peran', 'PENENTU');
+            $wajib = $subs->where('Wajib', 'Y');
+
+            // 1) Auto-gugur — ada tes penentu yang selesai & GAGAL.
+            $gagal = $penentu->first(fn ($x) => $selesai($x) && $x->Hasil === 'GAGAL');
+            if ($mode->Auto_Gugur === 'Y' && $gagal) {
+                $this->tetapkanTahap($lamaranTahapId, 'GUGUR', 'Gugur otomatis — gagal pada tes "' . ($gagal->Label ?? '') . '".', $adminId, now());
+                $this->tulisJejak($tahap, $mode->Kode, 'GUGUR', 'Auto-gugur: tes penentu gagal.');
+
+                return ['outcome' => 'GUGUR'];
+            }
+
+            // 2) Kondisi tunggu.
+            $wajibTerakhir = $wajib->sortByDesc('Urutan')->first();
+            $tungguOk = $mode->Tunggu === 'SEGERA'
+                || ($mode->Tunggu === 'SEMUA' && $wajib->every(fn ($x) => $selesai($x)))
+                || ($mode->Tunggu === 'TERAKHIR' && (! $wajibTerakhir || $selesai($wajibTerakhir)));
+            if (! $tungguOk) {
+                $this->tulisJejak($tahap, $mode->Kode, 'TUNGGU', 'Menunggu sub-tes wajib lain selesai.');
+
+                return ['outcome' => 'TUNGGU'];
+            }
+
+            // 3) Syarat lulus.
+            if ($mode->Syarat_Lulus === 'SEMUA_PENENTU') {
+                if (! $penentu->every(fn ($x) => $selesai($x))) {
+                    $this->tulisJejak($tahap, $mode->Kode, 'TUNGGU', 'Menunggu seluruh tes penentu selesai.');
+
+                    return ['outcome' => 'TUNGGU'];
+                }
+                $semuaLulus = $penentu->every(fn ($x) => $x->Hasil === 'LULUS');
+                if ($semuaLulus && $mode->Auto_Lanjut === 'Y') {
+                    $this->tetapkanTahap($lamaranTahapId, 'LULUS', 'Lolos otomatis — semua tes penentu lulus.', $adminId, now());
+                    $this->tulisJejak($tahap, $mode->Kode, 'LANJUT', 'Semua penentu lulus → maju otomatis.');
+
+                    return ['outcome' => 'LANJUT'];
+                }
+                $this->tandaiSiapDiputus($lamaranTahapId);
+                $this->tulisJejak($tahap, $mode->Kode, 'SIAP_DIPUTUS', $semuaLulus ? 'Semua lulus — menunggu keputusan admin.' : 'Ada tes tidak lulus — menunggu keputusan admin.');
+
+                return ['outcome' => 'SIAP_DIPUTUS'];
+            }
+
+            // MANUAL — semua sub-tes selesai, admin yang memutuskan.
+            $this->tandaiSiapDiputus($lamaranTahapId);
+            $this->tulisJejak($tahap, $mode->Kode, 'SIAP_DIPUTUS', 'Semua sub-tes selesai — menunggu keputusan admin.');
+
+            return ['outcome' => 'SIAP_DIPUTUS'];
+        });
+    }
+
+    /** Baca mode keputusan tahap; fallback AMAN (MANUAL) bila konfigurasi hilang. */
+    private function modeKeputusan(int $masterAlurTahapId): object
+    {
+        $kode = DB::table('N_WEB_CAREERS_Master_Alur_Tahap')->where('Id_Master_Alur_Tahap', $masterAlurTahapId)->value('Mode_Keputusan_Kode');
+        $mode = $kode ? DB::table('N_WEB_CAREERS_Master_Mode_Keputusan')->where('Kode', $kode)->first() : null;
+
+        return $mode ?: (object) ['Kode' => 'MANUAL_REVIEW', 'Tunggu' => 'SEMUA', 'Auto_Lanjut' => 'N', 'Syarat_Lulus' => 'MANUAL', 'Auto_Gugur' => 'N'];
+    }
+
+    /** Tandai tahap siap diputus admin (dibaca worklist di Fase 3). */
+    private function tandaiSiapDiputus(int $lamaranTahapId): void
+    {
+        DB::table('N_WEB_CAREERS_Lamaran_Tahap')->where('Id_Lamaran_Tahap', $lamaranTahapId)->update(['Siap_Diputus' => 'Y', 'Updated_At' => now()]);
+    }
+
+    /** Jejak keputusan — audit "kenapa" tiap evaluasi. Tak boleh menggagalkan keputusan. */
+    private function tulisJejak(object $tahap, string $modeKode, string $verdict, string $ringkasan): void
+    {
+        try {
+            DB::table('N_WEB_CAREERS_Lamaran_Keputusan_Jejak')->insert([
+                'Lamaran_Id' => $tahap->Lamaran_Id ?? null,
+                'Lamaran_Tahap_Id' => $tahap->Id_Lamaran_Tahap,
+                'Mode_Kode' => $modeKode,
+                'Verdict' => $verdict,
+                'Ringkasan' => mb_substr($ringkasan, 0, 500),
+                'Created_At' => now(),
+                'Created_By' => session('career_auth.nama', 'SISTEM'),
+            ]);
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->warning('Gagal tulis jejak keputusan: ' . $e->getMessage());
         }
     }
 }
