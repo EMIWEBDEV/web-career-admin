@@ -83,7 +83,7 @@
 </template>
 
 <script setup>
-import { useExportNotification } from '@/composables/useExportNotification.js'
+import { useExportNotification } from '../composables/useExportNotification.js'
 
 const { items, dismiss } = useExportNotification()
 
