@@ -17,11 +17,11 @@
             <div v-for="f in list" :key="f.Id_Master_Feedback_Form" class="pkg-card" :class="{ open: open === f.Id_Master_Feedback_Form }">
                 <!-- Header row -->
                 <div class="pkg-row">
-                    <button type="button" class="pkg-chev" :class="{ open: open === f.Id_Master_Feedback_Form }" title="Buka detail" @click="open = (open === f.Id_Master_Feedback_Form ? null : f.Id_Master_Feedback_Form)">
+                    <button type="button" class="pkg-chev" :class="{ open: open === f.Id_Master_Feedback_Form }" title="Buka detail" @click="toggleExpand(f)">
                         <i class="bi bi-chevron-right"></i>
                     </button>
                     <div class="pkg-row__main">
-                        <button type="button" class="pkg-row__titlebtn" @click="open = (open === f.Id_Master_Feedback_Form ? null : f.Id_Master_Feedback_Form)">
+                        <button type="button" class="pkg-row__titlebtn" @click="toggleExpand(f)">
                             <span class="pkg-row__title">{{ f.Nama }}</span>
                         </button>
                         <div class="pkg-row__meta">
@@ -205,6 +205,14 @@ export default {
     },
     mounted() { this.load(); },
     methods: {
+        async toggleExpand(f) {
+            if (this.open === f.Id_Master_Feedback_Form) {
+                this.open = null;
+            } else {
+                await this.loadQuestions(f);
+                this.open = f.Id_Master_Feedback_Form;
+            }
+        },
         async load() {
             this.loading = true;
             try {
