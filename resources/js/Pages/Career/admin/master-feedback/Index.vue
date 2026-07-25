@@ -138,7 +138,7 @@
         </AdminModal>
 
         <!-- Confirm remove -->
-        <ConfirmModal :show="!!removeTarget" title="Hapus Form Feedback" :message="'Yakin hapus \"' + (removeTarget?.Nama ?? '') + '\"? Pertanyaan di dalamnya juga akan dihapus.'" icon="bi-trash" @confirm="doRemove" @close="removeTarget = null" />
+        <ConfirmModal :show="!!removeTarget" title="Hapus Form Feedback" :message="removeMessage" icon="bi-trash" @confirm="doRemove" @close="removeTarget = null" />
     </div>
 </template>
 
@@ -161,6 +161,12 @@ export default {
             savingQ: {},
             form: { Nama: '', Deskripsi: '', Mode_Tampilan: 'SCROLL', Durasi_Hari: null, Flag_Aktif: 'Y' },
         };
+    },
+    computed: {
+        removeMessage() {
+            const name = this.removeTarget?.Nama ?? '';
+            return `Yakin hapus "${name}"? Pertanyaan di dalamnya juga akan dihapus.`;
+        },
     },
     mounted() { this.load(); },
     methods: {
