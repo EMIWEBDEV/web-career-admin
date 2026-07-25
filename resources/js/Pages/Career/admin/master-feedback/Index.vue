@@ -199,22 +199,29 @@
                                                     <div class="fb-preview-ta__counter">0/500</div>
                                                 </div>
 
-                                                <!-- Radio: matches RadioCards.vue — first option selected -->
-                                                <div v-if="p.Tipe === 'RADIO'" class="fb-preview-pills">
-                                                    <span v-for="(opt, oi) in (p._opsiList || [])" :key="oi"
-                                                          :class="['fb-preview-pills__item', { 'fb-preview-pills__item--on': oi === 0 }]">
-                                                        {{ opt }}
-                                                    </span>
+                                                <!-- Radio: realistic card pills — one selected with radio dot -->
+                                                <div v-if="p.Tipe === 'RADIO'" class="fb-pv-radio">
+                                                    <div v-for="(opt, oi) in (p._opsiList || [])" :key="oi"
+                                                          class="fb-pv-radio__card"
+                                                          :class="{ 'fb-pv-radio__card--sel': oi === 0 }">
+                                                        <span class="fb-pv-radio__dot">
+                                                            <span v-if="oi === 0" class="fb-pv-radio__dot--fill"></span>
+                                                        </span>
+                                                        <span class="fb-pv-radio__text">{{ opt }}</span>
+                                                    </div>
                                                     <span v-if="!p._opsiList || !p._opsiList.length" class="fb-preview__empty">Tambahkan opsi di panel kiri</span>
                                                 </div>
 
-                                                <!-- Checkbox: matches CheckboxCards.vue — first 2 selected with ✓ -->
-                                                <div v-if="p.Tipe === 'CHECKBOX'" class="fb-preview-pills">
-                                                    <span v-for="(opt, oi) in (p._opsiList || [])" :key="oi"
-                                                          :class="['fb-preview-pills__item fb-preview-pills__item--check', { 'fb-preview-pills__item--on': oi < 2 }]">
-                                                        <i v-if="oi < 2" class="bi bi-check-lg fb-preview-pills__check"></i>
-                                                        {{ opt }}
-                                                    </span>
+                                                <!-- Checkbox: realistic card pills — 2 selected with checkmarks -->
+                                                <div v-if="p.Tipe === 'CHECKBOX'" class="fb-pv-check">
+                                                    <div v-for="(opt, oi) in (p._opsiList || [])" :key="oi"
+                                                          class="fb-pv-check__card"
+                                                          :class="{ 'fb-pv-check__card--sel': oi < 2 }">
+                                                        <span class="fb-pv-check__box">
+                                                            <i v-if="oi < 2" class="bi bi-check-lg"></i>
+                                                        </span>
+                                                        <span class="fb-pv-check__text">{{ opt }}</span>
+                                                    </div>
                                                     <span v-if="!p._opsiList || !p._opsiList.length" class="fb-preview__empty">Tambahkan opsi di panel kiri</span>
                                                 </div>
 
@@ -763,17 +770,47 @@ export default {
 }
 .fb-preview-ta__counter { text-align: right; font-size: .7rem; color: #cbd5e1; margin-top: 4px; }
 
-/* ── Radio / Checkbox Preview (matches RadioCards & CheckboxCards) ── */
-.fb-preview-pills { display: flex; flex-wrap: wrap; gap: 8px; }
-.fb-preview-pills__item {
-    display: flex; align-items: center; gap: 6px; padding: 10px 18px;
-    border: 1.5px solid #e2e8f0; border-radius: 10px; background: #fff;
-    font-size: .85rem; color: #475569; cursor: default; user-select: none;
+/* ── Radio Preview (realistic cards with radio dot) ── */
+.fb-pv-radio { display: flex; flex-direction: column; gap: 8px; }
+.fb-pv-radio__card {
+    display: flex; align-items: center; gap: 12px; padding: 12px 16px;
+    border: 2px solid #e2e8f0; border-radius: 12px; background: #fff;
+    cursor: default; user-select: none; transition: none;
 }
-.fb-preview-pills__item--on {
-    border-color: #6366f1; background: rgba(99,102,241,.06); color: #6366f1; font-weight: 600;
+.fb-pv-radio__card--sel {
+    border-color: #6366f1; background: rgba(99,102,241,.04);
 }
-.fb-preview-pills__check { font-size: .75rem; color: #6366f1; font-weight: 700; }
+.fb-pv-radio__dot {
+    width: 20px; height: 20px; border-radius: 50%; border: 2px solid #cbd5e1;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.fb-pv-radio__card--sel .fb-pv-radio__dot { border-color: #6366f1; }
+.fb-pv-radio__dot--fill {
+    width: 10px; height: 10px; border-radius: 50%; background: #6366f1;
+}
+.fb-pv-radio__text { font-size: .88rem; color: #475569; }
+.fb-pv-radio__card--sel .fb-pv-radio__text { color: #6366f1; font-weight: 600; }
+
+/* ── Checkbox Preview (realistic cards with checkbox) ── */
+.fb-pv-check { display: flex; flex-direction: column; gap: 8px; }
+.fb-pv-check__card {
+    display: flex; align-items: center; gap: 12px; padding: 12px 16px;
+    border: 2px solid #e2e8f0; border-radius: 12px; background: #fff;
+    cursor: default; user-select: none; transition: none;
+}
+.fb-pv-check__card--sel {
+    border-color: #6366f1; background: rgba(99,102,241,.04);
+}
+.fb-pv-check__box {
+    width: 20px; height: 20px; border-radius: 5px; border: 2px solid #cbd5e1;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    font-size: .7rem;
+}
+.fb-pv-check__card--sel .fb-pv-check__box {
+    border-color: #6366f1; background: #6366f1; color: #fff;
+}
+.fb-pv-check__text { font-size: .88rem; color: #475569; }
+.fb-pv-check__card--sel .fb-pv-check__text { color: #6366f1; font-weight: 600; }
 /* Dropdown preview — realistic select */
 .fb-preview-dd__box {
     display: flex; justify-content: space-between; align-items: center;
