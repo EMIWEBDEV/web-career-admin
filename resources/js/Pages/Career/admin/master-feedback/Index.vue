@@ -192,14 +192,23 @@
                                                     <div v-if="!p._opsiList || !p._opsiList.length" class="fb-preview__empty">Tambahkan opsi di panel kiri</div>
                                                 </div>
 
-                                                <!-- Dropdown -->
-                                                <div v-if="p.Tipe === 'DROPDOWN'" class="fb-preview-opts">
-                                                    <div class="fb-preview-opts__dd">
-                                                        <span>Pilih salah satu...</span>
+                                                <!-- Dropdown: realistic select box + option menu -->
+                                                <div v-if="p.Tipe === 'DROPDOWN'" class="fb-preview-dd">
+                                                    <div class="fb-preview-dd__box">
+                                                        <span>Pilih salah satu</span>
                                                         <i class="bi bi-chevron-down"></i>
                                                     </div>
-                                                    <div v-for="(opt, oi) in (p._opsiList || [])" :key="oi" class="fb-preview-opts__dd-item">{{ opt }}</div>
-                                                    <div v-if="!p._opsiList || !p._opsiList.length" class="fb-preview__empty">Tambahkan opsi di panel kiri</div>
+                                                    <div class="fb-preview-dd__menu">
+                                                        <div v-for="(opt, oi) in (p._opsiList || [])" :key="oi"
+                                                             class="fb-preview-dd__item"
+                                                             :class="{ 'fb-preview-dd__item--sel': oi === 0 }">
+                                                            {{ opt }}
+                                                            <i v-if="oi === 0" class="bi bi-check-lg"></i>
+                                                        </div>
+                                                    </div>
+                                                    <div v-if="!p._opsiList || !p._opsiList.length" class="fb-preview__empty">
+                                                        Tambahkan opsi di panel kiri
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
@@ -703,14 +712,25 @@ export default {
 .fb-preview-opts__box {
     width: 18px; height: 18px; border-radius: 4px; border: 2px solid #cbd5e1; flex-shrink: 0;
 }
-.fb-preview-opts__dd {
+/* Dropdown preview — realistic select */
+.fb-preview-dd__box {
     display: flex; justify-content: space-between; align-items: center;
-    padding: 12px 14px; border: 1.5px solid #e2e8f0; border-radius: 10px;
-    font-size: .85rem; color: #94a3b8; background: #fff; margin-bottom: 4px;
+    padding: 12px 16px; border: 1.5px solid #c4b5fd; border-radius: 10px;
+    font-size: .85rem; color: #6366f1; background: #fff;
+    box-shadow: 0 0 0 3px rgba(99,102,241,.1); cursor: default;
 }
-.fb-preview-opts__dd-item {
-    padding: 6px 14px; font-size: .82rem; color: #475569;
+.fb-preview-dd__menu {
+    margin-top: 6px; border: 1px solid #e2e8f0; border-radius: 10px;
+    overflow: hidden; box-shadow: 0 8px 24px rgba(0,0,0,.08);
 }
+.fb-preview-dd__item {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 16px; font-size: .82rem; color: #475569; background: #fff;
+    border-bottom: 1px solid #f1f5f9; cursor: default;
+}
+.fb-preview-dd__item:last-child { border-bottom: none; }
+.fb-preview-dd__item--sel { color: #6366f1; background: rgba(99,102,241,.05); font-weight: 600; }
+.fb-preview-dd__item--sel i { font-size: .8rem; }
 .fb-preview__empty { font-size: .8rem; color: #cbd5e1; font-style: italic; padding: 8px 0; }
 
 /* ── Footer ── */
