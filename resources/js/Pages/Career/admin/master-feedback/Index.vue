@@ -944,6 +944,84 @@ export default {
 .fb-preview-dd__menu--ph { border-style: dashed; }
 .fb-preview__empty { font-size: .8rem; color: #cbd5e1; font-style: italic; padding: 8px 0; }
 
+/* ── Mobile Responsive ── */
+@media (max-width: 768px) {
+    /* Card actions wrap */
+    .pkg-row__act { flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+
+    /* Expanded body: editor + preview stack vertically */
+    .fb-q-expanded__body { flex-direction: column; gap: 16px; padding: 14px; }
+
+    /* Preview gets full width below editor */
+    .fb-preview { min-width: 100%; }
+    .fb-preview__card { padding: 16px 14px; }
+
+    /* Type pills: full width */
+    .fb-type-pill { flex: 1; justify-content: center; min-width: 80px; }
+
+    /* Scale card: stack fields vertically */
+    .fb-scale-card__body { flex-direction: column; gap: 12px; padding: 14px; }
+    .fb-scale-card__sep { display: none; }
+    .fb-scale-card__foot { flex-direction: column; gap: 8px; align-items: flex-start; }
+
+    /* Radio cards (Mode Tampilan): stack */
+    .wca-radio-cards { flex-direction: column; }
+
+    /* Status card: better mobile layout */
+    .wca-status-card { flex-wrap: wrap; gap: 10px; }
+    .wca-status-card__body { min-width: 180px; }
+
+    /* Option rows: full width */
+    .fb-option-row { gap: 8px; }
+    .fb-option-row__input { min-width: 0; }
+
+    /* Footer actions */
+    .fb-q-footer { flex-direction: column; gap: 10px; align-items: stretch; }
+    .fb-q-footer__btns { justify-content: flex-end; }
+
+    /* Collapsed card: better touch targets */
+    .fb-q-collapsed { padding: 12px 10px; gap: 8px; }
+    .fb-q-collapsed__edit, .fb-q-collapsed__del { padding: 8px 10px; font-size: 1rem; }
+
+    /* Expander header */
+    .fb-q-expanded__head { padding: 10px 12px; gap: 6px; }
+    .fb-q-expanded__close { padding: 5px 10px; font-size: .75rem; }
+
+    /* Drag handle: bigger touch target */
+    .fb-q-drag { padding: 4px 8px; font-size: 1.2rem; }
+
+    /* Scale card arrow hidden */
+    .fb-scale-card__arrow { display: none; }
+
+    /* Rating preview stars: smaller on mobile */
+    .fb-preview-rate__star { font-size: 28px; }
+
+    /* NPS buttons: smaller */
+    .fb-preview-nps__btn { width: 28px; height: 28px; font-size: .7rem; }
+}
+
+@media (max-width: 480px) {
+    /* Even smaller screens: card meta wrap */
+    .pkg-row { flex-wrap: wrap; }
+    .pkg-row__act { width: 100%; margin-top: 8px; }
+
+    /* Hide some labels */
+    .fb-preview__label { font-size: .62rem; }
+    .wca-field-lbl { font-size: .76rem; }
+
+    /* Type pills: minimal */
+    .fb-type-pill { padding: 6px 10px; font-size: .72rem; gap: 4px; }
+    .fb-type-pill__label { display: none; }
+
+    /* Preview hidden on very small screens? No, just reduce */
+    .fb-preview__card { padding: 12px 10px; font-size: .8rem; }
+    .fb-preview__q { font-size: .8rem; margin-bottom: 12px; }
+
+    /* Likert preview smaller */
+    .fb-preview-likert__opt { padding: 8px 10px; font-size: .72rem; min-width: 36px; }
+    .fb-preview-likert__labels { font-size: .6rem; }
+}
+
 /* ── Footer ── */
 .fb-q-footer {
     display: flex; justify-content: space-between; align-items: center;
