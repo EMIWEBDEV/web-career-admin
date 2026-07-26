@@ -475,18 +475,9 @@
         <!-- Assignment Modal -->
         <AdminModal
             :show="assignShow" :title="'Assign: ' + (assignForm?.Nama ?? '')"
-            subtitle="Tentukan program mana yang akan menggunakan form feedback ini." icon="bi-link-45deg"
+            subtitle="Form ini akan muncul untuk kandidat di program yang dipilih. Assignment spesifik mengesampingkan general." icon="bi-link-45deg"
             :save-label="null" @close="assignShow = false"
         >
-            <!-- Priority info -->
-            <div class="fb-assign-info">
-                <i class="bi bi-info-circle-fill"></i>
-                <div>
-                    <strong>Prioritas:</strong> Assignment <b>Spesifik</b> (per program) akan mengesampingkan assignment <b>General</b> (semua program).
-                    <br>Nonaktifkan assignment spesifik untuk mengembalikan ke form general.
-                </div>
-            </div>
-
             <!-- Current Assignments -->
             <div class="wca-fsection">
                 <div class="wca-fsection__label"><i class="bi bi-link-45deg"></i> Assignment Saat Ini</div>
