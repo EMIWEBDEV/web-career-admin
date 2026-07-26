@@ -83,7 +83,6 @@
                             <div :class="['fb-q-card', { 'fb-q-card--expanded': f._editIdx === i }]">
                                 <!-- COLLAPSED STATE -->
                                 <div v-if="f._editIdx !== i" class="fb-q-collapsed" @click="startEditing(f, i)">
-                                    ...
                                     <span class="fb-q-drag" @click.stop><i class="bi bi-grip-vertical"></i></span>
                                     <span class="fb-q-collapsed__num">{{ i + 1 }}</span>
                                     <span class="fb-q-collapsed__icon" v-html="typeIcon(p.Tipe)"></span>
