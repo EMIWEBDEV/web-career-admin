@@ -816,7 +816,7 @@ export default {
 /* ── Question Card ── */
 .fb-q-card {
     background: #fff; border: 1px solid #e2e8f0; border-radius: 10px;
-    margin-bottom: 8px; transition: all .15s; overflow: hidden;
+    margin-bottom: 8px; transition: border-color .2s, box-shadow .2s, max-height .3s ease; overflow: hidden;
 }
 .fb-q-card:hover { border-color: #c4b5fd; }
 .fb-q-card--expanded { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.06); }
