@@ -625,11 +625,22 @@ export default {
         removeQuestion(f, i) { f._pertanyaan.splice(i, 1); },
         async saveQuestions(f) {
             this.savingQ = { ...this.savingQ, [f.Id_Master_Feedback_Form]: true };
-            const pertanyaan = (f._pertanyaan || []).map((p, i) => ({
-                urutan: i + 1, tipe: p.Tipe, label: p.Label,
-                skala_min: p.Skala_Min ?? null, skala_max: p.Skala_Max ?? null,
-                opsi: (p._opsiList && p._opsiList.length) ? p._opsiList.filter(o => o.trim()) : null,
-            }));
+            const optionTypes = ['RADIO', 'CHECKBOX', 'DROPDOWN'];
+            const numericTypes = ['RATING', 'NPS', 'LIKERT'];
+            const pertanyaan = (f._pertanyaan || []).map((p, i) => {
+                const item = { urutan: i + 1, tipe: p.Tipe, label: p.Label };
+                // Hanya kirim skala untuk tipe numerik
+                if (numericTypes.includes(p.Tipe)) {
+                    item.skala_min = p.Skala_Min ?? null;
+                    item.skala_max = p.Skala_Max ?? null;
+                }
+                // Hanya kirim opsi untuk tipe pilihan — hindari data sampah
+                if (optionTypes.includes(p.Tipe)) {
+                    const clean = (p._opsiList || []).filter(o => o && o.trim());
+                    item.opsi = clean.length ? clean : null;
+                }
+                return item;
+            });
             await axios.post(`/api/v1/karir/master-feedback/${f.Id_Master_Feedback_Form}/pertanyaan`, { pertanyaan });
             this.savingQ = { ...this.savingQ, [f.Id_Master_Feedback_Form]: false };
             // Data sudah sinkron — tidak perlu reload yang bisa mengganggu _editIdx
