@@ -610,12 +610,11 @@ export default {
             f._editIdx = i;
         },
         saveIfChanged(f) {
-            // Hanya simpan jika ada perubahan dari snapshot terakhir
             if (!f._snapshot) return;
             const current = f._pertanyaan?.[f._editIdx];
             if (!current) return;
             const changed = JSON.stringify(current) !== JSON.stringify(f._snapshot);
-            if (changed) this.saveQuestions(f);
+            if (changed) this.saveQuestionsSilent(f); // background save — no await
         },
         snapshotQuestion(f, i) {
             if (!f._pertanyaan || !f._pertanyaan[i]) return;
@@ -629,12 +628,12 @@ export default {
             }
             f._editIdx = null;
         },
-        async doneEditing(f) {
-            const idx = f._editIdx; // simpan index sebelum di-null
-            f._editIdx = null;
+        doneEditing(f) {
+            const idx = f._editIdx;
+            f._editIdx = null; // tutup instant — no wait
             const changed = f._snapshot && JSON.stringify(f._pertanyaan?.[idx]) !== JSON.stringify(f._snapshot);
             f._snapshot = null;
-            if (changed) await this.saveQuestions(f);
+            if (changed) this.saveQuestionsSilent(f); // background save
         },
         addQuestion(f) { this.showTypePicker(f); },
         onReorder(f) {
@@ -687,39 +686,46 @@ export default {
             p._opsiList.splice(idx, 1);
         },
         async removeQuestion(f, i) {
-            if (this.savingQ[f.Id_Master_Feedback_Form]) return; // cegah double-click
-            f._pertanyaan.splice(i, 1);
-            await this.saveQuestions(f); // langsung simpan ke DB — realtime
+            if (this.savingQ[f.Id_Master_Feedback_Form]) return;
+            // Optimistic: hapus dulu dari UI, baru simpan ke DB
+            const removed = f._pertanyaan.splice(i, 1)[0];
+            this.saveQuestionsSilent(f).catch(() => {
+                // Gagal → kembalikan ke posisi semula
+                f._pertanyaan.splice(i, 0, removed);
+            });
         },
-        async saveQuestions(f) {
+        async saveQuestionsSilent(f) {
             if (this.savingQ[f.Id_Master_Feedback_Form]) return;
             this.savingQ = { ...this.savingQ, [f.Id_Master_Feedback_Form]: true };
             try {
+                const pertanyaan = this.buildPertanyaanPayload(f);
+                await axios.post(`/api/v1/karir/master-feedback/${f.Id_Master_Feedback_Form}/pertanyaan`, { pertanyaan });
+            } finally {
+                this.savingQ = { ...this.savingQ, [f.Id_Master_Feedback_Form]: false };
+            }
+        },
+        buildPertanyaanPayload(f) {
             const optionTypes = ['RADIO', 'CHECKBOX', 'DROPDOWN'];
             const numericTypes = ['RATING', 'NPS', 'LIKERT'];
-            const pertanyaan = (f._pertanyaan || []).map((p, i) => {
+            return (f._pertanyaan || []).map((p, i) => {
                 const item = { urutan: i + 1, tipe: p.Tipe, label: p.Label };
-                // Hanya kirim skala untuk tipe numerik
                 if (numericTypes.includes(p.Tipe)) {
                     item.skala_min = p.Skala_Min ?? null;
                     item.skala_max = p.Skala_Max ?? null;
-                    // Label kustom untuk ujung skala (hanya NPS & LIKERT)
                     if (['NPS', 'LIKERT'].includes(p.Tipe)) {
                         item.label_min = p.Label_Min || null;
                         item.label_max = p.Label_Max || null;
                     }
                 }
-                // Hanya kirim opsi untuk tipe pilihan — hindari data sampah
                 if (optionTypes.includes(p.Tipe)) {
                     const clean = (p._opsiList || []).filter(o => o && o.trim());
                     item.opsi = clean.length ? clean : null;
                 }
                 return item;
             });
-            await axios.post(`/api/v1/karir/master-feedback/${f.Id_Master_Feedback_Form}/pertanyaan`, { pertanyaan });
-            } finally {
-                this.savingQ = { ...this.savingQ, [f.Id_Master_Feedback_Form]: false };
-            }
+        },
+        saveQuestions(f) {
+            this.saveQuestionsSilent(f);
         },
         initials(name) {
             if (!name) return '?';
