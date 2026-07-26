@@ -1,6 +1,6 @@
 <template>
-  <CareerLayout>
-    <div class="fb-page">
+  <component :is="is_authenticated ? 'div' : CareerLayout">
+    <div class="fb-page" :class="{ 'fb-page--auth': is_authenticated }">
 
       <!-- Success -->
       <div v-if="success" class="fb-glass fb-glass--center">
@@ -61,7 +61,7 @@
         <FeedbackFormWizard v-else :pertanyaan="pertanyaan" :is-wajib="is_wajib" @submit="handleWizardSubmit" />
       </div>
     </div>
-  </CareerLayout>
+  </component>
 </template>
 
 <script setup>
@@ -73,7 +73,7 @@ import LikertInput from './components/feedback/LikertInput.vue'; import Textarea
 import RadioCards from './components/feedback/RadioCards.vue'; import CheckboxCards from './components/feedback/CheckboxCards.vue'
 import DropdownSelect from './components/feedback/DropdownSelect.vue'
 
-const props = defineProps({ feedback: Object, pertanyaan: Array, is_wajib: Boolean, mode_tampilan: String, error: String, message: String })
+const props = defineProps({ feedback: Object, pertanyaan: Array, is_wajib: Boolean, mode_tampilan: String, error: String, message: String, is_authenticated: Boolean })
 const jawaban = ref({}); const submitting = ref(false); const submitError = ref(null); const success = ref(false)
 const stateTitle = computed(()=>({invalid:'Link Tidak Valid',expired:'Link Kadaluarsa',already_submitted:'Feedback Sudah Terkirim'}[props.error]||''))
 const errorIcon = computed(()=>({invalid:'bi-link-45deg',expired:'bi-hourglass-split',already_submitted:'bi-check-circle-fill'}[props.error]||'bi-exclamation-circle'))

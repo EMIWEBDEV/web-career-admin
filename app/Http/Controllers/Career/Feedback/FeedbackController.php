@@ -52,11 +52,15 @@ class FeedbackController extends Controller
             ->first();
         $isWajib = $lamaran && $lamaran->Hasil_Akhir === 'DITERIMA';
 
+        // Deteksi apakah user sudah login (akses dari portal) atau belum (dari email)
+        $isAuthenticated = session()->has('career_auth');
+
         return Inertia::render('Career/FeedbackForm', [
             'feedback' => $feedback,
             'pertanyaan' => $pertanyaan,
             'is_wajib' => $isWajib,
             'mode_tampilan' => $feedback->Mode_Tampilan ?? 'SCROLL',
+            'is_authenticated' => $isAuthenticated,
         ]);
     }
 
