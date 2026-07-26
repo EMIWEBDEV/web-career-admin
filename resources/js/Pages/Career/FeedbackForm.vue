@@ -49,7 +49,7 @@
           </div>
           <div class="fb-progress"><div class="fb-progress__track"><div class="fb-progress__fill" :style="{width:progressPercent+'%'}"></div></div><span>{{answeredCount}}/{{pertanyaan?.length}}</span></div>
           <div v-if="mode_tampilan==='SCROLL'" class="fb-cards">
-            <div v-for="(p,idx) in pertanyaan" :key="p.Id_Master_Feedback_Pertanyaan" :class="['fb-card', { 'fb-card--done': jawaban[p.Id_Master_Feedback_Pertanyaan] != null && jawaban[p.Id_Master_Feedback_Pertanyaan] !== '' }]">
+            <div v-for="(p,idx) in pertanyaan" :key="p.Id_Master_Feedback_Pertanyaan" class="fb-card">
               <span class="fb-card__n">{{idx+1}}</span>
               <p class="fb-card__q">{{p.Label}}</p>
               <component :is="inputComp(p.Tipe)" :pertanyaan="p" :model-value="jawaban[p.Id_Master_Feedback_Pertanyaan]" @update:model-value="v=>jawaban[p.Id_Master_Feedback_Pertanyaan]=v"/>
@@ -162,8 +162,6 @@ function handleWizardSubmit(w){jawaban.value=w;submitFeedback()}
 .fb-card:hover { border-color: #c4b5fd; transform: translateY(-1px); box-shadow: 0 6px 20px rgba(99,102,241,.06); }
 .fb-card:hover::before { opacity: 1; }
 .fb-card:focus-within { background: rgba(255,255,255,.92); border-color: #6366f1; box-shadow: 0 0 0 5px rgba(99,102,241,.06); }
-.fb-card--done { border-color: #a7f3d0; background: rgba(240,253,244,.5); }
-.fb-card--done::after { content:'✓'; position:absolute; top:14px; right:18px; width:26px; height:26px; border-radius:50%; background:#10b981; color:#fff; font-size:.7rem; font-weight:700; display:flex; align-items:center; justify-content:center; animation: fb-pop .3s ease both; }
 .fb-card__n { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 10px; background: linear-gradient(135deg,#6366f1,#4f46e5); color: #fff; font-size: .78rem; font-weight: 700; margin-bottom: 14px; box-shadow: 0 3px 10px rgba(99,102,241,.3); }
 .fb-card__q { font-size: 1rem; font-weight: 650; color: #1e293b; margin: 0 0 16px; line-height: 1.5; }
 .fb-submit { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; padding: 18px; border: none; border-radius: 18px; font-size: 1.05rem; font-weight: 700; cursor: pointer; transition: all .35s cubic-bezier(.4,0,.2,1); background: #f1f5f9; color: #94a3b8; letter-spacing: .01em; }
