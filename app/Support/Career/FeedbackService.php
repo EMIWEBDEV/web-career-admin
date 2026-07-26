@@ -161,6 +161,11 @@ class FeedbackService
                     'Feedback_Jawaban_Id' => $feedbackId,
                     'Master_Feedback_Pertanyaan_Id' => $j['id_pertanyaan'],
                     'Jawaban' => (string) $j['jawaban'],
+                    'Label_Snapshot' => $j['label_snapshot'] ?? null,
+                    'Tipe_Snapshot' => $j['tipe_snapshot'] ?? null,
+                    'Opsi_Snapshot' => $j['opsi_snapshot'] ?? null,
+                    'Skala_Min_Snapshot' => $j['skala_min_snapshot'] ?? null,
+                    'Skala_Max_Snapshot' => $j['skala_max_snapshot'] ?? null,
                     'Created_At' => $now,
                 ];
             }

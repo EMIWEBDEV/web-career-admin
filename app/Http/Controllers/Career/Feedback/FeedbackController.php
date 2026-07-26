@@ -99,7 +99,19 @@ class FeedbackController extends Controller
             }
         }
 
-        $success = $this->service->simpanJawaban($feedback->Id_Feedback_Jawaban, $validated['jawaban']);
+        // Perkaya jawaban dengan snapshot pertanyaan (data integrity historis)
+        $jawabanDenganSnapshot = [];
+        foreach ($validated['jawaban'] as $jwb) {
+            $q = $pertanyaan->firstWhere('Id_Master_Feedback_Pertanyaan', $jwb['id_pertanyaan']);
+            $jwb['label_snapshot'] = $q->Label ?? null;
+            $jwb['tipe_snapshot'] = $q->Tipe ?? null;
+            $jwb['opsi_snapshot'] = $q->Opsi ?? null;
+            $jwb['skala_min_snapshot'] = $q->Skala_Min ?? null;
+            $jwb['skala_max_snapshot'] = $q->Skala_Max ?? null;
+            $jawabanDenganSnapshot[] = $jwb;
+        }
+
+        $success = $this->service->simpanJawaban($feedback->Id_Feedback_Jawaban, $jawabanDenganSnapshot);
 
         if (! $success) {
             return ResponseHelper::error('Feedback sudah dikirim sebelumnya', 409);

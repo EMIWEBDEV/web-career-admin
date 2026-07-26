@@ -248,29 +248,33 @@ class FeedbackAdminController extends Controller
 
     private function getPerPertanyaan(int $formId, ?string $dateFrom, ?string $dateTo): array
     {
-        $pertanyaan = DB::table('N_WEB_CAREERS_Master_Feedback_Pertanyaan')
-            ->where('Master_Feedback_Form_Id', $formId)
-            ->where('Flag_Cancellation', 'T')
-            ->orderBy('Urutan')
-            ->get();
+        // Baca dari snapshot — data historis akurat meskipun pertanyaan master berubah
+        $baseQuery = DB::table('N_WEB_CAREERS_Feedback_Jawaban_Detail as d')
+            ->join('N_WEB_CAREERS_Feedback_Jawaban as fj', 'd.Feedback_Jawaban_Id', '=', 'fj.Id_Feedback_Jawaban')
+            ->where('fj.Master_Feedback_Form_Id', $formId)
+            ->where('fj.Status_Pengisian', 'TERISI')
+            ->where('fj.Flag_Cancellation', 'T');
+
+        if ($dateFrom) $baseQuery->where('fj.Submitted_At', '>=', $dateFrom);
+        if ($dateTo) $baseQuery->where('fj.Submitted_At', '<=', $dateTo);
+
+        $all = $baseQuery
+            ->select('d.Master_Feedback_Pertanyaan_Id', 'd.Label_Snapshot', 'd.Tipe_Snapshot',
+                     'd.Opsi_Snapshot', 'd.Skala_Min_Snapshot', 'd.Skala_Max_Snapshot', 'd.Jawaban')
+            ->get()
+            ->groupBy('Master_Feedback_Pertanyaan_Id');
 
         $result = [];
-        foreach ($pertanyaan as $p) {
-            $query = DB::table('N_WEB_CAREERS_Feedback_Jawaban_Detail as d')
-                ->join('N_WEB_CAREERS_Feedback_Jawaban as fj', 'd.Feedback_Jawaban_Id', '=', 'fj.Id_Feedback_Jawaban')
-                ->where('d.Master_Feedback_Pertanyaan_Id', $p->Id_Master_Feedback_Pertanyaan)
-                ->where('fj.Status_Pengisian', 'TERISI')
-                ->where('fj.Flag_Cancellation', 'T');
+        foreach ($all as $pertanyaanId => $rows) {
+            $first = $rows->first();
+            $label = $first->Label_Snapshot ?? 'Pertanyaan #' . $pertanyaanId;
+            $tipe = $first->Tipe_Snapshot ?? 'TEXTAREA';
 
-            if ($dateFrom) $query->where('fj.Submitted_At', '>=', $dateFrom);
-            if ($dateTo) $query->where('fj.Submitted_At', '<=', $dateTo);
+            $item = ['id' => $pertanyaanId, 'label' => $label, 'tipe' => $tipe];
+            $jawabanValues = $rows->pluck('Jawaban');
 
-            $details = $query->select('d.Jawaban')->get();
-
-            $item = ['id' => $p->Id_Master_Feedback_Pertanyaan, 'label' => $p->Label, 'tipe' => $p->Tipe];
-
-            if (in_array($p->Tipe, ['RATING', 'LIKERT'])) {
-                $scores = $details->map(fn($d) => (float) $d->Jawaban)->toArray();
+            if (in_array($tipe, ['RATING', 'LIKERT'])) {
+                $scores = $jawabanValues->map(fn($v) => (float) $v)->toArray();
                 $item['avg'] = count($scores) > 0 ? round(array_sum($scores) / count($scores), 1) : 0;
                 $item['total'] = count($scores);
                 $dist = array_fill(1, 5, 0);
@@ -279,18 +283,17 @@ class FeedbackAdminController extends Controller
                     if (isset($dist[$bucket])) $dist[$bucket]++;
                 }
                 $item['distribusi'] = $dist;
-            } elseif ($p->Tipe === 'NPS') {
-                $scores = $details->map(fn($d) => (int) $d->Jawaban)->toArray();
+            } elseif ($tipe === 'NPS') {
+                $scores = $jawabanValues->map(fn($v) => (int) $v)->toArray();
                 $item['nps'] = $this->service->calculateNPS($scores);
                 $item['total'] = count($scores);
-            } elseif (in_array($p->Tipe, ['RADIO', 'CHECKBOX', 'DROPDOWN'])) {
-                $counts = $details->groupBy('Jawaban')->map->count()->toArray();
+            } elseif (in_array($tipe, ['RADIO', 'CHECKBOX', 'DROPDOWN'])) {
+                $counts = $rows->groupBy('Jawaban')->map->count()->toArray();
                 $item['counts'] = $counts;
-                $item['total'] = $details->count();
-            } elseif ($p->Tipe === 'TEXTAREA') {
-                $recent = $details->take(5)->pluck('Jawaban')->toArray();
-                $item['recent'] = $recent;
-                $item['total'] = $details->count();
+                $item['total'] = $rows->count();
+            } elseif ($tipe === 'TEXTAREA') {
+                $item['recent'] = $jawabanValues->take(5)->toArray();
+                $item['total'] = $rows->count();
             }
 
             $result[] = $item;

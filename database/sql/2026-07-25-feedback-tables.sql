@@ -230,3 +230,24 @@ CREATE NONCLUSTERED INDEX IX_ExportLog_User_Status
     INCLUDE (Export_Type, Keterangan, Progress_Chunk, Progress_Total, File_Url, Created_At);
 
 GO
+
+-- ============================================================
+-- 7. ALTER: Snapshot kolom — data integrity jawaban historis
+-- ============================================================
+ALTER TABLE N_WEB_CAREERS_Feedback_Jawaban_Detail
+ADD Label_Snapshot     VARCHAR(500) NULL,
+    Tipe_Snapshot      VARCHAR(20)  NULL,
+    Opsi_Snapshot      NVARCHAR(MAX) NULL,
+    Skala_Min_Snapshot INT NULL,
+    Skala_Max_Snapshot INT NULL;
+
+GO
+
+-- ============================================================
+-- 8. ALTER: Label ujung skala kustom (NPS & Likert)
+-- ============================================================
+ALTER TABLE N_WEB_CAREERS_Master_Feedback_Pertanyaan
+ADD Label_Min VARCHAR(100) NULL,
+    Label_Max VARCHAR(100) NULL;
+
+GO
