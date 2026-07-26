@@ -152,6 +152,27 @@
                                                 </div>
                                             </div>
 
+                                            <!-- Label Kustom (NPS & LIKERT) -->
+                                            <div v-if="['NPS','LIKERT'].includes(p.Tipe)" class="fb-label-custom">
+                                                <label class="wca-field-lbl">
+                                                    <i class="bi bi-tags"></i> Label Ujung Skala <span style="color:var(--muted);font-weight:400">(opsional)</span>
+                                                </label>
+                                                <div class="fb-label-custom__row">
+                                                    <div class="fb-label-custom__field">
+                                                        <span class="fb-label-custom__hint">Label Minimum</span>
+                                                        <el-input v-model="p.Label_Min" :placeholder="p.Tipe === 'NPS' ? 'Tidak mungkin' : 'Sangat Tidak Setuju'" size="large" clearable />
+                                                    </div>
+                                                    <div class="fb-label-custom__sep"><span>—</span></div>
+                                                    <div class="fb-label-custom__field">
+                                                        <span class="fb-label-custom__hint">Label Maksimum</span>
+                                                        <el-input v-model="p.Label_Max" :placeholder="p.Tipe === 'NPS' ? 'Sangat mungkin' : 'Sangat Setuju'" size="large" clearable />
+                                                    </div>
+                                                </div>
+                                                <small class="fb-label-custom__note">
+                                                    <i class="bi bi-info-circle"></i> Placeholder = nilai default. Kosongkan untuk pakai default.
+                                                </small>
+                                            </div>
+
                                             <!-- Options row -->
                                             <div v-if="['RADIO','CHECKBOX','DROPDOWN'].includes(p.Tipe)" class="fb-options-row">
                                                 <label class="wca-field-lbl">
@@ -216,8 +237,8 @@
                                                         </span>
                                                     </div>
                                                     <div class="fb-preview-nps__labels">
-                                                        <span>Tidak mungkin</span>
-                                                        <span>Sangat mungkin</span>
+                                                        <span>{{ p.Label_Min || 'Tidak mungkin' }}</span>
+                                                        <span>{{ p.Label_Max || 'Sangat mungkin' }}</span>
                                                     </div>
                                                 </div>
 
@@ -230,8 +251,8 @@
                                                         </span>
                                                     </div>
                                                     <div class="fb-preview-likert__labels">
-                                                        <span>Sangat Tidak Setuju</span>
-                                                        <span>Sangat Setuju</span>
+                                                        <span>{{ p.Label_Min || 'Sangat Tidak Setuju' }}</span>
+                                                        <span>{{ p.Label_Max || 'Sangat Setuju' }}</span>
                                                     </div>
                                                 </div>
 
@@ -514,6 +535,8 @@ export default {
                     ...p,
                     _key: 'q_' + (p.Id_Master_Feedback_Pertanyaan || Math.random().toString(36).slice(2, 10)),
                     _opsiList: Array.isArray(p.Opsi) ? [...p.Opsi] : [],
+                    Label_Min: p.Label_Min || null,
+                    Label_Max: p.Label_Max || null,
                 }));
                 // Jangan reset _editIdx — biarkan card yang sedang diedit tetap terbuka
                 // Hanya reset saat pertama kali expand (dipanggil dari toggleExpand)
@@ -633,6 +656,11 @@ export default {
                 if (numericTypes.includes(p.Tipe)) {
                     item.skala_min = p.Skala_Min ?? null;
                     item.skala_max = p.Skala_Max ?? null;
+                    // Label kustom untuk ujung skala (hanya NPS & LIKERT)
+                    if (['NPS', 'LIKERT'].includes(p.Tipe)) {
+                        item.label_min = p.Label_Min || null;
+                        item.label_max = p.Label_Max || null;
+                    }
                 }
                 // Hanya kirim opsi untuk tipe pilihan — hindari data sampah
                 if (optionTypes.includes(p.Tipe)) {
@@ -861,6 +889,14 @@ export default {
 }
 .fb-scale-card__info { font-size: .72rem; color: #94a3b8; font-weight: 600; }
 .fb-scale-card__info i { margin-right: 4px; }
+
+/* ── Label Custom ── */
+.fb-label-custom { margin-top: 16px; }
+.fb-label-custom__row { display: flex; align-items: flex-start; gap: 12px; margin-top: 6px; }
+.fb-label-custom__field { flex: 1; }
+.fb-label-custom__hint { display: block; font-size: .7rem; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; }
+.fb-label-custom__sep { display: flex; align-items: center; padding-top: 22px; color: #c4b5fd; font-weight: 700; font-size: 1rem; }
+.fb-label-custom__note { display: block; margin-top: 6px; font-size: .7rem; color: #94a3b8; }
 
 /* ── Options hint ── */
 .fb-options-hint { display: block; margin-top: 2px; margin-bottom: 8px; font-size: .7rem; color: #94a3b8; }

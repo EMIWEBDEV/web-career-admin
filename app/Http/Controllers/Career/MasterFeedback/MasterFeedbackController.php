@@ -7,6 +7,7 @@ use App\Helpers\ResponseHelper;
 use App\Http\Controllers\Controller;
 use App\Support\CareerShell;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
@@ -51,24 +52,37 @@ class MasterFeedbackController extends Controller
 
     public function show($id)
     {
-        $form = DB::table('N_WEB_CAREERS_Master_Feedback_Form')
+        $startedAt = microtime(true);
+        $cacheKey = $this->detailCacheKey($id);
+        $cached = Cache::get($cacheKey);
+
+        if ($cached !== null) {
+            return ResponseHelper::success($cached);
+        }
+
+        $queryFormStartedAt = microtime(true);
+        $form = DB::table($this->masterFeedbackFormTableForRead())
             ->where('Id_Master_Feedback_Form', $id)
             ->where('Flag_Cancellation', 'T')
             ->select('Id_Master_Feedback_Form', 'Nama', 'Deskripsi', 'Mode_Tampilan',
                      'Durasi_Hari', 'Flag_Aktif')
             ->first();
+        $queryFormMs = (microtime(true) - $queryFormStartedAt) * 1000;
 
         if (! $form) return ResponseHelper::error('Form tidak ditemukan', 404);
 
-        $pertanyaan = DB::table('N_WEB_CAREERS_Master_Feedback_Pertanyaan')
+        $queryPertanyaanStartedAt = microtime(true);
+        $pertanyaan = DB::table($this->masterFeedbackPertanyaanTableForRead())
             ->where('Master_Feedback_Form_Id', $id)
             ->where('Flag_Cancellation', 'T')
             ->orderBy('Urutan')
             ->select('Id_Master_Feedback_Pertanyaan', 'Urutan', 'Tipe', 'Label', 'Opsi',
-                     'Skala_Min', 'Skala_Max')
+                     'Skala_Min', 'Skala_Max', 'Label_Min', 'Label_Max')
             ->get();
+        $queryPertanyaanMs = (microtime(true) - $queryPertanyaanStartedAt) * 1000;
 
         // Konversi ke array murni — hindari stdClass + Collection mix
+        $transformStartedAt = microtime(true);
         $items = [];
         foreach ($pertanyaan as $p) {
             $items[] = [
@@ -79,10 +93,13 @@ class MasterFeedbackController extends Controller
                 'Opsi' => $p->Opsi ? json_decode($p->Opsi, true) : [],
                 'Skala_Min' => $p->Skala_Min !== null ? (int) $p->Skala_Min : null,
                 'Skala_Max' => $p->Skala_Max !== null ? (int) $p->Skala_Max : null,
+                'Label_Min' => $p->Label_Min ?? null,
+                'Label_Max' => $p->Label_Max ?? null,
             ];
         }
+        $transformMs = (microtime(true) - $transformStartedAt) * 1000;
 
-        return ResponseHelper::success([
+        $result = [
             'Id_Master_Feedback_Form' => $form->Id_Master_Feedback_Form,
             'Nama' => $form->Nama,
             'Deskripsi' => $form->Deskripsi,
@@ -90,7 +107,23 @@ class MasterFeedbackController extends Controller
             'Durasi_Hari' => $form->Durasi_Hari !== null ? (int) $form->Durasi_Hari : null,
             'Flag_Aktif' => $form->Flag_Aktif,
             'pertanyaan' => $items,
-        ]);
+        ];
+
+        Cache::put($cacheKey, $result, now()->addMinutes(10));
+
+        $totalMs = (microtime(true) - $startedAt) * 1000;
+        if ($totalMs >= 1000) {
+            Log::channel('feedback')->warning('Master feedback detail endpoint lambat', [
+                'form_id' => (int) $id,
+                'durasi_total_ms' => (int) round($totalMs),
+                'durasi_query_form_ms' => (int) round($queryFormMs),
+                'durasi_query_pertanyaan_ms' => (int) round($queryPertanyaanMs),
+                'durasi_transform_ms' => (int) round($transformMs),
+                'jumlah_pertanyaan' => count($items),
+            ]);
+        }
+
+        return ResponseHelper::success($result);
     }
 
     public function store(Request $request)
@@ -121,6 +154,7 @@ class MasterFeedbackController extends Controller
         ], 'Id_Master_Feedback_Form');
 
         Log::channel('feedback')->info('Form feedback dibuat', ['form_id' => $id]);
+        $this->clearDetailCache($id);
         return ResponseHelper::success(['id' => $id], 'Form berhasil dibuat', 201);
     }
 
@@ -150,6 +184,7 @@ class MasterFeedbackController extends Controller
                 'Updated_By_Id' => $user['id'] ?? null,
             ]);
 
+        $this->clearDetailCache($id);
         return ResponseHelper::success(null, 'Form berhasil diupdate');
     }
 
@@ -166,6 +201,7 @@ class MasterFeedbackController extends Controller
                 'Cancelled_By' => $user['name'] ?? 'SISTEM',
             ]);
 
+        $this->clearDetailCache($id);
         return ResponseHelper::success(null, 'Form berhasil dihapus');
     }
 
@@ -179,6 +215,8 @@ class MasterFeedbackController extends Controller
             'pertanyaan.*.opsi' => 'nullable|array',
             'pertanyaan.*.skala_min' => 'nullable|integer',
             'pertanyaan.*.skala_max' => 'nullable|integer',
+            'pertanyaan.*.label_min' => 'nullable|string|max:100',
+            'pertanyaan.*.label_max' => 'nullable|string|max:100',
         ]);
 
         $now = FormatTanggalHelper::getCurrentTime();
@@ -204,6 +242,8 @@ class MasterFeedbackController extends Controller
                     'Opsi' => isset($p['opsi']) ? json_encode($p['opsi']) : null,
                     'Skala_Min' => $p['skala_min'] ?? null,
                     'Skala_Max' => $p['skala_max'] ?? null,
+                    'Label_Min' => $p['label_min'] ?? null,
+                    'Label_Max' => $p['label_max'] ?? null,
                     'Created_At' => $now,
                     'Created_By' => $user['name'] ?? 'SISTEM',
                     'Created_By_Id' => $user['id'] ?? null,
@@ -212,6 +252,7 @@ class MasterFeedbackController extends Controller
             DB::table('N_WEB_CAREERS_Master_Feedback_Pertanyaan')->insert($rows);
         });
 
+        $this->clearDetailCache($formId);
         return ResponseHelper::success(null, 'Pertanyaan berhasil disimpan');
     }
 
@@ -228,6 +269,9 @@ class MasterFeedbackController extends Controller
 
         $now = FormatTanggalHelper::getCurrentTime();
         $user = session('career_auth');
+        $formId = DB::table('N_WEB_CAREERS_Master_Feedback_Pertanyaan')
+            ->where('Id_Master_Feedback_Pertanyaan', $id)
+            ->value('Master_Feedback_Form_Id');
 
         DB::table('N_WEB_CAREERS_Master_Feedback_Pertanyaan')
             ->where('Id_Master_Feedback_Pertanyaan', $id)
@@ -243,6 +287,10 @@ class MasterFeedbackController extends Controller
                 'Updated_By_Id' => $user['id'] ?? null,
             ]);
 
+        if ($formId !== null) {
+            $this->clearDetailCache($formId);
+        }
+
         return ResponseHelper::success(null, 'Pertanyaan diupdate');
     }
 
@@ -250,6 +298,9 @@ class MasterFeedbackController extends Controller
     {
         $now = FormatTanggalHelper::getCurrentTime();
         $user = session('career_auth');
+        $formId = DB::table('N_WEB_CAREERS_Master_Feedback_Pertanyaan')
+            ->where('Id_Master_Feedback_Pertanyaan', $id)
+            ->value('Master_Feedback_Form_Id');
 
         DB::table('N_WEB_CAREERS_Master_Feedback_Pertanyaan')
             ->where('Id_Master_Feedback_Pertanyaan', $id)
@@ -259,6 +310,38 @@ class MasterFeedbackController extends Controller
                 'Cancelled_By' => $user['name'] ?? 'SISTEM',
             ]);
 
+        if ($formId !== null) {
+            $this->clearDetailCache($formId);
+        }
+
         return ResponseHelper::success(null, 'Pertanyaan dihapus');
+    }
+
+    private function detailCacheKey($id): string
+    {
+        return 'career:master-feedback:detail:' . (string) $id;
+    }
+
+    private function clearDetailCache($id): void
+    {
+        Cache::forget($this->detailCacheKey($id));
+    }
+
+    private function masterFeedbackFormTableForRead()
+    {
+        if (DB::connection()->getDriverName() === 'sqlsrv') {
+            return DB::raw('N_WEB_CAREERS_Master_Feedback_Form WITH (NOLOCK)');
+        }
+
+        return 'N_WEB_CAREERS_Master_Feedback_Form';
+    }
+
+    private function masterFeedbackPertanyaanTableForRead()
+    {
+        if (DB::connection()->getDriverName() === 'sqlsrv') {
+            return DB::raw('N_WEB_CAREERS_Master_Feedback_Pertanyaan WITH (NOLOCK)');
+        }
+
+        return 'N_WEB_CAREERS_Master_Feedback_Pertanyaan';
     }
 }
