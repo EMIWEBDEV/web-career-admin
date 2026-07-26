@@ -9,8 +9,8 @@
       </label>
     </div>
     <div class="fb-likert__labels">
-      <span>Sangat Tidak Setuju</span>
-      <span>Sangat Setuju</span>
+      <span>{{ pertanyaan?.Label_Min || 'Sangat Tidak Setuju' }}</span>
+      <span>{{ pertanyaan?.Label_Max || 'Sangat Setuju' }}</span>
     </div>
   </div>
 </template>

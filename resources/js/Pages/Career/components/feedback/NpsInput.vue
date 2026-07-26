@@ -5,8 +5,8 @@
               :style="{ background: npsColor(s) }" @click="$emit('update:modelValue', s)" type="button">{{ s }}</button>
     </div>
     <div class="fb-nps__labels">
-      <span>Tidak mungkin</span>
-      <span>Sangat mungkin</span>
+      <span>{{ pertanyaan?.Label_Min || 'Tidak mungkin' }}</span>
+      <span>{{ pertanyaan?.Label_Max || 'Sangat mungkin' }}</span>
     </div>
   </div>
 </template>
