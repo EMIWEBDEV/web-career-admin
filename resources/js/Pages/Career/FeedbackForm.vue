@@ -1,7 +1,25 @@
 <template>
   <CareerLayout>
-    <div class="fb-page">
+    <div class="authx" style="min-height:auto;background:transparent;flex:1;display:flex;flex-direction:column;align-items:center">
+      <!-- Ambient scene (reuse AuthShell CSS) -->
+      <div class="ambient" aria-hidden="true" style="position:fixed;inset:0;z-index:0;overflow:hidden;pointer-events:none">
+        <span class="aurora aurora--a"></span>
+        <span class="aurora aurora--b"></span>
+        <div class="grid"></div>
+        <span class="twinkle twinkle--1"></span>
+        <span class="twinkle twinkle--2"></span>
+        <span class="twinkle twinkle--3"></span>
+        <i class="bi bi-chat-dots-fill glyph glyph--1"></i>
+        <i class="bi bi-star-fill glyph glyph--2"></i>
+        <span class="bokeh bokeh--a"></span>
+        <span class="bokeh bokeh--b"></span>
+      </div>
+      <div class="fb-page">
 
+
+      </div>
+    </div>
+  </CareerLayout>
       <!-- Success -->
       <div v-if="success" class="fb-glass fb-glass--center">
         <div class="fb-glass__check">✓</div>
