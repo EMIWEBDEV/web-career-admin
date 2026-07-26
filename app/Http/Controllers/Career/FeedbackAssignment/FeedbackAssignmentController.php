@@ -46,12 +46,13 @@ class FeedbackAssignmentController extends Controller
 
         if (! empty($validated['program_id']) && $validated['flag_aktif'] === 'Y') {
             $exists = DB::table('N_WEB_CAREERS_Feedback_Assignment')
+                ->where('Master_Feedback_Form_Id', $validated['master_feedback_form_id'])
                 ->where('Program_Id', $validated['program_id'])
                 ->where('Flag_Aktif', 'Y')
                 ->where('Flag_Cancellation', 'T')
                 ->exists();
             if ($exists) {
-                return ResponseHelper::error('Program ini sudah memiliki assignment feedback aktif.', 409);
+                return ResponseHelper::success(['skipped' => true], 'Assignment sudah ada — dilewati.');
             }
         }
 
