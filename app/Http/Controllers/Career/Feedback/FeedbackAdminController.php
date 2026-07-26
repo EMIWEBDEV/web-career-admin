@@ -7,6 +7,7 @@ use App\Helpers\ResponseHelper;
 use App\Http\Controllers\Controller;
 use App\Jobs\Career\FeedbackExportJob;
 use App\Support\Career\FeedbackService;
+use App\Support\CareerShell;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -19,7 +20,9 @@ class FeedbackAdminController extends Controller
 
     public function dashboard()
     {
-        return Inertia::render('Career/admin/feedback-dashboard/Index');
+        return Inertia::render('Career/admin/feedback-dashboard/Index',
+            CareerShell::props('/karir/feedback-dashboard', 'Feedback Dashboard')
+        );
     }
 
     public function chartData(Request $request)

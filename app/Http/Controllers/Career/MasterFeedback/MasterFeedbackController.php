@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Career\MasterFeedback;
 use App\Helpers\FormatTanggalHelper;
 use App\Helpers\ResponseHelper;
 use App\Http\Controllers\Controller;
+use App\Support\CareerShell;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -14,7 +15,9 @@ class MasterFeedbackController extends Controller
 {
     public function index()
     {
-        return Inertia::render('Career/admin/master-feedback/Index');
+        return Inertia::render('Career/admin/master-feedback/Index',
+            CareerShell::props('/karir/master-feedback', 'Master Feedback Form')
+        );
     }
 
     public function list(Request $request)
