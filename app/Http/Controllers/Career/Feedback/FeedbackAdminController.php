@@ -331,4 +331,43 @@ class FeedbackAdminController extends Controller
             'gagal' => $gagal ? ['total' => $gagal->total, 'avg_waktu_detik' => $gagal->avg_waktu_detik] : null,
         ];
     }
+
+    // ═══════════════ MONITORING ═══════════════
+
+    public function monitoringKpi(Request $request) {
+        $fId = $request->input('form_id'); $pId = $request->input('program_id');
+        $q = DB::table('N_WEB_CAREERS_Feedback_Jawaban as fj')->join('N_WEB_CAREERS_Lamaran as l','fj.Lamaran_Id','=','l.Id_Lamaran')->leftJoin('N_WEB_CAREERS_Master_Feedback_Form as ff','fj.Master_Feedback_Form_Id','=','ff.Id_Master_Feedback_Form')->where('fj.Flag_Cancellation','T');
+        if($fId) $q->where('fj.Master_Feedback_Form_Id',$fId); if($pId) $q->where('l.Program_Id',$pId);
+        $all=(clone$q)->count(); $ok=(clone$q)->where('fj.Status_Pengisian','TERISI')->count();
+        $pend=(clone$q)->where('fj.Status_Pengisian','MENUNGGU')->whereRaw('DATEDIFF(DAY,fj.Created_At,GETDATE())<=COALESCE(ff.Durasi_Hari,30)')->count();
+        $exp=(clone$q)->where('fj.Status_Pengisian','MENUNGGU')->whereRaw('DATEDIFF(DAY,fj.Created_At,GETDATE())>COALESCE(ff.Durasi_Hari,30)')->count();
+        return ResponseHelper::success(['total'=>$all,'terisi'=>$ok,'pending'=>$pend,'expired'=>$exp,'response_rate'=>$all>0?round($ok/$all*100):0]);
+    }
+
+    public function monitoringData(Request $request) {
+        $fId=$request->input('form_id');$pId=$request->input('program_id');$st=$request->input('status');$s=$request->input('search');$df=$request->input('date_from');$dt=$request->input('date_to');$pg=(int)$request->input('page',1);$lm=min((int)$request->input('limit',20),100);
+        $q=DB::table('N_WEB_CAREERS_Feedback_Jawaban as fj')->join('N_WEB_CAREERS_Lamaran as l','fj.Lamaran_Id','=','l.Id_Lamaran')->leftJoin('N_WEB_CAREERS_Users as u','l.Id_Users','=','u.Id_Users')->leftJoin('N_WEB_CAREERS_Program as p','l.Program_Id','=','p.Id_Program')->leftJoin('N_WEB_CAREERS_Master_Feedback_Form as ff','fj.Master_Feedback_Form_Id','=','ff.Id_Master_Feedback_Form')->where('fj.Flag_Cancellation','T');
+        if($fId)$q->where('fj.Master_Feedback_Form_Id',$fId);if($pId)$q->where('l.Program_Id',$pId);if($s)$q->where(fn($x)=>$x->where('u.Nama','LIKE',"%{$s}%")->orWhere('l.Kode','LIKE',"%{$s}%"));if($df)$q->where('l.Waktu_Lamar','>=',$df);if($dt)$q->where('l.Waktu_Lamar','<=',$dt);
+        if($st==='EXPIRED')$q->where('fj.Status_Pengisian','MENUNGGU')->whereRaw('DATEDIFF(DAY,fj.Created_At,GETDATE())>COALESCE(ff.Durasi_Hari,30)');elseif($st)$q->where('fj.Status_Pengisian',$st);
+        $ttl=$q->count();$items=$q->select('fj.Id_Feedback_Jawaban','fj.Status_Pengisian','fj.Created_At','fj.Submitted_At','fj.Master_Feedback_Form_Id','ff.Nama as Form_Nama','l.Id_Lamaran','l.Kode as Kode_Lamaran','l.Hasil_Akhir','l.Waktu_Lamar','u.Nama as Nama_Kandidat','u.Email','p.Nama as Program_Nama')->orderBy('fj.Created_At','DESC')->offset(($pg-1)*$lm)->limit($lm)->get();
+        return ResponseHelper::successWithPagination($items,$pg,$lm,$ttl);
+    }
+
+    public function reassignForm(Request $request) {
+        $v=$request->validate(['feedback_ids'=>'required|array|min:1','feedback_ids.*'=>'integer','new_form_id'=>'required|integer','resend_email'=>'boolean']);
+        $now=FormatTanggalHelper::getCurrentTime();$uid=session('career_auth.id');$un=(string)($uid??'SISTEM');$c=0;
+        foreach($v['feedback_ids'] as $fid){$old=DB::table('N_WEB_CAREERS_Feedback_Jawaban')->where('Id_Feedback_Jawaban',$fid)->where('Flag_Cancellation','T')->first();if(!$old)continue;
+            DB::transaction(function()use($fid,$v,$now,$un,$uid,$old,&$c){DB::table('N_WEB_CAREERS_Feedback_Jawaban')->where('Id_Feedback_Jawaban',$fid)->update(['Flag_Cancellation'=>'Y','Cancelled_At'=>$now,'Cancelled_By'=>$un]);DB::table('N_WEB_CAREERS_Feedback_Jawaban_Detail')->where('Feedback_Jawaban_Id',$fid)->delete();
+                $nid=DB::table('N_WEB_CAREERS_Feedback_Jawaban')->insertGetId(['Lamaran_Id'=>$old->Lamaran_Id,'Master_Feedback_Form_Id'=>$v['new_form_id'],'Email_Token'=>$old->Email_Token,'Status_Pengisian'=>'MENUNGGU','Created_At'=>$now],'Id_Feedback_Jawaban');
+                $fs=app(FeedbackService::class);$t=$fs->generateTokenPair($nid,$old->Email_Token);DB::table('N_WEB_CAREERS_Feedback_Jawaban')->where('Id_Feedback_Jawaban',$nid)->update(['Token_Hash'=>$t['hashids'].'.'.$t['signature']]);$c++;
+                if(!empty($v['resend_email'])){$l=DB::table('N_WEB_CAREERS_Lamaran')->where('Id_Lamaran',$old->Lamaran_Id)->first();if($l){$st=$l->Hasil_Akhir==='DITERIMA'?'LOLOS':'GUGUR';$url=rtrim(config('app.url'),'/').'/feedback/'.$t['hashids'].'/'.$t['signature'];\App\Jobs\Career\WcApplyEmailJob::dispatch((int)$l->Id_Users,$st,['kode'=>$l->Kode,'feedbackUrl'=>$url]);}}
+            });}
+        Log::channel('feedback')->info('Reassign',['count'=>$c,'form'=>$v['new_form_id']]);return ResponseHelper::success(['reassigned'=>$c],"$c feedback di-reassign.");
+    }
+
+    public function resendEmail(Request $request) {
+        $v=$request->validate(['feedback_ids'=>'required|array|min:1','feedback_ids.*'=>'integer']);$s=0;
+        foreach($v['feedback_ids'] as $fid){$fb=DB::table('N_WEB_CAREERS_Feedback_Jawaban')->where('Id_Feedback_Jawaban',$fid)->where('Flag_Cancellation','T')->first();if(!$fb||!$fb->Email_Token)continue;$l=DB::table('N_WEB_CAREERS_Lamaran')->where('Id_Lamaran',$fb->Lamaran_Id)->first();if(!$l)continue;$st=$l->Hasil_Akhir==='DITERIMA'?'LOLOS':'GUGUR';$pt=explode('.',$fb->Token_Hash,2);$url=rtrim(config('app.url'),'/').'/feedback/'.($pt[0]??'').'/'.($pt[1]??'');\App\Jobs\Career\WcApplyEmailJob::dispatch((int)$l->Id_Users,$st,['kode'=>$l->Kode,'feedbackUrl'=>$url]);$s++;}
+        return ResponseHelper::success(['resent'=>$s],"$s email terkirim.");
+    }
 }

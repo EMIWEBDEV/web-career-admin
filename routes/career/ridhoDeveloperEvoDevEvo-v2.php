@@ -61,6 +61,11 @@ Route::middleware(['career.auth', 'career.role:ADMIN,SUPERADMIN'])->group(functi
         ->group(function () use ($dash) {
             Route::get('/chart', [$dash, 'chartData'])->name('chart');
             Route::get('/detail/{id}', [$dash, 'detail'])->name('detail');
+            // Monitoring
+            Route::get('/monitoring-kpi', [$dash, 'monitoringKpi'])->name('monitoring.kpi');
+            Route::get('/monitoring', [$dash, 'monitoringData'])->name('monitoring.data');
+            Route::post('/reassign', [$dash, 'reassignForm'])->name('reassign');
+            Route::post('/resend', [$dash, 'resendEmail'])->name('resend');
         });
 
     // Export
