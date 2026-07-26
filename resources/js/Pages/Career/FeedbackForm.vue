@@ -14,9 +14,12 @@
         <span class="bokeh bokeh--b"></span>
         <i class="bi bi-star-fill glyph glyph--1"></i>
         <i class="bi bi-chat-dots-fill glyph glyph--2"></i>
-        <i class="bi bi-heart-fill glyph glyph--3"></i>
-        <i class="bi bi-clipboard-check-fill glyph glyph--4"></i>
-        <i class="bi bi-send-fill glyph glyph--5"></i>
+        <i class="bi bi-clipboard-check-fill glyph glyph--3"></i>
+        <i class="bi bi-send-fill glyph glyph--4"></i>
+        <i class="bi bi-hand-thumbs-up-fill glyph glyph--5"></i>
+        <i class="bi bi-lightbulb-fill glyph glyph--6"></i>
+        <i class="bi bi-emoji-smile-fill glyph glyph--7"></i>
+        <i class="bi bi-pencil-fill glyph glyph--8"></i>
         <div class="particles">
           <span class="pt pt--1"></span><span class="pt pt--2"></span><span class="pt pt--3"></span>
           <span class="pt pt--4"></span><span class="pt pt--5"></span><span class="pt pt--6"></span>
@@ -112,13 +115,16 @@ function handleWizardSubmit(w){jawaban.value=w;submitFeedback()}
 .fb-ambient .twinkle--4 { top: 48%; left: 64%; width: 4px; height: 4px; background: #c4b5fd; box-shadow:0 0 8px #8b5cf6; animation-delay:-3.2s; }
 .fb-ambient .twinkle--5 { top: 65%; left: 28%; width: 5px; height: 5px; background: #fcd34d; box-shadow:0 0 10px #f59e0b; animation-delay:-.5s; }
 @keyframes fb-tw { 0%,100%{opacity:.25;transform:scale(1)} 50%{opacity:1;transform:scale(2.2)} }
-.fb-ambient .glyph { position: absolute; display: block; line-height: 1; animation: fb-gly 9s ease-in-out infinite; filter: drop-shadow(0 0 8px currentColor); }
-.fb-ambient .glyph--1 { top: 25%; left: 30%; color: rgba(245,158,11,.5); font-size: 32px; animation-delay: 0s; }
-.fb-ambient .glyph--2 { top: 45%; left: 55%; color: rgba(99,102,241,.45); font-size: 28px; animation-delay: -2s; }
-.fb-ambient .glyph--3 { top: 55%; left: 35%; color: rgba(239,68,68,.4); font-size: 26px; animation-delay: -4s; }
-.fb-ambient .glyph--4 { top: 20%; left: 60%; color: rgba(16,185,129,.4); font-size: 30px; animation-delay: -6s; }
-.fb-ambient .glyph--5 { top: 65%; left: 50%; color: rgba(99,102,241,.4); font-size: 24px; animation-delay: -1s; }
-@keyframes fb-gly { 0%,100%{transform:translateY(0) rotate(0);opacity:.6} 50%{transform:translateY(-22px) rotate(10deg);opacity:1} }
+.fb-ambient .glyph { position: absolute; display: block; line-height: 1; animation: fb-gly 9s ease-in-out infinite; filter: drop-shadow(0 0 10px currentColor); }
+.fb-ambient .glyph--1 { top: 18%; left: 8%; color: rgba(245,158,11,.5); font-size: 36px; animation-delay: 0s; }
+.fb-ambient .glyph--2 { top: 38%; right: 6%; color: rgba(99,102,241,.5); font-size: 30px; animation-delay: -2s; }
+.fb-ambient .glyph--3 { top: 55%; left: 5%; color: rgba(16,185,129,.45); font-size: 28px; animation-delay: -4s; }
+.fb-ambient .glyph--4 { top: 22%; right: 10%; color: rgba(139,92,246,.45); font-size: 32px; animation-delay: -6s; }
+.fb-ambient .glyph--5 { top: 62%; right: 8%; color: rgba(99,102,241,.5); font-size: 26px; animation-delay: -1s; }
+.fb-ambient .glyph--6 { top: 70%; left: 12%; color: rgba(245,158,11,.45); font-size: 28px; animation-delay: -3s; }
+.fb-ambient .glyph--7 { top: 10%; left: 50%; color: rgba(245,158,11,.4); font-size: 24px; animation-delay: -5s; }
+.fb-ambient .glyph--8 { top: 75%; right: 15%; color: rgba(99,102,241,.45); font-size: 22px; animation-delay: -7s; }
+@keyframes fb-gly { 0%,100%{transform:translateY(0) rotate(0);opacity:.5} 50%{transform:translateY(-25px) rotate(12deg);opacity:1} }
 .fb-ambient .particles { position: absolute; inset: 0; }
 .fb-ambient .pt { position: absolute; width: 4px; height: 4px; border-radius: 50%; background: #c4b5fd; box-shadow: 0 0 6px #a78bfa; animation: fb-pt 14s linear infinite; }
 .fb-ambient .pt--1 { left: 15%; animation-delay: 0s; }
