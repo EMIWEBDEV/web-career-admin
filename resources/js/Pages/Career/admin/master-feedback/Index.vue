@@ -652,6 +652,9 @@ export default {
 </script>
 
 <style scoped>
+/* ── Header button refinement ── */
+.pkg-newbtn { padding: 9px 18px; font-size: .85rem; }
+
 /* ── Radio Cards (Mode Tampilan) ── */
 .wca-radio-cards { display: flex; gap: 12px; }
 .wca-radio-card {
