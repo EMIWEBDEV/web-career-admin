@@ -24,21 +24,39 @@ class MasterFeedbackController extends Controller
     {
         $query = DB::table('N_WEB_CAREERS_Master_Feedback_Form')
             ->where('Flag_Cancellation', 'T')
-            ->select('*');
+            ->select('Id_Master_Feedback_Form', 'Nama', 'Deskripsi', 'Mode_Tampilan',
+                     'Durasi_Hari', 'Flag_Aktif', 'Created_At', 'Created_By');
 
         if ($request->search) {
             $query->where('Nama', 'LIKE', "%{$request->search}%");
         }
 
         $items = $query->orderBy('Created_At', 'DESC')->get();
+
+        // Hitung jumlah pertanyaan per form (1 query, bukan N+1)
+        $counts = DB::table('N_WEB_CAREERS_Master_Feedback_Pertanyaan')
+            ->where('Flag_Cancellation', 'T')
+            ->whereIn('Master_Feedback_Form_Id', $items->pluck('Id_Master_Feedback_Form'))
+            ->selectRaw('Master_Feedback_Form_Id, COUNT(*) as jumlah')
+            ->groupBy('Master_Feedback_Form_Id')
+            ->pluck('jumlah', 'Master_Feedback_Form_Id');
+
+        $items->transform(function ($f) use ($counts) {
+            $f->Jumlah_Pertanyaan = $counts[$f->Id_Master_Feedback_Form] ?? 0;
+            return $f;
+        });
+
         return ResponseHelper::success($items);
     }
 
     public function show($id)
     {
+        // Select kolom spesifik — hindari SELECT * pada NVARCHAR(MAX) Opsi
         $form = DB::table('N_WEB_CAREERS_Master_Feedback_Form')
             ->where('Id_Master_Feedback_Form', $id)
             ->where('Flag_Cancellation', 'T')
+            ->select('Id_Master_Feedback_Form', 'Nama', 'Deskripsi', 'Mode_Tampilan',
+                     'Durasi_Hari', 'Flag_Aktif', 'Created_At', 'Created_By')
             ->first();
 
         if (! $form) return ResponseHelper::error('Form tidak ditemukan', 404);
@@ -47,6 +65,8 @@ class MasterFeedbackController extends Controller
             ->where('Master_Feedback_Form_Id', $id)
             ->where('Flag_Cancellation', 'T')
             ->orderBy('Urutan')
+            ->select('Id_Master_Feedback_Pertanyaan', 'Master_Feedback_Form_Id', 'Urutan',
+                     'Tipe', 'Label', 'Opsi', 'Skala_Min', 'Skala_Max')
             ->get();
 
         $form->pertanyaan = $pertanyaan;
