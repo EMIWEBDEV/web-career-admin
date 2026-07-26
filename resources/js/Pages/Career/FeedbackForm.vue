@@ -1,6 +1,6 @@
 <template>
-  <component :is="is_authenticated ? 'div' : CareerLayout">
-    <div class="fb-page" :class="{ 'fb-page--auth': is_authenticated }">
+  <CareerLayout>
+    <div class="fb-page">
 
       <!-- Success -->
       <div v-if="success" class="fb-glass fb-glass--center">
@@ -61,7 +61,7 @@
         <FeedbackFormWizard v-else :pertanyaan="pertanyaan" :is-wajib="is_wajib" @submit="handleWizardSubmit" />
       </div>
     </div>
-  </component>
+  </CareerLayout>
 </template>
 
 <script setup>
@@ -92,7 +92,7 @@ function handleWizardSubmit(w){jawaban.value=w;submitFeedback()}
 
 <style scoped>
 /* ── Page ── */
-.fb-page { position: relative; min-height: 60vh; padding: 100px 20px 80px; display: flex; flex-direction: column; align-items: center; }
+.fb-page { position: relative; min-height: 60vh; padding: 60px 20px 80px; display: flex; flex-direction: column; align-items: center; }
 
 /* ── Glass card ── */
 .fb-glass { position: relative; z-index: 1; background: rgba(255,255,255,.75); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,.6); border-radius: 24px; box-shadow: 0 8px 32px rgba(0,0,0,.04), 0 2px 8px rgba(0,0,0,.02); }
