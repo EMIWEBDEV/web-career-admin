@@ -18,8 +18,8 @@ class FeedbackService
         if ($programId) {
             $specific = DB::table('N_WEB_CAREERS_Feedback_Assignment')
                 ->where('Program_Id', $programId)
-                ->where('Flag_Aktif', 'Y')
-                ->where('Flag_Cancellation', 'T')
+                ->where('N_WEB_CAREERS_Feedback_Assignment.Flag_Aktif', 'Y')
+                ->where('N_WEB_CAREERS_Feedback_Assignment.Flag_Cancellation', 'T')
                 ->join('N_WEB_CAREERS_Master_Feedback_Form',
                     'N_WEB_CAREERS_Feedback_Assignment.Master_Feedback_Form_Id', '=',
                     'N_WEB_CAREERS_Master_Feedback_Form.Id_Master_Feedback_Form')
@@ -31,8 +31,8 @@ class FeedbackService
 
         $general = DB::table('N_WEB_CAREERS_Feedback_Assignment')
             ->where('Flag_General', 'Y')
-            ->where('Flag_Aktif', 'Y')
-            ->where('Flag_Cancellation', 'T')
+            ->where('N_WEB_CAREERS_Feedback_Assignment.Flag_Aktif', 'Y')
+            ->where('N_WEB_CAREERS_Feedback_Assignment.Flag_Cancellation', 'T')
             ->join('N_WEB_CAREERS_Master_Feedback_Form',
                 'N_WEB_CAREERS_Feedback_Assignment.Master_Feedback_Form_Id', '=',
                 'N_WEB_CAREERS_Master_Feedback_Form.Id_Master_Feedback_Form')
