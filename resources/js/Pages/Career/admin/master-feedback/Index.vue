@@ -474,47 +474,74 @@
 
         <!-- Assignment Modal -->
         <AdminModal
-            :show="assignShow" title="Assign Form ke Program"
-            :subtitle="'Form: ' + (assignForm?.Nama ?? '')" icon="bi-link-45deg"
+            :show="assignShow" :title="'Assign: ' + (assignForm?.Nama ?? '')"
+            subtitle="Tentukan program mana yang akan menggunakan form feedback ini." icon="bi-link-45deg"
             :save-label="null" @close="assignShow = false"
         >
-            <div class="wca-fsection">
-                <div class="wca-fsection__label"><i class="bi bi-link-45deg"></i> Assignment Aktif</div>
-                <div v-if="!assignments.length" class="wca-hint"><i class="bi bi-info-circle"></i> Belum ada assignment. Klik <b>Tambah Assignment</b> untuk menugaskan form ini ke program.</div>
-                <div v-for="a in assignments" :key="a.Id_Feedback_Assignment" class="wca-listrow" style="padding:8px 0">
-                    <span class="wca-avatar wca-avatar--sm" :style="{background: a.Flag_General==='Y'?'linear-gradient(135deg,#6366f1,#4f46e5)':'#10b981',color:'#fff',fontSize:'.65rem',fontWeight:'700'}">
-                        {{ a.Flag_General === 'Y' ? 'ALL' : 'P' }}
-                    </span>
-                    <div class="wca-listrow__main">
-                        <strong>{{ a.Flag_General === 'Y' ? 'Semua Program (General)' : (a.Program_Nama || 'Program #'+a.Program_Id) }}</strong>
-                        <small>{{ a.Flag_Aktif === 'Y' ? 'Aktif' : 'Nonaktif' }}</small>
-                    </div>
-                    <div class="wca-listrow__act">
-                        <el-switch :model-value="a.Flag_Aktif === 'Y'" @change="toggleAssignment(a)" size="small" />
-                    </div>
+            <!-- Priority info -->
+            <div class="fb-assign-info">
+                <i class="bi bi-info-circle-fill"></i>
+                <div>
+                    <strong>Prioritas:</strong> Assignment <b>Spesifik</b> (per program) akan mengesampingkan assignment <b>General</b> (semua program).
+                    <br>Nonaktifkan assignment spesifik untuk mengembalikan ke form general.
                 </div>
             </div>
 
-            <div class="wca-fsection" style="margin-top:16px">
-                <div class="wca-fsection__label"><i class="bi bi-plus-circle"></i> Tambah Assignment</div>
-                <div class="wca-form">
-                    <div class="wca-frow">
-                        <div>
-                            <label class="wca-field-lbl">Jenis</label>
-                            <el-select v-model="newAssign.type" style="width:100%">
-                                <el-option label="Semua Program (General)" value="general" />
-                                <el-option label="Program Spesifik" value="specific" />
-                            </el-select>
+            <!-- Current Assignments -->
+            <div class="wca-fsection">
+                <div class="wca-fsection__label"><i class="bi bi-link-45deg"></i> Assignment Saat Ini</div>
+                <div v-if="!assignments.length" class="fb-assign-empty">
+                    <span class="fb-assign-empty__icon">📋</span>
+                    <span>Belum ada assignment. Form ini tidak akan muncul untuk kandidat sampai ditugaskan ke program.</span>
+                </div>
+                <div v-for="a in assignments" :key="a.Id_Feedback_Assignment" :class="['fb-assign-card', { 'fb-assign-card--off': a.Flag_Aktif !== 'Y' }]">
+                    <div class="fb-assign-card__icon">
+                        <i :class="a.Flag_General === 'Y' ? 'bi bi-globe2' : 'bi bi-bullseye'"></i>
+                    </div>
+                    <div class="fb-assign-card__body">
+                        <div class="fb-assign-card__title">
+                            {{ a.Flag_General === 'Y' ? 'Semua Program' : (a.Program_Nama || 'Program #' + a.Program_Id) }}
                         </div>
-                        <div v-if="newAssign.type === 'specific'">
-                            <label class="wca-field-lbl">Program</label>
-                            <el-select v-model="newAssign.program_id" placeholder="Pilih program..." style="width:100%" filterable>
-                                <el-option v-for="p in programList" :key="p.Id_Program" :label="p.Nama" :value="p.Id_Program" />
-                            </el-select>
+                        <div class="fb-assign-card__meta">
+                            <span :class="['fb-assign-card__badge', a.Flag_General === 'Y' ? 'fb-assign-card__badge--general' : 'fb-assign-card__badge--specific']">
+                                {{ a.Flag_General === 'Y' ? 'General' : 'Spesifik' }}
+                            </span>
+                            <span v-if="a.Flag_Aktif === 'Y'" class="fb-assign-card__status fb-assign-card__status--on">● Aktif</span>
+                            <span v-else class="fb-assign-card__status fb-assign-card__status--off">○ Nonaktif</span>
                         </div>
                     </div>
-                    <el-button type="primary" size="small" @click="addAssignment" :disabled="!canAddAssign" style="margin-top:10px">
-                        <i class="bi bi-plus-lg"></i> Tambah Assignment
+                    <el-switch :model-value="a.Flag_Aktif === 'Y'" @change="toggleAssignment(a)" size="small" />
+                </div>
+            </div>
+
+            <!-- Add Assignment -->
+            <div class="wca-fsection" style="margin-top:16px">
+                <div class="wca-fsection__label"><i class="bi bi-plus-circle"></i> Tambah Assignment Baru</div>
+                <div class="fb-assign-form">
+                    <div class="fb-assign-form__type">
+                        <label :class="['fb-assign-type-card', { 'fb-assign-type-card--active': newAssign.type === 'general' }]" @click="newAssign.type = 'general'">
+                            <i class="bi bi-globe2"></i>
+                            <div>
+                                <strong>Semua Program</strong>
+                                <small>Berlaku untuk seluruh program yang belum punya form spesifik</small>
+                            </div>
+                        </label>
+                        <label :class="['fb-assign-type-card', { 'fb-assign-type-card--active': newAssign.type === 'specific' }]" @click="newAssign.type = 'specific'">
+                            <i class="bi bi-bullseye"></i>
+                            <div>
+                                <strong>Program Spesifik</strong>
+                                <small>Hanya untuk satu program — mengesampingkan form general</small>
+                            </div>
+                        </label>
+                    </div>
+                    <div v-if="newAssign.type === 'specific'" style="margin-top:12px">
+                        <label class="wca-field-lbl">Pilih Program</label>
+                        <el-select v-model="newAssign.program_id" placeholder="Cari program..." style="width:100%" filterable>
+                            <el-option v-for="p in programList" :key="p.Id_Program" :label="p.Nama" :value="p.Id_Program" />
+                        </el-select>
+                    </div>
+                    <el-button type="primary" @click="addAssignment" :disabled="!canAddAssign" style="margin-top:12px">
+                        <i class="bi bi-plus-lg"></i> Tambah
                     </el-button>
                 </div>
             </div>
@@ -1239,6 +1266,43 @@ export default {
     .fb-q-footer { flex-direction: column; gap: 8px; align-items: stretch; }
     .pkg-row__act { flex-wrap: wrap; }
 }
+
+/* ── Assignment Modal ── */
+.fb-assign-info {
+    display: flex; gap: 10px; padding: 12px 16px; background: #eff6ff;
+    border: 1px solid #bfdbfe; border-radius: 10px; margin-bottom: 8px;
+    font-size: .78rem; color: #3b82f6; line-height: 1.5;
+}
+.fb-assign-info i { font-size: 1rem; flex-shrink: 0; margin-top: 1px; }
+.fb-assign-empty { display: flex; align-items: center; gap: 10px; padding: 14px; background: #fefce8; border: 1px solid #fde68a; border-radius: 10px; font-size: .8rem; color: #a16207; }
+.fb-assign-empty__icon { font-size: 1.5rem; }
+.fb-assign-card {
+    display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; margin-top: 8px;
+}
+.fb-assign-card--off { opacity: 0.5; background: #f8fafc; }
+.fb-assign-card__icon { font-size: 1.3rem; color: #6366f1; width: 32px; text-align: center; flex-shrink: 0; }
+.fb-assign-card__body { flex: 1; }
+.fb-assign-card__title { font-size: .85rem; font-weight: 600; color: #1e293b; }
+.fb-assign-card__meta { display: flex; gap: 8px; align-items: center; margin-top: 3px; }
+.fb-assign-card__badge { font-size: .65rem; font-weight: 700; padding: 2px 8px; border-radius: 4px; text-transform: uppercase; letter-spacing: .05em; }
+.fb-assign-card__badge--general { background: #ede9fe; color: #7c3aed; }
+.fb-assign-card__badge--specific { background: #d1fae5; color: #059669; }
+.fb-assign-card__status { font-size: .72rem; font-weight: 600; }
+.fb-assign-card__status--on { color: #10b981; }
+.fb-assign-card__status--off { color: #94a3b8; }
+.fb-assign-form { margin-top: 6px; }
+.fb-assign-form__type { display: flex; gap: 10px; }
+.fb-assign-type-card {
+    flex: 1; display: flex; align-items: flex-start; gap: 10px; padding: 14px;
+    border: 2px solid #e2e8f0; border-radius: 12px; cursor: pointer; transition: all .15s;
+    background: #fff;
+}
+.fb-assign-type-card:hover { border-color: #a5b4fc; }
+.fb-assign-type-card--active { border-color: #6366f1; background: rgba(99,102,241,.04); }
+.fb-assign-type-card i { font-size: 1.3rem; color: #6366f1; flex-shrink: 0; margin-top: 1px; }
+.fb-assign-type-card strong { display: block; font-size: .84rem; color: #1e293b; }
+.fb-assign-type-card small { display: block; font-size: .72rem; color: #94a3b8; margin-top: 2px; line-height: 1.4; }
 
 /* ── Footer Action Bar ── */
 .fb-q-footer {
