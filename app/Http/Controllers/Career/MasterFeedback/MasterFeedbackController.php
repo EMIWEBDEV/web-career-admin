@@ -26,7 +26,7 @@ class MasterFeedbackController extends Controller
         $query = DB::table('N_WEB_CAREERS_Master_Feedback_Form')
             ->where('Flag_Cancellation', 'T')
             ->leftJoin('N_WEB_CAREERS_Users', 'N_WEB_CAREERS_Master_Feedback_Form.Created_By_Id', '=', 'N_WEB_CAREERS_Users.Id_Users')
-            ->select('Id_Master_Feedback_Form', 'Nama', 'Deskripsi', 'Mode_Tampilan',
+            ->select('Id_Master_Feedback_Form', 'N_WEB_CAREERS_Master_Feedback_Form.Nama', 'Deskripsi', 'Mode_Tampilan',
                      'Durasi_Hari', 'Flag_Aktif', 'N_WEB_CAREERS_Master_Feedback_Form.Created_At',
                      'N_WEB_CAREERS_Master_Feedback_Form.Created_By',
                      DB::raw('COALESCE(N_WEB_CAREERS_Users.Nama, N_WEB_CAREERS_Master_Feedback_Form.Created_By) as Created_By_Nama'));
