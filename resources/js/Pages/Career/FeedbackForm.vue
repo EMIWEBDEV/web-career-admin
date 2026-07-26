@@ -27,7 +27,7 @@
       </div>
 
       <div class="fb-page">
-        <div v-if="success" class="fb-glass fb-glass--center">
+        <div v-if="success || error==='already_submitted'" class="fb-glass fb-glass--center">
           <div class="fb-glass__check">✓</div>
           <h1>Feedback Terkirim!</h1>
           <p>Terima kasih — masukanmu sangat berarti untuk kami terus berkembang.</p>
