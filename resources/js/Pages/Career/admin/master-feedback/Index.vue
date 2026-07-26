@@ -58,7 +58,13 @@
                         <button class="wca-btn wca-btn--soft wca-btn--sm" type="button" @click="showTypePicker(f)"><i class="bi bi-plus-circle"></i> Tambah Pertanyaan</button>
                     </div>
 
-                    <div v-if="!f._pertanyaan || !f._pertanyaan.length" class="fb-empty-questions">
+                    <!-- Loading skeleton -->
+                    <div v-if="f._loadingQuestions" class="fb-loading">
+                        <div class="fb-loading__pulse"></div>
+                        <span>Memuat pertanyaan...</span>
+                    </div>
+
+                    <div v-else-if="!f._pertanyaan || !f._pertanyaan.length" class="fb-empty-questions">
                         <div class="fb-empty-questions__icon"><i class="bi bi-lightbulb"></i></div>
                         <h4>Belum ada pertanyaan</h4>
                         <p>Klik <b>Tambah Pertanyaan</b> lalu pilih tipe pertanyaan — Rating, NPS, Likert, Teks, atau Pilihan Ganda.</p>
@@ -476,10 +482,14 @@ export default {
         async toggleExpand(f) {
             if (this.open === f.Id_Master_Feedback_Form) {
                 this.open = null;
-            } else {
-                await this.loadQuestions(f);
-                this.open = f.Id_Master_Feedback_Form;
+                return;
             }
+            // Buka accordion dulu — instant feedback
+            this.open = f.Id_Master_Feedback_Form;
+            f._loadingQuestions = true;
+            // Fetch data async
+            await this.loadQuestions(f);
+            f._loadingQuestions = false;
         },
         async load() {
             this.loading = true;
@@ -684,6 +694,21 @@ export default {
 .wca-status-card__body { flex: 1; }
 .wca-status-card__body strong { display: block; font-size: .85rem; color: #1e293b; }
 .wca-status-card__body small { display: block; font-size: .73rem; color: var(--muted,#94a3b8); margin-top: 2px; }
+
+/* ── Loading Skeleton ── */
+.fb-loading {
+    display: flex; flex-direction: column; align-items: center; gap: 12px;
+    padding: 32px 20px; color: #94a3b8; font-size: .82rem; font-weight: 600;
+}
+.fb-loading__pulse {
+    width: 40px; height: 40px; border-radius: 12px;
+    background: linear-gradient(135deg, #6366f1, #818cf8);
+    animation: fb-pulse 1.2s ease-in-out infinite;
+}
+@keyframes fb-pulse {
+    0%, 100% { opacity: 0.4; transform: scale(0.9); }
+    50% { opacity: 1; transform: scale(1.05); }
+}
 
 /* ── Empty Questions State ── */
 .fb-empty-questions {
