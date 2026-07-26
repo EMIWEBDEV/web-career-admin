@@ -22,8 +22,6 @@
                 <el-option v-for="f in forms" :key="f.Id_Master_Feedback_Form" :label="f.Nama" :value="f.Id_Master_Feedback_Form" />
             </el-select>
             <el-date-picker v-model="dateRange" type="daterange" range-separator="—" start-placeholder="Mulai" end-placeholder="Akhir" size="small" @change="fetchData" style="width:240px" />
-                </div>
-            </div>
         </div>
 
         <!-- KPI Row -->
