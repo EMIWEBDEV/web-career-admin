@@ -103,7 +103,7 @@ function handleWizardSubmit(w){jawaban.value=w;submitFeedback()}
 
 <style scoped>
 /* ── Page ── */
-.fb-page { position: relative; min-height: 80vh; padding: 40px 20px 80px; display: flex; flex-direction: column; align-items: center; overflow: hidden; }
+.fb-page { position: relative; min-height: 60vh; padding: 24px 20px 80px; display: flex; flex-direction: column; align-items: center; }
 
 /* ── Ambient (mirip AuthShell tapi simpler) ── */
 .fb-ambient { position: fixed; inset: 0; pointer-events: none; z-index: 0; }
