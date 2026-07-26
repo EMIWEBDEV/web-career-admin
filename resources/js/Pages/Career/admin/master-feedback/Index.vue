@@ -527,7 +527,7 @@
                     </div>
                     <div v-if="newAssign.type === 'specific'" class="fb-assign-form__program">
                         <label class="wca-field-lbl">Pilih Program (bisa lebih dari satu)</label>
-                        <el-select v-model="newAssign.program_ids" placeholder="Cari program..." style="width:100%" filterable multiple size="large">
+                        <el-select v-model="newAssign.program_ids" placeholder="Cari program..." style="width:100%" filterable multiple collapse-tags collapse-tags-tooltip :max-collapse-tags="2" size="large">
                             <el-option v-for="p in programList" :key="p.value" :label="p.label" :value="p.value" />
                         </el-select>
                     </div>
