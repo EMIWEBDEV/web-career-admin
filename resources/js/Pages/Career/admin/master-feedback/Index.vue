@@ -476,7 +476,7 @@
         <AdminModal
             :show="assignShow" :title="'Assign: ' + (assignForm?.Nama ?? '')"
             subtitle="Assignment spesifik (per program) mengesampingkan assignment general (semua program)." icon="bi-link-45deg"
-            save-label="Tutup" @close="assignShow = false" @save="assignShow = false"
+            @close="assignShow = false"
         >
             <!-- Current Assignments -->
             <div class="wca-fsection">
