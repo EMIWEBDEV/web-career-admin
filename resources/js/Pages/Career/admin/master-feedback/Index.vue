@@ -107,7 +107,7 @@
                                         </div>
                                     </div>
 
-                                    <div class="fb-q-expanded__body" @click.stop>
+                                    <div class="fb-q-expanded__body fb-slide-in" @click.stop>
                                         <!-- Left: editor -->
                                         <div class="fb-q-editor">
                                             <label class="wca-field-lbl">Tipe Pertanyaan</label>
@@ -832,21 +832,18 @@ export default {
 /* ── Question Card ── */
 .fb-q-card {
     background: #fff; border: 1px solid #e2e8f0; border-radius: 10px;
-    margin-bottom: 8px; transition: border-color .2s, box-shadow .2s, transform .2s; overflow: hidden;
+    margin-bottom: 8px; transition: border-color .2s, box-shadow .2s; overflow: hidden;
 }
 .fb-q-card:hover { border-color: #c4b5fd; }
-.fb-q-card--expanded {
-    border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.06);
-    transform: scale(1.01);
-}
+.fb-q-card--expanded { border-color: #6366f1; box-shadow: 0 4px 20px rgba(99,102,241,.12); }
 
-/* Expand animation */
-.fb-q-expanded {
-    animation: fb-expand-in .25s cubic-bezier(.4,0,.2,1);
+/* Smooth expand animation — no glitch, pure CSS */
+.fb-slide-in {
+    animation: fb-fade-slide .2s ease-out;
 }
-@keyframes fb-expand-in {
-    from { opacity: 0; max-height: 0; transform: translateY(-8px); }
-    to   { opacity: 1; max-height: 2000px; transform: translateY(0); }
+@keyframes fb-fade-slide {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: translateY(0); }
 }
 
 /* Drag handle */
