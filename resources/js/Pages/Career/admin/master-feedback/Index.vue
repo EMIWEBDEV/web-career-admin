@@ -40,7 +40,7 @@
                     <div class="pkg-row__act" @click.stop>
                         <el-switch :model-value="f.Flag_Aktif === 'Y'" @change="(v) => setStatus(f, v)" />
                         <button class="pkg-ibtn" title="Ubah" @click="openEdit(f)"><i class="bi bi-pencil"></i></button>
-                        <button class="pkg-ibtn pkg-ibtn--assign" title="Assign ke Program" @click="openAssign(f)"><i class="bi bi-link-45deg"></i></button>
+                        <button class="pkg-ibtn" title="Assign ke Program" @click="openAssign(f)"><i class="bi bi-link-45deg"></i></button>
                         <button class="pkg-ibtn pkg-ibtn--danger" title="Hapus" @click="askRemove(f)"><i class="bi bi-trash"></i></button>
                     </div>
                 </div>
@@ -516,33 +516,33 @@
 
             <!-- Add Assignment -->
             <div class="wca-fsection" style="margin-top:16px">
-                <div class="wca-fsection__label"><i class="bi bi-plus-circle"></i> Tambah Assignment Baru</div>
+                <div class="wca-fsection__label"><i class="bi bi-plus-circle"></i> Tambah Assignment</div>
                 <div class="fb-assign-form">
                     <div class="fb-assign-form__type">
                         <label :class="['fb-assign-type-card', { 'fb-assign-type-card--active': newAssign.type === 'general' }]" @click="newAssign.type = 'general'">
                             <i class="bi bi-globe2"></i>
                             <div>
                                 <strong>Semua Program</strong>
-                                <small>Berlaku untuk seluruh program yang belum punya form spesifik</small>
+                                <small>Form ini akan dipakai semua program</small>
                             </div>
                         </label>
                         <label :class="['fb-assign-type-card', { 'fb-assign-type-card--active': newAssign.type === 'specific' }]" @click="newAssign.type = 'specific'">
                             <i class="bi bi-bullseye"></i>
                             <div>
-                                <strong>Program Spesifik</strong>
-                                <small>Hanya untuk satu program — mengesampingkan form general</small>
+                                <strong>Program Tertentu</strong>
+                                <small>Form ini hanya untuk 1 program pilihan</small>
                             </div>
                         </label>
                     </div>
-                    <div v-if="newAssign.type === 'specific'" style="margin-top:12px">
+                    <div v-if="newAssign.type === 'specific'" class="fb-assign-form__program">
                         <label class="wca-field-lbl">Pilih Program</label>
-                        <el-select v-model="newAssign.program_id" placeholder="Cari program..." style="width:100%" filterable>
+                        <el-select v-model="newAssign.program_id" placeholder="Cari program..." style="width:100%" filterable size="large">
                             <el-option v-for="p in programList" :key="p.Id_Program" :label="p.Nama" :value="p.Id_Program" />
                         </el-select>
                     </div>
-                    <el-button type="primary" @click="addAssignment" :disabled="!canAddAssign" style="margin-top:12px">
-                        <i class="bi bi-plus-lg"></i> Tambah
-                    </el-button>
+                    <button class="fb-assign-form__submit" @click="addAssignment" :disabled="!canAddAssign">
+                        <i class="bi bi-plus-lg"></i> Tambahkan Assignment
+                    </button>
                 </div>
             </div>
         </AdminModal>
@@ -1291,6 +1291,14 @@ export default {
 .fb-assign-card__status { font-size: .72rem; font-weight: 600; }
 .fb-assign-card__status--on { color: #10b981; }
 .fb-assign-card__status--off { color: #94a3b8; }
+.fb-assign-form__program { margin-top: 12px; }
+.fb-assign-form__submit {
+    display: block; width: 100%; margin-top: 12px; padding: 12px;
+    border: none; border-radius: 10px; background: linear-gradient(135deg,#6366f1,#4f46e5);
+    color: #fff; font-size: .85rem; font-weight: 700; cursor: pointer; transition: opacity .15s;
+}
+.fb-assign-form__submit:disabled { opacity: .45; cursor: not-allowed; }
+.fb-assign-form__submit:hover:not(:disabled) { opacity: .9; }
 .fb-assign-form { margin-top: 6px; }
 .fb-assign-form__type { display: flex; gap: 10px; }
 .fb-assign-type-card {
