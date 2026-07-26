@@ -1300,6 +1300,8 @@ export default {
 .fb-assign-card__status--on { color: #10b981; }
 .fb-assign-card__status--off { color: #94a3b8; }
 .fb-assign-form__program { margin-top: 12px; }
+.fb-assign-form__program :deep(.el-select__tags) { max-height: 120px; overflow-y: auto; }
+.fb-assign-form__program :deep(.el-tag) { max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
 .fb-assign-form__submit {
     display: block; width: 100%; margin-top: 12px; padding: 12px;
     border: none; border-radius: 10px; background: linear-gradient(135deg,#6366f1,#4f46e5);
