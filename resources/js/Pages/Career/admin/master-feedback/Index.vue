@@ -541,9 +541,12 @@ export default {
             const key = 'q_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
             f._pertanyaan.push({ _key: key, Tipe: 'RATING', Label: '', Skala_Min: 1, Skala_Max: 5, _opsiList: [] });
             f._editIdx = f._pertanyaan.length - 1;
+            // Auto-scroll to new card after DOM update
             this.$nextTick(() => {
-                const el = this.$el.querySelector('.fb-q-card--expanded');
-                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                try {
+                    const cards = document.querySelectorAll('.fb-q-card--expanded');
+                    if (cards.length) cards[cards.length - 1].scrollIntoView({ behavior: 'smooth', block: 'center' });
+                } catch (e) { /* ignore scroll errors */ }
             });
         },
         addQuestion(f) { this.showTypePicker(f); },
