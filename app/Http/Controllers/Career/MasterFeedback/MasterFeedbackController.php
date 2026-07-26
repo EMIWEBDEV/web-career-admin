@@ -25,7 +25,7 @@ class MasterFeedbackController extends Controller
     {
         $query = DB::table('N_WEB_CAREERS_Master_Feedback_Form')
             ->where('Flag_Cancellation', 'T')
-            ->leftJoin('N_WEB_CAREERS_Users', 'N_WEB_CAREERS_Master_Feedback_Form.Created_By_Id', '=', 'N_WEB_CAREERS_Users.Id_Users')
+            ->leftJoin('N_WEB_CAREERS_Users', DB::raw('TRY_CAST(N_WEB_CAREERS_Master_Feedback_Form.Created_By AS INT)'), '=', 'N_WEB_CAREERS_Users.Id_Users')
             ->select('Id_Master_Feedback_Form', 'N_WEB_CAREERS_Master_Feedback_Form.Nama', 'Deskripsi', 'Mode_Tampilan',
                      'Durasi_Hari', 'Flag_Aktif', 'N_WEB_CAREERS_Master_Feedback_Form.Created_At',
                      'N_WEB_CAREERS_Master_Feedback_Form.Created_By',
@@ -150,10 +150,8 @@ class MasterFeedbackController extends Controller
             'Flag_Aktif' => $validated['flag_aktif'],
             'Created_At' => $now,
             'Created_By' => isset($user['id']) ? (string) $user['id'] : 'SISTEM',
-            'Created_By_Id' => $user['id'] ?? null,
             'Updated_At' => $now,
             'Updated_By' => isset($user['id']) ? (string) $user['id'] : 'SISTEM',
-            'Updated_By_Id' => $user['id'] ?? null,
         ], 'Id_Master_Feedback_Form');
 
         Log::channel('feedback')->info('Form feedback dibuat', ['form_id' => $id]);
@@ -249,7 +247,6 @@ class MasterFeedbackController extends Controller
                     'Label_Max' => $p['label_max'] ?? null,
                     'Created_At' => $now,
                     'Created_By' => isset($user['id']) ? (string) $user['id'] : 'SISTEM',
-                    'Created_By_Id' => $user['id'] ?? null,
                 ];
             }
             DB::table('N_WEB_CAREERS_Master_Feedback_Pertanyaan')->insert($rows);

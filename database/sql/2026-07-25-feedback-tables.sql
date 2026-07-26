@@ -251,3 +251,19 @@ ADD Label_Min VARCHAR(100) NULL,
     Label_Max VARCHAR(100) NULL;
 
 GO
+
+-- ============================================================
+-- 9. ALTER: Drop redundant Created_By_Id / Updated_By_Id
+-- ============================================================
+-- Created_By / Updated_By / Cancelled_By sekarang menyimpan Id_Users.
+-- JOIN ke N_WEB_CAREERS_Users untuk mendapatkan nama saat display.
+ALTER TABLE N_WEB_CAREERS_Master_Feedback_Form
+DROP COLUMN Created_By_Id, Updated_By_Id;
+
+ALTER TABLE N_WEB_CAREERS_Master_Feedback_Pertanyaan
+DROP COLUMN Created_By_Id, Updated_By_Id;
+
+ALTER TABLE N_WEB_CAREERS_Feedback_Assignment
+DROP COLUMN Created_By_Id, Updated_By_Id;
+
+GO

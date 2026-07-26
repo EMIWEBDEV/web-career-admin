@@ -64,11 +64,9 @@ class FeedbackAssignmentController extends Controller
             'Flag_General' => $validated['flag_general'],
             'Flag_Aktif' => $validated['flag_aktif'],
             'Created_At' => $now,
-            'Created_By' => isset($user['id']) ? (string) $user['id'] : 'SISTEM' ?? 'SISTEM',
-            'Created_By_Id' => $user['id'] ?? null,
+            'Created_By' => $user['nama'] ?? 'SISTEM' ?? 'SISTEM',
             'Updated_At' => $now,
-            'Updated_By' => isset($user['id']) ? (string) $user['id'] : 'SISTEM' ?? 'SISTEM',
-            'Updated_By_Id' => $user['id'] ?? null,
+            'Updated_By' => $user['nama'] ?? 'SISTEM' ?? 'SISTEM',
         ], 'Id_Feedback_Assignment');
 
         return ResponseHelper::success(['id' => $id], 'Assignment berhasil dibuat', 201);
@@ -88,9 +86,8 @@ class FeedbackAssignmentController extends Controller
             ->update([
                 'Flag_Aktif' => $validated['flag_aktif'],
                 'Updated_At' => $now,
-                'Updated_By' => isset($user['id']) ? (string) $user['id'] : 'SISTEM' ?? 'SISTEM',
-                'Updated_By_Id' => $user['id'] ?? null,
-            ]);
+                'Updated_By' => $user['nama'] ?? 'SISTEM' ?? 'SISTEM',
+                ]);
 
         return ResponseHelper::success(null, 'Status assignment diupdate');
     }
