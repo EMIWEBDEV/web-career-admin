@@ -530,13 +530,13 @@
                             <i class="bi bi-bullseye"></i>
                             <div>
                                 <strong>Program Tertentu</strong>
-                                <small>Form ini hanya untuk 1 program pilihan</small>
+                                <small>Pilih satu atau beberapa program</small>
                             </div>
                         </label>
                     </div>
                     <div v-if="newAssign.type === 'specific'" class="fb-assign-form__program">
-                        <label class="wca-field-lbl">Pilih Program</label>
-                        <el-select v-model="newAssign.program_id" placeholder="Cari program..." style="width:100%" filterable size="large">
+                        <label class="wca-field-lbl">Pilih Program (bisa lebih dari satu)</label>
+                        <el-select v-model="newAssign.program_ids" placeholder="Cari program..." style="width:100%" filterable multiple size="large">
                             <el-option v-for="p in programList" :key="p.value" :label="p.label" :value="p.value" />
                         </el-select>
                     </div>
@@ -567,7 +567,7 @@ export default {
             assignForm: null,
             assignments: [],
             programList: [],
-            newAssign: { type: 'general', program_id: null },
+            newAssign: { type: 'general', program_ids: [] },
             show: false,
             editingId: null,
             removeTarget: null,
@@ -588,7 +588,7 @@ export default {
     computed: {
         canAddAssign() {
             if (this.newAssign.type === 'general') return true;
-            return !!this.newAssign.program_id;
+            return this.newAssign.program_ids && this.newAssign.program_ids.length > 0;
         },
         removeMessage() {
             const name = this.removeTarget?.Nama ?? '';
@@ -622,13 +622,21 @@ export default {
         },
         async addAssignment() {
             if (!this.canAddAssign) return;
-            await axios.post('/api/v1/karir/feedback-assignment', {
-                master_feedback_form_id: this.assignForm.Id_Master_Feedback_Form,
-                program_id: this.newAssign.type === 'specific' ? this.newAssign.program_id : null,
-                flag_general: this.newAssign.type === 'general' ? 'Y' : 'T',
-                flag_aktif: 'Y',
-            });
-            this.newAssign = { type: 'general', program_id: null };
+            if (this.newAssign.type === 'general') {
+                await axios.post('/api/v1/karir/feedback-assignment', {
+                    master_feedback_form_id: this.assignForm.Id_Master_Feedback_Form,
+                    flag_general: 'Y', flag_aktif: 'Y',
+                });
+            } else {
+                // Buat satu assignment per program yang dipilih
+                for (const pid of this.newAssign.program_ids) {
+                    await axios.post('/api/v1/karir/feedback-assignment', {
+                        master_feedback_form_id: this.assignForm.Id_Master_Feedback_Form,
+                        program_id: pid, flag_general: 'T', flag_aktif: 'Y',
+                    });
+                }
+            }
+            this.newAssign = { type: 'general', program_ids: [] };
             await this.openAssign(this.assignForm);
         },
         async toggleAssignment(a) {
