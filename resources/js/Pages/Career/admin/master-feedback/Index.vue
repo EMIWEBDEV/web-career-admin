@@ -476,7 +476,7 @@
         <AdminModal
             :show="assignShow" :title="'Assign: ' + (assignForm?.Nama ?? '')"
             subtitle="Assignment spesifik (per program) mengesampingkan assignment general (semua program)." icon="bi-link-45deg"
-            @close="assignShow = false"
+            hide-footer @close="assignShow = false"
         >
             <!-- Current Assignments -->
             <div class="wca-fsection">
@@ -510,11 +510,11 @@
                 <div class="wca-fsection__label"><i class="bi bi-plus-circle"></i> Tambah Assignment</div>
                 <div class="fb-assign-form">
                     <div class="fb-assign-form__type">
-                        <label :class="['fb-assign-type-card', { 'fb-assign-type-card--active': newAssign.type === 'general' }]" @click="quickAssignGeneral">
+                        <label :class="['fb-assign-type-card', { 'fb-assign-type-card--active': newAssign.type === 'general' }]" @click="newAssign.type = 'general'">
                             <i class="bi bi-globe2"></i>
                             <div>
                                 <strong>Semua Program</strong>
-                                <small>Klik untuk langsung assign ke semua program</small>
+                                <small>Form ini akan dipakai semua program</small>
                             </div>
                         </label>
                         <label :class="['fb-assign-type-card', { 'fb-assign-type-card--active': newAssign.type === 'specific' }]" @click="newAssign.type = 'specific'">
@@ -527,10 +527,13 @@
                     </div>
                     <div v-if="newAssign.type === 'specific'" class="fb-assign-form__program">
                         <label class="wca-field-lbl">Pilih Program (bisa lebih dari satu)</label>
-                        <el-select v-model="newAssign.program_ids" placeholder="Cari program lalu pilih..." style="width:100%" filterable multiple collapse-tags collapse-tags-tooltip :max-collapse-tags="2" size="large" @change="quickAssignSpecific">
+                        <el-select v-model="newAssign.program_ids" placeholder="Cari program..." style="width:100%" filterable multiple collapse-tags collapse-tags-tooltip :max-collapse-tags="2" size="large">
                             <el-option v-for="p in programList" :key="p.value" :label="p.label" :value="p.value" />
                         </el-select>
                     </div>
+                    <button class="fb-assign-form__submit" @click="addAssignment" :disabled="!canAddAssign">
+                        <i class="bi bi-plus-lg"></i> Tambahkan Assignment
+                    </button>
                 </div>
             </div>
         </AdminModal>
@@ -607,27 +610,6 @@ export default {
             ]);
             this.assignments = (aRes.data.result || []).filter(a => a.Master_Feedback_Form_Id === f.Id_Master_Feedback_Form);
             this.programList = pRes.data.result || [];
-        },
-        async quickAssignGeneral() {
-            await axios.post('/api/v1/karir/feedback-assignment', {
-                master_feedback_form_id: this.assignForm.Id_Master_Feedback_Form,
-                flag_general: 'Y', flag_aktif: 'Y',
-            });
-            await this.openAssign(this.assignForm);
-        },
-        async quickAssignSpecific(selectedIds) {
-            if (!selectedIds || !selectedIds.length) return;
-            // Hanya assign program yang baru dipilih (bukan yang sudah ada)
-            const existing = this.assignments.filter(a => a.Flag_Aktif === 'Y' && a.Program_Id);
-            const existingIds = existing.map(a => a.Program_Id);
-            const newIds = selectedIds.filter(id => !existingIds.includes(id));
-            for (const pid of newIds) {
-                await axios.post('/api/v1/karir/feedback-assignment', {
-                    master_feedback_form_id: this.assignForm.Id_Master_Feedback_Form,
-                    program_id: pid, flag_general: 'T', flag_aktif: 'Y',
-                });
-            }
-            if (newIds.length) await this.openAssign(this.assignForm);
         },
         async addAssignment() {
             if (!this.canAddAssign) return;
