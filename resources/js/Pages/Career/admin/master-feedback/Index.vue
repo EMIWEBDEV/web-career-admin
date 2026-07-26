@@ -82,7 +82,7 @@
                         <template #item="{ element: p, index: i }">
                             <div :class="['fb-q-card', { 'fb-q-card--expanded': f._editIdx === i }]">
                                 <!-- COLLAPSED STATE -->
-                                <div v-if="f._editIdx !== i" class="fb-q-collapsed" @click="f._editIdx = i">
+                                <div v-if="f._editIdx !== i" class="fb-q-collapsed" @click="saveQuestions(f); f._editIdx = i">
                                     <span class="fb-q-drag" @click.stop><i class="bi bi-grip-vertical"></i></span>
                                     <span class="fb-q-collapsed__num">{{ i + 1 }}</span>
                                     <span class="fb-q-collapsed__icon" v-html="typeIcon(p.Tipe)"></span>
@@ -101,7 +101,7 @@
                                         <span class="fb-q-drag"><i class="bi bi-grip-vertical"></i></span>
                                         <span class="fb-q-expanded__num">{{ i + 1 }}</span>
                                         <span class="fb-q-expanded__title">Edit Pertanyaan</span>
-                                        <button class="fb-q-expanded__close" @click="f._editIdx = null"><i class="bi bi-check-lg"></i> Selesai</button>
+                                        <button class="fb-q-expanded__close" @click="doneEditing(f)"><i class="bi bi-check-lg"></i> Selesai & Simpan</button>
                                     </div>
 
                                     <div class="fb-q-expanded__body">
@@ -558,6 +558,10 @@ export default {
                     if (cards.length) cards[cards.length - 1].scrollIntoView({ behavior: 'smooth', block: 'center' });
                 } catch (e) { /* ignore scroll errors */ }
             });
+        },
+        async doneEditing(f) {
+            f._editIdx = null; // tutup dulu — instant feedback
+            await this.saveQuestions(f); // lalu simpan ke DB
         },
         addQuestion(f) { this.showTypePicker(f); },
         onReorder(f) {
