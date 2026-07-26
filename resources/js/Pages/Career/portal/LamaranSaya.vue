@@ -473,7 +473,7 @@ export default {
     },
     methods: {
         // [feat/feedback]
-        fbCta(l) { const fp = this.$page.props.feedbackPending; return fp && fp.Id_Lamaran === l.id ? fp.feedback_url : null; },
+        fbCta(l) { const fp = this.$page.props.feedbackPending; return fp && fp.lamaran_hashid === l.id ? fp.feedback_url : null; },
         k(l) { return l.kartu || {}; },
         katLabel(k) { return { REKRUTMEN: 'Rekrutmen', MT: 'Management Trainee', INTERNSHIP: 'Internship' }[k] || k || '—'; },
         stLabel(s) { return { BERJALAN: 'Berjalan', LULUS: 'Diterima', GUGUR: 'Tidak Lolos', MUNDUR: 'Mengundurkan Diri' }[s] || s; },

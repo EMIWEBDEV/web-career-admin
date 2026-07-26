@@ -66,6 +66,8 @@ class HandleInertiaRequests extends Middleware
                 $parts = explode('.', $item->Token_Hash, 2);
                 $item->feedback_url = rtrim(config('app.url'), '/')
                     . '/feedback/' . ($parts[0] ?? '') . '/' . ($parts[1] ?? '');
+                // Hashids ID untuk matching dengan l.id di Vue
+                $item->lamaran_hashid = \Vinkla\Hashids\Facades\Hashids::encode($item->Id_Lamaran);
 
                 return $item;
             },
