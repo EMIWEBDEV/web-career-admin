@@ -515,7 +515,9 @@ export default {
                     _key: 'q_' + (p.Id_Master_Feedback_Pertanyaan || Math.random().toString(36).slice(2, 10)),
                     _opsiList: (p.Opsi && p.Opsi.length) ? [...p.Opsi] : [],
                 }));
-                f._editIdx = null;
+                // Jangan reset _editIdx — biarkan card yang sedang diedit tetap terbuka
+                // Hanya reset saat pertama kali expand (dipanggil dari toggleExpand)
+                if (!f._questionsLoaded) f._editIdx = null;
                 f.Jumlah_Pertanyaan = f._pertanyaan.length;
                 f._questionsLoaded = true;
             } catch (e) {
@@ -630,8 +632,7 @@ export default {
             }));
             await axios.post(`/api/v1/karir/master-feedback/${f.Id_Master_Feedback_Form}/pertanyaan`, { pertanyaan });
             this.savingQ = { ...this.savingQ, [f.Id_Master_Feedback_Form]: false };
-            f._questionsLoaded = false;
-            await this.loadQuestions(f);
+            // Data sudah sinkron — tidak perlu reload yang bisa mengganggu _editIdx
         },
         initials(name) {
             if (!name) return '?';
