@@ -476,7 +476,7 @@
         <AdminModal
             :show="assignShow" :title="'Assign: ' + (assignForm?.Nama ?? '')"
             subtitle="Assignment spesifik (per program) mengesampingkan assignment general (semua program)." icon="bi-link-45deg"
-            hide-footer @close="assignShow = false"
+            save-label="Tambahkan Assignment" @close="assignShow = false" @save="addAssignment"
         >
             <!-- Current Assignments -->
             <div class="wca-fsection">
@@ -531,9 +531,6 @@
                             <el-option v-for="p in programList" :key="p.value" :label="p.label" :value="p.value" />
                         </el-select>
                     </div>
-                    <button class="fb-assign-form__submit" @click="addAssignment" :disabled="!canAddAssign">
-                        <i class="bi bi-plus-lg"></i> Tambahkan Assignment
-                    </button>
                 </div>
             </div>
         </AdminModal>
@@ -612,14 +609,12 @@ export default {
             this.programList = pRes.data.result || [];
         },
         async addAssignment() {
-            if (!this.canAddAssign) return;
             if (this.newAssign.type === 'general') {
                 await axios.post('/api/v1/karir/feedback-assignment', {
                     master_feedback_form_id: this.assignForm.Id_Master_Feedback_Form,
                     flag_general: 'Y', flag_aktif: 'Y',
                 });
             } else {
-                // Buat satu assignment per program yang dipilih
                 for (const pid of this.newAssign.program_ids) {
                     await axios.post('/api/v1/karir/feedback-assignment', {
                         master_feedback_form_id: this.assignForm.Id_Master_Feedback_Form,
@@ -628,7 +623,7 @@ export default {
                 }
             }
             this.newAssign = { type: 'general', program_ids: [] };
-            await this.openAssign(this.assignForm);
+            this.assignShow = false;
         },
         async toggleAssignment(a) {
             await axios.put(`/api/v1/karir/feedback-assignment/${a.Id_Feedback_Assignment}`, {
