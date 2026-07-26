@@ -45,8 +45,32 @@ class MasterFeedbackController extends Controller
             ->groupBy('Master_Feedback_Form_Id')
             ->pluck('jumlah', 'Master_Feedback_Form_Id');
 
-        $items->transform(function ($f) use ($counts) {
+        // Assignment summary per form
+        $assignments = DB::table('N_WEB_CAREERS_Feedback_Assignment')
+            ->where('Flag_Aktif', 'Y')
+            ->where('Flag_Cancellation', 'T')
+            ->whereIn('Master_Feedback_Form_Id', $items->pluck('Id_Master_Feedback_Form'))
+            ->select('Master_Feedback_Form_Id', 'Flag_General', DB::raw('COUNT(*) as jumlah'))
+            ->groupBy('Master_Feedback_Form_Id', 'Flag_General')
+            ->get();
+
+        $assignMap = [];
+        foreach ($assignments as $a) {
+            if (! isset($assignMap[$a->Master_Feedback_Form_Id])) {
+                $assignMap[$a->Master_Feedback_Form_Id] = ['general' => false, 'specific_count' => 0];
+            }
+            if ($a->Flag_General === 'Y') {
+                $assignMap[$a->Master_Feedback_Form_Id]['general'] = true;
+            } else {
+                $assignMap[$a->Master_Feedback_Form_Id]['specific_count'] += $a->jumlah;
+            }
+        }
+
+        $items->transform(function ($f) use ($counts, $assignMap) {
             $f->Jumlah_Pertanyaan = $counts[$f->Id_Master_Feedback_Form] ?? 0;
+            $a = $assignMap[$f->Id_Master_Feedback_Form] ?? ['general' => false, 'specific_count' => 0];
+            $f->Assignment_General = $a['general'];
+            $f->Assignment_Specific_Count = $a['specific_count'];
             return $f;
         });
 

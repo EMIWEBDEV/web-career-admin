@@ -35,6 +35,9 @@
                             <span class="pkg-pill" :class="f.Flag_Aktif === 'Y' ? 'pkg-pill--green' : 'pkg-pill--slate'">
                                 <span class="pkg-pill__dot"></span> {{ f.Flag_Aktif === 'Y' ? 'Aktif' : 'Nonaktif' }}
                             </span>
+                            <!-- [feat/feedback] Assignment badge -->
+                            <span v-if="f.Assignment_General" class="pkg-pill pkg-pill--violet"><i class="bi bi-globe2"></i> General</span>
+                            <span v-else-if="f.Assignment_Specific_Count" class="pkg-pill pkg-pill--struct"><i class="bi bi-bullseye"></i> {{ f.Assignment_Specific_Count }} Program</span>
                         </div>
                     </div>
                     <div class="pkg-row__act" @click.stop>
