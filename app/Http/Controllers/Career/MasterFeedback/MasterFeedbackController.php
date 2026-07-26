@@ -25,8 +25,11 @@ class MasterFeedbackController extends Controller
     {
         $query = DB::table('N_WEB_CAREERS_Master_Feedback_Form')
             ->where('Flag_Cancellation', 'T')
+            ->leftJoin('N_WEB_CAREERS_Users', 'N_WEB_CAREERS_Master_Feedback_Form.Created_By', '=', DB::raw('CAST(N_WEB_CAREERS_Users.Id_Users AS VARCHAR)'))
             ->select('Id_Master_Feedback_Form', 'Nama', 'Deskripsi', 'Mode_Tampilan',
-                     'Durasi_Hari', 'Flag_Aktif', 'Created_At', 'Created_By');
+                     'Durasi_Hari', 'Flag_Aktif', 'N_WEB_CAREERS_Master_Feedback_Form.Created_At',
+                     'N_WEB_CAREERS_Master_Feedback_Form.Created_By',
+                     DB::raw('N_WEB_CAREERS_Users.Nama as Created_By_Nama'));
 
         if ($request->search) {
             $query->where('Nama', 'LIKE', "%{$request->search}%");

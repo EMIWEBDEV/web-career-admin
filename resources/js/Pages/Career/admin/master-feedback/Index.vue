@@ -46,8 +46,8 @@
 
                 <!-- Creator strip -->
                 <div class="pkg-creator">
-                    <span class="pkg-creator__av" style="background:#6366f1">{{ initials(f.Created_By) }}</span>
-                    <span class="pkg-creator__name">{{ f.Created_By || 'Sistem' }}</span>
+                    <span class="pkg-creator__av" style="background:#6366f1">{{ initials(f.Created_By_Nama || f.Created_By) }}</span>
+                    <span class="pkg-creator__name">{{ f.Created_By_Nama || f.Created_By || 'Sistem' }}</span>
                     <span class="pkg-creator__at"><i class="bi bi-clock"></i> {{ f.Created_At || '—' }}</span>
                 </div>
 
