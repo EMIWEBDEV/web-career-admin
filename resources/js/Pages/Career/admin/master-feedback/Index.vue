@@ -623,7 +623,7 @@ export default {
         cancelEditing(f, i) {
             // Kembalikan ke snapshot
             if (f._snapshot) {
-                this.$set(f._pertanyaan, i, f._snapshot);
+                f._pertanyaan.splice(i, 1, f._snapshot);
                 f._snapshot = null;
             }
             f._editIdx = null;
