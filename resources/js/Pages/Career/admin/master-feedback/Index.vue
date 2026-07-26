@@ -40,6 +40,7 @@
                     <div class="pkg-row__act" @click.stop>
                         <el-switch :model-value="f.Flag_Aktif === 'Y'" @change="(v) => setStatus(f, v)" />
                         <button class="pkg-ibtn" title="Ubah" @click="openEdit(f)"><i class="bi bi-pencil"></i></button>
+                        <button class="pkg-ibtn pkg-ibtn--assign" title="Assign ke Program" @click="openAssign(f)"><i class="bi bi-link-45deg"></i></button>
                         <button class="pkg-ibtn pkg-ibtn--danger" title="Hapus" @click="askRemove(f)"><i class="bi bi-trash"></i></button>
                     </div>
                 </div>
@@ -470,6 +471,54 @@
 
         <!-- Confirm remove -->
         <ConfirmModal :show="!!removeTarget" title="Hapus Form Feedback" :message="removeMessage" icon="bi-trash" @confirm="doRemove" @close="removeTarget = null" />
+
+        <!-- Assignment Modal -->
+        <AdminModal
+            :show="assignShow" title="Assign Form ke Program"
+            :subtitle="'Form: ' + (assignForm?.Nama ?? '')" icon="bi-link-45deg"
+            :save-label="null" @close="assignShow = false"
+        >
+            <div class="wca-fsection">
+                <div class="wca-fsection__label"><i class="bi bi-link-45deg"></i> Assignment Aktif</div>
+                <div v-if="!assignments.length" class="wca-hint"><i class="bi bi-info-circle"></i> Belum ada assignment. Klik <b>Tambah Assignment</b> untuk menugaskan form ini ke program.</div>
+                <div v-for="a in assignments" :key="a.Id_Feedback_Assignment" class="wca-listrow" style="padding:8px 0">
+                    <span class="wca-avatar wca-avatar--sm" :style="{background: a.Flag_General==='Y'?'linear-gradient(135deg,#6366f1,#4f46e5)':'#10b981',color:'#fff',fontSize:'.65rem',fontWeight:'700'}">
+                        {{ a.Flag_General === 'Y' ? 'ALL' : 'P' }}
+                    </span>
+                    <div class="wca-listrow__main">
+                        <strong>{{ a.Flag_General === 'Y' ? 'Semua Program (General)' : (a.Program_Nama || 'Program #'+a.Program_Id) }}</strong>
+                        <small>{{ a.Flag_Aktif === 'Y' ? 'Aktif' : 'Nonaktif' }}</small>
+                    </div>
+                    <div class="wca-listrow__act">
+                        <el-switch :model-value="a.Flag_Aktif === 'Y'" @change="toggleAssignment(a)" size="small" />
+                    </div>
+                </div>
+            </div>
+
+            <div class="wca-fsection" style="margin-top:16px">
+                <div class="wca-fsection__label"><i class="bi bi-plus-circle"></i> Tambah Assignment</div>
+                <div class="wca-form">
+                    <div class="wca-frow">
+                        <div>
+                            <label class="wca-field-lbl">Jenis</label>
+                            <el-select v-model="newAssign.type" style="width:100%">
+                                <el-option label="Semua Program (General)" value="general" />
+                                <el-option label="Program Spesifik" value="specific" />
+                            </el-select>
+                        </div>
+                        <div v-if="newAssign.type === 'specific'">
+                            <label class="wca-field-lbl">Program</label>
+                            <el-select v-model="newAssign.program_id" placeholder="Pilih program..." style="width:100%" filterable>
+                                <el-option v-for="p in programList" :key="p.Id_Program" :label="p.Nama" :value="p.Id_Program" />
+                            </el-select>
+                        </div>
+                    </div>
+                    <el-button type="primary" size="small" @click="addAssignment" :disabled="!canAddAssign" style="margin-top:10px">
+                        <i class="bi bi-plus-lg"></i> Tambah Assignment
+                    </el-button>
+                </div>
+            </div>
+        </AdminModal>
     </div>
 </template>
 
@@ -487,6 +536,11 @@ export default {
             list: [],
             loading: false,
             open: null,
+            assignShow: false,
+            assignForm: null,
+            assignments: [],
+            programList: [],
+            newAssign: { type: 'general', program_id: null },
             show: false,
             editingId: null,
             removeTarget: null,
@@ -505,6 +559,10 @@ export default {
         };
     },
     computed: {
+        canAddAssign() {
+            if (this.newAssign.type === 'general') return true;
+            return !!this.newAssign.program_id;
+        },
         removeMessage() {
             const name = this.removeTarget?.Nama ?? '';
             return `Yakin hapus "${name}"? Pertanyaan di dalamnya juga akan dihapus.`;
@@ -523,6 +581,34 @@ export default {
             // Fetch data async
             await this.loadQuestions(f);
             f._loadingQuestions = false;
+        },
+        async openAssign(f) {
+            this.assignForm = f;
+            this.assignShow = true;
+            this.newAssign = { type: 'general', program_id: null };
+            const [aRes, pRes] = await Promise.all([
+                axios.get('/api/v1/karir/feedback-assignment'),
+                axios.get('/api/v1/karir/options/program'),
+            ]);
+            this.assignments = (aRes.data.result || []).filter(a => a.Master_Feedback_Form_Id === f.Id_Master_Feedback_Form);
+            this.programList = pRes.data.result || [];
+        },
+        async addAssignment() {
+            if (!this.canAddAssign) return;
+            await axios.post('/api/v1/karir/feedback-assignment', {
+                master_feedback_form_id: this.assignForm.Id_Master_Feedback_Form,
+                program_id: this.newAssign.type === 'specific' ? this.newAssign.program_id : null,
+                flag_general: this.newAssign.type === 'general' ? 'Y' : 'T',
+                flag_aktif: 'Y',
+            });
+            this.newAssign = { type: 'general', program_id: null };
+            await this.openAssign(this.assignForm);
+        },
+        async toggleAssignment(a) {
+            await axios.put(`/api/v1/karir/feedback-assignment/${a.Id_Feedback_Assignment}`, {
+                flag_aktif: a.Flag_Aktif === 'Y' ? 'T' : 'Y',
+            });
+            await this.openAssign(this.assignForm);
         },
         async load() {
             this.loading = true;
