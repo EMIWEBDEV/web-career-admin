@@ -44,6 +44,8 @@ class FeedbackController extends Controller
             ->get()
             ->map(function ($p) {
                 $p->Opsi = $p->Opsi ? json_decode($p->Opsi) : null;
+                $p->Skala_Min = $p->Skala_Min !== null ? (int) $p->Skala_Min : null;
+                $p->Skala_Max = $p->Skala_Max !== null ? (int) $p->Skala_Max : null;
                 return $p;
             });
 
