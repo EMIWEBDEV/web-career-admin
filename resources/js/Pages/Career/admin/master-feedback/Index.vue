@@ -157,7 +157,23 @@
                                                 <label class="wca-field-lbl">
                                                     <i class="bi bi-list-ul"></i> Opsi Pilihan
                                                 </label>
-                                                <div class="fb-option-list">
+
+                                                <!-- Bulk paste area -->
+                                                <details class="fb-bulk-paste">
+                                                    <summary class="fb-bulk-paste__toggle">
+                                                        <i class="bi bi-clipboard"></i> Paste banyak opsi sekaligus
+                                                    </summary>
+                                                    <textarea
+                                                        class="fb-bulk-paste__area"
+                                                        placeholder="Paste daftar opsi di sini...&#10;Setiap baris akan jadi satu opsi.&#10;&#10;Contoh:&#10;- Melamar posisi pekerjaan&#10;- Melihat lowongan kerja&#10;- Mencari informasi perusahaan&#10;- Memeriksa status lamaran"
+                                                        rows="6"
+                                                        @input="parseBulkOptions(p, $event.target.value)"
+                                                    ></textarea>
+                                                    <small class="fb-bulk-paste__hint">Pisahkan dengan baris baru. Tanda hubung (-, •, *) dan angka di awal otomatis dibersihkan.</small>
+                                                </details>
+
+                                                <!-- Individual option rows -->
+                                                <div class="fb-option-list" v-if="(p._opsiList || []).length">
                                                     <div v-for="(opt, oi) in (p._opsiList || [])" :key="oi" class="fb-option-row">
                                                         <span class="fb-option-row__num">{{ oi + 1 }}</span>
                                                         <input
@@ -173,7 +189,7 @@
                                                     </div>
                                                 </div>
                                                 <button class="fb-option-add" @click="addOption(p)">
-                                                    <i class="bi bi-plus"></i> Tambah Opsi
+                                                    <i class="bi bi-plus"></i> Tambah Opsi Manual
                                                 </button>
                                             </div>
                                         </div>
@@ -590,6 +606,22 @@ export default {
             if (!p._opsiList) p._opsiList = [];
             p._opsiList.push('');
         },
+        parseBulkOptions(p, text) {
+            if (!text.trim()) {
+                if (!p._opsiList) p._opsiList = [];
+                return;
+            }
+            // Split by newline, clean each line
+            const lines = text.split('\n')
+                .map(l => l
+                    .replace(/^[\s]*[-•*✓✓✅☑️✔️▪︎▸►▻☐☑\d]+[.)\s]*\s*/, '') // hapus bullet & angka
+                    .trim()
+                )
+                .filter(l => l.length > 0);
+            if (lines.length) {
+                p._opsiList = lines;
+            }
+        },
         removeOption(p, idx) {
             if (!p._opsiList) return;
             p._opsiList.splice(idx, 1);
@@ -823,6 +855,25 @@ export default {
 }
 .fb-scale-card__info { font-size: .72rem; color: #94a3b8; font-weight: 600; }
 .fb-scale-card__info i { margin-right: 4px; }
+
+/* ── Bulk Paste ── */
+.fb-bulk-paste { margin-bottom: 12px; }
+.fb-bulk-paste__toggle {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: .78rem; font-weight: 600; color: #6366f1; cursor: pointer;
+    padding: 4px 0; user-select: none;
+}
+.fb-bulk-paste__toggle:hover { opacity: .8; }
+.fb-bulk-paste__area {
+    width: 100%; margin-top: 8px; padding: 12px 14px;
+    border: 1.5px dashed #c4b5fd; border-radius: 10px;
+    font-size: .82rem; font-family: 'Inter', sans-serif; color: #334155;
+    resize: vertical; line-height: 1.6; outline: none;
+    background: rgba(99,102,241,.02); transition: border-color .15s;
+}
+.fb-bulk-paste__area:focus { border-color: #6366f1; border-style: solid; }
+.fb-bulk-paste__area::placeholder { color: #cbd5e1; }
+.fb-bulk-paste__hint { display: block; margin-top: 4px; font-size: .68rem; color: #94a3b8; }
 
 /* ── Option Rows (clean, minimal) ── */
 .fb-options-row { margin-top: 20px; }
