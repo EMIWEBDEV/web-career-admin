@@ -82,7 +82,7 @@
                         <template #item="{ element: p, index: i }">
                             <div :class="['fb-q-card', { 'fb-q-card--expanded': f._editIdx === i }]">
                                 <!-- COLLAPSED STATE -->
-                                <div v-if="f._editIdx !== i" class="fb-q-collapsed" @click="saveQuestions(f); f._editIdx = i">
+                                <div v-if="f._editIdx !== i" class="fb-q-collapsed" @click="startEditing(f, i)">
                                     <span class="fb-q-drag" @click.stop><i class="bi bi-grip-vertical"></i></span>
                                     <span class="fb-q-collapsed__num">{{ i + 1 }}</span>
                                     <span class="fb-q-collapsed__icon" v-html="typeIcon(p.Tipe)"></span>
@@ -101,7 +101,10 @@
                                         <span class="fb-q-drag"><i class="bi bi-grip-vertical"></i></span>
                                         <span class="fb-q-expanded__num">{{ i + 1 }}</span>
                                         <span class="fb-q-expanded__title">Edit Pertanyaan</span>
-                                        <button class="fb-q-expanded__close" @click="doneEditing(f)"><i class="bi bi-check-lg"></i> Selesai & Simpan</button>
+                                        <div class="fb-q-expanded__actions">
+                                            <button class="fb-q-expanded__cancel" @click="cancelEditing(f, i)"><i class="bi bi-x-lg"></i> Batal</button>
+                                            <button class="fb-q-expanded__close" @click="doneEditing(f)"><i class="bi bi-check-lg"></i> Selesai & Simpan</button>
+                                        </div>
                                     </div>
 
                                     <div class="fb-q-expanded__body">
@@ -581,7 +584,9 @@ export default {
         showTypePicker(f) {
             if (!f._pertanyaan) f._pertanyaan = [];
             const key = 'q_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
-            f._pertanyaan.push({ _key: key, Tipe: 'RATING', Label: '', Skala_Min: 1, Skala_Max: 5, _opsiList: [] });
+            const newQ = { _key: key, Tipe: 'RATING', Label: '', Skala_Min: 1, Skala_Max: 5, _opsiList: [] };
+            f._pertanyaan.push(newQ);
+            f._snapshot = JSON.parse(JSON.stringify(newQ)); // snapshot untuk batalkan
             f._editIdx = f._pertanyaan.length - 1;
             // Auto-scroll to new card after DOM update
             this.$nextTick(() => {
@@ -591,8 +596,26 @@ export default {
                 } catch (e) { /* ignore scroll errors */ }
             });
         },
+        startEditing(f, i) {
+            this.saveQuestions(f); // simpan dulu sebelum switch
+            this.snapshotQuestion(f, i); // ambil snapshot sebelum edit
+            f._editIdx = i;
+        },
+        snapshotQuestion(f, i) {
+            if (!f._pertanyaan || !f._pertanyaan[i]) return;
+            f._snapshot = JSON.parse(JSON.stringify(f._pertanyaan[i]));
+        },
+        cancelEditing(f, i) {
+            // Kembalikan ke snapshot
+            if (f._snapshot) {
+                this.$set(f._pertanyaan, i, f._snapshot);
+                f._snapshot = null;
+            }
+            f._editIdx = null;
+        },
         async doneEditing(f) {
             f._editIdx = null; // tutup dulu — instant feedback
+            f._snapshot = null;
             await this.saveQuestions(f); // lalu simpan ke DB
         },
         addQuestion(f) { this.showTypePicker(f); },
@@ -838,6 +861,12 @@ export default {
     color: #fff; font-size: .7rem; font-weight: 700; display: flex; align-items: center; justify-content: center;
 }
 .fb-q-expanded__title { flex: 1; font-size: .8rem; font-weight: 700; color: #4f46e5; }
+.fb-q-expanded__actions { display: flex; gap: 6px; }
+.fb-q-expanded__cancel {
+    border: none; background: #f1f5f9; color: #64748b;
+    padding: 5px 12px; border-radius: 7px; font-size: .75rem; font-weight: 700; cursor: pointer;
+}
+.fb-q-expanded__cancel:hover { background: #e2e8f0; color: #475569; }
 .fb-q-expanded__close {
     border: none; background: #10b981; color: #fff;
     padding: 5px 12px; border-radius: 7px; font-size: .75rem; font-weight: 700; cursor: pointer;
