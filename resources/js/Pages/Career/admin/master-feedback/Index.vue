@@ -475,8 +475,8 @@
         <!-- Assignment Modal -->
         <AdminModal
             :show="assignShow" :title="'Assign: ' + (assignForm?.Nama ?? '')"
-            subtitle="Form ini akan muncul untuk kandidat di program yang dipilih. Assignment spesifik mengesampingkan general." icon="bi-link-45deg"
-            :save-label="null" @close="assignShow = false"
+            subtitle="Assignment spesifik (per program) mengesampingkan assignment general (semua program)." icon="bi-link-45deg"
+            save-label="Tutup" @close="assignShow = false" @save="assignShow = false"
         >
             <!-- Current Assignments -->
             <div class="wca-fsection">
