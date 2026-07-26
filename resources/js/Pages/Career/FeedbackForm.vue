@@ -46,8 +46,6 @@
             <span><i class="bi bi-clock"></i> ~2 menit</span>
             <span class="fb-head__dot">·</span>
             <span><i class="bi bi-list-ol"></i> {{ pertanyaan?.length || 0 }} pertanyaan</span>
-            <span class="fb-head__dot">·</span>
-            <span><i class="bi bi-send"></i> Rahasia &amp; anonim</span>
           </div>
         </div>
 
@@ -80,6 +78,7 @@
 <script setup>
 import { ref, computed } from 'vue'; import axios from 'axios'
 import CareerLayout from './Layouts/CareerLayout.vue'; import FeedbackFormWizard from './FeedbackFormWizard.vue'
+defineOptions({ layout: null })
 import RatingInput from './components/feedback/RatingInput.vue'; import NpsInput from './components/feedback/NpsInput.vue'
 import LikertInput from './components/feedback/LikertInput.vue'; import TextareaInput from './components/feedback/TextareaInput.vue'
 import RadioCards from './components/feedback/RadioCards.vue'; import CheckboxCards from './components/feedback/CheckboxCards.vue'
