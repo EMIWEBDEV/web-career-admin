@@ -51,12 +51,11 @@ class MasterFeedbackController extends Controller
 
     public function show($id)
     {
-        // Select kolom spesifik — hindari SELECT * pada NVARCHAR(MAX) Opsi
         $form = DB::table('N_WEB_CAREERS_Master_Feedback_Form')
             ->where('Id_Master_Feedback_Form', $id)
             ->where('Flag_Cancellation', 'T')
             ->select('Id_Master_Feedback_Form', 'Nama', 'Deskripsi', 'Mode_Tampilan',
-                     'Durasi_Hari', 'Flag_Aktif', 'Created_At', 'Created_By')
+                     'Durasi_Hari', 'Flag_Aktif')
             ->first();
 
         if (! $form) return ResponseHelper::error('Form tidak ditemukan', 404);
@@ -65,17 +64,33 @@ class MasterFeedbackController extends Controller
             ->where('Master_Feedback_Form_Id', $id)
             ->where('Flag_Cancellation', 'T')
             ->orderBy('Urutan')
-            ->select('Id_Master_Feedback_Pertanyaan', 'Master_Feedback_Form_Id', 'Urutan',
-                     'Tipe', 'Label', 'Opsi', 'Skala_Min', 'Skala_Max')
-            ->get()
-            ->map(function ($p) {
-                // Decode JSON Opsi → array agar frontend tidak parsing manual
-                $p->Opsi = $p->Opsi ? json_decode($p->Opsi, true) : [];
-                return $p;
-            });
+            ->select('Id_Master_Feedback_Pertanyaan', 'Urutan', 'Tipe', 'Label', 'Opsi',
+                     'Skala_Min', 'Skala_Max')
+            ->get();
 
-        $form->pertanyaan = $pertanyaan;
-        return ResponseHelper::success($form);
+        // Konversi ke array murni — hindari stdClass + Collection mix
+        $items = [];
+        foreach ($pertanyaan as $p) {
+            $items[] = [
+                'Id_Master_Feedback_Pertanyaan' => $p->Id_Master_Feedback_Pertanyaan,
+                'Urutan' => (int) $p->Urutan,
+                'Tipe' => $p->Tipe,
+                'Label' => $p->Label,
+                'Opsi' => $p->Opsi ? json_decode($p->Opsi, true) : [],
+                'Skala_Min' => $p->Skala_Min !== null ? (int) $p->Skala_Min : null,
+                'Skala_Max' => $p->Skala_Max !== null ? (int) $p->Skala_Max : null,
+            ];
+        }
+
+        return ResponseHelper::success([
+            'Id_Master_Feedback_Form' => $form->Id_Master_Feedback_Form,
+            'Nama' => $form->Nama,
+            'Deskripsi' => $form->Deskripsi,
+            'Mode_Tampilan' => $form->Mode_Tampilan,
+            'Durasi_Hari' => $form->Durasi_Hari !== null ? (int) $form->Durasi_Hari : null,
+            'Flag_Aktif' => $form->Flag_Aktif,
+            'pertanyaan' => $items,
+        ]);
     }
 
     public function store(Request $request)
