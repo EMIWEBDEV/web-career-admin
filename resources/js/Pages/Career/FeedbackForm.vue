@@ -43,11 +43,15 @@
         </div>
         <div v-else class="fb-main">
           <div class="fb-glass fb-glass--head">
-            <h1 class="fb-head__title">{{ is_wajib ? 'Selamat! Kamu Diterima 🎉' : 'Bantu Kami Lebih Baik' }}</h1>
-            <p class="fb-head__sub">{{ is_wajib ? 'Sebelum melanjutkan, mohon luangkan 2 menit untuk mengisi feedback — ini wajib diisi untuk menyelesaikan proses lamaranmu.' : 'Terima kasih sudah melamar di EVO Group. Isi feedback singkat tentang pengalamanmu agar kami bisa terus meningkatkan proses seleksi.' }}</p>
+            <div class="fb-head__icon">{{ is_wajib ? '🎉' : '💬' }}</div>
+            <h1 class="fb-head__title">{{ is_wajib ? 'Selamat, Kamu Diterima!' : 'Bantu Kami Lebih Baik' }}</h1>
+            <p class="fb-head__sub">{{ is_wajib ? 'Sebelum melanjutkan, mohon isi feedback singkat ini. Hanya 2 menit — wajib diisi untuk menyelesaikan proses lamaranmu.' : 'Terima kasih sudah melamar di EVO Group. Isi feedback singkat tentang pengalamanmu agar kami bisa terus meningkatkan proses seleksi.' }}</p>
             <div class="fb-head__info"><span><i class="bi bi-clock"></i> ~2 menit</span><span class="fb-head__dot">·</span><span><i class="bi bi-list-ol"></i> {{ pertanyaan?.length || 0 }} pertanyaan</span></div>
           </div>
-          <div class="fb-progress"><div class="fb-progress__track"><div class="fb-progress__fill" :style="{width:progressPercent+'%'}"></div></div><span>{{answeredCount}}/{{pertanyaan?.length}}</span></div>
+          <div class="fb-progress">
+            <div class="fb-progress__track"><div class="fb-progress__fill" :style="{width:progressPercent+'%'}"></div></div>
+            <div class="fb-progress__badge">{{answeredCount}}<span>/{{pertanyaan?.length}}</span></div>
+          </div>
           <div v-if="mode_tampilan==='SCROLL'" class="fb-cards">
             <div v-for="(p,idx) in pertanyaan" :key="p.Id_Master_Feedback_Pertanyaan" class="fb-card">
               <span class="fb-card__n">{{idx+1}}</span>
@@ -148,14 +152,16 @@ function handleWizardSubmit(w){jawaban.value=w;submitFeedback()}
 .fb-glass__btn { display: inline-block; margin-top: 24px; padding: 13px 30px; background: linear-gradient(135deg,#6366f1,#4f46e5); color: #fff; border-radius: 12px; text-decoration: none; font-weight: 700; font-size: .88rem; transition: transform .15s,box-shadow .15s; }
 .fb-glass__btn:hover { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(99,102,241,.3); }
 .fb-main { position: relative; z-index: 1; max-width: 680px; width: 100%; display: flex; flex-direction: column; align-items: center; gap: 20px; }
-.fb-head__title { font-size: 1.85rem; font-weight: 800; color: #1e293b; margin: 0 0 12px; letter-spacing: -.02em; }
-.fb-head__sub { font-size: .92rem; color: #64748b; line-height: 1.7; margin: 0; }
-.fb-head__info { display: flex; align-items: center; gap: 12px; margin-top: 16px; font-size: .8rem; color: #94a3b8; font-weight: 600; }
+.fb-head__icon { font-size: 2.5rem; margin-bottom: 10px; line-height: 1; }
+.fb-head__title { font-size: 1.7rem; font-weight: 800; color: #1e293b; margin: 0 0 10px; letter-spacing: -.02em; }
+.fb-head__sub { font-size: .9rem; color: #64748b; line-height: 1.65; margin: 0; }
+.fb-head__info { display: flex; align-items: center; gap: 12px; margin-top: 14px; font-size: .78rem; color: #94a3b8; font-weight: 600; }
 .fb-head__dot { color: #cbd5e1; }
-.fb-progress { display: flex; align-items: center; gap: 14px; width: 100%; padding: 12px 18px; background: #fff; border: 1px solid #e8e5f7; border-radius: 14px; position: sticky; top: 80px; z-index: 5; }
+.fb-progress { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 16px; background: #fff; border: 1px solid #e8e5f7; border-radius: 14px; position: sticky; top: 80px; z-index: 5; }
 .fb-progress__track { flex: 1; height: 6px; background: #ede9fe; border-radius: 4px; overflow: hidden; box-shadow: inset 0 1px 2px rgba(0,0,0,.04); }
 .fb-progress__fill { height: 100%; border-radius: 4px; background: linear-gradient(90deg,#6366f1,#a78bfa); transition: width .5s cubic-bezier(.4,0,.2,1); box-shadow: 0 0 8px rgba(99,102,241,.25); }
-.fb-progress span { font-size: .8rem; font-weight: 700; color: #6366f1; min-width: 36px; text-align: right; }
+.fb-progress__badge { background: linear-gradient(135deg,#6366f1,#4f46e5); color: #fff; padding: 4px 12px; border-radius: 20px; font-size: .75rem; font-weight: 700; white-space: nowrap; }
+.fb-progress__badge span { font-weight: 500; opacity: .75; }
 .fb-cards { width: 100%; display: flex; flex-direction: column; gap: 16px; }
 .fb-card { background: #fff; border: 1.5px solid #e8e5f7; border-radius: 20px; padding: 26px 28px; transition: all .25s cubic-bezier(.4,0,.2,1); position: relative; }
 .fb-card:hover { border-color: #c4b5fd; }
