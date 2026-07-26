@@ -146,10 +146,10 @@ class MasterFeedbackController extends Controller
             'Durasi_Hari' => $validated['durasi_hari'] ?? null,
             'Flag_Aktif' => $validated['flag_aktif'],
             'Created_At' => $now,
-            'Created_By' => $user['nama'] ?? 'SISTEM',
+            'Created_By' => isset($user['id']) ? (string) $user['id'] : 'SISTEM',
             'Created_By_Id' => $user['id'] ?? null,
             'Updated_At' => $now,
-            'Updated_By' => $user['nama'] ?? 'SISTEM',
+            'Updated_By' => isset($user['id']) ? (string) $user['id'] : 'SISTEM',
             'Updated_By_Id' => $user['id'] ?? null,
         ], 'Id_Master_Feedback_Form');
 
@@ -180,7 +180,7 @@ class MasterFeedbackController extends Controller
                 'Durasi_Hari' => $validated['durasi_hari'] ?? null,
                 'Flag_Aktif' => $validated['flag_aktif'],
                 'Updated_At' => $now,
-                'Updated_By' => $user['nama'] ?? 'SISTEM',
+                'Updated_By' => isset($user['id']) ? (string) $user['id'] : 'SISTEM',
                 'Updated_By_Id' => $user['id'] ?? null,
             ]);
 
@@ -198,7 +198,7 @@ class MasterFeedbackController extends Controller
             ->update([
                 'Flag_Cancellation' => 'Y',
                 'Cancelled_At' => $now,
-                'Cancelled_By' => $user['nama'] ?? 'SISTEM',
+                'Cancelled_By' => isset($user['id']) ? (string) $user['id'] : 'SISTEM',
             ]);
 
         $this->clearDetailCache($id);
@@ -229,7 +229,7 @@ class MasterFeedbackController extends Controller
                 ->update([
                     'Flag_Cancellation' => 'Y',
                     'Cancelled_At' => $now,
-                    'Cancelled_By' => $user['nama'] ?? 'SISTEM',
+                    'Cancelled_By' => isset($user['id']) ? (string) $user['id'] : 'SISTEM',
                 ]);
 
             $rows = [];
@@ -245,7 +245,7 @@ class MasterFeedbackController extends Controller
                     'Label_Min' => $p['label_min'] ?? null,
                     'Label_Max' => $p['label_max'] ?? null,
                     'Created_At' => $now,
-                    'Created_By' => $user['nama'] ?? 'SISTEM',
+                    'Created_By' => isset($user['id']) ? (string) $user['id'] : 'SISTEM',
                     'Created_By_Id' => $user['id'] ?? null,
                 ];
             }
@@ -283,7 +283,7 @@ class MasterFeedbackController extends Controller
                 'Skala_Max' => $validated['skala_max'] ?? null,
                 'Urutan' => $validated['urutan'],
                 'Updated_At' => $now,
-                'Updated_By' => $user['nama'] ?? 'SISTEM',
+                'Updated_By' => isset($user['id']) ? (string) $user['id'] : 'SISTEM',
                 'Updated_By_Id' => $user['id'] ?? null,
             ]);
 
@@ -307,7 +307,7 @@ class MasterFeedbackController extends Controller
             ->update([
                 'Flag_Cancellation' => 'Y',
                 'Cancelled_At' => $now,
-                'Cancelled_By' => $user['nama'] ?? 'SISTEM',
+                'Cancelled_By' => isset($user['id']) ? (string) $user['id'] : 'SISTEM',
             ]);
 
         if ($formId !== null) {

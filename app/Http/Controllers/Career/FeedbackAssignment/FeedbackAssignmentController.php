@@ -64,10 +64,10 @@ class FeedbackAssignmentController extends Controller
             'Flag_General' => $validated['flag_general'],
             'Flag_Aktif' => $validated['flag_aktif'],
             'Created_At' => $now,
-            'Created_By' => $user['nama'] ?? 'SISTEM',
+            'Created_By' => isset($user['id']) ? (string) $user['id'] : 'SISTEM' ?? 'SISTEM',
             'Created_By_Id' => $user['id'] ?? null,
             'Updated_At' => $now,
-            'Updated_By' => $user['nama'] ?? 'SISTEM',
+            'Updated_By' => isset($user['id']) ? (string) $user['id'] : 'SISTEM' ?? 'SISTEM',
             'Updated_By_Id' => $user['id'] ?? null,
         ], 'Id_Feedback_Assignment');
 
@@ -88,7 +88,7 @@ class FeedbackAssignmentController extends Controller
             ->update([
                 'Flag_Aktif' => $validated['flag_aktif'],
                 'Updated_At' => $now,
-                'Updated_By' => $user['nama'] ?? 'SISTEM',
+                'Updated_By' => isset($user['id']) ? (string) $user['id'] : 'SISTEM' ?? 'SISTEM',
                 'Updated_By_Id' => $user['id'] ?? null,
             ]);
 
