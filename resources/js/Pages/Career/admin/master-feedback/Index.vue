@@ -165,12 +165,13 @@
                                                 <div class="fb-option-list" v-if="(p._opsiList || []).length">
                                                     <div v-for="(opt, oi) in (p._opsiList || [])" :key="oi" class="fb-option-row">
                                                         <span class="fb-option-row__num">{{ oi + 1 }}</span>
-                                                        <input
+                                                        <textarea
                                                             v-model="p._opsiList[oi]"
                                                             :placeholder="oi === 0 ? 'Tulis atau paste daftar opsi...' : ('Opsi ' + (oi + 1))"
                                                             class="fb-option-row__input"
+                                                            rows="1"
                                                             @input="onOptionInput(p, oi, $event)"
-                                                        />
+                                                        ></textarea>
                                                         <button
                                                             v-if="(p._opsiList || []).length > 1"
                                                             class="fb-option-row__del"
@@ -597,17 +598,22 @@ export default {
             p._opsiList.push('');
         },
         onOptionInput(p, idx, event) {
-            const val = event.target?.value ?? p._opsiList[idx] ?? '';
+            const el = event.target;
+            const val = el?.value ?? '';
             if (!val.includes('\n')) return;
-            // User pasted multi-line text — auto-split into individual options
+
+            // Split, clean, filter
             const lines = val.split('\n')
                 .map(l => l
                     .replace(/^[\s]*[-•*✓✅☑️✔️▪︎▸►▻\d]+[.)\s]*\s*/, '')
                     .trim()
                 )
                 .filter(l => l.length > 0);
+
             if (lines.length > 1) {
                 p._opsiList = lines;
+                // Reset textarea height after split
+                if (el) { el.style.height = 'auto'; el.rows = 1; }
             }
         },
         removeOption(p, idx) {
@@ -864,6 +870,7 @@ export default {
     flex: 1; padding: 10px 14px; border: 1.5px solid #e2e8f0; border-radius: 10px;
     font-size: .88rem; font-family: 'Inter', sans-serif; color: #334155;
     outline: none; transition: border-color .15s; background: #fff;
+    resize: none; overflow: hidden; line-height: 1.5;
 }
 .fb-option-row__input:focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.08); }
 .fb-option-row__input::placeholder { color: #cbd5e1; }
