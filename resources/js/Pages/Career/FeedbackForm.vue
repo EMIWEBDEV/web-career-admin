@@ -1,17 +1,6 @@
 <template>
   <CareerLayout>
     <div class="fb-page">
-      <!-- Ambient background -->
-      <div class="fb-ambient" aria-hidden="true">
-        <span class="fb-aurora fb-aurora--a"></span>
-        <span class="fb-aurora fb-aurora--b"></span>
-        <span class="fb-twinkle fb-twinkle--1"></span>
-        <span class="fb-twinkle fb-twinkle--2"></span>
-        <span class="fb-twinkle fb-twinkle--3"></span>
-        <i class="bi bi-chat-dots-fill fb-glyph fb-glyph--1"></i>
-        <i class="bi bi-star-fill fb-glyph fb-glyph--2"></i>
-        <i class="bi bi-send-fill fb-glyph fb-glyph--3"></i>
-      </div>
 
       <!-- Success -->
       <div v-if="success" class="fb-glass fb-glass--center">
@@ -103,30 +92,12 @@ function handleWizardSubmit(w){jawaban.value=w;submitFeedback()}
 
 <style scoped>
 /* ── Page ── */
-.fb-page { position: relative; min-height: 60vh; padding: 24px 20px 80px; display: flex; flex-direction: column; align-items: center; }
-
-/* ── Ambient (mirip AuthShell tapi simpler) ── */
-.fb-ambient { position: fixed; inset: 0; pointer-events: none; z-index: 0; }
-.fb-aurora { position: absolute; border-radius: 50%; filter: blur(80px); opacity: .35; }
-.fb-aurora--a { width: 500px; height: 500px; background: #c4b5fd; top: -10%; left: -15%; animation: fb-float-a 12s ease-in-out infinite; }
-.fb-aurora--b { width: 400px; height: 400px; background: #a5b4fc; bottom: -10%; right: -10%; animation: fb-float-b 15s ease-in-out infinite; }
-@keyframes fb-float-a { 0%,100%{transform:translate(0,0)} 33%{transform:translate(40px,-30px)} 66%{transform:translate(-20px,20px)} }
-@keyframes fb-float-b { 0%,100%{transform:translate(0,0)} 50%{transform:translate(-30px,-20px)} }
-.fb-twinkle { position: absolute; width: 4px; height: 4px; border-radius: 50%; background: #6366f1; animation: fb-tw 3s ease-in-out infinite; }
-.fb-twinkle--1 { top: 15%; left: 20%; animation-delay: 0s; }
-.fb-twinkle--2 { top: 70%; right: 15%; animation-delay: 1s; }
-.fb-twinkle--3 { bottom: 20%; left: 60%; animation-delay: 2s; }
-@keyframes fb-tw { 0%,100%{opacity:.3;transform:scale(1)} 50%{opacity:1;transform:scale(1.8)} }
-.fb-glyph { position: absolute; font-size: 2rem; color: #c4b5fd; opacity: .2; animation: fb-gly 8s ease-in-out infinite; }
-.fb-glyph--1 { top: 10%; right: 10%; animation-delay: 0s; }
-.fb-glyph--2 { bottom: 25%; left: 8%; animation-delay: 3s; font-size: 1.5rem; }
-.fb-glyph--3 { top: 50%; right: 5%; animation-delay: 5s; font-size: 1.2rem; }
-@keyframes fb-gly { 0%,100%{transform:translateY(0) rotate(0);opacity:.15} 50%{transform:translateY(-20px) rotate(10deg);opacity:.3} }
+.fb-page { position: relative; min-height: 60vh; padding: 100px 20px 80px; display: flex; flex-direction: column; align-items: center; }
 
 /* ── Glass card ── */
 .fb-glass { position: relative; z-index: 1; background: rgba(255,255,255,.75); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,.6); border-radius: 24px; box-shadow: 0 8px 32px rgba(0,0,0,.04), 0 2px 8px rgba(0,0,0,.02); }
 .fb-glass--center { text-align: center; max-width: 480px; width: 100%; padding: 48px 32px; margin-top: 60px; }
-.fb-glass--head { max-width: 640px; width: 100%; padding: 32px 30px; }
+.fb-glass--head { width: 100%; padding: 32px 30px; }
 .fb-glass__check { width: 72px; height: 72px; border-radius: 50%; background: linear-gradient(135deg,#10b981,#059669); color: #fff; font-size: 2rem; font-weight: 700; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; box-shadow: 0 8px 24px rgba(16,185,129,.25); }
 .fb-glass__icon { font-size: 2.5rem; color: #6366f1; margin-bottom: 16px; }
 .fb-glass h1 { font-size: 1.6rem; font-weight: 800; color: #1e293b; margin: 0 0 10px; }
