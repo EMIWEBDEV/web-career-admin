@@ -83,6 +83,7 @@
                             <div :class="['fb-q-card', { 'fb-q-card--expanded': f._editIdx === i }]">
                                 <!-- COLLAPSED STATE -->
                                 <div v-if="f._editIdx !== i" class="fb-q-collapsed" @click="startEditing(f, i)">
+                                    ...
                                     <span class="fb-q-drag" @click.stop><i class="bi bi-grip-vertical"></i></span>
                                     <span class="fb-q-collapsed__num">{{ i + 1 }}</span>
                                     <span class="fb-q-collapsed__icon" v-html="typeIcon(p.Tipe)"></span>
@@ -97,17 +98,17 @@
 
                                 <!-- EXPANDED STATE -->
                                 <div v-else class="fb-q-expanded">
-                                    <div class="fb-q-expanded__head">
-                                        <span class="fb-q-drag"><i class="bi bi-grip-vertical"></i></span>
+                                    <div class="fb-q-expanded__head" @click="saveQuestions(f); f._editIdx = null">
+                                        <span class="fb-q-drag" @click.stop><i class="bi bi-grip-vertical"></i></span>
                                         <span class="fb-q-expanded__num">{{ i + 1 }}</span>
                                         <span class="fb-q-expanded__title">Edit Pertanyaan</span>
-                                        <div class="fb-q-expanded__actions">
+                                        <div class="fb-q-expanded__actions" @click.stop>
                                             <button class="fb-q-expanded__cancel" @click="cancelEditing(f, i)"><i class="bi bi-x-lg"></i> Batal</button>
                                             <button class="fb-q-expanded__close" @click="doneEditing(f)"><i class="bi bi-check-lg"></i> Selesai & Simpan</button>
                                         </div>
                                     </div>
 
-                                    <div class="fb-q-expanded__body">
+                                    <div class="fb-q-expanded__body" @click.stop>
                                         <!-- Left: editor -->
                                         <div class="fb-q-editor">
                                             <label class="wca-field-lbl">Tipe Pertanyaan</label>
@@ -597,6 +598,11 @@ export default {
             });
         },
         startEditing(f, i) {
+            // Toggle: kalau sudah terbuka → tutup
+            if (f._editIdx === i) {
+                f._editIdx = null;
+                return;
+            }
             this.saveQuestions(f); // simpan dulu sebelum switch
             this.snapshotQuestion(f, i); // ambil snapshot sebelum edit
             f._editIdx = i;
@@ -854,7 +860,7 @@ export default {
 /* ── Expanded State ── */
 .fb-q-expanded__head {
     display: flex; align-items: center; gap: 8px; padding: 10px 14px;
-    background: #f8f7ff; border-bottom: 1px solid #ede9fe;
+    background: #f8f7ff; border-bottom: 1px solid #ede9fe; cursor: pointer;
 }
 .fb-q-expanded__num {
     width: 24px; height: 24px; border-radius: 6px; background: #6366f1;
