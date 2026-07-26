@@ -709,6 +709,8 @@ export default {
             const numericTypes = ['RATING', 'NPS', 'LIKERT'];
             return (f._pertanyaan || []).map((p, i) => {
                 const item = { urutan: i + 1, tipe: p.Tipe, label: p.Label };
+                // Kirim Id existing untuk UPSERT — cegah delete-reinsert
+                if (p.Id_Master_Feedback_Pertanyaan) item.id = p.Id_Master_Feedback_Pertanyaan;
                 if (numericTypes.includes(p.Tipe)) {
                     item.skala_min = p.Skala_Min ?? null;
                     item.skala_max = p.Skala_Max ?? null;

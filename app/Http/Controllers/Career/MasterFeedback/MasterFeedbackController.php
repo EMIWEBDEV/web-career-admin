@@ -217,24 +217,45 @@ class MasterFeedbackController extends Controller
             'pertanyaan.*.skala_max' => 'nullable|integer',
             'pertanyaan.*.label_min' => 'nullable|string|max:100',
             'pertanyaan.*.label_max' => 'nullable|string|max:100',
+            'pertanyaan.*.id' => 'nullable|integer',
         ]);
 
         $now = FormatTanggalHelper::getCurrentTime();
         $user = session('career_auth');
+        $userId = isset($user['id']) ? (string) $user['id'] : 'SISTEM';
 
-        DB::transaction(function () use ($formId, $validated, $now, $user) {
-            DB::table('N_WEB_CAREERS_Master_Feedback_Pertanyaan')
-                ->where('Master_Feedback_Form_Id', $formId)
-                ->where('Flag_Cancellation', 'T')
-                ->update([
-                    'Flag_Cancellation' => 'Y',
-                    'Cancelled_At' => $now,
-                    'Cancelled_By' => isset($user['id']) ? (string) $user['id'] : 'SISTEM',
-                ]);
+        DB::transaction(function () use ($formId, $validated, $now, $userId) {
+            // Kumpulkan ID pertanyaan yang dikirim (existing)
+            $sentIds = collect($validated['pertanyaan'])
+                ->pluck('id')
+                ->filter()
+                ->toArray();
 
-            $rows = [];
+            // Soft-delete hanya pertanyaan yang TIDAK ada di list kiriman
+            if (! empty($sentIds)) {
+                DB::table('N_WEB_CAREERS_Master_Feedback_Pertanyaan')
+                    ->where('Master_Feedback_Form_Id', $formId)
+                    ->where('Flag_Cancellation', 'T')
+                    ->whereNotIn('Id_Master_Feedback_Pertanyaan', $sentIds)
+                    ->update([
+                        'Flag_Cancellation' => 'Y',
+                        'Cancelled_At' => $now,
+                        'Cancelled_By' => $userId,
+                    ]);
+            } else {
+                // Semua pertanyaan dihapus — soft-delete semua
+                DB::table('N_WEB_CAREERS_Master_Feedback_Pertanyaan')
+                    ->where('Master_Feedback_Form_Id', $formId)
+                    ->where('Flag_Cancellation', 'T')
+                    ->update([
+                        'Flag_Cancellation' => 'Y',
+                        'Cancelled_At' => $now,
+                        'Cancelled_By' => $userId,
+                    ]);
+            }
+
             foreach ($validated['pertanyaan'] as $p) {
-                $rows[] = [
+                $data = [
                     'Master_Feedback_Form_Id' => $formId,
                     'Urutan' => $p['urutan'],
                     'Tipe' => $p['tipe'],
@@ -244,11 +265,23 @@ class MasterFeedbackController extends Controller
                     'Skala_Max' => $p['skala_max'] ?? null,
                     'Label_Min' => $p['label_min'] ?? null,
                     'Label_Max' => $p['label_max'] ?? null,
-                    'Created_At' => $now,
-                    'Created_By' => isset($user['id']) ? (string) $user['id'] : 'SISTEM',
+                    'Updated_At' => $now,
+                    'Updated_By' => $userId,
                 ];
+
+                if (! empty($p['id'])) {
+                    // UPDATE existing — tidak buat row baru!
+                    DB::table('N_WEB_CAREERS_Master_Feedback_Pertanyaan')
+                        ->where('Id_Master_Feedback_Pertanyaan', $p['id'])
+                        ->update($data);
+                } else {
+                    // INSERT new only
+                    $data['Created_At'] = $now;
+                    $data['Created_By'] = $userId;
+                    $data['Flag_Cancellation'] = 'T';
+                    DB::table('N_WEB_CAREERS_Master_Feedback_Pertanyaan')->insert($data);
+                }
             }
-            DB::table('N_WEB_CAREERS_Master_Feedback_Pertanyaan')->insert($rows);
         });
 
         $this->clearDetailCache($formId);
