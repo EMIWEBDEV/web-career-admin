@@ -684,7 +684,10 @@ export default {
             if (!p._opsiList) return;
             p._opsiList.splice(idx, 1);
         },
-        removeQuestion(f, i) { f._pertanyaan.splice(i, 1); },
+        removeQuestion(f, i) {
+            f._pertanyaan.splice(i, 1);
+            this.saveQuestions(f); // langsung simpan ke DB — realtime
+        },
         async saveQuestions(f) {
             this.savingQ = { ...this.savingQ, [f.Id_Master_Feedback_Form]: true };
             const optionTypes = ['RADIO', 'CHECKBOX', 'DROPDOWN'];
