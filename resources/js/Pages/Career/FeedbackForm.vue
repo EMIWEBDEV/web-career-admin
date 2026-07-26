@@ -3,11 +3,24 @@
       <div class="fb-ambient" aria-hidden="true">
         <span class="aurora aurora--a"></span>
         <span class="aurora aurora--b"></span>
+        <span class="aurora aurora--c"></span>
+        <div class="grid"></div>
         <span class="twinkle twinkle--1"></span>
         <span class="twinkle twinkle--2"></span>
         <span class="twinkle twinkle--3"></span>
-        <i class="bi bi-chat-dots-fill glyph glyph--1"></i>
-        <i class="bi bi-star-fill glyph glyph--2"></i>
+        <span class="twinkle twinkle--4"></span>
+        <span class="twinkle twinkle--5"></span>
+        <span class="bokeh bokeh--a"></span>
+        <span class="bokeh bokeh--b"></span>
+        <i class="bi bi-star-fill glyph glyph--1"></i>
+        <i class="bi bi-chat-dots-fill glyph glyph--2"></i>
+        <i class="bi bi-heart-fill glyph glyph--3"></i>
+        <i class="bi bi-clipboard-check-fill glyph glyph--4"></i>
+        <i class="bi bi-send-fill glyph glyph--5"></i>
+        <div class="particles">
+          <span class="pt pt--1"></span><span class="pt pt--2"></span><span class="pt pt--3"></span>
+          <span class="pt pt--4"></span><span class="pt pt--5"></span><span class="pt pt--6"></span>
+        </div>
       </div>
 
       <div class="fb-page">
@@ -80,20 +93,41 @@ function handleWizardSubmit(w){jawaban.value=w;submitFeedback()}
 <style scoped>
 /* Ambient */
 .fb-ambient { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+.fb-ambient .grid { position: absolute; inset: -20%; background-image: linear-gradient(rgba(99,102,241,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(99,102,241,.045) 1px,transparent 1px); background-size: 54px 54px; -webkit-mask:radial-gradient(ellipse at 42% 42%,#000 34%,transparent 74%); mask:radial-gradient(ellipse at 42% 42%,#000 34%,transparent 74%); }
 .fb-ambient .aurora { position: absolute; border-radius: 50%; }
-.fb-ambient .aurora--a { top: -14%; left: -8%; width: 500px; height: 500px; filter: blur(80px); opacity: .5; background: radial-gradient(circle, rgba(139,92,246,.55), transparent 68%); animation: fb-float-a 18s ease-in-out infinite; }
-.fb-ambient .aurora--b { top: 8%; right: -6%; width: 420px; height: 420px; filter: blur(80px); opacity: .45; background: radial-gradient(circle, rgba(99,102,241,.5), transparent 66%); animation: fb-float-b 22s ease-in-out 2s infinite reverse; }
-@keyframes fb-float-a { 0%,100%{transform:translate(0,0)} 33%{transform:translate(40px,-30px)} 66%{transform:translate(-20px,20px)} }
-@keyframes fb-float-b { 0%,100%{transform:translate(0,0)} 50%{transform:translate(-30px,-20px)} }
+.fb-ambient .aurora--a { top: -14%; left: -8%; width: 560px; height: 560px; filter: blur(90px); opacity: .5; background: radial-gradient(circle,rgba(139,92,246,.5),transparent 68%); animation: fb-fl-a 20s ease-in-out infinite; }
+.fb-ambient .aurora--b { top: 8%; right: -6%; width: 440px; height: 440px; filter: blur(85px); opacity: .45; background: radial-gradient(circle,rgba(99,102,241,.45),transparent 66%); animation: fb-fl-b 24s ease-in-out 3s infinite reverse; }
+.fb-ambient .aurora--c { bottom: -12%; left: 30%; width: 380px; height: 380px; filter: blur(75px); opacity: .35; background: radial-gradient(circle,rgba(245,158,11,.35),transparent 70%); animation: fb-fl-c 26s ease-in-out 5s infinite; }
+@keyframes fb-fl-a { 0%,100%{transform:translate(0,0) scale(1)} 33%{transform:translate(50px,-40px) scale(1.1)} 66%{transform:translate(-30px,25px) scale(.9)} }
+@keyframes fb-fl-b { 0%,100%{transform:translate(0,0)} 50%{transform:translate(-40px,-25px)} }
+@keyframes fb-fl-c { 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(30px,-20px) scale(1.15)} }
+.fb-ambient .bokeh { position: absolute; border-radius: 50%; filter: blur(12px); }
+.fb-ambient .bokeh--a { top: 18%; left: 55%; width: 160px; height: 160px; background: radial-gradient(circle,rgba(139,92,246,.12),transparent 70%); animation: fb-bk 20s ease-in-out infinite; }
+.fb-ambient .bokeh--b { top: 60%; left: 20%; width: 110px; height: 110px; background: radial-gradient(circle,rgba(99,102,241,.1),transparent 70%); animation: fb-bk 25s ease-in-out -6s infinite reverse; }
+@keyframes fb-bk { 0%,100%{transform:translate(0,0)} 50%{transform:translate(25px,-15px)} }
 .fb-ambient .twinkle { position: absolute; border-radius: 50%; animation: fb-tw 3.8s ease-in-out infinite; }
-.fb-ambient .twinkle--1 { top: 22%; left: 46%; width: 5px; height: 5px; background: #c4b5fd; box-shadow: 0 0 8px #a78bfa; animation-delay: -.2s; }
-.fb-ambient .twinkle--2 { top: 34%; left: 52%; width: 4px; height: 4px; background: #fcd34d; box-shadow: 0 0 8px #f59e0b; animation-delay: -1.1s; }
-.fb-ambient .twinkle--3 { top: 14%; left: 38%; width: 6px; height: 6px; background: #a5b4fc; box-shadow: 0 0 9px #6366f1; animation-delay: -2s; }
-@keyframes fb-tw { 0%,100%{opacity:.3;transform:scale(1)} 50%{opacity:1;transform:scale(2)} }
-.fb-ambient .glyph { position: absolute; display: block; line-height: 1; animation: fb-gly 8s ease-in-out infinite; }
-.fb-ambient .glyph--1 { top: 30%; left: 42%; color: rgba(99,102,241,.22); font-size: 26px; animation-delay: -2s; }
-.fb-ambient .glyph--2 { top: 52%; left: 48%; color: rgba(139,92,246,.2); font-size: 30px; animation-delay: -5s; }
-@keyframes fb-gly { 0%,100%{transform:translateY(0) rotate(0);opacity:.15} 50%{transform:translateY(-18px) rotate(8deg);opacity:.3} }
+.fb-ambient .twinkle--1 { top: 22%; left: 46%; width: 5px; height: 5px; background: #c4b5fd; box-shadow:0 0 10px #a78bfa; animation-delay:-.2s; }
+.fb-ambient .twinkle--2 { top: 34%; left: 52%; width: 4px; height: 4px; background: #fcd34d; box-shadow:0 0 10px #f59e0b; animation-delay:-1.1s; }
+.fb-ambient .twinkle--3 { top: 14%; left: 38%; width: 6px; height: 6px; background: #a5b4fc; box-shadow:0 0 12px #6366f1; animation-delay:-2s; }
+.fb-ambient .twinkle--4 { top: 48%; left: 64%; width: 4px; height: 4px; background: #c4b5fd; box-shadow:0 0 8px #8b5cf6; animation-delay:-3.2s; }
+.fb-ambient .twinkle--5 { top: 65%; left: 28%; width: 5px; height: 5px; background: #fcd34d; box-shadow:0 0 10px #f59e0b; animation-delay:-.5s; }
+@keyframes fb-tw { 0%,100%{opacity:.25;transform:scale(1)} 50%{opacity:1;transform:scale(2.2)} }
+.fb-ambient .glyph { position: absolute; display: block; line-height: 1; animation: fb-gly 9s ease-in-out infinite; }
+.fb-ambient .glyph--1 { top: 25%; left: 30%; color: rgba(245,158,11,.22); font-size: 28px; animation-delay: 0s; }
+.fb-ambient .glyph--2 { top: 45%; left: 55%; color: rgba(99,102,241,.2); font-size: 24px; animation-delay: -2s; }
+.fb-ambient .glyph--3 { top: 55%; left: 35%; color: rgba(239,68,68,.18); font-size: 22px; animation-delay: -4s; }
+.fb-ambient .glyph--4 { top: 20%; left: 60%; color: rgba(16,185,129,.18); font-size: 26px; animation-delay: -6s; }
+.fb-ambient .glyph--5 { top: 65%; left: 50%; color: rgba(99,102,241,.18); font-size: 20px; animation-delay: -1s; }
+@keyframes fb-gly { 0%,100%{transform:translateY(0) rotate(0);opacity:.12} 50%{transform:translateY(-22px) rotate(10deg);opacity:.3} }
+.fb-ambient .particles { position: absolute; inset: 0; }
+.fb-ambient .pt { position: absolute; width: 3px; height: 3px; border-radius: 50%; background: #a5b4fc; animation: fb-pt 12s linear infinite; }
+.fb-ambient .pt--1 { left: 15%; animation-delay: 0s; }
+.fb-ambient .pt--2 { left: 35%; animation-delay: -3s; }
+.fb-ambient .pt--3 { left: 55%; animation-delay: -6s; }
+.fb-ambient .pt--4 { left: 75%; animation-delay: -9s; }
+.fb-ambient .pt--5 { left: 25%; animation-delay: -1.5s; }
+.fb-ambient .pt--6 { left: 65%; animation-delay: -7.5s; }
+@keyframes fb-pt { 0%{transform:translateY(105vh) scale(0);opacity:0} 10%{opacity:.6} 90%{opacity:.6} 100%{transform:translateY(-10vh) scale(1.5);opacity:0} }
 /* Page */
 .fb-page { position: relative; z-index: 1; min-height: 60vh; padding: 7rem 20px 80px; display: flex; flex-direction: column; align-items: center; }
 .fb-glass { position: relative; z-index: 1; background: rgba(255,255,255,.75); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,.6); border-radius: 24px; box-shadow: 0 8px 32px rgba(0,0,0,.04), 0 2px 8px rgba(0,0,0,.02); }
