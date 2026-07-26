@@ -182,7 +182,6 @@ class MasterFeedbackController extends Controller
                 'Flag_Aktif' => $validated['flag_aktif'],
                 'Updated_At' => $now,
                 'Updated_By' => isset($user['id']) ? (string) $user['id'] : 'SISTEM',
-                'Updated_By_Id' => $user['id'] ?? null,
             ]);
 
         $this->clearDetailCache($id);
@@ -284,7 +283,6 @@ class MasterFeedbackController extends Controller
                 'Urutan' => $validated['urutan'],
                 'Updated_At' => $now,
                 'Updated_By' => isset($user['id']) ? (string) $user['id'] : 'SISTEM',
-                'Updated_By_Id' => $user['id'] ?? null,
             ]);
 
         if ($formId !== null) {
