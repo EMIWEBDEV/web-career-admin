@@ -113,6 +113,10 @@
                                 Detail Lamaran
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
                             </Link>
+                            <a v-if="fbCta(l)" :href="fbCta(l)" class="lms-btn-feedback">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                                Isi Feedback
+                            </a>
                             <button type="button" class="lms-btn-hapus" :disabled="menghapus === l.id" title="Hapus / batalkan lamaran ini" @click="minta(l)">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /></svg>
                             </button>
@@ -468,6 +472,8 @@ export default {
         },
     },
     methods: {
+        // [feat/feedback]
+        fbCta(l) { const fp = this.$page.props.feedbackPending; return fp && fp.Id_Lamaran === l.id ? fp.feedback_url : null; },
         k(l) { return l.kartu || {}; },
         katLabel(k) { return { REKRUTMEN: 'Rekrutmen', MT: 'Management Trainee', INTERNSHIP: 'Internship' }[k] || k || '—'; },
         stLabel(s) { return { BERJALAN: 'Berjalan', LULUS: 'Diterima', GUGUR: 'Tidak Lolos', MUNDUR: 'Mengundurkan Diri' }[s] || s; },
@@ -639,6 +645,10 @@ export default {
 .lms-btn-hapus { appearance: none; cursor: pointer; width: 44px; height: 44px; border-radius: 13px; border: 1px solid #f4c9c9; background: #fff; color: #dc2626; display: inline-flex; align-items: center; justify-content: center; transition: all 0.16s; }
 .lms-btn-hapus:hover:not(:disabled) { background: #dc2626; border-color: #dc2626; color: #fff; }
 .lms-btn-hapus:disabled { opacity: 0.55; cursor: default; }
+/* [feat/feedback] */
+.lms-btn-feedback { appearance: none; cursor: pointer; font-family: inherit; font-size: 13.5px; font-weight: 800; color: #fff; background: linear-gradient(135deg,#f59e0b,#d97706); border: none; padding: 13px 24px; border-radius: 14px; display: inline-flex; align-items: center; gap: 9px; box-shadow: 0 10px 24px rgba(245,158,11,.3); transition: transform .16s; text-decoration: none; animation: fb-cta-pulse 2s ease-in-out infinite; }
+@keyframes fb-cta-pulse { 0%,100%{box-shadow:0 10px 24px rgba(245,158,11,.3)} 50%{box-shadow:0 10px 34px rgba(245,158,11,.5)} }
+.lms-btn-feedback:hover { transform: translateY(-2px); color: #fff; }
 
 /* ═══ RIWAYAT ═══ */
 .lms-histrow { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin: 34px 2px 4px; }
