@@ -55,7 +55,9 @@
                 <div v-if="open === f.Id_Master_Feedback_Form" class="pkg-detail">
                     <div class="pkg-dhead pkg-dhead--indigo">
                         <span><i class="bi bi-list-ol"></i> PERTANYAAN FORM — {{ (f._pertanyaan || []).length }} butir</span>
-                        <button class="wca-btn wca-btn--soft wca-btn--sm" type="button" @click="showTypePicker(f)"><i class="bi bi-plus-circle"></i> Tambah Pertanyaan</button>
+                        <button class="wca-btn wca-btn--soft wca-btn--sm" type="button"
+                                :disabled="savingQ[f.Id_Master_Feedback_Form]"
+                                @click="showTypePicker(f)"><i class="bi bi-plus-circle"></i> Tambah Pertanyaan</button>
                     </div>
 
                     <!-- Loading skeleton -->
@@ -684,12 +686,15 @@ export default {
             if (!p._opsiList) return;
             p._opsiList.splice(idx, 1);
         },
-        removeQuestion(f, i) {
+        async removeQuestion(f, i) {
+            if (this.savingQ[f.Id_Master_Feedback_Form]) return; // cegah double-click
             f._pertanyaan.splice(i, 1);
-            this.saveQuestions(f); // langsung simpan ke DB — realtime
+            await this.saveQuestions(f); // langsung simpan ke DB — realtime
         },
         async saveQuestions(f) {
+            if (this.savingQ[f.Id_Master_Feedback_Form]) return;
             this.savingQ = { ...this.savingQ, [f.Id_Master_Feedback_Form]: true };
+            try {
             const optionTypes = ['RADIO', 'CHECKBOX', 'DROPDOWN'];
             const numericTypes = ['RATING', 'NPS', 'LIKERT'];
             const pertanyaan = (f._pertanyaan || []).map((p, i) => {
@@ -712,8 +717,9 @@ export default {
                 return item;
             });
             await axios.post(`/api/v1/karir/master-feedback/${f.Id_Master_Feedback_Form}/pertanyaan`, { pertanyaan });
-            this.savingQ = { ...this.savingQ, [f.Id_Master_Feedback_Form]: false };
-            // Data sudah sinkron — tidak perlu reload yang bisa mengganggu _editIdx
+            } finally {
+                this.savingQ = { ...this.savingQ, [f.Id_Master_Feedback_Form]: false };
+            }
         },
         initials(name) {
             if (!name) return '?';
