@@ -1,17 +1,13 @@
 <template>
   <CareerLayout>
-    <div class="authx" style="min-height:auto;background:transparent;flex:1;display:flex;flex-direction:column;align-items:center">
-      <div class="ambient" aria-hidden="true" style="position:fixed;inset:0;z-index:0;overflow:hidden;pointer-events:none">
+      <div class="fb-ambient" aria-hidden="true">
         <span class="aurora aurora--a"></span>
         <span class="aurora aurora--b"></span>
-        <div class="grid"></div>
         <span class="twinkle twinkle--1"></span>
         <span class="twinkle twinkle--2"></span>
         <span class="twinkle twinkle--3"></span>
         <i class="bi bi-chat-dots-fill glyph glyph--1"></i>
         <i class="bi bi-star-fill glyph glyph--2"></i>
-        <span class="bokeh bokeh--a"></span>
-        <span class="bokeh bokeh--b"></span>
       </div>
 
       <div class="fb-page">
@@ -51,13 +47,13 @@
           <FeedbackFormWizard v-else :pertanyaan="pertanyaan" :is-wajib="is_wajib" @submit="handleWizardSubmit"/>
         </div>
       </div>
-    </div>
   </CareerLayout>
 </template>
 
 <script setup>
 import { ref, computed } from 'vue'; import axios from 'axios'
 import CareerLayout from './Layouts/CareerLayout.vue'; import FeedbackFormWizard from './FeedbackFormWizard.vue'
+import './components/AuthShell.vue'; // load global .authx CSS
 defineOptions({ layout: null })
 import RatingInput from './components/feedback/RatingInput.vue'; import NpsInput from './components/feedback/NpsInput.vue'
 import LikertInput from './components/feedback/LikertInput.vue'; import TextareaInput from './components/feedback/TextareaInput.vue'
@@ -82,10 +78,27 @@ function handleWizardSubmit(w){jawaban.value=w;submitFeedback()}
 </script>
 
 <style scoped>
+/* Ambient */
+.fb-ambient { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+.fb-ambient .aurora { position: absolute; border-radius: 50%; }
+.fb-ambient .aurora--a { top: -14%; left: -8%; width: 500px; height: 500px; filter: blur(80px); opacity: .5; background: radial-gradient(circle, rgba(139,92,246,.55), transparent 68%); animation: fb-float-a 18s ease-in-out infinite; }
+.fb-ambient .aurora--b { top: 8%; right: -6%; width: 420px; height: 420px; filter: blur(80px); opacity: .45; background: radial-gradient(circle, rgba(99,102,241,.5), transparent 66%); animation: fb-float-b 22s ease-in-out 2s infinite reverse; }
+@keyframes fb-float-a { 0%,100%{transform:translate(0,0)} 33%{transform:translate(40px,-30px)} 66%{transform:translate(-20px,20px)} }
+@keyframes fb-float-b { 0%,100%{transform:translate(0,0)} 50%{transform:translate(-30px,-20px)} }
+.fb-ambient .twinkle { position: absolute; border-radius: 50%; animation: fb-tw 3.8s ease-in-out infinite; }
+.fb-ambient .twinkle--1 { top: 22%; left: 46%; width: 5px; height: 5px; background: #c4b5fd; box-shadow: 0 0 8px #a78bfa; animation-delay: -.2s; }
+.fb-ambient .twinkle--2 { top: 34%; left: 52%; width: 4px; height: 4px; background: #fcd34d; box-shadow: 0 0 8px #f59e0b; animation-delay: -1.1s; }
+.fb-ambient .twinkle--3 { top: 14%; left: 38%; width: 6px; height: 6px; background: #a5b4fc; box-shadow: 0 0 9px #6366f1; animation-delay: -2s; }
+@keyframes fb-tw { 0%,100%{opacity:.3;transform:scale(1)} 50%{opacity:1;transform:scale(2)} }
+.fb-ambient .glyph { position: absolute; display: block; line-height: 1; animation: fb-gly 8s ease-in-out infinite; }
+.fb-ambient .glyph--1 { top: 30%; left: 42%; color: rgba(99,102,241,.22); font-size: 26px; animation-delay: -2s; }
+.fb-ambient .glyph--2 { top: 52%; left: 48%; color: rgba(139,92,246,.2); font-size: 30px; animation-delay: -5s; }
+@keyframes fb-gly { 0%,100%{transform:translateY(0) rotate(0);opacity:.15} 50%{transform:translateY(-18px) rotate(8deg);opacity:.3} }
+/* Page */
 .fb-page { position: relative; z-index: 1; min-height: 60vh; padding: 7rem 20px 80px; display: flex; flex-direction: column; align-items: center; }
 .fb-glass { position: relative; z-index: 1; background: rgba(255,255,255,.75); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,.6); border-radius: 24px; box-shadow: 0 8px 32px rgba(0,0,0,.04), 0 2px 8px rgba(0,0,0,.02); }
 .fb-glass--center { text-align: center; max-width: 480px; width: 100%; padding: 48px 32px; margin-top: 60px; }
-.fb-glass--head { max-width: 640px; width: 100%; padding: 32px 30px; }
+.fb-glass--head { width: 100%; padding: 32px 30px; }
 .fb-glass__check { width: 72px; height: 72px; border-radius: 50%; background: linear-gradient(135deg,#10b981,#059669); color: #fff; font-size: 2rem; font-weight: 700; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; box-shadow: 0 8px 24px rgba(16,185,129,.25); }
 .fb-glass__icon { font-size: 2.5rem; color: #6366f1; margin-bottom: 16px; }
 .fb-glass h1 { font-size: 1.6rem; font-weight: 800; color: #1e293b; margin: 0 0 10px; }
