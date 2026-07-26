@@ -97,7 +97,7 @@
 
                                 <!-- EXPANDED STATE -->
                                 <div v-else class="fb-q-expanded">
-                                    <div class="fb-q-expanded__head" @click="saveQuestions(f); f._editIdx = null">
+                                    <div class="fb-q-expanded__head" @click="saveIfChanged(f); f._editIdx = null">
                                         <span class="fb-q-drag" @click.stop><i class="bi bi-grip-vertical"></i></span>
                                         <span class="fb-q-expanded__num">{{ i + 1 }}</span>
                                         <span class="fb-q-expanded__title">Edit Pertanyaan</span>
@@ -599,12 +599,21 @@ export default {
         startEditing(f, i) {
             // Toggle: kalau sudah terbuka → tutup
             if (f._editIdx === i) {
+                this.saveIfChanged(f);
                 f._editIdx = null;
                 return;
             }
-            this.saveQuestions(f); // simpan dulu sebelum switch
+            this.saveIfChanged(f); // simpan hanya jika ada perubahan
             this.snapshotQuestion(f, i); // ambil snapshot sebelum edit
             f._editIdx = i;
+        },
+        saveIfChanged(f) {
+            // Hanya simpan jika ada perubahan dari snapshot terakhir
+            if (!f._snapshot) return;
+            const current = f._pertanyaan?.[f._editIdx];
+            if (!current) return;
+            const changed = JSON.stringify(current) !== JSON.stringify(f._snapshot);
+            if (changed) this.saveQuestions(f);
         },
         snapshotQuestion(f, i) {
             if (!f._pertanyaan || !f._pertanyaan[i]) return;
@@ -619,9 +628,11 @@ export default {
             f._editIdx = null;
         },
         async doneEditing(f) {
-            f._editIdx = null; // tutup dulu — instant feedback
+            const idx = f._editIdx; // simpan index sebelum di-null
+            f._editIdx = null;
+            const changed = f._snapshot && JSON.stringify(f._pertanyaan?.[idx]) !== JSON.stringify(f._snapshot);
             f._snapshot = null;
-            await this.saveQuestions(f); // lalu simpan ke DB
+            if (changed) await this.saveQuestions(f);
         },
         addQuestion(f) { this.showTypePicker(f); },
         onReorder(f) {
