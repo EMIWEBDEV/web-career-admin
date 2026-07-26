@@ -537,7 +537,7 @@
                     <div v-if="newAssign.type === 'specific'" class="fb-assign-form__program">
                         <label class="wca-field-lbl">Pilih Program</label>
                         <el-select v-model="newAssign.program_id" placeholder="Cari program..." style="width:100%" filterable size="large">
-                            <el-option v-for="p in programList" :key="p.Id_Program" :label="p.Nama" :value="p.Id_Program" />
+                            <el-option v-for="p in programList" :key="p.value" :label="p.label" :value="p.value" />
                         </el-select>
                     </div>
                     <button class="fb-assign-form__submit" @click="addAssignment" :disabled="!canAddAssign">
