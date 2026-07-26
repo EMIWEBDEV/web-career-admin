@@ -80,9 +80,9 @@
                         @end="onReorder(f)"
                     >
                         <template #item="{ element: p, index: i }">
-                            <div :class="['fb-q-card', { 'fb-q-card--expanded': f._editIdx === i }]">
+                            <div :class="['fb-q-card', { 'fb-q-card--expanded': f._editIdx === i, 'fb-q-card--view': f._viewIdx === i }]">
                                 <!-- COLLAPSED STATE -->
-                                <div v-if="f._editIdx !== i" class="fb-q-collapsed" @click="startEditing(f, i)">
+                                <div v-if="f._editIdx !== i && f._viewIdx !== i" class="fb-q-collapsed" @click="f._viewIdx = i">
                                     <span class="fb-q-drag" @click.stop><i class="bi bi-grip-vertical"></i></span>
                                     <span class="fb-q-collapsed__num">{{ i + 1 }}</span>
                                     <span class="fb-q-collapsed__icon" v-html="typeIcon(p.Tipe)"></span>
@@ -91,11 +91,32 @@
                                         <small>{{ typeLabel(p.Tipe) }}</small>
                                     </span>
                                     <span :class="['wca-badge', typeBadgeClass(p.Tipe)]" style="margin-right:8px">{{ p.Tipe }}</span>
-                                    <button class="fb-q-collapsed__edit" @click.stop="f._editIdx = i"><i class="bi bi-pencil"></i></button>
+                                    <button class="fb-q-collapsed__edit" @click.stop="startEditing(f, i)"><i class="bi bi-pencil"></i></button>
                                     <button class="fb-q-collapsed__del" @click.stop="removeQuestion(f, i)"><i class="bi bi-trash"></i></button>
                                 </div>
 
-                                <!-- EXPANDED STATE -->
+                                <!-- VIEW STATE: readonly detail -->
+                                <div v-else-if="f._viewIdx === i" class="fb-q-view">
+                                    <div class="fb-q-view__head">
+                                        <span class="fb-q-view__num">{{ i + 1 }}</span>
+                                        <span :class="['wca-badge', typeBadgeClass(p.Tipe)]">{{ p.Tipe }}</span>
+                                        <span class="fb-q-view__q">{{ p.Label || '(Tanpa judul)' }}</span>
+                                        <div class="fb-q-view__actions">
+                                            <button class="fb-q-view__btn fb-q-view__btn--edit" @click="startEditing(f, i)"><i class="bi bi-pencil"></i> Edit</button>
+                                            <button class="fb-q-view__btn fb-q-view__btn--close" @click="f._viewIdx = null"><i class="bi bi-x-lg"></i></button>
+                                        </div>
+                                    </div>
+                                    <div class="fb-q-view__body">
+                                        <div class="fb-q-view__meta">
+                                            <span v-if="['RATING','NPS','LIKERT'].includes(p.Tipe)"><i class="bi bi-sliders2-vertical"></i> Skala {{ p.Skala_Min ?? defaultMin(p.Tipe) }} – {{ p.Skala_Max ?? defaultMax(p.Tipe) }}</span>
+                                            <span v-if="p.Tipe === 'TEXTAREA'"><i class="bi bi-text-paragraph"></i> Maks. 500 karakter</span>
+                                            <span v-if="['RADIO','CHECKBOX','DROPDOWN'].includes(p.Tipe) && (p._opsiList||[]).filter(o=>o.trim()).length"><i class="bi bi-list-ul"></i> {{ (p._opsiList||[]).filter(o=>o.trim()).length }} opsi: {{ (p._opsiList||[]).filter(o=>o.trim()).slice(0,5).join(', ') }}<template v-if="(p._opsiList||[]).filter(o=>o.trim()).length>5"> ...</template></span>
+                                            <span v-if="['NPS','LIKERT'].includes(p.Tipe) && (p.Label_Min||p.Label_Max)"><i class="bi bi-tags"></i> "{{ p.Label_Min || (p.Tipe==='NPS'?'Tidak mungkin':'Sangat Tidak Setuju') }}" — "{{ p.Label_Max || (p.Tipe==='NPS'?'Sangat mungkin':'Sangat Setuju') }}"</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- EDIT STATE -->
                                 <div v-else class="fb-q-expanded">
                                     <div class="fb-q-expanded__head">
                                         <span class="fb-q-drag"><i class="bi bi-grip-vertical"></i></span>
@@ -820,6 +841,29 @@ export default {
 }
 .fb-q-card:hover { border-color: #c4b5fd; }
 .fb-q-card--expanded { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.06); }
+.fb-q-card--view { border-color: #c4b5fd; }
+
+/* ── View State (readonly detail) ── */
+.fb-q-view__head {
+    display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+    background: #fafbff; border-bottom: 1px solid #ede9fe;
+}
+.fb-q-view__num {
+    width: 24px; height: 24px; border-radius: 6px; background: #6366f1;
+    color: #fff; font-size: .7rem; font-weight: 700; display: flex; align-items: center; justify-content: center;
+}
+.fb-q-view__q { flex: 1; font-size: .84rem; font-weight: 600; color: #334155; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fb-q-view__actions { display: flex; gap: 6px; }
+.fb-q-view__btn {
+    border: none; padding: 5px 12px; border-radius: 7px; font-size: .73rem; font-weight: 700; cursor: pointer;
+}
+.fb-q-view__btn--edit { background: #f1f5f9; color: #6366f1; }
+.fb-q-view__btn--edit:hover { background: #e2e8f0; }
+.fb-q-view__btn--close { background: #f1f5f9; color: #94a3b8; }
+.fb-q-view__btn--close:hover { background: #e2e8f0; color: #64748b; }
+.fb-q-view__body { padding: 12px 14px; }
+.fb-q-view__meta { display: flex; flex-wrap: wrap; gap: 12px; font-size: .78rem; color: #64748b; }
+.fb-q-view__meta span { display: inline-flex; align-items: center; gap: 4px; }
 
 /* Drag handle */
 .fb-q-drag { cursor: grab; color: #cbd5e1; font-size: 1rem; padding: 0 2px; user-select: none; flex-shrink: 0; line-height: 1; }
