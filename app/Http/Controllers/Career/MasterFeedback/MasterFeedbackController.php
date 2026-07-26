@@ -67,7 +67,12 @@ class MasterFeedbackController extends Controller
             ->orderBy('Urutan')
             ->select('Id_Master_Feedback_Pertanyaan', 'Master_Feedback_Form_Id', 'Urutan',
                      'Tipe', 'Label', 'Opsi', 'Skala_Min', 'Skala_Max')
-            ->get();
+            ->get()
+            ->map(function ($p) {
+                // Decode JSON Opsi → array agar frontend tidak parsing manual
+                $p->Opsi = $p->Opsi ? json_decode($p->Opsi, true) : [];
+                return $p;
+            });
 
         $form->pertanyaan = $pertanyaan;
         return ResponseHelper::success($form);

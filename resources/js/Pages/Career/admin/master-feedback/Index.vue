@@ -513,7 +513,7 @@ export default {
                 f._pertanyaan = (data.result?.pertanyaan || []).map(p => ({
                     ...p,
                     _key: 'q_' + (p.Id_Master_Feedback_Pertanyaan || Math.random().toString(36).slice(2, 10)),
-                    _opsiList: (p.Opsi && p.Opsi.length) ? [...p.Opsi] : [],
+                    _opsiList: Array.isArray(p.Opsi) ? [...p.Opsi] : [],
                 }));
                 // Jangan reset _editIdx — biarkan card yang sedang diedit tetap terbuka
                 // Hanya reset saat pertama kali expand (dipanggil dari toggleExpand)
