@@ -66,7 +66,7 @@
         </div>
 
         <!-- Modal buat/ubah jenis tes -->
-        <AdminModal :show="show" :title="editingId ? 'Ubah Jenis Tes' : 'Tambah Jenis Tes'" subtitle="Definisikan metode tes lalu susun paket-nya" icon="bi-ui-checks-grid" lg :save-label="editingId ? 'Perbarui' : 'Simpan Tes'" @close="show = false" @save="save">
+        <AdminModal :busy="saving" :show="show" :title="editingId ? 'Ubah Jenis Tes' : 'Tambah Jenis Tes'" subtitle="Definisikan metode tes lalu susun paket-nya" icon="bi-ui-checks-grid" lg :save-label="editingId ? 'Perbarui' : 'Simpan Tes'" @close="show = false" @save="save">
             <div class="wca-fsection">
                 <div class="wca-fsection__label"><i class="bi bi-ui-checks-grid"></i> Detail Tes</div>
                 <div class="wca-form">

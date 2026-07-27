@@ -71,7 +71,7 @@
             </div>
         </div>
 
-        <AdminModal
+        <AdminModal :busy="saving"
             :show="show"
             :title="editingId ? 'Ubah Mode' : 'Tambah Mode Kustom'"
             subtitle="Untuk pola pelaksanaan di luar bawaan"

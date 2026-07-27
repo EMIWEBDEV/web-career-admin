@@ -60,7 +60,7 @@
             </div>
         </div>
 
-        <AdminModal
+        <AdminModal :busy="saving"
             :show="show"
             :title="editingId ? 'Ubah Tipe Tahap' : 'Tambah Tipe Kustom'"
             subtitle="Untuk kebutuhan tahap yang belum tercakup tipe bawaan"

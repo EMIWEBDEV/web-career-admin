@@ -67,7 +67,7 @@
             </div>
         </div>
 
-        <AdminModal :show="show" :title="editingId ? 'Ubah Kategori' : 'Kategori Baru'" subtitle="Kelompok Talent Acquisition" icon="bi-diagram-3" :save-label="editingId ? 'Perbarui' : 'Simpan Kategori'" @close="show = false" @save="save">
+        <AdminModal :busy="saving" :show="show" :title="editingId ? 'Ubah Kategori' : 'Kategori Baru'" subtitle="Kelompok Talent Acquisition" icon="bi-diagram-3" :save-label="editingId ? 'Perbarui' : 'Simpan Kategori'" @close="show = false" @save="save">
             <div class="wca-fsection">
                 <div class="wca-fsection__label"><i class="bi bi-diagram-3"></i> Detail Kategori</div>
                 <div class="wca-form">

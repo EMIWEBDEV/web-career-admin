@@ -156,7 +156,7 @@
         </div>
 
         <!-- Modal buat/ubah program -->
-        <AdminModal :show="show" :title="editingId ? 'Ubah Program' : 'Buat Program Kegiatan'" :subtitle="langkahMeta[langkah].sub" icon="bi-diagram-3-fill" xl @close="show = false">
+        <AdminModal :busy="saving" :show="show" :title="editingId ? 'Ubah Program' : 'Buat Program Kegiatan'" :subtitle="langkahMeta[langkah].sub" icon="bi-diagram-3-fill" xl @close="show = false">
             <!-- ── Stepper ── -->
             <nav class="pgk-steps">
                 <button

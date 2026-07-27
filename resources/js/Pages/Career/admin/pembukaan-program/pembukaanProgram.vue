@@ -61,7 +61,7 @@
         </div>
 
         <!-- Modal buka/ubah -->
-        <AdminModal :show="show" :title="editingId ? 'Ubah Pembukaan' : 'Buka Program'" subtitle="Publikasikan program ke landing + window pendaftaran" icon="bi-megaphone" :save-label="editingId ? 'Perbarui' : 'Buka'" @close="show = false" @save="save">
+        <AdminModal :busy="saving" :show="show" :title="editingId ? 'Ubah Pembukaan' : 'Buka Program'" subtitle="Publikasikan program ke landing + window pendaftaran" icon="bi-megaphone" :save-label="editingId ? 'Perbarui' : 'Buka'" @close="show = false" @save="save">
             <div class="wca-fsection">
                 <div class="wca-fsection__label"><i class="bi bi-megaphone"></i> Detail Pembukaan</div>
                 <div class="wca-form">

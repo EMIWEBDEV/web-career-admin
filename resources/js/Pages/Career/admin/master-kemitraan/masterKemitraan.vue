@@ -136,7 +136,7 @@
         </div>
 
         <!-- Modal Create/Edit -->
-        <AdminModal
+        <AdminModal :busy="saving"
             :show="show"
             :title="editingId ? 'Ubah MoU' : 'MoU Baru'"
             subtitle="Kerja sama institusi untuk program Internship"

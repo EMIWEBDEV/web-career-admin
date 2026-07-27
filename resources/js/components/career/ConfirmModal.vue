@@ -11,7 +11,9 @@
         <template #footer>
             <button class="wca-btn wca-btn--ghost" type="button" @click="$emit('cancel')"><i class="bi bi-x-circle"></i> {{ cancelLabel }}</button>
             <button class="wca-btn" :class="danger ? 'wca-btn--danger' : 'wca-btn--dark'" type="button" :disabled="busy" @click="$emit('confirm')">
-                <i class="bi" :class="danger ? 'bi-trash' : 'bi-check-lg'"></i> {{ busy ? busyLabel : confirmLabel }}
+                <span v-if="busy" class="wca-spin" aria-hidden="true"></span>
+                <i v-else class="bi" :class="danger ? 'bi-trash' : 'bi-check-lg'"></i>
+                {{ busy ? busyLabel : confirmLabel }}
             </button>
         </template>
     </AdminModal>

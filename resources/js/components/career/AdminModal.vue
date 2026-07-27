@@ -5,8 +5,12 @@
 <template>
     <teleport to="body">
         <transition name="wca-modal">
-            <div v-if="show" class="wca-modal-mask wca" @click.self="$emit('close')">
-                <div class="wca-modal" :class="{ 'wca-modal--lg': lg, 'wca-modal--xl': xl }" role="dialog" aria-modal="true">
+            <div v-if="show" class="wca-modal-mask wca" @click.self="tutup">
+                <div class="wca-modal" :class="{ 'wca-modal--lg': lg, 'wca-modal--xl': xl, 'is-busy': busy }" role="dialog" aria-modal="true" :aria-busy="busy">
+                    <!-- Garis progres tipis di puncak modal: penanda proses berjalan
+                         yang tetap terlihat walau tombol sudah tergulir keluar layar. -->
+                    <div v-if="busy" class="wca-modal__bar" aria-hidden="true"></div>
+
                     <div class="wca-modal__head">
                         <div class="wca-modal__headglow"></div>
                         <span class="wca-modal__icon"><i class="bi" :class="icon"></i></span>
@@ -14,7 +18,7 @@
                             <h3>{{ title }}</h3>
                             <p v-if="subtitle">{{ subtitle }}</p>
                         </div>
-                        <button class="wca-modal__close" type="button" aria-label="Tutup" @click="$emit('close')">
+                        <button class="wca-modal__close" type="button" aria-label="Tutup" :disabled="busy" @click="tutup">
                             <i class="bi bi-x-lg"></i>
                         </button>
                     </div>
@@ -23,16 +27,18 @@
 
                     <div class="wca-modal__foot">
                         <div v-if="footNote" class="wca-modal__footnote">
-                            <i class="bi bi-shield-check"></i>
-                            <span>{{ footNote }}</span>
+                            <i class="bi" :class="busy ? 'bi-hourglass-split' : 'bi-shield-check'"></i>
+                            <span>{{ busy ? busyLabel : footNote }}</span>
                         </div>
                         <div class="wca-modal__footbtns">
                             <slot name="footer">
-                                <button class="wca-btn wca-btn--ghost" type="button" @click="$emit('close')">
+                                <button class="wca-btn wca-btn--ghost" type="button" :disabled="busy" @click="tutup">
                                     <i class="bi bi-x-lg"></i> {{ cancelLabel }}
                                 </button>
-                                <button class="wca-btn wca-btn--dark" type="button" @click="$emit('save')">
-                                    <i class="bi bi-save"></i> {{ saveLabel }}
+                                <button class="wca-btn wca-btn--dark" type="button" :disabled="busy" @click="$emit('save')">
+                                    <span v-if="busy" class="wca-spin" aria-hidden="true"></span>
+                                    <i v-else class="bi bi-save"></i>
+                                    {{ busy ? busyLabel : saveLabel }}
                                 </button>
                             </slot>
                         </div>
@@ -44,7 +50,7 @@
 </template>
 
 <script setup>
-defineProps({
+const props = defineProps({
     show: { type: Boolean, default: false },
     title: { type: String, default: '' },
     subtitle: { type: String, default: '' },
@@ -54,6 +60,17 @@ defineProps({
     saveLabel: { type: String, default: 'Simpan Data' },
     cancelLabel: { type: String, default: 'Batal' },
     footNote: { type: String, default: 'Periksa kembali data sebelum disimpan.' },
+    /* Proses simpan sedang berjalan: tombol dikunci + spinner, modal tak bisa
+       ditutup. Mencegah klik ganda (data dobel) sekaligus memberi tahu pengguna
+       bahwa kliknya SUDAH diterima. */
+    busy: { type: Boolean, default: false },
+    busyLabel: { type: String, default: 'Menyimpan…' },
 });
-defineEmits(['close', 'save']);
+
+const emit = defineEmits(['close', 'save']);
+
+/** Tutup diabaikan selama proses berjalan — termasuk klik latar & tombol X. */
+function tutup() {
+    if (! props.busy) emit('close');
+}
 </script>

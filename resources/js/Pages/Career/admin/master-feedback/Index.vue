@@ -553,6 +553,7 @@ export default {
         return {
             list: [],
             loading: false,
+            saving: false, // proses simpan form berjalan → tombol modal dikunci
             open: null,
             assignShow: false,
             assignForm: null,
@@ -692,6 +693,8 @@ export default {
             this.show = true;
         },
         async saveForm() {
+            if (this.saving) return; // cegah klik ganda → data dobel
+            this.saving = true;
             try {
                 const payload = { nama: this.form.Nama, deskripsi: this.form.Deskripsi, mode_tampilan: this.form.Mode_Tampilan, durasi_hari: this.form.Durasi_Hari, flag_aktif: this.form.Flag_Aktif };
                 if (this.editingId) {
@@ -705,6 +708,8 @@ export default {
                 const msg = e.response?.data?.message || e.message || 'Gagal menyimpan form';
                 this.$message.error(msg);
                 console.error('[MasterFeedback:saveForm]', e);
+            } finally {
+                this.saving = false;
             }
         },
         askRemove(f) { this.removeTarget = f; },

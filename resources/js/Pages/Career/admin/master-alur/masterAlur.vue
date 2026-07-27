@@ -141,7 +141,7 @@
         </div>
 
         <!-- Modal buat/ubah alur — builder tahapan -->
-        <AdminModal :show="show" :title="editingId ? 'Ubah Alur Seleksi' : 'Buat Alur Seleksi'" subtitle="Identitas alur & susunan tahapan." icon="bi-signpost-split" lg :save-label="editingId ? 'Perbarui' : 'Simpan Alur'" @close="show = false" @save="save">
+        <AdminModal :busy="saving" :show="show" :title="editingId ? 'Ubah Alur Seleksi' : 'Buat Alur Seleksi'" subtitle="Identitas alur & susunan tahapan." icon="bi-signpost-split" lg :save-label="editingId ? 'Perbarui' : 'Simpan Alur'" @close="show = false" @save="save">
             <div class="wca-fsection">
                 <div class="wca-fsection__label"><i class="bi bi-signpost-split"></i> Detail Alur</div>
                 <div class="wca-form">

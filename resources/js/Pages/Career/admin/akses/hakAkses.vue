@@ -149,7 +149,7 @@
         </div>
 
         <!-- MODAL: beri akses halaman -->
-        <AdminModal :show="showTambah" title="Beri Akses Halaman" subtitle="Pilih pengguna lalu centang halaman yang boleh dibuka" icon="bi-person-plus" lg save-label="Simpan Akses" @close="showTambah = false" @save="simpanTambah">
+        <AdminModal :busy="sibuk" :show="showTambah" title="Beri Akses Halaman" subtitle="Pilih pengguna lalu centang halaman yang boleh dibuka" icon="bi-person-plus" lg save-label="Simpan Akses" @close="showTambah = false" @save="simpanTambah">
             <div class="wca-fsection">
                 <div class="wca-fsection__label"><i class="bi bi-person"></i> Pengguna</div>
                 <el-select v-model="formTambah.userId" filterable placeholder="Cari nama / email" style="width:100%">
@@ -176,7 +176,7 @@
         </AdminModal>
 
         <!-- MODAL: duplikat akses -->
-        <AdminModal :show="showDup" title="Duplikat Hak Akses" subtitle="Salin seluruh hak akses dari satu pengguna ke pengguna lain" icon="bi-files" save-label="Duplikat" @close="showDup = false" @save="simpanDup">
+        <AdminModal :busy="sibuk" :show="showDup" title="Duplikat Hak Akses" subtitle="Salin seluruh hak akses dari satu pengguna ke pengguna lain" icon="bi-files" save-label="Duplikat" @close="showDup = false" @save="simpanDup">
             <div class="wca-fsection">
                 <div class="wca-form">
                     <div>

@@ -71,7 +71,7 @@
             </div>
         </div>
 
-        <AdminModal
+        <AdminModal :busy="saving"
             :show="show"
             :title="editingId ? 'Ubah Sumber' : 'Tambah Sumber Kustom'"
             subtitle="Untuk channel/audience di luar bawaan"

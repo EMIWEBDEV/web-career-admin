@@ -93,7 +93,7 @@
             </div>
         </div>
 
-        <AdminModal
+        <AdminModal :busy="saving"
             :show="show" :title="editingId ? 'Ubah Menu' : 'Tambah Menu'"
             subtitle="Halaman yang dapat diberi hak akses" icon="bi-list-nested"
             :save-label="editingId ? 'Perbarui' : 'Simpan Menu'" @close="show = false" @save="save"

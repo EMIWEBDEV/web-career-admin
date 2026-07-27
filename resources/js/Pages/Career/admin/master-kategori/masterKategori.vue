@@ -98,7 +98,7 @@
             </div>
         </div>
 
-        <AdminModal
+        <AdminModal :busy="saving"
             :show="show"
             :title="editingId ? 'Ubah Kategori' : 'Kategori Baru'"
             subtitle="Identitas + preset default (bisa diubah saat buat program)"

@@ -129,7 +129,7 @@
         </div>
 
         <!-- ══════════ MODAL: identitas + pilih komponen ══════════ -->
-        <AdminModal
+        <AdminModal :busy="saving"
             :show="show"
             :title="editingId ? 'Ubah Formulir' : 'Daftarkan Formulir'"
             subtitle="Pertanyaannya ditulis di kode — di sini Anda memilih komponen mana yang dipakai."
@@ -194,7 +194,7 @@
         </AdminModal>
 
         <!-- ══════════ MODAL: daftar pertanyaan (ringkas, bisa dibaca cepat) ══════════ -->
-        <AdminModal
+        <AdminModal :busy="saving"
             :show="isiShow"
             :title="`Pertanyaan — ${isiFormulir?.nama || ''}`"
             :subtitle="`${isiInfo?.nama}. Ditulis di kode; ubah lewat developer.`"
@@ -259,7 +259,7 @@
         </AdminModal>
 
         <!-- ══════════ MODAL: pratinjau tampilan kandidat ══════════ -->
-        <AdminModal
+        <AdminModal :busy="saving"
             :show="praShow"
             :title="`Pratinjau — ${praFormulir?.nama || ''}`"
             :subtitle="`${praInfo?.nama}. Ini persis yang dilihat kandidat; isian di sini tidak disimpan.`"

@@ -73,7 +73,7 @@
             </div>
         </div>
 
-        <AdminModal
+        <AdminModal :busy="saving"
             :show="show"
             :title="editingId ? 'Ubah Perilaku' : 'Tambah Perilaku Kustom'"
             subtitle="Untuk cara pelaksanaan tahap yang belum tercakup"

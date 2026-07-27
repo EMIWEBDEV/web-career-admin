@@ -75,7 +75,7 @@
             </div>
         </div>
 
-        <AdminModal :show="show" :title="editingId ? 'Ubah Akun' : (tab === 'pengguna' ? 'Pengguna Baru' : 'Admin Baru')" subtitle="Akun akses sistem" icon="bi-person-badge" :save-label="editingId ? 'Perbarui' : 'Simpan Akun'" @close="show = false" @save="save">
+        <AdminModal :busy="saving" :show="show" :title="editingId ? 'Ubah Akun' : (tab === 'pengguna' ? 'Pengguna Baru' : 'Admin Baru')" subtitle="Akun akses sistem" icon="bi-person-badge" :save-label="editingId ? 'Perbarui' : 'Simpan Akun'" @close="show = false" @save="save">
             <div class="wca-fsection">
                 <div class="wca-fsection__label"><i class="bi bi-person"></i> Identitas</div>
                 <div class="wca-form">

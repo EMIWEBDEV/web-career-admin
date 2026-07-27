@@ -64,7 +64,7 @@
         </div>
 
         <!-- Modal buat/ubah jadwal -->
-        <AdminModal :show="show" :title="editingId ? 'Ubah Jadwal' : 'Buat Jadwal Kegiatan'" subtitle="Isi identitas jadwal lalu susun agenda (rapat/campaign/seleksi/evaluasi)" icon="bi-calendar3-range" lg :save-label="editingId ? 'Perbarui' : 'Simpan Jadwal'" @close="show = false" @save="save">
+        <AdminModal :busy="saving" :show="show" :title="editingId ? 'Ubah Jadwal' : 'Buat Jadwal Kegiatan'" subtitle="Isi identitas jadwal lalu susun agenda (rapat/campaign/seleksi/evaluasi)" icon="bi-calendar3-range" lg :save-label="editingId ? 'Perbarui' : 'Simpan Jadwal'" @close="show = false" @save="save">
             <div class="wca-fsection">
                 <div class="wca-fsection__label"><i class="bi bi-info-circle"></i> Identitas Jadwal</div>
                 <div class="wca-form">

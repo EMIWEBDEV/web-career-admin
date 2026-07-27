@@ -102,7 +102,7 @@
         </div>
 
         <!-- Modal Create/Edit -->
-        <AdminModal
+        <AdminModal :busy="saving"
             :show="show"
             :title="editingId ? 'Ubah Kampus' : 'Kampus Baru'"
             subtitle="Universitas / mitra pendidikan"

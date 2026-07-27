@@ -70,7 +70,7 @@
             </div>
         </div>
 
-        <AdminModal
+        <AdminModal :busy="saving"
             :show="show"
             :title="editingId ? 'Ubah Mode Pengumuman' : 'Tambah Mode Kustom'"
             subtitle="Untuk cara penerbitan hasil yang belum tercakup mode bawaan"

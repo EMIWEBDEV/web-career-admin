@@ -66,7 +66,7 @@
             </div>
         </div>
 
-        <AdminModal
+        <AdminModal :busy="saving"
             :show="show"
             :title="editingId ? 'Ubah Mode Keputusan' : 'Tambah Mode Kustom'"
             subtitle="Perilaku di bawah ini yang dijalankan mesin seleksi"

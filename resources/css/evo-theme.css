@@ -2924,6 +2924,78 @@ h6,
     transition: all 0.15s ease;
     white-space: nowrap;
 }
+/* ── STATUS PROSES BERJALAN (dipakai SELURUH tombol admin) ──
+   Tombol yang sedang memproses dikunci & kehilangan efek hover, supaya:
+   1) pengguna tahu kliknya SUDAH diterima (bukan tombol macet),
+   2) klik ganda tidak membuat data dobel. */
+.wca-btn:disabled,
+.wca-btn[disabled],
+.wca-btn.is-busy {
+    opacity: 0.62;
+    cursor: not-allowed;
+    filter: saturate(0.85);
+}
+.wca-btn:disabled:hover,
+.wca-btn[disabled]:hover,
+.wca-btn.is-busy:hover {
+    transform: none !important;
+    box-shadow: none !important;
+}
+
+/* Spinner ringkas — mewarisi warna teks tombol, jadi cocok di semua varian. */
+.wca-spin {
+    display: inline-block;
+    width: 0.82em;
+    height: 0.82em;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: wcaSpin 0.62s linear infinite;
+    flex: 0 0 auto;
+}
+@keyframes wcaSpin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Garis progres di puncak modal saat menyimpan. */
+.wca-modal__bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    border-radius: 3px 3px 0 0;
+    overflow: hidden;
+    background: rgba(99, 102, 241, 0.14);
+    z-index: 5;
+}
+.wca-modal__bar::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    width: 38%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #6366f1, #a855f7, #6366f1);
+    animation: wcaBar 1.15s ease-in-out infinite;
+}
+@keyframes wcaBar {
+    0% {
+        transform: translateX(-100%);
+    }
+    100% {
+        transform: translateX(300%);
+    }
+}
+
+/* Saat menyimpan, isi modal tidak bisa diutak-atik lagi. */
+.wca-modal.is-busy .wca-modal__body {
+    pointer-events: none;
+    opacity: 0.72;
+    transition: opacity 0.18s ease;
+}
+
 .wca-btn--primary {
     background: linear-gradient(120deg, #4f46e5 0%, #7c3aed 100%); /* selaras palet login: indigo → violet */
     color: #fff;
