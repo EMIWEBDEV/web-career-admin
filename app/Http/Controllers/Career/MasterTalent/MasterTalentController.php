@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Career\MasterTalent;
 
 use App\Helpers\ResponseHelper;
 use App\Http\Controllers\Controller;
+use App\Support\Career\KodeUnik;
 use App\Support\CareerShell;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -69,14 +70,8 @@ class MasterTalentController extends Controller
             $now = now();
 
             // Kode = NAMA di-uppercase (pola master: REKRUTMEN, MANAGEMENT_TRAINEE, dst) — tanpa prefix.
-            $base = trim(preg_replace('/[^A-Z0-9]+/', '_', strtoupper($data['nama'])), '_') ?: 'KATEGORI';
-            $base = substr($base, 0, 26); // Kode varchar(30): sisakan ruang untuk sufiks _N
-            $kode = $base;
-            $n = 2;
-            while (DB::table('N_WEB_CAREERS_Master_Talent_Acquisition')->where('Kode', $kode)->exists()) {
-                $kode = $base . '_' . $n++;
-            }
-
+            // Kode dibuat memakai lebar kolom penuh; sufiks _N hanya bila bentrok.
+            $kode = KodeUnik::buat('N_WEB_CAREERS_Master_Talent_Acquisition', 'Kode', $data['nama'], 30, 'KATEGORI');
             DB::table('N_WEB_CAREERS_Master_Talent_Acquisition')->insert([
                 'Kode' => $kode,
                 'Nama' => $data['nama'],

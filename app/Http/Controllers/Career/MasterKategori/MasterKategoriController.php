@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Career\MasterKategori;
 
 use App\Helpers\ResponseHelper;
 use App\Http\Controllers\Controller;
+use App\Support\Career\KodeUnik;
 use App\Support\CareerShell;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -79,14 +80,8 @@ class MasterKategoriController extends Controller
             $now = now();
 
             // Kode = NAMA di-uppercase, unik (pola master siklus) — tanpa prefix.
-            $base = trim(preg_replace('/[^A-Z0-9]+/', '_', strtoupper($data['nama'])), '_') ?: 'KATEGORI';
-            $base = substr($base, 0, 16); // Kode varchar(20): sisakan ruang untuk sufiks _N
-            $kode = $base;
-            $n = 2;
-            while (DB::table('N_WEB_CAREERS_Master_Kategori')->where('Kode', $kode)->exists()) {
-                $kode = $base . '_' . $n++;
-            }
-
+            // Kode dibuat memakai lebar kolom penuh; sufiks _N hanya bila bentrok.
+            $kode = KodeUnik::buat('N_WEB_CAREERS_Master_Kategori', 'Kode', $data['nama'], 20, 'KATEGORI');
             DB::table('N_WEB_CAREERS_Master_Kategori')->insert([
                 'Kode' => $kode,
                 'Nama' => $data['nama'],

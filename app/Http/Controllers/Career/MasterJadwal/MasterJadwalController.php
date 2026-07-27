@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Career\MasterJadwal;
 
 use App\Helpers\ResponseHelper;
 use App\Http\Controllers\Controller;
+use App\Support\Career\KodeUnik;
 use App\Support\CareerShell;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -127,14 +128,8 @@ class MasterJadwalController extends Controller
             $userName = session('career_auth.nama', 'ADMIN');
             $now = now();
 
-            $base = trim(preg_replace('/[^A-Z0-9]+/', '_', strtoupper($data['kegiatan'])), '_') ?: 'JADWAL';
-            $base = substr($base, 0, 26);
-            $kode = $base;
-            $n = 2;
-            while (DB::table('N_WEB_CAREERS_Master_Jadwal')->where('Kode', $kode)->exists()) {
-                $kode = $base . '_' . $n++;
-            }
-
+            // Kode dibuat memakai lebar kolom penuh; sufiks _N hanya bila bentrok.
+            $kode = KodeUnik::buat('N_WEB_CAREERS_Master_Jadwal', 'Kode', $data['kegiatan'], 30, 'JADWAL');
             $jumlahAgenda = 0;
 
             DB::transaction(function () use ($sumber, $data, $kode, $userId, $userName, $now, &$jumlahAgenda) {
@@ -200,14 +195,8 @@ class MasterJadwalController extends Controller
             // Kolom Kode varchar(30): potong ke 26 agar masih ada ruang untuk
             // sufiks "_N" saat harus dibuat unik. Nama panjang seperti
             // "TESTING - KEGIATAN MT 2026 BY FRANS" tadinya meluber & gagal insert.
-            $base = trim(preg_replace('/[^A-Z0-9]+/', '_', strtoupper($data['kegiatan'])), '_') ?: 'JADWAL';
-            $base = substr($base, 0, 26);
-            $kode = $base;
-            $n = 2;
-            while (DB::table('N_WEB_CAREERS_Master_Jadwal')->where('Kode', $kode)->exists()) {
-                $kode = $base . '_' . $n++;
-            }
-
+            // Kode dibuat memakai lebar kolom penuh; sufiks _N hanya bila bentrok.
+            $kode = KodeUnik::buat('N_WEB_CAREERS_Master_Jadwal', 'Kode', $data['kegiatan'], 30, 'JADWAL');
             DB::transaction(function () use ($data, $kode, $userId, $userName, $now) {
                 $id = DB::table('N_WEB_CAREERS_Master_Jadwal')->insertGetId([
                     'Kode' => $kode,

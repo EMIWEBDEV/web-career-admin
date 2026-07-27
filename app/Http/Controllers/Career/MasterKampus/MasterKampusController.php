@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Career\MasterKampus;
 
 use App\Helpers\ResponseHelper;
 use App\Http\Controllers\Controller;
+use App\Support\Career\KodeUnik;
 use App\Support\CareerShell;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -74,14 +75,8 @@ class MasterKampusController extends Controller
 
             // Kode = uppercased dari singkatan (bila ada) atau nama; dijamin unik.
             $sumber = !empty($data['singkatan']) ? $data['singkatan'] : $data['nama'];
-            $base = trim(preg_replace('/[^A-Z0-9]+/', '_', strtoupper($sumber)), '_') ?: 'KAMPUS';
-            $base = substr($base, 0, 26); // Kode varchar(30): sisakan ruang untuk sufiks _N
-            $kode = $base;
-            $n = 2;
-            while (DB::table('N_WEB_CAREERS_Master_Kampus')->where('Kode', $kode)->exists()) {
-                $kode = $base . '_' . $n++;
-            }
-
+            // Kode dibuat memakai lebar kolom penuh; sufiks _N hanya bila bentrok.
+            $kode = KodeUnik::buat('N_WEB_CAREERS_Master_Kampus', 'Kode', $sumber, 30, 'KAMPUS');
             DB::table('N_WEB_CAREERS_Master_Kampus')->insert([
                 'Kode' => $kode,
                 'Nama' => $data['nama'],

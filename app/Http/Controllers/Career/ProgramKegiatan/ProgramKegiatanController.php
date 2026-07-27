@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Career\ProgramKegiatan;
 
 use App\Helpers\ResponseHelper;
 use App\Http\Controllers\Controller;
+use App\Support\Career\KodeUnik;
 use App\Support\Career\MesinSyarat;
 use App\Support\CareerShell;
 use Illuminate\Http\Request;
@@ -198,14 +199,8 @@ class ProgramKegiatanController extends Controller
             $userName = session('career_auth.nama', 'ADMIN');
             $now = now();
 
-            $base = trim(preg_replace('/[^A-Z0-9]+/', '_', strtoupper($data['nama'])), '_') ?: 'PROGRAM';
-            $base = substr($base, 0, 26); // Kode varchar(30): sisakan ruang untuk sufiks _N
-            $kode = $base;
-            $n = 2;
-            while (DB::table('N_WEB_CAREERS_Program')->where('Kode', $kode)->exists()) {
-                $kode = $base . '_' . $n++;
-            }
-
+            // Kode dibuat memakai lebar kolom penuh; sufiks _N hanya bila bentrok.
+            $kode = KodeUnik::buat('N_WEB_CAREERS_Program', 'Kode', $data['nama'], 30, 'PROGRAM');
             DB::transaction(function () use ($data, $kode, $userId, $userName, $now) {
                 $id = DB::table('N_WEB_CAREERS_Program')->insertGetId([
                     'Kode' => $kode, 'Nama' => $data['nama'], 'Kategori' => $data['kategori'], 'Warna' => $data['warna'] ?? '#4f46e5',

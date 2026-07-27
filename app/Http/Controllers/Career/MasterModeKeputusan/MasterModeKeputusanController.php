@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Career\MasterModeKeputusan;
 
 use App\Helpers\ResponseHelper;
 use App\Http\Controllers\Controller;
+use App\Support\Career\KodeUnik;
 use App\Support\CareerShell;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -82,13 +83,8 @@ class MasterModeKeputusanController extends Controller
             $userName = session('career_auth.nama', 'ADMIN');
             $now = now();
 
-            $base = trim(preg_replace('/[^A-Z0-9]+/', '_', strtoupper($data['nama'])), '_') ?: 'MODE';
-            $base = substr($base, 0, 26);
-            $kode = $base;
-            $n = 2;
-            while (DB::table('N_WEB_CAREERS_Master_Mode_Keputusan')->where('Kode', $kode)->exists()) {
-                $kode = $base . '_' . $n++;
-            }
+            // Kode dibuat memakai lebar kolom penuh; sufiks _N hanya bila bentrok.
+            $kode = KodeUnik::buat('N_WEB_CAREERS_Master_Mode_Keputusan', 'Kode', $data['nama'], 30, 'MODE');
             $urutan = (int) DB::table('N_WEB_CAREERS_Master_Mode_Keputusan')->max('Urutan') + 1;
 
             DB::table('N_WEB_CAREERS_Master_Mode_Keputusan')->insert([

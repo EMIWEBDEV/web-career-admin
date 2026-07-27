@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Career\MasterAlur;
 
 use App\Helpers\ResponseHelper;
 use App\Http\Controllers\Controller;
+use App\Support\Career\KodeUnik;
 use App\Support\CareerShell;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -256,14 +257,8 @@ class MasterAlurController extends Controller
             $userName = session('career_auth.nama', 'ADMIN');
             $now = now();
 
-            $base = trim(preg_replace('/[^A-Z0-9]+/', '_', strtoupper($data['nama'])), '_') ?: 'ALUR';
-            $base = substr($base, 0, 26); // Kode varchar(30): sisakan ruang untuk sufiks _N
-            $kode = $base;
-            $n = 2;
-            while (DB::table('N_WEB_CAREERS_Master_Alur')->where('Kode', $kode)->exists()) {
-                $kode = $base . '_' . $n++;
-            }
-
+            // Kode dibuat memakai lebar kolom penuh; sufiks _N hanya bila bentrok.
+            $kode = KodeUnik::buat('N_WEB_CAREERS_Master_Alur', 'Kode', $data['nama'], 30, 'ALUR');
             DB::transaction(function () use ($data, $kode, $userId, $userName, $now) {
                 $id = DB::table('N_WEB_CAREERS_Master_Alur')->insertGetId([
                     'Kode' => $kode,
