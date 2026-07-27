@@ -72,9 +72,22 @@ class Handler extends ExceptionHandler
         // dulu — keduanya sudah jadi redirect ke login sebelum sampai sini.
         $response = parent::render($request, $e);
 
-        // Dev: jangan sentuh Ignition/stacktrace.
+        // ── Kapan halaman desain dipakai saat APP_DEBUG=true? ──
+        // HttpException (abort 403/404/419/429/503, dsb.) adalah keadaan yang
+        // MEMANG DIRANCANG — bukan bug — jadi selalu tampilkan halaman desain,
+        // termasuk saat development. Kalau tidak, developer tidak pernah melihat
+        // tampilan yang sebenarnya dilihat pengguna.
+        //
+        // Exception ASLI (bug → 500) tetap diserahkan ke Ignition saat debug,
+        // supaya stacktrace tidak hilang. Paksa lewat ERROR_PAGE_FORCE=true bila
+        // ingin melihat tampilan 500 versi pengguna.
         if (config('app.debug') === true) {
-            return $response;
+            $httpException = $e instanceof \Symfony\Component\HttpKernel\Exception\HttpExceptionInterface
+                || $e instanceof \Illuminate\Session\TokenMismatchException;
+
+            if (! $httpException && ! env('ERROR_PAGE_FORCE', false)) {
+                return $response;
+            }
         }
 
         // Jangan Vue-kan response file (download) atau streamed.
@@ -96,13 +109,36 @@ class Handler extends ExceptionHandler
         }
 
         try {
+            // Kode referensi singkat — dicetak di halaman error & di log, supaya
+            // kandidat bisa menyebutkannya saat menghubungi tim rekrutmen.
+            $referensi = strtoupper(substr(md5($request->fullUrl() . microtime()), 0, 8));
+
+            if ($status >= 500) {
+                \Illuminate\Support\Facades\Log::channel('web_career')
+                    ->error("[ERR-{$referensi}] {$status} {$request->fullUrl()} — " . $e->getMessage());
+            }
+
             return Inertia::render('Error', [
                 'status' => $status,
                 'message' => $this->errorMessageFor($status),
+                'homeUrl' => \App\Http\Middleware\CareerRole::beranda(session('career_auth.role')),
+                'referensi' => $referensi,
             ])->toResponse($request)->setStatusCode($status);
         } catch (Throwable $inertiaError) {
             // Bila render Inertia gagal (mis. share() butuh DB yang sedang down),
             // jangan biarkan layar kosong — kembalikan response asli (Blade fallback).
+            // Kegagalannya DICATAT: tanpa ini, halaman error desain bisa diam-diam
+            // tidak pernah tampil dan tidak ada yang tahu sebabnya.
+            try {
+                \Illuminate\Support\Facades\Log::channel('web_career')->error(
+                    '[ERROR-PAGE] gagal merender halaman status ' . $status . ': '
+                    . get_class($inertiaError) . ' — ' . $inertiaError->getMessage()
+                    . ' @ ' . $inertiaError->getFile() . ':' . $inertiaError->getLine()
+                );
+            } catch (Throwable $abaikan) {
+                // logging pun gagal — jangan sampai menambah masalah.
+            }
+
             return $response;
         }
     }

@@ -11,12 +11,12 @@ use Illuminate\Support\Facades\Route;
 */
 
 // Halaman Inertia
-Route::get('/master-kemitraan', [MasterKemitraanController::class, 'index'])->name('career.master-kemitraan');
+Route::get('/master-kemitraan', [MasterKemitraanController::class, 'index'])->name('career.master-kemitraan')->middleware('career.permission:masterKemitraanPage,VIEW');
 
 // JSON (bukan halaman Inertia) — prefix api/v1
 Route::prefix('api/v1')->name('career.api.master-kemitraan.')->group(function () {
-    Route::get('/master-kemitraan', [MasterKemitraanController::class, 'list'])->name('list');
-    Route::post('/master-kemitraan', [MasterKemitraanController::class, 'store'])->name('store');
-    Route::put('/master-kemitraan/{id}', [MasterKemitraanController::class, 'update'])->name('update');
-    Route::delete('/master-kemitraan/{id}', [MasterKemitraanController::class, 'destroy'])->name('destroy');
+    Route::get('/master-kemitraan', [MasterKemitraanController::class, 'list'])->name('list')->middleware('career.permission:masterKemitraanPage,VIEW');
+    Route::post('/master-kemitraan', [MasterKemitraanController::class, 'store'])->name('store')->middleware('career.permission:masterKemitraanPage,CREATE');
+    Route::put('/master-kemitraan/{id}', [MasterKemitraanController::class, 'update'])->name('update')->middleware('career.permission:masterKemitraanPage,EDIT');
+    Route::delete('/master-kemitraan/{id}', [MasterKemitraanController::class, 'destroy'])->name('destroy')->middleware('career.permission:masterKemitraanPage,DELETE');
 });

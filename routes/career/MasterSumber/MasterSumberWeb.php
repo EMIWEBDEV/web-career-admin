@@ -10,13 +10,13 @@ use Illuminate\Support\Facades\Route;
 */
 
 // Halaman Inertia
-Route::get('/master-sumber', [MasterSumberController::class, 'index'])->name('career.master-sumber');
+Route::get('/master-sumber', [MasterSumberController::class, 'index'])->name('career.master-sumber')->middleware('career.permission:masterSumberPage,VIEW');
 
 // JSON (bukan halaman Inertia) — prefix api/v1
 Route::prefix('api/v1')->name('career.api.master-sumber.')->group(function () {
-    Route::get('/master-sumber', [MasterSumberController::class, 'list'])->name('list');
-    Route::post('/master-sumber', [MasterSumberController::class, 'store'])->name('store');
-    Route::put('/master-sumber/{id}', [MasterSumberController::class, 'update'])->name('update');
-    Route::patch('/master-sumber/{id}/toggle', [MasterSumberController::class, 'toggle'])->name('toggle');
-    Route::delete('/master-sumber/{id}', [MasterSumberController::class, 'destroy'])->name('destroy');
+    Route::get('/master-sumber', [MasterSumberController::class, 'list'])->name('list')->middleware('career.permission:masterSumberPage,VIEW');
+    Route::post('/master-sumber', [MasterSumberController::class, 'store'])->name('store')->middleware('career.permission:masterSumberPage,CREATE');
+    Route::put('/master-sumber/{id}', [MasterSumberController::class, 'update'])->name('update')->middleware('career.permission:masterSumberPage,EDIT');
+    Route::patch('/master-sumber/{id}/toggle', [MasterSumberController::class, 'toggle'])->name('toggle')->middleware('career.permission:masterSumberPage,EDIT');
+    Route::delete('/master-sumber/{id}', [MasterSumberController::class, 'destroy'])->name('destroy')->middleware('career.permission:masterSumberPage,DELETE');
 });

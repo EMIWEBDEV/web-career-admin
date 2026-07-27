@@ -8,6 +8,10 @@
 <link rel="shortcut icon" href="{{ asset('logo/logo.png') }}" type="image/png" />
 <link rel="shortcut icon" href="/assets/compiled/png/logo.png" type="image/x-icon">
 <link rel="stylesheet" href="/assets/extensions/bootstrap-icons/font/bootstrap-icons.min.css">
+{{-- Inter + Playfair Display — dipakai halaman status/error (kicker editorial). --}}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:ital,wght@1,600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/assets/compiled/css/app.css">
 @vite(['resources/css/evo-theme.css'])
 <style>

@@ -7,15 +7,15 @@ use Illuminate\Support\Facades\Route;
 | PENJADWALAN. Halaman Inertia /karir/penjadwalan + JSON group api/v1.
 | Semua opsi dari DB (tanpa hardcode); paket ujian diteruskan server dari HCLearn.
 */
-Route::get('/karir/penjadwalan', [PenjadwalanController::class, 'index'])->name('career.penjadwalan');
+Route::get('/karir/penjadwalan', [PenjadwalanController::class, 'index'])->name('career.penjadwalan')->middleware('career.permission:penjadwalanPage,VIEW');
 
 Route::prefix('api/v1')->name('career.api.penjadwalan.')->group(function () {
-    Route::get('/penjadwalan', [PenjadwalanController::class, 'list'])->name('list');
-    Route::post('/penjadwalan', [PenjadwalanController::class, 'store'])->name('store');
-    Route::put('/penjadwalan/{id}', [PenjadwalanController::class, 'update'])->name('update');
-    Route::delete('/penjadwalan/{id}', [PenjadwalanController::class, 'destroy'])->name('destroy');
+    Route::get('/penjadwalan', [PenjadwalanController::class, 'list'])->name('list')->middleware('career.permission:penjadwalanPage,VIEW');
+    Route::post('/penjadwalan', [PenjadwalanController::class, 'store'])->name('store')->middleware('career.permission:penjadwalanPage,CREATE');
+    Route::put('/penjadwalan/{id}', [PenjadwalanController::class, 'update'])->name('update')->middleware('career.permission:penjadwalanPage,EDIT');
+    Route::delete('/penjadwalan/{id}', [PenjadwalanController::class, 'destroy'])->name('destroy')->middleware('career.permission:penjadwalanPage,DELETE');
 
-    Route::get('/penjadwalan/opsi', [PenjadwalanController::class, 'opsi'])->name('opsi');
-    Route::get('/penjadwalan/kandidat', [PenjadwalanController::class, 'kandidat'])->name('kandidat');
-    Route::get('/penjadwalan/paket-ujian', [PenjadwalanController::class, 'paketUjian'])->name('paket');
+    Route::get('/penjadwalan/opsi', [PenjadwalanController::class, 'opsi'])->name('opsi')->middleware('career.permission:penjadwalanPage,VIEW');
+    Route::get('/penjadwalan/kandidat', [PenjadwalanController::class, 'kandidat'])->name('kandidat')->middleware('career.permission:penjadwalanPage,VIEW');
+    Route::get('/penjadwalan/paket-ujian', [PenjadwalanController::class, 'paketUjian'])->name('paket')->middleware('career.permission:penjadwalanPage,VIEW');
 });

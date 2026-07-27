@@ -6,6 +6,7 @@ use App\Helpers\ResponseHelper;
 use App\Http\Controllers\Controller;
 use App\Jobs\Career\WcSyncEmailJob;
 use App\Services\WebCareers\HclClient;
+use App\Support\Career\AksesService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -475,12 +476,21 @@ class AuthController extends Controller
         $user = ['id' => $row->Id_Users, 'nama' => $row->Nama, 'email' => $row->Email, 'role' => $row->Role, 'klasifikasi' => $row->Klasifikasi, 'valid_until' => $row->Valid_Until, 'pwd_epoch' => $row->Pwd_Changed_At];
         $request->session()->put('career_auth', $user);
 
+        // Paket hak akses (permissions / label menu / kategori) — pola cat-evo.
+        // Kandidat yang belum punya baris akses di-provision otomatis dari cetakan
+        // klasifikasinya di dalam AksesService, jadi tidak perlu disentuh admin.
+        $request->session()->put('career_akses', AksesService::paket(
+            (int) $row->Id_Users,
+            (string) $row->Role,
+            $row->Klasifikasi
+        ));
+
         return ResponseHelper::success($user, 'Login berhasil.');
     }
 
     public function logout(Request $request)
     {
-        $request->session()->forget('career_auth');
+        $request->session()->forget(['career_auth', 'career_akses']);
 
         return ResponseHelper::success(null, 'Logout berhasil.');
     }
@@ -735,7 +745,7 @@ class AuthController extends Controller
         Log::channel('web_career')->info("[RESET] user #{$row->Id_Users} ({$row->Email}) berhasil reset kata sandi.");
 
         // Bersihkan sesi tab yang melakukan reset.
-        $request->session()->forget('career_auth');
+        $request->session()->forget(['career_auth', 'career_akses']);
 
         return ResponseHelper::success(null, 'Kata sandi berhasil diperbarui. Silakan masuk dengan kata sandi baru.');
     }

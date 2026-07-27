@@ -10,13 +10,13 @@ use Illuminate\Support\Facades\Route;
 */
 
 // Halaman Inertia
-Route::get('/master-mode-pengumuman', [MasterModePengumumanController::class, 'index'])->name('career.master-mode-pengumuman');
+Route::get('/master-mode-pengumuman', [MasterModePengumumanController::class, 'index'])->name('career.master-mode-pengumuman')->middleware('career.permission:masterModePengumumanPage,VIEW');
 
 // JSON (bukan halaman Inertia) — prefix api/v1
 Route::prefix('api/v1')->name('career.api.master-mode-pengumuman.')->group(function () {
-    Route::get('/master-mode-pengumuman', [MasterModePengumumanController::class, 'list'])->name('list');
-    Route::post('/master-mode-pengumuman', [MasterModePengumumanController::class, 'store'])->name('store');
-    Route::put('/master-mode-pengumuman/{id}', [MasterModePengumumanController::class, 'update'])->name('update');
-    Route::patch('/master-mode-pengumuman/{id}/toggle', [MasterModePengumumanController::class, 'toggle'])->name('toggle');
-    Route::delete('/master-mode-pengumuman/{id}', [MasterModePengumumanController::class, 'destroy'])->name('destroy');
+    Route::get('/master-mode-pengumuman', [MasterModePengumumanController::class, 'list'])->name('list')->middleware('career.permission:masterModePengumumanPage,VIEW');
+    Route::post('/master-mode-pengumuman', [MasterModePengumumanController::class, 'store'])->name('store')->middleware('career.permission:masterModePengumumanPage,CREATE');
+    Route::put('/master-mode-pengumuman/{id}', [MasterModePengumumanController::class, 'update'])->name('update')->middleware('career.permission:masterModePengumumanPage,EDIT');
+    Route::patch('/master-mode-pengumuman/{id}/toggle', [MasterModePengumumanController::class, 'toggle'])->name('toggle')->middleware('career.permission:masterModePengumumanPage,EDIT');
+    Route::delete('/master-mode-pengumuman/{id}', [MasterModePengumumanController::class, 'destroy'])->name('destroy')->middleware('career.permission:masterModePengumumanPage,DELETE');
 });

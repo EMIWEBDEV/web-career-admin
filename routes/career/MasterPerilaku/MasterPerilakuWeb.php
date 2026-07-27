@@ -10,13 +10,13 @@ use Illuminate\Support\Facades\Route;
 */
 
 // Halaman Inertia
-Route::get('/master-perilaku', [MasterPerilakuController::class, 'index'])->name('career.master-perilaku');
+Route::get('/master-perilaku', [MasterPerilakuController::class, 'index'])->name('career.master-perilaku')->middleware('career.permission:masterPerilakuPage,VIEW');
 
 // JSON (bukan halaman Inertia) — prefix api/v1
 Route::prefix('api/v1')->name('career.api.master-perilaku.')->group(function () {
-    Route::get('/master-perilaku', [MasterPerilakuController::class, 'list'])->name('list');
-    Route::post('/master-perilaku', [MasterPerilakuController::class, 'store'])->name('store');
-    Route::put('/master-perilaku/{id}', [MasterPerilakuController::class, 'update'])->name('update');
-    Route::patch('/master-perilaku/{id}/toggle', [MasterPerilakuController::class, 'toggle'])->name('toggle');
-    Route::delete('/master-perilaku/{id}', [MasterPerilakuController::class, 'destroy'])->name('destroy');
+    Route::get('/master-perilaku', [MasterPerilakuController::class, 'list'])->name('list')->middleware('career.permission:masterPerilakuPage,VIEW');
+    Route::post('/master-perilaku', [MasterPerilakuController::class, 'store'])->name('store')->middleware('career.permission:masterPerilakuPage,CREATE');
+    Route::put('/master-perilaku/{id}', [MasterPerilakuController::class, 'update'])->name('update')->middleware('career.permission:masterPerilakuPage,EDIT');
+    Route::patch('/master-perilaku/{id}/toggle', [MasterPerilakuController::class, 'toggle'])->name('toggle')->middleware('career.permission:masterPerilakuPage,EDIT');
+    Route::delete('/master-perilaku/{id}', [MasterPerilakuController::class, 'destroy'])->name('destroy')->middleware('career.permission:masterPerilakuPage,DELETE');
 });

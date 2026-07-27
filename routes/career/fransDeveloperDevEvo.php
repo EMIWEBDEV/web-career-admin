@@ -3,6 +3,8 @@
 // Routes induk milik fransDeveloper (folder: career)
 
 // MasterSiklus DIHAPUS (Batch 11) — siklus tidak menggerakkan logika apa pun.
+// Hak akses (RBAC): master menu, manajemen hak akses, akses klasifikasi akun.
+require base_path('routes/career/Akses/AksesWeb.php');
 require base_path('routes/career/MasterTalent/MasterTalentWeb.php');
 require base_path('routes/career/MasterTalent/MasterTalentApi.php');
 require base_path('routes/career/MasterPerilaku/MasterPerilakuWeb.php');

@@ -83,7 +83,7 @@ class CareerAuth
     /** Sesi tidak lagi sah — bersihkan lalu arahkan ke halaman masuk. */
     private function keluar(Request $request, string $pesan): Response
     {
-        session()->forget('career_auth');
+        session()->forget(['career_auth', 'career_akses']);
 
         if ($request->expectsJson()) {
             return response()->json(['success' => false, 'status' => 401, 'message' => $pesan], 401);

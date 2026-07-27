@@ -6,12 +6,12 @@ use Illuminate\Support\Facades\Route;
 /*
 | PROGRAM KEGIATAN (induk-detail). Halaman Inertia /karir/program-kegiatan + JSON group api/v1.
 */
-Route::get('/karir/program-kegiatan', [ProgramKegiatanController::class, 'index'])->name('career.program-kegiatan');
+Route::get('/karir/program-kegiatan', [ProgramKegiatanController::class, 'index'])->name('career.program-kegiatan')->middleware('career.permission:programPage,VIEW');
 
 Route::prefix('api/v1')->name('career.api.program-kegiatan.')->group(function () {
-    Route::get('/program-kegiatan', [ProgramKegiatanController::class, 'list'])->name('list');
-    Route::post('/program-kegiatan', [ProgramKegiatanController::class, 'store'])->name('store');
-    Route::put('/program-kegiatan/{id}', [ProgramKegiatanController::class, 'update'])->name('update');
-    Route::patch('/program-kegiatan/{id}/toggle', [ProgramKegiatanController::class, 'toggle'])->name('toggle');
-    Route::delete('/program-kegiatan/{id}', [ProgramKegiatanController::class, 'destroy'])->name('destroy');
+    Route::get('/program-kegiatan', [ProgramKegiatanController::class, 'list'])->name('list')->middleware('career.permission:programPage,VIEW');
+    Route::post('/program-kegiatan', [ProgramKegiatanController::class, 'store'])->name('store')->middleware('career.permission:programPage,CREATE');
+    Route::put('/program-kegiatan/{id}', [ProgramKegiatanController::class, 'update'])->name('update')->middleware('career.permission:programPage,EDIT');
+    Route::patch('/program-kegiatan/{id}/toggle', [ProgramKegiatanController::class, 'toggle'])->name('toggle')->middleware('career.permission:programPage,EDIT');
+    Route::delete('/program-kegiatan/{id}', [ProgramKegiatanController::class, 'destroy'])->name('destroy')->middleware('career.permission:programPage,DELETE');
 });

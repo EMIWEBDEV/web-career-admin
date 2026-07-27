@@ -54,6 +54,8 @@ class Kernel extends HttpKernel
         // career.role menganggap sesi sudah divalidasi career.auth.
         'career.auth' => \App\Http\Middleware\CareerAuth::class,
         'career.role' => \App\Http\Middleware\CareerRole::class,
+        // Gerbang hak akses per halaman & aksi: career.permission:{jenisPage},{AKSI}
+        'career.permission' => \App\Http\Middleware\CareerPermission::class,
         'auth' => \App\Http\Middleware\Authenticate::class,
         'auth.basic' => \Illuminate\Auth\Middleware\AuthenticateWithBasicAuth::class,
         'auth.session' => \Illuminate\Session\Middleware\AuthenticateSession::class,

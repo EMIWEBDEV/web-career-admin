@@ -15,6 +15,12 @@ class CareerShell
         return array_merge($extra, [
             'layout' => self::layout($url, $title),
             'auth' => ['user' => self::adminUser()],
+            // Hak akses halaman ini → dipakai Vue menyembunyikan tombol yang
+            // tidak diizinkan (gerbang sebenarnya tetap di middleware server).
+            'akses' => [
+                'permissions' => session('career_akses.permissions', []),
+                'konten' => session('career_akses.permission_konten', []),
+            ],
         ]);
     }
 
@@ -56,6 +62,24 @@ class CareerShell
      */
     public static function nav(): array
     {
+        // SUMBER UTAMA: paket hak akses di sesi (dibangun dari master menu +
+        // Page_Access user). Hanya menu yang ia punya izin VIEW-nya yang muncul.
+        $dariAkses = session('career_akses.menu');
+        if (is_array($dariAkses) && $dariAkses) {
+            return array_map(fn ($g) => [
+                'id' => $g['id'],
+                'title' => $g['title'],
+                'items' => array_map(fn ($it) => [
+                    'key' => $it['key'],
+                    'label' => $it['label'],
+                    'icon' => $it['icon'],
+                    'url' => $it['url'],
+                ], $g['items']),
+            ], $dariAkses);
+        }
+
+        // Cadangan: sesi lama / paket akses belum terbentuk → daftar bawaan,
+        // supaya panel tidak pernah tampil tanpa menu sama sekali.
         return self::adalahAdmin() ? self::adminNav() : self::kandidatNav();
     }
 

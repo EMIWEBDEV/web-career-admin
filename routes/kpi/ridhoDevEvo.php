@@ -24,11 +24,11 @@ Route::prefix('karir')
         // Lowongan lama (/karir/lowongan) DIHAPUS — sumber lowongan kini SATU-satunya
         // dari Monitoring MPP (routes/career/MppLowongan/MppLowonganWeb.php).
         // Seleksi — worklist pelamar ditangani modul Lamaran (mesin syarat + ketuk palu).
-        Route::get('/pelamar', [LamaranController::class, 'worklist'])->name('pelamar');
-        Route::get('/hasil-tes', [$c, 'hasil_page'])->name('hasil');
-        Route::get('/pengumuman', [$c, 'pengumuman_page'])->name('pengumuman');
+        Route::get('/pelamar', [LamaranController::class, 'worklist'])->name('pelamar')->middleware('career.permission:pelamarPage,VIEW');
+        Route::get('/hasil-tes', [$c, 'hasil_page'])->name('hasil')->middleware('career.permission:hasilTesPage,VIEW');
+        Route::get('/pengumuman', [$c, 'pengumuman_page'])->name('pengumuman')->middleware('career.permission:pengumumanPage,VIEW');
         // Data
-        Route::get('/kandidat', [$c, 'kandidat_page'])->name('kandidat');
+        Route::get('/kandidat', [$c, 'kandidat_page'])->name('kandidat')->middleware('career.permission:kandidatPage,VIEW');
     });
 
 // Seluruh master DIPINDAH ke struktur per-modul (routes/career/Master*/*Web.php):
@@ -46,16 +46,16 @@ Route::prefix('api/v1/karir')
         Route::get('/options/{type}', [$c, 'options'])->name('options');
 
         // Worklist admin: daftar program (panel kiri) + kanban seleksi (panel kanan) & ketuk palu.
-        Route::get('/lamaran/worklist/program', [LamaranController::class, 'worklistProgram'])->name('lamaran.worklist.program');
-        Route::get('/lamaran/worklist/program/{id}', [LamaranController::class, 'worklistDetail'])->name('lamaran.worklist.detail');
-        Route::get('/lamaran/pengisian/{id}', [LamaranController::class, 'lihatPengisian'])->name('lamaran.pengisian');
-        Route::get('/lamaran/berkas/{id}', [LamaranController::class, 'worklistBerkas'])->name('lamaran.berkas');
-        Route::get('/lamaran/berkas/file/{id}', [LamaranController::class, 'berkasFile'])->name('lamaran.berkas.file');
-        Route::patch('/lamaran/tahap/{id}/putus', [LamaranController::class, 'putus'])->name('lamaran.putus');
+        Route::get('/lamaran/worklist/program', [LamaranController::class, 'worklistProgram'])->name('lamaran.worklist.program')->middleware('career.permission:pelamarPage,VIEW');
+        Route::get('/lamaran/worklist/program/{id}', [LamaranController::class, 'worklistDetail'])->name('lamaran.worklist.detail')->middleware('career.permission:pelamarPage,VIEW');
+        Route::get('/lamaran/pengisian/{id}', [LamaranController::class, 'lihatPengisian'])->name('lamaran.pengisian')->middleware('career.permission:pelamarPage,VIEW');
+        Route::get('/lamaran/berkas/{id}', [LamaranController::class, 'worklistBerkas'])->name('lamaran.berkas')->middleware('career.permission:pelamarPage,VIEW');
+        Route::get('/lamaran/berkas/file/{id}', [LamaranController::class, 'berkasFile'])->name('lamaran.berkas.file')->middleware('career.permission:pelamarPage,VIEW');
+        Route::patch('/lamaran/tahap/{id}/putus', [LamaranController::class, 'putus'])->name('lamaran.putus')->middleware('career.permission:pelamarPage,APPROVE');
         // Escape hatch multi-tes: tandai sub-tes tidak hadir → mesin evaluasi ulang.
-        Route::patch('/lamaran/sub-tes/{id}/tidak-hadir', [LamaranController::class, 'subTesTidakHadir'])->name('lamaran.subtes.tidakhadir');
+        Route::patch('/lamaran/sub-tes/{id}/tidak-hadir', [LamaranController::class, 'subTesTidakHadir'])->name('lamaran.subtes.tidakhadir')->middleware('career.permission:pelamarPage,EDIT');
         // Catat hasil sub-tes MANUAL (wawancara/FGD di tahap campuran) → mesin yang sama.
-        Route::patch('/lamaran/sub-tes/{id}/catat-hasil', [LamaranController::class, 'subTesCatatHasil'])->name('lamaran.subtes.catathasil');
+        Route::patch('/lamaran/sub-tes/{id}/catat-hasil', [LamaranController::class, 'subTesCatatHasil'])->name('lamaran.subtes.catathasil')->middleware('career.permission:pelamarPage,EDIT');
 
         // CRUD master generik (master/simple, master/rich, master/akun, master/kemitraan)
         // DIHAPUS: halaman gaya lama yang memakainya sudah tidak punya route —
@@ -69,9 +69,9 @@ Route::prefix('kandidat')
     ->middleware('career.auth')
     ->name('career.portal.')
     ->group(function () {
-        Route::get('/loker', [LamaranController::class, 'loker'])->name('loker');
-        Route::get('/portal', [LamaranController::class, 'portalIndex'])->name('index');
-        Route::get('/lamaran/{id}', [LamaranController::class, 'portalDetail'])->name('detail');
+        Route::get('/loker', [LamaranController::class, 'loker'])->name('loker')->middleware('career.permission:lokerPage,VIEW');
+        Route::get('/portal', [LamaranController::class, 'portalIndex'])->name('index')->middleware('career.permission:portalPage,VIEW');
+        Route::get('/lamaran/{id}', [LamaranController::class, 'portalDetail'])->name('detail')->middleware('career.permission:portalPage,VIEW');
         // Pratinjau berkas milik kandidat sendiri (signed URL GCS).
         Route::get('/lamaran/berkas/file/{id}', [LamaranController::class, 'portalBerkasFile'])->name('berkas.file');
     });
@@ -89,10 +89,10 @@ Route::prefix('api/v1/lamaran')
     ->middleware('career.auth')
     ->name('career.lamaran.')
     ->group(function () {
-        Route::get('/loker', [LamaranController::class, 'lokerList'])->name('loker');
-        Route::post('/', [LamaranController::class, 'lamar'])->name('lamar');
+        Route::get('/loker', [LamaranController::class, 'lokerList'])->name('loker')->middleware('career.permission:lokerPage,VIEW');
+        Route::post('/', [LamaranController::class, 'lamar'])->name('lamar')->middleware('career.permission:portalPage,CREATE');
         Route::get('/apply-status/{processId}', [LamaranController::class, 'applyStatus'])->name('apply.status');
-        Route::post('/tahap/{id}/kirim', [LamaranController::class, 'kirimFormulir'])->name('kirim');
+        Route::post('/tahap/{id}/kirim', [LamaranController::class, 'kirimFormulir'])->name('kirim')->middleware('career.permission:portalPage,EDIT');
         Route::delete('/{id}', [LamaranController::class, 'batalkan'])->name('batal');
     });
 

@@ -116,7 +116,7 @@
                     <div v-if="loadingDetail" class="plw-load" style="padding: 3rem 0"><span class="plw-spin"></span> Memuat papan seleksi…</div>
 
                     <!-- KANBAN -->
-                    <div v-else class="plw-kanban">
+                    <div v-else class="plw-kanban" :class="{ 'is-gugur': statusTab === 'GUGUR' }">
                         <div v-for="(col, i) in kolomTampil" :key="col.kode || col.label" class="plw-col">
                             <div class="plw-col__head">
                                 <span class="plw-col__num" :class="{ 'is-hot': kartuKolom(col).length > 0 }">{{ String(i + 1).padStart(2, '0') }}</span>
@@ -459,9 +459,11 @@ export default {
         },
         jmlAktif() { return (this.detail.pelamar || []).filter((r) => r.statusLamaran !== 'GUGUR').length; },
         jmlGugur() { return (this.detail.pelamar || []).filter((r) => r.statusLamaran === 'GUGUR').length; },
-        // Tab Berjalan → kolom tahap alur; tab Tidak Lolos → satu kolom khusus.
+        // KEDUA tab memakai kolom tahap alur yang sama. Kandidat gugur tetap
+        // "diam" di tahap tempat ia gugur (backend mengirim kolomUrutan dari
+        // tahap ber-Hasil GUGUR), bukan ditumpuk jadi satu kolom — supaya admin
+        // langsung melihat DI TAHAP MANA kandidat paling banyak berguguran.
         kolomTampil() {
-            if (this.statusTab === 'GUGUR') return [{ label: 'Tidak Lolos', kode: '__GUGUR__', provider: null }];
             return this.detail.kolom || [];
         },
     },
@@ -483,8 +485,8 @@ export default {
             if (!b) return '';
             return b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB';
         },
+        /** Kartu pada satu kolom tahap — berlaku sama untuk tab Berjalan & Tidak Lolos. */
         kartuKolom(col) {
-            if (col.kode === '__GUGUR__') return this.pelamarTampil;
             return this.pelamarTampil.filter((r) => r.kolomUrutan === col.urutan);
         },
         segKelas(n) {
@@ -736,6 +738,10 @@ export default {
 .plw-col__head { display: flex; align-items: center; gap: 9px; padding: 2px 4px 12px; }
 .plw-col__num { width: 26px; height: 26px; border-radius: 9px; background: rgba(99, 102, 241, 0.12); color: #4f46e5; font-size: 12.5px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex: 0 0 auto; }
 .plw-col__num.is-hot { background: rgba(245, 158, 11, 0.16); color: #b45309; }
+/* Tab "Tidak Lolos": kolom tahapnya sama, tapi diberi nada merah supaya sekali
+   lihat ketahuan ini papan kegagalan — dan di tahap mana penyusutan terbesar. */
+.plw-kanban.is-gugur .plw-col__num.is-hot { background: rgba(239, 68, 68, .14); color: #b91c1c; }
+.plw-kanban.is-gugur .plw-col__count:not(:empty) { color: #b91c1c; background: rgba(239, 68, 68, .1); }
 .plw-col__name { font-size: 13.5px; font-weight: 800; color: #334155; flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; }
 .plw-col__count { font-size: 12px; font-weight: 800; color: #94a3b8; background: #eef0f7; border-radius: 8px; padding: 2px 9px; flex: 0 0 auto; }
 .plw-col__cards { display: flex; flex-direction: column; gap: 11px; min-height: 60px; }

@@ -189,11 +189,16 @@
                              manual (wawancara/FGD). Peran INFORMATIF tidak menentukan lulus. -->
                         <div class="alr-tests">
                             <div class="alr-tests__head">
-                                <span><i class="bi bi-list-check"></i> Daftar Tes / Aktivitas ({{ (s.tests || []).length }})</span>
+                                <span><i class="bi bi-list-check"></i> Daftar Tes / Aktivitas <template v-if="(s.tests || []).length">({{ s.tests.length }})</template><span v-else class="alr-tests__opt">— opsional</span></span>
                                 <button class="wca-btn wca-btn--soft wca-btn--sm" type="button" @click="addTest(s)"><i class="bi bi-plus-circle"></i> Tambah Tes</button>
                             </div>
                             <div v-if="!(s.tests || []).length" class="alr-tests__empty">
-                                <i class="bi bi-info-circle"></i> Belum ada tes — sistem akan membuat <b>1 aktivitas default</b> dari tahap ini.
+                                <i class="bi bi-check-circle-fill"></i>
+                                <div>
+                                    <b>Biarkan kosong bila tahap ini hanya satu aktivitas.</b>
+                                    Sistem otomatis menganggapnya 1 aktivitas bernama “{{ s.label || 'nama tahap' }}”.
+                                    <br>Isi daftar ini <b>hanya</b> bila tahap berisi beberapa tes sekaligus — mis. FGD = Psikotes 1 + Psikotes 2 + Wawancara.
+                                </div>
                             </div>
                             <div v-for="(t, k) in s.tests" :key="k" class="alr-test">
                                 <span class="alr-test__no">{{ k + 1 }}</span>
@@ -342,6 +347,26 @@ export default {
         /** Nama pendek mode untuk pil di daftar alur. */
         namaMode(kode) { return this.modeKeputusan.find((m) => m.value === kode)?.nama || kode || 'Manual'; },
 
+        /**
+         * Buang baris tes BAWAAN dari data yang dimuat untuk diedit.
+         * Bawaan = tepat 1 tes, PENENTU, tanpa jenis tes, dan namanya sama
+         * dengan nama tahap — persis yang dibuat backend saat daftar dikosongkan.
+         * Tahap yang memang punya beberapa tes tidak tersentuh.
+         */
+        buangTesBawaan(s) {
+            const t = s.tests || [];
+            const bawaan = t.length === 1
+                && !t[0].jenisTes
+                && (t[0].peran || 'PENENTU') === 'PENENTU'
+                && (t[0].label || '').trim() === (s.label || '').trim();
+
+            return bawaan ? [] : t.map((x) => ({
+                label: x.label,
+                jenisTes: x.jenisTes ?? null,
+                peran: x.peran || 'PENENTU',
+                ambang: x.ambang ?? null,
+            }));
+        },
         addTest(s) {
             if (!Array.isArray(s.tests)) s.tests = [];
             s.tests.push({ label: '', jenisTes: null, peran: 'PENENTU', ambang: null });
@@ -406,12 +431,12 @@ export default {
                     tipe: s.tipe,
                     mode: s.mode || 'MANUAL_REVIEW',
                     formulirId: s.formulirId ?? null,
-                    tests: (s.tests || []).map((t) => ({
-                        label: t.label,
-                        jenisTes: t.jenisTes ?? null,
-                        peran: t.peran || 'PENENTU',
-                        ambang: t.ambang ?? null,
-                    })),
+                    // Baris tes BAWAAN (dibuat otomatis sistem untuk tahap satu
+                    // aktivitas) sengaja TIDAK ditampilkan lagi saat mengedit —
+                    // kalau ditampilkan, ia terlihat seolah wajib diisi dan
+                    // namanya cuma menggandakan nama tahap. Daftar dibiarkan
+                    // kosong; backend akan membuatkannya lagi saat disimpan.
+                    tests: this.buangTesBawaan(s),
                     pengumuman: s.pengumuman || 'OTOMATIS',
                     jedaHari: s.jedaHari ?? null,
                     notifikasi: s.notifikasi !== false,
@@ -558,7 +583,9 @@ export default {
 /* Blok daftar tes (sub-tes) di dalam kartu tahap pada modal builder. */
 .alr-tests { border: 1px solid rgba(15, 23, 42, .1); border-radius: 12px; padding: .7rem .8rem; margin-top: .5rem; background: #f8fafc; }
 .alr-tests__head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; font-size: 11.5px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: #334155; margin-bottom: .55rem; }
-.alr-tests__empty { font-size: 11.5px; color: #64748b; padding: .3rem 0 .1rem; }
+.alr-tests__opt { font-weight: 600; color: #94a3b8; text-transform: none; letter-spacing: 0; margin-left: .25rem; }
+.alr-tests__empty { display: flex; align-items: flex-start; gap: .45rem; font-size: 11.5px; line-height: 1.6; color: #475569; padding: .5rem .6rem; border-radius: 9px; background: rgba(16, 185, 129, .07); border: 1px solid rgba(16, 185, 129, .2); }
+.alr-tests__empty > i { color: #059669; font-size: 13px; margin-top: 1px; flex: none; }
 .alr-test { display: flex; gap: .55rem; align-items: flex-start; padding: .6rem; border: 1px solid rgba(15, 23, 42, .08); border-radius: 10px; background: #fff; margin-bottom: .5rem; }
 .alr-test__no { flex: none; width: 1.4rem; height: 1.4rem; border-radius: 50%; background: #e0e7ff; color: #4338ca; font-size: 11px; font-weight: 800; display: grid; place-items: center; }
 .alr-test__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .45rem; }
