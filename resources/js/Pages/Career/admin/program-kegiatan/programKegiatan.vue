@@ -35,20 +35,59 @@
             </div>
         </div>
 
-        <!-- Toolbar: tabs + search -->
+        <!-- Toolbar: tab kategori (DARI DATABASE, disaring hak akses) -->
         <div class="pkg-toolbar">
             <div class="pkg-tabs">
-                <button class="pkg-tab" :class="{ on: tab === '' }" @click="tab = ''"><i class="bi bi-grid"></i> Semua <span class="pkg-tab__n">{{ list.length }}</span></button>
-                <button class="pkg-tab" :class="{ on: tab === 'REKRUTMEN' }" @click="tab = 'REKRUTMEN'"><i class="bi bi-briefcase"></i> Rekrutmen <span class="pkg-tab__n">{{ countKat('REKRUTMEN') }}</span></button>
-                <button class="pkg-tab" :class="{ on: tab === 'MT' }" @click="tab = 'MT'"><i class="bi bi-mortarboard"></i> Management Trainee <span class="pkg-tab__n">{{ countKat('MT') }}</span></button>
-                <button class="pkg-tab" :class="{ on: tab === 'INTERNSHIP' }" @click="tab = 'INTERNSHIP'"><i class="bi bi-backpack"></i> Internship <span class="pkg-tab__n">{{ countKat('INTERNSHIP') }}</span></button>
-            </div>
-            <div class="pkg-search">
-                <i class="bi bi-search"></i>
-                <input v-model="query" type="text" placeholder="Cari program atau kode..." />
-                <button v-if="query" type="button" class="pkg-search__x" @click="query = ''"><i class="bi bi-x-lg"></i></button>
+                <!-- "Semua" hanya berguna bila memang ada lebih dari satu kategori. -->
+                <button v-if="kategoriTab.length > 1" class="pkg-tab" :class="{ on: tab === '' }" @click="pilihTab('')">
+                    <i class="bi bi-grid"></i> Semua <span class="pkg-tab__n">{{ totalSemua }}</span>
+                </button>
+                <button v-for="k in kategoriTab" :key="k.kode" class="pkg-tab" :class="{ on: tab === k.kode }" @click="pilihTab(k.kode)">
+                    <i class="bi" :class="katIkon(k.kode)"></i> {{ k.nama }} <span class="pkg-tab__n">{{ k.jumlah }}</span>
+                </button>
             </div>
         </div>
+
+        <!-- FILTER PANEL — semua saringan dikirim ke backend. -->
+        <div v-if="sheetOpen" class="pkg-sheetbg" @click="sheetOpen = false"></div>
+        <div class="pkg-filter" :class="{ 'is-open': sheetOpen }">
+            <div class="pkg-filter__head">
+                <span class="pkg-filter__title"><i class="bi bi-funnel"></i> Filter Panel</span>
+                <div class="pkg-filter__act">
+                    <button v-if="adaFilter" class="pkg-filter__reset" type="button" @click="resetFilter"><i class="bi bi-arrow-counterclockwise"></i> Reset</button>
+                    <button class="pkg-filter__close" type="button" aria-label="Tutup" @click="sheetOpen = false"><i class="bi bi-x-lg"></i></button>
+                </div>
+            </div>
+            <div class="pkg-filter__grid">
+                <div>
+                    <label class="wca-field-lbl">Cari</label>
+                    <el-input v-model="filters.q" placeholder="Nama / kode / penyelenggara / alur" clearable @input="cariDebounce">
+                        <template #prefix><i class="bi bi-search"></i></template>
+                    </el-input>
+                </div>
+                <div>
+                    <label class="wca-field-lbl">Status</label>
+                    <el-select v-model="filters.status" placeholder="Semua status" clearable style="width:100%" @change="load">
+                        <el-option label="Berjalan" value="BERJALAN" />
+                        <el-option label="Draft" value="DRAFT" />
+                        <el-option label="Selesai" value="SELESAI" />
+                    </el-select>
+                </div>
+                <div>
+                    <label class="wca-field-lbl">Tanggal Dibuat</label>
+                    <el-date-picker
+                        v-model="filters.rentang" type="daterange" value-format="YYYY-MM-DD"
+                        start-placeholder="Mulai" end-placeholder="Akhir" range-separator="—"
+                        style="width:100%" @change="load"
+                    />
+                </div>
+                <div class="pkg-filter__count"><strong>{{ searched.length }}</strong> program</div>
+            </div>
+        </div>
+        <button class="pkg-fab" type="button" aria-label="Filter" @click="sheetOpen = true">
+            <i class="bi bi-funnel-fill"></i>
+            <span v-if="jumlahFilter" class="pkg-fab__badge">{{ jumlahFilter }}</span>
+        </button>
 
         <!-- Program list -->
         <div v-loading="loading" class="pkg-list">
@@ -685,6 +724,12 @@ export default {
             query: '',
             page: 1,
             perPage: 6,
+            // Tab kategori dari DB (sudah disaring hak akses) + Filter Panel.
+            kategoriTab: [],
+            totalSemua: 0,
+            filters: { q: '', status: null, rentang: null },
+            sheetOpen: false,
+            cariTimer: null,
             show: false,
             editingId: null,
             // Wizard: langkah aktif + apakah seksi opsional diaktifkan.
@@ -728,15 +773,18 @@ export default {
         };
     },
     computed: {
-        filtered() { return this.tab ? this.list.filter((p) => p.kategori === this.tab) : this.list; },
+        // Penyaringan (kategori, pencarian, status, tanggal) SUDAH dikerjakan
+        // backend — `list` di sini sudah bersih. Sisanya hanya pemenggalan halaman.
+        filtered() { return this.list; },
         aktif() { return this.filtered.filter((p) => p.status === 'BERJALAN').length; },
         totalKuotaPosisi() { return this.filtered.reduce((n, p) => n + this.totalKuota(p), 0); },
+        searched() { return this.list; },
 
-        /** Filter tab + pencarian nama/kode/penyelenggara/alur. */
-        searched() {
-            const q = (this.query || '').trim().toLowerCase();
-            if (!q) return this.filtered;
-            return this.filtered.filter((p) => [p.nama, p.kode, p.penyelenggara, p.alurNama, p.alur].join(' ').toLowerCase().includes(q));
+        adaFilter() {
+            return !!(this.filters.q || this.filters.status || (this.filters.rentang && this.filters.rentang.length));
+        },
+        jumlahFilter() {
+            return [this.filters.q, this.filters.status, this.filters.rentang?.length ? 1 : null].filter(Boolean).length;
         },
         totalPages() { return Math.max(1, Math.ceil(this.searched.length / this.perPage)); },
         paged() { const s = (this.page - 1) * this.perPage; return this.searched.slice(s, s + this.perPage); },
@@ -920,14 +968,29 @@ export default {
         async load() {
             this.loading = true;
             try {
-                const res = await axios.get(API, CFG);
-                this.list = res.data.result || [];
+                const params = {
+                    q: this.filters.q || undefined,
+                    kategori: this.tab || undefined,
+                    status: this.filters.status || undefined,
+                    dari: this.filters.rentang?.[0] || undefined,
+                    sampai: this.filters.rentang?.[1] || undefined,
+                };
+                const r = (await axios.get(API, { ...CFG, params })).data.result || {};
+                this.list = r.data || [];
+                // Tab kategori datang dari master + hak akses pengguna.
+                this.kategoriTab = r.kategori || [];
+                this.totalSemua = r.total || 0;
+                // Jangan tertinggal di halaman yang sudah tidak ada isinya.
+                if (this.page > this.totalPages) this.page = 1;
             } catch (e) {
                 this.notice('Gagal memuat data program.');
             } finally {
                 this.loading = false;
             }
         },
+        pilihTab(kode) { this.tab = kode; this.page = 1; this.load(); },
+        cariDebounce() { if (this.cariTimer) clearTimeout(this.cariTimer); this.cariTimer = setTimeout(() => { this.page = 1; this.load(); }, 400); },
+        resetFilter() { this.filters = { q: '', status: null, rentang: null }; this.page = 1; this.load(); },
         openCreate() {
             this.editingId = null;
             // Semua field sengaja KOSONG — mode & warna baru terisi dari preset
@@ -1162,6 +1225,30 @@ export default {
 
 /* Toolbar */
 .pkg-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin: 26px 0 16px; }
+
+/* ── FILTER PANEL — card di desktop, bottom-sheet lewat FAB di mobile ── */
+.pkg-filter { background: #fff; border: 1px solid rgba(15,23,42,.08); border-radius: 16px; padding: .9rem 1rem 1rem; margin-bottom: 1rem; box-shadow: 0 8px 24px rgba(15,23,42,.04); }
+.pkg-filter__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: .65rem; }
+.pkg-filter__title { display: inline-flex; align-items: center; gap: .45rem; font-size: 12px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #4338ca; }
+.pkg-filter__act { display: inline-flex; gap: .4rem; }
+.pkg-filter__reset { display: inline-flex; align-items: center; gap: .3rem; border: 1px solid rgba(79,70,229,.25); background: #eef2ff; color: #4338ca; font-size: 11.5px; font-weight: 700; border-radius: 9px; padding: 4px 10px; cursor: pointer; }
+.pkg-filter__reset:hover { background: #e0e7ff; }
+.pkg-filter__close { display: none; border: none; background: transparent; color: #64748b; font-size: 15px; cursor: pointer; }
+.pkg-filter__grid { display: grid; grid-template-columns: minmax(220px,1.6fr) 1fr 1.4fr auto; gap: .7rem; align-items: end; }
+.pkg-filter__count { font-size: 12px; color: #64748b; padding-bottom: .5rem; white-space: nowrap; }
+.pkg-sheetbg { display: none; }
+.pkg-fab { display: none; position: fixed; right: 18px; bottom: 20px; z-index: 70; width: 52px; height: 52px; border-radius: 50%; border: none; background: linear-gradient(135deg,#8b5cf6,#6366f1); color: #fff; font-size: 19px; cursor: pointer; box-shadow: 0 12px 28px rgba(99,102,241,.45); }
+.pkg-fab__badge { position: absolute; top: -4px; right: -4px; min-width: 19px; height: 19px; border-radius: 999px; background: #ef4444; color: #fff; font-size: 10.5px; font-weight: 800; display: grid; place-items: center; padding: 0 5px; border: 2px solid #fff; }
+
+@media (max-width: 960px) { .pkg-filter__grid { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 640px) {
+    .pkg-filter { display: none; }
+    .pkg-filter.is-open { display: block; position: fixed; left: 0; right: 0; bottom: 0; z-index: 80; margin: 0; border-radius: 18px 18px 0 0; max-height: 78vh; overflow-y: auto; box-shadow: 0 -18px 40px rgba(15,23,42,.25); }
+    .pkg-filter__grid { grid-template-columns: 1fr; }
+    .pkg-filter__close { display: inline-flex; }
+    .pkg-fab { display: grid; place-items: center; }
+    .pkg-sheetbg { display: block; position: fixed; inset: 0; z-index: 75; background: rgba(15,23,42,.45); }
+}
 .pkg-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
 .pkg-tab { appearance: none; cursor: pointer; font-family: inherit; font-size: 13px; font-weight: 700; padding: 10px 15px; border-radius: 12px; border: 1px solid #e6e9f3; background: rgba(255, 255, 255, .9); color: #64748b; transition: all .16s; display: inline-flex; align-items: center; gap: 7px; }
 .pkg-tab:hover { border-color: #c7cdf0; color: #4f46e5; }

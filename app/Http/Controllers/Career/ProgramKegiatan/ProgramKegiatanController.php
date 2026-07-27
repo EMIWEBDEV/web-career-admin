@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Career\ProgramKegiatan;
 
 use App\Helpers\ResponseHelper;
 use App\Http\Controllers\Controller;
+use App\Support\Career\AksesService;
 use App\Support\Career\KodeUnik;
 use App\Support\Career\MesinSyarat;
 use App\Support\CareerShell;
@@ -24,13 +25,46 @@ class ProgramKegiatanController extends Controller
         return Inertia::render('Career/admin/program-kegiatan/programKegiatan', CareerShell::props('/karir/program-kegiatan', 'Program Kegiatan'));
     }
 
-    public function list()
+    public function list(Request $request)
     {
         try {
-            $programs = DB::table('N_WEB_CAREERS_Program as p')
+            // ── FILTER SERVER-SIDE (Filter Panel) ──
+            $q = trim((string) $request->query('q', ''));
+            $kategori = trim((string) $request->query('kategori', ''));
+            $status = strtoupper(trim((string) $request->query('status', '')));
+            $dari = $request->query('dari');
+            $sampai = $request->query('sampai');
+
+            // Kategori yang BOLEH dilihat pengguna ini (Role_Konten_Access).
+            // NULL = tidak dibatasi. Ini gerbang sebenarnya — tab di layar hanya
+            // mengikuti, jadi kategori terlarang tak bisa diintip lewat URL.
+            $izin = AksesService::kategoriDiizinkan('programPage');
+
+            $dasar = fn () => DB::table('N_WEB_CAREERS_Program as p')
                 ->leftJoin('N_WEB_CAREERS_Users as u', 'u.Id_Users', '=', 'p.Created_By_Id')
                 ->leftJoin('N_WEB_CAREERS_Master_Alur as a', 'a.Kode', '=', 'p.Alur_Kode')
-                ->orderBy('p.Id_Program')
+                ->when($izin, fn ($w) => $w->whereIn('p.Kategori', $izin))
+                ->when($q !== '', fn ($w) => $w->where(function ($x) use ($q) {
+                    $x->where('p.Nama', 'like', "%{$q}%")
+                        ->orWhere('p.Kode', 'like', "%{$q}%")
+                        ->orWhere('p.Penyelenggara', 'like', "%{$q}%")
+                        ->orWhere('a.Nama', 'like', "%{$q}%");
+                }))
+                ->when(in_array($status, ['BERJALAN', 'DRAFT', 'SELESAI', 'NONAKTIF'], true), fn ($w) => $w->where('p.Status', $status))
+                ->when($dari, fn ($w) => $w->whereDate('p.Created_At', '>=', $dari))
+                ->when($sampai, fn ($w) => $w->whereDate('p.Created_At', '<=', $sampai));
+
+            // Hitungan per kategori DIHITUNG SEBELUM tab diterapkan, supaya angka
+            // di tiap tab tetap benar saat salah satunya sedang dipilih.
+            $hitungKategori = (clone $dasar())
+                ->select('p.Kategori', DB::raw('COUNT(*) as jml'))
+                ->groupBy('p.Kategori')
+                ->pluck('jml', 'Kategori');
+
+            $programs = $dasar()
+                ->when($kategori !== '', fn ($w) => $w->where('p.Kategori', $kategori))
+                // Terbaru di atas — program yang baru dibuat paling sering dibuka.
+                ->orderByDesc('p.Id_Program')
                 ->select('p.*', 'u.Nama as Pembuat', 'a.Nama as AlurNama')
                 ->get();
 
@@ -69,7 +103,26 @@ class ProgramKegiatanController extends Controller
                 ])->values(),
             ])->values();
 
-            return ResponseHelper::success($rows, 'Data program dimuat');
+            // Tab kategori DIAMBIL DARI MASTER (bukan hardcode) dan disaring ke
+            // kategori yang boleh dilihat pengguna ini. Bila ia hanya berhak atas
+            // satu kategori, hanya satu tab yang muncul.
+            $tabKategori = DB::table('N_WEB_CAREERS_Master_Talent_Acquisition')
+                ->where('Flag_Aktif', 'Y')
+                ->when($izin, fn ($w) => $w->whereIn('Kode', $izin))
+                ->orderBy('Id_Master_Talent_Acquisition')
+                ->get(['Kode', 'Nama'])
+                ->map(fn ($k) => [
+                    'kode' => $k->Kode,
+                    'nama' => $k->Nama,
+                    'jumlah' => (int) ($hitungKategori[$k->Kode] ?? 0),
+                ])
+                ->values();
+
+            return ResponseHelper::success([
+                'data' => $rows,
+                'kategori' => $tabKategori,
+                'total' => (int) $hitungKategori->sum(),
+            ], 'Data program dimuat');
         } catch (\Throwable $e) {
             Log::channel('web_career')->error('Gagal memuat program: ' . $e->getMessage());
 
