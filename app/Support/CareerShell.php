@@ -135,6 +135,11 @@ class CareerShell
                 // [feat/feedback]
                 ['key' => 'feedback-dashboard', 'label' => 'Feedback Dashboard', 'icon' => 'bi bi-graph-up', 'url' => '/karir/feedback-dashboard'],
             ]],
+            ['id' => 'hak-akses', 'title' => 'Hak Akses', 'items' => [
+                ['key' => 'master-menu', 'label' => 'Master Menu', 'icon' => 'bi bi-list-nested', 'url' => '/master-menu'],
+                ['key' => 'hak-akses', 'label' => 'Manajemen Hak Akses', 'icon' => 'bi bi-person-lock', 'url' => '/hak-akses'],
+                ['key' => 'klasifikasi-akses', 'label' => 'Akses Klasifikasi Akun', 'icon' => 'bi bi-shield-lock', 'url' => '/klasifikasi-akses'],
+            ]],
             ['id' => 'pengaturan', 'title' => 'Pengaturan', 'items' => [
                 ['key' => 'master-akun', 'label' => 'Master Akun', 'icon' => 'bi bi-person-badge', 'url' => '/master-akun'],
             ]],
