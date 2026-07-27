@@ -612,34 +612,51 @@ export default {
             this.programList = pRes.data.result || [];
         },
         async addAssignment() {
-            if (this.newAssign.type === 'general') {
-                await axios.post('/api/v1/karir/feedback-assignment', {
-                    master_feedback_form_id: this.assignForm.Id_Master_Feedback_Form,
-                    flag_general: 'Y', flag_aktif: 'Y',
-                });
-            } else {
-                for (const pid of this.newAssign.program_ids) {
+            try {
+                if (this.newAssign.type === 'general') {
                     await axios.post('/api/v1/karir/feedback-assignment', {
                         master_feedback_form_id: this.assignForm.Id_Master_Feedback_Form,
-                        program_id: pid, flag_general: 'T', flag_aktif: 'Y',
+                        flag_general: 'Y', flag_aktif: 'Y',
                     });
+                } else {
+                    for (const pid of this.newAssign.program_ids) {
+                        await axios.post('/api/v1/karir/feedback-assignment', {
+                            master_feedback_form_id: this.assignForm.Id_Master_Feedback_Form,
+                            program_id: pid, flag_general: 'T', flag_aktif: 'Y',
+                        });
+                    }
                 }
+                this.$message.success('Assignment berhasil ditambahkan');
+                this.newAssign = { type: 'general', program_ids: [] };
+                this.assignShow = false;
+            } catch (e) {
+                const msg = e.response?.data?.message || e.message || 'Gagal menambah assignment';
+                this.$message.error(msg);
+                console.error('[MasterFeedback:addAssignment]', e);
             }
-            this.newAssign = { type: 'general', program_ids: [] };
-            this.assignShow = false;
         },
         async toggleAssignment(a) {
-            await axios.put(`/api/v1/karir/feedback-assignment/${a.Id_Feedback_Assignment}`, {
-                flag_aktif: a.Flag_Aktif === 'Y' ? 'T' : 'Y',
-            });
-            await this.openAssign(this.assignForm);
+            try {
+                await axios.put(`/api/v1/karir/feedback-assignment/${a.Id_Feedback_Assignment}`, {
+                    flag_aktif: a.Flag_Aktif === 'Y' ? 'T' : 'Y',
+                });
+                await this.openAssign(this.assignForm);
+            } catch (e) {
+                const msg = e.response?.data?.message || e.message || 'Gagal mengubah assignment';
+                this.$message.error(msg);
+                console.error('[MasterFeedback:toggleAssignment]', e);
+            }
         },
         async load() {
             this.loading = true;
             try {
                 const { data } = await axios.get('/api/v1/karir/master-feedback');
                 this.list = (data.result || []).map(f => ({ ...f, _pertanyaan: [], _questionsLoaded: false }));
-            } catch (e) { /* silent */ }
+            } catch (e) {
+                const msg = e.response?.data?.message || e.message || 'Gagal memuat data form';
+                this.$message.error(msg);
+                console.error('[MasterFeedback:load]', e);
+            }
             this.loading = false;
         },
         async loadQuestions(f) {
@@ -653,14 +670,15 @@ export default {
                     Label_Min: p.Label_Min || null,
                     Label_Max: p.Label_Max || null,
                 }));
-                // Jangan reset _editIdx — biarkan card yang sedang diedit tetap terbuka
-                // Hanya reset saat pertama kali expand (dipanggil dari toggleExpand)
                 if (!f._questionsLoaded) f._editIdx = null;
                 f.Jumlah_Pertanyaan = f._pertanyaan.length;
                 f._questionsLoaded = true;
             } catch (e) {
                 f._pertanyaan = [];
                 f._questionsLoaded = true;
+                const msg = e.response?.data?.message || e.message || 'Gagal memuat pertanyaan';
+                this.$message.error(msg);
+                console.error('[MasterFeedback:loadQuestions]', e);
             }
         },
         openCreate() { this.editingId = null; this.form = { Nama: '', Deskripsi: '', Mode_Tampilan: 'SCROLL', Durasi_Hari: null, Flag_Aktif: 'Y' }; this.show = true; },
@@ -674,24 +692,45 @@ export default {
             this.show = true;
         },
         async saveForm() {
-            const payload = { nama: this.form.Nama, deskripsi: this.form.Deskripsi, mode_tampilan: this.form.Mode_Tampilan, durasi_hari: this.form.Durasi_Hari, flag_aktif: this.form.Flag_Aktif };
-            if (this.editingId) {
-                await axios.put(`/api/v1/karir/master-feedback/${this.editingId}`, payload);
-            } else {
-                await axios.post('/api/v1/karir/master-feedback', payload);
+            try {
+                const payload = { nama: this.form.Nama, deskripsi: this.form.Deskripsi, mode_tampilan: this.form.Mode_Tampilan, durasi_hari: this.form.Durasi_Hari, flag_aktif: this.form.Flag_Aktif };
+                if (this.editingId) {
+                    await axios.put(`/api/v1/karir/master-feedback/${this.editingId}`, payload);
+                } else {
+                    await axios.post('/api/v1/karir/master-feedback', payload);
+                }
+                this.$message.success(this.editingId ? 'Form berhasil diupdate' : 'Form berhasil dibuat');
+                this.show = false; this.load();
+            } catch (e) {
+                const msg = e.response?.data?.message || e.message || 'Gagal menyimpan form';
+                this.$message.error(msg);
+                console.error('[MasterFeedback:saveForm]', e);
             }
-            this.show = false; this.load();
         },
         askRemove(f) { this.removeTarget = f; },
         async doRemove() {
             if (!this.removeTarget) return;
-            await axios.delete(`/api/v1/karir/master-feedback/${this.removeTarget.Id_Master_Feedback_Form}`);
-            if (this.open === this.removeTarget.Id_Master_Feedback_Form) this.open = null;
-            this.removeTarget = null; this.load();
+            try {
+                await axios.delete(`/api/v1/karir/master-feedback/${this.removeTarget.Id_Master_Feedback_Form}`);
+                if (this.open === this.removeTarget.Id_Master_Feedback_Form) this.open = null;
+                this.$message.success('Form berhasil dihapus');
+                this.removeTarget = null; this.load();
+            } catch (e) {
+                const msg = e.response?.data?.message || e.message || 'Gagal menghapus form';
+                this.$message.error(msg);
+                console.error('[MasterFeedback:doRemove]', e);
+            }
         },
         async setStatus(f, active) {
-            await axios.put(`/api/v1/karir/master-feedback/${f.Id_Master_Feedback_Form}`, { nama: f.Nama, deskripsi: f.Deskripsi, mode_tampilan: f.Mode_Tampilan, durasi_hari: f.Durasi_Hari, flag_aktif: active ? 'Y' : 'T' });
-            this.load();
+            try {
+                await axios.put(`/api/v1/karir/master-feedback/${f.Id_Master_Feedback_Form}`, { nama: f.Nama, deskripsi: f.Deskripsi, mode_tampilan: f.Mode_Tampilan, durasi_hari: f.Durasi_Hari, flag_aktif: active ? 'Y' : 'T' });
+                this.$message.success(active ? 'Form diaktifkan' : 'Form dinonaktifkan');
+                this.load();
+            } catch (e) {
+                const msg = e.response?.data?.message || e.message || 'Gagal mengubah status form';
+                this.$message.error(msg);
+                console.error('[MasterFeedback:setStatus]', e);
+            }
         },
         showTypePicker(f) {
             if (!f._pertanyaan) f._pertanyaan = [];
@@ -797,11 +836,12 @@ export default {
         },
         async removeQuestion(f, i) {
             if (this.savingQ[f.Id_Master_Feedback_Form]) return;
-            // Optimistic: hapus dulu dari UI, baru simpan ke DB
             const removed = f._pertanyaan.splice(i, 1)[0];
-            this.saveQuestionsSilent(f).catch(() => {
-                // Gagal → kembalikan ke posisi semula
+            this.saveQuestionsSilent(f).catch((e) => {
                 f._pertanyaan.splice(i, 0, removed);
+                const msg = e.response?.data?.message || e.message || 'Gagal menghapus pertanyaan';
+                this.$message.error(msg);
+                console.error('[MasterFeedback:removeQuestion]', e);
             });
         },
         async saveQuestionsSilent(f) {
@@ -810,6 +850,11 @@ export default {
             try {
                 const pertanyaan = this.buildPertanyaanPayload(f);
                 await axios.post(`/api/v1/karir/master-feedback/${f.Id_Master_Feedback_Form}/pertanyaan`, { pertanyaan });
+            } catch (e) {
+                const msg = e.response?.data?.message || e.message || 'Gagal menyimpan pertanyaan';
+                this.$message.error(msg);
+                console.error('[MasterFeedback:saveQuestions]', e);
+                throw e; // rethrow agar caller bisa rollback (mis. removeQuestion)
             } finally {
                 this.savingQ = { ...this.savingQ, [f.Id_Master_Feedback_Form]: false };
             }

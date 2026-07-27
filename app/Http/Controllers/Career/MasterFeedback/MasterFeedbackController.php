@@ -80,12 +80,8 @@ class MasterFeedbackController extends Controller
     public function show($id)
     {
         $startedAt = microtime(true);
-        $cacheKey = $this->detailCacheKey($id);
-        $cached = Cache::get($cacheKey);
-
-        if ($cached !== null) {
-            return ResponseHelper::success($cached);
-        }
+        // Cache dinonaktifkan — data form harus selalu fresh setelah edit.
+        // NOLOCK sudah cukup untuk performa read tanpa staleness.
 
         $queryFormStartedAt = microtime(true);
         $form = DB::table($this->masterFeedbackFormTableForRead())
@@ -135,8 +131,6 @@ class MasterFeedbackController extends Controller
             'Flag_Aktif' => $form->Flag_Aktif,
             'pertanyaan' => $items,
         ];
-
-        Cache::put($cacheKey, $result, now()->addMinutes(10));
 
         $totalMs = (microtime(true) - $startedAt) * 1000;
         if ($totalMs >= 1000) {

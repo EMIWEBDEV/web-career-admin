@@ -12,16 +12,29 @@
 
         <div class="ld-wrap">
             <!-- [feat/feedback] Banner feedback -->
+            <!-- ═══ FEEDBACK CTA BANNER (Eye-Catching & Ultra-Premium) ═══ -->
             <div v-if="showFeedbackBanner && feedbackPending" :class="['ld-feedback-banner', feedbackPending.Hasil_Akhir === 'DITERIMA' ? 'ld-feedback-banner--wajib' : 'ld-feedback-banner--optional']">
+                <div class="ld-feedback-banner__glow"></div>
                 <div class="ld-feedback-banner__content">
-                    <div class="ld-feedback-banner__text">
-                        <strong v-if="feedbackPending.Hasil_Akhir === 'DITERIMA'">Selamat! Mohon isi feedback untuk menyelesaikan proses.</strong>
-                        <strong v-else>Bantu kami menjadi lebih baik dengan mengisi feedback.</strong>
-                        <span>{{ feedbackPending.Hasil_Akhir === 'DITERIMA' ? 'Feedback wajib diisi.' : 'Hanya butuh 1-2 menit.' }}</span>
+                    <div class="ld-feedback-banner__left">
+                        <div class="ld-feedback-banner__icon">
+                            <i class="bi bi-stars"></i>
+                        </div>
+                        <div class="ld-feedback-banner__text">
+                            <h4 class="ld-feedback-banner__title">
+                                <template v-if="feedbackPending.Hasil_Akhir === 'DITERIMA'">Selamat! Mohon isi feedback untuk menyelesaikan proses 🎉</template>
+                                <template v-else>Bantu Kami Berbenah &amp; Tingkatkan Layanan ✨</template>
+                            </h4>
+                            <p class="ld-feedback-banner__sub">
+                                {{ feedbackPending.Hasil_Akhir === 'DITERIMA' ? 'Masukan Anda wajib diisi untuk kelengkapan administrasi.' : 'Ulasan dan saran Anda sangat berharga bagi evaluasi rekrutmen kami (hanya 1-2 menit).' }}
+                            </p>
+                        </div>
                     </div>
                     <div class="ld-feedback-banner__actions">
-                        <a :href="feedbackPending.feedback_url" class="ld-feedback-banner__btn ld-feedback-banner__btn--fill">Isi Feedback →</a>
-                        <button v-if="feedbackPending.Hasil_Akhir !== 'DITERIMA'" class="ld-feedback-banner__btn ld-feedback-banner__btn--ghost" @click="showFeedbackBanner = false">Nanti Saja</button>
+                        <a :href="feedbackPending.feedback_url" class="ld-feedback-banner__btn ld-feedback-banner__btn--fill" title="Bantu kami evaluasi proses rekrutmen ini, masukan Anda sangat berharga!">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M12 8v4M12 16h.01"/></svg>
+                            <span>Bantu Kami Berbenah ✨</span>
+                        </a>
                     </div>
                 </div>
             </div>
@@ -167,7 +180,7 @@
                     </div>
 
                     <!-- ── ALUR SELEKSI · WATERFALL (gantt bertingkat) ── -->
-                    <div class="ld-card ld-wf">
+                    <div v-if="isMtCategory" class="ld-card ld-wf">
                         <div class="ld-wf__head">
                             <div class="ld-sectitle">
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" /></svg>
@@ -403,6 +416,10 @@ export default {
         };
     },
     computed: {
+        isMtCategory() {
+            const cat = (this.lamaran?.kategori || this.lamaran?.Kategori || this.lamaran?.kategori_program || '').toString().toUpperCase();
+            return cat === 'MT';
+        },
         // [feat/feedback]
         feedbackPending() { return this.$page.props.feedbackPending; },
         komponen() { return this.tugas ? komponenFormulir(this.tugas.komponen) : null; },
@@ -862,5 +879,128 @@ export default {
     .ld { padding: 20px 16px 40px; }
     .ld-cred, .ld-fields, .ld-benefits { grid-template-columns: 1fr; }
     .ld-hero__in { padding: 18px; }
+}
+
+/* ═══ FEEDBACK BANNER GLASSMORPHISM & CTA STYLING ═══ */
+.ld-feedback-banner {
+    position: relative;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(254, 243, 199, 0.6) 100%);
+    backdrop-filter: blur(14px);
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    border-radius: 18px;
+    padding: 18px 24px;
+    margin-bottom: 20px;
+    box-shadow: 0 12px 32px rgba(245, 158, 11, 0.15), 0 2px 8px rgba(0, 0, 0, 0.02);
+    overflow: hidden;
+    transition: all 0.3s ease;
+}
+
+.ld-feedback-banner--wajib {
+    background: linear-gradient(135deg, rgba(236, 253, 245, 0.95) 0%, rgba(209, 250, 229, 0.7) 100%);
+    border-color: rgba(16, 185, 129, 0.4);
+    box-shadow: 0 12px 32px rgba(16, 185, 129, 0.15);
+}
+
+.ld-feedback-banner__glow {
+    position: absolute;
+    top: -50%;
+    right: -20%;
+    width: 200px;
+    height: 200px;
+    background: radial-gradient(circle, rgba(245, 158, 11, 0.25) 0%, transparent 70%);
+    pointer-events: none;
+}
+
+.ld-feedback-banner__content {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    position: relative;
+    z-index: 1;
+    flex-wrap: wrap;
+}
+
+.ld-feedback-banner__left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex: 1 1 320px;
+}
+
+.ld-feedback-banner__icon {
+    width: 46px;
+    height: 46px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #f59e0b 0%, #f43f5e 100%);
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.3rem;
+    flex-shrink: 0;
+    box-shadow: 0 6px 18px rgba(245, 158, 11, 0.35);
+}
+
+.ld-feedback-banner__title {
+    font-size: 1.05rem;
+    font-weight: 800;
+    color: #0f172a;
+    margin: 0 0 4px;
+    line-height: 1.3;
+}
+
+.ld-feedback-banner__sub {
+    font-size: 0.85rem;
+    color: #475569;
+    margin: 0;
+    line-height: 1.45;
+}
+
+.ld-feedback-banner__actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+}
+
+.ld-feedback-banner__btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: inherit;
+    font-size: 0.85rem;
+    font-weight: 800;
+    padding: 10px 20px;
+    border-radius: 12px;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.ld-feedback-banner__btn--fill {
+    background: linear-gradient(135deg, #f59e0b 0%, #f43f5e 100%);
+    color: #ffffff !important;
+    border: none;
+    box-shadow: 0 8px 20px rgba(245, 158, 11, 0.35);
+    animation: fb-cta-pulse 2.2s ease-in-out infinite;
+}
+
+.ld-feedback-banner__btn--fill:hover {
+    transform: translateY(-2px) scale(1.02);
+    background: linear-gradient(135deg, #fbbf24 0%, #e11d48 100%);
+    box-shadow: 0 12px 28px rgba(244, 63, 94, 0.45);
+}
+
+.ld-feedback-banner__btn--ghost {
+    background: rgba(255, 255, 255, 0.8);
+    color: #64748b;
+    border: 1px solid #cbd5e1;
+}
+
+.ld-feedback-banner__btn--ghost:hover {
+    background: #ffffff;
+    color: #0f172a;
+    border-color: #94a3b8;
 }
 </style>

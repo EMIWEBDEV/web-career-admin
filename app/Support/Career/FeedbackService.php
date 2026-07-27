@@ -206,20 +206,66 @@ class FeedbackService
         $totalDibuat = (clone $baseQuery)->count();
         $totalTerisi = (clone $baseQuery)->where('fj.Status_Pengisian', 'TERISI')->count();
 
+        // Gunakan Tipe_Snapshot agar data tetap akurat meskipun master pertanyaan berubah
         $skorStats = DB::table('N_WEB_CAREERS_Feedback_Jawaban_Detail as d')
             ->join('N_WEB_CAREERS_Feedback_Jawaban as fj', 'd.Feedback_Jawaban_Id', '=', 'fj.Id_Feedback_Jawaban')
-            ->join('N_WEB_CAREERS_Master_Feedback_Pertanyaan as p', 'd.Master_Feedback_Pertanyaan_Id', '=', 'p.Id_Master_Feedback_Pertanyaan')
             ->join('N_WEB_CAREERS_Lamaran as l', 'fj.Lamaran_Id', '=', 'l.Id_Lamaran')
             ->where('fj.Flag_Cancellation', 'T')
             ->where('fj.Status_Pengisian', 'TERISI')
-            ->whereIn('p.Tipe', ['RATING', 'NPS', 'LIKERT'])
+            ->whereIn('d.Tipe_Snapshot', ['RATING', 'NPS', 'LIKERT'])
             ->when($formId, fn($q) => $q->where('fj.Master_Feedback_Form_Id', $formId))
             ->when($programId, fn($q) => $q->where('l.Program_Id', $programId))
             ->when($dateFrom, fn($q) => $q->where('fj.Submitted_At', '>=', $dateFrom))
             ->when($dateTo, fn($q) => $q->where('fj.Submitted_At', '<=', $dateTo))
-            ->selectRaw("p.Tipe, AVG(TRY_CAST(d.Jawaban AS FLOAT)) as rata2, COUNT(*) as jumlah")
-            ->groupBy('p.Tipe')
+            ->selectRaw("d.Tipe_Snapshot as Tipe, AVG(TRY_CAST(d.Jawaban AS FLOAT)) as rata2, COUNT(*) as jumlah")
+            ->groupBy('d.Tipe_Snapshot')
             ->get();
+
+        // NPS breakdown: baca Skala_Min/Max snapshot, normalisasi ke 0-10, lalu kategorikan
+        $npsRows = DB::table('N_WEB_CAREERS_Feedback_Jawaban_Detail as d')
+            ->join('N_WEB_CAREERS_Feedback_Jawaban as fj', 'd.Feedback_Jawaban_Id', '=', 'fj.Id_Feedback_Jawaban')
+            ->join('N_WEB_CAREERS_Lamaran as l', 'fj.Lamaran_Id', '=', 'l.Id_Lamaran')
+            ->where('fj.Flag_Cancellation', 'T')
+            ->where('fj.Status_Pengisian', 'TERISI')
+            ->where('d.Tipe_Snapshot', 'NPS')
+            ->when($formId, fn($q) => $q->where('fj.Master_Feedback_Form_Id', $formId))
+            ->when($programId, fn($q) => $q->where('l.Program_Id', $programId))
+            ->when($dateFrom, fn($q) => $q->where('fj.Submitted_At', '>=', $dateFrom))
+            ->when($dateTo, fn($q) => $q->where('fj.Submitted_At', '<=', $dateTo))
+            ->select('d.Jawaban', 'd.Skala_Min_Snapshot', 'd.Skala_Max_Snapshot')
+            ->get();
+
+        $npsTotal = count($npsRows);
+        $npsPromoters = 0;
+        $npsDetractors = 0;
+
+        foreach ($npsRows as $row) {
+            $score = (int) $row->Jawaban;
+            $skalaMin = (int) ($row->Skala_Min_Snapshot ?? 0);
+            $skalaMax = (int) ($row->Skala_Max_Snapshot ?? 10);
+            $range = $skalaMax - $skalaMin;
+            // Normalisasi ke 0-10 berdasarkan skala yang dikonfigurasi
+            $normalized = $range > 0 ? (($score - $skalaMin) / $range) * 10 : $score;
+            if ($normalized >= 9) {
+                $npsPromoters++;
+            } elseif ($normalized <= 6) {
+                $npsDetractors++;
+            }
+        }
+
+        // Skala referensi untuk NPS (dari respons pertama, fallback 0-10)
+        $npsScaleMin = null;
+        $npsScaleMax = null;
+        if ($npsTotal > 0) {
+            $firstRow = $npsRows->first();
+            $npsScaleMin = (int) ($firstRow->Skala_Min_Snapshot ?? 0);
+            $npsScaleMax = (int) ($firstRow->Skala_Max_Snapshot ?? 10);
+        }
+
+        $npsPassives = $npsTotal - $npsPromoters - $npsDetractors;
+        $npsScore = $npsTotal > 0
+            ? round(($npsPromoters - $npsDetractors) / $npsTotal * 100, 1)
+            : 0;
 
         $avgWaktu = (clone $baseQuery)
             ->where('fj.Status_Pengisian', 'TERISI')
@@ -232,20 +278,43 @@ class FeedbackService
             'total_terisi' => $totalTerisi,
             'response_rate' => $totalDibuat > 0 ? round($totalTerisi / $totalDibuat * 100, 1) : 0,
             'skor_stats' => $skorStats,
+            'nps_score' => $npsScore,
+            'nps_scale_min' => $npsScaleMin,
+            'nps_scale_max' => $npsScaleMax,
+            'nps_breakdown' => [
+                'promoters' => $npsPromoters,
+                'passives' => $npsPassives,
+                'detractors' => $npsDetractors,
+                'total' => $npsTotal,
+            ],
             'avg_waktu_detik' => $avgWaktu->avg_detik ?? 0,
         ];
     }
 
     /**
-     * NPS: %Promoters(9-10) - %Detractors(0-6). Range: -100 to +100.
+     * NPS: %Promoters - %Detractors. Normalisasi skor ke 0-10 berdasarkan Skala_Min/Max,
+     * lalu apply threshold standar NPS (promoter ≥9, detractor ≤6). Range: -100 to +100.
      */
-    public function calculateNPS(array $scores): float
+    public function calculateNPS(array $scores, int $skalaMin = 0, int $skalaMax = 10): float
     {
         $total = count($scores);
         if ($total === 0) return 0.0;
 
-        $promoters = count(array_filter($scores, fn($s) => (int) $s >= 9));
-        $detractors = count(array_filter($scores, fn($s) => (int) $s <= 6));
+        $range = $skalaMax - $skalaMin;
+        if ($range <= 0) $range = 10;
+
+        $promoters = 0;
+        $detractors = 0;
+        foreach ($scores as $s) {
+            $score = (int) $s;
+            // Normalisasi ke 0-10 berdasarkan skala yang dikonfigurasi
+            $normalized = (($score - $skalaMin) / $range) * 10;
+            if ($normalized >= 9) {
+                $promoters++;
+            } elseif ($normalized <= 6) {
+                $detractors++;
+            }
+        }
 
         return round(($promoters - $detractors) / $total * 100, 1);
     }

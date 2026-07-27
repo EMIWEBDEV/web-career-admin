@@ -20,5 +20,12 @@ class VerifyCsrfToken extends Middleware
         // Webhook hasil tes dari CAT/HCLearn (server-to-server, tanpa session/CSRF);
         // diamankan header X-WC-Secret di controller.
         'api/v1/webhook/*',
+        // [feat/feedback] Admin actions (reassign/resend) dilindungi career.auth,
+        // tidak perlu CSRF tambahan.
+        'api/v1/karir/feedback/reassign',
+        'api/v1/karir/feedback/resend',
+        // [feat/feedback] Master feedback CRUD — semua mutation endpoint
+        // dilindungi career.auth + career.role:ADMIN,SUPERADMIN.
+        'api/v1/karir/master-feedback/*',
     ];
 }

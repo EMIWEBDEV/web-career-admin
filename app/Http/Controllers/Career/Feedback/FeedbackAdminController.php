@@ -32,22 +32,38 @@ class FeedbackAdminController extends Controller
         $dateFrom = $request->input('date_from');
         $dateTo = $request->input('date_to');
 
-        $overview = $this->service->aggregate($formId ? (int) $formId : null,
-            $programId ? (int) $programId : null, $dateFrom, $dateTo);
+        $formIds = is_array($formId) ? array_filter(array_map('intval', $formId)) : ($formId !== null && $formId !== '' ? array_filter(array_map('intval', explode(',', $formId))) : []);
+        $programIds = is_array($programId) ? array_filter(array_map('intval', $programId)) : ($programId !== null && $programId !== '' ? array_filter(array_map('intval', explode(',', $programId))) : []);
 
-        $programComparison = $this->getProgramComparison(
-            $formId ? (int) $formId : null, $dateFrom, $dateTo);
-        $npsTrend = $this->getNpsTrend(
-            $formId ? (int) $formId : null, $programId ? (int) $programId : null);
-        $perPertanyaan = $formId ? $this->getPerPertanyaan((int) $formId, $dateFrom, $dateTo) : null;
-        $lolosVsGagal = $formId ? $this->getLolosVsGagal((int) $formId, $dateFrom, $dateTo) : null;
+        $firstFormId = !empty($formIds) ? reset($formIds) : null;
+        $firstProgId = !empty($programIds) ? reset($programIds) : null;
+
+        $overview = $this->service->aggregate($firstFormId, $firstProgId, $dateFrom, $dateTo);
+
+        // Layer 1: Health Bar
+        $satisfactionIndex = $this->calcSatisfactionIndex($overview);
+
+        // Layer 2: Comparison View
+        $aspekScorecard = $this->getAspekScorecard($firstFormId, $firstProgId, $dateFrom, $dateTo);
+        $lolosVsGagal = $this->getLolosVsGagal($firstFormId, $dateFrom, $dateTo);
+        $programComparison = $this->getProgramComparison($firstFormId, $dateFrom, $dateTo);
+
+        // Layer 3: Tabs
+        $ratingTrend = $this->getRatingTrend($firstFormId, $firstProgId, $dateFrom, $dateTo);
+        $npsTrend = $this->getNpsTrend($firstFormId, $firstProgId, $dateFrom, $dateTo);
+        $textVoice = $this->getTextVoice($firstFormId, $firstProgId, $dateFrom, $dateTo, 20);
+        $perPertanyaan = $firstFormId ? $this->getPerPertanyaan($firstFormId, $dateFrom, $dateTo) : null;
 
         return ResponseHelper::success([
-            'overview' => $overview,
-            'program_comparison' => $programComparison,
-            'nps_trend' => $npsTrend,
-            'per_pertanyaan' => $perPertanyaan,
-            'lolos_vs_gagal' => $lolosVsGagal,
+            'overview'            => $overview,
+            'satisfaction_index'  => $satisfactionIndex,
+            'aspek_scorecard'     => $aspekScorecard,
+            'lolos_vs_gagal'      => $lolosVsGagal,
+            'program_comparison'  => $programComparison,
+            'rating_trend'        => $ratingTrend,
+            'nps_trend'           => $npsTrend,
+            'text_voice'          => $textVoice,
+            'per_pertanyaan'      => $perPertanyaan,
         ]);
     }
 
@@ -57,19 +73,19 @@ class FeedbackAdminController extends Controller
             ->join('N_WEB_CAREERS_Lamaran as l', 'fj.Lamaran_Id', '=', 'l.Id_Lamaran')
             ->leftJoin('N_WEB_CAREERS_Program as p', 'l.Program_Id', '=', 'p.Id_Program')
             ->leftJoin('N_WEB_CAREERS_Users as u', 'l.Id_Users', '=', 'u.Id_Users')
+            ->leftJoin('N_WEB_CAREERS_Master_Feedback_Form as ff', 'fj.Master_Feedback_Form_Id', '=', 'ff.Id_Master_Feedback_Form')
             ->where('fj.Id_Feedback_Jawaban', $feedbackId)
             ->select('fj.*', 'l.Kode as Kode_Lamaran', 'l.Hasil_Akhir', 'p.Nama as Program_Nama',
-                'u.Nama as Nama_Kandidat', 'u.Email')
+                'u.Nama as Nama_Kandidat', 'u.Email', 'ff.Nama as Form_Nama')
             ->first();
 
         if (! $feedback) return ResponseHelper::error('Feedback tidak ditemukan', 404);
 
         $jawaban = DB::table('N_WEB_CAREERS_Feedback_Jawaban_Detail as d')
-            ->join('N_WEB_CAREERS_Master_Feedback_Pertanyaan as p',
-                'd.Master_Feedback_Pertanyaan_Id', '=', 'p.Id_Master_Feedback_Pertanyaan')
             ->where('d.Feedback_Jawaban_Id', $feedbackId)
-            ->select('p.Label', 'p.Tipe', 'p.Opsi', 'd.Jawaban')
-            ->orderBy('p.Urutan')
+            ->select('d.Label_Snapshot as Label', 'd.Tipe_Snapshot as Tipe', 'd.Opsi_Snapshot as Opsi',
+                     'd.Jawaban', 'd.Skala_Min_Snapshot', 'd.Skala_Max_Snapshot')
+            ->orderBy('d.Id_Feedback_Jawaban_Detail')
             ->get();
 
         $feedback->jawaban = $jawaban;
@@ -181,29 +197,29 @@ class FeedbackAdminController extends Controller
 
     private function getProgramComparison(?int $formId, ?string $dateFrom, ?string $dateTo): array
     {
-        $query = DB::table('N_WEB_CAREERS_Feedback_Jawaban as fj')
+        // Step 1: Hitung rata-rata rating per feedback (pakai Tipe_Snapshot)
+        $ratingPerFb = DB::table('N_WEB_CAREERS_Feedback_Jawaban_Detail as d')
+            ->join('N_WEB_CAREERS_Feedback_Jawaban as fj', 'd.Feedback_Jawaban_Id', '=', 'fj.Id_Feedback_Jawaban')
+            ->where('fj.Flag_Cancellation', 'T')
+            ->where('fj.Status_Pengisian', 'TERISI')
+            ->whereIn('d.Tipe_Snapshot', ['RATING', 'LIKERT'])
+            ->when($formId, fn($q) => $q->where('fj.Master_Feedback_Form_Id', $formId))
+            ->when($dateFrom, fn($q) => $q->where('fj.Submitted_At', '>=', $dateFrom))
+            ->when($dateTo, fn($q) => $q->where('fj.Submitted_At', '<=', $dateTo))
+            ->selectRaw('d.Feedback_Jawaban_Id, AVG(TRY_CAST(d.Jawaban AS FLOAT)) as avg_rating')
+            ->groupBy('d.Feedback_Jawaban_Id');
+
+        // Step 2: Join dengan program untuk agregat per program
+        $items = DB::table('N_WEB_CAREERS_Feedback_Jawaban as fj')
             ->join('N_WEB_CAREERS_Lamaran as l', 'fj.Lamaran_Id', '=', 'l.Id_Lamaran')
             ->join('N_WEB_CAREERS_Program as p', 'l.Program_Id', '=', 'p.Id_Program')
+            ->joinSub($ratingPerFb, 'fb_rating', fn($j) => $j->on('fb_rating.Feedback_Jawaban_Id', '=', 'fj.Id_Feedback_Jawaban'))
             ->where('fj.Flag_Cancellation', 'T')
-            ->where('fj.Status_Pengisian', 'TERISI');
-
-        if ($formId) $query->where('fj.Master_Feedback_Form_Id', $formId);
-        if ($dateFrom) $query->where('fj.Submitted_At', '>=', $dateFrom);
-        if ($dateTo) $query->where('fj.Submitted_At', '<=', $dateTo);
-
-        $items = $query->selectRaw("
-                p.Id_Program,
-                p.Nama as Program_Nama,
-                COUNT(*) as total_respon,
-                AVG(TRY_CAST(
-                    (SELECT AVG(TRY_CAST(d2.Jawaban AS FLOAT))
-                     FROM N_WEB_CAREERS_Feedback_Jawaban_Detail d2
-                     JOIN N_WEB_CAREERS_Master_Feedback_Pertanyaan p2
-                       ON d2.Master_Feedback_Pertanyaan_Id = p2.Id_Master_Feedback_Pertanyaan
-                     WHERE d2.Feedback_Jawaban_Id = fj.Id_Feedback_Jawaban
-                       AND p2.Tipe IN ('RATING','LIKERT'))
-                AS FLOAT)) as avg_rating
-            ")
+            ->where('fj.Status_Pengisian', 'TERISI')
+            ->when($formId, fn($q) => $q->where('fj.Master_Feedback_Form_Id', $formId))
+            ->when($dateFrom, fn($q) => $q->where('fj.Submitted_At', '>=', $dateFrom))
+            ->when($dateTo, fn($q) => $q->where('fj.Submitted_At', '<=', $dateTo))
+            ->selectRaw('p.Id_Program, p.Nama as Program_Nama, COUNT(*) as total_respon, AVG(fb_rating.avg_rating) as avg_rating')
             ->groupBy('p.Id_Program', 'p.Nama')
             ->orderBy('total_respon', 'DESC')
             ->get()
@@ -212,34 +228,45 @@ class FeedbackAdminController extends Controller
         return $items;
     }
 
-    private function getNpsTrend(?int $formId, ?int $programId): array
+    private function getNpsTrend(?int $formId, ?int $programId, ?string $dateFrom = null, ?string $dateTo = null): array
     {
         $query = DB::table('N_WEB_CAREERS_Feedback_Jawaban_Detail as d')
             ->join('N_WEB_CAREERS_Feedback_Jawaban as fj', 'd.Feedback_Jawaban_Id', '=', 'fj.Id_Feedback_Jawaban')
-            ->join('N_WEB_CAREERS_Master_Feedback_Pertanyaan as p', 'd.Master_Feedback_Pertanyaan_Id', '=', 'p.Id_Master_Feedback_Pertanyaan')
             ->join('N_WEB_CAREERS_Lamaran as l', 'fj.Lamaran_Id', '=', 'l.Id_Lamaran')
             ->where('fj.Flag_Cancellation', 'T')
             ->where('fj.Status_Pengisian', 'TERISI')
-            ->where('p.Tipe', 'NPS');
+            ->where('d.Tipe_Snapshot', 'NPS');
 
         if ($formId) $query->where('fj.Master_Feedback_Form_Id', $formId);
         if ($programId) $query->where('l.Program_Id', $programId);
+        if ($dateFrom) $query->where('fj.Submitted_At', '>=', $dateFrom);
+        if ($dateTo) $query->where('fj.Submitted_At', '<=', $dateTo);
 
-        // Group by month, calculate NPS per month
-        $scores = $query->selectRaw("
+        // Group by month, normalize scores with their snapshot scale, lalu hitung NPS
+        $rows = $query->selectRaw("
                 FORMAT(fj.Submitted_At, 'yyyy-MM') as bulan,
-                d.Jawaban as skor
+                d.Jawaban as skor,
+                d.Skala_Min_Snapshot,
+                d.Skala_Max_Snapshot
             ")
             ->get()
             ->groupBy('bulan');
 
         $trend = [];
-        foreach ($scores as $bulan => $items) {
-            $skorArray = $items->pluck('skor')->map(fn($s) => (int) $s)->toArray();
+        foreach ($rows as $bulan => $items) {
+            // Normalisasi tiap skor ke 0-10 berdasarkan skala snapshot-nya
+            $normalizedScores = [];
+            foreach ($items as $it) {
+                $score = (int) $it->skor;
+                $skalaMin = (int) ($it->Skala_Min_Snapshot ?? 0);
+                $skalaMax = (int) ($it->Skala_Max_Snapshot ?? 10);
+                $range = $skalaMax - $skalaMin;
+                $normalizedScores[] = $range > 0 ? (($score - $skalaMin) / $range) * 10 : $score;
+            }
             $trend[] = [
                 'bulan' => $bulan,
-                'nps' => $this->service->calculateNPS($skorArray),
-                'total' => count($skorArray),
+                'nps' => $this->service->calculateNPS($normalizedScores),
+                'total' => count($normalizedScores),
             ];
         }
 
@@ -284,8 +311,10 @@ class FeedbackAdminController extends Controller
                 }
                 $item['distribusi'] = $dist;
             } elseif ($tipe === 'NPS') {
+                $skalaMin = (int) ($first->Skala_Min_Snapshot ?? 0);
+                $skalaMax = (int) ($first->Skala_Max_Snapshot ?? 10);
                 $scores = $jawabanValues->map(fn($v) => (int) $v)->toArray();
-                $item['nps'] = $this->service->calculateNPS($scores);
+                $item['nps'] = $this->service->calculateNPS($scores, $skalaMin, $skalaMax);
                 $item['total'] = count($scores);
             } elseif (in_array($tipe, ['RADIO', 'CHECKBOX', 'DROPDOWN'])) {
                 $counts = $rows->groupBy('Jawaban')->map->count()->toArray();
@@ -302,14 +331,15 @@ class FeedbackAdminController extends Controller
         return $result;
     }
 
-    private function getLolosVsGagal(int $formId, ?string $dateFrom, ?string $dateTo): array
+    private function getLolosVsGagal(?int $formId, ?string $dateFrom, ?string $dateTo): array
     {
         $query = DB::table('N_WEB_CAREERS_Feedback_Jawaban as fj')
             ->join('N_WEB_CAREERS_Lamaran as l', 'fj.Lamaran_Id', '=', 'l.Id_Lamaran')
-            ->where('fj.Master_Feedback_Form_Id', $formId)
             ->where('fj.Status_Pengisian', 'TERISI')
             ->where('fj.Flag_Cancellation', 'T')
             ->whereIn('l.Hasil_Akhir', ['DITERIMA', 'DITOLAK']);
+
+        if ($formId) $query->where('fj.Master_Feedback_Form_Id', $formId);
 
         if ($dateFrom) $query->where('fj.Submitted_At', '>=', $dateFrom);
         if ($dateTo) $query->where('fj.Submitted_At', '<=', $dateTo);
@@ -332,12 +362,160 @@ class FeedbackAdminController extends Controller
         ];
     }
 
+    // ═══════════════ LAYER 1: HEALTH BAR ═══════════════
+
+    /**
+     * Composite Satisfaction Index (0-100).
+     * Bobot: RATING 40%, LIKERT 30%, NPS (dinormalisasi) 30%.
+     * Jika satu tipe tidak ada, bobot sisanya disesuaikan proporsional.
+     */
+    private function calcSatisfactionIndex(array $overview): ?int
+    {
+        $stats = collect($overview['skor_stats'] ?? [])->keyBy('Tipe');
+        $score = 0;
+        $weight = 0;
+
+        foreach (['RATING' => 40, 'LIKERT' => 30, 'NPS' => 30] as $tipe => $w) {
+            if (!isset($stats[$tipe]) || $stats[$tipe]->jumlah == 0) continue;
+            if ($tipe === 'NPS') {
+                // NPS: normalize -100..+100 → 0..100
+                $npsNorm = ($overview['nps_score'] + 100) / 2;
+                $score += $npsNorm * $w;
+            } else {
+                // RATING / LIKERT: normalize skala ke 0..100
+                $avg = (float) $stats[$tipe]->rata2;
+                $score += ($avg / 5) * 100 * $w / 100;
+            }
+            $weight += $w;
+        }
+
+        if ($weight === 0) return null;
+        // Normalisasi berdasarkan bobot aktual
+        return (int) round($score / $weight * 100);
+    }
+
+    // ═══════════════ LAYER 2: COMPARISON VIEW ═══════════════
+
+    /**
+     * Per-Aspek Scorecard: semua pertanyaan RATING/LIKERT, dinormalisasi ke 0-100%.
+     * Normalisasi: ((skor - Skala_Min) / (Skala_Max - Skala_Min)) × 100
+     * Sorted worst→best.
+     */
+    private function getAspekScorecard(?int $formId, ?int $programId, ?string $dateFrom, ?string $dateTo): array
+    {
+        $query = DB::table('N_WEB_CAREERS_Feedback_Jawaban_Detail as d')
+            ->join('N_WEB_CAREERS_Feedback_Jawaban as fj', 'd.Feedback_Jawaban_Id', '=', 'fj.Id_Feedback_Jawaban')
+            ->join('N_WEB_CAREERS_Lamaran as l', 'fj.Lamaran_Id', '=', 'l.Id_Lamaran')
+            ->where('fj.Flag_Cancellation', 'T')
+            ->where('fj.Status_Pengisian', 'TERISI')
+            ->whereIn('d.Tipe_Snapshot', ['RATING', 'LIKERT'])
+            ->whereNotNull('d.Jawaban');
+
+        if ($formId) $query->where('fj.Master_Feedback_Form_Id', $formId);
+        if ($programId) $query->where('l.Program_Id', $programId);
+        if ($dateFrom) $query->where('fj.Submitted_At', '>=', $dateFrom);
+        if ($dateTo) $query->where('fj.Submitted_At', '<=', $dateTo);
+
+        // Normalisasi tiap skor ke 0-100% berdasarkan skala snapshot-nya, lalu AVG
+        $items = $query->selectRaw("
+                d.Label_Snapshot as label,
+                d.Tipe_Snapshot as tipe,
+                AVG(
+                    ((TRY_CAST(d.Jawaban AS FLOAT) - ISNULL(d.Skala_Min_Snapshot, 1))
+                    / NULLIF(ISNULL(d.Skala_Max_Snapshot, 5) - ISNULL(d.Skala_Min_Snapshot, 1), 0))
+                    * 100
+                ) as avg_pct,
+                COUNT(*) as total
+            ")
+            ->groupBy('d.Label_Snapshot', 'd.Tipe_Snapshot')
+            ->orderBy('avg_pct', 'ASC')
+            ->get()
+            ->toArray();
+
+        return $items;
+    }
+
+    // ═══════════════ LAYER 3: TABS ═══════════════
+
+    /**
+     * Rating/Likert trend per bulan — dinormalisasi ke 0-100%.
+     */
+    private function getRatingTrend(?int $formId, ?int $programId, ?string $dateFrom, ?string $dateTo): array
+    {
+        $query = DB::table('N_WEB_CAREERS_Feedback_Jawaban_Detail as d')
+            ->join('N_WEB_CAREERS_Feedback_Jawaban as fj', 'd.Feedback_Jawaban_Id', '=', 'fj.Id_Feedback_Jawaban')
+            ->join('N_WEB_CAREERS_Lamaran as l', 'fj.Lamaran_Id', '=', 'l.Id_Lamaran')
+            ->where('fj.Flag_Cancellation', 'T')
+            ->where('fj.Status_Pengisian', 'TERISI')
+            ->whereIn('d.Tipe_Snapshot', ['RATING', 'LIKERT']);
+
+        if ($formId) $query->where('fj.Master_Feedback_Form_Id', $formId);
+        if ($programId) $query->where('l.Program_Id', $programId);
+        if ($dateFrom) $query->where('fj.Submitted_At', '>=', $dateFrom);
+        if ($dateTo) $query->where('fj.Submitted_At', '<=', $dateTo);
+
+        $rows = $query->selectRaw("
+                FORMAT(fj.Submitted_At, 'yyyy-MM') as bulan,
+                AVG(
+                    ((TRY_CAST(d.Jawaban AS FLOAT) - ISNULL(d.Skala_Min_Snapshot, 1))
+                    / NULLIF(ISNULL(d.Skala_Max_Snapshot, 5) - ISNULL(d.Skala_Min_Snapshot, 1), 0))
+                    * 100
+                ) as avg_pct,
+                COUNT(*) as total
+            ")
+            ->groupBy(DB::raw("FORMAT(fj.Submitted_At, 'yyyy-MM')"))
+            ->orderBy('bulan')
+            ->get();
+
+        return $rows->map(fn($r) => [
+            'bulan' => $r->bulan,
+            'avg' => round((float) $r->avg_pct, 1),
+            'total' => (int) $r->total,
+        ])->toArray();
+    }
+
+    /**
+     * Suara Kandidat: TEXTAREA responses terbaru.
+     */
+    private function getTextVoice(?int $formId, ?int $programId, ?string $dateFrom, ?string $dateTo, int $limit = 20): array
+    {
+        $query = DB::table('N_WEB_CAREERS_Feedback_Jawaban_Detail as d')
+            ->join('N_WEB_CAREERS_Feedback_Jawaban as fj', 'd.Feedback_Jawaban_Id', '=', 'fj.Id_Feedback_Jawaban')
+            ->join('N_WEB_CAREERS_Lamaran as l', 'fj.Lamaran_Id', '=', 'l.Id_Lamaran')
+            ->leftJoin('N_WEB_CAREERS_Users as u', 'l.Id_Users', '=', 'u.Id_Users')
+            ->where('fj.Flag_Cancellation', 'T')
+            ->where('fj.Status_Pengisian', 'TERISI')
+            ->where('d.Tipe_Snapshot', 'TEXTAREA')
+            ->whereNotNull('d.Jawaban')
+            ->where('d.Jawaban', '!=', '');
+
+        if ($formId) $query->where('fj.Master_Feedback_Form_Id', $formId);
+        if ($programId) $query->where('l.Program_Id', $programId);
+        if ($dateFrom) $query->where('fj.Submitted_At', '>=', $dateFrom);
+        if ($dateTo) $query->where('fj.Submitted_At', '<=', $dateTo);
+
+        return $query->select(
+                'd.Label_Snapshot as label',
+                'd.Jawaban as jawaban',
+                'l.Kode as kode_lamaran',
+                'u.Nama as nama_kandidat',
+                'fj.Submitted_At'
+            )
+            ->orderBy('fj.Submitted_At', 'DESC')
+            ->limit($limit)
+            ->get()
+            ->toArray();
+    }
+
     // ═══════════════ MONITORING ═══════════════
 
     public function monitoringKpi(Request $request) {
         $fId = $request->input('form_id'); $pId = $request->input('program_id');
+        $fIds = is_array($fId) ? array_filter(array_map('intval', $fId)) : ($fId !== null && $fId !== '' ? array_filter(array_map('intval', explode(',', $fId))) : []);
+        $pIds = is_array($pId) ? array_filter(array_map('intval', $pId)) : ($pId !== null && $pId !== '' ? array_filter(array_map('intval', explode(',', $pId))) : []);
+
         $q = DB::table('N_WEB_CAREERS_Feedback_Jawaban as fj')->join('N_WEB_CAREERS_Lamaran as l','fj.Lamaran_Id','=','l.Id_Lamaran')->leftJoin('N_WEB_CAREERS_Master_Feedback_Form as ff','fj.Master_Feedback_Form_Id','=','ff.Id_Master_Feedback_Form')->where('fj.Flag_Cancellation','T');
-        if($fId) $q->where('fj.Master_Feedback_Form_Id',$fId); if($pId) $q->where('l.Program_Id',$pId);
+        if(!empty($fIds)) $q->whereIn('fj.Master_Feedback_Form_Id', $fIds); if(!empty($pIds)) $q->whereIn('l.Program_Id', $pIds);
         $all=(clone$q)->count(); $ok=(clone$q)->where('fj.Status_Pengisian','TERISI')->count();
         $pend=(clone$q)->where('fj.Status_Pengisian','MENUNGGU')->whereRaw('DATEDIFF(DAY,fj.Created_At,GETDATE())<=COALESCE(ff.Durasi_Hari,30)')->count();
         $exp=(clone$q)->where('fj.Status_Pengisian','MENUNGGU')->whereRaw('DATEDIFF(DAY,fj.Created_At,GETDATE())>COALESCE(ff.Durasi_Hari,30)')->count();
@@ -346,8 +524,11 @@ class FeedbackAdminController extends Controller
 
     public function monitoringData(Request $request) {
         $fId=$request->input('form_id');$pId=$request->input('program_id');$st=$request->input('status');$s=$request->input('search');$df=$request->input('date_from');$dt=$request->input('date_to');$pg=(int)$request->input('page',1);$lm=min((int)$request->input('limit',20),100);
+        $fIds = is_array($fId) ? array_filter(array_map('intval', $fId)) : ($fId !== null && $fId !== '' ? array_filter(array_map('intval', explode(',', $fId))) : []);
+        $pIds = is_array($pId) ? array_filter(array_map('intval', $pId)) : ($pId !== null && $pId !== '' ? array_filter(array_map('intval', explode(',', $pId))) : []);
+
         $q=DB::table('N_WEB_CAREERS_Feedback_Jawaban as fj')->join('N_WEB_CAREERS_Lamaran as l','fj.Lamaran_Id','=','l.Id_Lamaran')->leftJoin('N_WEB_CAREERS_Users as u','l.Id_Users','=','u.Id_Users')->leftJoin('N_WEB_CAREERS_Program as p','l.Program_Id','=','p.Id_Program')->leftJoin('N_WEB_CAREERS_Master_Feedback_Form as ff','fj.Master_Feedback_Form_Id','=','ff.Id_Master_Feedback_Form')->where('fj.Flag_Cancellation','T');
-        if($fId)$q->where('fj.Master_Feedback_Form_Id',$fId);if($pId)$q->where('l.Program_Id',$pId);if($s)$q->where(fn($x)=>$x->where('u.Nama','LIKE',"%{$s}%")->orWhere('l.Kode','LIKE',"%{$s}%"));if($df)$q->where('l.Waktu_Lamar','>=',$df);if($dt)$q->where('l.Waktu_Lamar','<=',$dt);
+        if(!empty($fIds))$q->whereIn('fj.Master_Feedback_Form_Id',$fIds);if(!empty($pIds))$q->whereIn('l.Program_Id',$pIds);if($s)$q->where(fn($x)=>$x->where('u.Nama','LIKE',"%{$s}%")->orWhere('l.Kode','LIKE',"%{$s}%"));if($df)$q->where('l.Waktu_Lamar','>=',$df);if($dt)$q->where('l.Waktu_Lamar','<=',$dt);
         if($st==='EXPIRED')$q->where('fj.Status_Pengisian','MENUNGGU')->whereRaw('DATEDIFF(DAY,fj.Created_At,GETDATE())>COALESCE(ff.Durasi_Hari,30)');elseif($st)$q->where('fj.Status_Pengisian',$st);
         $ttl=$q->count();$items=$q->select('fj.Id_Feedback_Jawaban','fj.Status_Pengisian','fj.Created_At','fj.Submitted_At','fj.Master_Feedback_Form_Id','ff.Nama as Form_Nama','l.Id_Lamaran','l.Kode as Kode_Lamaran','l.Hasil_Akhir','l.Waktu_Lamar','u.Nama as Nama_Kandidat','u.Email','p.Nama as Program_Nama')->orderBy('fj.Created_At','DESC')->offset(($pg-1)*$lm)->limit($lm)->get();
         return ResponseHelper::successWithPagination($items,$pg,$lm,$ttl);
@@ -355,19 +536,39 @@ class FeedbackAdminController extends Controller
 
     public function reassignForm(Request $request) {
         $v=$request->validate(['feedback_ids'=>'required|array|min:1','feedback_ids.*'=>'integer','new_form_id'=>'required|integer','resend_email'=>'boolean']);
-        $now=FormatTanggalHelper::getCurrentTime();$uid=session('career_auth.id');$un=(string)($uid??'SISTEM');$c=0;
+        $now=FormatTanggalHelper::getCurrentTime();$uid=session('career_auth.id');$un=(string)($uid??'SISTEM');$c=0;$skipped=0;
         foreach($v['feedback_ids'] as $fid){$old=DB::table('N_WEB_CAREERS_Feedback_Jawaban')->where('Id_Feedback_Jawaban',$fid)->where('Flag_Cancellation','T')->first();if(!$old)continue;
+            // Jangan reassign feedback yang sudah TERISI — jawaban sudah masuk
+            if($old->Status_Pengisian==='TERISI'){$skipped++;continue;}
             DB::transaction(function()use($fid,$v,$now,$un,$uid,$old,&$c){DB::table('N_WEB_CAREERS_Feedback_Jawaban')->where('Id_Feedback_Jawaban',$fid)->update(['Flag_Cancellation'=>'Y','Cancelled_At'=>$now,'Cancelled_By'=>$un]);DB::table('N_WEB_CAREERS_Feedback_Jawaban_Detail')->where('Feedback_Jawaban_Id',$fid)->delete();
                 $nid=DB::table('N_WEB_CAREERS_Feedback_Jawaban')->insertGetId(['Lamaran_Id'=>$old->Lamaran_Id,'Master_Feedback_Form_Id'=>$v['new_form_id'],'Email_Token'=>$old->Email_Token,'Status_Pengisian'=>'MENUNGGU','Created_At'=>$now],'Id_Feedback_Jawaban');
                 $fs=app(FeedbackService::class);$t=$fs->generateTokenPair($nid,$old->Email_Token);DB::table('N_WEB_CAREERS_Feedback_Jawaban')->where('Id_Feedback_Jawaban',$nid)->update(['Token_Hash'=>$t['hashids'].'.'.$t['signature']]);$c++;
-                if(!empty($v['resend_email'])){$l=DB::table('N_WEB_CAREERS_Lamaran')->where('Id_Lamaran',$old->Lamaran_Id)->first();if($l){$st=$l->Hasil_Akhir==='DITERIMA'?'LOLOS':'GUGUR';$url=rtrim(config('app.url'),'/').'/feedback/'.$t['hashids'].'/'.$t['signature'];\App\Jobs\Career\WcApplyEmailJob::dispatch((int)$l->Id_Users,$st,['kode'=>$l->Kode,'feedbackUrl'=>$url]);}}
+                // Wajib kirim email — link lama expired, user harus dapat link baru
+                $l=DB::table('N_WEB_CAREERS_Lamaran')->where('Id_Lamaran',$old->Lamaran_Id)->first();if($l){$st=$l->Hasil_Akhir==='DITERIMA'?'LOLOS':'GUGUR';$url=rtrim(config('app.url'),'/').'/feedback/'.$t['hashids'].'/'.$t['signature'];\App\Jobs\Career\WcApplyEmailJob::dispatchSync((int)$l->Id_Users,$st,['kode'=>$l->Kode,'feedbackUrl'=>$url]);}
             });}
-        Log::channel('feedback')->info('Reassign',['count'=>$c,'form'=>$v['new_form_id']]);return ResponseHelper::success(['reassigned'=>$c],"$c feedback di-reassign.");
+        $msg = $c > 0 ? "$c feedback di-reassign." : "Tidak ada yang di-reassign.";
+        if($skipped > 0) $msg .= " $skipped dilewati (sudah TERISI).";
+        Log::channel('feedback')->info('Reassign',['count'=>$c,'skipped'=>$skipped,'form'=>$v['new_form_id']]);return ResponseHelper::success(['reassigned'=>$c,'skipped'=>$skipped],$msg);
     }
 
     public function resendEmail(Request $request) {
-        $v=$request->validate(['feedback_ids'=>'required|array|min:1','feedback_ids.*'=>'integer']);$s=0;
-        foreach($v['feedback_ids'] as $fid){$fb=DB::table('N_WEB_CAREERS_Feedback_Jawaban')->where('Id_Feedback_Jawaban',$fid)->where('Flag_Cancellation','T')->first();if(!$fb||!$fb->Email_Token)continue;$l=DB::table('N_WEB_CAREERS_Lamaran')->where('Id_Lamaran',$fb->Lamaran_Id)->first();if(!$l)continue;$st=$l->Hasil_Akhir==='DITERIMA'?'LOLOS':'GUGUR';$pt=explode('.',$fb->Token_Hash,2);$url=rtrim(config('app.url'),'/').'/feedback/'.($pt[0]??'').'/'.($pt[1]??'');\App\Jobs\Career\WcApplyEmailJob::dispatch((int)$l->Id_Users,$st,['kode'=>$l->Kode,'feedbackUrl'=>$url]);$s++;}
-        return ResponseHelper::success(['resent'=>$s],"$s email terkirim.");
+        $v=$request->validate(['feedback_ids'=>'required|array|min:1','feedback_ids.*'=>'integer']);$s=0;$skipped=0;$failed=0;
+        foreach($v['feedback_ids'] as $fid){$fb=DB::table('N_WEB_CAREERS_Feedback_Jawaban')->where('Id_Feedback_Jawaban',$fid)->where('Flag_Cancellation','T')->first();if(!$fb||!$fb->Email_Token)continue;
+            if($fb->Status_Pengisian==='TERISI'){$skipped++;continue;}
+            $l=DB::table('N_WEB_CAREERS_Lamaran')->where('Id_Lamaran',$fb->Lamaran_Id)->first();if(!$l)continue;
+            $st=$l->Hasil_Akhir==='DITERIMA'?'LOLOS':'GUGUR';$pt=explode('.',$fb->Token_Hash,2);$url=rtrim(config('app.url'),'/').'/feedback/'.($pt[0]??'').'/'.($pt[1]??'');
+            try {
+                // dispatchSync: proses job langsung (blocking) tapi logic email tetap di Job class
+                \App\Jobs\Career\WcApplyEmailJob::dispatchSync((int)$l->Id_Users, $st, ['kode'=>$l->Kode, 'feedbackUrl'=>$url]);
+                $s++;
+            } catch (\Throwable $e) {
+                $failed++;
+                Log::channel('feedback')->error('Resend email gagal',['feedback_id'=>$fid,'error'=>$e->getMessage()]);
+            }
+        }
+        $msg = $s > 0 ? "$s email terkirim." : "Tidak ada email yang dikirim.";
+        if($skipped > 0) $msg .= " $skipped dilewati (sudah TERISI).";
+        if($failed > 0) $msg .= " $failed gagal.";
+        return ResponseHelper::success(['resent'=>$s,'skipped'=>$skipped,'failed'=>$failed],$msg);
     }
 }

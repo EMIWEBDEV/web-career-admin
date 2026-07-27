@@ -67,10 +67,6 @@ class CareerShell
                 ['key' => 'portal', 'label' => 'Lamaran Saya', 'icon' => 'bi bi-file-earmark-text', 'url' => '/kandidat/portal'],
                 ['key' => 'loker', 'label' => 'Cari Lowongan', 'icon' => 'bi bi-search', 'url' => '/karir/landing-page'],
             ]],
-            // [feat/feedback] Menu Feedback Saya di portal kandidat
-            ['id' => 'feedback', 'title' => 'Feedback', 'items' => [
-                ['key' => 'feedback', 'label' => 'Feedback Saya', 'icon' => 'bi bi-chat-dots', 'url' => '/kandidat/portal'],
-            ]],
             ['id' => 'akun', 'title' => 'Akun', 'items' => [
                 ['key' => 'profil', 'label' => 'Profil Saya', 'icon' => 'bi bi-person-circle', 'url' => '/profil'],
             ]],

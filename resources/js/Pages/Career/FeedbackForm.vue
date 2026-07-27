@@ -42,29 +42,123 @@
           </a>
         </div>
         <div v-else class="fb-main">
-          <div class="fb-glass fb-glass--head">
-            <div class="fb-head__icon">{{ is_wajib ? '🎉' : '💬' }}</div>
-            <h1 class="fb-head__title">{{ is_wajib ? 'Selamat, Kamu Diterima!' : 'Bantu Kami Lebih Baik' }}</h1>
-            <p class="fb-head__sub">{{ is_wajib ? 'Sebelum melanjutkan, mohon isi feedback singkat ini. Hanya 2 menit — wajib diisi untuk menyelesaikan proses lamaranmu.' : 'Terima kasih sudah melamar di EVO Group. Isi feedback singkat tentang pengalamanmu agar kami bisa terus meningkatkan proses seleksi.' }}</p>
-            <div class="fb-head__info"><span><i class="bi bi-clock"></i> ~2 menit</span><span class="fb-head__dot">·</span><span><i class="bi bi-list-ol"></i> {{ pertanyaan?.length || 0 }} pertanyaan</span></div>
-          </div>
-          <div class="fb-progress">
-            <div class="fb-progress__track"><div class="fb-progress__fill" :style="{width:progressPercent+'%'}"></div></div>
-            <div class="fb-progress__badge">{{answeredCount}}<span>/{{pertanyaan?.length}}</span></div>
-          </div>
-          <div v-if="mode_tampilan==='SCROLL'" class="fb-cards">
-            <div v-for="(p,idx) in pertanyaan" :key="p.Id_Master_Feedback_Pertanyaan" class="fb-card">
-              <span class="fb-card__n">{{idx+1}}</span>
-              <p class="fb-card__q">{{p.Label}}</p>
-              <component :is="inputComp(p.Tipe)" :pertanyaan="p" :model-value="jawaban[p.Id_Master_Feedback_Pertanyaan]" @update:model-value="v=>jawaban[p.Id_Master_Feedback_Pertanyaan]=v"/>
+          <!-- SCROLL MODE: CLEAN UNIFIED CANVAS -->
+          <template v-if="mode_tampilan === 'SCROLL'">
+            <!-- HERO HEADER CARD -->
+            <div class="fb-wz-hero-card mb-4 text-center">
+              <div class="fb-wz-hero-inner">
+                <div class="fb-wz-hero-icon-wrap mb-2">
+                  <div class="fb-wz-hero-icon">
+                    <span>{{ is_wajib ? '🎉' : '💬' }}</span>
+                  </div>
+                </div>
+                
+                <h2 class="fb-wz-hero-title">
+                  {{ is_wajib ? 'Selamat, Kamu Diterima!' : 'Bantu Kami Lebih Baik' }}
+                </h2>
+                
+                <p class="fb-wz-hero-sub">
+                  {{ is_wajib ? 'Mohon isi feedback singkat ini untuk menyelesaikan proses lamaranmu.' : 'Isi feedback singkat tentang pengalamanmu agar kami bisa terus meningkatkan kualitas proses seleksi.' }}
+                </p>
+
+                <div class="fb-wz-hero-chips d-flex align-items-center justify-content-center gap-2 mt-3 flex-wrap">
+                  <span class="fb-wz-chip">
+                    <i class="bi bi-clock-history me-1 text-indigo"></i> ~2 Menit
+                  </span>
+                  <span class="fb-wz-chip">
+                    <i class="bi bi-lightning-charge-fill me-1 text-emerald"></i> Praktis &amp; Cepat
+                  </span>
+                  <span class="fb-wz-chip">
+                    <i class="bi bi-shield-lock-fill me-1 text-amber"></i> 100% Rahasia
+                  </span>
+                </div>
+              </div>
             </div>
-            <button class="fb-submit" :disabled="!isComplete||submitting" @click="submitFeedback">
-              <template v-if="submitting"><span class="fb-submit__spin"></span>Mengirim...</template>
-              <template v-else>Kirim Feedback <i class="bi bi-send-fill"></i></template>
-            </button>
-            <p v-if="submitError" class="fb-submit__err">{{submitError}}</p>
-          </div>
-          <FeedbackFormWizard v-else :pertanyaan="pertanyaan" :is-wajib="is_wajib" @submit="handleWizardSubmit"/>
+
+            <!-- STICKY PROGRESS TRACKER -->
+            <div class="fb-scroll-progress mb-4">
+              <div class="d-flex align-items-center justify-content-between mb-2">
+                <span class="wca-badge wca-b--indigo py-1 px-3">
+                  <i class="bi bi-list-check me-1 text-amber"></i> {{ answeredCount }} dari {{ pertanyaan?.length || 0 }} Pertanyaan Terisi
+                </span>
+                <span class="fb-wz-pct-badge font-bold text-xs text-indigo">
+                  {{ progressPercent }}% Selesai
+                </span>
+              </div>
+              <div class="fb-wz-track-bar">
+                <div class="fb-wz-track-fill" :style="{ width: progressPercent + '%' }"></div>
+              </div>
+            </div>
+
+            <!-- QUESTION CARDS STACK -->
+            <div class="fb-cards">
+              <div v-for="(p,idx) in pertanyaan" :key="p.Id_Master_Feedback_Pertanyaan" class="fb-wz-card mb-3">
+                <div class="fb-wz-card__body">
+                  <div class="fb-wz-card__head d-flex align-items-center justify-content-between gap-2 mb-3">
+                    <div class="d-flex align-items-center gap-2">
+                      <span class="fb-wz-q-num">Q{{ idx + 1 }}</span>
+                      <span class="wca-badge wca-b--indigo">
+                        <i class="bi" :class="typeIcon(p.Tipe)"></i>
+                        <span class="ms-1">{{ typeLabel(p.Tipe) }}</span>
+                      </span>
+                    </div>
+                    <span v-if="p.Flag_Wajib === 'Y' || is_wajib" class="wca-badge wca-b--rose">Wajib ✨</span>
+                  </div>
+                  <h3 class="fb-wz-card__label mb-4 text-center">{{ p.Label }}</h3>
+                  <div class="fb-wz-card__input-body py-2">
+                    <component
+                      :is="inputComp(p.Tipe)"
+                      :pertanyaan="p"
+                      :model-value="jawaban[p.Id_Master_Feedback_Pertanyaan]"
+                      @update:model-value="v => jawaban[p.Id_Master_Feedback_Pertanyaan] = v"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <!-- SUBMIT BUTTON SECTION -->
+              <div class="text-center mt-4">
+                <button
+                  type="button"
+                  class="fb-wz-btn fb-wz-btn--submit w-100 py-3 text-center"
+                  :disabled="!isComplete || submitting"
+                  @click="submitFeedback"
+                >
+                  <span v-if="submitting" class="spinner-border spinner-border-sm me-1.5" role="status" aria-hidden="true"></span>
+                  <span>{{ submitting ? 'Mengirim...' : 'Kirim Feedback ✨' }}</span>
+                </button>
+                <p v-if="submitError" class="alert alert-danger mt-3 text-center text-xs font-semibold py-2">
+                  <i class="bi bi-exclamation-triangle-fill me-1"></i> {{ submitError }}
+                </p>
+              </div>
+
+              <!-- TRUST SHIELD PILL BADGE -->
+              <div class="fb-wz-reassurance-wrap mt-4 text-center">
+                <div class="fb-wz-trust-pill">
+                  <div class="fb-wz-trust-left">
+                    <i class="bi bi-shield-check text-emerald fs-6"></i>
+                    <span>Masukan Anda tersimpan secara <strong>aman &amp; confidential</strong></span>
+                  </div>
+                  <span class="fb-wz-trust-divider"></span>
+                  <div class="fb-wz-trust-right">
+                    <i class="bi bi-lock-fill text-indigo"></i>
+                    <span>SSL Encrypted</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <!-- WIZARD MODE: CLEAN SINGLE CANVAS -->
+          <template v-else>
+            <FeedbackFormWizard
+              :pertanyaan="pertanyaan"
+              :is-wajib="is_wajib"
+              :submitting="submitting"
+              :submit-error="submitError"
+              @submit="handleWizardSubmit"
+            />
+          </template>
         </div>
       </div>
   </CareerLayout>
@@ -84,15 +178,74 @@ const props = defineProps({ feedback: Object, pertanyaan: Array, is_wajib: Boole
 const jawaban = ref({}); const submitting = ref(false); const submitError = ref(null); const success = ref(false)
 const stateTitle = computed(()=>({invalid:'Link Tidak Valid',expired:'Link Kadaluarsa',already_submitted:'Feedback Sudah Terkirim'}[props.error]||''))
 const errorIcon = computed(()=>({invalid:'bi-link-45deg',expired:'bi-hourglass-split',already_submitted:'bi-check-circle-fill'}[props.error]||'bi-exclamation-circle'))
-const answeredCount = computed(()=>(props.pertanyaan||[]).filter(p=>jawaban.value[p.Id_Master_Feedback_Pertanyaan]!=null&&jawaban.value[p.Id_Master_Feedback_Pertanyaan]!=='').length)
-const isComplete = computed(()=>props.pertanyaan?.every(p=>jawaban.value[p.Id_Master_Feedback_Pertanyaan]!=null&&jawaban.value[p.Id_Master_Feedback_Pertanyaan]!==''))
-const progressPercent = computed(()=>props.pertanyaan?.length?Math.round(answeredCount.value/props.pertanyaan.length*100):0)
+
+function isAnswered(p) {
+  if (!p) return false
+  const val = jawaban.value[p.Id_Master_Feedback_Pertanyaan]
+  if (Array.isArray(val)) return val.length > 0
+  if (typeof val === 'number') return !isNaN(val)
+  return val !== undefined && val !== null && String(val).trim() !== ''
+}
+
+const answeredCount = computed(() => {
+  if (!props.pertanyaan) return 0
+  return props.pertanyaan.filter(p => isAnswered(p)).length
+})
+
+const isComplete = computed(() => {
+  if (!props.pertanyaan || props.pertanyaan.length === 0) return false
+  return props.pertanyaan.every(p => isAnswered(p))
+})
+
+const progressPercent = computed(() => {
+  if (!props.pertanyaan || props.pertanyaan.length === 0) return 0
+  return Math.round((answeredCount.value / props.pertanyaan.length) * 100)
+})
+
 function inputComp(t){const m={RATING:RatingInput,NPS:NpsInput,LIKERT:LikertInput,TEXTAREA:TextareaInput,RADIO:RadioCards,CHECKBOX:CheckboxCards,DROPDOWN:DropdownSelect};return m[t]||TextareaInput}
-async function submitFeedback(){if(!isComplete.value)return;submitting.value=true;submitError.value=null
-  try{const arr=Object.entries(jawaban.value).map(([id,val])=>({id_pertanyaan:parseInt(id),jawaban:Array.isArray(val)?val:String(val)}))
+
+function typeIcon(tipe) {
+  const map = {
+    RATING: 'bi-star-fill',
+    NPS: 'bi-speedometer2',
+    LIKERT: 'bi-bar-chart-fill',
+    TEXTAREA: 'bi-pencil-square',
+    RADIO: 'bi-ui-radios',
+    CHECKBOX: 'bi-ui-checks',
+    DROPDOWN: 'bi-caret-down-square-fill'
+  }
+  return map[tipe] || 'bi-chat-dots-fill'
+}
+
+function typeLabel(tipe) {
+  const map = {
+    RATING: 'Rating Bintang',
+    NPS: 'NPS (0-10)',
+    LIKERT: 'Skala Kepuasan',
+    TEXTAREA: 'Teks Catatan',
+    RADIO: 'Pilihan Tunggal',
+    CHECKBOX: 'Pilihan Berganda',
+    DROPDOWN: 'Menu Pilihan'
+  }
+  return map[tipe] || 'Pertanyaan'
+}
+
+async function submitFeedback(){
+  if(!isComplete.value || submitting.value) return;
+  submitting.value = true;
+  submitError.value = null;
+  try {
+    const arr = Object.entries(jawaban.value).map(([id,val])=>({id_pertanyaan:parseInt(id),jawaban:Array.isArray(val)?val:String(val)}))
     const{data}=await axios.post(window.location.pathname,{jawaban:arr})
-    if(data.success){success.value=true;if(data.result?.redirect_to)setTimeout(()=>window.location.href=data.result.redirect_to,3000)}
-  }catch(e){submitError.value=e.response?.data?.message||'Gagal mengirim. Coba lagi.'}finally{submitting.value=false}
+    if(data.success){
+      success.value=true;
+      if(data.result?.redirect_to) setTimeout(()=>window.location.href=data.result.redirect_to, 3000)
+    }
+  } catch(e){
+    submitError.value=e.response?.data?.message||'Gagal mengirim. Coba lagi.'
+  } finally {
+    submitting.value=false
+  }
 }
 function handleWizardSubmit(w){jawaban.value=w;submitFeedback()}
 </script>
@@ -138,11 +291,11 @@ function handleWizardSubmit(w){jawaban.value=w;submitFeedback()}
 .fb-ambient .pt--5 { left: 25%; animation-delay: -1.5s; }
 .fb-ambient .pt--6 { left: 65%; animation-delay: -7.5s; }
 @keyframes fb-pt { 0%{transform:translateY(105vh) scale(0);opacity:0} 10%{opacity:.6} 90%{opacity:.6} 100%{transform:translateY(-10vh) scale(1.5);opacity:0} }
+
 /* Page */
 .fb-page { position: relative; min-height: 60vh; padding: 7rem 20px 80px; display: flex; flex-direction: column; align-items: center; }
 .fb-glass { position: relative; background: rgba(255,255,255,.85); border: 1px solid rgba(0,0,0,.06); border-radius: 28px; box-shadow: 0 4px 24px rgba(0,0,0,.03), 0 1px 4px rgba(0,0,0,.02); }
 .fb-glass--center { text-align: center; max-width: 480px; width: 100%; padding: 56px 36px; margin-top: 60px; }
-.fb-glass--head { width: 100%; padding: 36px 34px; }
 .fb-glass__check { width: 80px; height: 80px; border-radius: 50%; background: linear-gradient(135deg,#10b981,#059669); color: #fff; font-size: 2.2rem; font-weight: 700; display: flex; align-items: center; justify-content: center; margin: 0 auto 24px; box-shadow: 0 12px 32px rgba(16,185,129,.3); animation: fb-pop .5s cubic-bezier(.18,.89,.32,1.28) both; }
 @keyframes fb-pop { 0%{transform:scale(0) rotate(-8deg)} 60%{transform:scale(1.15) rotate(3deg)} 100%{transform:scale(1) rotate(0)} }
 .fb-glass__icon { font-size: 2.8rem; margin-bottom: 18px; }
@@ -151,31 +304,259 @@ function handleWizardSubmit(w){jawaban.value=w;submitFeedback()}
 .fb-glass__note { font-size: .8rem!important; color: #94a3b8!important; margin-top: 16px!important; }
 .fb-glass__btn { display: inline-block; margin-top: 24px; padding: 13px 30px; background: linear-gradient(135deg,#6366f1,#4f46e5); color: #fff; border-radius: 12px; text-decoration: none; font-weight: 700; font-size: .88rem; transition: transform .15s,box-shadow .15s; }
 .fb-glass__btn:hover { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(99,102,241,.3); }
-.fb-main { position: relative; z-index: 1; max-width: 680px; width: 100%; display: flex; flex-direction: column; align-items: center; gap: 20px; }
-.fb-head__icon { font-size: 2.5rem; margin-bottom: 10px; line-height: 1; }
-.fb-head__title { font-size: 1.7rem; font-weight: 800; color: #1e293b; margin: 0 0 10px; letter-spacing: -.02em; }
-.fb-head__sub { font-size: .9rem; color: #64748b; line-height: 1.65; margin: 0; }
-.fb-head__info { display: flex; align-items: center; gap: 12px; margin-top: 14px; font-size: .78rem; color: #94a3b8; font-weight: 600; }
-.fb-head__dot { color: #cbd5e1; }
-.fb-progress { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 16px; background: #fff; border: 1px solid #e8e5f7; border-radius: 14px; position: sticky; top: 80px; z-index: 5; }
-.fb-progress__track { flex: 1; height: 6px; background: #ede9fe; border-radius: 4px; overflow: hidden; box-shadow: inset 0 1px 2px rgba(0,0,0,.04); }
-.fb-progress__fill { height: 100%; border-radius: 4px; background: linear-gradient(90deg,#6366f1,#a78bfa); transition: width .5s cubic-bezier(.4,0,.2,1); box-shadow: 0 0 8px rgba(99,102,241,.25); }
-.fb-progress__badge { background: linear-gradient(135deg,#6366f1,#4f46e5); color: #fff; padding: 4px 12px; border-radius: 20px; font-size: .75rem; font-weight: 700; white-space: nowrap; }
-.fb-progress__badge span { font-weight: 500; opacity: .75; }
-.fb-cards { width: 100%; display: flex; flex-direction: column; gap: 16px; }
-.fb-card { background: #fff; border: 1.5px solid #e8e5f7; border-radius: 20px; padding: 26px 28px; transition: all .25s cubic-bezier(.4,0,.2,1); position: relative; }
-.fb-card:hover { border-color: #c4b5fd; }
-.fb-card:focus-within { border-color: #6366f1; box-shadow: 0 0 0 5px rgba(99,102,241,.06); }
-.fb-card__n { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 10px; background: linear-gradient(135deg,#6366f1,#4f46e5); color: #fff; font-size: .78rem; font-weight: 700; margin-bottom: 14px; box-shadow: 0 3px 10px rgba(99,102,241,.3); }
-.fb-card__q { font-size: 1rem; font-weight: 650; color: #1e293b; margin: 0 0 16px; line-height: 1.5; }
-.fb-submit { position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; padding: 16px; border: 0; cursor: pointer; border-radius: 16px; font-size: .94rem; font-weight: 700; transition: all .3s cubic-bezier(.22,1,.36,1); letter-spacing: .01em; background: #f1f5f9; color: #94a3b8; }
-.fb-submit:not(:disabled) { background: linear-gradient(135deg,#8b5cf6 0%,#6366f1 55%,#4f46e5 100%); color: #fff; box-shadow: 0 16px 32px rgba(99,102,241,.36); }
-.fb-submit:not(:disabled)::after { content:''; position:absolute; top:0; left:0; height:100%; width:55%; background:linear-gradient(90deg,transparent,rgba(255,255,255,.4),transparent); transform:translateX(-170%) skewX(-18deg); animation: fb-sheen 5s ease-in-out 1.5s infinite; pointer-events:none; }
-@keyframes fb-sheen { 0%,100%{transform:translateX(-170%) skewX(-18deg)} 50%{transform:translateX(220%) skewX(-18deg)} }
-.fb-submit:not(:disabled):hover { transform: translateY(-2px); box-shadow: 0 22px 44px rgba(99,102,241,.44); filter: brightness(1.05); }
-.fb-submit:not(:disabled):active { transform: translateY(0); }
-.fb-submit:disabled { opacity: .55; cursor: not-allowed; box-shadow: none; }
-.fb-submit__spin { display: inline-block; width: 20px; height: 20px; border: 2.5px solid rgba(255,255,255,.25); border-top-color: #fff; border-radius: 50%; animation: fb-spin .6s linear infinite; }
-@keyframes fb-spin { to{transform:rotate(360deg)} }
-.fb-submit__err { text-align: center; color: #ef4444; font-size: .84rem; font-weight: 600; margin-top: 6px; }
+
+.fb-main { position: relative; z-index: 1; max-width: 660px; width: 100%; display: flex; flex-direction: column; align-items: center; gap: 0; }
+
+/* SCROLL PROGRESS TRACKER */
+.fb-scroll-progress {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(99, 102, 241, 0.12);
+  border-radius: 20px;
+  padding: 16px 20px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.03);
+  position: sticky;
+  top: 84px;
+  z-index: 10;
+}
+
+/* WIZARD HERO HEADER */
+.fb-wz-hero-card {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1.5px solid rgba(99, 102, 241, 0.14);
+  border-radius: 24px;
+  padding: 24px 28px;
+  box-shadow: 0 10px 30px rgba(99, 102, 241, 0.06), 0 2px 8px rgba(0, 0, 0, 0.02);
+  transition: all 0.3s ease;
+}
+
+.fb-wz-hero-card:hover {
+  border-color: rgba(99, 102, 241, 0.25);
+  box-shadow: 0 14px 36px rgba(99, 102, 241, 0.1);
+}
+
+.fb-wz-hero-icon-wrap {
+  display: inline-flex;
+}
+
+.fb-wz-hero-icon {
+  width: 54px;
+  height: 54px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%);
+  border: 1px solid #c7d2fe;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.7rem;
+  box-shadow: 0 6px 18px rgba(99, 102, 241, 0.18);
+  animation: fbFloatIcon 4s ease-in-out infinite;
+}
+
+@keyframes fbFloatIcon {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-4px) scale(1.04); }
+}
+
+.fb-wz-hero-title {
+  font-size: 1.45rem;
+  font-weight: 800;
+  color: #0f172a;
+  margin-bottom: 6px;
+  letter-spacing: -0.015em;
+  background: linear-gradient(135deg, #0f172a 0%, #3730a3 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.fb-wz-hero-sub {
+  font-size: 0.88rem;
+  color: #64748b;
+  line-height: 1.6;
+  max-width: 520px;
+  margin: 0 auto;
+}
+
+.fb-wz-hero-chips {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+.fb-wz-chip {
+  display: inline-flex;
+  align-items: center;
+  background: rgba(248, 250, 252, 0.9);
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 0.76rem;
+  font-weight: 650;
+  color: #475569;
+}
+
+.fb-wz-pct-badge {
+  background: #eef2ff;
+  padding: 4px 12px;
+  border-radius: 20px;
+  border: 1px solid #c7d2fe;
+}
+
+.fb-wz-track-bar {
+  height: 6px;
+  background: #f1f5f9;
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.fb-wz-track-fill {
+  height: 100%;
+  border-radius: 99px;
+  background: linear-gradient(90deg, #6366f1 0%, #a78bfa 100%);
+  transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 0 10px rgba(99, 102, 241, 0.3);
+}
+
+.fb-cards { width: 100%; display: flex; flex-direction: column; gap: 0; }
+
+.fb-wz-card {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(16px);
+  border: 1.5px solid rgba(99, 102, 241, 0.12);
+  border-radius: 24px;
+  padding: 26px 24px;
+  box-shadow: 0 12px 32px rgba(99, 102, 241, 0.08), 0 2px 8px rgba(0, 0, 0, 0.02);
+}
+
+.fb-wz-q-num {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #6366f1, #4f46e5);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 0.85rem;
+  box-shadow: 0 3px 10px rgba(99, 102, 241, 0.3);
+}
+
+.fb-wz-card__label {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.5;
+  letter-spacing: -0.01em;
+}
+
+/* BUTTONS */
+.fb-wz-btn {
+  padding: 14px 28px;
+  border-radius: 14px;
+  font-size: 0.94rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  border: none;
+  outline: none !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fb-wz-btn--submit {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: #ffffff;
+  box-shadow: 0 10px 24px rgba(16, 185, 129, 0.35);
+}
+
+.fb-wz-btn--submit:not(:disabled):hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 30px rgba(16, 185, 129, 0.45);
+}
+
+.fb-wz-btn:disabled,
+.fb-wz-btn--submit:disabled {
+  background: #f1f5f9 !important;
+  background-image: none !important;
+  color: #94a3b8 !important;
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: none !important;
+  opacity: 0.55 !important;
+  cursor: not-allowed !important;
+  transform: none !important;
+  filter: grayscale(1) !important;
+  pointer-events: none !important;
+}
+
+.fb-wz-btn:disabled::after,
+.fb-wz-btn--submit:disabled::after {
+  display: none !important;
+}
+
+/* REASSURANCE ELEGANT TRUST PILL BADGE */
+.fb-wz-reassurance-wrap {
+  display: flex;
+  justify-content: center;
+  margin-top: 20px;
+}
+
+.fb-wz-trust-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 18px;
+  border-radius: 30px;
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(99, 102, 241, 0.12);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.03);
+  font-size: 0.78rem;
+  color: #475569;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  max-width: 100%;
+}
+
+.fb-wz-trust-pill:hover {
+  background: #ffffff;
+  border-color: rgba(99, 102, 241, 0.25);
+  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.08);
+  transform: translateY(-1px);
+}
+
+.fb-wz-trust-left,
+.fb-wz-trust-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.fb-wz-trust-divider {
+  width: 1px;
+  height: 14px;
+  background: #cbd5e1;
+  flex-shrink: 0;
+}
+
+@media (max-width: 576px) {
+  .fb-wz-trust-pill {
+    flex-direction: column;
+    gap: 6px;
+    border-radius: 16px;
+    padding: 10px 16px;
+  }
+  .fb-wz-trust-divider {
+    display: none;
+  }
+}
 </style>
