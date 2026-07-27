@@ -85,7 +85,9 @@ class Handler extends ExceptionHandler
             $httpException = $e instanceof \Symfony\Component\HttpKernel\Exception\HttpExceptionInterface
                 || $e instanceof \Illuminate\Session\TokenMismatchException;
 
-            if (! $httpException && ! env('ERROR_PAGE_FORCE', false)) {
+            // config(), BUKAN env(): env() di luar folder config bernilai null
+            // begitu `php artisan config:cache` dijalankan.
+            if (! $httpException && ! config('app.error_page_force', false)) {
                 return $response;
             }
         }

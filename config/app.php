@@ -44,6 +44,14 @@ return [
     'debug' => (bool) env('APP_DEBUG', false),
 
     /*
+    | Paksa halaman error versi PENGGUNA (Pages/Error.vue) tampil walau
+    | APP_DEBUG=true — berguna untuk meninjau tampilan 500 tanpa mematikan debug.
+    | Dibaca lewat config() agar tetap benar saat `php artisan config:cache`
+    | (env() di luar folder config akan bernilai null bila config di-cache).
+    */
+    'error_page_force' => (bool) env('ERROR_PAGE_FORCE', false),
+
+    /*
     |--------------------------------------------------------------------------
     | Application URL
     |--------------------------------------------------------------------------
