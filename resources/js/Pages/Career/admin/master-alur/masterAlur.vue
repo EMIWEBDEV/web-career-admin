@@ -172,14 +172,8 @@
                                 <RefSelect type="tipe" v-model="s.tipe" placeholder="Pilih tipe" />
                             </div>
                         </div>
-                        <div class="wca-frow">
-                            <div><label class="wca-field-lbl">Mode Keputusan</label>
-                                <RefSelect type="mode-keputusan" v-model="s.mode" placeholder="Pilih mode" @picked="(o) => (s.modeInfo = o)" />
-                                <small v-if="modeInfo(s)" class="alr-mode-note">
-                                    <i class="bi" :class="modeInfo(s).ikon || 'bi-diagram-3'"></i> {{ modeInfo(s).deskripsi }}
-                                </small>
-                            </div>
-                            <div v-if="butuhFormulir(s)"><label class="wca-field-lbl">Formulir yang Diisi</label>
+                        <div v-if="butuhFormulir(s)" class="wca-frow">
+                            <div><label class="wca-field-lbl">Formulir yang Diisi</label>
                                 <RefSelect type="formulir" v-model="s.formulirId" placeholder="Pilih formulir (Master Formulir)" clearable />
                             </div>
                         </div>
@@ -226,6 +220,27 @@
                                 </div>
                                 <button class="wca-iconbtn wca-iconbtn--danger" type="button" title="Hapus tes" @click="removeTest(s, k)"><i class="bi bi-trash"></i></button>
                             </div>
+                        </div>
+
+                        <!-- MODE KEPUTUSAN — sengaja DI BAWAH daftar tes, karena ini
+                             kesimpulan ATAS tes-tes di atasnya. Pilihannya menyesuaikan:
+                             1 aktivitas → cukup "otomatis vs admin"; 2+ aktivitas →
+                             aturan menunggu ikut berarti, jadi seluruh mode ditampilkan. -->
+                        <div class="alr-dec" :class="{ 'is-multi': jumlahTes(s) >= 2 }">
+                            <div class="alr-dec__head">
+                                <i class="bi bi-signpost-2"></i>
+                                <span>Cara tahap ini menyimpulkan</span>
+                                <span class="alr-dec__count">{{ jumlahTes(s) }} aktivitas</span>
+                            </div>
+
+                            <el-select v-model="s.mode" style="width:100%" placeholder="Pilih cara menyimpulkan">
+                                <el-option v-for="m in modeTampil(s)" :key="m.value" :label="labelMode(m, s)" :value="m.value" />
+                            </el-select>
+
+                            <p class="alr-dec__note">
+                                <i class="bi" :class="modeInfo(s)?.ikon || 'bi-info-circle'"></i>
+                                <span>{{ catatanMode(s) }}</span>
+                            </p>
                         </div>
 
                         <!-- PENGUMUMAN HASIL — kapan hasil tahap ini boleh dilihat kandidat.
@@ -344,6 +359,64 @@ export default {
         },
         /** Info mode terpilih (untuk kalimat efek di bawah dropdown). */
         modeInfo(s) { return this.modeKeputusan.find((m) => m.value === s.mode) || null; },
+
+        /** Jumlah aktivitas nyata: daftar kosong tetap dihitung 1 (dibuat sistem). */
+        jumlahTes(s) { return Math.max(1, (s.tests || []).length); },
+
+        /**
+         * Pilihan mode yang MASUK AKAL untuk tahap ini.
+         *
+         * Dengan 1 aktivitas, "tunggu semua" dan "tunggu tes terakhir" berakhir
+         * sama persis — menampilkan keduanya cuma membuat admin menebak-nebak.
+         * Maka disisakan satu wakil per perilaku maju: otomatis vs diputus admin.
+         * Begitu ada 2+ aktivitas, aturan menunggu jadi berarti → tampilkan semua.
+         */
+        modeTampil(s) {
+            if (this.jumlahTes(s) >= 2) return this.modeKeputusan;
+
+            const wakil = [];
+            for (const m of this.modeKeputusan) {
+                if (!wakil.some((w) => w.autoLanjut === m.autoLanjut)) wakil.push(m);
+            }
+            return wakil;
+        },
+
+        /** Label dropdown: disederhanakan saat tahap hanya satu aktivitas. */
+        labelMode(m, s) {
+            if (this.jumlahTes(s) >= 2) return m.label;
+            return m.autoLanjut
+                ? 'Otomatis — maju sendiri bila lulus'
+                : 'Manual — admin yang memutuskan';
+        },
+
+        /** Kalimat akibat, ditulis mengikuti jumlah aktivitas nyata di tahap ini. */
+        catatanMode(s) {
+            const m = this.modeInfo(s);
+            if (!m) return 'Pilih bagaimana tahap ini menyimpulkan hasil.';
+
+            const n = this.jumlahTes(s);
+            if (n < 2) {
+                return m.autoLanjut
+                    ? 'Begitu aktivitas ini selesai & lulus, kandidat langsung maju ke tahap berikutnya.'
+                    : 'Setelah aktivitas ini selesai, tahap ditandai SIAP DIPUTUS — admin yang menekan lolos/tolak.';
+            }
+
+            const tunggu = { SEMUA: `menunggu ${n} aktivitas selesai`, TERAKHIR: 'menunggu aktivitas terakhir selesai', SEGERA: 'dievaluasi begitu hasil pertama masuk' }[m.tunggu] || 'dievaluasi';
+            const lanjut = m.autoLanjut ? 'lalu maju otomatis' : 'lalu menunggu keputusan admin';
+            const gugur = m.autoGugur ? ' Ada tes penentu gagal → kandidat langsung gugur.' : '';
+
+            return `Tahap ${tunggu}, ${lanjut}.${gugur}`;
+        },
+
+        /**
+         * Jaga agar mode terpilih selalu ada di daftar yang ditampilkan.
+         * Dipanggil saat tes ditambah/dihapus — mis. admin memilih "tunggu tes
+         * terakhir" (hanya masuk akal untuk 2+ tes) lalu menghapus tesnya.
+         */
+        samakanMode(s) {
+            const boleh = this.modeTampil(s).map((m) => m.value);
+            if (!boleh.includes(s.mode)) s.mode = boleh[0] || null;
+        },
         /** Nama pendek mode untuk pil di daftar alur. */
         namaMode(kode) { return this.modeKeputusan.find((m) => m.value === kode)?.nama || kode || 'Manual'; },
 
@@ -370,8 +443,12 @@ export default {
         addTest(s) {
             if (!Array.isArray(s.tests)) s.tests = [];
             s.tests.push({ label: '', jenisTes: null, peran: 'PENENTU', ambang: null });
+            this.samakanMode(s);
         },
-        removeTest(s, k) { s.tests.splice(k, 1); },
+        removeTest(s, k) {
+            s.tests.splice(k, 1);
+            this.samakanMode(s);
+        },
 
         /** Muat mode pengumuman AKTIF dari master (Flag_Aktif). */
         async loadModePengumuman() {
@@ -577,8 +654,15 @@ export default {
 .alr-meta { margin-bottom: .8rem; }
 .alr-empty-stage { color: #94a3b8; font-size: 13px; }
 
-/* Kalimat efek mode keputusan di bawah dropdown-nya. */
-.alr-mode-note { display: block; margin-top: .35rem; font-size: 11.5px; line-height: 1.5; color: #64748b; font-weight: 600; }
+/* Blok "cara tahap menyimpulkan" — diletakkan SETELAH daftar tes karena ia
+   adalah kesimpulan atas tes-tes tersebut. Diberi nada indigo agar terbaca
+   sebagai keputusan, bukan sekadar isian tambahan. */
+.alr-dec { margin-top: .55rem; padding: .7rem .8rem; border-radius: 12px; border: 1px solid rgba(79, 70, 229, .18); background: linear-gradient(180deg, rgba(79, 70, 229, .05), rgba(124, 58, 237, .04)); }
+.alr-dec.is-multi { border-color: rgba(79, 70, 229, .34); box-shadow: 0 4px 14px rgba(79, 70, 229, .08); }
+.alr-dec__head { display: flex; align-items: center; gap: .4rem; font-size: 11.5px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: #4338ca; margin-bottom: .5rem; }
+.alr-dec__count { margin-left: auto; text-transform: none; letter-spacing: 0; font-size: 10.5px; font-weight: 700; color: #4338ca; background: rgba(79, 70, 229, .1); border-radius: 999px; padding: 1px 8px; }
+.alr-dec__note { display: flex; align-items: flex-start; gap: .4rem; margin: .5rem 0 0; font-size: 11.5px; line-height: 1.55; color: #64748b; }
+.alr-dec__note > i { color: #4338ca; margin-top: 1px; flex: none; }
 
 /* Blok daftar tes (sub-tes) di dalam kartu tahap pada modal builder. */
 .alr-tests { border: 1px solid rgba(15, 23, 42, .1); border-radius: 12px; padding: .7rem .8rem; margin-top: .5rem; background: #f8fafc; }
