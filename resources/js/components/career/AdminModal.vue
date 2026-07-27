@@ -5,8 +5,17 @@
 <template>
     <teleport to="body">
         <transition name="wca-modal">
-            <div v-if="show" class="wca-modal-mask wca" @click.self="tutup">
-                <div class="wca-modal" :class="{ 'wca-modal--lg': lg, 'wca-modal--xl': xl, 'is-busy': busy }" role="dialog" aria-modal="true" :aria-busy="busy">
+            <!-- Klik latar SENGAJA tidak menutup modal: satu klik meleset saat
+                 mengisi form panjang (mis. susunan tahapan alur) akan membuang
+                 seluruh isian tanpa peringatan. Penutupan hanya lewat tombol
+                 Batal / X. Klik latar dibalas goyangan singkat sebagai isyarat
+                 bahwa modal memang sengaja bertahan — bukan aplikasi macet. -->
+            <div v-if="show" class="wca-modal-mask wca" @click.self="tolakTutup">
+                <div
+                    class="wca-modal"
+                    :class="{ 'wca-modal--lg': lg, 'wca-modal--xl': xl, 'is-busy': busy, 'is-nudge': nudge }"
+                    role="dialog" aria-modal="true" :aria-busy="busy"
+                >
                     <!-- Garis progres tipis di puncak modal: penanda proses berjalan
                          yang tetap terlihat walau tombol sudah tergulir keluar layar. -->
                     <div v-if="busy" class="wca-modal__bar" aria-hidden="true"></div>
@@ -50,6 +59,8 @@
 </template>
 
 <script setup>
+import { onBeforeUnmount, ref } from 'vue';
+
 const props = defineProps({
     show: { type: Boolean, default: false },
     title: { type: String, default: '' },
@@ -69,8 +80,21 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'save']);
 
-/** Tutup diabaikan selama proses berjalan — termasuk klik latar & tombol X. */
+/** Tutup hanya lewat tombol; diabaikan selama proses simpan berjalan. */
 function tutup() {
     if (! props.busy) emit('close');
 }
+
+/* Klik latar: modal TIDAK ditutup (lihat catatan di template). Beri goyangan
+   singkat supaya pengguna paham modal sengaja bertahan. */
+const nudge = ref(false);
+let nudgeTimer = null;
+
+function tolakTutup() {
+    if (nudgeTimer) clearTimeout(nudgeTimer);
+    nudge.value = true;
+    nudgeTimer = setTimeout(() => (nudge.value = false), 420);
+}
+
+onBeforeUnmount(() => nudgeTimer && clearTimeout(nudgeTimer));
 </script>

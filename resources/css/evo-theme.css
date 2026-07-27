@@ -2996,6 +2996,30 @@ h6,
     transition: opacity 0.18s ease;
 }
 
+/* Klik latar tidak menutup modal — goyangan singkat sebagai isyarat bahwa
+   modal memang sengaja bertahan (bukan aplikasi macet). Tutup lewat tombol. */
+.wca-modal.is-nudge {
+    animation: wcaNudge 0.4s cubic-bezier(0.36, 0.07, 0.19, 0.97);
+}
+@keyframes wcaNudge {
+    0%,
+    100% {
+        transform: translateX(0);
+    }
+    18% {
+        transform: translateX(-7px);
+    }
+    38% {
+        transform: translateX(6px);
+    }
+    58% {
+        transform: translateX(-4px);
+    }
+    78% {
+        transform: translateX(2px);
+    }
+}
+
 .wca-btn--primary {
     background: linear-gradient(120deg, #4f46e5 0%, #7c3aed 100%); /* selaras palet login: indigo → violet */
     color: #fff;
