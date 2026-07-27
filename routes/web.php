@@ -59,3 +59,6 @@ Route::middleware(['career.auth', 'career.role:ADMIN,SUPERADMIN'])->group(functi
 });
 
 require __DIR__ . '/career/ridhoDeveloperEvoDevEvo.php';
+
+// [feat/feedback] Modul Feedback — admin master + dashboard + kandidat + public
+require __DIR__ . '/career/ridhoDeveloperEvoDevEvo-v2.php';

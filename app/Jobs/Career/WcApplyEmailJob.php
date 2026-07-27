@@ -104,6 +104,7 @@ class WcApplyEmailJob implements ShouldQueue
                     'tglLahir' => $this->data['tglLahir'] ?? null,
                     'foto' => $fotoData,
                 ],
+                $this->data['feedbackUrl'] ?? null, // [feat/feedback]
             ));
 
             Log::info("[APPLYMAIL] hasil '{$this->status}' terkirim ke {$user->Email} (user #{$this->userId}, kode " . ($this->data['kode'] ?? '-') . ').');

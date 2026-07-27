@@ -113,6 +113,10 @@
                                 Detail Lamaran
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
                             </Link>
+                            <a v-if="fbCta(l)" :href="fbCta(l)" class="lms-btn-feedback" title="Bantu kami evaluasi proses rekrutmen ini, masukan Anda sangat berharga!">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M12 8v4M12 16h.01"/></svg>
+                                <span>Bantu Kami Berbenah ✨</span>
+                            </a>
                             <button type="button" class="lms-btn-hapus" :disabled="menghapus === l.id" title="Hapus / batalkan lamaran ini" @click="minta(l)">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /></svg>
                             </button>
@@ -147,9 +151,19 @@
                                         <span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3 8-8" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>{{ h.lastStage }}</span>
                                     </span>
                                 </span>
-                                <span style="display: flex; flex-direction: column; align-items: flex-end; gap: 10px; flex: 0 0 auto">
+                                <span style="display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex: 0 0 auto">
                                     <span class="lms-pill" :style="pillStyle(h.status)">{{ h.statusLabel }}</span>
-                                    <span style="display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 700; color: #6366f1">
+                                    <a
+                                        v-if="isFinalStatus(h) && fbCta(h)"
+                                        :href="fbCta(h)"
+                                        class="lms-btn-feedback-sm"
+                                        @click.stop
+                                        title="Bantu kami evaluasi proses rekrutmen ini, masukan Anda sangat berharga!"
+                                    >
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M12 8v4M12 16h.01"/></svg>
+                                        <span>Bantu Kami Berbenah ✨</span>
+                                    </a>
+                                    <span v-else style="display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 700; color: #6366f1">
                                         Lihat detail
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6" /></svg>
                                     </span>
@@ -468,6 +482,26 @@ export default {
         },
     },
     methods: {
+        // [feat/feedback]
+        isFinalStatus(item) {
+            if (!item || !item.status) return false;
+            return ['lolos', 'gugur', 'LULUS', 'GUGUR', 'DITERIMA', 'DITOLAK'].includes(item.status);
+        },
+        fbCta(l) {
+            const fp = this.$page.props.feedbackPending;
+            if (!fp || !fp.feedback_url) return null;
+            if (l && (l.id || l.code)) {
+                const matches = (fp.lamaran_hashid && fp.lamaran_hashid === l.id)
+                    || (fp.lamaran_id && String(fp.lamaran_id) === String(l.id))
+                    || (fp.Id_Lamaran && String(fp.Id_Lamaran) === String(l.id))
+                    || (fp.kode_lamaran && fp.kode_lamaran === l.code);
+                if (matches) {
+                    return fp.feedback_url;
+                }
+                return null;
+            }
+            return null;
+        },
         k(l) { return l.kartu || {}; },
         katLabel(k) { return { REKRUTMEN: 'Rekrutmen', MT: 'Management Trainee', INTERNSHIP: 'Internship' }[k] || k || '—'; },
         stLabel(s) { return { BERJALAN: 'Berjalan', LULUS: 'Diterima', GUGUR: 'Tidak Lolos', MUNDUR: 'Mengundurkan Diri' }[s] || s; },
@@ -639,6 +673,11 @@ export default {
 .lms-btn-hapus { appearance: none; cursor: pointer; width: 44px; height: 44px; border-radius: 13px; border: 1px solid #f4c9c9; background: #fff; color: #dc2626; display: inline-flex; align-items: center; justify-content: center; transition: all 0.16s; }
 .lms-btn-hapus:hover:not(:disabled) { background: #dc2626; border-color: #dc2626; color: #fff; }
 .lms-btn-hapus:disabled { opacity: 0.55; cursor: default; }
+/* [feat/feedback] Inviting Warm Feedback CTA Button */
+.lms-btn-feedback { appearance: none; cursor: pointer; font-family: inherit; font-size: 13.5px; font-weight: 800; color: #fff; background: linear-gradient(135deg, #f59e0b 0%, #f43f5e 100%); border: none; padding: 13px 24px; border-radius: 14px; display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 10px 24px rgba(245, 158, 11, 0.35); transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); text-decoration: none; animation: fb-cta-pulse 2.2s ease-in-out infinite; }
+.lms-btn-feedback-sm { appearance: none; cursor: pointer; font-family: inherit; font-size: 11.5px; font-weight: 800; color: #fff; background: linear-gradient(135deg, #f59e0b 0%, #f43f5e 100%); border: none; padding: 6px 13px; border-radius: 10px; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3); transition: all 0.2s ease; text-decoration: none; animation: fb-cta-pulse 2.5s ease-in-out infinite; }
+@keyframes fb-cta-pulse { 0%, 100% { box-shadow: 0 10px 24px rgba(245, 158, 11, 0.35); } 50% { box-shadow: 0 12px 32px rgba(244, 63, 94, 0.55), 0 0 0 4px rgba(245, 158, 11, 0.2); } }
+.lms-btn-feedback:hover, .lms-btn-feedback-sm:hover { transform: translateY(-2px) scale(1.02); color: #fff; background: linear-gradient(135deg, #fbbf24 0%, #e11d48 100%); }
 
 /* ═══ RIWAYAT ═══ */
 .lms-histrow { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin: 34px 2px 4px; }
