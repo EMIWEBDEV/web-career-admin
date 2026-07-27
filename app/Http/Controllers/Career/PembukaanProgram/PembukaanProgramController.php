@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Career\PembukaanProgram;
 
 use App\Helpers\ResponseHelper;
 use App\Http\Controllers\Controller;
+use App\Support\Career\AksesService;
 use App\Support\CareerShell;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -28,13 +29,41 @@ class PembukaanProgramController extends Controller
         return Inertia::render('Career/admin/pembukaan-program/pembukaanProgram', CareerShell::props('/karir/pembukaan', 'Pembukaan Program'));
     }
 
-    public function list()
+    public function list(Request $request)
     {
         try {
-            $rows = DB::table('N_WEB_CAREERS_Pembukaan as pb')
+            // Pola & perilaku SAMA dengan Program Kegiatan: filter server-side,
+            // urut terbaru di atas, dan tab kategori dari master + hak akses.
+            $q = trim((string) $request->query('q', ''));
+            $kategori = trim((string) $request->query('kategori', ''));
+            $status = strtoupper(trim((string) $request->query('status', '')));
+            $dari = $request->query('dari');
+            $sampai = $request->query('sampai');
+
+            $izin = AksesService::kategoriDiizinkan('pembukaanPage');
+
+            $dasar = fn () => DB::table('N_WEB_CAREERS_Pembukaan as pb')
                 ->leftJoin('N_WEB_CAREERS_Users as u', 'u.Id_Users', '=', 'pb.Created_By_Id')
                 ->leftJoin('N_WEB_CAREERS_Program as p', 'p.Id_Program', '=', 'pb.Program_Id')
                 ->leftJoin('N_WEB_CAREERS_Program_Batch as b', 'b.Id_Program_Batch', '=', 'pb.Program_Batch_Id')
+                ->when($izin, fn ($w) => $w->whereIn('p.Kategori', $izin))
+                ->when($q !== '', fn ($w) => $w->where(function ($x) use ($q) {
+                    $x->where('pb.Kode', 'like', "%{$q}%")
+                        ->orWhere('p.Nama', 'like', "%{$q}%")
+                        ->orWhere('p.Kode', 'like', "%{$q}%")
+                        ->orWhere('b.Nama', 'like', "%{$q}%");
+                }))
+                ->when(in_array($status, ['TERBIT', 'DRAFT'], true), fn ($w) => $w->where('pb.Status_Publish', $status))
+                ->when($dari, fn ($w) => $w->whereDate('pb.Created_At', '>=', $dari))
+                ->when($sampai, fn ($w) => $w->whereDate('pb.Created_At', '<=', $sampai));
+
+            $hitungKategori = (clone $dasar())
+                ->select('p.Kategori', DB::raw('COUNT(*) as jml'))
+                ->groupBy('p.Kategori')
+                ->pluck('jml', 'Kategori');
+
+            $rows = $dasar()
+                ->when($kategori !== '', fn ($w) => $w->where('p.Kategori', $kategori))
                 ->orderByDesc('pb.Id_Pembukaan')
                 ->select('pb.*', 'u.Nama as Pembuat', 'p.Nama as ProgramNama', 'p.Kode as ProgramKode', 'p.Kategori as ProgramKategori', 'b.Nama as BatchNama')
                 ->get();
@@ -54,7 +83,23 @@ class PembukaanProgramController extends Controller
                 'createdAt' => $r->Created_At,
             ])->values();
 
-            return ResponseHelper::success($data, 'Data pembukaan dimuat');
+            $tabKategori = DB::table('N_WEB_CAREERS_Master_Talent_Acquisition')
+                ->where('Flag_Aktif', 'Y')
+                ->when($izin, fn ($w) => $w->whereIn('Kode', $izin))
+                ->orderBy('Id_Master_Talent_Acquisition')
+                ->get(['Kode', 'Nama'])
+                ->map(fn ($k) => [
+                    'kode' => $k->Kode,
+                    'nama' => $k->Nama,
+                    'jumlah' => (int) ($hitungKategori[$k->Kode] ?? 0),
+                ])
+                ->values();
+
+            return ResponseHelper::success([
+                'data' => $data,
+                'kategori' => $tabKategori,
+                'total' => (int) $hitungKategori->sum(),
+            ], 'Data pembukaan dimuat');
         } catch (\Throwable $e) {
             Log::channel('web_career')->error('Gagal memuat pembukaan: ' . $e->getMessage());
 
