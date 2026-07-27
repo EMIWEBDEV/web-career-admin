@@ -177,6 +177,16 @@ class CareerAdminController extends Controller
         if ($type === 'tahap-formulir') {
             return $this->options_tahap_formulir();
         }
+        // [feat/feedback] Opsi program untuk assignment form feedback
+        if ($type === 'program') {
+            $rows = DB::table('N_WEB_CAREERS_Program')
+                ->select('Id_Program', 'Nama')
+                ->orderBy('Nama')
+                ->get()
+                ->map(fn ($r) => ['value' => $r->Id_Program, 'label' => $r->Nama])
+                ->values();
+            return ResponseHelper::success($rows, 'Opsi program');
+        }
         if ($type === 'field-turunan') {
             return ResponseHelper::success(FieldTurunan::daftar(), 'Field turunan');
         }

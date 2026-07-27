@@ -49,7 +49,10 @@ class HasilLamaranMail extends Mailable
 
     public ?string $fotoData;   // bytes foto verifikasi (di-embed di blade), null bila tak ada
 
-    public function __construct(string $nama, string $status, ?string $kode = null, ?string $posisi = null, ?string $program = null, array $tahap = [], array $kandidat = [])
+    // [feat/feedback] URL halaman feedback (token-based, tanpa login)
+    public ?string $feedbackUrl;
+
+    public function __construct(string $nama, string $status, ?string $kode = null, ?string $posisi = null, ?string $program = null, array $tahap = [], array $kandidat = [], ?string $feedbackUrl = null)
     {
         $this->nama = $nama;
         $this->status = in_array($status, ['LOLOS', 'GUGUR', 'MENUNGGU'], true) ? $status : 'MENUNGGU';
@@ -61,6 +64,7 @@ class HasilLamaranMail extends Mailable
         $this->urutan = $tahap['urutan'] ?? null;
         $this->total = $tahap['total'] ?? null;
         $this->diterima = (bool) ($tahap['diterima'] ?? false);
+        $this->feedbackUrl = $feedbackUrl; // [feat/feedback]
 
         $this->email = $kandidat['email'] ?? null;
         $this->fotoData = $kandidat['foto'] ?? null;
@@ -109,6 +113,7 @@ class HasilLamaranMail extends Mailable
                 'preheaderTxt' => $preheader,
                 'portalUrl' => $portalUrl,
                 'karirUrl' => $karirUrl,
+                'feedbackUrl' => $this->feedbackUrl, // [feat/feedback]
             ],
         );
     }

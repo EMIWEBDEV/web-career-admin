@@ -116,6 +116,8 @@ class CareerShell
                 ['key' => 'master-mode-keputusan', 'label' => 'Master Mode Keputusan', 'icon' => 'bi bi-diagram-3', 'url' => '/master-mode-keputusan'],
                 ['key' => 'master-klasifikasi', 'label' => 'Master Kategori', 'icon' => 'bi bi-tags', 'url' => '/master-kategori'],
                 ['key' => 'master-jadwal', 'label' => 'Master Jadwal Kegiatan', 'icon' => 'bi bi-calendar3-range', 'url' => '/master-jadwal'],
+                // [feat/feedback]
+                ['key' => 'master-feedback', 'label' => 'Master Feedback Form', 'icon' => 'bi bi-chat-dots', 'url' => '/karir/master-feedback'],
             ]],
             ['id' => 'program', 'title' => 'Operasional', 'items' => [
                 ['key' => 'program', 'label' => 'Program Kegiatan', 'icon' => 'bi bi-diagram-3-fill', 'url' => '/karir/program-kegiatan'],
@@ -130,6 +132,8 @@ class CareerShell
             ]],
             ['id' => 'data', 'title' => 'Data', 'items' => [
                 ['key' => 'kandidat', 'label' => 'Kandidat', 'icon' => 'bi bi-people', 'url' => '/karir/kandidat'],
+                // [feat/feedback]
+                ['key' => 'feedback-dashboard', 'label' => 'Feedback Dashboard', 'icon' => 'bi bi-graph-up', 'url' => '/karir/feedback-dashboard'],
             ]],
             ['id' => 'pengaturan', 'title' => 'Pengaturan', 'items' => [
                 ['key' => 'master-akun', 'label' => 'Master Akun', 'icon' => 'bi bi-person-badge', 'url' => '/master-akun'],

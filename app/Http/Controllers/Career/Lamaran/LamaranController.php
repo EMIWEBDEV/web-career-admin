@@ -815,7 +815,7 @@ class LamaranController extends Controller
                 ->join('N_WEB_CAREERS_Program as p', 'p.Id_Program', '=', 'l.Program_Id')
                 ->leftJoin('N_WEB_CAREERS_Program_Posisi as x', 'x.Id_Program_Posisi', '=', 'l.Program_Posisi_Id')
                 ->where('l.Id_Lamaran', $lamaranId)
-                ->select('l.Id_Users', 'l.Kode', 'l.Status', 'l.Hasil_Akhir', 'p.Nama as ProgramNama', 'x.Posisi')
+                ->select('l.Id_Users', 'l.Kode', 'l.Status', 'l.Hasil_Akhir', 'l.Program_Id', 'p.Nama as ProgramNama', 'x.Posisi')
                 ->first();
             if (! $l || ! $l->Id_Users) {
                 return;
@@ -824,10 +824,33 @@ class LamaranController extends Controller
             // LULUS + lamaran DITERIMA (tahap terakhir) → LOLOS; LULUS + lanjut → MENUNGGU.
             $status = ! $lulus ? 'GUGUR' : ($l->Status === 'LULUS' ? 'LOLOS' : 'MENUNGGU');
 
+            // [feat/feedback] Buat feedback record untuk keputusan FINAL
+            $feedbackUrl = null;
+            if (in_array($status, ['GUGUR', 'LOLOS'], true)) {
+                $userEmail = DB::table('N_WEB_CAREERS_Users')
+                    ->where('Id_Users', $l->Id_Users)
+                    ->value('Email');
+                if ($userEmail) {
+                    $feedbackService = app(\App\Support\Career\FeedbackService::class);
+                    $feedbackId = $feedbackService->buatFeedback(
+                        (int) $lamaranId,
+                        $userEmail,
+                        $l->Program_Id
+                    );
+                    if ($feedbackId) {
+                        $tokens = $feedbackService->generateTokenPair($feedbackId, $userEmail);
+                        $feedbackUrl = rtrim(config('app.url'), '/')
+                            . '/feedback/' . $tokens['hashids'] . '/' . $tokens['signature'];
+                    }
+                }
+            }
+            // Akhir [feat/feedback]
+
             WcApplyEmailJob::dispatch((int) $l->Id_Users, $status, [
                 'kode' => $l->Kode,
                 'posisi' => $l->Posisi ?: $l->ProgramNama,
                 'program' => $l->ProgramNama,
+                'feedbackUrl' => $feedbackUrl, // [feat/feedback]
             ]);
         } catch (\Throwable $e) {
             Log::channel('web_career')->error("[CALLBACK] gagal antre email hasil lamaran #{$lamaranId}: " . $e->getMessage());
