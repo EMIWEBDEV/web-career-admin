@@ -99,6 +99,95 @@ class MasterJadwalController extends Controller
         }
     }
 
+    /**
+     * DUPLIKAT jadwal: seluruh agenda (label & tanggal) disalin apa adanya,
+     * yang diganti hanya NAMA KEGIATAN dan ALUR SELEKSI.
+     *
+     * Alasannya: satu angkatan biasanya memakai susunan agenda yang sama persis
+     * dengan angkatan sebelumnya — mengetik ulang belasan baris agenda cuma
+     * mengundang salah ketik. Kategori ikut sumber karena alur terikat kategori.
+     */
+    public function duplikat(Request $request, $id)
+    {
+        try {
+            $realId = Hashids::decode($id)[0] ?? null;
+            $sumber = $realId ? DB::table('N_WEB_CAREERS_Master_Jadwal')->where('Id_Master_Jadwal', $realId)->first() : null;
+            if (! $sumber) {
+                return ResponseHelper::error('Jadwal sumber tidak ditemukan.', 404);
+            }
+
+            $data = $request->validate([
+                'kegiatan' => 'required|string|max:120',
+                'alur' => 'nullable|string|max:30',
+            ], [
+                'kegiatan.required' => 'Nama kegiatan baru wajib diisi.',
+            ]);
+
+            $userId = session('career_auth.id');
+            $userName = session('career_auth.nama', 'ADMIN');
+            $now = now();
+
+            $base = trim(preg_replace('/[^A-Z0-9]+/', '_', strtoupper($data['kegiatan'])), '_') ?: 'JADWAL';
+            $base = substr($base, 0, 26);
+            $kode = $base;
+            $n = 2;
+            while (DB::table('N_WEB_CAREERS_Master_Jadwal')->where('Kode', $kode)->exists()) {
+                $kode = $base . '_' . $n++;
+            }
+
+            $jumlahAgenda = 0;
+
+            DB::transaction(function () use ($sumber, $data, $kode, $userId, $userName, $now, &$jumlahAgenda) {
+                $baruId = DB::table('N_WEB_CAREERS_Master_Jadwal')->insertGetId([
+                    'Kode' => $kode,
+                    'Kegiatan' => $data['kegiatan'],
+                    // Kategori ikut sumber: alur seleksi terikat kategori, jadi
+                    // mengubahnya di sini justru membuat pasangannya tidak cocok.
+                    'Kategori' => $sumber->Kategori,
+                    'Alur_Kode' => $data['alur'] ?? $sumber->Alur_Kode,
+                    'Status' => 'AKTIF',
+                    'Created_At' => $now, 'Created_By' => $userName, 'Created_By_Id' => $userId,
+                    'Updated_At' => $now, 'Updated_By' => $userName, 'Updated_By_Id' => $userId,
+                ], 'Id_Master_Jadwal');
+
+                $agenda = DB::table('N_WEB_CAREERS_Master_Jadwal_Agenda')
+                    ->where('Master_Jadwal_Id', $sumber->Id_Master_Jadwal)
+                    ->orderBy('Urutan')
+                    ->get();
+
+                foreach ($agenda as $i => $g) {
+                    DB::table('N_WEB_CAREERS_Master_Jadwal_Agenda')->insert([
+                        'Master_Jadwal_Id' => $baruId,
+                        'Urutan' => $i + 1,
+                        'Jenis' => $g->Jenis,
+                        'Label' => $g->Label,
+                        'Tanggal_Mulai' => $g->Tanggal_Mulai,
+                        'Tanggal_Selesai' => $g->Tanggal_Selesai,
+                        'Alur_Idx' => null,
+                        'Created_By_Id' => $userId,
+                        'Updated_By_Id' => $userId,
+                    ]);
+                }
+
+                $jumlahAgenda = $agenda->count();
+            });
+
+            Log::channel('web_career')->info("Master jadwal {$sumber->Kode} diduplikat ke {$kode} oleh {$userName}");
+
+            return ResponseHelper::success(
+                ['kode' => $kode, 'agenda' => $jumlahAgenda],
+                "Jadwal diduplikat ({$jumlahAgenda} agenda disalin). Periksa kembali tanggalnya.",
+                201
+            );
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return ResponseHelper::error(collect($e->errors())->flatten()->first() ?? 'Data tidak valid', 422);
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->error("Gagal duplikat jadwal #{$id}: " . $e->getMessage());
+
+            return ResponseHelper::error('Gagal menduplikat jadwal', 500);
+        }
+    }
+
     public function store(Request $request)
     {
         try {

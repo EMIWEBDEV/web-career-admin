@@ -35,6 +35,7 @@
                     </div>
                     <div class="pkg-row__act" @click.stop>
                         <el-switch :model-value="j.status === 'AKTIF'" @change="(v) => setStatus(j, v)" />
+                        <button class="pkg-ibtn" title="Duplikat jadwal ini" @click="openDup(j)"><i class="bi bi-files"></i></button>
                         <button class="pkg-ibtn" title="Ubah" @click="openEdit(j)"><i class="bi bi-pencil"></i></button>
                         <button class="pkg-ibtn pkg-ibtn--danger" title="Hapus" @click="askRemove(j)"><i class="bi bi-trash"></i></button>
                     </div>
@@ -123,6 +124,50 @@
             </div>
         </AdminModal>
 
+        <!-- DUPLIKAT — seluruh agenda disalin apa adanya; yang diganti hanya
+             nama kegiatan & alur seleksi. Kategori ikut sumber karena alur
+             terikat kategori. -->
+        <AdminModal
+            :busy="dupSaving" :show="dupShow" title="Duplikat Jadwal Kegiatan"
+            :subtitle="dupTarget ? `Menyalin dari: ${dupTarget.kegiatan}` : ''"
+            icon="bi-files" save-label="Duplikat Jadwal"
+            foot-note="Tanggal agenda ikut tersalin — periksa & sesuaikan setelah ini."
+            @close="dupShow = false" @save="simpanDup"
+        >
+            <div class="wca-fsection">
+                <div class="wca-fsection__label"><i class="bi bi-clipboard-check"></i> Yang Disalin</div>
+                <div class="jdw-dupinfo">
+                    <div class="jdw-dupinfo__row">
+                        <span><i class="bi bi-list-ol"></i> Agenda</span>
+                        <b>{{ dupTarget?.agenda?.length || 0 }} baris (label &amp; tanggal ikut)</b>
+                    </div>
+                    <div class="jdw-dupinfo__row">
+                        <span><i class="bi bi-tags"></i> Kategori</span>
+                        <b>{{ katLabel(dupTarget?.kategori) }} <small>— mengikuti sumber</small></b>
+                    </div>
+                </div>
+            </div>
+
+            <div class="wca-fsection">
+                <div class="wca-fsection__label"><i class="bi bi-pencil-square"></i> Yang Diganti</div>
+                <div class="wca-form">
+                    <div>
+                        <label class="wca-field-lbl">Nama Kegiatan Baru</label>
+                        <el-input v-model="dupForm.kegiatan" placeholder="mis. Rekrutmen Batch 2 2026" />
+                    </div>
+                    <div>
+                        <label class="wca-field-lbl">Alur Seleksi</label>
+                        <RefSelect
+                            type="alur" v-model="dupForm.alur" clearable
+                            :params="{ kategori: dupTarget?.kategori }"
+                            placeholder="Pilih alur seleksi"
+                        />
+                        <small class="jdw-hint">Kosongkan bila ingin memakai alur yang sama dengan sumber.</small>
+                    </div>
+                </div>
+            </div>
+        </AdminModal>
+
         <ConfirmModal :show="delShow" title="Hapus Jadwal" :busy="deleting" confirm-label="Ya, Hapus" note="Jadwal & seluruh agenda-nya akan dihapus permanen." @cancel="delShow = false" @confirm="confirmDelete">
             Yakin ingin menghapus jadwal <strong>{{ delTarget?.kegiatan }}</strong>?
         </ConfirmModal>
@@ -152,6 +197,11 @@ export default {
             show: false,
             editingId: null,
             form: { kegiatan: '', kategori: '', alur: '', agenda: [] },
+            // Duplikat jadwal — agenda disalin, hanya nama & alur yang diganti.
+            dupShow: false,
+            dupTarget: null,
+            dupSaving: false,
+            dupForm: { kegiatan: '', alur: '' },
             // Jenis agenda dimuat dari DB (satu sumber: label + deskripsi + ikon + warna),
             // bukan lagi dua peta hardcode yang tercecer di sini.
             jenisOptions: [],
@@ -254,6 +304,33 @@ export default {
                 this.notice('Gagal mengubah status.');
             }
         },
+        /* ── Duplikat jadwal ── */
+        openDup(j) {
+            this.dupTarget = j;
+            // Saran nama: tambahkan "(Salinan)" supaya tidak bentrok & jelas asalnya.
+            this.dupForm = { kegiatan: `${j.kegiatan} (Salinan)`, alur: j.alur || '' };
+            this.dupShow = true;
+        },
+        async simpanDup() {
+            if (this.dupSaving || !this.dupTarget) return;
+            if (!this.dupForm.kegiatan.trim()) return this.notice('Nama kegiatan baru wajib diisi.');
+            this.dupSaving = true;
+            try {
+                const res = await axios.post(`${API}/${this.dupTarget.id}/duplikat`, {
+                    kegiatan: this.dupForm.kegiatan,
+                    alur: this.dupForm.alur || null,
+                }, CFG);
+                this.notice(res.data?.message || 'Jadwal diduplikat.');
+                this.dupShow = false;
+                this.dupTarget = null;
+                await this.load();
+            } catch (e) {
+                this.notice(e.response?.data?.message || 'Gagal menduplikat jadwal.');
+            } finally {
+                this.dupSaving = false;
+            }
+        },
+
         askRemove(j) { this.delTarget = j; this.delShow = true; },
         async confirmDelete() {
             if (this.deleting || !this.delTarget) return;
@@ -278,6 +355,15 @@ export default {
 
 <style scoped>
 .mjd-statusnote { display: flex; align-items: center; gap: .45rem; font-size: 12.5px; color: #047857; background: rgba(16,185,129,.1); border: 1px solid rgba(16,185,129,.25); border-radius: 10px; padding: .55rem .7rem; }
+
+/* Ringkasan "yang ikut tersalin" pada modal duplikat — supaya admin tahu
+   persis apa yang dibawa dan apa yang perlu ia ganti. */
+.jdw-dupinfo { display: flex; flex-direction: column; gap: .4rem; padding: .6rem .75rem; border-radius: 11px; background: rgba(79,70,229,.05); border: 1px solid rgba(79,70,229,.16); }
+.jdw-dupinfo__row { display: flex; align-items: center; justify-content: space-between; gap: .6rem; font-size: 12px; color: #64748b; }
+.jdw-dupinfo__row b { color: #334155; font-weight: 700; }
+.jdw-dupinfo__row b small { color: #94a3b8; font-weight: 600; }
+.jdw-dupinfo__row > span { display: inline-flex; align-items: center; gap: .35rem; }
+.jdw-hint { display: block; margin-top: .3rem; font-size: 11px; color: #94a3b8; }
 .jdw-head-act { display: inline-flex; align-items: center; gap: .4rem; margin-left: auto; }
 .jdw-meta { margin-bottom: .8rem; }
 .jdw-empty-agenda { color: #94a3b8; font-size: 13px; }
