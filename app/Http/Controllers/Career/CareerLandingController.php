@@ -27,24 +27,30 @@ use Vinkla\Hashids\Facades\Hashids;
  */
 class CareerLandingController extends Controller
 {
+    public function __construct()
+    {
+        $this->cekKelayakanLamaran = new \App\Support\Career\KelayakanLamaran();
+    }
     /** Memoisasi pembukaan DB per-request (dipakai landing + detail + apply). */
     private $openingsCache = null;
+
+    /** Memoisasi info divisi (konten landing per divisi) per-request. */
+    private $timInfoCache = null;
 
     public function index(Request $request)
     {
         $lowongan = $this->visibleLowongan();
-        dd($lowongan);
         $programMt = $this->programMt();
 
+        // Props lowongan/departments/locations DIHAPUS — LandingPage.vue tidak
+        // lagi mendeklarasikannya sejak redesign (job list pindah ke /karir/lowongan).
         return Inertia::render('Career/LandingPage', [
             'meta' => $this->meta($lowongan, $programMt),
-            'departments' => $this->departments(),
-            'locations' => $this->locations(),
-            'lowongan' => $lowongan,
             'programMt' => $programMt,
             'achievements' => $this->achievements(),
             'offices' => $this->offices(),
             'benefits' => $this->benefits(),
+            'tim' => $this->timCards(),
         ]);
     }
 
@@ -80,9 +86,12 @@ class CareerLandingController extends Controller
     public function apply(Request $request, string $id)
     {
         $form = (int) $request->query('form', 1);
-        return Inertia::render('Career/ApplyForm', array_merge($this->layoutShared(), [
-            'flow' => $this->applyFlow($id, $form === 2 ? 2 : 1),
-        ]));
+        return Inertia::render(
+            'Career/ApplyForm',
+            array_merge($this->layoutShared(), [
+                'flow' => $this->applyFlow($id, $form === 2 ? 2 : 1),
+            ]),
+        );
     }
 
     private function applyFlow(string $id, int $form = 1): array
@@ -91,16 +100,31 @@ class CareerLandingController extends Controller
         $lo = collect($this->lowongan())->firstWhere('id', $id);
         $mt = collect($this->programMt())->firstWhere('id', $id);
         if ($mt) {
-            $job = ['posisi' => $mt['nama'], 'program' => trim(($mt['batch'] ?? '') . ' · ' . ($mt['perusahaan'] ?? 'EVO Group')), 'kategori' => 'MT', 'lokasi' => $mt['lokasi'] ?? '—'];
+            $job = [
+                'posisi' => $mt['nama'],
+                'program' => trim(($mt['batch'] ?? '') . ' · ' . ($mt['perusahaan'] ?? 'EVO Group')),
+                'kategori' => 'MT',
+                'lokasi' => $mt['lokasi'] ?? '—',
+            ];
             // ID nyata (kalau kartu ini dari DB) agar finalisasi bisa membuat lamaran.
             $job['pembukaanId'] = $mt['pembukaanId'] ?? null;
             $job['posisiId'] = $mt['posisiId'] ?? null;
         } elseif ($lo) {
-            $job = ['posisi' => $lo['posisi'], 'program' => $lo['perusahaan'] ?? 'EVO Group', 'kategori' => 'REKRUTMEN', 'lokasi' => trim(($lo['lokasi'] ?? '') . ' · ' . ($lo['tempatKerja'] ?? ''), ' ·')];
+            $job = [
+                'posisi' => $lo['posisi'],
+                'program' => $lo['perusahaan'] ?? 'EVO Group',
+                'kategori' => 'REKRUTMEN',
+                'lokasi' => trim(($lo['lokasi'] ?? '') . ' · ' . ($lo['tempatKerja'] ?? ''), ' ·'),
+            ];
             $job['pembukaanId'] = $lo['pembukaanId'] ?? null;
             $job['posisiId'] = $lo['posisiId'] ?? null;
         } else {
-            $job = ['posisi' => 'Lowongan EVO Group', 'program' => 'EVO Group', 'kategori' => 'REKRUTMEN', 'lokasi' => 'Palembang'];
+            $job = [
+                'posisi' => 'Lowongan EVO Group',
+                'program' => 'EVO Group',
+                'kategori' => 'REKRUTMEN',
+                'lokasi' => 'Palembang',
+            ];
         }
         $isMt = $job['kategori'] === 'MT';
 
@@ -124,22 +148,34 @@ class CareerLandingController extends Controller
         $kelayakan = ['boleh' => true, 'alasan' => null, 'kode' => null];
         $sudahLamar = null;
         if ($userId) {
-            $kelayakan = (new \App\Support\Career\KelayakanLamaran())->cek($userId, $job['kategori'] ?? null);
+            $kelayakan = $this->cekKelayakanLamaran->cek($userId, $job['kategori'] ?? null);
             $posEnc = $mt['posisiId'] ?? ($lo['posisiId'] ?? null);
-            $posId = $posEnc ? (Hashids::decode($posEnc)[0] ?? null) : null;
+            $posId = $posEnc ? Hashids::decode($posEnc)[0] ?? null : null;
             if ($posId) {
-                $lam = DB::table('N_WEB_CAREERS_Lamaran')->where('Id_Users', $userId)->where('Program_Posisi_Id', $posId)->first();
+                $lam = DB::table('N_WEB_CAREERS_Lamaran')
+                    ->where('Id_Users', $userId)
+                    ->where('Program_Posisi_Id', $posId)
+                    ->first();
                 if ($lam) {
                     $sudahLamar = [
                         'kode' => $lam->Kode,
                         'status' => $lam->Status,
-                        'tanggal' => $lam->Waktu_Lamar ? \Illuminate\Support\Carbon::parse($lam->Waktu_Lamar)->translatedFormat('d M Y') : null,
+                        'tanggal' => $lam->Waktu_Lamar
+                            ? \Illuminate\Support\Carbon::parse($lam->Waktu_Lamar)->translatedFormat('d M Y')
+                            : null,
                     ];
                 }
             }
         }
 
-        return ['lowongan' => array_merge(['id' => $id], $job), 'form' => $form, 'steps' => $steps, 'kandidat' => $kandidat, 'kelayakan' => $kelayakan, 'sudahLamar' => $sudahLamar];
+        return [
+            'lowongan' => array_merge(['id' => $id], $job),
+            'form' => $form,
+            'steps' => $steps,
+            'kandidat' => $kandidat,
+            'kelayakan' => $kelayakan,
+            'sudahLamar' => $sudahLamar,
+        ];
     }
 
     /**
@@ -199,7 +235,13 @@ class CareerLandingController extends Controller
 
     private function faceStep(): array
     {
-        return ['key' => 'FACE', 'tipe' => 'FACE', 'judul' => 'Verifikasi Wajah', 'ikon' => 'bi-camera', 'deskripsi' => 'Ambil satu foto wajah untuk verifikasi identitas — langkah terakhir sebelum finalisasi.'];
+        return [
+            'key' => 'FACE',
+            'tipe' => 'FACE',
+            'judul' => 'Verifikasi Wajah',
+            'ikon' => 'bi-camera',
+            'deskripsi' => 'Ambil satu foto wajah untuk verifikasi identitas — langkah terakhir sebelum finalisasi.',
+        ];
     }
 
     private function reviewStep(): array
@@ -211,41 +253,144 @@ class CareerLandingController extends Controller
     private function rekrutmenSteps(): array
     {
         return [
-            ['key' => 'DIRI', 'tipe' => 'FORM', 'judul' => 'Data Diri', 'ikon' => 'bi-person-vcard', 'fields' => [
-                ['key' => 'nama', 'label' => 'Nama Lengkap', 'tipe' => 'text', 'required' => true, 'ph' => 'Sesuai KTP'],
-                ['key' => 'nik', 'label' => 'NIK', 'tipe' => 'text', 'required' => true, 'ph' => '16 digit'],
-                ['key' => 'jkel', 'label' => 'Jenis Kelamin', 'tipe' => 'select', 'required' => true, 'opsi' => ['Laki-laki', 'Perempuan']],
-                ['key' => 'lahir', 'label' => 'Tanggal Lahir', 'tipe' => 'date', 'required' => true],
-                ['key' => 'hp', 'label' => 'No. HP / WhatsApp', 'tipe' => 'phone', 'required' => true, 'ph' => '628xxxxxxxxx'],
-                ['key' => 'email', 'label' => 'Email', 'tipe' => 'text', 'required' => true, 'ph' => 'nama@email.com'],
-                ['key' => 'alamat', 'label' => 'Alamat Domisili', 'tipe' => 'textarea', 'required' => true, 'full' => true],
-            ]],
-            ['key' => 'DIDIK', 'tipe' => 'FORM', 'judul' => 'Pendidikan', 'ikon' => 'bi-mortarboard', 'fields' => [
-                ['key' => 'jenjang', 'label' => 'Jenjang', 'tipe' => 'select', 'required' => true, 'opsi' => ['SMA', 'SMK', 'D3', 'D4', 'S1', 'S2']],
-                ['key' => 'kampus', 'label' => 'Institusi / Kampus', 'tipe' => 'text', 'required' => true],
-                ['key' => 'jurusan', 'label' => 'Jurusan', 'tipe' => 'text', 'required' => true],
-                ['key' => 'ipk', 'label' => 'IPK', 'tipe' => 'number', 'required' => true, 'ph' => '3.50'],
-                ['key' => 'lulus', 'label' => 'Tahun Lulus', 'tipe' => 'number', 'required' => true, 'ph' => '2024'],
-            ]],
-            ['key' => 'KERJA', 'tipe' => 'FORM', 'judul' => 'Pengalaman', 'ikon' => 'bi-briefcase', 'opsional' => true, 'repeat' => true, 'itemLabel' => 'Pengalaman', 'fields' => [
-                ['key' => 'perusahaan', 'label' => 'Perusahaan / Instansi', 'tipe' => 'text'],
-                ['key' => 'posisiKerja', 'label' => 'Posisi / Jabatan', 'tipe' => 'text'],
-                ['key' => 'mulai', 'label' => 'Tanggal Mulai', 'tipe' => 'date'],
-                ['key' => 'selesai', 'label' => 'Tanggal Selesai', 'tipe' => 'date', 'disableIf' => 'sekarang'],
-                ['key' => 'sekarang', 'label' => 'Masih berlangsung sampai sekarang', 'tipe' => 'switch', 'full' => true],
-                ['key' => 'deskripsiKerja', 'label' => 'Deskripsi Tugas / Pencapaian', 'tipe' => 'textarea', 'full' => true],
-            ]],
-            ['key' => 'BERKAS', 'tipe' => 'UPLOAD', 'judul' => 'Unggah Berkas', 'ikon' => 'bi-paperclip', 'files' => [
-                ['key' => 'cv', 'label' => 'CV / Resume', 'required' => true, 'accept' => '.pdf', 'hint' => 'PDF'],
-                ['key' => 'ktp', 'label' => 'KTP', 'required' => true, 'accept' => '.pdf,.jpg,.jpeg,.png', 'hint' => 'PDF / JPG'],
-                ['key' => 'ijazah', 'label' => 'Ijazah / Transkrip', 'required' => true, 'accept' => '.pdf', 'hint' => 'PDF'],
-                ['key' => 'pasfoto', 'label' => 'Pas Foto', 'required' => false, 'accept' => '.jpg,.jpeg,.png', 'hint' => 'JPG / PNG'],
-            ]],
-            ['key' => 'SEDIA', 'tipe' => 'PERNYATAAN', 'judul' => 'Pernyataan & Kesediaan', 'ikon' => 'bi-check2-square', 'items' => [
-                'Data yang saya isi benar & dapat dipertanggungjawabkan',
-                'Bersedia ditempatkan di seluruh unit EVO Group',
-                'Bersedia mengikuti seluruh tahapan seleksi',
-            ]],
+            [
+                'key' => 'DIRI',
+                'tipe' => 'FORM',
+                'judul' => 'Data Diri',
+                'ikon' => 'bi-person-vcard',
+                'fields' => [
+                    [
+                        'key' => 'nama',
+                        'label' => 'Nama Lengkap',
+                        'tipe' => 'text',
+                        'required' => true,
+                        'ph' => 'Sesuai KTP',
+                    ],
+                    ['key' => 'nik', 'label' => 'NIK', 'tipe' => 'text', 'required' => true, 'ph' => '16 digit'],
+                    [
+                        'key' => 'jkel',
+                        'label' => 'Jenis Kelamin',
+                        'tipe' => 'select',
+                        'required' => true,
+                        'opsi' => ['Laki-laki', 'Perempuan'],
+                    ],
+                    ['key' => 'lahir', 'label' => 'Tanggal Lahir', 'tipe' => 'date', 'required' => true],
+                    [
+                        'key' => 'hp',
+                        'label' => 'No. HP / WhatsApp',
+                        'tipe' => 'phone',
+                        'required' => true,
+                        'ph' => '628xxxxxxxxx',
+                    ],
+                    [
+                        'key' => 'email',
+                        'label' => 'Email',
+                        'tipe' => 'text',
+                        'required' => true,
+                        'ph' => 'nama@email.com',
+                    ],
+                    [
+                        'key' => 'alamat',
+                        'label' => 'Alamat Domisili',
+                        'tipe' => 'textarea',
+                        'required' => true,
+                        'full' => true,
+                    ],
+                ],
+            ],
+            [
+                'key' => 'DIDIK',
+                'tipe' => 'FORM',
+                'judul' => 'Pendidikan',
+                'ikon' => 'bi-mortarboard',
+                'fields' => [
+                    [
+                        'key' => 'jenjang',
+                        'label' => 'Jenjang',
+                        'tipe' => 'select',
+                        'required' => true,
+                        'opsi' => ['SMA', 'SMK', 'D3', 'D4', 'S1', 'S2'],
+                    ],
+                    ['key' => 'kampus', 'label' => 'Institusi / Kampus', 'tipe' => 'text', 'required' => true],
+                    ['key' => 'jurusan', 'label' => 'Jurusan', 'tipe' => 'text', 'required' => true],
+                    ['key' => 'ipk', 'label' => 'IPK', 'tipe' => 'number', 'required' => true, 'ph' => '3.50'],
+                    [
+                        'key' => 'lulus',
+                        'label' => 'Tahun Lulus',
+                        'tipe' => 'number',
+                        'required' => true,
+                        'ph' => '2024',
+                    ],
+                ],
+            ],
+            [
+                'key' => 'KERJA',
+                'tipe' => 'FORM',
+                'judul' => 'Pengalaman',
+                'ikon' => 'bi-briefcase',
+                'opsional' => true,
+                'repeat' => true,
+                'itemLabel' => 'Pengalaman',
+                'fields' => [
+                    ['key' => 'perusahaan', 'label' => 'Perusahaan / Instansi', 'tipe' => 'text'],
+                    ['key' => 'posisiKerja', 'label' => 'Posisi / Jabatan', 'tipe' => 'text'],
+                    ['key' => 'mulai', 'label' => 'Tanggal Mulai', 'tipe' => 'date'],
+                    ['key' => 'selesai', 'label' => 'Tanggal Selesai', 'tipe' => 'date', 'disableIf' => 'sekarang'],
+                    [
+                        'key' => 'sekarang',
+                        'label' => 'Masih berlangsung sampai sekarang',
+                        'tipe' => 'switch',
+                        'full' => true,
+                    ],
+                    [
+                        'key' => 'deskripsiKerja',
+                        'label' => 'Deskripsi Tugas / Pencapaian',
+                        'tipe' => 'textarea',
+                        'full' => true,
+                    ],
+                ],
+            ],
+            [
+                'key' => 'BERKAS',
+                'tipe' => 'UPLOAD',
+                'judul' => 'Unggah Berkas',
+                'ikon' => 'bi-paperclip',
+                'files' => [
+                    ['key' => 'cv', 'label' => 'CV / Resume', 'required' => true, 'accept' => '.pdf', 'hint' => 'PDF'],
+                    [
+                        'key' => 'ktp',
+                        'label' => 'KTP',
+                        'required' => true,
+                        'accept' => '.pdf,.jpg,.jpeg,.png',
+                        'hint' => 'PDF / JPG',
+                    ],
+                    [
+                        'key' => 'ijazah',
+                        'label' => 'Ijazah / Transkrip',
+                        'required' => true,
+                        'accept' => '.pdf',
+                        'hint' => 'PDF',
+                    ],
+                    [
+                        'key' => 'pasfoto',
+                        'label' => 'Pas Foto',
+                        'required' => false,
+                        'accept' => '.jpg,.jpeg,.png',
+                        'hint' => 'JPG / PNG',
+                    ],
+                ],
+            ],
+            [
+                'key' => 'SEDIA',
+                'tipe' => 'PERNYATAAN',
+                'judul' => 'Pernyataan & Kesediaan',
+                'ikon' => 'bi-check2-square',
+                'items' => [
+                    'Data yang saya isi benar & dapat dipertanggungjawabkan',
+                    'Bersedia ditempatkan di seluruh unit EVO Group',
+                    'Bersedia mengikuti seluruh tahapan seleksi',
+                ],
+            ],
             $this->faceStep(),
             $this->reviewStep(),
         ];
@@ -254,27 +399,112 @@ class CareerLandingController extends Controller
     /** MT — FORM 1 (pendaftaran awal saat apply). Field mengikuti "Form 1" (varian umum) di Excel. */
     private function mtForm1Steps(): array
     {
-        $kampus = ['Universitas Sriwijaya', 'Politeknik Negeri Sriwijaya', 'Universitas Indonesia', 'Institut Teknologi Bandung', 'Universitas Gadjah Mada', 'IPB University', 'Universitas Padjadjaran', 'Institut Teknologi Sepuluh Nopember', 'Universitas Bina Darma', 'Lainnya'];
+        $kampus = [
+            'Universitas Sriwijaya',
+            'Politeknik Negeri Sriwijaya',
+            'Universitas Indonesia',
+            'Institut Teknologi Bandung',
+            'Universitas Gadjah Mada',
+            'IPB University',
+            'Universitas Padjadjaran',
+            'Institut Teknologi Sepuluh Nopember',
+            'Universitas Bina Darma',
+            'Lainnya',
+        ];
 
         return [
-            ['key' => 'DIRI', 'tipe' => 'FORM', 'judul' => 'Data Diri', 'ikon' => 'bi-person-vcard', 'fields' => [
-                ['key' => 'nama', 'label' => 'Nama Lengkap Sesuai ID', 'tipe' => 'text', 'required' => true, 'ph' => 'Sesuai KTP'],
-                ['key' => 'lahir', 'label' => 'Tanggal Lahir', 'tipe' => 'date', 'required' => true],
-                ['key' => 'jkel', 'label' => 'Jenis Kelamin', 'tipe' => 'select', 'required' => true, 'opsi' => ['Laki-Laki', 'Perempuan']],
-                ['key' => 'hp', 'label' => 'No. Handphone Aktif (WA)', 'tipe' => 'phone', 'required' => true, 'ph' => '628xxxxxxxxx'],
-                ['key' => 'email', 'label' => 'Email', 'tipe' => 'text', 'required' => true, 'ph' => 'nama@email.com'],
-                ['key' => 'statusMhs', 'label' => 'Status Kemahasiswaan', 'tipe' => 'select', 'required' => true, 'opsi' => ['Mahasiswa', 'Sudah Lulus']],
-                ['key' => 'semester', 'label' => 'Semester saat ini', 'tipe' => 'number', 'required' => true, 'ph' => 'mis. 6', 'showIf' => ['key' => 'statusMhs', 'value' => 'Mahasiswa']],
-            ]],
-            ['key' => 'DIDIK', 'tipe' => 'FORM', 'judul' => 'Pendidikan', 'ikon' => 'bi-mortarboard', 'fields' => [
-                ['key' => 'kampus', 'label' => 'Nama Kampus', 'tipe' => 'select', 'required' => true, 'opsi' => $kampus],
-                ['key' => 'institusi', 'label' => 'Jenis Institusi Pendidikan', 'tipe' => 'select', 'required' => true, 'opsi' => ['Politeknik', 'Universitas']],
-                ['key' => 'jurusan', 'label' => 'Jurusan / Fakultas', 'tipe' => 'text', 'required' => true],
-                ['key' => 'prodi', 'label' => 'Program Studi', 'tipe' => 'text', 'required' => true],
-                ['key' => 'jenjang', 'label' => 'Jenjang Pendidikan', 'tipe' => 'select', 'required' => true, 'opsi' => ['D3', 'D4', 'S1', 'S2']],
-                ['key' => 'ipk', 'label' => 'IPK', 'tipe' => 'number', 'required' => true, 'ph' => '3.50'],
-                ['key' => 'bersediaBanyuasin', 'label' => 'Bersedia ditempatkan di Pabrik Banyuasin?', 'tipe' => 'select', 'required' => true, 'opsi' => ['Ya', 'Tidak'], 'full' => true],
-            ]],
+            [
+                'key' => 'DIRI',
+                'tipe' => 'FORM',
+                'judul' => 'Data Diri',
+                'ikon' => 'bi-person-vcard',
+                'fields' => [
+                    [
+                        'key' => 'nama',
+                        'label' => 'Nama Lengkap Sesuai ID',
+                        'tipe' => 'text',
+                        'required' => true,
+                        'ph' => 'Sesuai KTP',
+                    ],
+                    ['key' => 'lahir', 'label' => 'Tanggal Lahir', 'tipe' => 'date', 'required' => true],
+                    [
+                        'key' => 'jkel',
+                        'label' => 'Jenis Kelamin',
+                        'tipe' => 'select',
+                        'required' => true,
+                        'opsi' => ['Laki-Laki', 'Perempuan'],
+                    ],
+                    [
+                        'key' => 'hp',
+                        'label' => 'No. Handphone Aktif (WA)',
+                        'tipe' => 'phone',
+                        'required' => true,
+                        'ph' => '628xxxxxxxxx',
+                    ],
+                    [
+                        'key' => 'email',
+                        'label' => 'Email',
+                        'tipe' => 'text',
+                        'required' => true,
+                        'ph' => 'nama@email.com',
+                    ],
+                    [
+                        'key' => 'statusMhs',
+                        'label' => 'Status Kemahasiswaan',
+                        'tipe' => 'select',
+                        'required' => true,
+                        'opsi' => ['Mahasiswa', 'Sudah Lulus'],
+                    ],
+                    [
+                        'key' => 'semester',
+                        'label' => 'Semester saat ini',
+                        'tipe' => 'number',
+                        'required' => true,
+                        'ph' => 'mis. 6',
+                        'showIf' => ['key' => 'statusMhs', 'value' => 'Mahasiswa'],
+                    ],
+                ],
+            ],
+            [
+                'key' => 'DIDIK',
+                'tipe' => 'FORM',
+                'judul' => 'Pendidikan',
+                'ikon' => 'bi-mortarboard',
+                'fields' => [
+                    [
+                        'key' => 'kampus',
+                        'label' => 'Nama Kampus',
+                        'tipe' => 'select',
+                        'required' => true,
+                        'opsi' => $kampus,
+                    ],
+                    [
+                        'key' => 'institusi',
+                        'label' => 'Jenis Institusi Pendidikan',
+                        'tipe' => 'select',
+                        'required' => true,
+                        'opsi' => ['Politeknik', 'Universitas'],
+                    ],
+                    ['key' => 'jurusan', 'label' => 'Jurusan / Fakultas', 'tipe' => 'text', 'required' => true],
+                    ['key' => 'prodi', 'label' => 'Program Studi', 'tipe' => 'text', 'required' => true],
+                    [
+                        'key' => 'jenjang',
+                        'label' => 'Jenjang Pendidikan',
+                        'tipe' => 'select',
+                        'required' => true,
+                        'opsi' => ['D3', 'D4', 'S1', 'S2'],
+                    ],
+                    ['key' => 'ipk', 'label' => 'IPK', 'tipe' => 'number', 'required' => true, 'ph' => '3.50'],
+                    [
+                        'key' => 'bersediaBanyuasin',
+                        'label' => 'Bersedia ditempatkan di Pabrik Banyuasin?',
+                        'tipe' => 'select',
+                        'required' => true,
+                        'opsi' => ['Ya', 'Tidak'],
+                        'full' => true,
+                    ],
+                ],
+            ],
             $this->faceStep(),
             $this->reviewStep(),
         ];
@@ -286,45 +516,217 @@ class CareerLandingController extends Controller
         $yn = ['Ya', 'Tidak'];
 
         return [
-            ['key' => 'VALIDASI', 'tipe' => 'FORM', 'judul' => 'Validasi Data Peserta', 'ikon' => 'bi-clipboard-check', 'deskripsi' => 'Data ini terisi otomatis dari pendaftaran (Form 1). Konfirmasi kebenarannya.', 'fields' => [
-                ['key' => 'namaPre', 'label' => 'Nama Lengkap', 'tipe' => 'text', 'readonly' => true, 'ph' => '(otomatis dari pendaftaran)'],
-                ['key' => 'emailPre', 'label' => 'Email Terdaftar', 'tipe' => 'text', 'readonly' => true, 'ph' => '(otomatis dari pendaftaran)'],
-                ['key' => 'waPre', 'label' => 'No. WhatsApp Terdaftar', 'tipe' => 'text', 'readonly' => true, 'ph' => '(otomatis dari pendaftaran)'],
-                ['key' => 'dataSesuai', 'label' => 'Apakah data di atas sudah sesuai?', 'tipe' => 'select', 'required' => true, 'opsi' => ['Sesuai', 'Perlu diperbarui'], 'full' => true],
-                ['key' => 'dataBaru', 'label' => 'Tuliskan data yang benar', 'tipe' => 'textarea', 'full' => true, 'showIf' => ['key' => 'dataSesuai', 'value' => 'Perlu diperbarui']],
-            ]],
-            ['key' => 'IDENTITAS', 'tipe' => 'FORM', 'judul' => 'Identitas Tambahan', 'ikon' => 'bi-person-lines-fill', 'fields' => [
-                ['key' => 'alamatKtp', 'label' => 'Alamat Lengkap (Sesuai KTP)', 'tipe' => 'textarea', 'required' => true, 'full' => true],
-                ['key' => 'alamatDomisili', 'label' => 'Alamat Domisili Saat Ini (kosongkan jika sama dengan KTP)', 'tipe' => 'textarea', 'full' => true],
-                ['key' => 'perguruanTinggi', 'label' => 'Nama Perguruan Tinggi', 'tipe' => 'text', 'required' => true],
-                ['key' => 'tahunLulus', 'label' => 'Tahun Lulus / Perkiraan Lulus', 'tipe' => 'text', 'required' => true, 'ph' => 'mis. 2025'],
-                ['key' => 'statusKetersediaan', 'label' => 'Status Ketersediaan Mengikuti Proses', 'tipe' => 'select', 'required' => true, 'opsi' => ['Siap mengikuti seluruh proses', 'Perlu penyesuaian jadwal']],
-                ['key' => 'mulaiKerja', 'label' => 'Ketersediaan Mulai Bekerja', 'tipe' => 'select', 'required' => true, 'opsi' => ['Segera', '1 bulan', '2 bulan', '3 bulan']],
-            ]],
-            ['key' => 'DARURAT', 'tipe' => 'FORM', 'judul' => 'Kontak Darurat', 'ikon' => 'bi-telephone-plus', 'fields' => [
-                ['key' => 'namaDarurat', 'label' => 'Nama Kontak Darurat', 'tipe' => 'text', 'required' => true],
-                ['key' => 'hubunganDarurat', 'label' => 'Hubungan dengan Peserta', 'tipe' => 'text', 'required' => true],
-                ['key' => 'hpDarurat', 'label' => 'No. Handphone Kontak Darurat', 'tipe' => 'phone', 'required' => true, 'ph' => '628xxxxxxxxx'],
-            ]],
-            ['key' => 'KESIAPAN', 'tipe' => 'FORM', 'judul' => 'Kesiapan Penempatan & Kerja', 'ikon' => 'bi-briefcase', 'fields' => [
-                ['key' => 'plant', 'label' => 'Bersedia ditempatkan di area Plant / Pabrik', 'tipe' => 'select', 'required' => true, 'opsi' => $yn, 'full' => true],
-                ['key' => 'shift', 'label' => 'Bersedia bekerja dengan sistem shift jika dibutuhkan', 'tipe' => 'select', 'required' => true, 'opsi' => $yn, 'full' => true],
-                ['key' => 'durasiMt', 'label' => 'Bersedia mengikuti program MT sesuai durasi & ketentuan', 'tipe' => 'select', 'required' => true, 'opsi' => $yn, 'full' => true],
-                ['key' => 'ikatanDinas', 'label' => 'Bersedia menjalani ikatan dinas 2 tahun jika lulus', 'tipe' => 'select', 'required' => true, 'opsi' => $yn, 'full' => true],
-                ['key' => 'pengalamanProduksi', 'label' => 'Punya pengalaman magang/kerja/praktik di produksi/manufaktur', 'tipe' => 'select', 'required' => true, 'opsi' => $yn, 'full' => true],
-                ['key' => 'pengalamanJelas', 'label' => 'Jika Ya, jelaskan singkat pengalaman tersebut', 'tipe' => 'textarea', 'full' => true, 'showIf' => ['key' => 'pengalamanProduksi', 'value' => 'Ya']],
-            ]],
-            ['key' => 'DOKUMEN', 'tipe' => 'UPLOAD', 'judul' => 'Kelengkapan Dokumen', 'ikon' => 'bi-paperclip', 'files' => [
-                ['key' => 'cv', 'label' => 'CV Terbaru', 'required' => true, 'accept' => '.pdf', 'hint' => 'PDF'],
-                ['key' => 'transkrip', 'label' => 'Transkrip Nilai', 'required' => true, 'accept' => '.pdf', 'hint' => 'PDF'],
-                ['key' => 'ijazah', 'label' => 'Ijazah / Surat Keterangan Lulus', 'required' => false, 'accept' => '.pdf', 'hint' => 'PDF'],
-                ['key' => 'sertifikat', 'label' => 'Sertifikat Pendukung (jika ada)', 'required' => false, 'accept' => '.pdf,.jpg,.jpeg,.png', 'hint' => 'PDF / JPG'],
-            ]],
-            ['key' => 'PERSETUJUAN', 'tipe' => 'PERNYATAAN', 'judul' => 'Pernyataan Persetujuan', 'ikon' => 'bi-check2-square', 'items' => [
-                'Saya menyatakan seluruh data & dokumen yang saya berikan benar dan dapat dipertanggungjawabkan.',
-                'Saya bersedia mengikuti seluruh tahapan seleksi Management Trainee sesuai ketentuan EVO Group.',
-                'Saya menyetujui penggunaan data pribadi hanya untuk keperluan proses rekrutmen & seleksi.',
-            ]],
+            [
+                'key' => 'VALIDASI',
+                'tipe' => 'FORM',
+                'judul' => 'Validasi Data Peserta',
+                'ikon' => 'bi-clipboard-check',
+                'deskripsi' => 'Data ini terisi otomatis dari pendaftaran (Form 1). Konfirmasi kebenarannya.',
+                'fields' => [
+                    [
+                        'key' => 'namaPre',
+                        'label' => 'Nama Lengkap',
+                        'tipe' => 'text',
+                        'readonly' => true,
+                        'ph' => '(otomatis dari pendaftaran)',
+                    ],
+                    [
+                        'key' => 'emailPre',
+                        'label' => 'Email Terdaftar',
+                        'tipe' => 'text',
+                        'readonly' => true,
+                        'ph' => '(otomatis dari pendaftaran)',
+                    ],
+                    [
+                        'key' => 'waPre',
+                        'label' => 'No. WhatsApp Terdaftar',
+                        'tipe' => 'text',
+                        'readonly' => true,
+                        'ph' => '(otomatis dari pendaftaran)',
+                    ],
+                    [
+                        'key' => 'dataSesuai',
+                        'label' => 'Apakah data di atas sudah sesuai?',
+                        'tipe' => 'select',
+                        'required' => true,
+                        'opsi' => ['Sesuai', 'Perlu diperbarui'],
+                        'full' => true,
+                    ],
+                    [
+                        'key' => 'dataBaru',
+                        'label' => 'Tuliskan data yang benar',
+                        'tipe' => 'textarea',
+                        'full' => true,
+                        'showIf' => ['key' => 'dataSesuai', 'value' => 'Perlu diperbarui'],
+                    ],
+                ],
+            ],
+            [
+                'key' => 'IDENTITAS',
+                'tipe' => 'FORM',
+                'judul' => 'Identitas Tambahan',
+                'ikon' => 'bi-person-lines-fill',
+                'fields' => [
+                    [
+                        'key' => 'alamatKtp',
+                        'label' => 'Alamat Lengkap (Sesuai KTP)',
+                        'tipe' => 'textarea',
+                        'required' => true,
+                        'full' => true,
+                    ],
+                    [
+                        'key' => 'alamatDomisili',
+                        'label' => 'Alamat Domisili Saat Ini (kosongkan jika sama dengan KTP)',
+                        'tipe' => 'textarea',
+                        'full' => true,
+                    ],
+                    [
+                        'key' => 'perguruanTinggi',
+                        'label' => 'Nama Perguruan Tinggi',
+                        'tipe' => 'text',
+                        'required' => true,
+                    ],
+                    [
+                        'key' => 'tahunLulus',
+                        'label' => 'Tahun Lulus / Perkiraan Lulus',
+                        'tipe' => 'text',
+                        'required' => true,
+                        'ph' => 'mis. 2025',
+                    ],
+                    [
+                        'key' => 'statusKetersediaan',
+                        'label' => 'Status Ketersediaan Mengikuti Proses',
+                        'tipe' => 'select',
+                        'required' => true,
+                        'opsi' => ['Siap mengikuti seluruh proses', 'Perlu penyesuaian jadwal'],
+                    ],
+                    [
+                        'key' => 'mulaiKerja',
+                        'label' => 'Ketersediaan Mulai Bekerja',
+                        'tipe' => 'select',
+                        'required' => true,
+                        'opsi' => ['Segera', '1 bulan', '2 bulan', '3 bulan'],
+                    ],
+                ],
+            ],
+            [
+                'key' => 'DARURAT',
+                'tipe' => 'FORM',
+                'judul' => 'Kontak Darurat',
+                'ikon' => 'bi-telephone-plus',
+                'fields' => [
+                    ['key' => 'namaDarurat', 'label' => 'Nama Kontak Darurat', 'tipe' => 'text', 'required' => true],
+                    [
+                        'key' => 'hubunganDarurat',
+                        'label' => 'Hubungan dengan Peserta',
+                        'tipe' => 'text',
+                        'required' => true,
+                    ],
+                    [
+                        'key' => 'hpDarurat',
+                        'label' => 'No. Handphone Kontak Darurat',
+                        'tipe' => 'phone',
+                        'required' => true,
+                        'ph' => '628xxxxxxxxx',
+                    ],
+                ],
+            ],
+            [
+                'key' => 'KESIAPAN',
+                'tipe' => 'FORM',
+                'judul' => 'Kesiapan Penempatan & Kerja',
+                'ikon' => 'bi-briefcase',
+                'fields' => [
+                    [
+                        'key' => 'plant',
+                        'label' => 'Bersedia ditempatkan di area Plant / Pabrik',
+                        'tipe' => 'select',
+                        'required' => true,
+                        'opsi' => $yn,
+                        'full' => true,
+                    ],
+                    [
+                        'key' => 'shift',
+                        'label' => 'Bersedia bekerja dengan sistem shift jika dibutuhkan',
+                        'tipe' => 'select',
+                        'required' => true,
+                        'opsi' => $yn,
+                        'full' => true,
+                    ],
+                    [
+                        'key' => 'durasiMt',
+                        'label' => 'Bersedia mengikuti program MT sesuai durasi & ketentuan',
+                        'tipe' => 'select',
+                        'required' => true,
+                        'opsi' => $yn,
+                        'full' => true,
+                    ],
+                    [
+                        'key' => 'ikatanDinas',
+                        'label' => 'Bersedia menjalani ikatan dinas 2 tahun jika lulus',
+                        'tipe' => 'select',
+                        'required' => true,
+                        'opsi' => $yn,
+                        'full' => true,
+                    ],
+                    [
+                        'key' => 'pengalamanProduksi',
+                        'label' => 'Punya pengalaman magang/kerja/praktik di produksi/manufaktur',
+                        'tipe' => 'select',
+                        'required' => true,
+                        'opsi' => $yn,
+                        'full' => true,
+                    ],
+                    [
+                        'key' => 'pengalamanJelas',
+                        'label' => 'Jika Ya, jelaskan singkat pengalaman tersebut',
+                        'tipe' => 'textarea',
+                        'full' => true,
+                        'showIf' => ['key' => 'pengalamanProduksi', 'value' => 'Ya'],
+                    ],
+                ],
+            ],
+            [
+                'key' => 'DOKUMEN',
+                'tipe' => 'UPLOAD',
+                'judul' => 'Kelengkapan Dokumen',
+                'ikon' => 'bi-paperclip',
+                'files' => [
+                    ['key' => 'cv', 'label' => 'CV Terbaru', 'required' => true, 'accept' => '.pdf', 'hint' => 'PDF'],
+                    [
+                        'key' => 'transkrip',
+                        'label' => 'Transkrip Nilai',
+                        'required' => true,
+                        'accept' => '.pdf',
+                        'hint' => 'PDF',
+                    ],
+                    [
+                        'key' => 'ijazah',
+                        'label' => 'Ijazah / Surat Keterangan Lulus',
+                        'required' => false,
+                        'accept' => '.pdf',
+                        'hint' => 'PDF',
+                    ],
+                    [
+                        'key' => 'sertifikat',
+                        'label' => 'Sertifikat Pendukung (jika ada)',
+                        'required' => false,
+                        'accept' => '.pdf,.jpg,.jpeg,.png',
+                        'hint' => 'PDF / JPG',
+                    ],
+                ],
+            ],
+            [
+                'key' => 'PERSETUJUAN',
+                'tipe' => 'PERNYATAAN',
+                'judul' => 'Pernyataan Persetujuan',
+                'ikon' => 'bi-check2-square',
+                'items' => [
+                    'Saya menyatakan seluruh data & dokumen yang saya berikan benar dan dapat dipertanggungjawabkan.',
+                    'Saya bersedia mengikuti seluruh tahapan seleksi Management Trainee sesuai ketentuan EVO Group.',
+                    'Saya menyetujui penggunaan data pribadi hanya untuk keperluan proses rekrutmen & seleksi.',
+                ],
+            ],
             $this->reviewStep(),
         ];
     }
@@ -335,9 +737,12 @@ class CareerLandingController extends Controller
         $job = collect($this->lowongan())->firstWhere('id', $id);
         abort_unless($job, 404);
 
-        return Inertia::render('Career/DetailLowongan', array_merge($this->layoutShared(), [
-            'lowongan' => $job,
-        ]));
+        return Inertia::render(
+            'Career/DetailLowongan',
+            array_merge($this->layoutShared(), [
+                'lowongan' => $job,
+            ]),
+        );
     }
 
     /** Halaman detail Management Trainee (punya route sendiri, memakai CareerLayout). */
@@ -346,27 +751,209 @@ class CareerLandingController extends Controller
         $mt = collect($this->programMt())->firstWhere('id', $id);
         abort_unless($mt, 404);
 
-        return Inertia::render('Career/DetailMt', array_merge($this->layoutShared(), [
-            'programMt' => $mt,
-        ]));
+        return Inertia::render(
+            'Career/DetailMt',
+            array_merge($this->layoutShared(), [
+                'programMt' => $mt,
+            ]),
+        );
     }
 
-    /** Daftar seluruh tim / fungsi perusahaan (konten masih statis di komponen Vue). */
+    /** Daftar seluruh tim / fungsi perusahaan — data dari Master Info Divisi. */
     public function semuaTim()
     {
-        return Inertia::render('Career/SemuaTim', $this->layoutShared());
+        return Inertia::render(
+            'Career/SemuaTim',
+            array_merge($this->layoutShared(), [
+                'tim' => $this->timCards(),
+            ]),
+        );
     }
 
     /**
      * Halaman perkenalan tim / fungsi perusahaan (bukan lowongan).
-     * Konten masih ditulis langsung di komponen Vue, jadi controller hanya
-     * mengirim payload layout. Slug disiapkan untuk pembeda tim nantinya.
+     * Konten dari Master Info Divisi (+ sub-divisi & lowongan real per divisi).
+     * Bila tabel info masih kosong total, prop `tim` tidak dikirim dan komponen
+     * Vue menampilkan konten statis lamanya (fallback agar link tidak mati).
      */
     public function showTim(string $slug = 'it')
     {
-        return Inertia::render('Career/DetailTim', array_merge($this->layoutShared(), [
-            'slug' => $slug,
-        ]));
+        $info = $this->timInfoRows();
+
+        $divisiId = null;
+        $tim = null;
+        foreach ($info as $idDiv => $t) {
+            if ($t['slug'] === $slug) {
+                $divisiId = (int) $idDiv;
+                $tim = $t;
+                break;
+            }
+        }
+
+        // Data sudah ada tapi slug tak dikenal → 404. Tabel kosong → fallback statis.
+        if ($info && ! $tim) {
+            abort(404);
+        }
+
+        $props = array_merge($this->layoutShared(), ['slug' => $slug]);
+
+        if ($tim) {
+            $jobs = collect($this->dbLowonganCards())
+                ->filter(fn ($c) => ($c['timSlug'] ?? null) === $slug)
+                ->values();
+
+            $sub = $this->subFungsiDivisi($divisiId);
+
+            $props['tim'] = [
+                'slug' => $tim['slug'],
+                'nama' => $tim['nama'],
+                'deskripsiSingkat' => $tim['deskripsi'],
+                'judulUtama' => $tim['judulUtama'],
+                'deskripsiDetail' => $tim['deskripsiDetail'],
+                'poin' => $tim['poin'],
+                'img' => $tim['img'],
+                'stats' => [
+                    'subFungsi' => count($sub),
+                    'lowongan' => $jobs->count(),
+                ],
+            ];
+            $props['subFungsi'] = $sub;
+            $props['lowonganTim'] = $jobs->all();
+        }
+
+        return Inertia::render('Career/DetailTim', $props);
+    }
+
+    /** Sub-divisi milik satu divisi (nama HRIS + info aktif bila sudah diisi). */
+    private function subFungsiDivisi(int $divisiId): array
+    {
+        try {
+            return DB::table('HRIS_Divisi_Sub_Divisi as m')
+                ->join('HRIS_Sub_Divisi as sd', 'sd.ID_Sub_Divisi', '=', 'm.ID_Sub_Divisi')
+                ->leftJoin('N_WEB_CAREERS_Sub_Divisi_Informations as si', function ($j) {
+                    $j->on('si.Id_Sub_Divisi', '=', 'sd.ID_Sub_Divisi')->where('si.Flag_Aktif', '=', 'Y');
+                })
+                ->where('m.ID_Divisi', $divisiId)
+                ->orderBy('sd.Keterangan')
+                ->select(
+                    'sd.ID_Sub_Divisi',
+                    'sd.Keterangan',
+                    'si.Label_Sub_Div',
+                    'si.Deskripsi_Singkat',
+                    'si.Img_Path_Header',
+                    'si.Updated_At',
+                )
+                ->get()
+                // Mapping bisa memuat sub yang sama dua kali (beda sub-departement).
+                ->unique('ID_Sub_Divisi')
+                ->map(fn ($r) => [
+                    'nama' => $r->Label_Sub_Div ?: $r->Keterangan,
+                    'deskripsi' => $r->Deskripsi_Singkat,
+                    'img' => $r->Img_Path_Header
+                        ? '/karir/tim-img/sub/' . Hashids::encode($r->ID_Sub_Divisi) . '/header?v=' .
+                            ($r->Updated_At ? strtotime($r->Updated_At) : 0)
+                        : null,
+                ])
+                ->values()
+                ->all();
+        } catch (\Throwable $e) {
+            // Halaman publik tidak boleh tumbang karena data sub-divisi bermasalah.
+            return [];
+        }
+    }
+
+    /**
+     * Info divisi AKTIF (Master Info Divisi) → peta per Id_Divisi.
+     * Slug DITURUNKAN dari label (fallback nama HRIS), tidak disimpan di DB —
+     * resolusi cukup scan peta ini (±22 divisi). Dimemoisasi per-request.
+     */
+    private function timInfoRows(): array
+    {
+        if ($this->timInfoCache !== null) {
+            return $this->timInfoCache;
+        }
+
+        try {
+            $rows = DB::table('N_WEB_CAREERS_Division_Informations as i')
+                ->join('HRIS_Divisi as dv', 'dv.ID_Divisi', '=', 'i.Id_Divisi')
+                ->where('i.Flag_Aktif', 'Y')
+                ->select('i.*', 'dv.Keterangan')
+                ->get();
+
+            $this->timInfoCache = $rows
+                ->mapWithKeys(function ($r) {
+                    $v = $r->Updated_At ? strtotime($r->Updated_At) : 0;
+                    $img = fn (string $slot, ?string $path) => $path
+                        ? '/karir/tim-img/divisi/' . Hashids::encode($r->Id_Divisi) . '/' . $slot . '?v=' . $v
+                        : null;
+
+                    return [
+                        (int) $r->Id_Divisi => [
+                            'slug' => Str::slug($r->Label_Division ?: $r->Keterangan),
+                            'nama' => $r->Label_Division ?: $r->Keterangan,
+                            'deskripsi' => $r->Deskripsi_Singkat,
+                            'judulUtama' => $r->Judul_Utama,
+                            'deskripsiDetail' => $r->Deskripsi_Detail,
+                            'poin' => is_string($r->Poin_Keunggulan)
+                                ? (json_decode($r->Poin_Keunggulan, true) ?: [])
+                                : [],
+                            'img' => [
+                                'header' => $img('header', $r->Img_Path_Header),
+                                'utama' => $img('utama', $r->Img_Path_Utama),
+                                'img2' => $img('img2', $r->Img_Path_2),
+                                'img3' => $img('img3', $r->Img_Path_3),
+                            ],
+                        ],
+                    ];
+                })
+                ->all();
+        } catch (\Throwable $e) {
+            // Landing tidak boleh tumbang karena tabel info divisi bermasalah.
+            $this->timInfoCache = [];
+        }
+
+        return $this->timInfoCache;
+    }
+
+    /**
+     * Kartu tim untuk landing (TimSection) & halaman Semua Tim.
+     * Rekap lowongan dihitung dari kartu lowongan yang SAMA dengan yang tampil
+     * di /karir/lowongan (dbLowonganCards) sehingga angkanya selalu konsisten.
+     */
+    private function timCards(): array
+    {
+        $info = $this->timInfoRows();
+        if (! $info) {
+            return [];
+        }
+
+        $perSlug = collect($this->dbLowonganCards())
+            ->filter(fn ($c) => ! empty($c['timSlug']))
+            ->groupBy('timSlug');
+
+        return collect($info)
+            ->map(function ($t) use ($perSlug) {
+                $jobs = collect($perSlug->get($t['slug'], []));
+
+                return [
+                    'slug' => $t['slug'],
+                    'nama' => $t['nama'],
+                    'deskripsi' => $t['deskripsi'],
+                    'img' => $t['img']['header'],
+                    'lowongan' => $jobs->count(),
+                    'kuota' => (int) $jobs->sum('kuota'),
+                    'kuotaTerisi' => (int) $jobs->sum('kuotaTerisi'),
+                    'pelamar' => (int) $jobs->sum('pelamar'),
+                    'skill' => $jobs->flatMap(fn ($j) => $j['skill'] ?? [])->unique()->values()->all(),
+                    'lokasi' => $jobs->pluck('lokasi')->filter(fn ($l) => $l && $l !== '—')->unique()->implode(' / ') ?: null,
+                    'tempatKerja' => $jobs->pluck('tempatKerja')->filter()->unique()->implode(' / ') ?: null,
+                    'pengalaman' => $jobs->pluck('pengalaman')->filter()->first(),
+                    'benefit' => $jobs->flatMap(fn ($j) => $j['benefit'] ?? [])->filter()->unique()->take(3)->implode(' + ') ?: null,
+                ];
+            })
+            ->sortBy('nama')
+            ->values()
+            ->all();
     }
 
     /** Payload bersama yang dibutuhkan CareerLayout (navbar + footer) di semua halaman. */
@@ -423,10 +1010,12 @@ class CareerLandingController extends Controller
     {
         $today = now()->toDateString();
 
-        return array_values(array_filter($this->lowongan(), function ($l) use ($today) {
-            $tutup = $l['tanggalTutup'] ?? null;
-            return empty($tutup) || $tutup >= $today; // evergreen ATAU belum lewat tanggal
-        }));
+        return array_values(
+            array_filter($this->lowongan(), function ($l) use ($today) {
+                $tutup = $l['tanggalTutup'] ?? null;
+                return empty($tutup) || $tutup >= $today; // evergreen ATAU belum lewat tanggal
+            }),
+        );
     }
 
     // ═══════════════════════ SUMBER DB (pembukaan nyata) ═══════════════════════
@@ -450,24 +1039,36 @@ class CareerLandingController extends Controller
                 ->where('pb.Status_Publish', 'TERBIT')
                 ->where('p.Status', 'BERJALAN')
                 ->where(function ($q) use ($kini) {
-                    $q->where('pb.Masa_Berlaku', 'EVERGREEN')
-                        ->orWhere(function ($w) use ($kini) {
-                            $w->where('pb.Masa_Berlaku', 'BERBATAS')
-                                ->where(function ($a) use ($kini) {
-                                    $a->whereNull('pb.Tanggal_Buka')->orWhere('pb.Tanggal_Buka', '<=', $kini);
-                                })
-                                ->where(function ($c) use ($kini) {
-                                    $c->whereNull('pb.Tanggal_Tutup')->orWhere('pb.Tanggal_Tutup', '>=', $kini);
-                                });
-                        });
+                    $q->where('pb.Masa_Berlaku', 'EVERGREEN')->orWhere(function ($w) use ($kini) {
+                        $w->where('pb.Masa_Berlaku', 'BERBATAS')
+                            ->where(function ($a) use ($kini) {
+                                $a->whereNull('pb.Tanggal_Buka')->orWhere('pb.Tanggal_Buka', '<=', $kini);
+                            })
+                            ->where(function ($c) use ($kini) {
+                                $c->whereNull('pb.Tanggal_Tutup')->orWhere('pb.Tanggal_Tutup', '>=', $kini);
+                            });
+                    });
                 })
                 ->orderByDesc('pb.Id_Pembukaan')
-                ->select('pb.*', 'p.Nama as ProgramNama', 'p.Kategori', 'p.Penyelenggara', 'p.Alur_Kode', 'p.Jadwal_Kode', 'b.Nama as BatchNama')
+                ->select(
+                    'pb.*',
+                    'p.Nama as ProgramNama',
+                    'p.Kategori',
+                    'p.Penyelenggara',
+                    'p.Alur_Kode',
+                    'p.Jadwal_Kode',
+                    'b.Nama as BatchNama',
+                )
                 ->get();
 
             $ids = $pembukaan->pluck('Program_Id')->unique();
-            $posisi = $ids->isEmpty() ? collect() : DB::table('N_WEB_CAREERS_Program_Posisi')
-                ->whereIn('Program_Id', $ids)->where('Status', 'BUKA')->get()->groupBy('Program_Id');
+            $posisi = $ids->isEmpty()
+                ? collect()
+                : DB::table('N_WEB_CAREERS_Program_Posisi')
+                    ->whereIn('Program_Id', $ids)
+                    ->where('Status', 'BUKA')
+                    ->get()
+                    ->groupBy('Program_Id');
 
             // JADWAL KEGIATAN nyata: agenda dari Master_Jadwal yang dirujuk program.
             // Wajib DB (bukan dummy) — dikelompokkan per Kode jadwal.
@@ -479,7 +1080,8 @@ class CareerLandingController extends Controller
                     ->whereIn('j.Kode', $jadwalKode)
                     ->orderBy('a.Urutan')
                     ->select('j.Kode as JadwalKode', 'a.Jenis', 'a.Label', 'a.Tanggal_Mulai', 'a.Tanggal_Selesai')
-                    ->get()->groupBy('JadwalKode');
+                    ->get()
+                    ->groupBy('JadwalKode');
             }
 
             // TAHAPAN SELEKSI nyata: tahap dari alur yang dipakai program.
@@ -491,19 +1093,21 @@ class CareerLandingController extends Controller
                     ->whereIn('al.Kode', $alurKode)
                     ->orderBy('t.Urutan')
                     ->select('al.Kode as AlurKode', 't.Label', 't.Tipe_Tahap_Kode', 't.Provider')
-                    ->get()->groupBy('AlurKode');
+                    ->get()
+                    ->groupBy('AlurKode');
             }
 
             // Jumlah pelamar nyata per program — hanya yang BELUM gugur dihitung
             // sebagai "pelamar aktif" (yang gugur tidak menempati minat kursi).
             $pelamar = collect();
-            $terisi = collect();          // kursi TERISI per program = lamaran AKTIF (non-GUGUR)
-            $terisiPosisi = collect();    // kursi TERISI per posisi (lowongan)
+            $terisi = collect(); // kursi TERISI per program = lamaran AKTIF (non-GUGUR)
+            $terisiPosisi = collect(); // kursi TERISI per posisi (lowongan)
             try {
                 $pelamar = DB::table('N_WEB_CAREERS_Lamaran')
                     ->where('Status', '!=', 'GUGUR')
                     ->select('Program_Id', DB::raw('COUNT(*) as Jml'))
-                    ->groupBy('Program_Id')->pluck('Jml', 'Program_Id');
+                    ->groupBy('Program_Id')
+                    ->pluck('Jml', 'Program_Id');
 
                 // Kursi TERISI = kandidat yang masih dalam proses ATAU sudah diterima
                 // (non-GUGUR). Begitu kandidat lolos administrasi, kursinya terhitung;
@@ -511,20 +1115,38 @@ class CareerLandingController extends Controller
                 $terisi = DB::table('N_WEB_CAREERS_Lamaran')
                     ->where('Status', '!=', 'GUGUR')
                     ->select('Program_Id', DB::raw('COUNT(*) as Jml'))
-                    ->groupBy('Program_Id')->pluck('Jml', 'Program_Id');
+                    ->groupBy('Program_Id')
+                    ->pluck('Jml', 'Program_Id');
 
                 $terisiPosisi = DB::table('N_WEB_CAREERS_Lamaran')
                     ->where('Status', '!=', 'GUGUR')
                     ->select('Program_Posisi_Id', DB::raw('COUNT(*) as Jml'))
-                    ->groupBy('Program_Posisi_Id')->pluck('Jml', 'Program_Posisi_Id');
+                    ->groupBy('Program_Posisi_Id')
+                    ->pluck('Jml', 'Program_Posisi_Id');
             } catch (\Throwable $e) {
                 $pelamar = collect();
             }
 
-            $this->openingsCache = compact('pembukaan', 'posisi', 'pelamar', 'terisi', 'terisiPosisi', 'agenda', 'tahap');
+            $this->openingsCache = compact(
+                'pembukaan',
+                'posisi',
+                'pelamar',
+                'terisi',
+                'terisiPosisi',
+                'agenda',
+                'tahap',
+            );
         } catch (\Throwable $e) {
             // Landing publik tidak boleh tumbang hanya karena data DB bermasalah.
-            $this->openingsCache = ['pembukaan' => collect(), 'posisi' => collect(), 'pelamar' => collect(), 'terisi' => collect(), 'terisiPosisi' => collect(), 'agenda' => collect(), 'tahap' => collect()];
+            $this->openingsCache = [
+                'pembukaan' => collect(),
+                'posisi' => collect(),
+                'pelamar' => collect(),
+                'terisi' => collect(),
+                'terisiPosisi' => collect(),
+                'agenda' => collect(),
+                'tahap' => collect(),
+            ];
         }
 
         return $this->openingsCache;
@@ -550,12 +1172,15 @@ class CareerLandingController extends Controller
             $pipeline = $this->shapeTahapan($o['tahap']->get($pb->Alur_Kode, []));
 
             foreach ($o['posisi']->get($pb->Program_Id, []) as $x) {
-                $m = ($x->Mpp_Ref ?? null) ? ($mpp[$x->Mpp_Ref] ?? null) : null;
+                $m = $x->Mpp_Ref ?? null ? $mpp[$x->Mpp_Ref] ?? null : null;
 
                 // Employment MPP → label kartu ("Full-time", "Contract / PKWT" → "Contract").
-                $tipeKerja = $m && $m['employment']
-                    ? trim(explode('/', $m['employment'])[0])
-                    : ($pb->Kategori === 'INTERNSHIP' ? 'Internship' : 'Full-time');
+                $tipeKerja =
+                    $m && $m['employment']
+                        ? trim(explode('/', $m['employment'])[0])
+                        : ($pb->Kategori === 'INTERNSHIP'
+                            ? 'Internship'
+                            : 'Full-time');
 
                 $out[] = [
                     'id' => 'PB-' . $pb->Kode . '-' . $x->Id_Program_Posisi,
@@ -576,9 +1201,18 @@ class CareerLandingController extends Controller
                     'kuota' => (int) $x->Kuota,
                     'kuotaTerisi' => (int) ($o['terisiPosisi'][$x->Id_Program_Posisi] ?? 0),
                     'pelamar' => (int) ($o['pelamar'][$pb->Program_Id] ?? 0),
-                    'tanggalTutup' => $pb->Masa_Berlaku === 'BERBATAS' ? ($pb->Tanggal_Tutup ? substr($pb->Tanggal_Tutup, 0, 16) : null) : null,
-                    'deskripsi' => $m['deskripsi'] ?? ('Lowongan ' . $x->Posisi . ' pada program ' . $pb->ProgramNama . ' di EVO Group.'),
-                    'ringkasan' => $m ? Str::limit($m['deskripsi'] ?: 'Lowongan ' . $x->Posisi . ' di EVO Group.', 130) : ('Lowongan ' . $pb->ProgramNama . ' di EVO Group.'),
+                    'tanggalTutup' =>
+                        $pb->Masa_Berlaku === 'BERBATAS'
+                            ? ($pb->Tanggal_Tutup
+                                ? substr($pb->Tanggal_Tutup, 0, 16)
+                                : null)
+                            : null,
+                    'deskripsi' =>
+                        $m['deskripsi'] ??
+                        'Lowongan ' . $x->Posisi . ' pada program ' . $pb->ProgramNama . ' di EVO Group.',
+                    'ringkasan' => $m
+                        ? Str::limit($m['deskripsi'] ?: 'Lowongan ' . $x->Posisi . ' di EVO Group.', 130)
+                        : 'Lowongan ' . $pb->ProgramNama . ' di EVO Group.',
                     // Konten kaya dari MPP; kosong bila posisi tak tertaut MPP.
                     'tanggungJawab' => $m['tanggungJawab'] ?? [],
                     'persyaratan' => $m['persyaratan'] ?? [],
@@ -586,6 +1220,12 @@ class CareerLandingController extends Controller
                     'benefit' => $m['benefit'] ?? [],
                     'pipeline' => $pipeline,
                     'unggulan' => false,
+                    // Slug tim/divisi (Master Info Divisi) — Id_Divisi mentah tidak
+                    // pernah dikirim ke frontend. Null bila posisi tak tertaut MPP
+                    // atau divisinya belum punya info aktif.
+                    'timSlug' => $m && ! empty($m['divisiId'])
+                        ? ($this->timInfoRows()[$m['divisiId']]['slug'] ?? null)
+                        : null,
                 ];
             }
         }
@@ -608,7 +1248,14 @@ class CareerLandingController extends Controller
             $head = DB::table('N_WEB_CAREERS_Detail_MPP as d')
                 ->leftJoin('N_WEB_CAREERS_Master_Employment as me', 'me.Id_Employment', '=', 'd.Employment_Type')
                 ->leftJoin('N_WEB_CAREERS_Master_Workplace as mw', 'mw.Id_Workplace', '=', 'd.Workplace_Type')
-                ->leftJoin('N_WEB_CAREERS_Master_Experience_Level as mx', 'mx.Id_Experience_Level', '=', 'd.Experience_Level')
+                ->leftJoin(
+                    'N_WEB_CAREERS_Master_Experience_Level as mx',
+                    'mx.Id_Experience_Level',
+                    '=',
+                    'd.Experience_Level',
+                )
+                // Divisi asal posisi (untuk pengelompokan kartu tim di landing).
+                ->leftJoin('HRIS_Transaksi_GForm as g', 'g.No_Transaksi', '=', 'd.No_Transaksi_MPP')
                 ->whereIn('d.No_Transaksi_MPP', $refs)
                 ->select(
                     'd.Id_Detail_MPP',
@@ -616,36 +1263,59 @@ class CareerLandingController extends Controller
                     'd.Deskripsi',
                     'me.Nama_Employment',
                     'mw.Nama_Workplace',
-                    'mx.Nama_Experience_Level'
+                    'mx.Nama_Experience_Level',
+                    'g.Id_Divisi',
                 )
                 ->get();
 
             $ids = $head->pluck('Id_Detail_MPP');
             $points = DB::table('N_WEB_CAREERS_Points_MPP')
-                ->whereIn('Id_Detail_MPP', $ids)->orderBy('Urutan')->get()->groupBy('Id_Detail_MPP');
+                ->whereIn('Id_Detail_MPP', $ids)
+                ->orderBy('Urutan')
+                ->get()
+                ->groupBy('Id_Detail_MPP');
             $skill = DB::table('N_WEB_CAREERS_Detail_Skill_MPP as sk')
                 ->join('N_WEB_CAREERS_Master_Skill as ms', 'ms.Id_Skill', '=', 'sk.Id_Skill')
                 ->whereIn('sk.Id_Detail_MPP', $ids)
-                ->select('sk.Id_Detail_MPP', 'ms.Nama_Skill')->get()->groupBy('Id_Detail_MPP');
+                ->select('sk.Id_Detail_MPP', 'ms.Nama_Skill')
+                ->get()
+                ->groupBy('Id_Detail_MPP');
             $benefit = DB::table('N_WEB_CAREERS_Detail_Benefit_MPP as bn')
                 ->join('N_WEB_CAREERS_Master_Benefit as mb', 'mb.Id_Benefit', '=', 'bn.Id_Benefit')
                 ->whereIn('bn.Id_Detail_MPP', $ids)
-                ->select('bn.Id_Detail_MPP', 'mb.Nama_Benefit')->get()->groupBy('Id_Detail_MPP');
+                ->select('bn.Id_Detail_MPP', 'mb.Nama_Benefit')
+                ->get()
+                ->groupBy('Id_Detail_MPP');
 
-            return $head->mapWithKeys(function ($h) use ($points, $skill, $benefit) {
-                $p = collect($points->get($h->Id_Detail_MPP, []));
+            return $head
+                ->mapWithKeys(function ($h) use ($points, $skill, $benefit) {
+                    $p = collect($points->get($h->Id_Detail_MPP, []));
 
-                return [$h->No_Transaksi_MPP => [
-                    'deskripsi' => $h->Deskripsi,
-                    'employment' => $h->Nama_Employment,
-                    'workplace' => $h->Nama_Workplace,
-                    'pengalaman' => $h->Nama_Experience_Level,
-                    'tanggungJawab' => $p->where('Section', 'responsibility')->pluck('Content')->values()->all(),
-                    'persyaratan' => $p->where('Section', 'requirement')->pluck('Content')->values()->all(),
-                    'skill' => collect($skill->get($h->Id_Detail_MPP, []))->pluck('Nama_Skill')->values()->all(),
-                    'benefit' => collect($benefit->get($h->Id_Detail_MPP, []))->pluck('Nama_Benefit')->values()->all(),
-                ]];
-            })->all();
+                    return [
+                        $h->No_Transaksi_MPP => [
+                            'deskripsi' => $h->Deskripsi,
+                            'employment' => $h->Nama_Employment,
+                            'workplace' => $h->Nama_Workplace,
+                            'pengalaman' => $h->Nama_Experience_Level,
+                            'divisiId' => $h->Id_Divisi ? (int) $h->Id_Divisi : null,
+                            'tanggungJawab' => $p
+                                ->where('Section', 'responsibility')
+                                ->pluck('Content')
+                                ->values()
+                                ->all(),
+                            'persyaratan' => $p->where('Section', 'requirement')->pluck('Content')->values()->all(),
+                            'skill' => collect($skill->get($h->Id_Detail_MPP, []))
+                                ->pluck('Nama_Skill')
+                                ->values()
+                                ->all(),
+                            'benefit' => collect($benefit->get($h->Id_Detail_MPP, []))
+                                ->pluck('Nama_Benefit')
+                                ->values()
+                                ->all(),
+                        ],
+                    ];
+                })
+                ->all();
         } catch (\Throwable $e) {
             // Landing tidak boleh tumbang karena pengayaan MPP gagal.
             return [];
@@ -655,21 +1325,31 @@ class CareerLandingController extends Controller
     /** Ubah agenda jadwal DB -> bentuk {label, tanggal} untuk kartu landing. */
     private function shapeJadwal($rows): array
     {
-        return collect($rows)->map(fn($a) => [
-            'label' => $a->Label,
-            'jenis' => $a->Jenis,
-            'tanggal' => $this->rentangTanggal($a->Tanggal_Mulai, $a->Tanggal_Selesai),
-        ])->values()->all();
+        return collect($rows)
+            ->map(
+                fn($a) => [
+                    'label' => $a->Label,
+                    'jenis' => $a->Jenis,
+                    'tanggal' => $this->rentangTanggal($a->Tanggal_Mulai, $a->Tanggal_Selesai),
+                ],
+            )
+            ->values()
+            ->all();
     }
 
     /** Ubah tahap alur DB -> bentuk {label, tipe} untuk pipeline seleksi. */
     private function shapeTahapan($rows): array
     {
-        return collect($rows)->map(fn($t) => [
-            'label' => $t->Label,
-            'tipe' => $t->Tipe_Tahap_Kode,
-            'provider' => $t->Provider,
-        ])->values()->all();
+        return collect($rows)
+            ->map(
+                fn($t) => [
+                    'label' => $t->Label,
+                    'tipe' => $t->Tipe_Tahap_Kode,
+                    'provider' => $t->Provider,
+                ],
+            )
+            ->values()
+            ->all();
     }
 
     private function rentangTanggal($mulai, $selesai): string
@@ -715,14 +1395,20 @@ class CareerLandingController extends Controller
                 'status' => 'BUKA',
                 'tipeKegiatan' => 'Terbuka Umum',
                 'lokasi' => optional($listPosisi->first())->Lokasi ?: 'Palembang',
-                'penempatan' => $listPosisi->pluck('Lokasi')->filter()->unique()->implode(' & ') ?: 'Palembang & Banyuasin',
+                'penempatan' =>
+                    $listPosisi->pluck('Lokasi')->filter()->unique()->implode(' & ') ?: 'Palembang & Banyuasin',
                 'durasi' => '12 bulan program akselerasi',
                 'ikatan' => 'Ikatan dinas sesuai ketentuan',
                 'kuota' => (int) $listPosisi->sum('Kuota'),
                 'kuotaTerisi' => (int) ($o['terisi'][$pb->Program_Id] ?? 0),
                 'pelamar' => (int) ($o['pelamar'][$pb->Program_Id] ?? 0),
                 'tanggalBuka' => $pb->Tanggal_Buka ? substr($pb->Tanggal_Buka, 0, 16) : null,
-                'tanggalTutup' => $pb->Masa_Berlaku === 'BERBATAS' ? ($pb->Tanggal_Tutup ? substr($pb->Tanggal_Tutup, 0, 16) : null) : null,
+                'tanggalTutup' =>
+                    $pb->Masa_Berlaku === 'BERBATAS'
+                        ? ($pb->Tanggal_Tutup
+                            ? substr($pb->Tanggal_Tutup, 0, 16)
+                            : null)
+                        : null,
                 'tanggalPengumuman' => null,
                 // Kampus sasaran tak lagi whitelist per pembukaan — kelayakan kampus
                 // ditentukan lewat SYARAT auto-gugur. Kartu "Kampus Sasaran" disembunyikan.
@@ -731,7 +1417,12 @@ class CareerLandingController extends Controller
                 'deskripsi' => 'Program Management Trainee ' . $pb->ProgramNama . '.',
                 'catatanKegiatan' => 'Dibuka untuk umum — pendaftar memilih kampus dari daftar resmi.',
                 // Benefit & fasilitas boleh dummy (belum ada sumber DB-nya).
-                'benefit' => ['Gaji & tunjangan kompetitif', 'Rotasi lintas divisi', 'Mentoring dari manajemen', 'Jalur cepat ke posisi manajerial'],
+                'benefit' => [
+                    'Gaji & tunjangan kompetitif',
+                    'Rotasi lintas divisi',
+                    'Mentoring dari manajemen',
+                    'Jalur cepat ke posisi manajerial',
+                ],
                 'kriteria' => [],
                 'fasilitas' => ['Asuransi kesehatan', 'Laptop kerja', 'Coaching berkala'],
                 // Jadwal & tahapan WAJIB dari DB — Vue menyembunyikan kartunya bila kosong.
@@ -773,9 +1464,11 @@ class CareerLandingController extends Controller
                 'pelamar' => 37,
                 'tanggalTutup' => '2026-08-15',
                 'unggulan' => true,
-                'ringkasan' => 'Menjadi ujung tombak penjualan produk pet food premium ke jaringan retail dan pet shop modern.',
+                'ringkasan' =>
+                    'Menjadi ujung tombak penjualan produk pet food premium ke jaringan retail dan pet shop modern.',
                 'skill' => ['Negosiasi', 'Relationship', 'Target Oriented', 'MS Office'],
-                'deskripsi' => 'Sebagai Sales Executive, Anda bertanggung jawab mengembangkan penjualan produk Evopet (Life Cat, Ori Cat, Life Dog) di area yang ditentukan, membangun hubungan dengan mitra retail, serta memastikan pencapaian target penjualan bulanan.',
+                'deskripsi' =>
+                    'Sebagai Sales Executive, Anda bertanggung jawab mengembangkan penjualan produk Evopet (Life Cat, Ori Cat, Life Dog) di area yang ditentukan, membangun hubungan dengan mitra retail, serta memastikan pencapaian target penjualan bulanan.',
                 'tanggungJawab' => [
                     'Mencapai target penjualan bulanan sesuai area yang ditetapkan.',
                     'Membangun & memelihara hubungan baik dengan pet shop dan retailer.',
@@ -788,7 +1481,12 @@ class CareerLandingController extends Controller
                     'Memiliki SIM C dan bersedia mobilitas tinggi.',
                     'Komunikatif, ulet, dan berorientasi target.',
                 ],
-                'benefit' => ['Gaji pokok + komisi', 'Tunjangan transport', 'BPJS Kesehatan & Ketenagakerjaan', 'Jenjang karir jelas'],
+                'benefit' => [
+                    'Gaji pokok + komisi',
+                    'Tunjangan transport',
+                    'BPJS Kesehatan & Ketenagakerjaan',
+                    'Jenjang karir jelas',
+                ],
                 'pipeline' => [
                     ['tipe' => 'FORM', 'label' => 'Lamaran & Screening CV'],
                     ['tipe' => 'HCLEARN_TEST', 'label' => 'Psikotes Online'],
@@ -812,9 +1510,11 @@ class CareerLandingController extends Controller
                 'pelamar' => 58,
                 'tanggalTutup' => '2026-08-30',
                 'unggulan' => true,
-                'ringkasan' => 'Membangun & memelihara platform internal HCIS serta sistem operasional grup berbasis Laravel + Vue.',
+                'ringkasan' =>
+                    'Membangun & memelihara platform internal HCIS serta sistem operasional grup berbasis Laravel + Vue.',
                 'skill' => ['Laravel', 'Vue.js', 'MySQL/MSSQL', 'REST API', 'Git'],
-                'deskripsi' => 'Bergabung dengan tim Technology untuk mengembangkan produk digital internal, mulai dari HCIS, sistem KPI, hingga platform karir. Anda akan bekerja end-to-end dari perancangan hingga deployment.',
+                'deskripsi' =>
+                    'Bergabung dengan tim Technology untuk mengembangkan produk digital internal, mulai dari HCIS, sistem KPI, hingga platform karir. Anda akan bekerja end-to-end dari perancangan hingga deployment.',
                 'tanggungJawab' => [
                     'Mengembangkan fitur baru pada aplikasi internal (Laravel + Inertia + Vue).',
                     'Menulis kode yang bersih, teruji, dan mudah dipelihara.',
@@ -827,7 +1527,12 @@ class CareerLandingController extends Controller
                     'Paham konsep REST API, database relasional, dan Git flow.',
                     'Mampu bekerja mandiri maupun tim.',
                 ],
-                'benefit' => ['Gaji kompetitif', 'Remote/Hybrid friendly', 'Perangkat kerja disediakan', 'Budget pengembangan skill'],
+                'benefit' => [
+                    'Gaji kompetitif',
+                    'Remote/Hybrid friendly',
+                    'Perangkat kerja disediakan',
+                    'Budget pengembangan skill',
+                ],
                 'pipeline' => [
                     ['tipe' => 'FORM', 'label' => 'Lamaran & Screening CV'],
                     ['tipe' => 'HCLEARN_TEST', 'label' => 'Technical Test'],
@@ -851,9 +1556,11 @@ class CareerLandingController extends Controller
                 'pelamar' => 44,
                 'tanggalTutup' => '2026-08-20',
                 'unggulan' => false,
-                'ringkasan' => 'Merancang & mengeksekusi kampanye digital untuk brand pet food Evopet di berbagai kanal.',
+                'ringkasan' =>
+                    'Merancang & mengeksekusi kampanye digital untuk brand pet food Evopet di berbagai kanal.',
                 'skill' => ['Meta Ads', 'Google Ads', 'Copywriting', 'Analytics', 'Content Planning'],
-                'deskripsi' => 'Anda akan mengelola performa kampanye digital, meningkatkan brand awareness, dan mendorong penjualan online untuk portofolio brand Evopet.',
+                'deskripsi' =>
+                    'Anda akan mengelola performa kampanye digital, meningkatkan brand awareness, dan mendorong penjualan online untuk portofolio brand Evopet.',
                 'tanggungJawab' => [
                     'Merencanakan & mengeksekusi kampanye di Meta, Google, dan marketplace.',
                     'Menganalisis performa kampanye dan menyusun laporan.',
@@ -889,9 +1596,11 @@ class CareerLandingController extends Controller
                 'pelamar' => 21,
                 'tanggalTutup' => '2026-09-05',
                 'unggulan' => false,
-                'ringkasan' => 'Memimpin operasional gudang, memastikan akurasi stok, dan efisiensi alur keluar-masuk barang.',
+                'ringkasan' =>
+                    'Memimpin operasional gudang, memastikan akurasi stok, dan efisiensi alur keluar-masuk barang.',
                 'skill' => ['WMS', 'Inventory Control', 'Leadership', 'K3', 'Reporting'],
-                'deskripsi' => 'Mengelola tim gudang untuk memastikan penerimaan, penyimpanan, dan pengiriman barang berjalan akurat, aman, dan tepat waktu.',
+                'deskripsi' =>
+                    'Mengelola tim gudang untuk memastikan penerimaan, penyimpanan, dan pengiriman barang berjalan akurat, aman, dan tepat waktu.',
                 'tanggungJawab' => [
                     'Mengawasi operasional harian gudang dan tim.',
                     'Menjaga akurasi stok melalui stock opname berkala.',
@@ -928,9 +1637,11 @@ class CareerLandingController extends Controller
                 'pelamar' => 29,
                 'tanggalTutup' => '2026-08-25',
                 'unggulan' => false,
-                'ringkasan' => 'Menjaga standar mutu produk pet food sepanjang proses produksi melalui pengujian & kontrol kualitas.',
+                'ringkasan' =>
+                    'Menjaga standar mutu produk pet food sepanjang proses produksi melalui pengujian & kontrol kualitas.',
                 'skill' => ['QC/QA', 'GMP', 'Analisis Lab', 'HACCP', 'Dokumentasi'],
-                'deskripsi' => 'Bertanggung jawab memastikan setiap batch produksi memenuhi standar mutu dan keamanan pangan sebelum didistribusikan.',
+                'deskripsi' =>
+                    'Bertanggung jawab memastikan setiap batch produksi memenuhi standar mutu dan keamanan pangan sebelum didistribusikan.',
                 'tanggungJawab' => [
                     'Melakukan pengujian mutu bahan baku dan produk jadi.',
                     'Menerapkan standar GMP dan HACCP di lini produksi.',
@@ -968,7 +1679,8 @@ class CareerLandingController extends Controller
                 'unggulan' => false,
                 'ringkasan' => 'Menangani siklus HR end-to-end: rekrutmen, administrasi, hingga employee engagement.',
                 'skill' => ['Recruitment', 'Payroll', 'UU Ketenagakerjaan', 'People Skills', 'HRIS'],
-                'deskripsi' => 'Menjadi mitra bisnis HR yang mendukung operasional people di entitas grup, dari hiring hingga pengembangan karyawan.',
+                'deskripsi' =>
+                    'Menjadi mitra bisnis HR yang mendukung operasional people di entitas grup, dari hiring hingga pengembangan karyawan.',
                 'tanggungJawab' => [
                     'Mengelola proses rekrutmen dan onboarding karyawan.',
                     'Menangani administrasi kepegawaian dan payroll dasar.',
@@ -1007,7 +1719,8 @@ class CareerLandingController extends Controller
                 'unggulan' => false,
                 'ringkasan' => 'Mengelola pencatatan transaksi keuangan, rekonsiliasi, dan pelaporan pajak dasar.',
                 'skill' => ['Accounting', 'Pajak', 'Excel', 'Accurate/SAP', 'Ketelitian'],
-                'deskripsi' => 'Mendukung operasional keuangan perusahaan dengan memastikan pencatatan yang akurat dan pelaporan yang tepat waktu.',
+                'deskripsi' =>
+                    'Mendukung operasional keuangan perusahaan dengan memastikan pencatatan yang akurat dan pelaporan yang tepat waktu.',
                 'tanggungJawab' => [
                     'Mencatat dan memverifikasi transaksi keuangan harian.',
                     'Melakukan rekonsiliasi bank dan buku besar.',
@@ -1045,7 +1758,8 @@ class CareerLandingController extends Controller
                 'unggulan' => false,
                 'ringkasan' => 'Membuat konten kreatif seputar dunia pet untuk media sosial brand Evopet.',
                 'skill' => ['Content Creation', 'Video Editing', 'Canva', 'Storytelling', 'Kreativitas'],
-                'deskripsi' => 'Program magang untuk kamu yang suka dunia hewan peliharaan dan kreatif membuat konten. Kamu akan terlibat langsung dalam produksi konten harian.',
+                'deskripsi' =>
+                    'Program magang untuk kamu yang suka dunia hewan peliharaan dan kreatif membuat konten. Kamu akan terlibat langsung dalam produksi konten harian.',
                 'tanggungJawab' => [
                     'Membuat konten foto/video untuk Instagram & TikTok.',
                     'Menyusun ide kampanye konten mingguan.',
@@ -1058,7 +1772,12 @@ class CareerLandingController extends Controller
                     'Aktif di media sosial dan paham tren.',
                     'Menyukai hewan peliharaan jadi nilai plus.',
                 ],
-                'benefit' => ['Uang saku magang', 'Sertifikat magang', 'Mentoring langsung', 'Peluang jadi karyawan tetap'],
+                'benefit' => [
+                    'Uang saku magang',
+                    'Sertifikat magang',
+                    'Mentoring langsung',
+                    'Peluang jadi karyawan tetap',
+                ],
                 'pipeline' => [
                     ['tipe' => 'FORM', 'label' => 'Lamaran & Portfolio'],
                     ['tipe' => 'HCLEARN_TEST', 'label' => 'Tugas Kreatif'],
@@ -1109,9 +1828,12 @@ class CareerLandingController extends Controller
                 'tanggalTutup' => '2026-08-31',
                 'tanggalPengumuman' => '2026-09-20',
                 'targetKampus' => ['ITB', 'UI', 'UGM', 'IPB', 'Unpad', 'ITS', 'Unsri'],
-                'ringkasan' => 'Kegiatan pengembangan intensif 12 bulan untuk lulusan terbaik dari kampus mitra, disiapkan menjadi future leader di lini bisnis EVO Group.',
-                'deskripsi' => 'EVO Development Program (EDP) adalah kegiatan Management Trainee unggulan yang dibuka secara khusus untuk kampus mitra terpilih. Peserta menjalani rotasi lintas divisi, mentoring langsung dari BOD, serta proyek nyata berdampak bisnis sebelum ditempatkan pada posisi manajerial.',
-                'catatanKegiatan' => 'Kegiatan ini dibuka melalui jalur undangan ke kampus mitra. Pendaftaran umum akan diverifikasi terhadap daftar kampus terpilih.',
+                'ringkasan' =>
+                    'Kegiatan pengembangan intensif 12 bulan untuk lulusan terbaik dari kampus mitra, disiapkan menjadi future leader di lini bisnis EVO Group.',
+                'deskripsi' =>
+                    'EVO Development Program (EDP) adalah kegiatan Management Trainee unggulan yang dibuka secara khusus untuk kampus mitra terpilih. Peserta menjalani rotasi lintas divisi, mentoring langsung dari BOD, serta proyek nyata berdampak bisnis sebelum ditempatkan pada posisi manajerial.',
+                'catatanKegiatan' =>
+                    'Kegiatan ini dibuka melalui jalur undangan ke kampus mitra. Pendaftaran umum akan diverifikasi terhadap daftar kampus terpilih.',
                 'benefit' => [
                     'Gaji & tunjangan kompetitif sejak hari pertama',
                     'Rotasi lintas divisi & lintas entitas grup',
@@ -1167,8 +1889,10 @@ class CareerLandingController extends Controller
                 'tanggalTutup' => '2026-07-31',
                 'tanggalPengumuman' => '2026-08-20',
                 'targetKampus' => ['Semua Universitas'],
-                'ringkasan' => 'Kegiatan percepatan karir bagi lulusan yang bercita-cita membangun karir di dunia sales & distribusi FMCG pet food.',
-                'deskripsi' => 'Sales Trainee Program membekali peserta dengan kemampuan sales, leadership, dan analisis pasar melalui kombinasi kelas, coaching lapangan, dan penugasan area nyata hingga siap memimpin tim penjualan.',
+                'ringkasan' =>
+                    'Kegiatan percepatan karir bagi lulusan yang bercita-cita membangun karir di dunia sales & distribusi FMCG pet food.',
+                'deskripsi' =>
+                    'Sales Trainee Program membekali peserta dengan kemampuan sales, leadership, dan analisis pasar melalui kombinasi kelas, coaching lapangan, dan penugasan area nyata hingga siap memimpin tim penjualan.',
                 'catatanKegiatan' => 'Kuota batch ini telah terpenuhi. Pantau terus untuk pembukaan batch berikutnya.',
                 'benefit' => [
                     'Gaji pokok + insentif penjualan',
@@ -1210,11 +1934,41 @@ class CareerLandingController extends Controller
     private function achievements(): array
     {
         return [
-            ['icon' => 'bi-people-fill', 'value' => 1200, 'suffix' => '+', 'label' => 'Karyawan Aktif', 'desc' => 'Tersebar di seluruh entitas grup'],
-            ['icon' => 'bi-calendar2-heart-fill', 'value' => 15, 'suffix' => '+', 'label' => 'Tahun Berkarya', 'desc' => 'Tumbuh sejak 2011'],
-            ['icon' => 'bi-geo-alt-fill', 'value' => 2, 'suffix' => ' Lokasi', 'label' => 'Pusat Operasional', 'desc' => 'Palembang & Banyuasin'],
-            ['icon' => 'bi-box-seam-fill', 'value' => 20, 'suffix' => '+', 'label' => 'Brand Produk', 'desc' => 'Life Cat, Ori Dog, dll.'],
-            ['icon' => 'bi-buildings-fill', 'value' => 3, 'suffix' => ' Entitas', 'label' => 'Perusahaan Grup', 'desc' => 'ENB, EMI, GMN'],
+            [
+                'icon' => 'bi-people-fill',
+                'value' => 1200,
+                'suffix' => '+',
+                'label' => 'Karyawan Aktif',
+                'desc' => 'Tersebar di seluruh entitas grup',
+            ],
+            [
+                'icon' => 'bi-calendar2-heart-fill',
+                'value' => 15,
+                'suffix' => '+',
+                'label' => 'Tahun Berkarya',
+                'desc' => 'Tumbuh sejak 2011',
+            ],
+            [
+                'icon' => 'bi-geo-alt-fill',
+                'value' => 2,
+                'suffix' => ' Lokasi',
+                'label' => 'Pusat Operasional',
+                'desc' => 'Palembang & Banyuasin',
+            ],
+            [
+                'icon' => 'bi-box-seam-fill',
+                'value' => 20,
+                'suffix' => '+',
+                'label' => 'Brand Produk',
+                'desc' => 'Life Cat, Ori Dog, dll.',
+            ],
+            [
+                'icon' => 'bi-buildings-fill',
+                'value' => 3,
+                'suffix' => ' Entitas',
+                'label' => 'Perusahaan Grup',
+                'desc' => 'ENB, EMI, GMN',
+            ],
         ];
     }
 

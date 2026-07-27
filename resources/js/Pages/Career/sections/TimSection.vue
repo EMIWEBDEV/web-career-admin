@@ -1,6 +1,6 @@
 <!-- WEB CAREER — Section: Fungsi Perusahaan (kartu tim horizontal, snap scroll) -->
 <template>
-    <section id="tim" class="wc-section wc-tim">
+    <section v-if="tim.length" id="tim" class="wc-section wc-tim">
         <div class="wc-sec-head wc-reveal">
             <span class="wc-eyebrow"><span class="wc-dot"></span> Fungsi Perusahaan</span>
             <h2>Tim yang <span class="wc-grad">menjalankan Evo.</span></h2>
@@ -26,7 +26,13 @@
                     :style="{ '--d': i * 60 + 'ms', '--i': i }"
                     @click="onCardClick(t)"
                 >
-                    <div class="wc-tim__photo" :style="{ backgroundPosition: t.pos }"></div>
+                    <div
+                        class="wc-tim__photo"
+                        :style="{
+                            backgroundPosition: t.pos || '50% center',
+                            backgroundImage: `url('${t.img || '/img/IMG_5417.JPG'}')`,
+                        }"
+                    ></div>
                     <div class="wc-tim__scrim"></div>
 
                     <!-- Jumlah lowongan terbuka pada fungsi ini -->
@@ -88,17 +94,15 @@
 
 <script setup>
 import { Link, router } from '@inertiajs/vue3';
-import { onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 
-// `lowongan` = jumlah lowongan terbuka pada fungsi tersebut (sementara statis).
-const tim = [
-    { nama: 'Manufacturing', slug: 'manufacturing', pos: '50% center', lowongan: 3, deskripsi: 'Menjalankan proses produksi pet food secara konsisten dengan perhatian pada mutu dan efisiensi.' },
-    { nama: 'Quality & Research', slug: 'quality-research', pos: '30% center', lowongan: 2, deskripsi: 'Menjaga kualitas serta mendukung riset formula bernutrisi seimbang bagi hewan peliharaan.' },
-    { nama: 'Sales & Distribution', slug: 'sales-distribution', pos: '70% center', lowongan: 5, deskripsi: 'Mengembangkan pasar dan memastikan produk dapat dijangkau melalui jaringan distribusi nasional.' },
-    { nama: 'Brand & Marketing', slug: 'brand-marketing', pos: '40% center', lowongan: 1, deskripsi: 'Membangun merek dan menyampaikan manfaat produk secara relevan kepada konsumen.' },
-    { nama: 'Supply Chain', slug: 'supply-chain', pos: '60% center', lowongan: 0, deskripsi: 'Mengelola ketersediaan bahan dan alur pasok untuk mendukung kegiatan operasional perusahaan.' },
-    { nama: 'Corporate Support', slug: 'corporate-support', pos: '35% center', lowongan: 2, deskripsi: 'Memperkuat organisasi melalui fungsi keuangan, sumber daya manusia, dan administrasi perusahaan.' },
-];
+// Data tim dari Master Info Divisi (CareerLandingController::timCards()).
+// Section otomatis tersembunyi bila belum ada divisi yang diisi/aktif.
+const props = defineProps({
+    tim: { type: Array, default: () => [] },
+});
+
+const tim = computed(() => props.tim || []);
 
 // Halaman perkenalan tim: /karir/tim/{slug}
 function bukaDetail(t) {

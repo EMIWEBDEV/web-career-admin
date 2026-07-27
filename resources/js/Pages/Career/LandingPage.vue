@@ -12,7 +12,7 @@
         <HeroSection :benefits="benefits" :has-mt="hasMt" />
         <TentangSection />
         <AchievementSection :achievements="achievements" />
-        <TimSection />
+        <TimSection :tim="tim" />
         <MtSection :program-mt="programMt" />
         <LokasiSection :offices="offices" />
         <CtaSection />
@@ -40,8 +40,10 @@ const props = defineProps({
     achievements: { type: Array, default: () => [] },
     offices: { type: Array, default: () => [] },
     benefits: { type: Array, default: () => [] },
+    tim: { type: Array, default: () => [] },
 });
 
+const tim = computed(() => props.tim || []);
 const programMt = computed(() => props.programMt || []);
 const achievements = computed(() => props.achievements || []);
 const offices = computed(() => props.offices || []);

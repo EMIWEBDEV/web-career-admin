@@ -17,8 +17,16 @@
 
             
 
+            <!-- ── Info tim belum diisi (Master Info Divisi kosong) ── -->
+            <div v-if="!tim.length" class="st-empty">
+                <i class="bi bi-diagram-3"></i>
+                <strong>Informasi tim sedang disiapkan</strong>
+                <span>Konten perkenalan tim akan segera hadir. Sementara itu, lihat lowongan yang tersedia.</span>
+                <Link href="/karir/lowongan" class="st-empty__btn">Lihat semua lowongan</Link>
+            </div>
+
             <!-- ── Pencarian & filter ────────────────────────────── -->
-            <div class="st-toolbar wc-reveal">
+            <div v-if="tim.length" class="st-toolbar wc-reveal">
                 <div class="st-search">
                     <i class="bi bi-search"></i>
                     <input
@@ -68,13 +76,15 @@
                     <p class="st-card__desc">{{ t.deskripsi }}</p>
 
                     <div class="st-meta">
-                        <span><i class="bi bi-geo-alt"></i> {{ t.lokasi }} · {{ t.tempatKerja }}</span>
-                        <span><i class="bi bi-briefcase"></i> {{ t.pengalaman }}</span>
+                        <span v-if="t.lokasi || t.tempatKerja">
+                            <i class="bi bi-geo-alt"></i> {{ [t.lokasi, t.tempatKerja].filter(Boolean).join(' · ') }}
+                        </span>
+                        <span v-if="t.pengalaman"><i class="bi bi-briefcase"></i> {{ t.pengalaman }}</span>
                     </div>
 
-                    <div class="st-benefit"><i class="bi bi-gift"></i> {{ t.benefit }}</div>
+                    <div v-if="t.benefit" class="st-benefit"><i class="bi bi-gift"></i> {{ t.benefit }}</div>
 
-                    <div class="st-tags">
+                    <div v-if="t.skill?.length" class="st-tags">
                         <span v-for="s in t.skill.slice(0, 4)" :key="s">{{ s }}</span>
                         <span v-if="t.skill.length > 4" class="st-tags--more">+{{ t.skill.length - 4 }}</span>
                     </div>
@@ -89,7 +99,7 @@
                 </Link>
             </div>
 
-            <div v-else class="st-empty">
+            <div v-else-if="tim.length" class="st-empty">
                 <i class="bi bi-search"></i>
                 <strong>Tim tidak ditemukan</strong>
                 <span>Coba kata kunci lain, atau tampilkan kembali seluruh tim.</span>
@@ -117,102 +127,17 @@ defineOptions({ layout: null });
 const props = defineProps({
     hasMt: { type: Boolean, default: false },
     offices: { type: Array, default: () => [] },
+    // Data tim dari Master Info Divisi (CareerLandingController::timCards()).
+    tim: { type: Array, default: () => [] },
 });
 
 const hasMt = computed(() => props.hasMt);
 const offices = computed(() => props.offices || []);
+const tim = computed(() => props.tim || []);
 
-// CONTOH ISI — sesuaikan dengan data tim yang sebenarnya.
-const tim = [
-    {
-        nama: 'Finance & Accounting',
-        slug: 'corporate-support',
-        deskripsi: 'Mengelola perencanaan keuangan, perpajakan, serta akuntansi operasional perusahaan.',
-        lokasi: 'Palembang',
-        tempatKerja: 'On-site (WFO)',
-        pengalaman: 'Min. 1 - 5 Tahun',
-        benefit: 'Gaji + THR + Benefit',
-        skill: ['Accounting', 'Tax/Pajak', 'Excel', 'Financial Reporting', 'Audit', 'ERP'],
-        lowongan: 3,
-        kuota: 5,
-        kuotaTerisi: 0,
-        pelamar: 18,
-    },
-    {
-        nama: 'Manufacturing',
-        slug: 'manufacturing',
-        deskripsi: 'Menjalankan proses produksi pet food secara konsisten dengan perhatian pada mutu dan efisiensi.',
-        lokasi: 'Palembang',
-        tempatKerja: 'On-site (WFO)',
-        pengalaman: 'Min. 1 - 3 Tahun',
-        benefit: 'Gaji + THR + Shift Allowance',
-        skill: ['Produksi', 'K3', 'Maintenance', 'Lean', 'GMP'],
-        lowongan: 3,
-        kuota: 6,
-        kuotaTerisi: 1,
-        pelamar: 24,
-    },
-    {
-        nama: 'Quality & Research',
-        slug: 'quality-research',
-        deskripsi: 'Menjaga kualitas serta mendukung riset formula bernutrisi seimbang bagi hewan peliharaan.',
-        lokasi: 'Palembang',
-        tempatKerja: 'On-site (WFO)',
-        pengalaman: 'Min. 2 Tahun',
-        benefit: 'Gaji + THR + Benefit',
-        skill: ['QC/QA', 'Laboratorium', 'HACCP', 'Riset Formula'],
-        lowongan: 2,
-        kuota: 3,
-        kuotaTerisi: 0,
-        pelamar: 11,
-    },
-    {
-        nama: 'Sales & Distribution',
-        slug: 'sales-distribution',
-        deskripsi: 'Mengembangkan pasar dan memastikan produk dapat dijangkau melalui jaringan distribusi nasional.',
-        lokasi: 'Nasional',
-        tempatKerja: 'Hybrid',
-        pengalaman: 'Fresh Graduate - 5 Tahun',
-        benefit: 'Gaji + THR + Insentif Penjualan',
-        skill: ['Sales', 'Distribusi', 'Negosiasi', 'Retail', 'Key Account'],
-        lowongan: 5,
-        kuota: 8,
-        kuotaTerisi: 2,
-        pelamar: 42,
-    },
-    {
-        nama: 'Brand & Marketing',
-        slug: 'brand-marketing',
-        deskripsi: 'Membangun merek dan menyampaikan manfaat produk secara relevan kepada konsumen.',
-        lokasi: 'Palembang',
-        tempatKerja: 'On-site (WFO)',
-        pengalaman: 'Min. 2 Tahun',
-        benefit: 'Gaji + THR + Benefit',
-        skill: ['Branding', 'Digital Ads', 'Content', 'Market Research'],
-        lowongan: 1,
-        kuota: 2,
-        kuotaTerisi: 1,
-        pelamar: 15,
-    },
-    {
-        nama: 'Supply Chain',
-        slug: 'supply-chain',
-        deskripsi: 'Mengelola ketersediaan bahan dan alur pasok untuk mendukung kegiatan operasional perusahaan.',
-        lokasi: 'Palembang',
-        tempatKerja: 'On-site (WFO)',
-        pengalaman: 'Min. 1 - 3 Tahun',
-        benefit: 'Gaji + THR + Benefit',
-        skill: ['Procurement', 'Warehouse', 'Inventory', 'Logistik'],
-        lowongan: 0,
-        kuota: 0,
-        kuotaTerisi: 0,
-        pelamar: 6,
-    },
-];
-
-const totalLowongan = computed(() => tim.reduce((n, t) => n + t.lowongan, 0));
-const totalPelamar = computed(() => tim.reduce((n, t) => n + t.pelamar, 0));
-const timMembuka = computed(() => tim.filter((t) => t.lowongan > 0).length);
+const totalLowongan = computed(() => tim.value.reduce((n, t) => n + (t.lowongan || 0), 0));
+const totalPelamar = computed(() => tim.value.reduce((n, t) => n + (t.pelamar || 0), 0));
+const timMembuka = computed(() => tim.value.filter((t) => t.lowongan > 0).length);
 
 // ── Pencarian & filter ──────────────────────────────────────
 const search = ref('');
@@ -221,10 +146,11 @@ const filter = ref('semua');
 // Kata kunci dicocokkan ke nama tim, deskripsi, keahlian, dan lokasi.
 const timTampil = computed(() => {
     const q = search.value.trim().toLowerCase();
-    return tim.filter((t) => {
+    return tim.value.filter((t) => {
         if (filter.value === 'buka' && !t.lowongan) return false;
         if (!q) return true;
-        return [t.nama, t.deskripsi, t.lokasi, t.tempatKerja, t.pengalaman, ...t.skill]
+        return [t.nama, t.deskripsi, t.lokasi, t.tempatKerja, t.pengalaman, ...(t.skill || [])]
+            .filter(Boolean)
             .join(' ')
             .toLowerCase()
             .includes(q);

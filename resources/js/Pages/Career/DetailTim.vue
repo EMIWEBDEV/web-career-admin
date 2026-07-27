@@ -8,7 +8,7 @@
      ══════════════════════════════════════════════════════════ -->
 <template>
     <Head>
-        <title>Tim Information Technology - EVO Group Career</title>
+        <title>{{ judulTab }}</title>
     </Head>
 
     <CareerLayout :has-mt="hasMt" :offices="offices">
@@ -17,68 +17,134 @@
                 <i class="bi bi-arrow-left"></i> Kembali ke Fungsi Perusahaan
             </button>
 
-            <!-- ── HERO ──────────────────────────────────────────── -->
-            <header class="dt-hero wc-reveal">
-                <div class="dt-hero__photo"></div>
-                <div class="dt-hero__scrim"></div>
-                <div class="dt-hero__body">
-                    <span class="dt-hero__eyebrow"><span class="dt-dot"></span> Fungsi Perusahaan</span>
-                    <h1>Information Technology</h1>
-                    <p>
-                        Tim yang menjaga agar seluruh sistem, data, dan alat kerja di Evo berjalan lancar —
-                        dari lantai produksi sampai aplikasi yang dipakai tim lapangan setiap hari.
-                    </p>
-                    <div class="dt-hero__stats">
-                        <div><strong>12</strong><small>Anggota tim</small></div>
-                        <span class="dt-hero__sep"></span>
-                        <div><strong>4</strong><small>Sub-fungsi</small></div>
-                        <span class="dt-hero__sep"></span>
-                        <div><strong>3</strong><small>Lowongan terbuka</small></div>
+            <!-- ══════════ KONTEN DINAMIS (Master Info Divisi) ══════════ -->
+            <template v-if="tim">
+                <!-- ── HERO ──────────────────────────────────────── -->
+                <header class="dt-hero wc-reveal">
+                    <div
+                        class="dt-hero__photo"
+                        :style="tim.img?.header ? { backgroundImage: `url('${tim.img.header}')` } : undefined"
+                    ></div>
+                    <div class="dt-hero__scrim"></div>
+                    <div class="dt-hero__body">
+                        <span class="dt-hero__eyebrow"><span class="dt-dot"></span> Fungsi Perusahaan</span>
+                        <h1>{{ tim.nama }}</h1>
+                        <p v-if="tim.deskripsiSingkat">{{ tim.deskripsiSingkat }}</p>
+                        <div class="dt-hero__stats">
+                            <div><strong>{{ tim.stats?.subFungsi ?? 0 }}</strong><small>Sub-fungsi</small></div>
+                            <span class="dt-hero__sep"></span>
+                            <div><strong>{{ tim.stats?.lowongan ?? 0 }}</strong><small>Lowongan terbuka</small></div>
+                        </div>
                     </div>
-                </div>
-            </header>
+                </header>
 
-            <!-- ── TENTANG TIM ───────────────────────────────────── -->
-            <section class="dt-section">
-                <div class="dt-about">
-                    <div class="dt-about__text wc-reveal">
-                        <h2>Bukan sekadar tim pendukung, tapi rekan berpikir.</h2>
+                <!-- ── TENTANG TIM ───────────────────────────────── -->
+                <section v-if="tim.judulUtama || tim.deskripsiDetail || tim.poin?.length || galeri.length" class="dt-section">
+                    <div class="dt-about">
+                        <div class="dt-about__text wc-reveal">
+                            <h2>{{ tim.judulUtama || `Tentang tim ${tim.nama}` }}</h2>
+                            <p v-if="tim.deskripsiDetail" style="white-space: pre-line">{{ tim.deskripsiDetail }}</p>
+                            <ul v-if="tim.poin?.length" class="dt-points">
+                                <li v-for="(p, i) in tim.poin" :key="i">
+                                    <i class="bi bi-check-circle-fill"></i> {{ p }}
+                                </li>
+                            </ul>
+                        </div>
+
+                        <div v-if="galeri.length" class="dt-about__media wc-reveal" style="--d: 90ms">
+                            <div
+                                v-for="(g, i) in galeri"
+                                :key="i"
+                                class="dt-shot"
+                                :style="{ backgroundImage: `url('${g}')` }"
+                            ></div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ── SUB-FUNGSI ────────────────────────────────── -->
+                <section v-if="subFungsi.length" class="dt-section">
+                    <div class="dt-head wc-reveal">
+                        <h2>Sub-fungsi di tim ini</h2>
+                        <p>Bagian-bagian yang bekerja sama menjalankan fungsi {{ tim.nama }}.</p>
+                    </div>
+                    <div class="dt-subgrid wc-reveal" style="--d: 70ms">
+                        <article v-for="s in subFungsi" :key="s.nama" class="dt-subcard">
+                            <div v-if="s.img" class="dt-subcard__img" :style="{ backgroundImage: `url('${s.img}')` }"></div>
+                            <div class="dt-subcard__body">
+                                <h3>{{ s.nama }}</h3>
+                                <p v-if="s.deskripsi">{{ s.deskripsi }}</p>
+                            </div>
+                        </article>
+                    </div>
+                </section>
+            </template>
+
+            <!-- ══════════ FALLBACK STATIS (Master Info Divisi belum diisi) ══════════ -->
+            <template v-else>
+                <!-- ── HERO ──────────────────────────────────────── -->
+                <header class="dt-hero wc-reveal">
+                    <div class="dt-hero__photo"></div>
+                    <div class="dt-hero__scrim"></div>
+                    <div class="dt-hero__body">
+                        <span class="dt-hero__eyebrow"><span class="dt-dot"></span> Fungsi Perusahaan</span>
+                        <h1>Information Technology</h1>
                         <p>
-                            Tim IT Evo terlibat sejak awal ketika sebuah proses ingin diperbaiki. Kami duduk bersama tim
-                            produksi, gudang, dan penjualan untuk memahami masalahnya dulu, baru menentukan solusi
-                            teknologinya — bukan sebaliknya.
+                            Tim yang menjaga agar seluruh sistem, data, dan alat kerja di Evo berjalan lancar —
+                            dari lantai produksi sampai aplikasi yang dipakai tim lapangan setiap hari.
                         </p>
-                        <p>
-                            Sehari-hari kami mengurus sistem internal, integrasi data antar cabang, perangkat di pabrik,
-                            sampai aplikasi rekrutmen yang sedang kamu buka sekarang.
-                        </p>
-                        <ul class="dt-points">
-                            <li><i class="bi bi-check-circle-fill"></i> Membangun & merawat aplikasi internal perusahaan</li>
-                            <li><i class="bi bi-check-circle-fill"></i> Menjaga infrastruktur, jaringan, dan keamanan data</li>
-                            <li><i class="bi bi-check-circle-fill"></i> Mendampingi tim lain mengadopsi alat kerja baru</li>
-                        </ul>
+                        <div class="dt-hero__stats">
+                            <div><strong>12</strong><small>Anggota tim</small></div>
+                            <span class="dt-hero__sep"></span>
+                            <div><strong>4</strong><small>Sub-fungsi</small></div>
+                            <span class="dt-hero__sep"></span>
+                            <div><strong>3</strong><small>Lowongan terbuka</small></div>
+                        </div>
                     </div>
+                </header>
 
-                    <div class="dt-about__media wc-reveal" style="--d: 90ms">
-                        <div class="dt-shot dt-shot--a"></div>
-                        <div class="dt-shot dt-shot--b"></div>
-                        <div class="dt-shot dt-shot--c"></div>
+                <!-- ── TENTANG TIM ───────────────────────────────── -->
+                <section class="dt-section">
+                    <div class="dt-about">
+                        <div class="dt-about__text wc-reveal">
+                            <h2>Bukan sekadar tim pendukung, tapi rekan berpikir.</h2>
+                            <p>
+                                Tim IT Evo terlibat sejak awal ketika sebuah proses ingin diperbaiki. Kami duduk bersama tim
+                                produksi, gudang, dan penjualan untuk memahami masalahnya dulu, baru menentukan solusi
+                                teknologinya — bukan sebaliknya.
+                            </p>
+                            <p>
+                                Sehari-hari kami mengurus sistem internal, integrasi data antar cabang, perangkat di pabrik,
+                                sampai aplikasi rekrutmen yang sedang kamu buka sekarang.
+                            </p>
+                            <ul class="dt-points">
+                                <li><i class="bi bi-check-circle-fill"></i> Membangun & merawat aplikasi internal perusahaan</li>
+                                <li><i class="bi bi-check-circle-fill"></i> Menjaga infrastruktur, jaringan, dan keamanan data</li>
+                                <li><i class="bi bi-check-circle-fill"></i> Mendampingi tim lain mengadopsi alat kerja baru</li>
+                            </ul>
+                        </div>
+
+                        <div class="dt-about__media wc-reveal" style="--d: 90ms">
+                            <div class="dt-shot dt-shot--a"></div>
+                            <div class="dt-shot dt-shot--b"></div>
+                            <div class="dt-shot dt-shot--c"></div>
+                        </div>
                     </div>
-                </div>
-            </section>
+                </section>
+            </template>
 
-                     <!-- ── LOWONGAN DI TIM INI ───────────────────────────── -->
+            <!-- ── LOWONGAN DI TIM INI (dinamis & fallback) ──────── -->
             <section class="dt-section">
                 <div class="dt-head dt-head--row wc-reveal">
                     <div>
                         <h2>Lowongan di tim ini</h2>
-                        <p>Posisi yang sedang kami cari untuk memperkuat tim Information Technology.</p>
+                        <p>Posisi yang sedang kami cari untuk memperkuat tim {{ namaTim }}.</p>
                     </div>
-                    <span class="dt-count"><i class="bi bi-briefcase-fill"></i> {{ lowonganTim.length }} lowongan terbuka</span>
+                    <span class="dt-count"><i class="bi bi-briefcase-fill"></i> {{ lowonganTampil.length }} lowongan terbuka</span>
                 </div>
 
-                <div v-if="lowonganTim.length" class="rek__grid wc-reveal" style="--d: 70ms">
-                    <LowonganCard v-for="job in lowonganTim" :key="job.id" :job="job" />
+                <div v-if="lowonganTampil.length" class="rek__grid wc-reveal" style="--d: 70ms">
+                    <LowonganCard v-for="job in lowonganTampil" :key="job.id" :job="job" />
                 </div>
                 <div v-else class="dt-empty wc-reveal">
                     <i class="bi bi-clipboard-x"></i>
@@ -120,9 +186,9 @@ import { goToSection, observeReveal } from './careerData';
 
 defineOptions({ layout: null });
 
-// CONTOH ISI — sesuaikan/ganti dengan lowongan asli tim ini.
+// CONTOH ISI — hanya dipakai mode FALLBACK statis (Master Info Divisi kosong).
 // Bentuk objeknya mengikuti kartu lowongan di halaman "Semua Lowongan".
-const lowonganTim = [
+const contohLowongan = [
     {
         id: 'RC-2026-011',
         posisi: 'Backend Developer',
@@ -170,14 +236,31 @@ const lowonganTim = [
     },
 ];
 
-// Hanya payload layout (navbar + footer). Konten halaman ditulis langsung di template.
 const props = defineProps({
     hasMt: { type: Boolean, default: false },
     offices: { type: Array, default: () => [] },
+    slug: { type: String, default: '' },
+    // Konten dari Master Info Divisi. Null = tabel belum diisi → fallback statis.
+    tim: { type: Object, default: null },
+    subFungsi: { type: Array, default: () => [] },
+    lowonganTim: { type: Array, default: () => [] },
 });
 
 const hasMt = computed(() => props.hasMt);
 const offices = computed(() => props.offices || []);
+const tim = computed(() => props.tim);
+const subFungsi = computed(() => props.subFungsi || []);
+
+const namaTim = computed(() => props.tim?.nama || 'Information Technology');
+const judulTab = computed(() => `Tim ${namaTim.value} - EVO Group Career`);
+
+// Galeri "Tentang Tim": hanya slot yang sudah diunggah.
+const galeri = computed(() =>
+    [props.tim?.img?.utama, props.tim?.img?.img2, props.tim?.img?.img3].filter(Boolean),
+);
+
+// Mode dinamis pakai lowongan real per divisi; fallback pakai contoh statis.
+const lowonganTampil = computed(() => (props.tim ? props.lowonganTim || [] : contohLowongan));
 
 let revealObs = null;
 onMounted(() => nextTick(() => (revealObs = observeReveal())));
@@ -378,6 +461,47 @@ onUnmounted(() => revealObs?.disconnect());
 .dt-shot:hover {
     transform: translateY(-4px);
 }
+/* ── Kartu sub-fungsi (konten dinamis Master Info Divisi) ── */
+.dt-subgrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    gap: 1rem;
+}
+.dt-subcard {
+    overflow: hidden;
+    border-radius: 1.1rem;
+    background: #fff;
+    border: 1px solid rgba(99, 102, 241, 0.14);
+    box-shadow: 0 10px 26px rgba(15, 23, 42, 0.07);
+    transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.35s;
+}
+.dt-subcard:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 18px 38px rgba(79, 70, 229, 0.14);
+}
+.dt-subcard__img {
+    height: 8.5rem;
+    background-size: cover;
+    background-position: center;
+}
+.dt-subcard__body {
+    padding: 1rem 1.1rem 1.15rem;
+}
+.dt-subcard__body h3 {
+    margin: 0 0 0.35rem;
+    font-size: 1rem;
+    font-weight: 800;
+    letter-spacing: -0.015em;
+    color: var(--ink);
+}
+.dt-subcard__body p {
+    margin: 0;
+    color: var(--slate);
+    font-size: 0.86rem;
+    font-weight: 600;
+    line-height: 1.6;
+}
+
 .dt-shot--a { background-position: 40% center; }
 .dt-shot--b { background-position: 65% 30%; }
 .dt-shot--c { background-position: 25% 70%; }
