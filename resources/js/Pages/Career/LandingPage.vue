@@ -10,8 +10,9 @@
 
     <CareerLayout :has-mt="hasMt" :offices="offices">
         <HeroSection :benefits="benefits" :has-mt="hasMt" />
+        <TentangSection />
         <AchievementSection :achievements="achievements" />
-        <LowonganSection :lowongan="lowongan" :departments="departments" :locations="locations" />
+        <TimSection />
         <MtSection :program-mt="programMt" />
         <LokasiSection :offices="offices" />
         <CtaSection />
@@ -23,8 +24,9 @@ import { Head } from '@inertiajs/vue3';
 import { computed, nextTick, onMounted, onUnmounted } from 'vue';
 import CareerLayout from './Layouts/CareerLayout.vue';
 import HeroSection from './sections/HeroSection.vue';
+import TentangSection from './sections/TentangSection.vue';
 import AchievementSection from './sections/AchievementSection.vue';
-import LowonganSection from './sections/LowonganSection.vue';
+import TimSection from './sections/TimSection.vue';
 import MtSection from './sections/MtSection.vue';
 import LokasiSection from './sections/LokasiSection.vue';
 import CtaSection from './sections/CtaSection.vue';
@@ -34,18 +36,12 @@ defineOptions({ layout: null });
 
 const props = defineProps({
     meta: { type: Object, default: () => ({}) },
-    departments: { type: Array, default: () => [] },
-    locations: { type: Array, default: () => [] },
-    lowongan: { type: Array, default: () => [] },
     programMt: { type: Array, default: () => [] },
     achievements: { type: Array, default: () => [] },
     offices: { type: Array, default: () => [] },
     benefits: { type: Array, default: () => [] },
 });
 
-const departments = computed(() => props.departments || []);
-const locations = computed(() => props.locations || []);
-const lowongan = computed(() => props.lowongan || []);
 const programMt = computed(() => props.programMt || []);
 const achievements = computed(() => props.achievements || []);
 const offices = computed(() => props.offices || []);

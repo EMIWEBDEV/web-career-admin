@@ -23,9 +23,9 @@
                 </p>
 
                 <div class="wc-hero2__actions">
-                    <button class="wc-hero2__btn wc-hero2__btn--primary" type="button" @click="goToSection('lowongan')">
+                    <Link class="wc-hero2__btn wc-hero2__btn--primary" href="/karir/lowongan">
                         <i class="bi bi-search"></i> Jelajahi Lowongan
-                    </button>
+                    </Link>
                     <button v-if="hasMt" class="wc-hero2__btn wc-hero2__btn--glass" type="button" @click="goToSection('mt')">
                         <i class="bi bi-stars"></i> Management Trainee
                     </button>
@@ -69,6 +69,7 @@
 </template>
 
 <script setup>
+import { Link } from '@inertiajs/vue3';
 import { goToSection } from '../careerData';
 
 defineProps({

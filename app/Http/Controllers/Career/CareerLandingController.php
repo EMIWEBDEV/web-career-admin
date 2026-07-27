@@ -33,6 +33,7 @@ class CareerLandingController extends Controller
     public function index(Request $request)
     {
         $lowongan = $this->visibleLowongan();
+        dd($lowongan);
         $programMt = $this->programMt();
 
         return Inertia::render('Career/LandingPage', [
@@ -151,28 +152,46 @@ class CareerLandingController extends Controller
         $mt = collect($this->programMt())->firstWhere('id', $id);
         if ($mt) {
             return [
-                'id' => $id, 'kategori' => 'MT', 'jenis' => 'MT',
-                'nama' => $mt['nama'], 'perusahaan' => $mt['perusahaan'] ?? 'EVO Group',
-                'batch' => $mt['batch'] ?? null, 'lokasi' => $mt['lokasi'] ?? '—',
-                'penempatan' => $mt['penempatan'] ?? null, 'durasi' => $mt['durasi'] ?? null,
-                'ikatan' => $mt['ikatan'] ?? null, 'tipeKegiatan' => $mt['tipeKegiatan'] ?? null,
-                'ringkasan' => $mt['ringkasan'] ?? null, 'deskripsi' => $mt['deskripsi'] ?? null,
-                'benefit' => $mt['benefit'] ?? [], 'kriteria' => $mt['kriteria'] ?? [],
-                'fasilitas' => $mt['fasilitas'] ?? [], 'tanggalPengumuman' => $mt['tanggalPengumuman'] ?? null,
-                'pipeline' => $mt['pipeline'] ?? [], 'jadwal' => $mt['jadwal'] ?? [],
+                'id' => $id,
+                'kategori' => 'MT',
+                'jenis' => 'MT',
+                'nama' => $mt['nama'],
+                'perusahaan' => $mt['perusahaan'] ?? 'EVO Group',
+                'batch' => $mt['batch'] ?? null,
+                'lokasi' => $mt['lokasi'] ?? '—',
+                'penempatan' => $mt['penempatan'] ?? null,
+                'durasi' => $mt['durasi'] ?? null,
+                'ikatan' => $mt['ikatan'] ?? null,
+                'tipeKegiatan' => $mt['tipeKegiatan'] ?? null,
+                'ringkasan' => $mt['ringkasan'] ?? null,
+                'deskripsi' => $mt['deskripsi'] ?? null,
+                'benefit' => $mt['benefit'] ?? [],
+                'kriteria' => $mt['kriteria'] ?? [],
+                'fasilitas' => $mt['fasilitas'] ?? [],
+                'tanggalPengumuman' => $mt['tanggalPengumuman'] ?? null,
+                'pipeline' => $mt['pipeline'] ?? [],
+                'jadwal' => $mt['jadwal'] ?? [],
             ];
         }
         $lo = collect($this->lowongan())->firstWhere('id', $id);
         if ($lo) {
             return [
-                'id' => $id, 'kategori' => 'REKRUTMEN', 'jenis' => 'REKRUTMEN',
-                'nama' => $lo['posisi'], 'perusahaan' => $lo['perusahaan'] ?? 'EVO Group',
-                'departemen' => $lo['departemen'] ?? null, 'level' => $lo['level'] ?? null,
+                'id' => $id,
+                'kategori' => 'REKRUTMEN',
+                'jenis' => 'REKRUTMEN',
+                'nama' => $lo['posisi'],
+                'perusahaan' => $lo['perusahaan'] ?? 'EVO Group',
+                'departemen' => $lo['departemen'] ?? null,
+                'level' => $lo['level'] ?? null,
                 'tipeKerja' => $lo['tipeKerja'] ?? null,
                 'lokasi' => trim(($lo['lokasi'] ?? '') . ' · ' . ($lo['tempatKerja'] ?? ''), ' ·'),
-                'ringkasan' => $lo['ringkasan'] ?? null, 'deskripsi' => $lo['deskripsi'] ?? null,
-                'benefit' => $lo['benefit'] ?? [], 'kriteria' => $lo['persyaratan'] ?? [],
-                'skill' => $lo['skill'] ?? [], 'pipeline' => $lo['pipeline'] ?? [], 'jadwal' => [],
+                'ringkasan' => $lo['ringkasan'] ?? null,
+                'deskripsi' => $lo['deskripsi'] ?? null,
+                'benefit' => $lo['benefit'] ?? [],
+                'kriteria' => $lo['persyaratan'] ?? [],
+                'skill' => $lo['skill'] ?? [],
+                'pipeline' => $lo['pipeline'] ?? [],
+                'jadwal' => [],
             ];
         }
         return null;
@@ -329,6 +348,24 @@ class CareerLandingController extends Controller
 
         return Inertia::render('Career/DetailMt', array_merge($this->layoutShared(), [
             'programMt' => $mt,
+        ]));
+    }
+
+    /** Daftar seluruh tim / fungsi perusahaan (konten masih statis di komponen Vue). */
+    public function semuaTim()
+    {
+        return Inertia::render('Career/SemuaTim', $this->layoutShared());
+    }
+
+    /**
+     * Halaman perkenalan tim / fungsi perusahaan (bukan lowongan).
+     * Konten masih ditulis langsung di komponen Vue, jadi controller hanya
+     * mengirim payload layout. Slug disiapkan untuk pembeda tim nantinya.
+     */
+    public function showTim(string $slug = 'it')
+    {
+        return Inertia::render('Career/DetailTim', array_merge($this->layoutShared(), [
+            'slug' => $slug,
         ]));
     }
 
@@ -573,8 +610,14 @@ class CareerLandingController extends Controller
                 ->leftJoin('N_WEB_CAREERS_Master_Workplace as mw', 'mw.Id_Workplace', '=', 'd.Workplace_Type')
                 ->leftJoin('N_WEB_CAREERS_Master_Experience_Level as mx', 'mx.Id_Experience_Level', '=', 'd.Experience_Level')
                 ->whereIn('d.No_Transaksi_MPP', $refs)
-                ->select('d.Id_Detail_MPP', 'd.No_Transaksi_MPP', 'd.Deskripsi',
-                    'me.Nama_Employment', 'mw.Nama_Workplace', 'mx.Nama_Experience_Level')
+                ->select(
+                    'd.Id_Detail_MPP',
+                    'd.No_Transaksi_MPP',
+                    'd.Deskripsi',
+                    'me.Nama_Employment',
+                    'mw.Nama_Workplace',
+                    'mx.Nama_Experience_Level'
+                )
                 ->get();
 
             $ids = $head->pluck('Id_Detail_MPP');
@@ -612,7 +655,7 @@ class CareerLandingController extends Controller
     /** Ubah agenda jadwal DB -> bentuk {label, tanggal} untuk kartu landing. */
     private function shapeJadwal($rows): array
     {
-        return collect($rows)->map(fn ($a) => [
+        return collect($rows)->map(fn($a) => [
             'label' => $a->Label,
             'jenis' => $a->Jenis,
             'tanggal' => $this->rentangTanggal($a->Tanggal_Mulai, $a->Tanggal_Selesai),
@@ -622,7 +665,7 @@ class CareerLandingController extends Controller
     /** Ubah tahap alur DB -> bentuk {label, tipe} untuk pipeline seleksi. */
     private function shapeTahapan($rows): array
     {
-        return collect($rows)->map(fn ($t) => [
+        return collect($rows)->map(fn($t) => [
             'label' => $t->Label,
             'tipe' => $t->Tipe_Tahap_Kode,
             'provider' => $t->Provider,
@@ -631,7 +674,7 @@ class CareerLandingController extends Controller
 
     private function rentangTanggal($mulai, $selesai): string
     {
-        $f = fn ($d) => $d ? \Illuminate\Support\Carbon::parse($d)->translatedFormat('d M Y') : null;
+        $f = fn($d) => $d ? \Illuminate\Support\Carbon::parse($d)->translatedFormat('d M Y') : null;
         $a = $f($mulai);
         $b = $f($selesai);
         if ($a && $b && $a !== $b) {
