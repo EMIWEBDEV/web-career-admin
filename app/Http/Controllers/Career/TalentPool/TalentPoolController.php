@@ -47,26 +47,40 @@ class TalentPoolController extends Controller
                 ->select('tp.*', 'u.Nama as Kandidat', 'u.Email as KandidatEmail')
                 ->get();
 
-            $data = $rows->map(fn ($r) => [
-                'id' => Hashids::encode($r->Id_Talent_Pool),
-                'kandidat' => $r->Kandidat ?: '—',
-                'email' => $r->KandidatEmail,
-                'posisi' => $r->Posisi ?: '—',
-                'program' => $r->Program_Nama ?: '—',
-                'tahapAsal' => $r->Tahap_Asal,
-                'skor' => $r->Skor !== null ? (float) $r->Skor : null,
-                'tag' => $r->Tag,
-                'catatan' => $r->Catatan,
-                'status' => $r->Status,
-                'createdBy' => $r->Created_By ?: 'Sistem',
-                'createdAt' => $r->Created_At,
-            ])->values();
+            $now = now();
+            $data = $rows->map(function ($r) use ($now) {
+                $exp = $r->Tanggal_Kedaluwarsa ? \Illuminate\Support\Carbon::parse($r->Tanggal_Kedaluwarsa) : null;
+                $habis = $exp ? $exp->isPast() : false;
+                // Status efektif: kartu AKTIF yang lewat tempo ditampilkan KEDALUWARSA
+                // walau scheduler belum jalan (aman untuk pembacaan real-time).
+                $status = ($r->Status === 'AKTIF' && $habis) ? 'KEDALUWARSA' : $r->Status;
+
+                return [
+                    'id' => Hashids::encode($r->Id_Talent_Pool),
+                    'kandidat' => $r->Kandidat ?: '—',
+                    'email' => $r->KandidatEmail,
+                    'posisi' => $r->Posisi ?: '—',
+                    'program' => $r->Program_Nama ?: '—',
+                    'tahapAsal' => $r->Tahap_Asal,
+                    'skor' => $r->Skor !== null ? (float) $r->Skor : null,
+                    'tag' => $r->Tag,
+                    'catatan' => $r->Catatan,
+                    'status' => $status,
+                    'tanggalKedaluwarsa' => $exp ? $exp->format('d M Y') : null,
+                    // Sisa hari: positif = masih berlaku, negatif = sudah lewat.
+                    'sisaHari' => $exp ? (int) $now->diffInDays($exp, false) : null,
+                    'kedaluwarsa' => $habis,
+                    'createdBy' => $r->Created_By ?: 'Sistem',
+                    'createdAt' => $r->Created_At,
+                ];
+            })->values();
 
             $ringkas = [
                 'total' => $data->count(),
                 'aktif' => $data->where('status', 'AKTIF')->count(),
                 'ditarik' => $data->where('status', 'DITARIK')->count(),
                 'arsip' => $data->where('status', 'ARSIP')->count(),
+                'kedaluwarsa' => $data->where('status', 'KEDALUWARSA')->count(),
             ];
 
             return ResponseHelper::success(['data' => $data, 'ringkas' => $ringkas], 'Data talent pool dimuat');
@@ -119,6 +133,36 @@ class TalentPoolController extends Controller
             Log::channel('web_career')->error("Gagal ubah talent pool #{$id}: " . $e->getMessage());
 
             return ResponseHelper::error('Gagal memperbarui data', 500);
+        }
+    }
+
+    /** Perpanjang masa berlaku: reset kedaluwarsa = sekarang + durasi master aktif. */
+    public function perpanjang($id)
+    {
+        try {
+            $realId = Hashids::decode($id)[0] ?? null;
+            if (! $realId) {
+                return ResponseHelper::error('Data tidak valid.', 422);
+            }
+            $now = now();
+            $terpengaruh = DB::table('N_WEB_CAREERS_Talent_Pool')->where('Id_Talent_Pool', $realId)->update([
+                'Status' => 'AKTIF',
+                'Tanggal_Kedaluwarsa' => \App\Support\Career\LamaranService::hitungKedaluwarsa($now),
+                'Updated_At' => $now,
+                'Updated_By' => session('career_auth.nama', 'ADMIN'),
+                'Updated_By_Id' => session('career_auth.id'),
+            ]);
+            if (! $terpengaruh) {
+                return ResponseHelper::error('Data tidak ditemukan', 404);
+            }
+
+            Log::channel('web_career')->info("Talent Pool #{$realId} diperpanjang");
+
+            return ResponseHelper::success(null, 'Masa berlaku diperpanjang');
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->error("Gagal perpanjang talent pool #{$id}: " . $e->getMessage());
+
+            return ResponseHelper::error('Gagal memperpanjang', 500);
         }
     }
 

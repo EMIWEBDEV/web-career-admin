@@ -545,9 +545,35 @@ class LamaranService
             'Tag' => null,
             'Catatan' => $catatan,
             'Status' => 'AKTIF',
+            // Masa berlaku dihitung dari Master Masa Talent Pool yang AKTIF (mis. 6 bulan).
+            'Tanggal_Masuk' => $now,
+            'Tanggal_Kedaluwarsa' => self::hitungKedaluwarsa($now),
             'Created_At' => $now, 'Created_By' => $nama, 'Created_By_Id' => $adminId,
             'Updated_At' => $now, 'Updated_By' => $nama, 'Updated_By_Id' => $adminId,
         ]);
+    }
+
+    /**
+     * Tanggal kedaluwarsa kartu Talent Pool = sekarang + durasi master AKTIF.
+     * Master data-driven (HARI/BULAN/TAHUN); fallback 6 bulan bila belum diset.
+     */
+    public static function hitungKedaluwarsa($now)
+    {
+        $dasar = $now instanceof \Carbon\CarbonInterface ? $now->copy() : \Illuminate\Support\Carbon::parse($now);
+
+        $masa = DB::table('N_WEB_CAREERS_Master_Masa_Talent_Pool')
+            ->where('Flag_Aktif', 'Y')
+            ->orderByDesc('Id_Master_Masa_Talent_Pool')
+            ->first();
+
+        $angka = (int) ($masa->Durasi_Angka ?? 6);
+        $satuan = strtoupper($masa->Durasi_Satuan ?? 'BULAN');
+
+        return match ($satuan) {
+            'HARI' => $dasar->addDays($angka),
+            'TAHUN' => $dasar->addYears($angka),
+            default => $dasar->addMonths($angka),
+        };
     }
 
     // ═══════════════════ MESIN KEPUTUSAN TAHAP (multi-tes) ═══════════════════

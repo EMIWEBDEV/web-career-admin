@@ -63,6 +63,7 @@ Route::prefix('api/v1/karir')
         // Talent Pool — data kartu + kelola status/tag/catatan.
         Route::get('/talent-pool', [TalentPoolController::class, 'list'])->name('talent-pool.list')->middleware('career.permission:talentPoolPage,VIEW');
         Route::patch('/talent-pool/{id}', [TalentPoolController::class, 'ubah'])->name('talent-pool.ubah')->middleware('career.permission:talentPoolPage,EDIT');
+        Route::patch('/talent-pool/{id}/perpanjang', [TalentPoolController::class, 'perpanjang'])->name('talent-pool.perpanjang')->middleware('career.permission:talentPoolPage,EDIT');
         Route::delete('/talent-pool/{id}', [TalentPoolController::class, 'destroy'])->name('talent-pool.destroy')->middleware('career.permission:talentPoolPage,DELETE');
 
         // CRUD master generik (master/simple, master/rich, master/akun, master/kemitraan)

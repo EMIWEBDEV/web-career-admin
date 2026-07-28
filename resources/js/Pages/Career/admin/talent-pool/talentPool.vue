@@ -18,6 +18,7 @@
             <div class="tp-stat tp-stat--total"><span class="tp-stat__n">{{ ringkas.total }}</span><span class="tp-stat__l">Total</span></div>
             <div class="tp-stat tp-stat--aktif"><span class="tp-stat__n">{{ ringkas.aktif }}</span><span class="tp-stat__l">Aktif</span></div>
             <div class="tp-stat tp-stat--ditarik"><span class="tp-stat__n">{{ ringkas.ditarik }}</span><span class="tp-stat__l">Ditarik</span></div>
+            <div class="tp-stat tp-stat--kedaluwarsa"><span class="tp-stat__n">{{ ringkas.kedaluwarsa }}</span><span class="tp-stat__l">Kadaluarsa</span></div>
             <div class="tp-stat tp-stat--arsip"><span class="tp-stat__n">{{ ringkas.arsip }}</span><span class="tp-stat__l">Arsip</span></div>
         </div>
 
@@ -51,6 +52,11 @@
                         <span v-if="k.tahapAsal"><i class="bi bi-signpost"></i> {{ k.tahapAsal }}</span>
                         <span v-if="k.skor !== null" class="tp-skor"><i class="bi bi-graph-up"></i> {{ k.skor }}</span>
                     </div>
+                    <div v-if="k.tanggalKedaluwarsa" class="tp-exp" :class="expClass(k)">
+                        <i class="bi bi-hourglass-split"></i>
+                        <span v-if="k.status === 'KEDALUWARSA'">Kadaluarsa {{ k.tanggalKedaluwarsa }}</span>
+                        <span v-else>Berlaku s/d {{ k.tanggalKedaluwarsa }}<template v-if="k.sisaHari !== null"> · {{ k.sisaHari }} hari lagi</template></span>
+                    </div>
                     <div v-if="k.tag" class="tp-tag"><i class="bi bi-tag-fill"></i> {{ k.tag }}</div>
                     <p v-if="k.catatan" class="tp-note">{{ k.catatan }}</p>
                 </div>
@@ -58,6 +64,7 @@
                 <div class="tp-card__foot">
                     <span class="tp-by"><i class="bi bi-clock"></i> {{ k.createdAt || '—' }}</span>
                     <div class="tp-act">
+                        <button v-if="k.status === 'KEDALUWARSA' || (k.sisaHari !== null && k.sisaHari <= 14)" class="tp-ibtn tp-ibtn--gold" title="Perpanjang masa berlaku" @click="perpanjang(k)"><i class="bi bi-arrow-clockwise"></i></button>
                         <button class="tp-ibtn" title="Kelola" @click="openEdit(k)"><i class="bi bi-sliders"></i></button>
                         <button class="tp-ibtn tp-ibtn--danger" title="Hapus" @click="askRemove(k)"><i class="bi bi-trash"></i></button>
                     </div>
@@ -106,7 +113,7 @@ export default {
     data() {
         return {
             list: [],
-            ringkas: { total: 0, aktif: 0, ditarik: 0, arsip: 0 },
+            ringkas: { total: 0, aktif: 0, ditarik: 0, arsip: 0, kedaluwarsa: 0 },
             loading: false,
             filters: { q: '', status: '' },
             cariTimer: null,
@@ -114,6 +121,7 @@ export default {
                 { value: '', label: 'Semua' },
                 { value: 'AKTIF', label: 'Aktif' },
                 { value: 'DITARIK', label: 'Ditarik' },
+                { value: 'KEDALUWARSA', label: 'Kadaluarsa' },
                 { value: 'ARSIP', label: 'Arsip' },
             ],
             show: false,
@@ -137,7 +145,23 @@ export default {
             const p = String(name).trim().split(/\s+/);
             return ((p[0]?.[0] || '') + (p[1]?.[0] || '')).toUpperCase() || '—';
         },
-        statusLabel(s) { return { AKTIF: 'Aktif', DITARIK: 'Ditarik', ARSIP: 'Arsip' }[s] || s; },
+        statusLabel(s) { return { AKTIF: 'Aktif', DITARIK: 'Ditarik', ARSIP: 'Arsip', KEDALUWARSA: 'Kadaluarsa' }[s] || s; },
+        /** Warna baris masa berlaku: merah bila lewat/≤7 hari, kuning ≤14, netral. */
+        expClass(k) {
+            if (k.status === 'KEDALUWARSA' || (k.sisaHari !== null && k.sisaHari < 0)) return 'is-habis';
+            if (k.sisaHari !== null && k.sisaHari <= 7) return 'is-kritis';
+            if (k.sisaHari !== null && k.sisaHari <= 14) return 'is-segera';
+            return '';
+        },
+        async perpanjang(k) {
+            try {
+                await axios.patch(`${API}/${k.id}/perpanjang`, {}, CFG);
+                this.notice('Masa berlaku diperpanjang.');
+                await this.load();
+            } catch (e) {
+                this.notice(e.response?.data?.message || 'Gagal memperpanjang.');
+            }
+        },
         async load() {
             this.loading = true;
             try {
@@ -208,8 +232,20 @@ export default {
 .tp-stat--total { border-top: 3px solid #6366f1; }
 .tp-stat--aktif { border-top: 3px solid #d97706; }
 .tp-stat--ditarik { border-top: 3px solid #0ea5e9; }
+.tp-stat--kedaluwarsa { border-top: 3px solid #ef4444; }
 .tp-stat--arsip { border-top: 3px solid #94a3b8; }
+.tp-stats { grid-template-columns: repeat(5, 1fr); }
 @media (max-width: 640px) { .tp-stats { grid-template-columns: repeat(2, 1fr); } }
+
+/* Baris masa berlaku pada kartu */
+.tp-exp { display: inline-flex; align-items: center; gap: .35rem; align-self: flex-start; font-size: 11px; font-weight: 700; color: #64748b; background: #f1f5f9; border-radius: 999px; padding: 2px 9px; }
+.tp-exp.is-segera { color: #b45309; background: rgba(234, 179, 8, .14); }
+.tp-exp.is-kritis { color: #c2410c; background: rgba(249, 115, 22, .16); }
+.tp-exp.is-habis { color: #dc2626; background: rgba(239, 68, 68, .14); }
+.tp-badge--kedaluwarsa { background: rgba(239, 68, 68, .14); color: #dc2626; }
+.tp-card.is-kedaluwarsa { border-top-color: #ef4444; opacity: .96; }
+.tp-ibtn--gold { color: #b45309; border-color: rgba(217, 119, 6, .4); }
+.tp-ibtn--gold:hover { background: #fff7ed; color: #92400e; border-color: #d97706; }
 
 /* Filter */
 .tp-filter { display: flex; gap: .7rem; align-items: center; flex-wrap: wrap; background: #fff; border: 1px solid rgba(15, 23, 42, .08); border-radius: 14px; padding: .7rem .8rem; margin-bottom: 1rem; box-shadow: 0 6px 18px rgba(15, 23, 42, .04); }

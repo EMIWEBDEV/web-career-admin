@@ -40,3 +40,4 @@ require base_path('routes/career/ProgramKegiatan/ProgramKegiatanApi.php');
 require base_path('routes/career/PembukaanProgram/PembukaanProgramWeb.php');
 require base_path('routes/career/Penjadwalan/PenjadwalanWeb.php');
 require base_path('routes/career/Penjadwalan/PenjadwalanApi.php');
+require base_path('routes/career/MasterMasaTalentPool/MasterMasaTalentPoolWeb.php');
