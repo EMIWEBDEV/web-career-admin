@@ -1056,7 +1056,15 @@ class LamaranController extends Controller
             ->get()
             ->groupBy('Lamaran_Tahap_Id');
 
-        $pelamar = $lamaran->map(function ($l) use ($tahapPer, $subPer) {
+        // Kuota MPP per posisi + kursi TERISI (LULUS) — untuk tombol sadar-kuota.
+        $posisiIds = $lamaran->pluck('Program_Posisi_Id')->filter()->unique()->all();
+        $kuotaPosisi = $posisiIds ? DB::table('N_WEB_CAREERS_Program_Posisi')->whereIn('Id_Program_Posisi', $posisiIds)->pluck('Kuota', 'Id_Program_Posisi') : collect();
+        $terisiKuota = $posisiIds
+            ? DB::table('N_WEB_CAREERS_Lamaran')->whereIn('Program_Posisi_Id', $posisiIds)->where('Status', 'LULUS')
+                ->select('Program_Posisi_Id', DB::raw('COUNT(*) as J'))->groupBy('Program_Posisi_Id')->pluck('J', 'Program_Posisi_Id')
+            : collect();
+
+        $pelamar = $lamaran->map(function ($l) use ($tahapPer, $subPer, $kuotaPosisi, $terisiKuota) {
             $tahapList = collect($tahapPer->get($l->Id_Lamaran, []));
 
             if ($l->Status === 'GUGUR') {
@@ -1079,6 +1087,15 @@ class LamaranController extends Controller
             $siap = $tAktif && ($tAktif->Siap_Diputus ?? 'N') === 'Y';
             $nungguSistem = $tAktif && $tAktif->Provider === 'THIRD_PARTY' && ! $siap;
             $butuhKeputusan = $tAktif && $tAktif->Status === 'BERJALAN' && ($siap || $tAktif->Provider !== 'THIRD_PARTY');
+
+            // Sadar-kuota: kursi terisi (LULUS) vs kuota MPP posisi. Loloskan hanya
+            // dibatasi bila kandidat berada di TAHAP TERAKHIR (LULUS = diterima).
+            $kuota = (int) ($kuotaPosisi[$l->Program_Posisi_Id] ?? 0);
+            $terisiK = (int) ($terisiKuota[$l->Program_Posisi_Id] ?? 0);
+            $sisaKuota = $kuota > 0 ? max(0, $kuota - $terisiK) : null;
+            $kuotaPenuh = $kuota > 0 && $terisiK >= $kuota;
+            $urutanAktif = (int) ($tAktif->Urutan ?? 0);
+            $diTahapAkhir = $urutanAktif > 0 && $urutanAktif >= (int) $l->Total_Tahap;
 
             if ($l->Status === 'GUGUR') {
                 $badge = ['tone' => 'gugur', 'teks' => 'Tidak Lolos'];
@@ -1109,6 +1126,12 @@ class LamaranController extends Controller
                 'kolomUrutan' => (int) ($tk->Urutan ?? $l->Urutan_Tahap),
                 'tahap' => $tk->Label ?? '—',
                 'urutan' => (int) ($tk->Urutan ?? $l->Urutan_Tahap),
+                // Info kuota (untuk tombol adaptif & indikator "sisa kursi").
+                'kuota' => $kuota,
+                'terisiKuota' => $terisiK,
+                'sisaKuota' => $sisaKuota,
+                'kuotaPenuh' => $kuotaPenuh,
+                'diTahapAkhir' => $diTahapAkhir,
                 'totalTahap' => (int) $l->Total_Tahap,
                 'badge' => $badge,
                 'butuhKeputusan' => (bool) $butuhKeputusan,

@@ -305,11 +305,19 @@
                         </div>
                     </div>
 
+                    <!-- Indikator kuota (muncul saat kandidat di tahap akhir & posisi berkuota) -->
+                    <div v-if="detailKandidat.butuhKeputusan && detailKandidat.diTahapAkhir && detailKandidat.kuota > 0" class="plw-kuota" :class="{ 'is-penuh': detailKandidat.kuotaPenuh }">
+                        <i class="bi" :class="detailKandidat.kuotaPenuh ? 'bi-lock-fill' : 'bi-people-fill'"></i>
+                        <span v-if="detailKandidat.kuotaPenuh">Kuota penuh ({{ detailKandidat.terisiKuota }}/{{ detailKandidat.kuota }}) — Loloskan dinonaktifkan. Gunakan Talent Pool / Tidak Lolos.</span>
+                        <span v-else>Sisa <b>{{ detailKandidat.sisaKuota }}</b> kursi dari {{ detailKandidat.kuota }} (terisi {{ detailKandidat.terisiKuota }}).</span>
+                    </div>
+
                     <!-- Aksi keputusan — 2 atau 3 tombol tergantung tahap. Tombol
                          "Masuk Talent Pool" hanya muncul bila tahap ini di-cut-off
-                         ke Talent Pool (diatur di Master Tahapan Seleksi). -->
-                    <div v-if="detailKandidat.butuhKeputusan" class="plw-actions" :class="{ 'is-three': bolehTalentPool(detailKandidat) }">
-                        <button type="button" class="plw-btn-lolos" @click="askPutus(detailKandidat, 'LULUS')">
+                         ke Talent Pool (diatur di Master Tahapan Seleksi). Loloskan
+                         disembunyikan bila kuota penuh di tahap terakhir. -->
+                    <div v-if="detailKandidat.butuhKeputusan" class="plw-actions" :class="{ 'is-three': bolehTalentPool(detailKandidat) && !kuotaBlokir(detailKandidat) }">
+                        <button v-if="!kuotaBlokir(detailKandidat)" type="button" class="plw-btn-lolos" @click="askPutus(detailKandidat, 'LULUS')">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M20 6L9 17l-5-5" /></svg>
                             Loloskan
                         </button>
@@ -504,6 +512,8 @@ export default {
             const col = (this.detail.kolom || []).find((k) => k.urutan === r.urutan);
             return !!(col && col.talentPool);
         },
+        /** Loloskan diblokir bila kuota penuh DAN kandidat di tahap terakhir. */
+        kuotaBlokir(r) { return !!(r && r.kuotaPenuh && r.diTahapAkhir); },
         ukuran(b) {
             if (!b) return '';
             return b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB';
@@ -908,6 +918,10 @@ export default {
 .plw-actions.is-three .plw-btn-lolos, .plw-actions.is-three .plw-btn-talent, .plw-actions.is-three .plw-btn-gugur { min-width: 130px; }
 .plw-tp-hint { display: flex; align-items: flex-start; gap: 8px; margin: 0 0 12px; padding: 10px 12px; border-radius: 10px; font-size: 12px; line-height: 1.55; color: #92400e; background: rgba(234, 179, 8, 0.1); border: 1px solid rgba(234, 179, 8, 0.28); }
 .plw-tp-hint .bi { color: #d97706; margin-top: 1px; flex: none; }
+/* Indikator kuota di area keputusan */
+.plw-kuota { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; padding: 9px 12px; border-radius: 10px; font-size: 12px; font-weight: 700; color: #3730a3; background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.25); }
+.plw-kuota.is-penuh { color: #b91c1c; background: rgba(239, 68, 68, 0.09); border-color: rgba(239, 68, 68, 0.28); }
+.plw-kuota .bi { flex: none; }
 
 /* ═══ LIGHTBOX ═══ */
 .plw-lb { position: fixed; inset: 0; z-index: 1090; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgba(10, 10, 20, 0.72); backdrop-filter: blur(6px); transition: opacity 0.28s; opacity: 0; pointer-events: none; }

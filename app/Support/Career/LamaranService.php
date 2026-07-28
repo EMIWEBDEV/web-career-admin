@@ -324,6 +324,30 @@ class LamaranService
             return ['ok' => false, 'pesan' => 'Tahap ini sudah diputus.'];
         }
 
+        // GERBANG KUOTA: LULUS di tahap TERAKHIR = kandidat DITERIMA → menempati
+        // kursi. Bila kuota MPP posisi sudah penuh, tolak — arahkan ke Tidak Lolos
+        // atau Masuk Talent Pool. Tahap antara (masih ada tahap berikut) tak dibatasi.
+        if ($hasil === 'LULUS') {
+            $adaBerikut = DB::table('N_WEB_CAREERS_Lamaran_Tahap')
+                ->where('Lamaran_Id', $tahap->Lamaran_Id)
+                ->where('Urutan', '>', $tahap->Urutan)
+                ->exists();
+            if (! $adaBerikut) {
+                $lam = DB::table('N_WEB_CAREERS_Lamaran')->where('Id_Lamaran', $tahap->Lamaran_Id)->first();
+                if ($lam && $lam->Program_Posisi_Id) {
+                    $kuota = (int) DB::table('N_WEB_CAREERS_Program_Posisi')->where('Id_Program_Posisi', $lam->Program_Posisi_Id)->value('Kuota');
+                    if ($kuota > 0) {
+                        $terisi = DB::table('N_WEB_CAREERS_Lamaran')
+                            ->where('Program_Posisi_Id', $lam->Program_Posisi_Id)
+                            ->where('Status', 'LULUS')->count();
+                        if ($terisi >= $kuota) {
+                            return ['ok' => false, 'pesan' => "Kuota posisi sudah penuh ({$terisi}/{$kuota}). Pilih \"Tidak Lolos\" atau \"Masuk Talent Pool\"."];
+                        }
+                    }
+                }
+            }
+        }
+
         $this->tetapkanTahap($lamaranTahapId, $hasil, $catatan, $adminId, now());
 
         $pesan = [
