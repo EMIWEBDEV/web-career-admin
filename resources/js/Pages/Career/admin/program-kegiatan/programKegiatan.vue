@@ -696,13 +696,37 @@
             Yakin ingin menghapus program <strong>{{ delTarget?.nama }}</strong>?
         </ConfirmModal>
 
+        <!-- GUARD INFO DIVISI — daftar divisi yang belum terisi + tombol isi langsung -->
+        <div v-if="guardDivisiShow" class="gid-overlay" @click.self="guardDivisiShow = false">
+            <div class="gid-modal">
+                <div class="gid-modal__head">
+                    <span class="gid-modal__ico"><i class="bi bi-exclamation-triangle-fill"></i></span>
+                    <div>
+                        <h3>Info Divisi Belum Lengkap</h3>
+                        <p>Lengkapi informasi divisi berikut dulu sebelum lanjut. Program yang sedang dibuat <b>tetap tersimpan</b> saat Anda mengisinya.</p>
+                    </div>
+                    <button type="button" class="gid-modal__x" @click="guardDivisiShow = false"><i class="bi bi-x-lg"></i></button>
+                </div>
+                <div class="gid-list">
+                    <div v-for="d in divisiBelum" :key="d.id" class="gid-item">
+                        <span class="gid-item__l"><i class="bi bi-diagram-3"></i> <b>{{ d.nama }}</b> <span class="gid-item__badge">0/0 belum diisi</span></span>
+                        <button type="button" class="gid-item__btn" @click="gotoInfoDivisi(d.id)"><i class="bi bi-pencil-square"></i> Isi Sekarang</button>
+                    </div>
+                </div>
+                <div class="gid-modal__foot">
+                    <button type="button" class="wca-btn wca-btn--ghost" @click="guardDivisiShow = false"><i class="bi bi-arrow-left"></i> Nanti Dulu</button>
+                    <button type="button" class="wca-btn wca-btn--primary" @click="gotoInfoDivisi(divisiBelum[0] && divisiBelum[0].id)"><i class="bi bi-box-arrow-up-right"></i> Buka Master Info Divisi</button>
+                </div>
+            </div>
+        </div>
+
         <transition name="wca-toast"><div v-if="toast" class="wca-toast"><i class="bi bi-check-circle-fill"></i> {{ toast }}</div></transition>
     </div>
 </template>
 
 <script>
 import axios from 'axios';
-import { Head } from '@inertiajs/vue3';
+import { Head, router } from '@inertiajs/vue3';
 import AdminModal from '@career/AdminModal.vue';
 import ConfirmModal from '@career/ConfirmModal.vue';
 import AuditStamp from '@career/AuditStamp.vue';
@@ -770,6 +794,9 @@ export default {
             delShow: false,
             delTarget: null,
             deleting: false,
+            // Guard Info Divisi: daftar divisi yang belum punya info + modal-nya.
+            divisiBelum: [],
+            guardDivisiShow: false,
             saving: false,
             toast: '',
             tm: null,
@@ -1047,6 +1074,15 @@ export default {
             this.show = false;
             this.clearDraft();
         },
+        /**
+         * Redirect ke Master Info Divisi untuk mengisi info divisi yang kurang.
+         * Draft "Buat Program" tetap di sessionStorage → begitu admin kembali ke
+         * halaman ini, modal terbuka lagi dengan isian utuh (lihat restoreDraft).
+         */
+        gotoInfoDivisi(id) {
+            this.saveDraft(); // pastikan tersimpan sebelum meninggalkan halaman
+            router.visit(id ? `/master-info-divisi?buka=${id}` : '/master-info-divisi');
+        },
         openCreate() {
             this.editingId = null;
             // Semua field sengaja KOSONG — mode & warna baru terisi dari preset
@@ -1077,7 +1113,10 @@ export default {
                         const res = await axios.post(`${API}/cek-info-divisi`, { mppRefs: refs }, CFG);
                         const belum = res.data?.result?.belumLengkap || [];
                         if (belum.length) {
-                            return this.notice(`Info Divisi belum terisi: ${belum.join(', ')}. Lengkapi dulu di menu Master Info Divisi, lalu kembali (draft program tetap tersimpan).`);
+                            // Tampilkan daftar divisi bermasalah + tombol redirect ke pengisian.
+                            this.divisiBelum = belum;
+                            this.guardDivisiShow = true;
+                            return;
                         }
                     } catch (e) { /* fail-open: jika cek gagal, jangan blokir admin */ }
                 }
@@ -1687,6 +1726,24 @@ export default {
     .pgk-syarat__id { grid-template-columns: 1fr auto; }
     .pgk-syarat__opt { grid-template-columns: 1fr; }
 }
+
+/* ── Guard Info Divisi ── */
+.gid-overlay { position: fixed; inset: 0; z-index: 3000; background: rgba(15, 23, 42, .5); display: grid; place-items: center; padding: 1rem; }
+.gid-modal { width: 100%; max-width: 520px; background: #fff; border-radius: 16px; overflow: hidden; box-shadow: 0 24px 60px rgba(15, 23, 42, .3); }
+.gid-modal__head { display: flex; gap: .8rem; align-items: flex-start; padding: 1.1rem 1.2rem .9rem; border-bottom: 1px solid rgba(15, 23, 42, .08); }
+.gid-modal__ico { flex: none; width: 2.4rem; height: 2.4rem; border-radius: 11px; display: grid; place-items: center; background: rgba(245, 158, 11, .14); color: #d97706; font-size: 18px; }
+.gid-modal__head h3 { margin: 0; font-size: 15.5px; font-weight: 800; color: #1e293b; }
+.gid-modal__head p { margin: .2rem 0 0; font-size: 12px; line-height: 1.55; color: #64748b; }
+.gid-modal__x { flex: none; border: none; background: transparent; color: #94a3b8; font-size: 15px; cursor: pointer; padding: 2px; }
+.gid-modal__x:hover { color: #64748b; }
+.gid-list { padding: .8rem 1.2rem; display: flex; flex-direction: column; gap: .5rem; max-height: 44vh; overflow-y: auto; }
+.gid-item { display: flex; align-items: center; justify-content: space-between; gap: .7rem; padding: .6rem .8rem; border: 1px solid rgba(15, 23, 42, .1); border-radius: 11px; background: #f8fafc; }
+.gid-item__l { display: inline-flex; align-items: center; gap: .45rem; font-size: 13px; color: #334155; min-width: 0; }
+.gid-item__l > i { color: #94a3b8; flex: none; }
+.gid-item__badge { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; color: #b91c1c; background: rgba(239, 68, 68, .12); border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
+.gid-item__btn { flex: none; display: inline-flex; align-items: center; gap: .35rem; border: none; background: linear-gradient(135deg, #6366f1, #4f46e5); color: #fff; font-size: 11.5px; font-weight: 700; border-radius: 9px; padding: 7px 12px; cursor: pointer; box-shadow: 0 6px 16px rgba(79, 70, 229, .25); }
+.gid-item__btn:hover { transform: translateY(-1px); }
+.gid-modal__foot { display: flex; align-items: center; justify-content: space-between; gap: .6rem; padding: .9rem 1.2rem; border-top: 1px solid rgba(15, 23, 42, .08); background: #fbfcfe; }
 </style>
 
 <!-- Konten el-popover & el-option di-teleport ke <body>, jadi butuh style TIDAK ber-scope. -->

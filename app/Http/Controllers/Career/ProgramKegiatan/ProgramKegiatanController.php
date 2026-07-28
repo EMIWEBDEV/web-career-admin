@@ -274,12 +274,17 @@ class ProgramKegiatanController extends Controller
 
             $belum = [];
             foreach ($divisi as $d) {
-                if (! isset($adaInfo[$d->Id_Divisi])) {
-                    $belum[] = $d->Nama ?: ('Divisi #' . $d->Id_Divisi);
+                if (! isset($adaInfo[$d->Id_Divisi]) && ! isset($belum[$d->Id_Divisi])) {
+                    // id = Hashids(ID_Divisi) agar cocok dengan baris Master Info Divisi
+                    // → tombol bisa deep-link membuka divisi yang tepat.
+                    $belum[$d->Id_Divisi] = [
+                        'nama' => $d->Nama ?: ('Divisi #' . $d->Id_Divisi),
+                        'id' => Hashids::encode($d->Id_Divisi),
+                    ];
                 }
             }
 
-            return ResponseHelper::success(['belumLengkap' => array_values(array_unique($belum))], 'Cek info divisi');
+            return ResponseHelper::success(['belumLengkap' => array_values($belum)], 'Cek info divisi');
         } catch (\Throwable $e) {
             Log::channel('web_career')->error('Gagal cek info divisi: ' . $e->getMessage());
 

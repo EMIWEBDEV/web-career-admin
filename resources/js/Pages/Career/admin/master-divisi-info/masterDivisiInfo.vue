@@ -393,8 +393,10 @@ export default {
             return this.list.filter((d) => (`${d.namaHris} ${d.label || ''}`).toLowerCase().includes(s));
         },
     },
-    mounted() {
-        this.load();
+    async mounted() {
+        await this.load();
+        // Deep-link dari Program Kegiatan: ?buka=<id> → langsung buka editor divisi.
+        this.bukaDariUrl();
     },
     methods: {
         async load() {
@@ -408,6 +410,15 @@ export default {
             } finally {
                 this.loading = false;
             }
+        },
+        /** Buka editor divisi otomatis bila datang dengan query ?buka=<id>. */
+        bukaDariUrl() {
+            try {
+                const id = new URLSearchParams(window.location.search).get('buka');
+                if (!id) return;
+                const row = this.list.find((d) => String(d.id) === String(id));
+                if (row) this.openKelola(row);
+            } catch (e) { /* abaikan — deep-link opsional */ }
         },
         async openKelola(row) {
             this.detail = { ...row, sub: [], img: {} };
