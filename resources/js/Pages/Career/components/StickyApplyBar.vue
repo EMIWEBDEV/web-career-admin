@@ -112,12 +112,12 @@ onUnmounted(() => {
     gap: 1.25rem;
     padding: 0.85rem 1.35rem;
     border-radius: 999px;
-    background: rgba(15, 23, 42, 0.88);
-    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid rgba(99, 102, 241, 0.22);
     backdrop-filter: blur(20px) saturate(1.4);
     -webkit-backdrop-filter: blur(20px) saturate(1.4);
-    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.2);
-    color: #ffffff;
+    box-shadow: 0 20px 50px rgba(99, 102, 241, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    color: #0f172a;
 }
 .wc-sticky-bar__info {
     display: flex;
@@ -128,8 +128,8 @@ onUnmounted(() => {
     width: 0.65rem;
     height: 0.65rem;
     border-radius: 50%;
-    background: #34d399;
-    box-shadow: 0 0 0 4px rgba(52, 211, 153, 0.25);
+    background: #10b981;
+    box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.22);
     flex: none;
     animation: wcPulseGlow 2s ease-in-out infinite;
 }
@@ -142,12 +142,12 @@ onUnmounted(() => {
     font-size: 0.88rem;
     font-weight: 800;
     line-height: 1.2;
-    color: #ffffff;
+    color: #0f172a;
 }
 .wc-sticky-bar__info small {
     display: block;
     font-size: 0.72rem;
-    color: rgba(255, 255, 255, 0.75);
+    color: #64748b;
     margin-top: 2px;
 }
 .wc-sticky-bar__actions {
@@ -172,20 +172,21 @@ onUnmounted(() => {
 .wc-sticky-bar__btn--primary {
     background: linear-gradient(135deg, #8b5cf6, #6366f1);
     color: #ffffff;
-    box-shadow: 0 8px 20px rgba(99, 102, 241, 0.35);
+    box-shadow: 0 8px 20px rgba(99, 102, 241, 0.32);
 }
 .wc-sticky-bar__btn--primary:hover {
     transform: translateY(-2px);
-    box-shadow: 0 12px 24px rgba(99, 102, 241, 0.45);
+    box-shadow: 0 12px 24px rgba(99, 102, 241, 0.42);
+    color: #ffffff;
 }
 .wc-sticky-bar__btn--accent {
-    background: rgba(255, 255, 255, 0.14);
-    border: 1px solid rgba(255, 255, 255, 0.25);
-    color: #c4b5fd;
+    background: rgba(99, 102, 241, 0.08);
+    border: 1px solid rgba(99, 102, 241, 0.22);
+    color: #4f46e5;
 }
 .wc-sticky-bar__btn--accent:hover {
-    background: rgba(255, 255, 255, 0.22);
-    color: #ffffff;
+    background: rgba(99, 102, 241, 0.15);
+    color: #4338ca;
 }
 
 /* Tombol tutup — jalan keluar bagi pengguna yang tidak membutuhkan ajakan ini. */
@@ -197,16 +198,16 @@ onUnmounted(() => {
     width: 1.85rem;
     height: 1.85rem;
     border-radius: 50%;
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    background: rgba(255, 255, 255, 0.08);
-    color: rgba(255, 255, 255, 0.7);
+    border: 1px solid rgba(226, 232, 240, 0.95);
+    background: rgba(100, 116, 139, 0.08);
+    color: #64748b;
     font-size: 0.66rem;
     cursor: pointer;
     transition: background 0.18s ease, color 0.18s ease;
 }
 .wc-sticky-bar__close:hover {
-    background: rgba(255, 255, 255, 0.2);
-    color: #ffffff;
+    background: rgba(99, 102, 241, 0.12);
+    color: #4f46e5;
 }
 
 /* Transition */
@@ -231,10 +232,11 @@ onUnmounted(() => {
         padding: 0.5rem 0.5rem 0.5rem 0.9rem;
         border-radius: 1.15rem;
         /* Blur berat mahal di ponsel — cukup dikurangi, latar dipekatkan. */
-        background: rgba(15, 23, 42, 0.94);
+        background: rgba(255, 255, 255, 0.96);
+        border: 1px solid rgba(99, 102, 241, 0.2);
         backdrop-filter: blur(10px);
         -webkit-backdrop-filter: blur(10px);
-        box-shadow: 0 10px 28px rgba(0, 0, 0, 0.3);
+        box-shadow: 0 10px 28px rgba(99, 102, 241, 0.12);
     }
     .wc-sticky-bar__info {
         gap: 0.55rem;
