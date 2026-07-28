@@ -576,6 +576,135 @@ class LamaranService
         };
     }
 
+    /**
+     * Tarik kandidat dari Talent Pool ke lowongan lain (BISA lintas MPP).
+     * Membuat lamaran baru di posisi tujuan mengikuti alur program tujuan; tahap
+     * sebelum $mulaiDariUrutan ditandai LULUS + bypass (fast-track). Kartu Talent
+     * Pool ditandai DITARIK beserta jejak tujuannya.
+     *
+     * @return array{ok:bool, pesan:string, lamaranId?:int}
+     */
+    public function tarikDariTalentPool(int $talentPoolId, int $posisiId, int $mulaiDariUrutan, ?int $adminId): array
+    {
+        $kartu = DB::table('N_WEB_CAREERS_Talent_Pool')->where('Id_Talent_Pool', $talentPoolId)->first();
+        if (! $kartu) {
+            return ['ok' => false, 'pesan' => 'Kartu Talent Pool tidak ditemukan.'];
+        }
+        if ($kartu->Status === 'DITARIK') {
+            return ['ok' => false, 'pesan' => 'Kandidat sudah pernah ditarik dari kartu ini.'];
+        }
+        if (! $kartu->Id_Users) {
+            return ['ok' => false, 'pesan' => 'Data kandidat tidak valid.'];
+        }
+
+        $posisi = DB::table('N_WEB_CAREERS_Program_Posisi')->where('Id_Program_Posisi', $posisiId)->first();
+        if (! $posisi) {
+            return ['ok' => false, 'pesan' => 'Posisi tujuan tidak ditemukan.'];
+        }
+        $program = DB::table('N_WEB_CAREERS_Program')->where('Id_Program', $posisi->Program_Id)->first();
+        if (! $program) {
+            return ['ok' => false, 'pesan' => 'Program tujuan tidak ditemukan.'];
+        }
+
+        // Cegah tarik ke posisi yang kandidatnya sudah punya lamaran aktif di sana.
+        $sudah = DB::table('N_WEB_CAREERS_Lamaran')
+            ->where('Id_Users', $kartu->Id_Users)
+            ->where('Program_Posisi_Id', $posisiId)
+            ->where('Status', '!=', 'GUGUR')
+            ->exists();
+        if ($sudah) {
+            return ['ok' => false, 'pesan' => 'Kandidat sudah punya lamaran aktif di posisi tujuan.'];
+        }
+
+        $alur = DB::table('N_WEB_CAREERS_Master_Alur')->where('Kode', $program->Alur_Kode)->first();
+        $tahap = $alur
+            ? DB::table('N_WEB_CAREERS_Master_Alur_Tahap')->where('Master_Alur_Id', $alur->Id_Master_Alur)->orderBy('Urutan')->get()
+            : collect();
+        if ($tahap->isEmpty()) {
+            return ['ok' => false, 'pesan' => 'Program tujuan belum memiliki alur/tahap seleksi.'];
+        }
+
+        // Normalisasi titik masuk ke urutan tahap yang valid.
+        $urutanValid = $tahap->pluck('Urutan')->map(fn ($u) => (int) $u)->all();
+        $mulai = in_array((int) $mulaiDariUrutan, $urutanValid, true) ? (int) $mulaiDariUrutan : min($urutanValid);
+
+        $pembukaan = DB::table('N_WEB_CAREERS_Pembukaan')
+            ->where('Program_Id', $program->Id_Program)->where('Status_Publish', 'TERBIT')
+            ->orderByDesc('Id_Pembukaan')->first();
+
+        $now = now();
+        $nama = session('career_auth.nama', 'ADMIN');
+        $kode = 'LMR-' . strtoupper(Str::random(8));
+
+        $lamaranId = DB::transaction(function () use ($kartu, $posisi, $program, $pembukaan, $alur, $tahap, $mulai, $kode, $now, $nama, $adminId, $talentPoolId) {
+            $id = DB::table('N_WEB_CAREERS_Lamaran')->insertGetId([
+                'Kode' => $kode,
+                'Id_Users' => $kartu->Id_Users,
+                'Kategori' => $program->Kategori,
+                'Program_Id' => $program->Id_Program,
+                'Program_Posisi_Id' => $posisi->Id_Program_Posisi,
+                'Mpp_Ref' => $posisi->Mpp_Ref ?? null,
+                'Pembukaan_Id' => $pembukaan->Id_Pembukaan ?? null,
+                'Program_Batch_Id' => $pembukaan->Program_Batch_Id ?? null,
+                'Master_Alur_Id' => $alur->Id_Master_Alur ?? null,
+                'Urutan_Tahap' => $mulai,
+                'Total_Tahap' => $tahap->count(),
+                'Status' => 'BERJALAN',
+                'Asal_Talent_Pool_Id' => $talentPoolId,
+                'Mulai_Dari_Urutan' => $mulai,
+                'Waktu_Lamar' => $now,
+                'Created_At' => $now, 'Created_By' => $nama, 'Created_By_Id' => $adminId,
+                'Updated_At' => $now, 'Updated_By' => $nama, 'Updated_By_Id' => $adminId,
+            ], 'Id_Lamaran');
+
+            foreach ($tahap->values() as $t) {
+                $bypass = (int) $t->Urutan < $mulai;
+                $isEntry = (int) $t->Urutan === $mulai;
+                $lamaranTahapId = DB::table('N_WEB_CAREERS_Lamaran_Tahap')->insertGetId([
+                    'Lamaran_Id' => $id,
+                    'Master_Alur_Tahap_Id' => $t->Id_Master_Alur_Tahap,
+                    'Urutan' => $t->Urutan,
+                    'Kode' => $t->Kode,
+                    'Label' => $t->Label,
+                    'Tipe_Tahap_Kode' => $t->Tipe_Tahap_Kode,
+                    'Provider' => $t->Provider,
+                    'Keputusan_Mode' => $t->Keputusan ?? null,
+                    'Formulir_Kode' => $t->Formulir_Kode,
+                    'Jenis_Tes_Kode' => $t->Jenis_Tes_Kode,
+                    'Status' => $bypass ? 'SELESAI' : ($isEntry ? 'BERJALAN' : 'MENUNGGU'),
+                    'Hasil' => $bypass ? 'LULUS' : null,
+                    'Catatan' => $bypass ? 'Dilewati — fast-track dari Talent Pool.' : null,
+                    'Waktu_Selesai' => $bypass ? $now : null,
+                    'Flag_Bypass' => $bypass ? 'Y' : 'T',
+                    'Mode_Pengumuman' => $t->Mode_Pengumuman ?? 'OTOMATIS',
+                    'Flag_Notifikasi' => $t->Flag_Notifikasi ?? 'Y',
+                    'Created_At' => $now, 'Created_By' => $nama, 'Created_By_Id' => $adminId,
+                    'Updated_At' => $now, 'Updated_By' => $nama, 'Updated_By_Id' => $adminId,
+                ], 'Id_Lamaran_Tahap');
+
+                // Sub-tes hanya dibekukan untuk tahap yang benar-benar dijalani.
+                if (! $bypass) {
+                    $this->snapshotSubTes($lamaranTahapId, $t->Id_Master_Alur_Tahap, $now, $nama, $adminId);
+                }
+            }
+
+            DB::table('N_WEB_CAREERS_Talent_Pool')->where('Id_Talent_Pool', $talentPoolId)->update([
+                'Status' => 'DITARIK',
+                'Ditarik_Ke_Lamaran_Id' => $id,
+                'Ditarik_Ke_Posisi_Id' => $posisi->Id_Program_Posisi,
+                'Ditarik_At' => $now,
+                'Ditarik_By_Id' => $adminId,
+                'Updated_At' => $now, 'Updated_By' => $nama, 'Updated_By_Id' => $adminId,
+            ]);
+
+            return $id;
+        });
+
+        Log::channel('web_career')->info("Talent Pool #{$talentPoolId} ditarik ke posisi #{$posisiId} (lamaran #{$lamaranId}) mulai tahap {$mulai}.");
+
+        return ['ok' => true, 'pesan' => 'Kandidat ditarik ke lowongan tujuan.', 'lamaranId' => $lamaranId];
+    }
+
     // ═══════════════════ MESIN KEPUTUSAN TAHAP (multi-tes) ═══════════════════
     // Satu tahap bisa punya banyak sub-tes. Cara tahap MENYIMPULKAN dibaca dari
     // Master_Mode_Keputusan (kolom perilaku), bukan hardcode. Untuk tahap 1-tes

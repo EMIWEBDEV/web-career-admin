@@ -21,6 +21,10 @@ use Vinkla\Hashids\Facades\Hashids;
  */
 class TalentPoolController extends Controller
 {
+    public function __construct(private \App\Support\Career\LamaranService $svc)
+    {
+    }
+
     /** Halaman Inertia (data di-fetch sendiri ke list()). */
     public function index()
     {
@@ -280,6 +284,122 @@ class TalentPoolController extends Controller
             Log::channel('web_career')->error("Gagal perpanjang talent pool #{$id}: " . $e->getMessage());
 
             return ResponseHelper::error('Gagal memperpanjang', 500);
+        }
+    }
+
+    /** Kata kunci signifikan dari nama posisi (untuk skor kecocokan rumpun). */
+    private function kataKunci(?string $s): array
+    {
+        $stop = ['dan', 'staff', 'senior', 'junior', 'officer', 'the', 'of', 'for'];
+
+        return collect(preg_split('/[^a-z0-9]+/i', strtolower((string) $s)))
+            ->filter(fn ($w) => strlen($w) >= 3 && ! in_array($w, $stop, true))
+            ->unique()->values()->all();
+    }
+
+    /** Daftar lowongan BUKA (lintas MPP) untuk menarik kandidat, diurut kecocokan. */
+    public function lowongan($id)
+    {
+        try {
+            $realId = Hashids::decode($id)[0] ?? null;
+            $kartu = DB::table('N_WEB_CAREERS_Talent_Pool')->where('Id_Talent_Pool', $realId)->first();
+            if (! $kartu) {
+                return ResponseHelper::error('Kartu tidak ditemukan', 404);
+            }
+            $asalMpp = $kartu->Program_Posisi_Id
+                ? DB::table('N_WEB_CAREERS_Program_Posisi')->where('Id_Program_Posisi', $kartu->Program_Posisi_Id)->value('Mpp_Ref')
+                : null;
+            $asal = $this->kataKunci($kartu->Posisi);
+
+            $rows = DB::table('N_WEB_CAREERS_Program_Posisi as x')
+                ->join('N_WEB_CAREERS_Program as p', 'p.Id_Program', '=', 'x.Program_Id')
+                ->where('p.Status', 'BERJALAN')
+                ->where('x.Status', 'BUKA')
+                ->when($kartu->Program_Posisi_Id, fn ($w) => $w->where('x.Id_Program_Posisi', '!=', $kartu->Program_Posisi_Id))
+                ->orderBy('p.Nama')
+                ->select('x.Id_Program_Posisi', 'x.Posisi', 'x.Departemen', 'x.Level', 'x.Kuota', 'x.Mpp_Ref', 'p.Nama as ProgramNama', 'p.Kategori')
+                ->get();
+
+            $data = $rows->map(function ($r) use ($asal, $asalMpp) {
+                $skor = count(array_intersect($asal, $this->kataKunci($r->Posisi)));
+
+                return [
+                    'posisiId' => Hashids::encode($r->Id_Program_Posisi),
+                    'posisi' => $r->Posisi,
+                    'departemen' => $r->Departemen ?: '—',
+                    'level' => $r->Level,
+                    'kuota' => (int) $r->Kuota,
+                    'program' => $r->ProgramNama,
+                    'kategori' => $r->Kategori,
+                    'lintasMpp' => ($r->Mpp_Ref ?? null) !== $asalMpp,
+                    'serumpun' => $skor > 0,
+                    'skorCocok' => $skor,
+                ];
+            })->sortByDesc('skorCocok')->values();
+
+            return ResponseHelper::success($data, 'Lowongan tujuan');
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->error('Gagal memuat lowongan tarik: ' . $e->getMessage());
+
+            return ResponseHelper::error('Gagal memuat lowongan', 500);
+        }
+    }
+
+    /** Tahap alur pada posisi tujuan — untuk memilih titik masuk (entry step). */
+    public function tahapLowongan($posisiId)
+    {
+        try {
+            $realId = Hashids::decode($posisiId)[0] ?? null;
+            $posisi = DB::table('N_WEB_CAREERS_Program_Posisi')->where('Id_Program_Posisi', $realId)->first();
+            if (! $posisi) {
+                return ResponseHelper::error('Posisi tidak ditemukan', 404);
+            }
+            $program = DB::table('N_WEB_CAREERS_Program')->where('Id_Program', $posisi->Program_Id)->first();
+            $alur = $program ? DB::table('N_WEB_CAREERS_Master_Alur')->where('Kode', $program->Alur_Kode)->first() : null;
+            $tahap = $alur
+                ? DB::table('N_WEB_CAREERS_Master_Alur_Tahap')->where('Master_Alur_Id', $alur->Id_Master_Alur)->orderBy('Urutan')->get()
+                : collect();
+
+            return ResponseHelper::success([
+                'program' => $program->Nama ?? null,
+                'tahap' => $tahap->map(fn ($t) => ['urutan' => (int) $t->Urutan, 'label' => $t->Label, 'tipe' => $t->Tipe_Tahap_Kode])->values(),
+            ], 'Tahap lowongan');
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->error('Gagal memuat tahap lowongan: ' . $e->getMessage());
+
+            return ResponseHelper::error('Gagal memuat tahap', 500);
+        }
+    }
+
+    /** Eksekusi tarik kandidat ke lowongan tujuan pada tahap terpilih. */
+    public function tarik(Request $request, $id)
+    {
+        try {
+            $realId = Hashids::decode($id)[0] ?? null;
+            if (! $realId) {
+                return ResponseHelper::error('Kartu tidak valid.', 422);
+            }
+            $data = $request->validate([
+                'posisiId' => 'required|string',
+                'mulaiDariUrutan' => 'required|integer|min:1',
+            ]);
+            $posisiRealId = Hashids::decode($data['posisiId'])[0] ?? null;
+            if (! $posisiRealId) {
+                return ResponseHelper::error('Posisi tujuan tidak valid.', 422);
+            }
+
+            $res = $this->svc->tarikDariTalentPool((int) $realId, (int) $posisiRealId, (int) $data['mulaiDariUrutan'], (int) session('career_auth.id'));
+            if (! $res['ok']) {
+                return ResponseHelper::error($res['pesan'], 422);
+            }
+
+            return ResponseHelper::success(null, $res['pesan']);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return ResponseHelper::error(collect($e->errors())->flatten()->first() ?? 'Data tidak valid', 422);
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->error("Gagal tarik talent pool #{$id}: " . $e->getMessage());
+
+            return ResponseHelper::error('Gagal menarik kandidat', 500);
         }
     }
 

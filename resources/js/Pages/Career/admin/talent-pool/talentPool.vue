@@ -94,6 +94,7 @@
                 <div class="tp-card__foot">
                     <span class="tp-by"><i class="bi bi-clock"></i> {{ k.createdAt || '—' }}</span>
                     <div class="tp-act">
+                        <button v-if="k.status === 'AKTIF' || k.status === 'KEDALUWARSA'" class="tp-tarikbtn" title="Tarik ke lowongan lain" @click="openTarik(k)"><i class="bi bi-box-arrow-in-right"></i> Tarik</button>
                         <button v-if="k.status === 'KEDALUWARSA' || (k.sisaHari !== null && k.sisaHari <= 14)" class="tp-ibtn tp-ibtn--gold" title="Perpanjang masa berlaku" @click="perpanjang(k)"><i class="bi bi-arrow-clockwise"></i></button>
                         <button class="tp-ibtn" title="Kelola" @click="openEdit(k)"><i class="bi bi-sliders"></i></button>
                         <button class="tp-ibtn tp-ibtn--danger" title="Hapus" @click="askRemove(k)"><i class="bi bi-trash"></i></button>
@@ -131,6 +132,43 @@
         <ConfirmModal :show="delShow" title="Hapus dari Talent Pool" :busy="deleting" confirm-label="Ya, Hapus" danger note="Kartu akan dihapus permanen dari kolam." @cancel="delShow = false" @confirm="confirmDelete">
             Hapus <strong>{{ delTarget?.kandidat }}</strong> dari Talent Pool?
         </ConfirmModal>
+
+        <!-- Tarik ke Lowongan: pilih posisi (lintas MPP) + titik masuk -->
+        <AdminModal :busy="tarikBusy" :show="tarikShow" title="Tarik ke Lowongan" :subtitle="tarikTarget ? `${tarikTarget.kandidat} — asal: ${tarikTarget.posisi}` : ''" icon="bi-box-arrow-in-right" lg save-label="Tarik Kandidat" @close="tarikShow = false" @save="konfirmTarik">
+            <div class="wca-fsection">
+                <div class="wca-fsection__label"><i class="bi bi-diagram-3"></i> 1. Pilih Lowongan Tujuan</div>
+                <el-input v-model="lowonganQ" placeholder="Cari posisi / program" clearable size="small" style="margin-bottom:.6rem">
+                    <template #prefix><i class="bi bi-search"></i></template>
+                </el-input>
+                <div v-loading="lowonganLoading" class="tkr-list">
+                    <button v-for="o in lowonganTampil" :key="o.posisiId" type="button" class="tkr-item" :class="{ 'is-on': pilihPosisi === o.posisiId }" @click="pilihLowongan(o)">
+                        <div class="tkr-item__main">
+                            <strong>{{ o.posisi }}</strong>
+                            <small>{{ o.program }} · {{ o.departemen }}</small>
+                        </div>
+                        <div class="tkr-item__tags">
+                            <span v-if="o.serumpun" class="tkr-tag is-match"><i class="bi bi-stars"></i> serumpun</span>
+                            <span v-if="o.lintasMpp" class="tkr-tag is-cross">lintas MPP</span>
+                            <i v-if="pilihPosisi === o.posisiId" class="bi bi-check-circle-fill tkr-check"></i>
+                        </div>
+                    </button>
+                    <div v-if="!lowonganLoading && !lowonganTampil.length" class="tkr-empty">Tidak ada lowongan BUKA yang cocok.</div>
+                </div>
+            </div>
+
+            <div v-if="pilihPosisi" class="wca-fsection">
+                <div class="wca-fsection__label"><i class="bi bi-signpost-split"></i> 2. Mulai dari Tahap</div>
+                <p class="tkr-hint"><i class="bi bi-info-circle"></i> Tahap sebelum pilihan Anda otomatis <b>dilewati (fast-track)</b>. Pilih "dari awal" untuk mengulang seluruh proses.</p>
+                <div v-loading="tahapLoading" class="tkr-steps">
+                    <label v-for="t in tahapList" :key="t.urutan" class="tkr-step" :class="{ 'is-on': mulaiUrutan === t.urutan }">
+                        <input type="radio" :value="t.urutan" v-model="mulaiUrutan">
+                        <span class="tkr-step__no">{{ t.urutan }}</span>
+                        <span class="tkr-step__label">{{ t.label }}</span>
+                        <span v-if="mulaiUrutan !== null && t.urutan < mulaiUrutan" class="tkr-step__skip">dilewati</span>
+                    </label>
+                </div>
+            </div>
+        </AdminModal>
 
         <transition name="wca-toast"><div v-if="toast" class="wca-toast"><i class="bi bi-check-circle-fill"></i> {{ toast }}</div></transition>
     </div>
@@ -178,6 +216,17 @@ export default {
             edit: null,
             form: { status: 'AKTIF', tag: '', catatan: '' },
             saving: false,
+            // Tarik ke lowongan
+            tarikShow: false,
+            tarikTarget: null,
+            lowongan: [],
+            lowonganLoading: false,
+            lowonganQ: '',
+            pilihPosisi: null,
+            tahapList: [],
+            tahapLoading: false,
+            mulaiUrutan: null,
+            tarikBusy: false,
             delShow: false,
             delTarget: null,
             deleting: false,
@@ -187,6 +236,11 @@ export default {
     },
     computed: {
         adaFilter() { return !!(this.filters.q || this.filters.status); },
+        lowonganTampil() {
+            const q = this.lowonganQ.trim().toLowerCase();
+            if (!q) return this.lowongan;
+            return this.lowongan.filter((o) => `${o.posisi} ${o.program} ${o.departemen}`.toLowerCase().includes(q));
+        },
     },
     mounted() { this.load(); },
     methods: {
@@ -210,6 +264,53 @@ export default {
                 await this.load();
             } catch (e) {
                 this.notice(e.response?.data?.message || 'Gagal memperpanjang.');
+            }
+        },
+        /* ── Tarik ke lowongan ── */
+        async openTarik(k) {
+            this.tarikTarget = k;
+            this.pilihPosisi = null;
+            this.tahapList = [];
+            this.mulaiUrutan = null;
+            this.lowonganQ = '';
+            this.lowongan = [];
+            this.tarikShow = true;
+            this.lowonganLoading = true;
+            try {
+                this.lowongan = (await axios.get(`${API}/${k.id}/lowongan`, CFG)).data.result || [];
+            } catch (e) {
+                this.notice('Gagal memuat lowongan.');
+            } finally {
+                this.lowonganLoading = false;
+            }
+        },
+        async pilihLowongan(o) {
+            this.pilihPosisi = o.posisiId;
+            this.mulaiUrutan = null;
+            this.tahapList = [];
+            this.tahapLoading = true;
+            try {
+                const r = (await axios.get(`${API}/lowongan/${o.posisiId}/tahap`, CFG)).data.result || {};
+                this.tahapList = r.tahap || [];
+                if (this.tahapList.length) this.mulaiUrutan = this.tahapList[0].urutan;
+            } catch (e) {
+                this.notice('Gagal memuat tahap lowongan.');
+            } finally {
+                this.tahapLoading = false;
+            }
+        },
+        async konfirmTarik() {
+            if (this.tarikBusy || !this.pilihPosisi || !this.mulaiUrutan) return;
+            this.tarikBusy = true;
+            try {
+                const res = await axios.post(`${API}/${this.tarikTarget.id}/tarik`, { posisiId: this.pilihPosisi, mulaiDariUrutan: this.mulaiUrutan }, CFG);
+                this.notice(res.data?.message || 'Kandidat ditarik.');
+                this.tarikShow = false;
+                await this.load();
+            } catch (e) {
+                this.notice(e.response?.data?.message || 'Gagal menarik kandidat.');
+            } finally {
+                this.tarikBusy = false;
             }
         },
         async load() {
@@ -357,6 +458,32 @@ export default {
 .tp-pager__info { font-size: 12.5px; font-weight: 700; color: #64748b; }
 .tp-ibtn--gold { color: #b45309; border-color: rgba(217, 119, 6, .4); }
 .tp-ibtn--gold:hover { background: #fff7ed; color: #92400e; border-color: #d97706; }
+.tp-tarikbtn { display: inline-flex; align-items: center; gap: .3rem; border: none; background: linear-gradient(135deg, #6366f1, #4f46e5); color: #fff; font-size: 11.5px; font-weight: 800; border-radius: 8px; padding: 6px 11px; cursor: pointer; box-shadow: 0 6px 16px rgba(79, 70, 229, .28); }
+.tp-tarikbtn:hover { transform: translateY(-1px); }
+
+/* Modal Tarik ke Lowongan */
+.tkr-list { max-height: 240px; overflow-y: auto; display: flex; flex-direction: column; gap: .4rem; }
+.tkr-item { display: flex; align-items: center; justify-content: space-between; gap: .6rem; text-align: left; border: 1px solid rgba(15, 23, 42, .1); background: #fff; border-radius: 11px; padding: .6rem .8rem; cursor: pointer; transition: all .14s; }
+.tkr-item:hover { border-color: rgba(99, 102, 241, .4); background: #f8fafc; }
+.tkr-item.is-on { border-color: #6366f1; background: #eef2ff; }
+.tkr-item__main { min-width: 0; display: flex; flex-direction: column; }
+.tkr-item__main strong { font-size: 13px; color: #1e293b; }
+.tkr-item__main small { font-size: 11px; color: #94a3b8; }
+.tkr-item__tags { display: inline-flex; align-items: center; gap: .4rem; flex: none; }
+.tkr-tag { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; border-radius: 999px; padding: 2px 8px; }
+.tkr-tag.is-match { color: #a16207; background: rgba(234, 179, 8, .16); }
+.tkr-tag.is-cross { color: #4338ca; background: rgba(79, 70, 229, .12); }
+.tkr-check { color: #4f46e5; font-size: 16px; }
+.tkr-empty { text-align: center; color: #94a3b8; font-size: 12.5px; padding: 1.5rem 0; }
+.tkr-hint { display: flex; align-items: flex-start; gap: .35rem; margin: 0 0 .6rem; font-size: 11.5px; line-height: 1.5; color: #64748b; }
+.tkr-hint > i { color: #6366f1; margin-top: 1px; }
+.tkr-steps { display: flex; flex-direction: column; gap: .35rem; }
+.tkr-step { display: flex; align-items: center; gap: .5rem; border: 1px solid rgba(15, 23, 42, .1); border-radius: 10px; padding: .5rem .7rem; cursor: pointer; }
+.tkr-step.is-on { border-color: #6366f1; background: #eef2ff; }
+.tkr-step input { accent-color: #4f46e5; }
+.tkr-step__no { width: 1.5rem; height: 1.5rem; border-radius: 50%; background: #e0e7ff; color: #4338ca; font-size: 11px; font-weight: 800; display: grid; place-items: center; flex: none; }
+.tkr-step__label { font-size: 12.5px; color: #1e293b; flex: 1; }
+.tkr-step__skip { font-size: 10px; font-weight: 700; color: #94a3b8; text-transform: uppercase; }
 
 /* Filter */
 .tp-filter { display: flex; gap: .7rem; align-items: center; flex-wrap: wrap; background: #fff; border: 1px solid rgba(15, 23, 42, .08); border-radius: 14px; padding: .7rem .8rem; margin-bottom: 1rem; box-shadow: 0 6px 18px rgba(15, 23, 42, .04); }

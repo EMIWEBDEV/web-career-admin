@@ -66,6 +66,10 @@ Route::prefix('api/v1/karir')
         Route::post('/talent-pool/bulk', [TalentPoolController::class, 'bulk'])->name('talent-pool.bulk')->middleware('career.permission:talentPoolPage,EDIT');
         Route::patch('/talent-pool/{id}', [TalentPoolController::class, 'ubah'])->name('talent-pool.ubah')->middleware('career.permission:talentPoolPage,EDIT');
         Route::patch('/talent-pool/{id}/perpanjang', [TalentPoolController::class, 'perpanjang'])->name('talent-pool.perpanjang')->middleware('career.permission:talentPoolPage,EDIT');
+        // Tarik ke lowongan (lintas MPP + pilih titik masuk).
+        Route::get('/talent-pool/{id}/lowongan', [TalentPoolController::class, 'lowongan'])->name('talent-pool.lowongan')->middleware('career.permission:talentPoolPage,VIEW');
+        Route::get('/talent-pool/lowongan/{posisiId}/tahap', [TalentPoolController::class, 'tahapLowongan'])->name('talent-pool.lowongan.tahap')->middleware('career.permission:talentPoolPage,VIEW');
+        Route::post('/talent-pool/{id}/tarik', [TalentPoolController::class, 'tarik'])->name('talent-pool.tarik')->middleware('career.permission:talentPoolPage,APPROVE');
         Route::delete('/talent-pool/{id}', [TalentPoolController::class, 'destroy'])->name('talent-pool.destroy')->middleware('career.permission:talentPoolPage,DELETE');
 
         // CRUD master generik (master/simple, master/rich, master/akun, master/kemitraan)
