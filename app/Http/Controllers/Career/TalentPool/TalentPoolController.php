@@ -38,12 +38,14 @@ class TalentPoolController extends Controller
             $q = trim((string) $request->query('q', ''));
             $status = strtoupper(trim((string) $request->query('status', '')));
             $tag = trim((string) $request->query('tag', ''));
+            $program = trim((string) $request->query('program', ''));
+            $divisi = trim((string) $request->query('divisi', ''));
             $sort = (string) $request->query('sort', 'terbaru');
             $page = max(1, (int) $request->query('page', 1));
             $perPage = min(60, max(6, (int) $request->query('perPage', 12)));
             $now = now();
 
-            // Query dasar (search + tag), dipakai ulang untuk ringkas & data.
+            // Query dasar (search + tag + program + divisi), dipakai ulang.
             $base = fn () => DB::table('N_WEB_CAREERS_Talent_Pool as tp')
                 ->leftJoin('N_WEB_CAREERS_Users as u', 'u.Id_Users', '=', 'tp.Id_Users')
                 ->when($q !== '', fn ($w) => $w->where(function ($x) use ($q) {
@@ -52,7 +54,13 @@ class TalentPoolController extends Controller
                         ->orWhere('tp.Program_Nama', 'like', "%{$q}%")
                         ->orWhere('tp.Tag', 'like', "%{$q}%");
                 }))
-                ->when($tag !== '', fn ($w) => $w->where('tp.Tag', 'like', "%{$tag}%"));
+                ->when($tag !== '', fn ($w) => $w->where('tp.Tag', 'like', "%{$tag}%"))
+                ->when($program !== '', fn ($w) => $w->where('tp.Program_Nama', $program))
+                ->when($divisi !== '', fn ($w) => $w->where('tp.Departemen', $divisi));
+
+            // Opsi dropdown (seluruh pool, bukan hasil filter) — program & divisi.
+            $opsiProgram = DB::table('N_WEB_CAREERS_Talent_Pool')->whereNotNull('Program_Nama')->where('Program_Nama', '!=', '')->distinct()->orderBy('Program_Nama')->pluck('Program_Nama')->values();
+            $opsiDivisi = DB::table('N_WEB_CAREERS_Talent_Pool')->whereNotNull('Departemen')->where('Departemen', '!=', '')->distinct()->orderBy('Departemen')->pluck('Departemen')->values();
 
             // Ringkasan atas set ter-search (TANPA filter status) — status efektif.
             $ringkas = [
@@ -84,6 +92,7 @@ class TalentPoolController extends Controller
             return ResponseHelper::success([
                 'data' => $rows->map(fn ($r) => $this->bentukKartu($r, $now))->values(),
                 'ringkas' => $ringkas,
+                'opsi' => ['program' => $opsiProgram, 'divisi' => $opsiDivisi],
                 'page' => $page,
                 'perPage' => $perPage,
                 'total' => $total,
@@ -121,6 +130,7 @@ class TalentPoolController extends Controller
             'email' => $r->KandidatEmail,
             'posisi' => $r->Posisi ?: '—',
             'program' => $r->Program_Nama ?: '—',
+            'departemen' => $r->Departemen ?: null,
             'tahapAsal' => $r->Tahap_Asal,
             'skor' => $r->Skor !== null ? (float) $r->Skor : null,
             'tag' => $r->Tag,

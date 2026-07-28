@@ -555,7 +555,7 @@ class LamaranService
             ->leftJoin('N_WEB_CAREERS_Program as p', 'p.Id_Program', '=', 'l.Program_Id')
             ->leftJoin('N_WEB_CAREERS_Program_Posisi as x', 'x.Id_Program_Posisi', '=', 'l.Program_Posisi_Id')
             ->where('l.Id_Lamaran', $tahap->Lamaran_Id)
-            ->select('l.Id_Lamaran', 'l.Id_Users', 'l.Program_Id', 'l.Program_Posisi_Id', 'p.Nama as ProgramNama', 'x.Posisi')
+            ->select('l.Id_Lamaran', 'l.Id_Users', 'l.Program_Id', 'l.Program_Posisi_Id', 'p.Nama as ProgramNama', 'x.Posisi', 'x.Departemen')
             ->first();
         if (! $lam) {
             return;
@@ -578,6 +578,7 @@ class LamaranService
             'Posisi' => $lam->Posisi,
             'Program_Nama' => $lam->ProgramNama,
             'Tahap_Asal' => $tahap->Label,
+            'Departemen' => $lam->Departemen ?? null,
             'Skor' => $tahap->Skor ?? null,
             'Tag' => null,
             'Catatan' => $catatan,
@@ -588,28 +589,6 @@ class LamaranService
             'Created_At' => $now, 'Created_By' => $nama, 'Created_By_Id' => $adminId,
             'Updated_At' => $now, 'Updated_By' => $nama, 'Updated_By_Id' => $adminId,
         ]);
-
-        // Notifikasi kandidat (best-effort — tak boleh menggagalkan keputusan).
-        $this->notifTalentPool($lam->Id_Users, 'MASUK', $lam->Posisi);
-    }
-
-    /** Kirim email notifikasi Talent Pool (best-effort, async, tak melempar). */
-    private function notifTalentPool(?int $userId, string $jenis, ?string $posisi = null, ?string $posisiTujuan = null): void
-    {
-        if (! $userId) {
-            return;
-        }
-        try {
-            $u = DB::table('N_WEB_CAREERS_Users')->where('Id_Users', $userId)->first();
-            if (! $u || empty($u->Email)) {
-                return;
-            }
-            \Illuminate\Support\Facades\Mail::to($u->Email)->queue(
-                new \App\Mail\Career\TalentPoolMail($u->Nama ?? 'Kandidat', $jenis, $posisi, $posisiTujuan)
-            );
-        } catch (\Throwable $e) {
-            Log::channel('web_career')->warning("Gagal antre email talent pool ({$jenis}) user #{$userId}: " . $e->getMessage());
-        }
     }
 
     /**
@@ -760,9 +739,6 @@ class LamaranService
         });
 
         Log::channel('web_career')->info("Talent Pool #{$talentPoolId} ditarik ke posisi #{$posisiId} (lamaran #{$lamaranId}) mulai tahap {$mulai}.");
-
-        // Notifikasi kandidat: ada kesempatan baru (best-effort).
-        $this->notifTalentPool($kartu->Id_Users, 'DITARIK', null, $posisi->Posisi);
 
         return ['ok' => true, 'pesan' => 'Kandidat ditarik ke lowongan tujuan.', 'lamaranId' => $lamaranId];
     }

@@ -83,69 +83,113 @@ class CareerShell
         return self::adalahAdmin() ? self::adminNav() : self::kandidatNav();
     }
 
-    /** Menu portal kandidat — hanya miliknya sendiri. */
+    /*
+    |===========================================================================
+    | ⛔ JANGAN MENAMBAH MENU DI BERKAS INI
+    |===========================================================================
+    | Menu TIDAK lagi ditulis sebagai array di sini. Sumbernya tabel
+    | N_WEB_CAREERS_Menu, dan cara menambahnya lewat halaman **Master Menu**
+    | (/master-menu) → lalu beri aksesnya di **Manajemen Hak Akses** (/hak-akses).
+    |
+    | KENAPA: berkas ini dulu jadi titik bentrok nomor satu. Setiap fitur baru
+    | menyisipkan satu baris di array yang sama, sehingga dua orang yang bekerja
+    | paralel hampir pasti menabrak baris yang sama saat merge — dan yang kalah
+    | merge kehilangan menunya diam-diam.
+    |
+    | Langkah menambah menu baru (tanpa menyentuh berkas ini sama sekali):
+    |   1. Master Menu → "Menu Baru": isi Kunci Halaman (mis. masterAnuPage),
+    |      nama, grup, URL, ikon, peran.
+    |   2. Manajemen Hak Akses → "Beri Akses": centang aksinya untuk pengguna.
+    |   3. Kunci route-nya:
+    |        ->middleware('career.permission:masterAnuPage,VIEW')
+    |
+    | Daftar DARURAT di bawah hanya dipakai bila tabel menu belum ada / kosong
+    | (mis. basis data baru). Isinya sengaja minimal — cukup untuk masuk dan
+    | membuka Master Menu, bukan salinan seluruh menu.
+    */
+
+    /** Menit cache daftar menu master. Pendek — perubahan menu harus cepat terasa. */
+    private const CACHE_MENU_MENIT = 5;
+
+    /**
+     * Susun menu dari tabel master (bukan array kode).
+     * Dikelompokkan per Nama_Header, urut mengikuti kolom Urutan.
+     */
+    private static function navDariMaster(string $role): array
+    {
+        try {
+            $rows = \Illuminate\Support\Facades\Cache::remember(
+                "wc_nav_master_{$role}",
+                now()->addMinutes(self::CACHE_MENU_MENIT),
+                fn () => \Illuminate\Support\Facades\DB::table('N_WEB_CAREERS_Menu')
+                    ->where('Untuk_Role', $role)
+                    ->where('Flag_Aktif', 'Y')
+                    ->orderBy('Urutan')
+                    ->get(['Jenis_Page', 'Nama_Menu', 'Nama_Header', 'Icon_Menu', 'Url_Menu', 'Urutan'])
+            );
+        } catch (\Throwable $e) {
+            return []; // tabel belum ada / DB bermasalah → pakai daftar darurat
+        }
+
+        $grup = [];
+        foreach ($rows as $r) {
+            $header = $r->Nama_Header ?: 'Menu';
+            $grup[$header] ??= [];
+            $grup[$header][] = [
+                'key' => $r->Jenis_Page,
+                'label' => $r->Nama_Menu,
+                'icon' => $r->Icon_Menu ?: 'bi bi-dot',
+                'url' => $r->Url_Menu ?: '#',
+            ];
+        }
+
+        return array_map(fn ($header, $items) => [
+            'id' => \Illuminate\Support\Str::slug($header),
+            'title' => $header,
+            'items' => $items,
+        ], array_keys($grup), $grup);
+    }
+
+    /** Buang cache menu master — dipanggil setiap Master Menu berubah. */
+    public static function lupakanNav(): void
+    {
+        foreach (['ADMIN', 'KANDIDAT'] as $r) {
+            \Illuminate\Support\Facades\Cache::forget("wc_nav_master_{$r}");
+        }
+    }
+
+    /** Menu portal kandidat — dari master; daftar darurat bila master kosong. */
     public static function kandidatNav(): array
     {
+        $dariMaster = self::navDariMaster('KANDIDAT');
+        if ($dariMaster) {
+            return $dariMaster;
+        }
+
         return [
             ['id' => 'lamaran', 'title' => 'Lamaran Saya', 'items' => [
-                ['key' => 'portal', 'label' => 'Lamaran Saya', 'icon' => 'bi bi-file-earmark-text', 'url' => '/kandidat/portal'],
-                ['key' => 'loker', 'label' => 'Cari Lowongan', 'icon' => 'bi bi-search', 'url' => '/karir/landing-page'],
-            ]],
-            ['id' => 'akun', 'title' => 'Akun', 'items' => [
-                ['key' => 'profil', 'label' => 'Profil Saya', 'icon' => 'bi bi-person-circle', 'url' => '/profil'],
+                ['key' => 'portalPage', 'label' => 'Lamaran Saya', 'icon' => 'bi bi-file-earmark-text', 'url' => '/kandidat/portal'],
             ]],
         ];
     }
 
-    /** Menu Web Career (admin) — dikelompokkan di sidebar. */
+    /**
+     * Menu admin — DARI TABEL MASTER (N_WEB_CAREERS_Menu), bukan array di sini.
+     * Lihat catatan besar di atas: jangan menambah menu di berkas ini.
+     */
     public static function adminNav(): array
     {
+        $dariMaster = self::navDariMaster('ADMIN');
+        if ($dariMaster) {
+            return $dariMaster;
+        }
+
+        // DARURAT — hanya saat tabel menu belum ada / kosong. Sengaja minimal:
+        // cukup untuk masuk lalu mendaftarkan menu lewat Master Menu.
         return [
-            ['id' => 'master', 'title' => 'Master Data', 'items' => [
-                ['key' => 'master-talent', 'label' => 'Master Talent Acquisition', 'icon' => 'bi bi-diagram-3', 'url' => '/master-talent'],
-                ['key' => 'master-perilaku', 'label' => 'Master Perilaku', 'icon' => 'bi bi-lightning-charge', 'url' => '/master-perilaku'],
-                ['key' => 'master-mode', 'label' => 'Master Mode Pelaksanaan', 'icon' => 'bi bi-toggles', 'url' => '/master-mode'],
-                ['key' => 'master-sumber', 'label' => 'Master Sumber Kandidat', 'icon' => 'bi bi-broadcast-pin', 'url' => '/master-sumber'],
-                ['key' => 'master-tipe', 'label' => 'Master Tipe Tahap', 'icon' => 'bi bi-diagram-2', 'url' => '/master-tipe'],
-                ['key' => 'master-formulir', 'label' => 'Master Formulir', 'icon' => 'bi bi-input-cursor-text', 'url' => '/master-formulir'],
-                ['key' => 'master-tes', 'label' => 'Master Jenis Tes', 'icon' => 'bi bi-ui-checks-grid', 'url' => '/master-tes'],
-                ['key' => 'master-kampus', 'label' => 'Master Kampus', 'icon' => 'bi bi-mortarboard', 'url' => '/master-kampus'],
-                ['key' => 'master-kemitraan', 'label' => 'Master Kemitraan / MoU', 'icon' => 'bi bi-file-earmark-medical', 'url' => '/master-kemitraan'],
-                ['key' => 'master-alur', 'label' => 'Master Tahapan Seleksi', 'icon' => 'bi bi-signpost-split', 'url' => '/master-alur'],
-                ['key' => 'master-mode-pengumuman', 'label' => 'Master Mode Pengumuman', 'icon' => 'bi bi-megaphone', 'url' => '/master-mode-pengumuman'],
-                ['key' => 'master-mode-keputusan', 'label' => 'Master Mode Keputusan', 'icon' => 'bi bi-diagram-3', 'url' => '/master-mode-keputusan'],
-                ['key' => 'master-klasifikasi', 'label' => 'Master Kategori', 'icon' => 'bi bi-tags', 'url' => '/master-kategori'],
-                ['key' => 'master-jadwal', 'label' => 'Master Jadwal Kegiatan', 'icon' => 'bi bi-calendar3-range', 'url' => '/master-jadwal'],
-                // [feat/feedback]
-                ['key' => 'master-feedback', 'label' => 'Master Feedback Form', 'icon' => 'bi bi-chat-dots', 'url' => '/karir/master-feedback'],
-                // [feat/landing-page] konten divisi/sub-divisi untuk landing page
-                ['key' => 'master-info-divisi', 'label' => 'Master Info Divisi', 'icon' => 'bi bi-diagram-3', 'url' => '/master-info-divisi'],
-            ]],
-            ['id' => 'program', 'title' => 'Operasional', 'items' => [
-                ['key' => 'program', 'label' => 'Program Kegiatan', 'icon' => 'bi bi-diagram-3-fill', 'url' => '/karir/program-kegiatan'],
-                ['key' => 'pembukaan', 'label' => 'Pembukaan Program', 'icon' => 'bi bi-megaphone', 'url' => '/karir/pembukaan'],
-                ['key' => 'monitoring-mpp', 'label' => 'Monitoring MPP', 'icon' => 'bi bi-clipboard-data', 'url' => '/karir/monitoring-mpp'],
-            ]],
-            ['id' => 'seleksi', 'title' => 'Seleksi', 'items' => [
-                ['key' => 'pelamar', 'label' => 'Worklist Pelamar', 'icon' => 'bi bi-kanban', 'url' => '/karir/pelamar'],
-                ['key' => 'talent-pool', 'label' => 'Talent Pool', 'icon' => 'bi bi-stars', 'url' => '/karir/talent-pool'],
-                ['key' => 'master-masa-talent-pool', 'label' => 'Masa Berlaku Talent Pool', 'icon' => 'bi bi-hourglass-split', 'url' => '/master-masa-talent-pool'],
-                ['key' => 'penjadwalan', 'label' => 'Penjadwalan Tes', 'icon' => 'bi bi-calendar-check', 'url' => '/karir/penjadwalan'],
-                ['key' => 'hasil', 'label' => 'Hasil Tes', 'icon' => 'bi bi-clipboard-data', 'url' => '/karir/hasil-tes'],
-                ['key' => 'pengumuman', 'label' => 'Pengumuman', 'icon' => 'bi bi-megaphone-fill', 'url' => '/karir/pengumuman'],
-            ]],
-            ['id' => 'data', 'title' => 'Data', 'items' => [
-                ['key' => 'kandidat', 'label' => 'Kandidat', 'icon' => 'bi bi-people', 'url' => '/karir/kandidat'],
-                // [feat/feedback]
-                ['key' => 'feedback-dashboard', 'label' => 'Feedback Dashboard', 'icon' => 'bi bi-graph-up', 'url' => '/karir/feedback-dashboard'],
-            ]],
             ['id' => 'hak-akses', 'title' => 'Hak Akses', 'items' => [
-                ['key' => 'master-menu', 'label' => 'Master Menu', 'icon' => 'bi bi-list-nested', 'url' => '/master-menu'],
-                ['key' => 'hak-akses', 'label' => 'Manajemen Hak Akses', 'icon' => 'bi bi-person-lock', 'url' => '/hak-akses'],
-                ['key' => 'klasifikasi-akses', 'label' => 'Akses Klasifikasi Akun', 'icon' => 'bi bi-shield-lock', 'url' => '/klasifikasi-akses'],
-            ]],
-            ['id' => 'pengaturan', 'title' => 'Pengaturan', 'items' => [
-                ['key' => 'master-akun', 'label' => 'Master Akun', 'icon' => 'bi bi-person-badge', 'url' => '/master-akun'],
+                ['key' => 'masterMenuPage', 'label' => 'Master Menu', 'icon' => 'bi bi-list-nested', 'url' => '/master-menu'],
+                ['key' => 'hakAksesPage', 'label' => 'Manajemen Hak Akses', 'icon' => 'bi bi-person-lock', 'url' => '/hak-akses'],
             ]],
         ];
     }

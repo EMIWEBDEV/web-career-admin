@@ -81,6 +81,11 @@
                         <label class="wca-field-lbl">{{ form.metode === 'CAT' ? 'Platform CAT' : 'Pelaksana / Penilai' }}</label>
                         <el-input v-model="form.pelaksana" :placeholder="form.metode === 'CAT' ? 'HCLearn' : 'Asesor Eksternal / Internal'" />
                     </div>
+                    <div>
+                        <label class="wca-field-lbl">Masa Berlaku Nilai (bulan)</label>
+                        <el-input-number v-model="form.masaBerlakuBulan" :min="0" :max="120" controls-position="right" style="width:100%" placeholder="mis. 6" />
+                        <small style="display:block;margin-top:.3rem;color:var(--muted);font-weight:600;font-size:.72rem">Dalam rentang ini, nilai tes lama <b>dipakai ulang</b> — kandidat tak perlu tes lagi. Kosong/0 = selalu tes baru.</small>
+                    </div>
                 </div>
             </div>
 
@@ -135,7 +140,7 @@ export default {
             loading: false,
             show: false,
             editingId: null,
-            form: { nama: '', kategori: '', metode: 'CAT', pelaksana: '', cat: true, paket: [] },
+            form: { nama: '', kategori: '', metode: 'CAT', pelaksana: '', cat: true, masaBerlakuBulan: null, paket: [] },
             delShow: false,
             delTarget: null,
             deleting: false,
@@ -161,7 +166,7 @@ export default {
         },
         openCreate() {
             this.editingId = null;
-            this.form = { nama: '', kategori: '', metode: 'CAT', pelaksana: '', cat: true, paket: [] };
+            this.form = { nama: '', kategori: '', metode: 'CAT', pelaksana: '', cat: true, masaBerlakuBulan: null, paket: [] };
             this.show = true;
         },
         openEdit(t) {
@@ -172,6 +177,7 @@ export default {
                 metode: t.metode || (t.cat ? 'CAT' : 'MANUAL'),
                 pelaksana: t.pelaksana || '',
                 cat: !!t.cat,
+                masaBerlakuBulan: t.masaBerlakuBulan ?? null,
                 paket: (t.paket || []).map((p) => ({ nama: p.nama, alat: [...(p.alat || [])], durasi: p.durasi ?? 0 })),
             };
             this.show = true;
@@ -191,6 +197,7 @@ export default {
                 metode: this.form.metode,
                 pelaksana: this.form.pelaksana,
                 cat: this.form.metode === 'CAT',
+                masaBerlakuBulan: this.form.masaBerlakuBulan ?? null,
                 paket: this.form.paket.map((p) => ({ nama: p.nama, alat: p.alat || [], durasi: p.durasi ?? 0 })),
             };
             try {

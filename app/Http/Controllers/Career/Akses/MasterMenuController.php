@@ -114,6 +114,7 @@ class MasterMenuController extends Controller
             ]);
 
             AksesService::lupakanSemua();
+            CareerShell::lupakanNav();
             Log::channel('web_career')->info("Master menu dibuat ({$data['jenisPage']}) oleh {$nama}");
 
             return ResponseHelper::success(null, 'Menu berhasil ditambahkan', 201);
@@ -150,6 +151,7 @@ class MasterMenuController extends Controller
             ]);
 
             AksesService::lupakanSemua();
+            CareerShell::lupakanNav();
 
             return ResponseHelper::success(null, 'Menu diperbarui');
         } catch (\Illuminate\Validation\ValidationException $e) {
@@ -175,6 +177,7 @@ class MasterMenuController extends Controller
             }
 
             AksesService::lupakanSemua();
+            CareerShell::lupakanNav();
 
             return ResponseHelper::success(null, 'Status diperbarui');
         } catch (\Throwable $e) {
@@ -245,6 +248,7 @@ class MasterMenuController extends Controller
             });
 
             AksesService::lupakanSemua();
+            CareerShell::lupakanNav();
 
             return ResponseHelper::success(null, 'Menu dihapus');
         } catch (\Throwable $e) {

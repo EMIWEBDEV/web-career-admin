@@ -43,6 +43,8 @@ class MasterTesController extends Controller
                     'metode' => $t->Metode,
                     'pelaksana' => $t->Pelaksana,
                     'cat' => $t->Flag_Cat === 'Y',
+                    // Masa berlaku nilai tes (bulan). Null/0 = selalu ambil tes baru.
+                    'masaBerlakuBulan' => $t->Masa_Berlaku_Bulan !== null ? (int) $t->Masa_Berlaku_Bulan : null,
                     'status' => $t->Flag_Aktif === 'Y' ? 'AKTIF' : 'NONAKTIF',
                     'createdBy' => $t->Pembuat ?: $t->Created_By,
                     'createdAt' => $t->Created_At,
@@ -70,6 +72,9 @@ class MasterTesController extends Controller
             'metode' => 'required|string|max:20',
             'pelaksana' => 'nullable|string|max:100',
             'cat' => 'nullable|boolean',
+            // Masa berlaku nilai (bulan): dalam rentang ini, hasil tes lama dipakai
+            // ulang (kandidat tak perlu tes lagi). Kosong/0 = tak pernah reuse.
+            'masaBerlakuBulan' => 'nullable|integer|min:0|max:120',
             'paket' => 'nullable|array',
             'paket.*.nama' => 'required|string|max:120',
             'paket.*.alat' => 'nullable|array',
@@ -110,6 +115,7 @@ class MasterTesController extends Controller
                     'Metode' => $data['metode'],
                     'Pelaksana' => $data['pelaksana'] ?? null,
                     'Flag_Cat' => ! empty($data['cat']) ? 'Y' : 'N',
+                    'Masa_Berlaku_Bulan' => $data['masaBerlakuBulan'] ?? null,
                     'Flag_Aktif' => 'Y',
                     'Created_At' => $now, 'Created_By' => $userName, 'Created_By_Id' => $userId,
                     'Updated_At' => $now, 'Updated_By' => $userName, 'Updated_By_Id' => $userId,
@@ -149,6 +155,7 @@ class MasterTesController extends Controller
                     'Metode' => $data['metode'],
                     'Pelaksana' => $data['pelaksana'] ?? null,
                     'Flag_Cat' => ! empty($data['cat']) ? 'Y' : 'N',
+                    'Masa_Berlaku_Bulan' => $data['masaBerlakuBulan'] ?? null,
                     'Updated_At' => now(), 'Updated_By' => $userName, 'Updated_By_Id' => $userId,
                 ]);
                 DB::table('N_WEB_CAREERS_Master_Jenis_Tes_Paket')->where('Master_Jenis_Tes_Id', $realId)->delete();

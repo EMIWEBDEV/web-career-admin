@@ -29,6 +29,12 @@
                     <template #prefix><i class="bi bi-search"></i></template>
                 </el-input>
             </div>
+            <el-select v-model="filters.program" placeholder="Semua program" clearable filterable size="default" style="width:190px" @change="reload">
+                <el-option v-for="p in opsi.program" :key="p" :label="p" :value="p" />
+            </el-select>
+            <el-select v-model="filters.divisi" placeholder="Semua divisi" clearable filterable size="default" style="width:180px" @change="reload">
+                <el-option v-for="d in opsi.divisi" :key="d" :label="d" :value="d" />
+            </el-select>
             <div class="tp-filter__seg">
                 <button v-for="s in statusOpsi" :key="s.value" type="button" class="tp-seg" :class="{ 'is-on': filters.status === s.value }" @click="setStatus(s.value)">{{ s.label }}</button>
             </div>
@@ -78,6 +84,7 @@
                 <div class="tp-card__body">
                     <div class="tp-line"><i class="bi bi-briefcase"></i> <span class="tp-ell">{{ k.posisi }}</span></div>
                     <div class="tp-line"><i class="bi bi-diagram-3"></i> <span class="tp-ell">{{ k.program }}</span></div>
+                    <div v-if="k.departemen" class="tp-line"><i class="bi bi-building"></i> <span class="tp-ell">{{ k.departemen }}</span></div>
                     <div class="tp-line tp-line--sub">
                         <span v-if="k.tahapAsal"><i class="bi bi-signpost"></i> {{ k.tahapAsal }}</span>
                         <span v-if="k.skor !== null" class="tp-skor"><i class="bi bi-graph-up"></i> {{ k.skor }}</span>
@@ -190,7 +197,8 @@ export default {
             list: [],
             ringkas: { total: 0, aktif: 0, ditarik: 0, arsip: 0, kedaluwarsa: 0 },
             loading: false,
-            filters: { q: '', status: '' },
+            filters: { q: '', status: '', program: '', divisi: '' },
+            opsi: { program: [], divisi: [] },
             sort: 'terbaru',
             sortOpsi: [
                 { value: 'terbaru', label: 'Terbaru' },
@@ -235,7 +243,7 @@ export default {
         };
     },
     computed: {
-        adaFilter() { return !!(this.filters.q || this.filters.status); },
+        adaFilter() { return !!(this.filters.q || this.filters.status || this.filters.program || this.filters.divisi); },
         lowonganTampil() {
             const q = this.lowonganQ.trim().toLowerCase();
             if (!q) return this.lowongan;
@@ -319,6 +327,8 @@ export default {
                 const params = {
                     q: this.filters.q || undefined,
                     status: this.filters.status || undefined,
+                    program: this.filters.program || undefined,
+                    divisi: this.filters.divisi || undefined,
                     sort: this.sort,
                     page: this.page,
                     perPage: this.perPage,
@@ -327,6 +337,7 @@ export default {
                 const r = res.data.result || {};
                 this.list = r.data || [];
                 this.ringkas = r.ringkas || { total: 0, aktif: 0, ditarik: 0, arsip: 0, kedaluwarsa: 0 };
+                this.opsi = r.opsi || { program: [], divisi: [] };
                 this.total = r.total || 0;
                 this.totalPage = r.totalPage || 1;
                 this.selected = [];
@@ -341,6 +352,7 @@ export default {
             this.cariTimer = setTimeout(() => { this.page = 1; this.load(); }, 400);
         },
         setStatus(v) { this.filters.status = v; this.page = 1; this.load(); },
+        reload() { this.page = 1; this.load(); },
         setSort(v) { this.sort = v; this.page = 1; this.load(); },
         gotoPage(n) { if (n < 1 || n > this.totalPage) return; this.page = n; this.load(); },
         /* ── Seleksi & aksi massal ── */

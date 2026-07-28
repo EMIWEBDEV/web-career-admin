@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(php -l app/Http/Controllers/Career/Lamaran/LamaranController.php)",
+      "Bash(php -l app/Jobs/Career/WcApplyFormJob.php)"
+    ]
+  }
+}
