@@ -34,9 +34,39 @@
             </div>
         </div>
 
+        <!-- Toolbar: pilih-semua, urutan, ekspor -->
+        <div class="tp-toolbar">
+            <label class="tp-checkall" v-if="list.length">
+                <el-checkbox :model-value="selected.length === list.length && list.length > 0" :indeterminate="selected.length > 0 && selected.length < list.length" @change="toggleAll" />
+                <span>{{ selected.length ? `${selected.length} dipilih` : 'Pilih semua' }}</span>
+            </label>
+            <div class="tp-toolbar__r">
+                <el-select :model-value="sort" size="small" style="width: 175px" @change="setSort">
+                    <template #prefix><i class="bi bi-sort-down"></i></template>
+                    <el-option v-for="s in sortOpsi" :key="s.value" :label="s.label" :value="s.value" />
+                </el-select>
+                <button type="button" class="tp-tbtn" @click="exportCsv"><i class="bi bi-download"></i> Ekspor CSV</button>
+            </div>
+        </div>
+
+        <!-- Bar aksi massal (muncul saat ada yang dipilih) -->
+        <transition name="wca-toast">
+            <div v-if="selected.length" class="tp-bulk">
+                <span><i class="bi bi-check2-square"></i> {{ selected.length }} kartu dipilih</span>
+                <div class="tp-bulk__act">
+                    <button type="button" @click="bulkAksi('PERPANJANG')"><i class="bi bi-arrow-clockwise"></i> Perpanjang</button>
+                    <button type="button" @click="bulkAksi('ARSIP')"><i class="bi bi-archive"></i> Arsipkan</button>
+                    <button type="button" @click="bulkAksi('AKTIF')"><i class="bi bi-stars"></i> Aktifkan</button>
+                    <button type="button" class="is-danger" @click="bulkAksi('HAPUS')"><i class="bi bi-trash"></i> Hapus</button>
+                    <button type="button" class="is-clear" @click="selected = []"><i class="bi bi-x-lg"></i></button>
+                </div>
+            </div>
+        </transition>
+
         <div v-loading="loading" class="tp-grid">
-            <div v-for="k in list" :key="k.id" class="tp-card" :class="'is-' + k.status.toLowerCase()">
+            <div v-for="k in list" :key="k.id" class="tp-card" :class="['is-' + k.status.toLowerCase(), { 'is-sel': isSel(k.id) }]">
                 <div class="tp-card__top">
+                    <el-checkbox class="tp-card__chk" :model-value="isSel(k.id)" @change="toggleSel(k.id)" @click.stop />
                     <span class="tp-card__av">{{ initials(k.kandidat) }}</span>
                     <div class="tp-card__id">
                         <strong class="tp-ell">{{ k.kandidat }}</strong>
@@ -71,6 +101,13 @@
                 </div>
             </div>
             <div v-if="!loading && !list.length" class="tp-empty"><i class="bi bi-stars"></i> {{ adaFilter ? 'Tidak ada kandidat yang cocok.' : 'Talent Pool masih kosong. Kandidat akan muncul di sini saat admin menekan “Masuk Talent Pool” di Worklist.' }}</div>
+        </div>
+
+        <!-- Paginasi -->
+        <div v-if="totalPage > 1" class="tp-pager">
+            <button type="button" class="tp-pager__btn" :disabled="page <= 1" @click="gotoPage(page - 1)"><i class="bi bi-chevron-left"></i></button>
+            <span class="tp-pager__info">Halaman {{ page }} / {{ totalPage }} · {{ total }} kartu</span>
+            <button type="button" class="tp-pager__btn" :disabled="page >= totalPage" @click="gotoPage(page + 1)"><i class="bi bi-chevron-right"></i></button>
         </div>
 
         <!-- Kelola kartu -->
@@ -116,6 +153,19 @@ export default {
             ringkas: { total: 0, aktif: 0, ditarik: 0, arsip: 0, kedaluwarsa: 0 },
             loading: false,
             filters: { q: '', status: '' },
+            sort: 'terbaru',
+            sortOpsi: [
+                { value: 'terbaru', label: 'Terbaru' },
+                { value: 'lama', label: 'Terlama' },
+                { value: 'skor', label: 'Skor tertinggi' },
+                { value: 'kedaluwarsa', label: 'Segera kadaluarsa' },
+                { value: 'nama', label: 'Nama A–Z' },
+            ],
+            page: 1,
+            perPage: 12,
+            total: 0,
+            totalPage: 1,
+            selected: [],
             cariTimer: null,
             statusOpsi: [
                 { value: '', label: 'Semua' },
@@ -165,11 +215,20 @@ export default {
         async load() {
             this.loading = true;
             try {
-                const params = { q: this.filters.q || undefined, status: this.filters.status || undefined };
+                const params = {
+                    q: this.filters.q || undefined,
+                    status: this.filters.status || undefined,
+                    sort: this.sort,
+                    page: this.page,
+                    perPage: this.perPage,
+                };
                 const res = await axios.get(API, { ...CFG, params });
                 const r = res.data.result || {};
                 this.list = r.data || [];
-                this.ringkas = r.ringkas || { total: 0, aktif: 0, ditarik: 0, arsip: 0 };
+                this.ringkas = r.ringkas || { total: 0, aktif: 0, ditarik: 0, arsip: 0, kedaluwarsa: 0 };
+                this.total = r.total || 0;
+                this.totalPage = r.totalPage || 1;
+                this.selected = [];
             } catch (e) {
                 this.notice('Gagal memuat talent pool.');
             } finally {
@@ -178,9 +237,37 @@ export default {
         },
         cariDebounce() {
             if (this.cariTimer) clearTimeout(this.cariTimer);
-            this.cariTimer = setTimeout(() => this.load(), 400);
+            this.cariTimer = setTimeout(() => { this.page = 1; this.load(); }, 400);
         },
-        setStatus(v) { this.filters.status = v; this.load(); },
+        setStatus(v) { this.filters.status = v; this.page = 1; this.load(); },
+        setSort(v) { this.sort = v; this.page = 1; this.load(); },
+        gotoPage(n) { if (n < 1 || n > this.totalPage) return; this.page = n; this.load(); },
+        /* ── Seleksi & aksi massal ── */
+        isSel(id) { return this.selected.includes(id); },
+        toggleSel(id) {
+            const i = this.selected.indexOf(id);
+            if (i >= 0) this.selected.splice(i, 1); else this.selected.push(id);
+        },
+        toggleAll() {
+            if (this.selected.length === this.list.length) this.selected = [];
+            else this.selected = this.list.map((k) => k.id);
+        },
+        async bulkAksi(aksi) {
+            if (!this.selected.length) return;
+            try {
+                const res = await axios.post(`${API}/bulk`, { ids: this.selected, aksi }, CFG);
+                this.notice(res.data?.message || 'Aksi massal selesai.');
+                await this.load();
+            } catch (e) {
+                this.notice(e.response?.data?.message || 'Gagal aksi massal.');
+            }
+        },
+        exportCsv() {
+            const p = new URLSearchParams();
+            if (this.filters.q) p.set('q', this.filters.q);
+            if (this.filters.status) p.set('status', this.filters.status);
+            window.open(`${API}/export?${p.toString()}`, '_blank');
+        },
         openEdit(k) {
             this.edit = k;
             this.form = { status: k.status, tag: k.tag || '', catatan: k.catatan || '' };
@@ -244,6 +331,30 @@ export default {
 .tp-exp.is-habis { color: #dc2626; background: rgba(239, 68, 68, .14); }
 .tp-badge--kedaluwarsa { background: rgba(239, 68, 68, .14); color: #dc2626; }
 .tp-card.is-kedaluwarsa { border-top-color: #ef4444; opacity: .96; }
+.tp-card.is-sel { outline: 2px solid #d97706; outline-offset: 1px; }
+.tp-card__chk { flex: none; }
+
+/* Toolbar & bulk */
+.tp-toolbar { display: flex; align-items: center; justify-content: space-between; gap: .8rem; margin-bottom: .8rem; flex-wrap: wrap; }
+.tp-checkall { display: inline-flex; align-items: center; gap: .5rem; font-size: 12.5px; font-weight: 700; color: #475569; }
+.tp-toolbar__r { display: inline-flex; align-items: center; gap: .5rem; }
+.tp-tbtn { display: inline-flex; align-items: center; gap: .35rem; border: 1px solid rgba(15, 23, 42, .12); background: #fff; color: #475569; font-size: 12px; font-weight: 700; border-radius: 9px; padding: 6px 12px; cursor: pointer; }
+.tp-tbtn:hover { background: #f8fafc; color: #d97706; border-color: rgba(217, 119, 6, .4); }
+.tp-bulk { display: flex; align-items: center; justify-content: space-between; gap: .8rem; background: linear-gradient(135deg, #fffbeb, #fff7ed); border: 1px solid rgba(217, 119, 6, .3); border-radius: 12px; padding: .6rem .9rem; margin-bottom: .8rem; flex-wrap: wrap; }
+.tp-bulk > span { font-size: 12.5px; font-weight: 800; color: #92400e; display: inline-flex; align-items: center; gap: .4rem; }
+.tp-bulk__act { display: inline-flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
+.tp-bulk__act button { display: inline-flex; align-items: center; gap: .3rem; border: 1px solid rgba(15, 23, 42, .12); background: #fff; color: #475569; font-size: 11.5px; font-weight: 700; border-radius: 8px; padding: 5px 10px; cursor: pointer; }
+.tp-bulk__act button:hover { background: #f8fafc; }
+.tp-bulk__act .is-danger { color: #dc2626; border-color: #fca5a5; }
+.tp-bulk__act .is-danger:hover { background: #fef2f2; }
+.tp-bulk__act .is-clear { color: #94a3b8; padding: 5px 8px; }
+
+/* Paginasi */
+.tp-pager { display: flex; align-items: center; justify-content: center; gap: .8rem; margin-top: 1.1rem; }
+.tp-pager__btn { width: 34px; height: 34px; border-radius: 9px; border: 1px solid rgba(15, 23, 42, .12); background: #fff; color: #475569; cursor: pointer; display: grid; place-items: center; }
+.tp-pager__btn:disabled { opacity: .4; cursor: not-allowed; }
+.tp-pager__btn:not(:disabled):hover { background: #f8fafc; color: #d97706; }
+.tp-pager__info { font-size: 12.5px; font-weight: 700; color: #64748b; }
 .tp-ibtn--gold { color: #b45309; border-color: rgba(217, 119, 6, .4); }
 .tp-ibtn--gold:hover { background: #fff7ed; color: #92400e; border-color: #d97706; }
 
