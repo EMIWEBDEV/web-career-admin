@@ -588,6 +588,28 @@ class LamaranService
             'Created_At' => $now, 'Created_By' => $nama, 'Created_By_Id' => $adminId,
             'Updated_At' => $now, 'Updated_By' => $nama, 'Updated_By_Id' => $adminId,
         ]);
+
+        // Notifikasi kandidat (best-effort — tak boleh menggagalkan keputusan).
+        $this->notifTalentPool($lam->Id_Users, 'MASUK', $lam->Posisi);
+    }
+
+    /** Kirim email notifikasi Talent Pool (best-effort, async, tak melempar). */
+    private function notifTalentPool(?int $userId, string $jenis, ?string $posisi = null, ?string $posisiTujuan = null): void
+    {
+        if (! $userId) {
+            return;
+        }
+        try {
+            $u = DB::table('N_WEB_CAREERS_Users')->where('Id_Users', $userId)->first();
+            if (! $u || empty($u->Email)) {
+                return;
+            }
+            \Illuminate\Support\Facades\Mail::to($u->Email)->queue(
+                new \App\Mail\Career\TalentPoolMail($u->Nama ?? 'Kandidat', $jenis, $posisi, $posisiTujuan)
+            );
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->warning("Gagal antre email talent pool ({$jenis}) user #{$userId}: " . $e->getMessage());
+        }
     }
 
     /**
@@ -738,6 +760,9 @@ class LamaranService
         });
 
         Log::channel('web_career')->info("Talent Pool #{$talentPoolId} ditarik ke posisi #{$posisiId} (lamaran #{$lamaranId}) mulai tahap {$mulai}.");
+
+        // Notifikasi kandidat: ada kesempatan baru (best-effort).
+        $this->notifTalentPool($kartu->Id_Users, 'DITARIK', null, $posisi->Posisi);
 
         return ['ok' => true, 'pesan' => 'Kandidat ditarik ke lowongan tujuan.', 'lamaranId' => $lamaranId];
     }
