@@ -284,6 +284,22 @@
                             <el-switch v-model="s.talentPool" />
                         </div>
 
+                        <!-- UPLOAD BERKAS HASIL — mis. MCU (PDF/JPG dari requester) atau
+                             hasil wawancara. Bisa diwajibkan atau opsional per tahap. -->
+                        <div class="alr-tp alr-up" :class="{ 'is-on': s.uploadHasil }">
+                            <div class="alr-tp__main">
+                                <span class="alr-tp__ico"><i class="bi bi-paperclip"></i></span>
+                                <div class="alr-tp__txt">
+                                    <b>Upload berkas hasil (PDF/JPG)</b>
+                                    <small>Aktifkan agar admin/requester mengunggah hasil di tahap ini (mis. MCU, hasil wawancara). <template v-if="s.uploadHasil">Centang <em>“wajib”</em> bila berkas harus ada sebelum Loloskan.</template></small>
+                                </div>
+                            </div>
+                            <div class="alr-up__ctl">
+                                <label v-if="s.uploadHasil" class="alr-up__wajib"><el-checkbox v-model="s.wajibUpload" /> wajib</label>
+                                <el-switch v-model="s.uploadHasil" />
+                            </div>
+                        </div>
+
                     </div>
                     <div class="wca-stagecard__actions">
                         <button class="wca-iconbtn" type="button" title="Naik" :disabled="i === 0" @click="moveStage(i, -1)"><i class="bi bi-chevron-up"></i></button>
@@ -535,11 +551,13 @@ export default {
                     jedaHari: s.jedaHari ?? null,
                     notifikasi: s.notifikasi !== false,
                     talentPool: s.talentPool === true,
+                    uploadHasil: s.uploadHasil === true,
+                    wajibUpload: s.wajibUpload === true,
                 })),
             };
             this.show = true;
         },
-        addStage() { this.form.stages.push({ label: '', tipe: '', mode: 'MANUAL_REVIEW', formulirId: null, tests: [], pengumuman: 'OTOMATIS', jedaHari: null, notifikasi: true, talentPool: false }); },
+        addStage() { this.form.stages.push({ label: '', tipe: '', mode: 'MANUAL_REVIEW', formulirId: null, tests: [], pengumuman: 'OTOMATIS', jedaHari: null, notifikasi: true, talentPool: false, uploadHasil: false, wajibUpload: false }); },
         removeStage(i) { this.form.stages.splice(i, 1); },
 
         // Label & ikon pil diambil dari master (fallback ke kode bila belum termuat).
@@ -591,6 +609,8 @@ export default {
                     jedaHari: this.modeButuhJeda(s.pengumuman) ? (s.jedaHari ?? null) : null,
                     notifikasi: s.notifikasi !== false,
                     talentPool: s.talentPool === true,
+                    uploadHasil: s.uploadHasil === true,
+                    wajibUpload: s.wajibUpload === true,
                 })),
             };
             try {
@@ -734,6 +754,12 @@ export default {
 .alr-tp__txt b { display: block; font-size: 12.5px; color: #1e293b; }
 .alr-tp__txt small { display: block; font-size: 11px; line-height: 1.5; color: #64748b; margin-top: .1rem; }
 .alr-tp__txt em { color: #b45309; font-style: normal; font-weight: 700; }
+/* Kartu upload hasil — nada biru saat aktif (beda dari talent pool yang kuning). */
+.alr-up.is-on { border-color: rgba(79, 70, 229, .45); background: linear-gradient(180deg, rgba(79, 70, 229, .07), rgba(99, 102, 241, .03)); }
+.alr-up .alr-tp__ico { background: #eef2ff; color: #4f46e5; border-color: rgba(79, 70, 229, .3); }
+.alr-up.is-on .alr-tp__ico { background: #c7d2fe; color: #3730a3; }
+.alr-up__ctl { display: inline-flex; align-items: center; gap: .7rem; flex: none; }
+.alr-up__wajib { display: inline-flex; align-items: center; gap: .3rem; font-size: 11.5px; font-weight: 700; color: #4338ca; white-space: nowrap; }
 @media (max-width: 560px) {
     .wca-frow { grid-template-columns: 1fr; }
 }

@@ -1031,6 +1031,9 @@ class LamaranController extends Controller
                     // Cut-off Talent Pool aktif untuk tahap ini? Dipakai worklist
                     // memunculkan tombol "Masuk Talent Pool" sesuai urutan tahap.
                     'talentPool' => ($t->Flag_Talent_Pool ?? 'T') === 'Y',
+                    // Upload berkas hasil (MCU/Interview) — aktif & wajib/tidak.
+                    'uploadHasil' => ($t->Flag_Upload_Hasil ?? 'T') === 'Y' || $t->Tipe_Tahap_Kode === 'MCU',
+                    'wajibUpload' => ($t->Flag_Wajib_Upload ?? 'T') === 'Y',
                 ])->all()
             : [];
 
@@ -1064,7 +1067,14 @@ class LamaranController extends Controller
                 ->select('Program_Posisi_Id', DB::raw('COUNT(*) as J'))->groupBy('Program_Posisi_Id')->pluck('J', 'Program_Posisi_Id')
             : collect();
 
-        $pelamar = $lamaran->map(function ($l) use ($tahapPer, $subPer, $kuotaPosisi, $terisiKuota) {
+        // Jumlah berkas hasil (MCU/Interview) per tahap — untuk gate wajib-upload.
+        $tahapIdsAll = $tahapPer->flatten(1)->pluck('Id_Lamaran_Tahap')->all();
+        $berkasCount = $tahapIdsAll
+            ? DB::table('N_WEB_CAREERS_Lamaran_Tahap_Berkas')->whereIn('Lamaran_Tahap_Id', $tahapIdsAll)
+                ->select('Lamaran_Tahap_Id', DB::raw('COUNT(*) as J'))->groupBy('Lamaran_Tahap_Id')->pluck('J', 'Lamaran_Tahap_Id')
+            : collect();
+
+        $pelamar = $lamaran->map(function ($l) use ($tahapPer, $subPer, $kuotaPosisi, $terisiKuota, $berkasCount) {
             $tahapList = collect($tahapPer->get($l->Id_Lamaran, []));
 
             if ($l->Status === 'GUGUR') {
@@ -1132,6 +1142,8 @@ class LamaranController extends Controller
                 'sisaKuota' => $sisaKuota,
                 'kuotaPenuh' => $kuotaPenuh,
                 'diTahapAkhir' => $diTahapAkhir,
+                // Berkas hasil pada tahap aktif (untuk unggah/preview + gate wajib).
+                'jmlBerkas' => (int) ($tAktif ? ($berkasCount[$tAktif->Id_Lamaran_Tahap] ?? 0) : 0),
                 'totalTahap' => (int) $l->Total_Tahap,
                 'badge' => $badge,
                 'butuhKeputusan' => (bool) $butuhKeputusan,
@@ -1195,6 +1207,109 @@ class LamaranController extends Controller
 
             return ResponseHelper::error('Gagal memproses keputusan.', 500);
         }
+    }
+
+    /** Upload berkas hasil tahap (MCU/Interview) — PDF/JPG, oleh admin/requester. */
+    public function unggahBerkasTahap(Request $request, string $id)
+    {
+        $realId = Hashids::decode($id)[0] ?? null;
+        if (! $realId) {
+            return ResponseHelper::error('Tahap tidak valid.', 422);
+        }
+        $tahap = DB::table('N_WEB_CAREERS_Lamaran_Tahap')->where('Id_Lamaran_Tahap', $realId)->first();
+        if (! $tahap) {
+            return ResponseHelper::error('Tahap tidak ditemukan.', 404);
+        }
+
+        $request->validate(['file' => 'required|file|mimes:pdf,jpg,jpeg|max:2048']);
+
+        $lam = DB::table('N_WEB_CAREERS_Lamaran as l')
+            ->leftJoin('N_WEB_CAREERS_Users as u', 'u.Id_Users', '=', 'l.Id_Users')
+            ->where('l.Id_Lamaran', $tahap->Lamaran_Id)->select('l.Id_Lamaran', 'u.Nama')->first();
+
+        $gcs = app(GcsBerkas::class);
+        $now = now();
+        $file = $request->file('file');
+        $ext = $file->getClientOriginalExtension();
+        $konten = $file->get();
+
+        try {
+            $gcs->validasi($file->getClientOriginalName(), $ext, strlen($konten));
+            $folder = $gcs->folderKandidat($now->format('Y'), $now->format('m'), $now->format('d'), ($lam->Nama ?? 'kandidat') . '-hasil-tahap');
+            $label = 'hasil-' . strtolower($tahap->Tipe_Tahap_Kode ?? 'tahap') . '-' . \Illuminate\Support\Str::lower(\Illuminate\Support\Str::random(6));
+            $path = $gcs->unggah($folder, $label, $ext, $konten);
+        } catch (\Throwable $e) {
+            return ResponseHelper::error($e->getMessage(), 422);
+        }
+
+        DB::table('N_WEB_CAREERS_Lamaran_Tahap_Berkas')->insert([
+            'Lamaran_Tahap_Id' => $realId,
+            'Lamaran_Id' => $tahap->Lamaran_Id,
+            'Jenis' => $tahap->Tipe_Tahap_Kode,
+            'Nama_File' => $file->getClientOriginalName(),
+            'Path_File' => $path,
+            'Mime' => $file->getClientMimeType(),
+            'Ukuran' => strlen($konten),
+            'Ext' => $gcs->normalkanExt($ext),
+            'Created_At' => $now, 'Created_By' => session('career_auth.nama', 'ADMIN'), 'Created_By_Id' => session('career_auth.id'),
+            'Updated_At' => $now,
+        ]);
+
+        Log::channel('web_career')->info("Berkas hasil tahap #{$realId} diunggah ({$file->getClientOriginalName()}).");
+
+        return ResponseHelper::success(null, 'Berkas terunggah.');
+    }
+
+    /** Daftar berkas hasil sebuah tahap. */
+    public function berkasTahap(string $id)
+    {
+        $realId = Hashids::decode($id)[0] ?? null;
+        $rows = DB::table('N_WEB_CAREERS_Lamaran_Tahap_Berkas')->where('Lamaran_Tahap_Id', $realId)->orderByDesc('Id_Lamaran_Tahap_Berkas')->get();
+
+        return ResponseHelper::success($rows->map(fn ($b) => [
+            'id' => Hashids::encode($b->Id_Lamaran_Tahap_Berkas),
+            'nama' => $b->Nama_File,
+            'ext' => $b->Ext,
+            'ukuran' => (int) $b->Ukuran,
+            'url' => route('career.api.lamaran.tahap.berkas.file', Hashids::encode($b->Id_Lamaran_Tahap_Berkas)),
+            'createdAt' => $b->Created_At,
+        ])->values(), 'Berkas tahap');
+    }
+
+    /** Serve berkas hasil tahap (signed URL GCS 15 menit). */
+    public function berkasTahapFile(string $id)
+    {
+        $realId = Hashids::decode($id)[0] ?? null;
+        $b = DB::table('N_WEB_CAREERS_Lamaran_Tahap_Berkas')->where('Id_Lamaran_Tahap_Berkas', $realId)->first();
+        if (! $b) {
+            abort(404);
+        }
+        try {
+            $gcs = Storage::disk(GcsBerkas::DISK);
+            if ($gcs->exists($b->Path_File)) {
+                return redirect()->away($gcs->temporaryUrl($b->Path_File, now()->addMinutes(15)));
+            }
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->warning('Signed URL berkas tahap gagal: ' . $e->getMessage());
+        }
+        abort(404, 'File tidak ditemukan.');
+    }
+
+    /** Hapus berkas hasil tahap. */
+    public function hapusBerkasTahap(string $id)
+    {
+        $realId = Hashids::decode($id)[0] ?? null;
+        $b = DB::table('N_WEB_CAREERS_Lamaran_Tahap_Berkas')->where('Id_Lamaran_Tahap_Berkas', $realId)->first();
+        if (! $b) {
+            return ResponseHelper::error('Tidak ditemukan', 404);
+        }
+        try {
+            app(GcsBerkas::class)->hapus([$b->Path_File]);
+        } catch (\Throwable $e) {
+        }
+        DB::table('N_WEB_CAREERS_Lamaran_Tahap_Berkas')->where('Id_Lamaran_Tahap_Berkas', $realId)->delete();
+
+        return ResponseHelper::success(null, 'Berkas dihapus.');
     }
 
     /**

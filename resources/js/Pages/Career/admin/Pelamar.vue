@@ -305,6 +305,30 @@
                         </div>
                     </div>
 
+                    <!-- Upload berkas hasil (MCU/Interview) — PDF/JPG oleh admin/requester -->
+                    <div v-if="detailKandidat.butuhKeputusan && bolehUpload(detailKandidat)" class="plw-upload">
+                        <div class="plw-upload__head">
+                            <span><i class="bi bi-paperclip"></i> Berkas Hasil
+                                <small v-if="wajibUpload(detailKandidat)" class="plw-req">wajib</small>
+                                <small v-else class="plw-opt">opsional</small>
+                            </span>
+                            <label class="plw-upbtn" :class="{ 'is-busy': berkasBusy }">
+                                <i class="bi bi-upload"></i> {{ berkasBusy ? 'Mengunggah…' : 'Unggah PDF/JPG' }}
+                                <input type="file" accept=".pdf,.jpg,.jpeg" hidden :disabled="berkasBusy" @change="unggahBerkas">
+                            </label>
+                        </div>
+                        <div v-if="berkasHasil.length" class="plw-files">
+                            <div v-for="b in berkasHasil" :key="b.id" class="plw-file">
+                                <i class="bi" :class="b.ext === 'pdf' ? 'bi-file-earmark-pdf' : 'bi-file-earmark-image'"></i>
+                                <button type="button" class="plw-file__name" @click="previewBerkas(b)">{{ b.nama }}</button>
+                                <button type="button" class="plw-file__del" title="Hapus" @click="hapusBerkas(b)"><i class="bi bi-x-lg"></i></button>
+                            </div>
+                        </div>
+                        <div v-else class="plw-files__empty">
+                            Belum ada berkas. <template v-if="wajibUpload(detailKandidat)"><b>Wajib</b> diunggah sebelum Loloskan.</template>
+                        </div>
+                    </div>
+
                     <!-- Indikator kuota (muncul saat kandidat di tahap akhir & posisi berkuota) -->
                     <div v-if="detailKandidat.butuhKeputusan && detailKandidat.diTahapAkhir && detailKandidat.kuota > 0" class="plw-kuota" :class="{ 'is-penuh': detailKandidat.kuotaPenuh }">
                         <i class="bi" :class="detailKandidat.kuotaPenuh ? 'bi-lock-fill' : 'bi-people-fill'"></i>
@@ -317,7 +341,7 @@
                          ke Talent Pool (diatur di Master Tahapan Seleksi). Loloskan
                          disembunyikan bila kuota penuh di tahap terakhir. -->
                     <div v-if="detailKandidat.butuhKeputusan" class="plw-actions" :class="{ 'is-three': bolehTalentPool(detailKandidat) && !kuotaBlokir(detailKandidat) }">
-                        <button v-if="!kuotaBlokir(detailKandidat)" type="button" class="plw-btn-lolos" @click="askPutus(detailKandidat, 'LULUS')">
+                        <button v-if="!kuotaBlokir(detailKandidat)" type="button" class="plw-btn-lolos" :disabled="uploadKurang(detailKandidat)" :title="uploadKurang(detailKandidat) ? 'Unggah berkas hasil dulu' : ''" @click="askPutus(detailKandidat, 'LULUS')">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M20 6L9 17l-5-5" /></svg>
                             Loloskan
                         </button>
@@ -449,6 +473,8 @@ export default {
             detailKandidat: null,
             profil: { lamaran: null, formulir: [] },
             loadingProfil: false,
+            berkasHasil: [],
+            berkasBusy: false,
             openForm: 0,
             lightbox: null,
             lbSrc: '',
@@ -573,6 +599,7 @@ export default {
             this.detailKandidat = r;
             this.openForm = 0;
             this.profil = { lamaran: null, formulir: [] };
+            this.berkasHasil = [];
             this.loadingProfil = true;
             try {
                 const res = await axios.get(`/api/v1/karir/lamaran/berkas/${r.id}`, CFG);
@@ -582,8 +609,60 @@ export default {
             } finally {
                 this.loadingProfil = false;
             }
+            if (this.bolehUpload(r) && r.tahapId) this.loadBerkas(r.tahapId);
         },
-        tutupKandidat() { this.detailKandidat = null; this.lightbox = null; },
+        tutupKandidat() { this.detailKandidat = null; this.lightbox = null; this.berkasHasil = []; },
+        /* ── Berkas hasil tahap (MCU/Interview) ── */
+        bolehUpload(r) {
+            if (!r || !r.butuhKeputusan) return false;
+            const col = (this.detail.kolom || []).find((k) => k.urutan === r.urutan);
+            return !!(col && col.uploadHasil);
+        },
+        wajibUpload(r) {
+            const col = (this.detail.kolom || []).find((k) => k.urutan === (r && r.urutan));
+            return !!(col && col.wajibUpload);
+        },
+        /** Loloskan tertahan bila upload wajib tapi belum ada berkas. */
+        uploadKurang(r) { return this.bolehUpload(r) && this.wajibUpload(r) && this.berkasHasil.length === 0; },
+        async loadBerkas(tahapId) {
+            try {
+                this.berkasHasil = (await axios.get(`/api/v1/karir/lamaran/tahap/${tahapId}/berkas`, CFG)).data.result || [];
+            } catch (e) { this.berkasHasil = []; }
+        },
+        async unggahBerkas(ev) {
+            const file = ev.target.files?.[0];
+            ev.target.value = '';
+            if (!file || !this.detailKandidat?.tahapId) return;
+            const fd = new FormData();
+            fd.append('file', file);
+            this.berkasBusy = true;
+            try {
+                await axios.post(`/api/v1/karir/lamaran/tahap/${this.detailKandidat.tahapId}/berkas`, fd, { headers: { Accept: 'application/json', 'Content-Type': 'multipart/form-data' } });
+                this.notice('Berkas terunggah.');
+                await this.loadBerkas(this.detailKandidat.tahapId);
+            } catch (e) {
+                this.notice(e.response?.data?.message || 'Gagal mengunggah.', true);
+            } finally {
+                this.berkasBusy = false;
+            }
+        },
+        async hapusBerkas(b) {
+            try {
+                await axios.delete(`/api/v1/karir/lamaran/tahap/berkas/${b.id}`, CFG);
+                this.notice('Berkas dihapus.');
+                await this.loadBerkas(this.detailKandidat.tahapId);
+            } catch (e) {
+                this.notice(e.response?.data?.message || 'Gagal menghapus.', true);
+            }
+        },
+        previewBerkas(b) {
+            if (b.ext === 'jpg' || b.ext === 'jpeg') {
+                this.lightbox = { nama: b.nama, field: 'hasil', status: '' };
+                this.lbSrc = b.url; this.lbLoading = true; this.lbError = false;
+            } else {
+                window.open(b.url, '_blank');
+            }
+        },
         bukaDok(b) {
             if (b.isImage) {
                 this.lightbox = b;
@@ -922,6 +1001,23 @@ export default {
 .plw-kuota { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; padding: 9px 12px; border-radius: 10px; font-size: 12px; font-weight: 700; color: #3730a3; background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.25); }
 .plw-kuota.is-penuh { color: #b91c1c; background: rgba(239, 68, 68, 0.09); border-color: rgba(239, 68, 68, 0.28); }
 .plw-kuota .bi { flex: none; }
+/* Upload berkas hasil (MCU/Interview) */
+.plw-upload { margin-bottom: 12px; padding: 11px 13px; border-radius: 12px; border: 1px solid rgba(15, 23, 42, 0.1); background: #f8fafc; }
+.plw-upload__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.plw-upload__head > span { font-size: 12.5px; font-weight: 800; color: #334155; display: inline-flex; align-items: center; gap: 6px; }
+.plw-req { font-size: 9.5px; font-weight: 800; text-transform: uppercase; color: #b91c1c; background: rgba(239, 68, 68, 0.12); border-radius: 999px; padding: 2px 7px; }
+.plw-opt { font-size: 9.5px; font-weight: 800; text-transform: uppercase; color: #64748b; background: #eef0f7; border-radius: 999px; padding: 2px 7px; }
+.plw-upbtn { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 700; color: #4f46e5; background: #eef2ff; border: 1px solid rgba(79, 70, 229, 0.25); border-radius: 8px; padding: 6px 11px; cursor: pointer; }
+.plw-upbtn.is-busy { opacity: 0.6; pointer-events: none; }
+.plw-files { display: flex; flex-direction: column; gap: 5px; margin-top: 9px; }
+.plw-file { display: flex; align-items: center; gap: 8px; background: #fff; border: 1px solid rgba(15, 23, 42, 0.08); border-radius: 8px; padding: 6px 9px; }
+.plw-file > .bi { color: #ef4444; font-size: 15px; flex: none; }
+.plw-file__name { flex: 1; text-align: left; border: none; background: none; cursor: pointer; font-size: 12px; color: #334155; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plw-file__name:hover { color: #4f46e5; text-decoration: underline; }
+.plw-file__del { border: none; background: none; color: #94a3b8; cursor: pointer; padding: 2px; }
+.plw-file__del:hover { color: #dc2626; }
+.plw-files__empty { margin-top: 8px; font-size: 11.5px; color: #94a3b8; }
+.plw-btn-lolos:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
 
 /* ═══ LIGHTBOX ═══ */
 .plw-lb { position: fixed; inset: 0; z-index: 1090; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgba(10, 10, 20, 0.72); backdrop-filter: blur(6px); transition: opacity 0.28s; opacity: 0; pointer-events: none; }

@@ -90,6 +90,9 @@ class MasterAlurController extends Controller
                         // Cut-off Talent Pool: bila 'Y', kandidat yang TIDAK lolos di tahap
                         // ini boleh dialihkan admin ke Talent Pool (bukan sekadar gugur).
                         'talentPool' => ($t->Flag_Talent_Pool ?? 'T') === 'Y',
+                        // Upload berkas hasil tahap (MCU/Interview) — aktif & wajib/tidak.
+                        'uploadHasil' => ($t->Flag_Upload_Hasil ?? 'T') === 'Y',
+                        'wajibUpload' => ($t->Flag_Wajib_Upload ?? 'T') === 'Y',
                     ])->values(),
                 ];
             })->values();
@@ -146,6 +149,9 @@ class MasterAlurController extends Controller
             'stages.*.notifikasi' => 'nullable|boolean',
             // Cut-off Talent Pool per tahap (fleksibel: bisa di tahap mana pun).
             'stages.*.talentPool' => 'nullable|boolean',
+            // Upload berkas hasil tahap (MCU/Interview) + wajib/opsional.
+            'stages.*.uploadHasil' => 'nullable|boolean',
+            'stages.*.wajibUpload' => 'nullable|boolean',
         ];
     }
 
@@ -234,6 +240,9 @@ class MasterAlurController extends Controller
                 // Cut-off Talent Pool: aktif → worklist menampilkan tombol
                 // "Masuk Talent Pool" saat memutus tahap ini.
                 'Flag_Talent_Pool' => ($s['talentPool'] ?? false) ? 'Y' : 'T',
+                // Upload berkas hasil (MCU/Interview) — aktif & wajib/opsional.
+                'Flag_Upload_Hasil' => ($s['uploadHasil'] ?? false) ? 'Y' : 'T',
+                'Flag_Wajib_Upload' => ($s['wajibUpload'] ?? false) ? 'Y' : 'T',
                 'Created_At' => $now, 'Created_By' => $userName, 'Created_By_Id' => $userId,
                 'Updated_At' => $now, 'Updated_By' => $userName, 'Updated_By_Id' => $userId,
             ], 'Id_Master_Alur_Tahap');

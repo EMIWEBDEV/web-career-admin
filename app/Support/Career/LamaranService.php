@@ -324,6 +324,19 @@ class LamaranService
             return ['ok' => false, 'pesan' => 'Tahap ini sudah diputus.'];
         }
 
+        // GATE WAJIB UPLOAD: tahap dgn "upload hasil WAJIB" (mis. MCU) tak bisa
+        // diloloskan sebelum berkas hasil diunggah.
+        if ($hasil === 'LULUS' && ! empty($tahap->Master_Alur_Tahap_Id)) {
+            $m = DB::table('N_WEB_CAREERS_Master_Alur_Tahap')->where('Id_Master_Alur_Tahap', $tahap->Master_Alur_Tahap_Id)->first();
+            $uploadAktif = $m && (($m->Flag_Upload_Hasil ?? 'T') === 'Y' || ($m->Tipe_Tahap_Kode ?? '') === 'MCU');
+            if ($m && $uploadAktif && ($m->Flag_Wajib_Upload ?? 'T') === 'Y') {
+                $adaBerkas = DB::table('N_WEB_CAREERS_Lamaran_Tahap_Berkas')->where('Lamaran_Tahap_Id', $lamaranTahapId)->exists();
+                if (! $adaBerkas) {
+                    return ['ok' => false, 'pesan' => 'Tahap ini wajib mengunggah berkas hasil (PDF/JPG) sebelum diloloskan.'];
+                }
+            }
+        }
+
         // GERBANG KUOTA: LULUS di tahap TERAKHIR = kandidat DITERIMA → menempati
         // kursi. Bila kuota MPP posisi sudah penuh, tolak — arahkan ke Tidak Lolos
         // atau Masuk Talent Pool. Tahap antara (masih ada tahap berikut) tak dibatasi.

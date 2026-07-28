@@ -60,6 +60,12 @@ Route::prefix('api/v1/karir')
         // Catat hasil sub-tes MANUAL (wawancara/FGD di tahap campuran) → mesin yang sama.
         Route::patch('/lamaran/sub-tes/{id}/catat-hasil', [LamaranController::class, 'subTesCatatHasil'])->name('lamaran.subtes.catathasil')->middleware('career.permission:pelamarPage,EDIT');
 
+        // Berkas hasil tahap (MCU/Interview) — unggah PDF/JPG, daftar, preview, hapus.
+        Route::get('/lamaran/tahap/{id}/berkas', [LamaranController::class, 'berkasTahap'])->name('lamaran.tahap.berkas')->middleware('career.permission:pelamarPage,VIEW');
+        Route::post('/lamaran/tahap/{id}/berkas', [LamaranController::class, 'unggahBerkasTahap'])->name('lamaran.tahap.berkas.unggah')->middleware('career.permission:pelamarPage,EDIT');
+        Route::get('/lamaran/tahap/berkas/file/{id}', [LamaranController::class, 'berkasTahapFile'])->name('lamaran.tahap.berkas.file')->middleware('career.permission:pelamarPage,VIEW');
+        Route::delete('/lamaran/tahap/berkas/{id}', [LamaranController::class, 'hapusBerkasTahap'])->name('lamaran.tahap.berkas.hapus')->middleware('career.permission:pelamarPage,EDIT');
+
         // Talent Pool — data kartu + kelola status/tag/catatan.
         Route::get('/talent-pool', [TalentPoolController::class, 'list'])->name('talent-pool.list')->middleware('career.permission:talentPoolPage,VIEW');
         Route::get('/talent-pool/export', [TalentPoolController::class, 'export'])->name('talent-pool.export')->middleware('career.permission:talentPoolPage,VIEW');
