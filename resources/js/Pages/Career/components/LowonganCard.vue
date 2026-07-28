@@ -417,37 +417,31 @@ function typeIcon(type) {
         background: linear-gradient(180deg, #a78bfa, #6366f1);
     }
     .rek__card.is-list:active {
-        transform: scale(0.988);
-        border-color: #c7d2fe;
-        box-shadow: 0 1px 5px rgba(15, 23, 42, 0.05);
-    }
-    .rek__card.is-list.is-full::before {
-        background: linear-gradient(180deg, #fda4af, #e11d48);
+        transform: scale(0.99);
+        background: #f8fafc;
     }
     .rek__card.is-list .rek__ribbon {
         display: none;
     }
-
-    /* Baris 1: badge tipe kerja (kiri) + tombol simpan (kanan) */
+    
+    /* Order 1: Top Header Bar (Type Badge on Left, Bookmark on Right) */
     .rek__card.is-list .rek__top {
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 8px;
         order: 1;
-        margin-bottom: 0;
+        margin-bottom: 2px;
         width: 100%;
     }
     .rek__card.is-list .rek__top .rek__type {
         display: inline-flex;
-        font-size: 0.63rem;
-        padding: 4px 10px;
-        border-radius: 999px;
+        font-size: 0.65rem;
+        padding: 4px 9px;
+        border-radius: 8px;
     }
     .rek__card.is-list .rek__top .rek__star {
-        display: inline-flex;
-        font-size: 0.6rem;
-        padding: 3px 8px;
+        display: none;
     }
     .rek__card.is-list .rek__top .rek__bookmark-btn {
         width: 30px;
@@ -455,13 +449,16 @@ function typeIcon(type) {
         font-size: 0.8rem;
         margin-left: auto;
         flex-shrink: 0;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
     }
-
-    /* Baris 2: judul posisi + sorotan benefit */
+    
+    /* Order 2: Full Width Job Title Header (100% Align Left) */
     .rek__card.is-list .rek__main-info {
         order: 2;
-        margin-top: 9px;
+        margin-top: 0;
         width: 100%;
+        text-align: left;
     }
     .rek__card.is-list .rek__title {
         font-size: 1rem;
@@ -469,64 +466,62 @@ function typeIcon(type) {
         margin: 0;
         color: #0f172a;
         line-height: 1.3;
+        text-align: left;
         white-space: normal;
     }
-    .rek__card.is-list .rek__salary {
-        display: inline-flex;
-        margin-top: 5px;
-        font-size: 0.72rem;
-        color: #7c3aed;
-    }
+    
+    .rek__card.is-list .rek__salary,
     .rek__card.is-list .rek__desc,
     .rek__card.is-list .rek__tags {
         display: none !important;
     }
-
-    /* Baris 3: lokasi & pengalaman — sejajar, rata kiri, boleh turun baris */
+    
+    /* Order 3: Subline Metadata (100% Align Left) */
     .rek__card.is-list .rek__meta {
         order: 3;
         display: flex;
-        flex-direction: row;
-        flex-wrap: wrap;
-        align-items: center;
-        justify-content: flex-start;
-        gap: 4px 14px;
-        margin-top: 9px;
+        flex-direction: column;
+        align-items: flex-start;
+        text-align: left;
+        gap: 4px;
+        margin-top: 4px;
         width: 100%;
     }
     .rek__card.is-list .rek__meta span {
-        font-size: 0.72rem;
+        font-size: 0.74rem;
         font-weight: 600;
         color: #64748b;
         line-height: 1.35;
+        text-align: left;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
     }
     .rek__card.is-list .rek__meta i {
-        font-size: 0.75rem;
-        color: #8b5cf6;
+        font-size: 0.78rem;
+        color: #6366f1;
     }
-
-    /* Baris 4: kuota (kiri) + tombol aksi berbentuk pil (kanan) */
+    
+    /* Order 4: Quota & Action CTA Footer (100% Align Left + Right CTA) */
     .rek__card.is-list .rek__foot {
         order: 4;
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 10px;
-        margin-top: 11px;
-        padding-top: 10px;
-        border-top: 1px solid #f1f3fa;
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1px dashed #e2e8f0;
         width: 100%;
     }
     .rek__card.is-list .rek__people {
         display: inline-flex;
-        font-size: 0.7rem;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.72rem;
         color: #64748b;
     }
-    .rek__card.is-list.is-full .rek__people b {
-        color: #e11d48;
-    }
     .rek__card.is-list .rek__cta {
-        font-size: 0.71rem;
+        font-size: 0.75rem;
         font-weight: 800;
         color: #4f46e5;
         background: rgba(99, 102, 241, 0.09);

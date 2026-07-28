@@ -1388,11 +1388,9 @@ function goMtPage(p) { if (p >= 1 && p <= mtTotalPages.value) { mtPage.value = p
     /* List mobile: tiap lowongan jadi kartu sendiri yang berjarak —
        bukan satu blok panjang yang menempel (lihat LowonganCard.vue). */
     .rek__grid.is-list-grid {
-        gap: 12px;
+        gap: 10px;
         background: transparent;
         border: none;
-        border-radius: 0;
-        overflow: visible;
         box-shadow: none;
     }
 }

@@ -10,6 +10,7 @@
         <div class="wc-about__grid">
             <article class="wc-about__visi wc-reveal wc-reveal--left">
                 <div class="wc-about__visi-shine" aria-hidden="true"></div>
+                <i class="bi bi-compass-fill wc-about__visi-bg-icon" aria-hidden="true"></i>
                 <span class="wc-about__visi-label"><i class="bi bi-compass"></i> Visi Kami</span>
                 <p class="wc-about__visi-text">
                     Menjadi perusahaan unggul dan terpercaya di industri hewan peliharaan Indonesia.
@@ -18,7 +19,9 @@
 
             <article class="wc-about__misi wc-reveal wc-reveal--right" style="--d: 90ms">
                 <div v-for="(m, i) in misi" :key="m.judul" class="wc-about__misi-item" :class="{ 'is-last': i === misi.length - 1 }">
-                    <span class="wc-about__misi-no">{{ String(i + 1).padStart(2, '0') }}</span>
+                    <div class="wc-about__misi-no-badge">
+                        <span>{{ String(i + 1).padStart(2, '0') }}</span>
+                    </div>
                     <div>
                         <strong>{{ m.judul }}</strong>
                         <p>{{ m.deskripsi }}</p>
@@ -67,70 +70,118 @@ const brands = [
 .wc-about__visi {
     position: relative;
     overflow: hidden;
-    padding: 2.2rem 2rem;
-    border-radius: 1.5rem;
-    background: linear-gradient(150deg, #6d5bd0 0%, #6366f1 100%);
+    padding: clamp(2rem, 4vw, 2.5rem) clamp(1.8rem, 4vw, 2.2rem);
+    border-radius: 1.75rem;
+    background: linear-gradient(135deg, #6366f1 0%, #4f46e5 50%, #4338ca 100%);
     color: #fff;
-    box-shadow: 0 24px 50px rgba(79, 70, 229, 0.28);
+    box-shadow: 0 20px 48px rgba(79, 70, 229, 0.32);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
 }
 .wc-about__visi-shine {
     position: absolute;
     top: -50%;
     right: -40%;
-    width: 200px;
-    height: 200px;
-    background: radial-gradient(circle, rgba(255, 255, 255, 0.25), transparent 70%);
+    width: 250px;
+    height: 250px;
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.28), transparent 70%);
     pointer-events: none;
+}
+.wc-about__visi-bg-icon {
+    position: absolute;
+    right: -1rem;
+    bottom: -1.5rem;
+    font-size: 11rem;
+    color: #ffffff;
+    opacity: 0.1;
+    pointer-events: none;
+    line-height: 1;
 }
 .wc-about__visi-label {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    font-size: 0.72rem;
+    gap: 7px;
+    padding: 6px 14px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.18);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    font-size: 0.7rem;
     font-weight: 800;
-    letter-spacing: 0.18em;
+    letter-spacing: 0.16em;
     text-transform: uppercase;
-    color: rgba(255, 255, 255, 0.85);
+    color: #ffffff;
+    width: fit-content;
 }
 .wc-about__visi-text {
-    margin: 0.9rem 0 0;
-    font-size: clamp(1.35rem, 2.6vw, 1.75rem);
+    margin: 1.2rem 0 0;
+    font-size: clamp(1.35rem, 2.5vw, 1.75rem);
     font-weight: 800;
     line-height: 1.35;
-    letter-spacing: -0.01em;
+    letter-spacing: -0.015em;
+    text-shadow: 0 2px 10px rgba(15, 23, 42, 0.2);
+    position: relative;
+    z-index: 1;
 }
 .wc-about__misi {
-    padding: 0.4rem 1.8rem;
-    border-radius: 1.5rem;
-    background: rgba(255, 255, 255, 0.9);
-    border: 1px solid rgba(226, 232, 240, 0.9);
-    box-shadow: 0 12px 30px rgba(15, 23, 42, 0.05);
+    padding: 1rem 1.6rem;
+    border-radius: 1.75rem;
+    background: rgba(255, 255, 255, 0.95);
+    border: 1px solid rgba(99, 102, 241, 0.16);
+    box-shadow: 0 16px 40px rgba(99, 102, 241, 0.07);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
 }
 .wc-about__misi-item {
     display: flex;
-    gap: 1rem;
-    padding: 1.4rem 0;
-    border-bottom: 1px solid rgba(226, 232, 240, 0.9);
+    align-items: flex-start;
+    gap: 1.1rem;
+    padding: 1.1rem 0.8rem;
+    border-bottom: 1px solid rgba(226, 232, 240, 0.8);
+    border-radius: 1rem;
+    transition: transform 0.22s ease, background 0.22s ease;
+}
+.wc-about__misi-item:hover {
+    background: rgba(99, 102, 241, 0.04);
+    transform: translateX(5px);
 }
 .wc-about__misi-item.is-last {
     border-bottom: none;
 }
-.wc-about__misi-no {
+.wc-about__misi-no-badge {
     flex: none;
-    font-size: 0.78rem;
+    width: 2.35rem;
+    height: 2.35rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.12), rgba(139, 92, 246, 0.18));
+    border: 1px solid rgba(99, 102, 241, 0.25);
+    color: #4f46e5;
     font-weight: 900;
-    color: var(--indigo);
+    font-size: 0.82rem;
+    transition: background 0.25s ease, color 0.25s ease, transform 0.25s ease, box-shadow 0.25s ease;
+}
+.wc-about__misi-item:hover .wc-about__misi-no-badge {
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    color: #ffffff;
+    transform: scale(1.08);
+    box-shadow: 0 6px 16px rgba(99, 102, 241, 0.32);
 }
 .wc-about__misi-item strong {
     display: block;
-    margin-bottom: 0.3rem;
+    margin-bottom: 0.25rem;
     font-size: 1rem;
     font-weight: 800;
-    color: var(--ink);
+    color: #1e1b4b;
 }
 .wc-about__misi-item p {
     margin: 0;
-    color: var(--slate);
+    color: #64748b;
     font-size: 0.86rem;
     font-weight: 600;
     line-height: 1.6;
@@ -138,34 +189,34 @@ const brands = [
 .wc-about__brands {
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 1rem;
-    margin-top: 1.4rem;
+    gap: 1.1rem;
+    margin-top: 1.5rem;
 }
 .wc-about__brand {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 0.6rem;
+    gap: 0.65rem;
     padding: 1.5rem 1rem;
-    border-radius: 1.2rem;
-    background: rgba(255, 255, 255, 0.9);
-    border: 1px solid rgba(226, 232, 240, 0.9);
-    box-shadow: 0 12px 30px rgba(15, 23, 42, 0.05);
+    border-radius: 1.25rem;
+    background: #ffffff;
+    border: 1px solid rgba(226, 232, 240, 0.95);
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
     text-align: center;
     transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease, border-color 0.25s ease;
 }
 .wc-about__brand:hover {
-    transform: translateY(-5px) scale(1.02);
-    border-color: rgba(139, 92, 246, 0.4);
-    box-shadow: 0 22px 44px rgba(79, 70, 229, 0.16);
+    transform: translateY(-6px);
+    border-color: rgba(99, 102, 241, 0.35);
+    box-shadow: 0 20px 40px rgba(99, 102, 241, 0.15);
 }
 .wc-about__brand-logo {
-    height: 2.75rem;
+    height: 2.85rem;
     width: auto;
     max-width: 100%;
     object-fit: contain;
-    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.05));
+    filter: drop-shadow(0 2px 6px rgba(0,0,0,0.06));
     transition: transform 0.25s ease;
 }
 .wc-about__brand:hover .wc-about__brand-logo {
@@ -173,7 +224,7 @@ const brands = [
 }
 .wc-about__brand-name {
     color: #64748b;
-    font-size: 0.76rem;
+    font-size: 0.78rem;
     font-weight: 700;
     margin-top: 2px;
 }
