@@ -13,8 +13,50 @@ Dua orang menambah fitur di minggu yang sama → menabrak baris yang sama saat
 merge → yang kalah merge **kehilangan menunya diam-diam** (route & halaman utuh,
 tapi menu lenyap dari sidebar).
 
-Sekarang menu dibaca dari tabel `N_WEB_CAREERS_Menu`. Array di `CareerShell`
+Sekarang menu dibaca dari tabel `N_WEB_CAREERS_Menu`. Yang tersisa di kode
 tinggal daftar **darurat**, hanya terpakai bila tabel menu belum ada.
+
+---
+
+## Shell sudah dipecah — `CareerShell.php` dibekukan
+
+`CareerShell.php` dipakai ~50 halaman. Selama isinya menu + brand + layout jadi
+satu, setiap penyesuaian kecil menyentuh berkas yang sama. Sekarang berkas itu
+tinggal penerus (94 baris, tanpa logika), dan isinya pindah ke berkas
+masing-masing:
+
+| Mau mengubah apa | Sunting di |
+|---|---|
+| Menambah / mengubah menu | **jangan di kode** → `/master-menu`, lalu `/hak-akses` |
+| Logo, nama aplikasi, anak usaha | `config/career_shell.php` |
+| Judul modul, subtitle, ikon | `config/career_shell.php` |
+| Props global untuk semua halaman | daftarkan kelasmu di `config/career_shell.php` → `props_tambahan` |
+| Aturan peran / identitas pengguna | `app/Support/Career/Shell/IdentitasShell.php` |
+| Bentuk payload layout & breadcrumb | `app/Support/Career/Shell/LayoutShell.php` |
+| Cadangan menu saat DB kosong | `app/Support/Career/Shell/NavigasiShell.php` |
+
+Karena tiap orang biasanya butuh hal yang berbeda, dua orang jarang menyentuh
+berkas yang sama — dan `CareerShell.php` sendiri tidak perlu disentuh lagi.
+
+### Butuh props yang ada di semua halaman?
+
+Jangan sunting `PropsShell`. Buat kelas di folder fiturmu:
+
+```php
+namespace App\Support\Career\Shell\Tambahan;
+
+class PropsAnu
+{
+    public static function tambahan(string $url, string $judul): array
+    {
+        return ['anu' => ['jumlah' => 3]];
+    }
+}
+```
+
+lalu tambah **satu baris di akhir** daftar `props_tambahan` pada
+`config/career_shell.php`. Penyedia yang error dicatat ke log dan dilewati —
+halaman tidak ikut jatuh.
 
 ---
 
@@ -84,7 +126,9 @@ require base_path('routes/career/MasterAnu/MasterAnuWeb.php');
 
 | Berkas | Frekuensi disentuh | Aturan |
 |---|---|---|
-| `app/Support/CareerShell.php` | **jangan** | menu lewat Master Menu |
+| `app/Support/CareerShell.php` | **jangan — dibekukan** | lihat tabel "Shell sudah dipecah" di atas |
+| `app/Support/Career/Shell/*.php` | jarang | tiap urusan punya berkasnya sendiri |
+| `config/career_shell.php` | jarang | tambah `props_tambahan` di **akhir** daftar |
 | `routes/career/fransDeveloperDevEvo.php` | 1 baris per fitur | tambah di **akhir** daftar |
 | `resources/css/evo-theme.css` | jarang | gaya khusus halaman taruh di `<style scoped>` |
 | `app/Http/Kernel.php` | hampir tak pernah | |
@@ -117,7 +161,8 @@ besar tiap minggu.
 |---|---|
 | berkas route | pertahankan **kedua** baris `require` |
 | `public/build/**` | jangan diselesaikan manual: `git checkout --ours public/build && npm run build` |
-| `CareerShell.php` | berarti ada yang menambah menu di kode. Pertahankan versi terbaru, lalu pindahkan menunya ke Master Menu |
+| `CareerShell.php` | seharusnya tidak mungkin — berarti ada yang menambah logika di berkas beku. Ambil versi terbaru, lalu pindahkan perubahannya ke berkas yang benar (lihat tabel "Shell sudah dipecah") |
+| `config/career_shell.php` | biasanya dua baris `props_tambahan` di ujung → ambil keduanya |
 | `evo-theme.css` | biasanya penambahan di ujung berbeda → ambil keduanya |
 
 ---
@@ -142,6 +187,7 @@ Bukan kodenya rusak — hak aksesmu belum ada di database.
 | `@career/IconPicker.vue` | pemilih ikon Bootstrap |
 | `App\Support\Career\KodeUnik` | kode unik dari nama, tanpa terpotong |
 | `App\Support\Career\AksesService` | hak akses, kategori diizinkan, mode pemeliharaan |
+| `App\Support\CareerShell` | props halaman admin — `CareerShell::props($url, $judul, $extra)` |
 
 **Pola halaman** — tiru salah satu:
 
