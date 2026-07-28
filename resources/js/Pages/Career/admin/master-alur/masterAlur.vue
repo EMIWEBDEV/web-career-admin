@@ -166,9 +166,26 @@
                 </div>
                 <div v-if="!form.stages.length" class="wca-hint" style="margin:0 0 .6rem"><i class="bi bi-info-circle"></i> Belum ada tahap. Klik <b>Tambah Tahap</b> untuk mulai menyusun urutan seleksi.</div>
 
-                <div v-for="(s, i) in form.stages" :key="i" class="wca-stagecard">
+                <!-- CUT-OFF TALENT POOL — SATU titik saja. Tahap dari sini sampai akhir
+                     otomatis aktif; tak perlu klik per tahap. -->
+                <div v-if="form.stages.length" class="alr-tpcut" :class="{ 'is-on': form.talentPoolMulai > 0 }">
+                    <div class="alr-tpcut__l">
+                        <span class="alr-tpcut__ico"><i class="bi bi-stars"></i></span>
+                        <div class="alr-tpcut__txt">
+                            <b>Cut-off ke Talent Pool</b>
+                            <small>Kandidat yang <b>tidak lolos</b> mulai tahap terpilih <b>sampai tahap akhir</b> boleh disimpan ke Talent Pool. Pilih <b>satu</b> titik mulai — tahap sesudahnya otomatis ikut.</small>
+                        </div>
+                    </div>
+                    <el-select v-model="form.talentPoolMulai" style="width:230px" placeholder="Nonaktif">
+                        <el-option :value="0" label="Nonaktif — tanpa cut-off" />
+                        <el-option v-for="(s, i) in form.stages" :key="i" :value="i + 1" :label="`Mulai Tahap ${i + 1}${s.label ? ' — ' + s.label : ''}`" />
+                    </el-select>
+                </div>
+
+                <div v-for="(s, i) in form.stages" :key="i" class="wca-stagecard" :class="{ 'is-tp': tahapTalentPool(i) }">
                     <div class="wca-stagecard__num">{{ i + 1 }}</div>
                     <div class="wca-stagecard__body">
+                        <div v-if="tahapTalentPool(i)" class="alr-tpflag"><i class="bi bi-stars"></i> Talent Pool aktif — kandidat tak lolos di tahap ini bisa disimpan (dari cut-off Tahap {{ form.talentPoolMulai }}).</div>
                         <div class="wca-frow">
                             <div><label class="wca-field-lbl">Nama Tahap</label><el-input v-model="s.label" placeholder="mis. Psikotes Online" /></div>
                             <div><label class="wca-field-lbl">Tipe</label>
@@ -270,19 +287,7 @@
                             <p class="alr-ann__note">{{ catatanPengumuman(s) }}</p>
                         </div>
 
-                        <!-- CUT-OFF TALENT POOL — fleksibel per tahap. Bila aktif, kandidat
-                             yang TIDAK lolos di tahap ini boleh dialihkan ke Talent Pool
-                             (bukan sekadar gugur) lewat tombol di Worklist. -->
-                        <div class="alr-tp" :class="{ 'is-on': s.talentPool }">
-                            <div class="alr-tp__main">
-                                <span class="alr-tp__ico"><i class="bi bi-stars"></i></span>
-                                <div class="alr-tp__txt">
-                                    <b>Cut-off ke Talent Pool di tahap ini</b>
-                                    <small>Aktifkan bila kandidat bagus yang belum lolos di tahap ini layak disimpan untuk lowongan berikutnya. Worklist akan memunculkan tombol <em>“Masuk Talent Pool”</em>.</small>
-                                </div>
-                            </div>
-                            <el-switch v-model="s.talentPool" />
-                        </div>
+                        <!-- Cut-off Talent Pool kini SATU titik di atas (bukan per tahap). -->
 
                         <!-- UPLOAD BERKAS HASIL — mis. MCU (PDF/JPG dari requester) atau
                              hasil wawancara. Bisa diwajibkan atau opsional per tahap. -->
@@ -346,7 +351,8 @@ export default {
             modePengumuman: [],
             // Mode keputusan AKTIF — bagaimana tahap menyimpulkan (multi-tes).
             modeKeputusan: [],
-            form: { nama: '', kategori: '', deskripsi: '', stages: [] },
+            // talentPoolMulai: 0 = nonaktif; N = cut-off Talent Pool mulai tahap ke-N (sampai akhir).
+            form: { nama: '', kategori: '', deskripsi: '', stages: [], talentPoolMulai: 0 },
             delShow: false,
             delTarget: null,
             deleting: false,
@@ -358,6 +364,8 @@ export default {
     watch: {
         // RefSelect hanya emit update:modelValue — pantau nilainya langsung.
         'filters.kategori'() { this.load(); },
+        // Jaga cut-off tetap valid saat jumlah tahap berubah (mis. tahap dihapus).
+        'form.stages.length'(n) { if (this.form.talentPoolMulai > n) this.form.talentPoolMulai = n; },
     },
     mounted() {
         this.load();
@@ -527,37 +535,43 @@ export default {
         },
         openCreate() {
             this.editingId = null;
-            this.form = { nama: '', kategori: '', deskripsi: '', stages: [] };
+            this.form = { nama: '', kategori: '', deskripsi: '', stages: [], talentPoolMulai: 0 };
             this.show = true;
         },
         openEdit(a) {
             this.editingId = a.id;
+            const stages = (a.stages || []).map((s) => ({
+                label: s.label,
+                tipe: s.tipe,
+                mode: s.mode || 'MANUAL_REVIEW',
+                formulirId: s.formulirId ?? null,
+                // Baris tes BAWAAN (dibuat otomatis sistem untuk tahap satu
+                // aktivitas) sengaja TIDAK ditampilkan lagi saat mengedit —
+                // kalau ditampilkan, ia terlihat seolah wajib diisi dan
+                // namanya cuma menggandakan nama tahap. Daftar dibiarkan
+                // kosong; backend akan membuatkannya lagi saat disimpan.
+                tests: this.buangTesBawaan(s),
+                pengumuman: s.pengumuman || 'OTOMATIS',
+                jedaHari: s.jedaHari ?? null,
+                notifikasi: s.notifikasi !== false,
+                talentPool: s.talentPool === true,
+                uploadHasil: s.uploadHasil === true,
+                wajibUpload: s.wajibUpload === true,
+            }));
+            // Turunkan titik cut-off dari data: tahap PERTAMA yang talentPool aktif.
+            const idx = stages.findIndex((s) => s.talentPool);
             this.form = {
                 nama: a.nama,
                 kategori: a.kategori,
                 deskripsi: a.deskripsi || '',
-                stages: (a.stages || []).map((s) => ({
-                    label: s.label,
-                    tipe: s.tipe,
-                    mode: s.mode || 'MANUAL_REVIEW',
-                    formulirId: s.formulirId ?? null,
-                    // Baris tes BAWAAN (dibuat otomatis sistem untuk tahap satu
-                    // aktivitas) sengaja TIDAK ditampilkan lagi saat mengedit —
-                    // kalau ditampilkan, ia terlihat seolah wajib diisi dan
-                    // namanya cuma menggandakan nama tahap. Daftar dibiarkan
-                    // kosong; backend akan membuatkannya lagi saat disimpan.
-                    tests: this.buangTesBawaan(s),
-                    pengumuman: s.pengumuman || 'OTOMATIS',
-                    jedaHari: s.jedaHari ?? null,
-                    notifikasi: s.notifikasi !== false,
-                    talentPool: s.talentPool === true,
-                    uploadHasil: s.uploadHasil === true,
-                    wajibUpload: s.wajibUpload === true,
-                })),
+                stages,
+                talentPoolMulai: idx >= 0 ? idx + 1 : 0,
             };
             this.show = true;
         },
-        addStage() { this.form.stages.push({ label: '', tipe: '', mode: 'MANUAL_REVIEW', formulirId: null, tests: [], pengumuman: 'OTOMATIS', jedaHari: null, notifikasi: true, talentPool: false, uploadHasil: false, wajibUpload: false }); },
+        /** Tahap ke-i (0-based) termasuk cut-off Talent Pool? (dari titik mulai sampai akhir). */
+        tahapTalentPool(i) { return this.form.talentPoolMulai > 0 && (i + 1) >= this.form.talentPoolMulai; },
+        addStage() { this.form.stages.push({ label: '', tipe: '', mode: 'MANUAL_REVIEW', formulirId: null, tests: [], pengumuman: 'OTOMATIS', jedaHari: null, notifikasi: true, uploadHasil: false, wajibUpload: false }); },
         removeStage(i) { this.form.stages.splice(i, 1); },
 
         // Label & ikon pil diambil dari master (fallback ke kode bila belum termuat).
@@ -592,7 +606,7 @@ export default {
                 nama: this.form.nama,
                 kategori: this.form.kategori,
                 deskripsi: this.form.deskripsi,
-                stages: this.form.stages.map((s) => ({
+                stages: this.form.stages.map((s, i) => ({
                     label: s.label,
                     tipe: s.tipe,
                     mode: s.mode || null,
@@ -608,7 +622,9 @@ export default {
                     // Jeda hanya bermakna untuk mode ber-flag butuhJeda; lainnya null.
                     jedaHari: this.modeButuhJeda(s.pengumuman) ? (s.jedaHari ?? null) : null,
                     notifikasi: s.notifikasi !== false,
-                    talentPool: s.talentPool === true,
+                    // Cut-off Talent Pool DITURUNKAN dari satu titik (talentPoolMulai):
+                    // tahap ke-N sampai akhir → 'Y'. Tak lagi per-tahap manual.
+                    talentPool: this.tahapTalentPool(i),
                     uploadHasil: s.uploadHasil === true,
                     wajibUpload: s.wajibUpload === true,
                 })),
@@ -754,6 +770,20 @@ export default {
 .alr-tp__txt b { display: block; font-size: 12.5px; color: #1e293b; }
 .alr-tp__txt small { display: block; font-size: 11px; line-height: 1.5; color: #64748b; margin-top: .1rem; }
 .alr-tp__txt em { color: #b45309; font-style: normal; font-weight: 700; }
+
+/* Cut-off Talent Pool — SATU titik di atas daftar tahap. */
+.alr-tpcut { display: flex; align-items: center; justify-content: space-between; gap: .9rem; padding: .8rem .9rem; border-radius: 13px; border: 1px solid rgba(15, 23, 42, .12); background: #f8fafc; margin: 0 0 .8rem; flex-wrap: wrap; }
+.alr-tpcut.is-on { border-color: rgba(217, 119, 6, .5); background: linear-gradient(180deg, rgba(234, 179, 8, .1), rgba(245, 158, 11, .04)); }
+.alr-tpcut__l { display: flex; align-items: flex-start; gap: .55rem; min-width: 0; flex: 1; }
+.alr-tpcut__ico { flex: none; width: 2rem; height: 2rem; border-radius: 9px; display: grid; place-items: center; background: #fff7ed; color: #d97706; font-size: 15px; border: 1px solid rgba(234, 179, 8, .3); }
+.alr-tpcut.is-on .alr-tpcut__ico { background: #fde68a; color: #92400e; }
+.alr-tpcut__txt { min-width: 0; }
+.alr-tpcut__txt b { display: block; font-size: 13px; color: #1e293b; }
+.alr-tpcut__txt small { display: block; font-size: 11px; line-height: 1.5; color: #64748b; margin-top: .1rem; }
+/* Penanda tahap yang tercakup cut-off (read-only, otomatis). */
+.wca-stagecard.is-tp { border-color: rgba(234, 179, 8, .45); box-shadow: 0 0 0 1px rgba(234, 179, 8, .18); }
+.alr-tpflag { display: flex; align-items: center; gap: .4rem; font-size: 11px; font-weight: 700; color: #a16207; background: rgba(234, 179, 8, .14); border-radius: 8px; padding: .4rem .6rem; margin-bottom: .5rem; }
+.alr-tpflag > i { color: #d97706; }
 /* Kartu upload hasil — nada biru saat aktif (beda dari talent pool yang kuning). */
 .alr-up.is-on { border-color: rgba(79, 70, 229, .45); background: linear-gradient(180deg, rgba(79, 70, 229, .07), rgba(99, 102, 241, .03)); }
 .alr-up .alr-tp__ico { background: #eef2ff; color: #4f46e5; border-color: rgba(79, 70, 229, .3); }
