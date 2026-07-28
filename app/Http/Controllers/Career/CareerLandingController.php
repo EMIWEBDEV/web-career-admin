@@ -60,9 +60,10 @@ class CareerLandingController extends Controller
         return Inertia::render('Career/SemuaLowongan', [
             'lowongan' => $this->visibleLowongan(),
             'programMt' => $this->programMt(),
-            'departments' => $this->departments(),
-            'locations' => $this->locations(),
             'offices' => $this->offices(),
+            // Kartu tim (Master Info Divisi + rekap lowongan) → sidebar filter
+            // divisi & pengelompokan daftar posisi per tim.
+            'tim' => $this->timCards(),
         ]);
     }
 
@@ -951,7 +952,8 @@ class CareerLandingController extends Controller
                     'benefit' => $jobs->flatMap(fn ($j) => $j['benefit'] ?? [])->filter()->unique()->take(3)->implode(' + ') ?: null,
                 ];
             })
-            ->sortBy('nama')
+            // Divisi yang sedang membuka lowongan tampil lebih dulu.
+            ->sortBy([['lowongan', 'desc'], ['nama', 'asc']])
             ->values()
             ->all();
     }
@@ -1207,6 +1209,10 @@ class CareerLandingController extends Controller
                                 ? substr($pb->Tanggal_Tutup, 0, 16)
                                 : null)
                             : null,
+                    // Kapan lowongan mulai dibuka — dipakai urutan "Terbaru" di
+                    // halaman daftar. Program_Posisi tidak punya kolom waktu,
+                    // jadi acuannya tanggal buka pembukaan (fallback: dibuat).
+                    'dibuka' => $pb->Tanggal_Buka ?: ($pb->Created_At ?: null),
                     'deskripsi' =>
                         $m['deskripsi'] ??
                         'Lowongan ' . $x->Posisi . ' pada program ' . $pb->ProgramNama . ' di EVO Group.',

@@ -15,7 +15,9 @@
         <TimSection :tim="tim" />
         <MtSection :program-mt="programMt" />
         <LokasiSection :offices="offices" />
+        <FaqSection />
         <CtaSection />
+        <StickyApplyBar :has-mt="hasMt" />
     </CareerLayout>
 </template>
 
@@ -29,7 +31,9 @@ import AchievementSection from './sections/AchievementSection.vue';
 import TimSection from './sections/TimSection.vue';
 import MtSection from './sections/MtSection.vue';
 import LokasiSection from './sections/LokasiSection.vue';
+import FaqSection from './sections/FaqSection.vue';
 import CtaSection from './sections/CtaSection.vue';
+import StickyApplyBar from './components/StickyApplyBar.vue';
 import { scrollToId } from './careerData';
 
 defineOptions({ layout: null });

@@ -9,7 +9,8 @@
 
         <div class="wc-about__grid">
             <article class="wc-about__visi wc-reveal wc-reveal--left">
-                <span class="wc-about__visi-label">Visi</span>
+                <div class="wc-about__visi-shine" aria-hidden="true"></div>
+                <span class="wc-about__visi-label"><i class="bi bi-compass"></i> Visi Kami</span>
                 <p class="wc-about__visi-text">
                     Menjadi perusahaan unggul dan terpercaya di industri hewan peliharaan Indonesia.
                 </p>
@@ -34,6 +35,7 @@
                 :style="{ '--d': i * 70 + 'ms' }"
             >
                 <img class="wc-about__brand-logo" :src="`/brand-logos/${b.file}`" :alt="b.nama" loading="lazy" decoding="async" />
+                <small class="wc-about__brand-name">{{ b.nama }}</small>
             </div>
         </div>
     </section>
@@ -71,13 +73,24 @@ const brands = [
     color: #fff;
     box-shadow: 0 24px 50px rgba(79, 70, 229, 0.28);
 }
+.wc-about__visi-shine {
+    position: absolute;
+    top: -50%;
+    right: -40%;
+    width: 200px;
+    height: 200px;
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.25), transparent 70%);
+    pointer-events: none;
+}
 .wc-about__visi-label {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     font-size: 0.72rem;
     font-weight: 800;
     letter-spacing: 0.18em;
     text-transform: uppercase;
-    color: rgba(255, 255, 255, 0.8);
+    color: rgba(255, 255, 255, 0.85);
 }
 .wc-about__visi-text {
     margin: 0.9rem 0 0;
@@ -140,22 +153,29 @@ const brands = [
     border: 1px solid rgba(226, 232, 240, 0.9);
     box-shadow: 0 12px 30px rgba(15, 23, 42, 0.05);
     text-align: center;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease, border-color 0.25s ease;
 }
 .wc-about__brand:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 22px 44px rgba(79, 70, 229, 0.14);
+    transform: translateY(-5px) scale(1.02);
+    border-color: rgba(139, 92, 246, 0.4);
+    box-shadow: 0 22px 44px rgba(79, 70, 229, 0.16);
 }
 .wc-about__brand-logo {
     height: 2.75rem;
     width: auto;
     max-width: 100%;
     object-fit: contain;
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.05));
+    transition: transform 0.25s ease;
 }
-.wc-about__brand small {
-    color: var(--muted);
+.wc-about__brand:hover .wc-about__brand-logo {
+    transform: scale(1.08);
+}
+.wc-about__brand-name {
+    color: #64748b;
     font-size: 0.76rem;
     font-weight: 700;
+    margin-top: 2px;
 }
 @media (max-width: 900px) {
     .wc-about__grid {
