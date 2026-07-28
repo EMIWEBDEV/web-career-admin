@@ -40,11 +40,11 @@ return [
 
     // ── KAMERA / PROCTORING WAJIB ──
     // Saat penjadwalan ujian dikirim ke CAT (cat-evo-pembaharuan), Web Careers
-    // MEMAKSA kamera aktif supaya tak ada sesi tes tanpa kamera. Nama field
-    // menyesuaikan yang diharapkan CAT (default 'Flag_Kamera') — ubah lewat .env
-    // bila kontrak CAT memakai nama lain (mis. 'Flag_Camera').
+    // MEMAKSA kamera aktif supaya tak ada sesi tes tanpa kamera. Kontrak CAT
+    // (PenjadwalanWebCareersController) mengharap field 'Flag_Camera' bertipe
+    // BOOLEAN — CAT mengubahnya jadi 'Y' pada token bila truthy.
     'wajib_kamera' => (bool) env('HCLEARN_WAJIB_KAMERA', true),
-    'kamera_field' => env('HCLEARN_KAMERA_FIELD', 'Flag_Kamera'),
+    'kamera_field' => env('HCLEARN_KAMERA_FIELD', 'Flag_Camera'),
 
     // Simpan payload penuh di N_WEB_CAREERS_Integrasi_Log hanya saat gagal.
     'log_payload_sukses' => (bool) env('HCLEARN_LOG_PAYLOAD_SUKSES', false),

@@ -241,6 +241,57 @@ class ProgramKegiatanController extends Controller
         DB::table('N_WEB_CAREERS_Program_Syarat')->where('Program_Id', $programId)->delete();
     }
 
+    /**
+     * GUARD INFO DIVISI — dari daftar MPP (mppRefs) posisi terpilih, kembalikan
+     * divisi mana yang BELUM punya info di Master Info Divisi (baris belum dibuat).
+     * Info divisi WAJIB terisi sebelum lanjut (dipakai landing page). Fail-open:
+     * bila cek gagal, TIDAK memblokir admin (cegah bug menjebak).
+     */
+    public function cekInfoDivisi(Request $request)
+    {
+        try {
+            $refs = collect($request->input('mppRefs', []))->map(fn ($r) => trim((string) $r))->filter()->unique()->values();
+            if ($refs->isEmpty()) {
+                return ResponseHelper::success(['belumLengkap' => []], 'Tidak ada MPP untuk dicek');
+            }
+
+            // MPP → divisi (Id_Divisi + nama).
+            $divisi = DB::table('HRIS_Transaksi_GForm as g')
+                ->leftJoin('HRIS_Divisi as dv', function ($j) {
+                    $j->on('dv.ID_Divisi', '=', 'g.Id_Divisi')->on('dv.Kode_Perusahaan', '=', 'g.Kode_Perusahaan');
+                })
+                ->whereIn('g.No_Transaksi', $refs->all())
+                ->whereNotNull('g.Id_Divisi')
+                ->select('g.Id_Divisi', 'dv.Keterangan as Nama')
+                ->distinct()->get();
+
+            // Divisi yang SUDAH punya baris info.
+            $adaInfo = array_flip(
+                DB::table('N_WEB_CAREERS_Division_Informations')
+                    ->whereIn('Id_Divisi', $divisi->pluck('Id_Divisi')->filter()->all() ?: [0])
+                    ->pluck('Id_Divisi')->all()
+            );
+
+            $belum = [];
+            foreach ($divisi as $d) {
+                if (! isset($adaInfo[$d->Id_Divisi]) && ! isset($belum[$d->Id_Divisi])) {
+                    // id = Hashids(ID_Divisi) agar cocok dengan baris Master Info Divisi
+                    // → tombol bisa deep-link membuka divisi yang tepat.
+                    $belum[$d->Id_Divisi] = [
+                        'nama' => $d->Nama ?: ('Divisi #' . $d->Id_Divisi),
+                        'id' => Hashids::encode($d->Id_Divisi),
+                    ];
+                }
+            }
+
+            return ResponseHelper::success(['belumLengkap' => array_values($belum)], 'Cek info divisi');
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->error('Gagal cek info divisi: ' . $e->getMessage());
+
+            return ResponseHelper::success(['belumLengkap' => []], 'Cek info divisi (fallback)');
+        }
+    }
+
     public function store(Request $request)
     {
         try {
