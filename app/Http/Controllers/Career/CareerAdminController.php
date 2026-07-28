@@ -48,43 +48,76 @@ class CareerAdminController extends Controller
         }
 
         $stats = [
-            ['label' => 'Program Berjalan', 'nilai' => $program->where('Status', 'BERJALAN')->count(), 'ikon' => 'bi bi-broadcast', 'warna' => '#059669'],
-            ['label' => 'Posisi Dibuka', 'nilai' => $posisi->where('Status', 'BUKA')->count(), 'ikon' => 'bi bi-briefcase', 'warna' => '#4f46e5'],
-            ['label' => 'Total Kuota', 'nilai' => (int) $posisi->sum('Kuota'), 'ikon' => 'bi bi-people', 'warna' => '#7c3aed'],
-            ['label' => 'Pelamar Masuk', 'nilai' => $jumlahLamaran, 'ikon' => 'bi bi-person-plus', 'warna' => '#d97706'],
+            [
+                'label' => 'Program Berjalan',
+                'nilai' => $program->where('Status', 'BERJALAN')->count(),
+                'ikon' => 'bi bi-broadcast',
+                'warna' => '#059669',
+            ],
+            [
+                'label' => 'Posisi Dibuka',
+                'nilai' => $posisi->where('Status', 'BUKA')->count(),
+                'ikon' => 'bi bi-briefcase',
+                'warna' => '#4f46e5',
+            ],
+            [
+                'label' => 'Total Kuota',
+                'nilai' => (int) $posisi->sum('Kuota'),
+                'ikon' => 'bi bi-people',
+                'warna' => '#7c3aed',
+            ],
+            [
+                'label' => 'Pelamar Masuk',
+                'nilai' => $jumlahLamaran,
+                'ikon' => 'bi bi-person-plus',
+                'warna' => '#d97706',
+            ],
         ];
 
-        $kegiatan = $program->map(fn ($p) => [
-            'id' => $p->Kode,
-            'nama' => $p->Nama,
-            'kategori' => $p->Kategori,
-            'status' => $p->Status,
-            'warna' => $p->Warna,
-        ])->values();
+        $kegiatan = $program
+            ->map(
+                fn($p) => [
+                    'id' => $p->Kode,
+                    'nama' => $p->Nama,
+                    'kategori' => $p->Kategori,
+                    'status' => $p->Status,
+                    'warna' => $p->Warna,
+                ],
+            )
+            ->values();
 
-        return Inertia::render('Career/admin/Dashboard', CareerShell::props('/karir', 'Dashboard Web Career', [
-            'stats' => $stats,
-            'funnel' => [],
-            'recent' => [],
-            'kegiatan' => $kegiatan,
-        ]));
+        return Inertia::render(
+            'Career/admin/Dashboard',
+            CareerShell::props('/karir', 'Dashboard Web Career', [
+                'stats' => $stats,
+                'funnel' => [],
+                'recent' => [],
+                'kegiatan' => $kegiatan,
+            ]),
+        );
     }
 
     /** /karir/pelamar — worklist seleksi. Diisi mesin lamaran (Batch 9-10). */
     public function pelamar()
     {
-        return Inertia::render('Career/admin/Pelamar', CareerShell::props('/karir/pelamar', 'Pelamar', [
-            'worklist' => [],
-            'lastUpdate' => ['waktu' => now()->format('d M Y H:i')],
-        ]));
+        return Inertia::render(
+            'Career/admin/Pelamar',
+            CareerShell::props('/karir/pelamar', 'Pelamar', [
+                'worklist' => [],
+                'lastUpdate' => ['waktu' => now()->format('d M Y H:i')],
+            ]),
+        );
     }
 
     /** /karir/hasil-tes — ringkasan hasil dari HCLearn (sumber skor ada di sana). */
     public function hasil_page()
     {
-        return Inertia::render('Career/admin/HasilTes', CareerShell::props('/karir/hasil-tes', 'Hasil Tes', [
-            'hasil' => [],
-        ]));
+        return Inertia::render(
+            'Career/admin/HasilTes',
+            CareerShell::props('/karir/hasil-tes', 'Hasil Tes', [
+                'hasil' => [],
+            ]),
+        );
     }
 
     /** /karir/kandidat — basis data kandidat terdaftar. */
@@ -94,17 +127,22 @@ class CareerAdminController extends Controller
             ->orderByDesc('Id_Users')
             ->limit(200)
             ->get()
-            ->map(fn ($u) => [
-                'id' => $u->Id_Users,
-                'nama' => $u->Nama ?? '—',
-                'email' => $u->Email ?? null,
-                'status' => ($u->Flag_Aktif ?? 'Y') === 'Y' ? 'AKTIF' : 'NONAKTIF',
-            ])
+            ->map(
+                fn($u) => [
+                    'id' => $u->Id_Users,
+                    'nama' => $u->Nama ?? '—',
+                    'email' => $u->Email ?? null,
+                    'status' => ($u->Flag_Aktif ?? 'Y') === 'Y' ? 'AKTIF' : 'NONAKTIF',
+                ],
+            )
             ->values();
 
-        return Inertia::render('Career/admin/Kandidat', CareerShell::props('/karir/kandidat', 'Kandidat', [
-            'kandidat' => $kandidat,
-        ]));
+        return Inertia::render(
+            'Career/admin/Kandidat',
+            CareerShell::props('/karir/kandidat', 'Kandidat', [
+                'kandidat' => $kandidat,
+            ]),
+        );
     }
 
     /** /karir/pengumuman — pengumuman hasil ke kandidat. */
@@ -113,13 +151,16 @@ class CareerAdminController extends Controller
         $kegiatanOptions = DB::table('N_WEB_CAREERS_Program')
             ->orderBy('Nama')
             ->get()
-            ->map(fn ($p) => ['id' => $p->Kode, 'nama' => $p->Nama, 'kategori' => $p->Kategori])
+            ->map(fn($p) => ['id' => $p->Kode, 'nama' => $p->Nama, 'kategori' => $p->Kategori])
             ->values();
 
-        return Inertia::render('Career/admin/Pengumuman', CareerShell::props('/karir/pengumuman', 'Pengumuman', [
-            'pengumuman' => [],
-            'kegiatanOptions' => $kegiatanOptions,
-        ]));
+        return Inertia::render(
+            'Career/admin/Pengumuman',
+            CareerShell::props('/karir/pengumuman', 'Pengumuman', [
+                'pengumuman' => [],
+                'kegiatanOptions' => $kegiatanOptions,
+            ]),
+        );
     }
 
     // ═══════════════════════ PORTAL KANDIDAT ═══════════════════════
@@ -127,9 +168,12 @@ class CareerAdminController extends Controller
     /** /profil — SATU route untuk semua akun; shell menyesuaikan role. */
     public function profil()
     {
-        return Inertia::render('Career/portal/Profil', CareerShell::props('/profil', 'Profil Saya', [
-            'user' => CareerShell::adminUser(),
-        ]));
+        return Inertia::render(
+            'Career/portal/Profil',
+            CareerShell::props('/profil', 'Profil Saya', [
+                'user' => CareerShell::adminUser(),
+            ]),
+        );
     }
 
     public function portalIndex()
@@ -139,19 +183,25 @@ class CareerAdminController extends Controller
 
     public function portalDetail(string $id)
     {
-        return Inertia::render('Career/portal/LamaranDetail', CareerShell::props('/kandidat/portal', 'Detail Lamaran', [
-            'kandidat' => CareerShell::adminUser(),
-            'lamaran' => ['id' => $id],
-        ]));
+        return Inertia::render(
+            'Career/portal/LamaranDetail',
+            CareerShell::props('/kandidat/portal', 'Detail Lamaran', [
+                'kandidat' => CareerShell::adminUser(),
+                'lamaran' => ['id' => $id],
+            ]),
+        );
     }
 
     public function portalTerkirim(string $id)
     {
-        return Inertia::render('Career/portal/LamaranTerkirim', CareerShell::props('/kandidat/portal', 'Lamaran Terkirim', [
-            'programId' => $id,
-            'catalog' => (object) [],
-            'stages' => [],
-        ]));
+        return Inertia::render(
+            'Career/portal/LamaranTerkirim',
+            CareerShell::props('/kandidat/portal', 'Lamaran Terkirim', [
+                'programId' => $id,
+                'catalog' => (object) [],
+                'stages' => [],
+            ]),
+        );
     }
 
     // ═══════════════════════ OPTIONS (dropdown) ═══════════════════════
@@ -183,7 +233,7 @@ class CareerAdminController extends Controller
                 ->select('Id_Program', 'Nama')
                 ->orderBy('Nama')
                 ->get()
-                ->map(fn ($r) => ['value' => $r->Id_Program, 'label' => $r->Nama])
+                ->map(fn($r) => ['value' => $r->Id_Program, 'label' => $r->Nama])
                 ->values();
             return ResponseHelper::success($rows, 'Opsi program');
         }
@@ -201,7 +251,7 @@ class CareerAdminController extends Controller
                 ->where('Flag_Aktif', 'Y')
                 ->orderBy('Nama')
                 ->get()
-                ->map(fn ($r) => ['value' => $r->Kode, 'label' => $r->Nama, 'perilaku' => $r->Perilaku_Kode])
+                ->map(fn($r) => ['value' => $r->Kode, 'label' => $r->Nama, 'perilaku' => $r->Perilaku_Kode])
                 ->values();
 
             return ResponseHelper::success($rows, 'Opsi tipe');
@@ -214,15 +264,17 @@ class CareerAdminController extends Controller
                 ->where('Flag_Aktif', 'Y')
                 ->orderBy('Urutan')
                 ->get()
-                ->map(fn ($r) => [
-                    'value' => $r->Kode,
-                    'label' => $r->Label,
-                    'nama' => $r->Nama,
-                    'ikon' => $r->Ikon,
-                    'warna' => $r->Warna,
-                    'deskripsi' => $r->Deskripsi,
-                    'butuhJeda' => $r->Butuh_Jeda === 'Y',
-                ])
+                ->map(
+                    fn($r) => [
+                        'value' => $r->Kode,
+                        'label' => $r->Label,
+                        'nama' => $r->Nama,
+                        'ikon' => $r->Ikon,
+                        'warna' => $r->Warna,
+                        'deskripsi' => $r->Deskripsi,
+                        'butuhJeda' => $r->Butuh_Jeda === 'Y',
+                    ],
+                )
                 ->values();
 
             return ResponseHelper::success($rows, 'Opsi mode pengumuman');
@@ -234,18 +286,20 @@ class CareerAdminController extends Controller
                 ->where('Flag_Aktif', 'Y')
                 ->orderBy('Urutan')
                 ->get()
-                ->map(fn ($r) => [
-                    'value' => $r->Kode,
-                    'label' => $r->Label,
-                    'nama' => $r->Nama,
-                    'ikon' => $r->Ikon,
-                    'warna' => $r->Warna,
-                    'deskripsi' => $r->Deskripsi,
-                    'tunggu' => $r->Tunggu,
-                    'autoLanjut' => $r->Auto_Lanjut === 'Y',
-                    'syaratLulus' => $r->Syarat_Lulus,
-                    'autoGugur' => $r->Auto_Gugur === 'Y',
-                ])
+                ->map(
+                    fn($r) => [
+                        'value' => $r->Kode,
+                        'label' => $r->Label,
+                        'nama' => $r->Nama,
+                        'ikon' => $r->Ikon,
+                        'warna' => $r->Warna,
+                        'deskripsi' => $r->Deskripsi,
+                        'tunggu' => $r->Tunggu,
+                        'autoLanjut' => $r->Auto_Lanjut === 'Y',
+                        'syaratLulus' => $r->Syarat_Lulus,
+                        'autoGugur' => $r->Auto_Gugur === 'Y',
+                    ],
+                )
                 ->values();
 
             return ResponseHelper::success($rows, 'Opsi mode keputusan');
@@ -296,7 +350,11 @@ class CareerAdminController extends Controller
             $q->whereNotNull('Komponen_Kode');
         }
 
-        $rows = $q->orderBy($labCol)->get()->map(fn ($r) => ['value' => $r->{$valCol}, 'label' => $r->{$labCol}])->values();
+        $rows = $q
+            ->orderBy($labCol)
+            ->get()
+            ->map(fn($r) => ['value' => $r->{$valCol}, 'label' => $r->{$labCol}])
+            ->values();
 
         return ResponseHelper::success($rows, 'Opsi ' . $type);
     }
@@ -313,7 +371,7 @@ class CareerAdminController extends Controller
             if (is_file($json)) {
                 $map = json_decode(file_get_contents($json), true) ?: [];
 
-                return array_values(array_map(fn ($k) => 'bi-' . $k, array_keys($map)));
+                return array_values(array_map(fn($k) => 'bi-' . $k, array_keys($map)));
             }
             $css = public_path('assets/extensions/bootstrap-icons/font/bootstrap-icons.css');
             if (is_file($css)) {
@@ -357,7 +415,12 @@ class CareerAdminController extends Controller
             })
             ->leftJoin('N_WEB_CAREERS_Master_Employment as me', 'me.Id_Employment', '=', 'd.Employment_Type')
             ->leftJoin('N_WEB_CAREERS_Master_Workplace as mw', 'mw.Id_Workplace', '=', 'd.Workplace_Type')
-            ->leftJoin('N_WEB_CAREERS_Master_Experience_Level as mx', 'mx.Id_Experience_Level', '=', 'd.Experience_Level')
+            ->leftJoin(
+                'N_WEB_CAREERS_Master_Experience_Level as mx',
+                'mx.Id_Experience_Level',
+                '=',
+                'd.Experience_Level',
+            )
             ->whereRaw("ISNULL(g.Status, '') <> 'Y'")
             ->whereRaw("ISNULL(g.Flag_Selesai, '') <> 'Y'")
             ->orderByDesc('g.Tanggal_Periode')
@@ -365,7 +428,9 @@ class CareerAdminController extends Controller
             ->get([
                 'g.No_Transaksi as no',
                 'jb.Keterangan as jabatan',
+                'dv.Id_Divisi as Id_Divisi',
                 'dv.Keterangan as divisi',
+                'sd.Id_Sub_Divisi as Id_Sub',
                 'sd.Keterangan as sub',
                 'lv.Keterangan as level',
                 'g.Jumlah_Rekruitmen as kuota',
@@ -374,27 +439,31 @@ class CareerAdminController extends Controller
                 'mx.Nama_Experience_Level as experience',
             ]);
 
-        $rows = collect($rows)->map(function ($r) {
-            $dept = trim(implode(' · ', array_filter([trim((string) $r->divisi), trim((string) $r->sub)])));
-            // Label sebelum "/" saja (mis. "Full-time / Purnawaktu" -> "Full-time").
-            $emp = trim(explode('/', (string) $r->employment)[0]);
+        $rows = collect($rows)
+            ->map(function ($r) {
+                $dept = trim(implode(' · ', array_filter([trim((string) $r->divisi), trim((string) $r->sub)])));
+                // Label sebelum "/" saja (mis. "Full-time / Purnawaktu" -> "Full-time").
+                $emp = trim(explode('/', (string) $r->employment)[0]);
 
-            return [
-                'value' => $r->no,
-                'label' => ($r->jabatan ?: $r->no) . ' — ' . ($dept ?: '—'),
-                'posisi' => $r->jabatan ?: ('Posisi ' . $r->no),
-                'divisi' => trim((string) $r->divisi),
-                'sub' => trim((string) $r->sub),
-                'departemen' => $dept,
-                'lokasi' => $r->workplace ?: '',
-                'level' => $r->level,
-                'kuota' => (int) ($r->kuota ?? 0),
-                'employment' => $emp,
-                'workplace' => $r->workplace,
-                'experience' => $r->experience,
-                'kategori' => null,
-            ];
-        })->values();
+                return [
+                    'value' => $r->no,
+                    'label' => ($r->jabatan ?: $r->no) . ' — ' . ($dept ?: '—'),
+                    'posisi' => $r->jabatan ?: 'Posisi ' . $r->no,
+                    'Id_Divisi' => $r->Id_Divisi,
+                    'divisi' => trim((string) $r->divisi),
+                    'sub' => trim((string) $r->sub),
+                    'Id_Sub_Divisi' => $r->Id_Sub,
+                    'departemen' => $dept,
+                    'lokasi' => $r->workplace ?: '',
+                    'level' => $r->level,
+                    'kuota' => (int) ($r->kuota ?? 0),
+                    'employment' => $emp,
+                    'workplace' => $r->workplace,
+                    'experience' => $r->experience,
+                    'kategori' => null,
+                ];
+            })
+            ->values();
 
         return ResponseHelper::success($rows, 'Opsi MPP (Monitoring MPP)');
     }
@@ -411,13 +480,15 @@ class CareerAdminController extends Controller
             ->where('Flag_Aktif', 'Y')
             ->orderBy('Nama')
             ->get()
-            ->map(fn ($r) => [
-                'value' => $r->Kategori,
-                'label' => $r->Nama,
-                'mode' => $r->Mode_Default,
-                'alur' => $r->Alur_Default_Kode,
-                'warna' => $r->Warna,
-            ])
+            ->map(
+                fn($r) => [
+                    'value' => $r->Kategori,
+                    'label' => $r->Nama,
+                    'mode' => $r->Mode_Default,
+                    'alur' => $r->Alur_Default_Kode,
+                    'warna' => $r->Warna,
+                ],
+            )
             ->values();
 
         return ResponseHelper::success($rows, 'Preset kategori');
@@ -434,7 +505,7 @@ class CareerAdminController extends Controller
     public function options_tahap_formulir()
     {
         $alur = request()->query('alur');
-        if (! $alur) {
+        if (!$alur) {
             return ResponseHelper::success([], 'Alur belum dipilih');
         }
 
@@ -444,16 +515,25 @@ class CareerAdminController extends Controller
             ->where('a.Kode', $alur)
             ->whereNotNull('t.Formulir_Kode')
             ->orderBy('t.Urutan')
-            ->select('t.Id_Master_Alur_Tahap', 't.Urutan', 't.Label', 't.Formulir_Kode', 'f.Nama as FormulirNama', 'f.Komponen_Kode')
+            ->select(
+                't.Id_Master_Alur_Tahap',
+                't.Urutan',
+                't.Label',
+                't.Formulir_Kode',
+                'f.Nama as FormulirNama',
+                'f.Komponen_Kode',
+            )
             ->get()
-            ->map(fn ($t) => [
-                'tahapId' => (int) $t->Id_Master_Alur_Tahap,
-                'urutan' => (int) $t->Urutan,
-                'label' => $t->Label,
-                'formulir' => $t->Formulir_Kode,
-                'formulirNama' => $t->FormulirNama,
-                'komponen' => $t->Komponen_Kode,
-            ])
+            ->map(
+                fn($t) => [
+                    'tahapId' => (int) $t->Id_Master_Alur_Tahap,
+                    'urutan' => (int) $t->Urutan,
+                    'label' => $t->Label,
+                    'formulir' => $t->Formulir_Kode,
+                    'formulirNama' => $t->FormulirNama,
+                    'komponen' => $t->Komponen_Kode,
+                ],
+            )
             ->values();
 
         return ResponseHelper::success($rows, 'Tahap berformulir');
@@ -472,11 +552,41 @@ class CareerAdminController extends Controller
     public function jenisAgenda(): array
     {
         return [
-            ['value' => 'RAPAT', 'label' => 'Rapat', 'deskripsi' => 'Rapat koordinasi panitia rekrutmen.', 'ikon' => 'bi-people-fill', 'warna' => '#4f46e5'],
-            ['value' => 'CAMPAIGN', 'label' => 'Campaign / Publikasi', 'deskripsi' => 'Publikasi lowongan ke kanal media & sosial.', 'ikon' => 'bi-megaphone', 'warna' => '#d97706'],
-            ['value' => 'SOSIALISASI', 'label' => 'Sosialisasi', 'deskripsi' => 'Sosialisasi program ke kampus / komunitas.', 'ikon' => 'bi-broadcast', 'warna' => '#0891b2'],
-            ['value' => 'SELEKSI', 'label' => 'Tahap Seleksi', 'deskripsi' => 'Pelaksanaan tahap seleksi (tes, wawancara, dsb).', 'ikon' => 'bi-people', 'warna' => '#059669'],
-            ['value' => 'EVALUASI', 'label' => 'Evaluasi / Laporan', 'deskripsi' => 'Evaluasi hasil & penyusunan laporan gelombang.', 'ikon' => 'bi-clipboard-check', 'warna' => '#7c3aed'],
+            [
+                'value' => 'RAPAT',
+                'label' => 'Rapat',
+                'deskripsi' => 'Rapat koordinasi panitia rekrutmen.',
+                'ikon' => 'bi-people-fill',
+                'warna' => '#4f46e5',
+            ],
+            [
+                'value' => 'CAMPAIGN',
+                'label' => 'Campaign / Publikasi',
+                'deskripsi' => 'Publikasi lowongan ke kanal media & sosial.',
+                'ikon' => 'bi-megaphone',
+                'warna' => '#d97706',
+            ],
+            [
+                'value' => 'SOSIALISASI',
+                'label' => 'Sosialisasi',
+                'deskripsi' => 'Sosialisasi program ke kampus / komunitas.',
+                'ikon' => 'bi-broadcast',
+                'warna' => '#0891b2',
+            ],
+            [
+                'value' => 'SELEKSI',
+                'label' => 'Tahap Seleksi',
+                'deskripsi' => 'Pelaksanaan tahap seleksi (tes, wawancara, dsb).',
+                'ikon' => 'bi-people',
+                'warna' => '#059669',
+            ],
+            [
+                'value' => 'EVALUASI',
+                'label' => 'Evaluasi / Laporan',
+                'deskripsi' => 'Evaluasi hasil & penyusunan laporan gelombang.',
+                'ikon' => 'bi-clipboard-check',
+                'warna' => '#7c3aed',
+            ],
         ];
     }
 
@@ -494,126 +604,378 @@ class CareerAdminController extends Controller
     {
         return [
             [
-                'id' => 'RC-001', 'mppRef' => 'MPP/2026/SLS/011', 'posisi' => 'Sales Executive (Pet Retail)', 'departemen' => 'Sales & Distribution',
-                'lokasi' => 'Palembang', 'level' => 'Staff', 'tempatKerja' => 'On-site', 'tipeKerja' => 'Full-time', 'kuota' => 4, 'pelamar' => 37,
-                'status' => 'BUKA', 'tutup' => '15 Agu 2026', 'kategori' => 'REKRUTMEN', 'program' => 'Rekrutmen Reguler Q3 2026', 'alurId' => 'ALR-REK', 'alurNama' => 'Alur Rekrutmen Standar',
-                'deskripsi' => 'Menjalankan aktivitas penjualan produk pet retail ke jaringan mitra & pelanggan di area Palembang.',
-                'tanggungJawab' => ['Mencapai target penjualan bulanan', 'Membina hubungan dengan mitra retail', 'Melaporkan aktivitas penjualan mingguan'],
-                'persyaratan' => ['Min. D3/S1 semua jurusan', 'Memiliki SIM C & kendaraan', 'Pengalaman sales min. 1 tahun (nilai plus)'],
+                'id' => 'RC-001',
+                'mppRef' => 'MPP/2026/SLS/011',
+                'posisi' => 'Sales Executive (Pet Retail)',
+                'departemen' => 'Sales & Distribution',
+                'lokasi' => 'Palembang',
+                'level' => 'Staff',
+                'tempatKerja' => 'On-site',
+                'tipeKerja' => 'Full-time',
+                'kuota' => 4,
+                'pelamar' => 37,
+                'status' => 'BUKA',
+                'tutup' => '15 Agu 2026',
+                'kategori' => 'REKRUTMEN',
+                'program' => 'Rekrutmen Reguler Q3 2026',
+                'alurId' => 'ALR-REK',
+                'alurNama' => 'Alur Rekrutmen Standar',
+                'deskripsi' =>
+                    'Menjalankan aktivitas penjualan produk pet retail ke jaringan mitra & pelanggan di area Palembang.',
+                'tanggungJawab' => [
+                    'Mencapai target penjualan bulanan',
+                    'Membina hubungan dengan mitra retail',
+                    'Melaporkan aktivitas penjualan mingguan',
+                ],
+                'persyaratan' => [
+                    'Min. D3/S1 semua jurusan',
+                    'Memiliki SIM C & kendaraan',
+                    'Pengalaman sales min. 1 tahun (nilai plus)',
+                ],
                 'skill' => ['Negosiasi', 'Komunikasi', 'Product Knowledge'],
             ],
             [
-                'id' => 'RC-002', 'mppRef' => 'MPP/2026/TCH/002', 'posisi' => 'Fullstack Web Developer', 'departemen' => 'Technology',
-                'lokasi' => 'Palembang', 'level' => 'Mid', 'tempatKerja' => 'Hybrid', 'tipeKerja' => 'Full-time', 'kuota' => 2, 'pelamar' => 58,
-                'status' => 'BUKA', 'tutup' => '30 Agu 2026', 'kategori' => 'REKRUTMEN', 'program' => 'Rekrutmen Reguler Q3 2026', 'alurId' => 'ALR-REK-TECH', 'alurNama' => 'Alur Rekrutmen Teknis',
+                'id' => 'RC-002',
+                'mppRef' => 'MPP/2026/TCH/002',
+                'posisi' => 'Fullstack Web Developer',
+                'departemen' => 'Technology',
+                'lokasi' => 'Palembang',
+                'level' => 'Mid',
+                'tempatKerja' => 'Hybrid',
+                'tipeKerja' => 'Full-time',
+                'kuota' => 2,
+                'pelamar' => 58,
+                'status' => 'BUKA',
+                'tutup' => '30 Agu 2026',
+                'kategori' => 'REKRUTMEN',
+                'program' => 'Rekrutmen Reguler Q3 2026',
+                'alurId' => 'ALR-REK-TECH',
+                'alurNama' => 'Alur Rekrutmen Teknis',
                 'deskripsi' => 'Membangun dan memelihara aplikasi web internal EVO Group (Laravel + Vue).',
-                'tanggungJawab' => ['Mengembangkan fitur end-to-end', 'Menjaga kualitas & keamanan kode', 'Berkolaborasi dengan tim produk'],
+                'tanggungJawab' => [
+                    'Mengembangkan fitur end-to-end',
+                    'Menjaga kualitas & keamanan kode',
+                    'Berkolaborasi dengan tim produk',
+                ],
                 'persyaratan' => ['S1 Informatika/sederajat', 'Menguasai PHP/Laravel & Vue', 'Paham REST API & Git'],
                 'skill' => ['Laravel', 'Vue.js', 'MySQL', 'Git'],
             ],
             [
-                'id' => 'RC-003', 'mppRef' => 'MPP/2026/MKT/006', 'posisi' => 'Digital Marketing Specialist', 'departemen' => 'Marketing',
-                'lokasi' => 'Palembang', 'level' => 'Staff', 'tempatKerja' => 'Hybrid', 'tipeKerja' => 'Full-time', 'kuota' => 2, 'pelamar' => 44,
-                'status' => 'BUKA', 'tutup' => '20 Agu 2026', 'kategori' => 'REKRUTMEN', 'program' => 'Rekrutmen Reguler Q3 2026', 'alurId' => 'ALR-REK', 'alurNama' => 'Alur Rekrutmen Standar',
+                'id' => 'RC-003',
+                'mppRef' => 'MPP/2026/MKT/006',
+                'posisi' => 'Digital Marketing Specialist',
+                'departemen' => 'Marketing',
+                'lokasi' => 'Palembang',
+                'level' => 'Staff',
+                'tempatKerja' => 'Hybrid',
+                'tipeKerja' => 'Full-time',
+                'kuota' => 2,
+                'pelamar' => 44,
+                'status' => 'BUKA',
+                'tutup' => '20 Agu 2026',
+                'kategori' => 'REKRUTMEN',
+                'program' => 'Rekrutmen Reguler Q3 2026',
+                'alurId' => 'ALR-REK',
+                'alurNama' => 'Alur Rekrutmen Standar',
                 'deskripsi' => 'Merancang & menjalankan kampanye pemasaran digital untuk brand EVO Group.',
-                'tanggungJawab' => ['Kelola kampanye ads & sosial media', 'Analisis performa kampanye', 'Buat konten pemasaran'],
+                'tanggungJawab' => [
+                    'Kelola kampanye ads & sosial media',
+                    'Analisis performa kampanye',
+                    'Buat konten pemasaran',
+                ],
                 'persyaratan' => ['S1 Marketing/Komunikasi', 'Menguasai Meta & Google Ads', 'Paham analitik digital'],
                 'skill' => ['Meta Ads', 'Google Ads', 'Copywriting', 'Analytics'],
             ],
             [
-                'id' => 'RC-004', 'mppRef' => 'MPP/2026/SCM/003', 'posisi' => 'Warehouse Supervisor', 'departemen' => 'Supply Chain',
-                'lokasi' => 'Banyuasin', 'level' => 'Supervisor', 'tempatKerja' => 'On-site', 'tipeKerja' => 'Full-time', 'kuota' => 1, 'pelamar' => 21,
-                'status' => 'PENUH', 'tutup' => '05 Sep 2026', 'kategori' => 'REKRUTMEN', 'program' => 'Rekrutmen Reguler Q3 2026', 'alurId' => 'ALR-REK', 'alurNama' => 'Alur Rekrutmen Standar',
+                'id' => 'RC-004',
+                'mppRef' => 'MPP/2026/SCM/003',
+                'posisi' => 'Warehouse Supervisor',
+                'departemen' => 'Supply Chain',
+                'lokasi' => 'Banyuasin',
+                'level' => 'Supervisor',
+                'tempatKerja' => 'On-site',
+                'tipeKerja' => 'Full-time',
+                'kuota' => 1,
+                'pelamar' => 21,
+                'status' => 'PENUH',
+                'tutup' => '05 Sep 2026',
+                'kategori' => 'REKRUTMEN',
+                'program' => 'Rekrutmen Reguler Q3 2026',
+                'alurId' => 'ALR-REK',
+                'alurNama' => 'Alur Rekrutmen Standar',
                 'deskripsi' => 'Mengawasi operasional gudang pabrik Banyuasin & memastikan akurasi stok.',
                 'tanggungJawab' => ['Supervisi tim gudang', 'Kontrol inventori & FIFO', 'Laporan operasional harian'],
                 'persyaratan' => ['Min. D3 Logistik/sederajat', 'Pengalaman gudang min. 3 tahun', 'Menguasai WMS'],
                 'skill' => ['Inventory', 'Leadership', 'WMS'],
             ],
             [
-                'id' => 'RC-005', 'mppRef' => 'MPP/2026/PRD/008', 'posisi' => 'Production Quality Analyst', 'departemen' => 'Production',
-                'lokasi' => 'Banyuasin', 'level' => 'Staff', 'tempatKerja' => 'On-site', 'tipeKerja' => 'Full-time', 'kuota' => 3, 'pelamar' => 29,
-                'status' => 'BUKA', 'tutup' => '25 Agu 2026', 'kategori' => 'REKRUTMEN', 'program' => 'Rekrutmen Reguler Q3 2026', 'alurId' => 'ALR-REK-TECH', 'alurNama' => 'Alur Rekrutmen Teknis',
+                'id' => 'RC-005',
+                'mppRef' => 'MPP/2026/PRD/008',
+                'posisi' => 'Production Quality Analyst',
+                'departemen' => 'Production',
+                'lokasi' => 'Banyuasin',
+                'level' => 'Staff',
+                'tempatKerja' => 'On-site',
+                'tipeKerja' => 'Full-time',
+                'kuota' => 3,
+                'pelamar' => 29,
+                'status' => 'BUKA',
+                'tutup' => '25 Agu 2026',
+                'kategori' => 'REKRUTMEN',
+                'program' => 'Rekrutmen Reguler Q3 2026',
+                'alurId' => 'ALR-REK-TECH',
+                'alurNama' => 'Alur Rekrutmen Teknis',
                 'deskripsi' => 'Mengawasi mutu produk manufaktur sesuai standar QA/QC.',
-                'tanggungJawab' => ['Inspeksi kualitas produk', 'Dokumentasi temuan mutu', 'Rekomendasi perbaikan proses'],
+                'tanggungJawab' => [
+                    'Inspeksi kualitas produk',
+                    'Dokumentasi temuan mutu',
+                    'Rekomendasi perbaikan proses',
+                ],
                 'persyaratan' => ['S1 Teknik Industri/Kimia', 'Paham QA/QC & GMP', 'Teliti & analitis'],
                 'skill' => ['QA/QC', 'GMP', 'Analisis Data'],
             ],
             [
-                'id' => 'RC-007', 'mppRef' => 'MPP/2026/FIN/005', 'posisi' => 'Finance & Accounting Staff', 'departemen' => 'Finance',
-                'lokasi' => 'Palembang', 'level' => 'Staff', 'tempatKerja' => 'On-site', 'tipeKerja' => 'Full-time', 'kuota' => 2, 'pelamar' => 40,
-                'status' => 'BUKA', 'tutup' => '01 Sep 2026', 'kategori' => 'REKRUTMEN', 'program' => 'Rekrutmen Reguler Q3 2026', 'alurId' => 'ALR-REK', 'alurNama' => 'Alur Rekrutmen Standar',
+                'id' => 'RC-007',
+                'mppRef' => 'MPP/2026/FIN/005',
+                'posisi' => 'Finance & Accounting Staff',
+                'departemen' => 'Finance',
+                'lokasi' => 'Palembang',
+                'level' => 'Staff',
+                'tempatKerja' => 'On-site',
+                'tipeKerja' => 'Full-time',
+                'kuota' => 2,
+                'pelamar' => 40,
+                'status' => 'BUKA',
+                'tutup' => '01 Sep 2026',
+                'kategori' => 'REKRUTMEN',
+                'program' => 'Rekrutmen Reguler Q3 2026',
+                'alurId' => 'ALR-REK',
+                'alurNama' => 'Alur Rekrutmen Standar',
                 'deskripsi' => 'Mengelola pencatatan keuangan & pelaporan akuntansi harian.',
                 'tanggungJawab' => ['Jurnal & rekonsiliasi', 'Laporan keuangan bulanan', 'Administrasi pajak dasar'],
                 'persyaratan' => ['S1 Akuntansi', 'Menguasai Excel & software akuntansi', 'Paham perpajakan dasar'],
                 'skill' => ['Akuntansi', 'Excel', 'Perpajakan'],
             ],
             [
-                'id' => 'RC-008', 'mppRef' => 'MPP/2026/MT/001', 'posisi' => 'Management Trainee (EDP)', 'departemen' => 'Lintas Divisi',
-                'lokasi' => 'Palembang', 'level' => 'Trainee', 'tempatKerja' => 'On-site', 'tipeKerja' => 'Full-time', 'kuota' => 10, 'pelamar' => 112,
-                'status' => 'BUKA', 'tutup' => '30 Sep 2026', 'kategori' => 'MT', 'program' => 'EVO Development Program (EDP) 2026', 'alurId' => 'ALR-MT', 'alurNama' => 'Alur Management Trainee',
-                'deskripsi' => 'Program kaderisasi calon pemimpin EVO Group melalui rotasi lintas divisi selama 12 bulan.',
-                'tanggungJawab' => ['Menjalani rotasi antar divisi', 'Mengerjakan capstone project', 'Mengikuti kelas kepemimpinan'],
-                'persyaratan' => ['S1 semua jurusan, IPK min. 3.00', 'Usia maks. 25 tahun', 'Bersedia ditempatkan di seluruh area'],
+                'id' => 'RC-008',
+                'mppRef' => 'MPP/2026/MT/001',
+                'posisi' => 'Management Trainee (EDP)',
+                'departemen' => 'Lintas Divisi',
+                'lokasi' => 'Palembang',
+                'level' => 'Trainee',
+                'tempatKerja' => 'On-site',
+                'tipeKerja' => 'Full-time',
+                'kuota' => 10,
+                'pelamar' => 112,
+                'status' => 'BUKA',
+                'tutup' => '30 Sep 2026',
+                'kategori' => 'MT',
+                'program' => 'EVO Development Program (EDP) 2026',
+                'alurId' => 'ALR-MT',
+                'alurNama' => 'Alur Management Trainee',
+                'deskripsi' =>
+                    'Program kaderisasi calon pemimpin EVO Group melalui rotasi lintas divisi selama 12 bulan.',
+                'tanggungJawab' => [
+                    'Menjalani rotasi antar divisi',
+                    'Mengerjakan capstone project',
+                    'Mengikuti kelas kepemimpinan',
+                ],
+                'persyaratan' => [
+                    'S1 semua jurusan, IPK min. 3.00',
+                    'Usia maks. 25 tahun',
+                    'Bersedia ditempatkan di seluruh area',
+                ],
                 'skill' => ['Leadership', 'Analitis', 'Adaptabilitas'],
             ],
             [
-                'id' => 'RC-009', 'mppRef' => 'MPP/2026/MT/002', 'posisi' => 'Management Trainee (Operations)', 'departemen' => 'Operations',
-                'lokasi' => 'Banyuasin', 'level' => 'Trainee', 'tempatKerja' => 'On-site', 'tipeKerja' => 'Full-time', 'kuota' => 6, 'pelamar' => 74,
-                'status' => 'BUKA', 'tutup' => '30 Sep 2026', 'kategori' => 'MT', 'program' => 'EVO Development Program (EDP) 2026', 'alurId' => 'ALR-MT', 'alurNama' => 'Alur Management Trainee',
+                'id' => 'RC-009',
+                'mppRef' => 'MPP/2026/MT/002',
+                'posisi' => 'Management Trainee (Operations)',
+                'departemen' => 'Operations',
+                'lokasi' => 'Banyuasin',
+                'level' => 'Trainee',
+                'tempatKerja' => 'On-site',
+                'tipeKerja' => 'Full-time',
+                'kuota' => 6,
+                'pelamar' => 74,
+                'status' => 'BUKA',
+                'tutup' => '30 Sep 2026',
+                'kategori' => 'MT',
+                'program' => 'EVO Development Program (EDP) 2026',
+                'alurId' => 'ALR-MT',
+                'alurNama' => 'Alur Management Trainee',
                 'deskripsi' => 'Jalur MT khusus operasional pabrik: produksi, mutu, dan rantai pasok.',
-                'tanggungJawab' => ['Rotasi lini produksi & gudang', 'Analisis efisiensi proses', 'Presentasi hasil improvement'],
-                'persyaratan' => ['S1 Teknik Industri/Mesin/Kimia', 'IPK min. 3.00', 'Bersedia ditempatkan di Banyuasin'],
+                'tanggungJawab' => [
+                    'Rotasi lini produksi & gudang',
+                    'Analisis efisiensi proses',
+                    'Presentasi hasil improvement',
+                ],
+                'persyaratan' => [
+                    'S1 Teknik Industri/Mesin/Kimia',
+                    'IPK min. 3.00',
+                    'Bersedia ditempatkan di Banyuasin',
+                ],
                 'skill' => ['Problem Solving', 'Lean', 'Komunikasi'],
             ],
             [
-                'id' => 'RC-012', 'mppRef' => 'MPP/2026/MT/003', 'posisi' => 'Management Trainee (Sales & Marketing)', 'departemen' => 'Sales & Distribution',
-                'lokasi' => 'Palembang', 'level' => 'Trainee', 'tempatKerja' => 'On-site', 'tipeKerja' => 'Full-time', 'kuota' => 8, 'pelamar' => 96,
-                'status' => 'BUKA', 'tutup' => '30 Sep 2026', 'kategori' => 'MT', 'program' => 'EVO Development Program (EDP) 2026', 'alurId' => 'ALR-MT', 'alurNama' => 'Alur Management Trainee',
+                'id' => 'RC-012',
+                'mppRef' => 'MPP/2026/MT/003',
+                'posisi' => 'Management Trainee (Sales & Marketing)',
+                'departemen' => 'Sales & Distribution',
+                'lokasi' => 'Palembang',
+                'level' => 'Trainee',
+                'tempatKerja' => 'On-site',
+                'tipeKerja' => 'Full-time',
+                'kuota' => 8,
+                'pelamar' => 96,
+                'status' => 'BUKA',
+                'tutup' => '30 Sep 2026',
+                'kategori' => 'MT',
+                'program' => 'EVO Development Program (EDP) 2026',
+                'alurId' => 'ALR-MT',
+                'alurNama' => 'Alur Management Trainee',
                 'deskripsi' => 'Jalur MT komersial: penjualan, distribusi, dan pengembangan pasar.',
-                'tanggungJawab' => ['Rotasi tim sales area', 'Analisis pasar & kompetitor', 'Menjalankan program penjualan'],
+                'tanggungJawab' => [
+                    'Rotasi tim sales area',
+                    'Analisis pasar & kompetitor',
+                    'Menjalankan program penjualan',
+                ],
                 'persyaratan' => ['S1 semua jurusan, IPK min. 3.00', 'Memiliki SIM A/C', 'Bersedia perjalanan dinas'],
                 'skill' => ['Negosiasi', 'Analisis Pasar', 'Presentasi'],
             ],
             [
-                'id' => 'RC-013', 'mppRef' => 'MPP/2026/MT/004', 'posisi' => 'Management Trainee (Finance)', 'departemen' => 'Finance & Accounting',
-                'lokasi' => 'Palembang', 'level' => 'Trainee', 'tempatKerja' => 'On-site', 'tipeKerja' => 'Full-time', 'kuota' => 4, 'pelamar' => 58,
-                'status' => 'BUKA', 'tutup' => '30 Sep 2026', 'kategori' => 'MT', 'program' => 'EVO Development Program (EDP) 2026', 'alurId' => 'ALR-MT', 'alurNama' => 'Alur Management Trainee',
+                'id' => 'RC-013',
+                'mppRef' => 'MPP/2026/MT/004',
+                'posisi' => 'Management Trainee (Finance)',
+                'departemen' => 'Finance & Accounting',
+                'lokasi' => 'Palembang',
+                'level' => 'Trainee',
+                'tempatKerja' => 'On-site',
+                'tipeKerja' => 'Full-time',
+                'kuota' => 4,
+                'pelamar' => 58,
+                'status' => 'BUKA',
+                'tutup' => '30 Sep 2026',
+                'kategori' => 'MT',
+                'program' => 'EVO Development Program (EDP) 2026',
+                'alurId' => 'ALR-MT',
+                'alurNama' => 'Alur Management Trainee',
                 'deskripsi' => 'Jalur MT keuangan: akuntansi, anggaran, dan pengendalian internal.',
-                'tanggungJawab' => ['Rotasi tim akuntansi & anggaran', 'Menyusun analisis biaya', 'Membantu audit internal'],
+                'tanggungJawab' => [
+                    'Rotasi tim akuntansi & anggaran',
+                    'Menyusun analisis biaya',
+                    'Membantu audit internal',
+                ],
                 'persyaratan' => ['S1 Akuntansi/Manajemen Keuangan', 'IPK min. 3.20', 'Menguasai Excel tingkat lanjut'],
                 'skill' => ['Akuntansi', 'Analisis Biaya', 'Excel'],
             ],
             [
-                'id' => 'RC-010', 'mppRef' => 'MPP/2026/INT/001', 'posisi' => 'Internship — Technology', 'departemen' => 'Technology',
-                'lokasi' => 'Palembang', 'level' => 'Magang', 'tempatKerja' => 'Hybrid', 'tipeKerja' => 'Internship', 'kuota' => 5, 'pelamar' => 63,
-                'status' => 'BUKA', 'tutup' => '15 Sep 2026', 'kategori' => 'INTERNSHIP', 'program' => 'Internship Batch 2026', 'alurId' => 'ALR-INT', 'alurNama' => 'Alur Magang (Internship)',
+                'id' => 'RC-010',
+                'mppRef' => 'MPP/2026/INT/001',
+                'posisi' => 'Internship — Technology',
+                'departemen' => 'Technology',
+                'lokasi' => 'Palembang',
+                'level' => 'Magang',
+                'tempatKerja' => 'Hybrid',
+                'tipeKerja' => 'Internship',
+                'kuota' => 5,
+                'pelamar' => 63,
+                'status' => 'BUKA',
+                'tutup' => '15 Sep 2026',
+                'kategori' => 'INTERNSHIP',
+                'program' => 'Internship Batch 2026',
+                'alurId' => 'ALR-INT',
+                'alurNama' => 'Alur Magang (Internship)',
                 'deskripsi' => 'Magang bersertifikat di tim Technology: pengembangan aplikasi internal.',
-                'tanggungJawab' => ['Membantu pengembangan fitur', 'Menulis dokumentasi teknis', 'Mengikuti sprint tim'],
-                'persyaratan' => ['Mahasiswa aktif semester 5+', 'Paham dasar pemrograman web', 'Durasi magang min. 3 bulan'],
+                'tanggungJawab' => [
+                    'Membantu pengembangan fitur',
+                    'Menulis dokumentasi teknis',
+                    'Mengikuti sprint tim',
+                ],
+                'persyaratan' => [
+                    'Mahasiswa aktif semester 5+',
+                    'Paham dasar pemrograman web',
+                    'Durasi magang min. 3 bulan',
+                ],
                 'skill' => ['HTML/CSS', 'JavaScript', 'Git'],
             ],
             [
-                'id' => 'RC-011', 'mppRef' => 'MPP/2026/INT/002', 'posisi' => 'Internship — Human Capital', 'departemen' => 'Human Capital',
-                'lokasi' => 'Palembang', 'level' => 'Magang', 'tempatKerja' => 'On-site', 'tipeKerja' => 'Internship', 'kuota' => 3, 'pelamar' => 48,
-                'status' => 'BUKA', 'tutup' => '15 Sep 2026', 'kategori' => 'INTERNSHIP', 'program' => 'Internship Batch 2026', 'alurId' => 'ALR-INT', 'alurNama' => 'Alur Magang (Internship)',
+                'id' => 'RC-011',
+                'mppRef' => 'MPP/2026/INT/002',
+                'posisi' => 'Internship — Human Capital',
+                'departemen' => 'Human Capital',
+                'lokasi' => 'Palembang',
+                'level' => 'Magang',
+                'tempatKerja' => 'On-site',
+                'tipeKerja' => 'Internship',
+                'kuota' => 3,
+                'pelamar' => 48,
+                'status' => 'BUKA',
+                'tutup' => '15 Sep 2026',
+                'kategori' => 'INTERNSHIP',
+                'program' => 'Internship Batch 2026',
+                'alurId' => 'ALR-INT',
+                'alurNama' => 'Alur Magang (Internship)',
                 'deskripsi' => 'Magang di tim Human Capital: administrasi rekrutmen & employer branding.',
-                'tanggungJawab' => ['Bantu proses seleksi administrasi', 'Kelola arsip kandidat', 'Bantu konten employer branding'],
-                'persyaratan' => ['Mahasiswa Psikologi/Manajemen semester 5+', 'Teliti & komunikatif', 'Durasi magang min. 3 bulan'],
+                'tanggungJawab' => [
+                    'Bantu proses seleksi administrasi',
+                    'Kelola arsip kandidat',
+                    'Bantu konten employer branding',
+                ],
+                'persyaratan' => [
+                    'Mahasiswa Psikologi/Manajemen semester 5+',
+                    'Teliti & komunikatif',
+                    'Durasi magang min. 3 bulan',
+                ],
                 'skill' => ['Administrasi', 'Komunikasi', 'Microsoft Office'],
             ],
             [
-                'id' => 'RC-014', 'mppRef' => 'MPP/2026/INT/003', 'posisi' => 'Internship — Marketing', 'departemen' => 'Marketing',
-                'lokasi' => 'Palembang', 'level' => 'Magang', 'tempatKerja' => 'Hybrid', 'tipeKerja' => 'Internship', 'kuota' => 4, 'pelamar' => 55,
-                'status' => 'BUKA', 'tutup' => '15 Sep 2026', 'kategori' => 'INTERNSHIP', 'program' => 'Internship Batch 2026', 'alurId' => 'ALR-INT', 'alurNama' => 'Alur Magang (Internship)',
+                'id' => 'RC-014',
+                'mppRef' => 'MPP/2026/INT/003',
+                'posisi' => 'Internship — Marketing',
+                'departemen' => 'Marketing',
+                'lokasi' => 'Palembang',
+                'level' => 'Magang',
+                'tempatKerja' => 'Hybrid',
+                'tipeKerja' => 'Internship',
+                'kuota' => 4,
+                'pelamar' => 55,
+                'status' => 'BUKA',
+                'tutup' => '15 Sep 2026',
+                'kategori' => 'INTERNSHIP',
+                'program' => 'Internship Batch 2026',
+                'alurId' => 'ALR-INT',
+                'alurNama' => 'Alur Magang (Internship)',
                 'deskripsi' => 'Magang di tim Marketing: produksi konten & riset kecil pasar.',
-                'tanggungJawab' => ['Membuat konten sosial media', 'Bantu riset kompetitor', 'Dokumentasi kegiatan brand'],
-                'persyaratan' => ['Mahasiswa Komunikasi/DKV/Manajemen semester 5+', 'Menguasai Canva/Adobe dasar', 'Durasi magang min. 3 bulan'],
+                'tanggungJawab' => [
+                    'Membuat konten sosial media',
+                    'Bantu riset kompetitor',
+                    'Dokumentasi kegiatan brand',
+                ],
+                'persyaratan' => [
+                    'Mahasiswa Komunikasi/DKV/Manajemen semester 5+',
+                    'Menguasai Canva/Adobe dasar',
+                    'Durasi magang min. 3 bulan',
+                ],
                 'skill' => ['Copywriting', 'Desain Dasar', 'Riset'],
             ],
             [
-                'id' => 'RC-015', 'mppRef' => 'MPP/2026/INT/004', 'posisi' => 'Internship — Production', 'departemen' => 'Production',
-                'lokasi' => 'Banyuasin', 'level' => 'Magang', 'tempatKerja' => 'On-site', 'tipeKerja' => 'Internship', 'kuota' => 6, 'pelamar' => 41,
-                'status' => 'BUKA', 'tutup' => '15 Sep 2026', 'kategori' => 'INTERNSHIP', 'program' => 'Internship Batch 2026', 'alurId' => 'ALR-INT', 'alurNama' => 'Alur Magang (Internship)',
+                'id' => 'RC-015',
+                'mppRef' => 'MPP/2026/INT/004',
+                'posisi' => 'Internship — Production',
+                'departemen' => 'Production',
+                'lokasi' => 'Banyuasin',
+                'level' => 'Magang',
+                'tempatKerja' => 'On-site',
+                'tipeKerja' => 'Internship',
+                'kuota' => 6,
+                'pelamar' => 41,
+                'status' => 'BUKA',
+                'tutup' => '15 Sep 2026',
+                'kategori' => 'INTERNSHIP',
+                'program' => 'Internship Batch 2026',
+                'alurId' => 'ALR-INT',
+                'alurNama' => 'Alur Magang (Internship)',
                 'deskripsi' => 'Magang di lini produksi pabrik Banyuasin: proses, mutu, dan K3.',
                 'tanggungJawab' => ['Mengamati proses produksi', 'Bantu pencatatan mutu', 'Menyusun laporan magang'],
                 'persyaratan' => ['Mahasiswa Teknik semester 5+', 'Bersedia kerja shift', 'Durasi magang min. 3 bulan'],

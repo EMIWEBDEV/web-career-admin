@@ -73,13 +73,25 @@ onUnmounted(() => observer?.disconnect());
     color: #8b5cf6;
 }
 .ach .wc-ach-card {
-    background: rgba(255, 255, 255, 0.86);
+    background: rgba(255, 255, 255, 0.88);
+    border: 1px solid rgba(226, 232, 240, 0.9);
     border-radius: 20px;
+    transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease, border-color 0.25s ease;
+}
+.ach .wc-ach-card:hover {
+    transform: translateY(-4px);
+    border-color: rgba(139, 92, 246, 0.4);
+    box-shadow: 0 20px 40px rgba(99, 102, 241, 0.14);
 }
 .ach .wc-ach-card__ico {
     background: rgba(99, 102, 241, 0.1);
     color: #6366f1;
     border-radius: 14px;
+    transition: background 0.2s ease, color 0.2s ease;
+}
+.ach .wc-ach-card:hover .wc-ach-card__ico {
+    background: #6366f1;
+    color: #ffffff;
 }
 .ach .wc-ach-card__num {
     background: none;
@@ -89,5 +101,51 @@ onUnmounted(() => observer?.disconnect());
 }
 .ach .wc-ach-card__num span {
     color: #4f46e5;
+}
+
+/* ═══ MOBILE — kartu digeser mendatar, bukan menumpuk ke bawah ═══
+   Grid `auto-fit minmax(180px)` runtuh jadi satu kolom di ponsel, sehingga
+   lima kartu pencapaian membuat section ini sangat panjang dan pengguna harus
+   menggulir lama sebelum sampai ke section berikutnya. Sebagai carousel,
+   tingginya tetap ringkas dan kartu berikutnya "mengintip" di tepi kanan
+   sebagai penanda bahwa daftarnya masih bisa digeser. */
+@media (max-width: 767.98px) {
+    .ach .wc-ach-grid {
+        display: flex;
+        gap: 0.7rem;
+        overflow-x: auto;
+        overscroll-behavior-x: contain;
+        scroll-snap-type: x mandatory;
+        scroll-padding-left: 1rem;
+        -webkit-overflow-scrolling: touch;
+        /* Tembus margin section (100vw - 2rem) agar kartu menyentuh tepi layar;
+           padding mengembalikan posisi kartu pertama & memberi ruang bayangan. */
+        margin-inline: -1rem;
+        padding: 0.3rem 1rem 0.6rem;
+        scrollbar-width: none;
+    }
+    .ach .wc-ach-grid::-webkit-scrollbar {
+        display: none;
+    }
+    .ach .wc-ach-card {
+        flex: 0 0 auto;
+        width: 68%;
+        max-width: 15rem;
+        scroll-snap-align: start;
+        padding: 1.3rem 1.15rem;
+    }
+    /* Sentuhan layar tidak punya hover — angkat bahu kartu saat ditekan saja. */
+    .ach .wc-ach-card:hover {
+        transform: none;
+        box-shadow: 0 12px 30px rgba(15, 23, 42, 0.05);
+        border-color: rgba(226, 232, 240, 0.9);
+    }
+    .ach .wc-ach-card:hover .wc-ach-card__ico {
+        background: rgba(99, 102, 241, 0.1);
+        color: #6366f1;
+    }
+    .ach .wc-ach-card__num {
+        font-size: 1.7rem;
+    }
 }
 </style>

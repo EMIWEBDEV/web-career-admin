@@ -1,4 +1,5 @@
-<!-- WEB CAREER — Footer 2 tingkat (bagian dari CareerLayout) -->
+<!-- WEB CAREER — Footer 2 tingkat (bagian dari CareerLayout)
+     dengan Social Media Icons Bar & Enhanced Mobile Footer UX -->
 <template>
     <footer class="wc-footer">
         <!-- Tingkat 1 -->
@@ -12,11 +13,21 @@
                     </span>
                 </div>
                 <p>Ekosistem people, pet &amp; manufacturing terkemuka di Sumatera Selatan. Naik level bersama kami.</p>
+
+                <!-- Baris Ikon Media Sosial & Kontak -->
+                <div class="wc-footer__social">
+                    <a href="https://linkedin.com" target="_blank" rel="noopener noreferrer" title="LinkedIn"><i class="bi bi-linkedin"></i></a>
+                    <a href="https://instagram.com" target="_blank" rel="noopener noreferrer" title="Instagram"><i class="bi bi-instagram"></i></a>
+                    <a href="mailto:recruitment@evogroup.co.id" title="Email Rekrutmen"><i class="bi bi-envelope-fill"></i></a>
+                    <a href="https://wa.me/6281234567890" target="_blank" rel="noopener noreferrer" title="WhatsApp HR"><i class="bi bi-whatsapp"></i></a>
+                </div>
             </div>
+
             <div class="wc-footer__cols">
                 <div class="wc-footer__col">
                     <strong>Karier</strong>
-                    <button type="button" @click="goToSection('lowongan')">Lowongan</button>
+                    <!-- #lowongan sudah tidak ada sejak redesign — arahkan ke Fungsi Perusahaan. -->
+                    <button type="button" @click="goToSection('tim')">Lowongan</button>
                     <button v-if="hasMt" type="button" @click="goToSection('mt')">Management Trainee</button>
                     <a href="/karir/lowongan">Semua Lowongan</a>
                 </div>

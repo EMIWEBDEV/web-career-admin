@@ -20,6 +20,10 @@ Route::get('/karir/landing-page/lowongan/{id}', [CareerLandingController::class,
 );
 Route::get('/karir/landing-page/mt/{id}', [CareerLandingController::class, 'showMt'])->name('career.mt.detail');
 
+// Perkenalan tim / fungsi perusahaan (konten statis di komponen Vue).
+Route::get('/karir/tim', [CareerLandingController::class, 'semuaTim'])->name('career.tim.semua');
+Route::get('/karir/tim/{slug}', [CareerLandingController::class, 'showTim'])->name('career.tim.detail');
+
 Route::get('/karir/apply/{id}', [CareerLandingController::class, 'apply'])->name('career.apply');
 
 Route::get('/karir/login', [CareerLandingController::class, 'login'])->name('career.login');

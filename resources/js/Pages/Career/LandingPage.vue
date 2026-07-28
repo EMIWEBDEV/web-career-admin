@@ -10,11 +10,14 @@
 
     <CareerLayout :has-mt="hasMt" :offices="offices">
         <HeroSection :benefits="benefits" :has-mt="hasMt" />
+        <TentangSection />
         <AchievementSection :achievements="achievements" />
-        <LowonganSection :lowongan="lowongan" :departments="departments" :locations="locations" />
+        <TimSection :tim="tim" />
         <MtSection :program-mt="programMt" />
         <LokasiSection :offices="offices" />
+        <FaqSection />
         <CtaSection />
+        <StickyApplyBar :has-mt="hasMt" />
     </CareerLayout>
 </template>
 
@@ -23,29 +26,28 @@ import { Head } from '@inertiajs/vue3';
 import { computed, nextTick, onMounted, onUnmounted } from 'vue';
 import CareerLayout from './Layouts/CareerLayout.vue';
 import HeroSection from './sections/HeroSection.vue';
+import TentangSection from './sections/TentangSection.vue';
 import AchievementSection from './sections/AchievementSection.vue';
-import LowonganSection from './sections/LowonganSection.vue';
+import TimSection from './sections/TimSection.vue';
 import MtSection from './sections/MtSection.vue';
 import LokasiSection from './sections/LokasiSection.vue';
+import FaqSection from './sections/FaqSection.vue';
 import CtaSection from './sections/CtaSection.vue';
+import StickyApplyBar from './components/StickyApplyBar.vue';
 import { scrollToId } from './careerData';
 
 defineOptions({ layout: null });
 
 const props = defineProps({
     meta: { type: Object, default: () => ({}) },
-    departments: { type: Array, default: () => [] },
-    locations: { type: Array, default: () => [] },
-    lowongan: { type: Array, default: () => [] },
     programMt: { type: Array, default: () => [] },
     achievements: { type: Array, default: () => [] },
     offices: { type: Array, default: () => [] },
     benefits: { type: Array, default: () => [] },
+    tim: { type: Array, default: () => [] },
 });
 
-const departments = computed(() => props.departments || []);
-const locations = computed(() => props.locations || []);
-const lowongan = computed(() => props.lowongan || []);
+const tim = computed(() => props.tim || []);
 const programMt = computed(() => props.programMt || []);
 const achievements = computed(() => props.achievements || []);
 const offices = computed(() => props.offices || []);

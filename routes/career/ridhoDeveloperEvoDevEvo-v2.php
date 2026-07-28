@@ -87,6 +87,17 @@ Route::post('/feedback/{hashids}/{signature}', [FeedbackController::class, 'subm
     ->name('career.feedback.submit')
     ->middleware('throttle:3,10'); // max 3 submit per 10 menit
 
+// ── Master Info Divisi (admin) — konten landing page divisi/sub-divisi ──
+Route::middleware(['career.auth', 'career.role:ADMIN,SUPERADMIN'])->group(function () {
+    require base_path('routes/career/MasterDivisiInfo/MasterDivisiInfoWeb.php');
+});
+require base_path('routes/career/MasterDivisiInfo/MasterDivisiInfoApi.php');
+
+// ── Gambar divisi/sub-divisi (PUBLIK — dipakai landing page & preview admin) ──
+Route::get('/karir/tim-img/{jenis}/{id}/{slot}', [\App\Http\Controllers\Career\MasterDivisiInfo\MasterDivisiInfoController::class, 'gambarPublik'])
+    ->where(['jenis' => 'divisi|sub', 'slot' => 'header|utama|img2|img3'])
+    ->name('career.tim.img');
+
 // ── Cek status feedback (kandidat auth) ──
 Route::middleware('career.auth')
     ->prefix('api/v1/kandidat/feedback')

@@ -27,5 +27,8 @@ class VerifyCsrfToken extends Middleware
         // [feat/feedback] Master feedback CRUD — semua mutation endpoint
         // dilindungi career.auth + career.role:ADMIN,SUPERADMIN.
         'api/v1/karir/master-feedback/*',
+        // [feat/landing-page] Master info divisi — dilindungi career.auth +
+        // career.role + career.permission:masterInfoDivisiPage.
+        'api/v1/master-info-divisi/*',
     ];
 }
