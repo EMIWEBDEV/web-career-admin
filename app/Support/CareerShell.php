@@ -118,6 +118,8 @@ class CareerShell
                 ['key' => 'master-jadwal', 'label' => 'Master Jadwal Kegiatan', 'icon' => 'bi bi-calendar3-range', 'url' => '/master-jadwal'],
                 // [feat/feedback]
                 ['key' => 'master-feedback', 'label' => 'Master Feedback Form', 'icon' => 'bi bi-chat-dots', 'url' => '/karir/master-feedback'],
+                // [feat/landing-page] konten divisi/sub-divisi untuk landing page
+                ['key' => 'master-info-divisi', 'label' => 'Master Info Divisi', 'icon' => 'bi bi-diagram-3', 'url' => '/master-info-divisi'],
             ]],
             ['id' => 'program', 'title' => 'Operasional', 'items' => [
                 ['key' => 'program', 'label' => 'Program Kegiatan', 'icon' => 'bi bi-diagram-3-fill', 'url' => '/karir/program-kegiatan'],

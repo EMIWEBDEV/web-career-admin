@@ -22,10 +22,25 @@
                     Sumatera Selatan. Temukan peran, tumbuh, dan wujudkan versi terbaik dirimu.
                 </p>
 
+                <div class="wc-hero2__search">
+                    <form @submit.prevent="handleSearch" class="wc-hero2__search-form">
+                        <i class="bi bi-search wc-hero2__search-icon"></i>
+                        <input
+                            v-model="searchQuery"
+                            type="text"
+                            class="wc-hero2__search-input"
+                            placeholder="Cari posisi atau kata kunci..."
+                        />
+                        <button type="submit" class="wc-hero2__search-btn">
+                            Cari <i class="bi bi-arrow-right"></i>
+                        </button>
+                    </form>
+                </div>
+
                 <div class="wc-hero2__actions">
-                    <button class="wc-hero2__btn wc-hero2__btn--primary" type="button" @click="goToSection('lowongan')">
-                        <i class="bi bi-search"></i> Jelajahi Lowongan
-                    </button>
+                    <Link class="wc-hero2__btn wc-hero2__btn--primary" href="/karir/lowongan">
+                        <i class="bi bi-briefcase"></i> Semua Lowongan
+                    </Link>
                     <button v-if="hasMt" class="wc-hero2__btn wc-hero2__btn--glass" type="button" @click="goToSection('mt')">
                         <i class="bi bi-stars"></i> Management Trainee
                     </button>
@@ -69,12 +84,24 @@
 </template>
 
 <script setup>
+import { ref } from 'vue';
+import { Link, router } from '@inertiajs/vue3';
 import { goToSection } from '../careerData';
 
 defineProps({
     benefits: { type: Array, default: () => [] },
     hasMt: { type: Boolean, default: false },
 });
+
+const searchQuery = ref('');
+
+function handleSearch() {
+    if (searchQuery.value.trim()) {
+        router.visit(`/karir/lowongan?q=${encodeURIComponent(searchQuery.value.trim())}`);
+    } else {
+        router.visit('/karir/lowongan');
+    }
+}
 </script>
 
 <style scoped>
@@ -199,11 +226,68 @@ defineProps({
     line-height: 1.65;
     text-wrap: pretty;
 }
+.wc-hero2__search {
+    margin: 24px 0 0;
+    max-width: 520px;
+}
+.wc-hero2__search-form {
+    position: relative;
+    display: flex;
+    align-items: center;
+    background: rgba(255, 255, 255, 0.16);
+    border: 1px solid rgba(255, 255, 255, 0.32);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-radius: 16px;
+    padding: 6px 6px 6px 18px;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
+    transition: background 0.2s ease, border-color 0.2s ease;
+}
+.wc-hero2__search-form:focus-within {
+    background: rgba(255, 255, 255, 0.24);
+    border-color: rgba(255, 255, 255, 0.55);
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.28);
+}
+.wc-hero2__search-icon {
+    font-size: 18px;
+    color: rgba(255, 255, 255, 0.75);
+    margin-right: 12px;
+}
+.wc-hero2__search-input {
+    flex: 1;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: #ffffff;
+    font-size: 14.5px;
+    font-weight: 500;
+}
+.wc-hero2__search-input::placeholder {
+    color: rgba(255, 255, 255, 0.65);
+}
+.wc-hero2__search-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: none;
+    padding: 11px 20px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #8b5cf6, #6366f1);
+    color: #ffffff;
+    font-size: 13.5px;
+    font-weight: 800;
+    cursor: pointer;
+    transition: transform 0.16s ease, box-shadow 0.16s ease;
+}
+.wc-hero2__search-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 8px 20px rgba(99, 102, 241, 0.45);
+}
 .wc-hero2__actions {
     display: flex;
     flex-wrap: wrap;
     gap: 12px;
-    margin: 28px 0 0;
+    margin: 20px 0 0;
 }
 .wc-hero2__btn {
     display: inline-flex;

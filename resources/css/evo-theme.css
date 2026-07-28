@@ -2612,23 +2612,35 @@ h6,
     }
     .wc-footer__cols {
         grid-template-columns: 1fr 1fr;
-        gap: 1.25rem;
+        gap: 1.1rem 1rem;
+    }
+    .wc-footer__office {
+        margin-bottom: 0.5rem;
+        padding: 6px 10px;
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.8);
+        border: 1px solid rgba(226, 232, 240, 0.9);
+    }
+    .wc-footer__bar {
+        padding-bottom: 115px; /* Floating action bar safe bottom clearance */
     }
     .wc-footer__bar-inner {
         flex-direction: column;
-        align-items: flex-start;
+        align-items: center;
+        text-align: center;
         gap: 0.4rem;
     }
 }
 @media (max-width: 400px) {
-    .wc-ach-grid {
-        grid-template-columns: 1fr 1fr;
-    }
+    /* .wc-ach-grid: di bawah 768px section Pencapaian beralih ke carousel
+       mendatar (lihat AchievementSection.vue) — aturan kolom di sini sudah
+       tidak berlaku lagi. */
     .wc-nav__brand-txt small {
         display: none;
     }
     .wc-footer__cols {
-        grid-template-columns: 1fr;
+        grid-template-columns: 1fr 1fr;
+        gap: 1rem 0.85rem;
     }
 }
 
