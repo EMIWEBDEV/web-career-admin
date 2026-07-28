@@ -534,6 +534,25 @@ class LamaranService
                 'Urutan_Tahap' => $berikut->Urutan,
                 'Updated_At' => $now, 'Updated_By' => $nama, 'Updated_By_Id' => $adminId,
             ]);
+
+            // REUSE nilai tes yang masih berlaku: bila tahap berikut adalah tes
+            // pihak ke-3 (mis. psikotes CAT) & kandidat punya nilai valid dalam masa
+            // berlaku (Master Jenis Tes → Masa_Berlaku_Bulan), pakai ulang — tak
+            // perlu tes lagi. Nonaktif otomatis bila masa berlaku tak diset (null/0).
+            if (($berikut->Provider ?? null) === 'THIRD_PARTY' && ! empty($berikut->Jenis_Tes_Kode)) {
+                $userId = (int) DB::table('N_WEB_CAREERS_Lamaran')->where('Id_Lamaran', $tahap->Lamaran_Id)->value('Id_Users');
+                $lama = $this->nilaiTesBerlaku($userId, $berikut->Jenis_Tes_Kode);
+                if ($lama) {
+                    $tgl = $lama->Waktu_Callback ? \Illuminate\Support\Carbon::parse($lama->Waktu_Callback)->format('d M Y') : '-';
+                    $lulusLama = $this->tentukanLulusTes($lama);
+                    DB::table('N_WEB_CAREERS_Lamaran_Tahap')->where('Id_Lamaran_Tahap', $berikut->Id_Lamaran_Tahap)
+                        ->update(['Skor' => $lama->Total_Nilai, 'Updated_At' => $now]);
+                    Log::channel('web_career')->info("Reuse nilai {$berikut->Jenis_Tes_Kode} lamaran #{$tahap->Lamaran_Id} → " . ($lulusLama ? 'LULUS' : 'GUGUR') . " (nilai {$lama->Total_Nilai}, {$tgl}).");
+                    // Pakai mekanisme yang sama: tetapkan tahap ini otomatis lalu maju.
+                    $this->tetapkanTahap((int) $berikut->Id_Lamaran_Tahap, $lulusLama ? 'LULUS' : 'GUGUR',
+                        "Nilai {$berikut->Jenis_Tes_Kode} sebelumnya ({$lama->Total_Nilai}, {$tgl}) masih berlaku — dipakai ulang, kandidat tak tes lagi.", $adminId, $now);
+                }
+            }
         } else {
             DB::table('N_WEB_CAREERS_Lamaran')->where('Id_Lamaran', $tahap->Lamaran_Id)->update([
                 'Status' => 'LULUS',
@@ -542,6 +561,51 @@ class LamaranService
                 'Updated_At' => $now, 'Updated_By' => $nama, 'Updated_By_Id' => $adminId,
             ]);
         }
+    }
+
+    /**
+     * Nilai tes pihak ke-3 milik kandidat yang MASIH BERLAKU untuk jenis tes ini.
+     * Berlaku = ada hasil selesai dalam N bulan terakhir (Master Jenis Tes →
+     * Masa_Berlaku_Bulan). Null bila masa berlaku tak diset atau tak ada hasil.
+     */
+    public function nilaiTesBerlaku(int $userId, string $jenisTesKode): ?object
+    {
+        if (! $userId || $jenisTesKode === '') {
+            return null;
+        }
+        $bulan = (int) DB::table('N_WEB_CAREERS_Master_Jenis_Tes')->where('Kode', $jenisTesKode)->value('Masa_Berlaku_Bulan');
+        if ($bulan <= 0) {
+            return null; // masa berlaku tak diset → selalu tes baru (tak reuse)
+        }
+        $batas = now()->copy()->subMonths($bulan);
+
+        return DB::table('N_WEB_CAREERS_Penjadwalan_Peserta as pp')
+            ->join('N_WEB_CAREERS_Penjadwalan_Tahap as pt', 'pt.Id_Penjadwalan_Tahap', '=', 'pp.Penjadwalan_Tahap_Id')
+            ->where('pp.Users_Id', $userId)
+            ->where('pt.Jenis_Tes_Kode', $jenisTesKode)
+            ->where('pp.Flag_Selesai', 'Y')
+            ->whereNotNull('pp.Waktu_Callback')
+            ->where('pp.Waktu_Callback', '>=', $batas)
+            ->orderByDesc('pp.Waktu_Callback')
+            ->select('pp.Total_Nilai', 'pp.Total_Soal', 'pp.Ambang_Batas_Nilai', 'pp.Status_Kelulusan', 'pp.Waktu_Callback')
+            ->first();
+    }
+
+    /** Simpulkan LULUS/GUGUR dari sebuah hasil tes lama (status teks → nilai vs ambang). */
+    private function tentukanLulusTes(object $r): bool
+    {
+        $teks = strtoupper(trim((string) ($r->Status_Kelulusan ?? '')));
+        if (in_array($teks, ['LULUS', 'LOLOS', 'PASS', 'ACCEPT'], true)) {
+            return true;
+        }
+        if (in_array($teks, ['TIDAK LULUS', 'TIDAK_LULUS', 'GAGAL', 'FAIL', 'GUGUR'], true)) {
+            return false;
+        }
+        if ($r->Total_Nilai !== null && $r->Ambang_Batas_Nilai !== null) {
+            return (float) $r->Total_Nilai >= (float) $r->Ambang_Batas_Nilai;
+        }
+
+        return true; // ada hasil selesai tapi status tak jelas → konservatif: lolos
     }
 
     /**
