@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Career\CareerAdminController;
 use App\Http\Controllers\Career\Lamaran\LamaranController;
+use App\Http\Controllers\Career\TalentPool\TalentPoolController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -27,6 +28,8 @@ Route::prefix('karir')
         Route::get('/pelamar', [LamaranController::class, 'worklist'])->name('pelamar')->middleware('career.permission:pelamarPage,VIEW');
         Route::get('/hasil-tes', [$c, 'hasil_page'])->name('hasil')->middleware('career.permission:hasilTesPage,VIEW');
         Route::get('/pengumuman', [$c, 'pengumuman_page'])->name('pengumuman')->middleware('career.permission:pengumumanPage,VIEW');
+        // Talent Pool — kolam kandidat bagus yang belum terpakai (diisi dari Worklist).
+        Route::get('/talent-pool', [TalentPoolController::class, 'index'])->name('talent-pool')->middleware('career.permission:talentPoolPage,VIEW');
         // Data
         Route::get('/kandidat', [$c, 'kandidat_page'])->name('kandidat')->middleware('career.permission:kandidatPage,VIEW');
     });
@@ -56,6 +59,11 @@ Route::prefix('api/v1/karir')
         Route::patch('/lamaran/sub-tes/{id}/tidak-hadir', [LamaranController::class, 'subTesTidakHadir'])->name('lamaran.subtes.tidakhadir')->middleware('career.permission:pelamarPage,EDIT');
         // Catat hasil sub-tes MANUAL (wawancara/FGD di tahap campuran) → mesin yang sama.
         Route::patch('/lamaran/sub-tes/{id}/catat-hasil', [LamaranController::class, 'subTesCatatHasil'])->name('lamaran.subtes.catathasil')->middleware('career.permission:pelamarPage,EDIT');
+
+        // Talent Pool — data kartu + kelola status/tag/catatan.
+        Route::get('/talent-pool', [TalentPoolController::class, 'list'])->name('talent-pool.list')->middleware('career.permission:talentPoolPage,VIEW');
+        Route::patch('/talent-pool/{id}', [TalentPoolController::class, 'ubah'])->name('talent-pool.ubah')->middleware('career.permission:talentPoolPage,EDIT');
+        Route::delete('/talent-pool/{id}', [TalentPoolController::class, 'destroy'])->name('talent-pool.destroy')->middleware('career.permission:talentPoolPage,DELETE');
 
         // CRUD master generik (master/simple, master/rich, master/akun, master/kemitraan)
         // DIHAPUS: halaman gaya lama yang memakainya sudah tidak punya route —

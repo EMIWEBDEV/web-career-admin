@@ -310,8 +310,10 @@ class LamaranService
     public function ketukPalu(int $lamaranTahapId, string $hasil, ?string $catatan, ?int $adminId): array
     {
         $hasil = strtoupper($hasil);
-        if (! in_array($hasil, ['LULUS', 'GUGUR'], true)) {
-            return ['ok' => false, 'pesan' => 'Hasil harus LULUS atau GUGUR.'];
+        // Tiga keputusan worklist: LULUS (maju), GUGUR (tutup), TALENT_POOL
+        // (tidak lolos di lowongan ini tapi disimpan untuk kesempatan berikutnya).
+        if (! in_array($hasil, ['LULUS', 'GUGUR', 'TALENT_POOL'], true)) {
+            return ['ok' => false, 'pesan' => 'Hasil harus LULUS, GUGUR, atau TALENT_POOL.'];
         }
 
         $tahap = DB::table('N_WEB_CAREERS_Lamaran_Tahap')->where('Id_Lamaran_Tahap', $lamaranTahapId)->first();
@@ -324,7 +326,13 @@ class LamaranService
 
         $this->tetapkanTahap($lamaranTahapId, $hasil, $catatan, $adminId, now());
 
-        return ['ok' => true, 'pesan' => $hasil === 'LULUS' ? 'Kandidat diloloskan ke tahap berikutnya.' : 'Kandidat digugurkan.'];
+        $pesan = [
+            'LULUS' => 'Kandidat diloloskan ke tahap berikutnya.',
+            'GUGUR' => 'Kandidat digugurkan.',
+            'TALENT_POOL' => 'Kandidat dialihkan ke Talent Pool.',
+        ][$hasil];
+
+        return ['ok' => true, 'pesan' => $pesan];
     }
 
     // ═══════════════════════ INTERNAL ═══════════════════════
@@ -455,6 +463,24 @@ class LamaranService
             return;
         }
 
+        // TALENT POOL: kandidat tidak lolos di lowongan ini, tapi cukup baik untuk
+        // disimpan. Lamaran ditutup dengan status khusus (bukan GUGUR biasa) dan
+        // sebuah kartu Talent Pool dibuat (idempoten — tak menduplikasi lamaran sama).
+        if ($hasil === 'TALENT_POOL') {
+            DB::table('N_WEB_CAREERS_Lamaran')->where('Id_Lamaran', $tahap->Lamaran_Id)->update([
+                'Status' => 'TALENT_POOL',
+                'Hasil_Akhir' => 'TALENT_POOL',
+                'Gugur_Di_Tahap' => $tahap->Label,
+                'Alasan_Gugur' => $catatan,
+                'Waktu_Selesai' => $now,
+                'Updated_At' => $now, 'Updated_By' => $nama, 'Updated_By_Id' => $adminId,
+            ]);
+
+            $this->simpanKeTalentPool($tahap, $catatan, $adminId, $nama, $now);
+
+            return;
+        }
+
         // LULUS: buka tahap berikutnya, atau tutup lamaran bila ini tahap terakhir.
         $berikut = DB::table('N_WEB_CAREERS_Lamaran_Tahap')
             ->where('Lamaran_Id', $tahap->Lamaran_Id)
@@ -479,6 +505,49 @@ class LamaranService
                 'Updated_At' => $now, 'Updated_By' => $nama, 'Updated_By_Id' => $adminId,
             ]);
         }
+    }
+
+    /**
+     * Simpan kandidat ke Talent Pool saat admin memilih "Masuk Talent Pool".
+     * Snapshot ringan (posisi, program, tahap, skor) diambil live agar kartu pool
+     * tetap terbaca walau lamaran/posisi berubah. Idempoten per lamaran aktif.
+     */
+    private function simpanKeTalentPool($tahap, ?string $catatan, ?int $adminId, string $nama, $now): void
+    {
+        $lam = DB::table('N_WEB_CAREERS_Lamaran as l')
+            ->leftJoin('N_WEB_CAREERS_Program as p', 'p.Id_Program', '=', 'l.Program_Id')
+            ->leftJoin('N_WEB_CAREERS_Program_Posisi as x', 'x.Id_Program_Posisi', '=', 'l.Program_Posisi_Id')
+            ->where('l.Id_Lamaran', $tahap->Lamaran_Id)
+            ->select('l.Id_Lamaran', 'l.Id_Users', 'l.Program_Id', 'l.Program_Posisi_Id', 'p.Nama as ProgramNama', 'x.Posisi')
+            ->first();
+        if (! $lam) {
+            return;
+        }
+
+        // Jangan menduplikasi kartu AKTIF untuk lamaran yang sama.
+        $sudahAda = DB::table('N_WEB_CAREERS_Talent_Pool')
+            ->where('Lamaran_Id', $tahap->Lamaran_Id)
+            ->where('Status', 'AKTIF')
+            ->exists();
+        if ($sudahAda) {
+            return;
+        }
+
+        DB::table('N_WEB_CAREERS_Talent_Pool')->insert([
+            'Lamaran_Id' => $lam->Id_Lamaran,
+            'Id_Users' => $lam->Id_Users,
+            'Program_Id' => $lam->Program_Id,
+            'Program_Posisi_Id' => $lam->Program_Posisi_Id,
+            'Posisi' => $lam->Posisi,
+            'Program_Nama' => $lam->ProgramNama,
+            'Tahap_Asal' => $tahap->Label,
+            'Skor' => $tahap->Skor ?? null,
+            'Tag' => null,
+            'Catatan' => $catatan,
+            'Status' => 'AKTIF',
+            'Created_At' => $now, 'Created_By' => $nama, 'Created_By_Id' => $adminId,
+            'Updated_At' => $now, 'Updated_By' => $nama, 'Updated_By_Id' => $adminId,
+        ]);
     }
 
     // ═══════════════════ MESIN KEPUTUSAN TAHAP (multi-tes) ═══════════════════

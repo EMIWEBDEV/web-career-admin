@@ -126,6 +126,7 @@ class CareerShell
             ]],
             ['id' => 'seleksi', 'title' => 'Seleksi', 'items' => [
                 ['key' => 'pelamar', 'label' => 'Worklist Pelamar', 'icon' => 'bi bi-kanban', 'url' => '/karir/pelamar'],
+                ['key' => 'talent-pool', 'label' => 'Talent Pool', 'icon' => 'bi bi-stars', 'url' => '/karir/talent-pool'],
                 ['key' => 'penjadwalan', 'label' => 'Penjadwalan Tes', 'icon' => 'bi bi-calendar-check', 'url' => '/karir/penjadwalan'],
                 ['key' => 'hasil', 'label' => 'Hasil Tes', 'icon' => 'bi bi-clipboard-data', 'url' => '/karir/hasil-tes'],
                 ['key' => 'pengumuman', 'label' => 'Pengumuman', 'icon' => 'bi bi-megaphone-fill', 'url' => '/karir/pengumuman'],

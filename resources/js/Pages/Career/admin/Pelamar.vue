@@ -305,11 +305,17 @@
                         </div>
                     </div>
 
-                    <!-- Aksi keputusan -->
-                    <div v-if="detailKandidat.butuhKeputusan" class="plw-actions">
+                    <!-- Aksi keputusan — 2 atau 3 tombol tergantung tahap. Tombol
+                         "Masuk Talent Pool" hanya muncul bila tahap ini di-cut-off
+                         ke Talent Pool (diatur di Master Tahapan Seleksi). -->
+                    <div v-if="detailKandidat.butuhKeputusan" class="plw-actions" :class="{ 'is-three': bolehTalentPool(detailKandidat) }">
                         <button type="button" class="plw-btn-lolos" @click="askPutus(detailKandidat, 'LULUS')">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M20 6L9 17l-5-5" /></svg>
                             Loloskan
+                        </button>
+                        <button v-if="bolehTalentPool(detailKandidat)" type="button" class="plw-btn-talent" @click="askPutus(detailKandidat, 'TALENT_POOL')">
+                            <i class="bi bi-stars"></i>
+                            Masuk Talent Pool
                         </button>
                         <button type="button" class="plw-btn-gugur" @click="askPutus(detailKandidat, 'GUGUR')">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
@@ -361,15 +367,19 @@
 
         <ConfirmModal
             :show="konfirmShow"
-            :title="putusHasil === 'LULUS' ? 'Loloskan Kandidat' : 'Gugurkan Kandidat'"
+            :title="putusJudul"
             :subtitle="putusTarget ? `${putusTarget.pelamar} — tahap ${putusTarget.tahap}` : ''"
             :danger="putusHasil === 'GUGUR'"
-            :confirm-label="putusHasil === 'LULUS' ? 'Ya, Loloskan' : 'Ya, Gugurkan'"
+            :confirm-label="putusLabelKonfirm"
             :busy="sibuk"
             @confirm="konfirmPutus"
             @cancel="konfirmShow = false"
         >
-            <el-input v-model="putusCatatan" type="textarea" :rows="2" placeholder="Catatan (mis. sesuai rekomendasi sistem / alasan khusus)" />
+            <p v-if="putusHasil === 'TALENT_POOL'" class="plw-tp-hint">
+                <i class="bi bi-stars"></i>
+                Kandidat <b>tidak melanjutkan</b> di lowongan ini, tetapi disimpan di <b>Talent Pool</b> untuk kesempatan berikutnya. Kuota tidak terpotong.
+            </p>
+            <el-input v-model="putusCatatan" type="textarea" :rows="2" :placeholder="putusHasil === 'TALENT_POOL' ? 'Catatan / tag (mis. kuat wawancara, cocok Finance)' : 'Catatan (mis. sesuai rekomendasi sistem / alasan khusus)'" />
         </ConfirmModal>
 
         <!-- Catat hasil sub-tes MANUAL (wawancara/FGD) — masuk mesin keputusan yang sama. -->
@@ -453,12 +463,18 @@ export default {
         };
     },
     computed: {
+        // Terminal "tidak lanjut" = GUGUR atau TALENT_POOL. Keduanya keluar dari
+        // tab Berjalan dan berkumpul di tab Tidak Lolos (dengan badge berbeda).
         pelamarTampil() {
+            const terminal = (r) => r.statusLamaran === 'GUGUR' || r.statusLamaran === 'TALENT_POOL';
             const aktif = this.statusTab !== 'GUGUR';
-            return (this.detail.pelamar || []).filter((r) => (r.statusLamaran === 'GUGUR') !== aktif);
+            return (this.detail.pelamar || []).filter((r) => terminal(r) !== aktif);
         },
-        jmlAktif() { return (this.detail.pelamar || []).filter((r) => r.statusLamaran !== 'GUGUR').length; },
-        jmlGugur() { return (this.detail.pelamar || []).filter((r) => r.statusLamaran === 'GUGUR').length; },
+        jmlAktif() { return (this.detail.pelamar || []).filter((r) => r.statusLamaran !== 'GUGUR' && r.statusLamaran !== 'TALENT_POOL').length; },
+        jmlGugur() { return (this.detail.pelamar || []).filter((r) => r.statusLamaran === 'GUGUR' || r.statusLamaran === 'TALENT_POOL').length; },
+        // Judul & label tombol konfirmasi untuk 3 keputusan.
+        putusJudul() { return { LULUS: 'Loloskan Kandidat', GUGUR: 'Gugurkan Kandidat', TALENT_POOL: 'Simpan ke Talent Pool' }[this.putusHasil] || 'Keputusan'; },
+        putusLabelKonfirm() { return { LULUS: 'Ya, Loloskan', GUGUR: 'Ya, Gugurkan', TALENT_POOL: 'Ya, Simpan' }[this.putusHasil] || 'Ya'; },
         // KEDUA tab memakai kolom tahap alur yang sama. Kandidat gugur tetap
         // "diam" di tahap tempat ia gugur (backend mengirim kolomUrutan dari
         // tahap ber-Hasil GUGUR), bukan ditumpuk jadi satu kolom — supaya admin
@@ -473,13 +489,20 @@ export default {
     methods: {
         inisial(n) { return (n || '?').split(' ').slice(0, 2).map((s) => s[0]).join('').toUpperCase(); },
         katLabel(k) { return { REKRUTMEN: 'Rekrutmen', MT: 'Management Trainee', INTERNSHIP: 'Internship / Magang' }[k] || k || '—'; },
-        statusLabel(s) { return { BERJALAN: 'Berjalan', LULUS: 'Diterima', GUGUR: 'Tidak Lolos' }[s] || s; },
+        statusLabel(s) { return { BERJALAN: 'Berjalan', LULUS: 'Diterima', GUGUR: 'Tidak Lolos', TALENT_POOL: 'Talent Pool' }[s] || s; },
         aksen(p) { return p.warna || (p.kategori === 'MT' ? '#f59e0b' : '#6366f1'); },
         avatarBg(r) {
             if (r.statusLamaran === 'GUGUR') return 'linear-gradient(135deg,#f87171,#ef4444)';
+            if (r.statusLamaran === 'TALENT_POOL') return 'linear-gradient(135deg,#fbbf24,#d97706)';
             if (r.statusLamaran === 'LULUS') return 'linear-gradient(135deg,#34d399,#10b981)';
             if (r.nungguSistem) return 'linear-gradient(135deg,#fbbf24,#f59e0b)';
             return 'linear-gradient(135deg,#8b5cf6,#6366f1)';
+        },
+        /** Tahap aktif kandidat ini di-cut-off ke Talent Pool? (dari kolom alur) */
+        bolehTalentPool(r) {
+            if (!r) return false;
+            const col = (this.detail.kolom || []).find((k) => k.urutan === r.urutan);
+            return !!(col && col.talentPool);
         },
         ukuran(b) {
             if (!b) return '';
@@ -762,6 +785,7 @@ export default {
 .plw-card__chip.tone-skor { background: rgba(139, 92, 246, 0.14); color: #7c3aed; }
 .plw-card__chip.tone-lolos { background: rgba(16, 185, 129, 0.12); color: #059669; }
 .plw-card__chip.tone-gugur { background: rgba(239, 68, 68, 0.12); color: #dc2626; }
+.plw-card__chip.tone-talent { background: rgba(234, 179, 8, 0.16); color: #a16207; }
 
 /* ═══ DRAWER ═══ */
 .plw-overlay { position: fixed; inset: 0; z-index: 1055; background: rgba(15, 23, 42, 0.42); backdrop-filter: blur(2px); transition: opacity 0.32s; opacity: 0; pointer-events: none; }
@@ -876,6 +900,14 @@ export default {
 .plw-btn-lolos:hover { transform: translateY(-2px); }
 .plw-btn-gugur { flex: 1; min-width: 150px; appearance: none; cursor: pointer; padding: 13px 18px; border-radius: 13px; background: #fff; border: 1px solid #f4c9c9; color: #dc2626; font-family: inherit; font-size: 13.5px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.16s; }
 .plw-btn-gugur:hover { background: #fef2f2; }
+/* Tombol ke-3: Masuk Talent Pool — nada emas, di antara Loloskan & Tidak Lolos. */
+.plw-btn-talent { flex: 1; min-width: 150px; appearance: none; cursor: pointer; padding: 13px 18px; border-radius: 13px; background: linear-gradient(135deg, #fbbf24, #d97706); border: none; color: #fff; font-family: inherit; font-size: 13.5px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 10px 24px rgba(217, 119, 6, 0.28); transition: transform 0.16s; }
+.plw-btn-talent:hover { transform: translateY(-2px); }
+.plw-btn-talent .bi { font-size: 15px; }
+/* Saat 3 tombol, izinkan membungkus rapi di layar sempit. */
+.plw-actions.is-three .plw-btn-lolos, .plw-actions.is-three .plw-btn-talent, .plw-actions.is-three .plw-btn-gugur { min-width: 130px; }
+.plw-tp-hint { display: flex; align-items: flex-start; gap: 8px; margin: 0 0 12px; padding: 10px 12px; border-radius: 10px; font-size: 12px; line-height: 1.55; color: #92400e; background: rgba(234, 179, 8, 0.1); border: 1px solid rgba(234, 179, 8, 0.28); }
+.plw-tp-hint .bi { color: #d97706; margin-top: 1px; flex: none; }
 
 /* ═══ LIGHTBOX ═══ */
 .plw-lb { position: fixed; inset: 0; z-index: 1090; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgba(10, 10, 20, 0.72); backdrop-filter: blur(6px); transition: opacity 0.28s; opacity: 0; pointer-events: none; }

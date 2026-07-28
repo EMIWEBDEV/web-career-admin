@@ -964,7 +964,7 @@ class LamaranController extends Controller
         $hitung = DB::table('N_WEB_CAREERS_Lamaran')
             ->select('Program_Id',
                 DB::raw('COUNT(*) as total'),
-                DB::raw("SUM(CASE WHEN Status <> 'GUGUR' THEN 1 ELSE 0 END) as aktif"),
+                DB::raw("SUM(CASE WHEN Status NOT IN ('GUGUR','TALENT_POOL') THEN 1 ELSE 0 END) as aktif"),
                 DB::raw("SUM(CASE WHEN Status = 'LULUS' THEN 1 ELSE 0 END) as lolos"))
             ->groupBy('Program_Id')
             ->get()
@@ -1028,6 +1028,9 @@ class LamaranController extends Controller
                     'label' => $t->Label,
                     'provider' => $t->Provider,
                     'tipe' => $t->Tipe_Tahap_Kode,
+                    // Cut-off Talent Pool aktif untuk tahap ini? Dipakai worklist
+                    // memunculkan tombol "Masuk Talent Pool" sesuai urutan tahap.
+                    'talentPool' => ($t->Flag_Talent_Pool ?? 'T') === 'Y',
                 ])->all()
             : [];
 
@@ -1058,6 +1061,8 @@ class LamaranController extends Controller
 
             if ($l->Status === 'GUGUR') {
                 $tk = $tahapList->firstWhere('Hasil', 'GUGUR') ?? $tahapList->last();
+            } elseif ($l->Status === 'TALENT_POOL') {
+                $tk = $tahapList->firstWhere('Hasil', 'TALENT_POOL') ?? $tahapList->last();
             } elseif ($l->Status === 'LULUS') {
                 $tk = $tahapList->last();
             } else {
@@ -1077,6 +1082,8 @@ class LamaranController extends Controller
 
             if ($l->Status === 'GUGUR') {
                 $badge = ['tone' => 'gugur', 'teks' => 'Tidak Lolos'];
+            } elseif ($l->Status === 'TALENT_POOL') {
+                $badge = ['tone' => 'talent', 'teks' => 'Talent Pool'];
             } elseif ($l->Status === 'LULUS') {
                 $badge = ['tone' => 'lolos', 'teks' => 'Diterima'];
             } elseif ($siap) {
@@ -1149,7 +1156,7 @@ class LamaranController extends Controller
         }
 
         $data = $request->validate([
-            'hasil' => 'required|in:LULUS,GUGUR',
+            'hasil' => 'required|in:LULUS,GUGUR,TALENT_POOL',
             'catatan' => 'nullable|string|max:500',
         ]);
 

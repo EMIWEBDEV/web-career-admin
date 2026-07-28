@@ -87,6 +87,9 @@ class MasterAlurController extends Controller
                         'pengumuman' => $t->Mode_Pengumuman ?? 'OTOMATIS',
                         'jedaHari' => isset($t->Jeda_Pengumuman_Hari) ? $t->Jeda_Pengumuman_Hari : null,
                         'notifikasi' => ($t->Flag_Notifikasi ?? 'Y') === 'Y',
+                        // Cut-off Talent Pool: bila 'Y', kandidat yang TIDAK lolos di tahap
+                        // ini boleh dialihkan admin ke Talent Pool (bukan sekadar gugur).
+                        'talentPool' => ($t->Flag_Talent_Pool ?? 'T') === 'Y',
                     ])->values(),
                 ];
             })->values();
@@ -141,6 +144,8 @@ class MasterAlurController extends Controller
             'stages.*.pengumuman' => ['nullable', Rule::in($kodeModeAktif ?: ['OTOMATIS'])],
             'stages.*.jedaHari' => 'nullable|integer|min:0|max:3650',
             'stages.*.notifikasi' => 'nullable|boolean',
+            // Cut-off Talent Pool per tahap (fleksibel: bisa di tahap mana pun).
+            'stages.*.talentPool' => 'nullable|boolean',
         ];
     }
 
@@ -226,6 +231,9 @@ class MasterAlurController extends Controller
                 'Jeda_Pengumuman_Hari' => $jeda,
                 // Konvensi proyek: 'Y' = ya, 'T' = tidak.
                 'Flag_Notifikasi' => ($s['notifikasi'] ?? true) ? 'Y' : 'T',
+                // Cut-off Talent Pool: aktif → worklist menampilkan tombol
+                // "Masuk Talent Pool" saat memutus tahap ini.
+                'Flag_Talent_Pool' => ($s['talentPool'] ?? false) ? 'Y' : 'T',
                 'Created_At' => $now, 'Created_By' => $userName, 'Created_By_Id' => $userId,
                 'Updated_At' => $now, 'Updated_By' => $userName, 'Updated_By_Id' => $userId,
             ], 'Id_Master_Alur_Tahap');

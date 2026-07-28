@@ -120,6 +120,9 @@
                                         <span v-if="s.notifikasi === false" class="alr-pill is-mute" title="Kandidat tidak dikirimi notifikasi saat hasil terbit">
                                             <i class="bi bi-bell-slash"></i> Tanpa notifikasi
                                         </span>
+                                        <span v-if="s.talentPool" class="alr-pill is-talent" title="Kandidat tak lolos di tahap ini bisa dialihkan ke Talent Pool">
+                                            <i class="bi bi-stars"></i> Cut-off Talent Pool
+                                        </span>
                                     </div>
                                     <!-- Sub-tes tahap: inilah yang dinilai mesin keputusan. -->
                                     <ul v-if="(s.tests || []).length" class="alr-subtes">
@@ -265,6 +268,20 @@
                                 <el-checkbox v-model="s.notifikasi">Beri tahu kandidat lewat email saat hasil terbit</el-checkbox>
                             </label>
                             <p class="alr-ann__note">{{ catatanPengumuman(s) }}</p>
+                        </div>
+
+                        <!-- CUT-OFF TALENT POOL — fleksibel per tahap. Bila aktif, kandidat
+                             yang TIDAK lolos di tahap ini boleh dialihkan ke Talent Pool
+                             (bukan sekadar gugur) lewat tombol di Worklist. -->
+                        <div class="alr-tp" :class="{ 'is-on': s.talentPool }">
+                            <div class="alr-tp__main">
+                                <span class="alr-tp__ico"><i class="bi bi-stars"></i></span>
+                                <div class="alr-tp__txt">
+                                    <b>Cut-off ke Talent Pool di tahap ini</b>
+                                    <small>Aktifkan bila kandidat bagus yang belum lolos di tahap ini layak disimpan untuk lowongan berikutnya. Worklist akan memunculkan tombol <em>“Masuk Talent Pool”</em>.</small>
+                                </div>
+                            </div>
+                            <el-switch v-model="s.talentPool" />
                         </div>
 
                     </div>
@@ -517,11 +534,12 @@ export default {
                     pengumuman: s.pengumuman || 'OTOMATIS',
                     jedaHari: s.jedaHari ?? null,
                     notifikasi: s.notifikasi !== false,
+                    talentPool: s.talentPool === true,
                 })),
             };
             this.show = true;
         },
-        addStage() { this.form.stages.push({ label: '', tipe: '', mode: 'MANUAL_REVIEW', formulirId: null, tests: [], pengumuman: 'OTOMATIS', jedaHari: null, notifikasi: true }); },
+        addStage() { this.form.stages.push({ label: '', tipe: '', mode: 'MANUAL_REVIEW', formulirId: null, tests: [], pengumuman: 'OTOMATIS', jedaHari: null, notifikasi: true, talentPool: false }); },
         removeStage(i) { this.form.stages.splice(i, 1); },
 
         // Label & ikon pil diambil dari master (fallback ke kode bila belum termuat).
@@ -572,6 +590,7 @@ export default {
                     // Jeda hanya bermakna untuk mode ber-flag butuhJeda; lainnya null.
                     jedaHari: this.modeButuhJeda(s.pengumuman) ? (s.jedaHari ?? null) : null,
                     notifikasi: s.notifikasi !== false,
+                    talentPool: s.talentPool === true,
                 })),
             };
             try {
@@ -702,6 +721,19 @@ export default {
 .alr-pill.is-terjadwal { color: #4338ca; background: rgba(79, 70, 229, .12); }
 .alr-pill.is-manual { color: #b45309; background: rgba(245, 158, 11, .14); }
 .alr-pill.is-mute { color: #64748b; background: #f1f5f9; }
+.alr-pill.is-talent { color: #a16207; background: rgba(234, 179, 8, .16); }
+
+/* Kartu switch Cut-off Talent Pool di dalam editor tahap. Netral saat mati,
+   menyala kuning-emas saat aktif agar terbaca sebagai "jalur khusus". */
+.alr-tp { display: flex; align-items: center; gap: .8rem; justify-content: space-between; margin-top: .5rem; padding: .7rem .8rem; border-radius: 12px; border: 1px dashed rgba(15, 23, 42, .16); background: #f8fafc; transition: background .2s, border-color .2s; }
+.alr-tp.is-on { border-style: solid; border-color: rgba(234, 179, 8, .5); background: linear-gradient(180deg, rgba(234, 179, 8, .1), rgba(245, 158, 11, .05)); }
+.alr-tp__main { display: flex; align-items: flex-start; gap: .55rem; min-width: 0; }
+.alr-tp__ico { flex: none; width: 1.9rem; height: 1.9rem; border-radius: 9px; display: grid; place-items: center; background: #fff7ed; color: #d97706; font-size: 15px; border: 1px solid rgba(234, 179, 8, .3); }
+.alr-tp.is-on .alr-tp__ico { background: #fde68a; color: #92400e; }
+.alr-tp__txt { min-width: 0; }
+.alr-tp__txt b { display: block; font-size: 12.5px; color: #1e293b; }
+.alr-tp__txt small { display: block; font-size: 11px; line-height: 1.5; color: #64748b; margin-top: .1rem; }
+.alr-tp__txt em { color: #b45309; font-style: normal; font-weight: 700; }
 @media (max-width: 560px) {
     .wca-frow { grid-template-columns: 1fr; }
 }
