@@ -195,7 +195,7 @@
         </div>
 
         <!-- Modal buat/ubah program -->
-        <AdminModal :busy="saving" :show="show" :title="editingId ? 'Ubah Program' : 'Buat Program Kegiatan'" :subtitle="langkahMeta[langkah].sub" icon="bi-diagram-3-fill" xl @close="show = false">
+        <AdminModal :busy="saving" :show="show" :title="editingId ? 'Ubah Program' : 'Buat Program Kegiatan'" :subtitle="langkahMeta[langkah].sub" icon="bi-diagram-3-fill" xl @close="tutupModal">
             <!-- ── Stepper ── -->
             <nav class="pgk-steps">
                 <button
@@ -684,7 +684,7 @@
 
             <!-- ── Footer wizard ── -->
             <template #footer>
-                <button class="wca-btn wca-btn--ghost" type="button" @click="show = false"><i class="bi bi-x-circle"></i> Batal</button>
+                <button class="wca-btn wca-btn--ghost" type="button" @click="tutupModal"><i class="bi bi-x-circle"></i> Batal</button>
                 <span style="flex:1"></span>
                 <button v-if="langkah > 0" class="wca-btn wca-btn--ghost" type="button" @click="langkah--"><i class="bi bi-arrow-left"></i> Kembali</button>
                 <button v-if="langkah < langkahMeta.length - 1" class="wca-btn wca-btn--primary" type="button" @click="maju">Lanjut <i class="bi bi-arrow-right"></i></button>
@@ -712,6 +712,9 @@ import { titleCase } from '../monitoring-mpp/mppHelpers';
 
 const API = '/api/v1/program-kegiatan';
 const CFG = { headers: { Accept: 'application/json' } };
+// Draft "Buat Program" disimpan di sessionStorage — tahan refresh/pindah halaman,
+// hanya dibuang saat Batal/tutup modal atau setelah simpan sukses (BUKAN saat edit).
+const DRAFT_KEY = 'evo_pgk_draft_v1';
 
 export default {
     components: { Head, AdminModal, ConfirmModal, AuditStamp, RefSelect },
@@ -820,11 +823,18 @@ export default {
     watch: {
         tab() { this.page = 1; },
         query() { this.page = 1; },
+        // Persist draft BUAT (bukan edit) tiap ada perubahan — debounce ringan.
+        form: { deep: true, handler() { this.simpanDraftDebounce(); } },
+        langkah() { this.simpanDraftDebounce(); },
+        pakaiBatch() { this.simpanDraftDebounce(); },
+        pakaiSyarat() { this.simpanDraftDebounce(); },
     },
     mounted() {
         this.load();
         this.loadPresets();
         this.loadFieldTurunan();
+        // Pulihkan draft "Buat Program" bila ada (refresh / pindah halaman lalu kembali).
+        this.restoreDraft();
     },
     methods: {
         katLabel(k) { return { REKRUTMEN: 'Rekrutmen', MT: 'Management Trainee', INTERNSHIP: 'Internship' }[k] || k || '—'; },
@@ -991,6 +1001,52 @@ export default {
         pilihTab(kode) { this.tab = kode; this.page = 1; this.load(); },
         cariDebounce() { if (this.cariTimer) clearTimeout(this.cariTimer); this.cariTimer = setTimeout(() => { this.page = 1; this.load(); }, 400); },
         resetFilter() { this.filters = { q: '', status: null, rentang: null }; this.page = 1; this.load(); },
+        /* ── Draft "Buat Program" (sessionStorage) ────────────────────────
+         * Aturan CLEAR (penting, cegah bug data hilang):
+         *   • DIBUANG saat: Batal/tutup modal (tutupModal) & simpan sukses (save).
+         *   • DIPERTAHANKAN saat: refresh, pindah halaman, unmount — draft utuh.
+         *   • TIDAK aktif untuk mode EDIT (editingId terisi).
+         */
+        simpanDraftDebounce() {
+            if (this.editingId || !this.show) return; // hanya sesi BUAT yang terbuka
+            if (this._draftTm) clearTimeout(this._draftTm);
+            this._draftTm = setTimeout(() => this.saveDraft(), 300);
+        },
+        saveDraft() {
+            if (this.editingId || !this.show) return;
+            try {
+                sessionStorage.setItem(DRAFT_KEY, JSON.stringify({
+                    form: this.form, langkah: this.langkah,
+                    pakaiBatch: this.pakaiBatch, pakaiSyarat: this.pakaiSyarat,
+                }));
+            } catch (e) { /* storage penuh / privat — abaikan, tak boleh mengganggu UI */ }
+        },
+        clearDraft() {
+            if (this._draftTm) clearTimeout(this._draftTm);
+            try { sessionStorage.removeItem(DRAFT_KEY); } catch (e) { /* abaikan */ }
+        },
+        restoreDraft() {
+            let raw = null;
+            try { raw = sessionStorage.getItem(DRAFT_KEY); } catch (e) { return; }
+            if (!raw) return;
+            let d;
+            try { d = JSON.parse(raw); } catch (e) { this.clearDraft(); return; }
+            if (!d || !d.form || typeof d.form !== 'object') { this.clearDraft(); return; }
+            this.editingId = null;
+            this.form = d.form;
+            this.langkah = Number(d.langkah) || 0;
+            this.pakaiBatch = !!d.pakaiBatch;
+            this.pakaiSyarat = !!d.pakaiSyarat;
+            this.show = true;
+            this.loadTahapFormulir();
+            if (this.form.kategori) this.loadMppOptions();
+            this.notice('Draft program dipulihkan. Lanjutkan, atau Batal untuk membuangnya.');
+        },
+        /** Tutup/Batal modal = buang draft (sesuai aturan: batal → dibuang). */
+        tutupModal() {
+            this.show = false;
+            this.clearDraft();
+        },
         openCreate() {
             this.editingId = null;
             // Semua field sengaja KOSONG — mode & warna baru terisi dari preset
@@ -1005,13 +1061,26 @@ export default {
         },
 
         /** Lanjut ke langkah berikutnya, validasi minimum langkah aktif dulu. */
-        maju() {
+        async maju() {
             if (this.langkah === 0) {
                 if (!this.form.kategori) return this.notice('Kategori wajib dipilih.');
                 if (!this.form.nama.trim()) return this.notice('Nama program wajib diisi.');
             }
             if (this.langkah === 1) {
                 if (this.form.posisi.some((l) => !l.mppRef)) return this.notice('Ada posisi yang belum dipilih dari MPP.');
+                // WAJIB: Info Divisi tiap posisi harus sudah terisi (dipakai landing page).
+                // Draft tersimpan di sessionStorage — admin bisa buka Master Info Divisi,
+                // mengisinya, lalu kembali tanpa kehilangan program yang sedang dibuat.
+                const refs = this.form.posisi.map((l) => l.mppRef).filter(Boolean);
+                if (refs.length) {
+                    try {
+                        const res = await axios.post(`${API}/cek-info-divisi`, { mppRefs: refs }, CFG);
+                        const belum = res.data?.result?.belumLengkap || [];
+                        if (belum.length) {
+                            return this.notice(`Info Divisi belum terisi: ${belum.join(', ')}. Lengkapi dulu di menu Master Info Divisi, lalu kembali (draft program tetap tersimpan).`);
+                        }
+                    } catch (e) { /* fail-open: jika cek gagal, jangan blokir admin */ }
+                }
             }
             this.langkah = Math.min(this.langkah + 1, this.langkahMeta.length - 1);
         },
@@ -1161,6 +1230,7 @@ export default {
                     await axios.post(API, payload, CFG);
                     this.notice('Program ditambahkan.');
                 }
+                this.clearDraft(); // sukses simpan → draft tak perlu lagi
                 this.show = false;
                 await this.load();
             } catch (e) {

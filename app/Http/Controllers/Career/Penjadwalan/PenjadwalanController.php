@@ -418,9 +418,10 @@ class PenjadwalanController extends Controller
             'Id_Master_Ujian' => $data['idMasterUjian'],
             'Waktu_Mulai' => $data['waktuMulai'],
             'Waktu_Akhir' => $data['waktuAkhir'],
-            // KAMERA WAJIB: dipaksa 'Y' dari sisi Web Careers agar CAT tidak pernah
-            // menjalankan sesi tanpa kamera. Nama field & nilai dari config/hclearn.
-            config('hclearn.kamera_field', 'Flag_Kamera') => config('hclearn.wajib_kamera', true) ? 'Y' : 'N',
+            // KAMERA WAJIB: dipaksa dari sisi Web Careers agar CAT tak pernah
+            // menjalankan sesi tanpa kamera. CAT mengharap 'Flag_Camera' BOOLEAN
+            // (lalu diubah jadi 'Y' pada token). Nama field & nilai dari config.
+            config('hclearn.kamera_field', 'Flag_Camera') => (bool) config('hclearn.wajib_kamera', true),
             // URL callback hasil tes: CAT memanggilnya saat tes difinalisasi →
             // WC auto gerakkan tahap (lulus/gugur) tanpa admin.
             'Url_Callback' => config('hclearn.public_url') . '/' . ltrim(config('hclearn.callback_path'), '/'),
