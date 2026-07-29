@@ -79,8 +79,27 @@ function bagianTerlihat(L) {
     return bagianTampil(L.bagian, jawaban.value);
 }
 
+/** Cari definisi field berdasarkan key (untuk reset_anak cascade). */
+function cariField(key) {
+    for (const L of langkah.value) {
+        for (const B of L.bagian || []) {
+            for (const f of B.field || []) {
+                if (f.key === key) return f;
+            }
+        }
+    }
+    return null;
+}
+
 function setNilai(key, nilai) {
-    emit('update:modelValue', { ...jawaban.value, [key]: nilai });
+    const patch = { [key]: nilai };
+    // Field cascade menandai anak-anaknya di skema: saat induk berubah, anak
+    // dikosongkan agar jenjang→jenis→kampus tidak menyimpan nilai basi.
+    const f = cariField(key);
+    if (f && Array.isArray(f.reset_anak)) {
+        f.reset_anak.forEach((k) => { patch[k] = ''; });
+    }
+    emit('update:modelValue', { ...jawaban.value, ...patch });
 }
 
 function setNilaiBaris(kunciBagian, i, key, nilai) {

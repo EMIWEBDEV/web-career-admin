@@ -162,12 +162,12 @@ export function periksaLangkah(langkah, jawaban) {
     return galat;
 }
 
-// Telepon wajib berawalan 62 dan minimal 10 digit (62 + 8 digit nomor).
+// Telepon internasional: kode negara + nomor. Panjang beda tiap negara, jadi
+// cukup periksa minimal 8 digit (tak lagi wajib berawalan 62).
 function galatTelepon(f, v) {
     if (f.tipe !== 'phone' || kosong(v)) return '';
-    const s = String(v);
-    if (!s.startsWith('62')) return `"${f.label}" harus berawalan 62.`;
-    if (s.length < 10) return `"${f.label}" belum lengkap (mis. 628xxxxxxxxx).`;
+    const s = String(v).replace(/\D/g, '');
+    if (s.length < 8) return `"${f.label}" belum lengkap.`;
     return '';
 }
 

@@ -41,7 +41,8 @@ class FieldTurunan
             'satuan' => 'tahun',
         ],
         'jenjang' => [
-            'sumber' => ['jenjang_politeknik', 'jenjang_universitas', 'jenjang_pendidikan'],
+            // 'jenjang' (field cascade baru) didahulukan; sisanya kompatibilitas lama.
+            'sumber' => ['jenjang', 'jenjang_politeknik', 'jenjang_universitas', 'jenjang_pendidikan'],
             'label' => 'Jenjang Pendidikan (gabungan semua jalur)',
             'tipe' => 'TEKS',
             'satuan' => null,

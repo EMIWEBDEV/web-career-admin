@@ -2,7 +2,7 @@
      Design). Layout FLUID (tanpa container), berjalan di dalam AppShell (rail +
      navbar shell). DATA NYATA: strip statistik (props.stats dari DB) dan kartu
      LAMARAN AKTIF + stepper PROGRES SELEKSI (props.lamaran[].tahapan dari DB).
-     HARDCODE sementara (sesuai kesepakatan): Riwayat Lamaran & Rekomendasi. -->
+     Riwayat Lamaran juga REAL (props.lamaran) + filter status; rekomendasi & drawer dummy dibuang. -->
 <template>
     <Head><title>Lamaran Saya - EVO Career</title></Head>
 
@@ -125,20 +125,20 @@
                 </div>
             </template>
 
-            <!-- ═══ RIWAYAT LAMARAN (DUMMY sementara) ═══ -->
-            <div class="lms-histrow">
+            <!-- ═══ RIWAYAT LAMARAN (REAL) ═══ -->
+            <div v-if="lamaran.length" class="lms-histrow">
                 <div class="lms-sec-label">RIWAYAT LAMARAN</div>
                 <div style="display: flex; gap: 7px; flex-wrap: wrap">
                     <button v-for="f in FILTERS" :key="f.key" type="button" class="lms-fbtn" :class="{ 'is-on': filter === f.key }" @click="filter = f.key">{{ f.label }}</button>
                 </div>
             </div>
 
-            <div class="lms-tl">
+            <div v-if="lamaran.length" class="lms-tl">
                 <div class="lms-tl__line"></div>
                 <div style="display: flex; flex-direction: column; gap: 14px">
                     <div v-for="h in histTampil" :key="h.id" class="lms-tl__item">
                         <span class="lms-tl__dot" :style="{ borderColor: ST[h.status].dot }"></span>
-                        <button type="button" class="lms-hcard" @click="bukaApp(h)">
+                        <button type="button" class="lms-hcard" @click="bukaDetail(h)">
                             <span class="lms-hcard__row">
                                 <span style="display: flex; flex-direction: column; min-width: 0; text-align: left">
                                     <span style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap">
@@ -175,183 +175,7 @@
                 </div>
             </div>
 
-            <!-- ═══ REKOMENDASI (DUMMY sementara) ═══ -->
-            <div class="lms-recrow">
-                <span class="lms-recrow__ico">
-                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z" /></svg>
-                </span>
-                <div>
-                    <div style="font-size: 16px; font-weight: 800; color: #0f172a; letter-spacing: -0.01em">Rekomendasi Untukmu</div>
-                    <div style="font-size: 12px; color: #8792a6">Lowongan yang cocok dengan profil &amp; riwayatmu</div>
-                </div>
-            </div>
-            <div class="lms-recs">
-                <div v-for="r in RECS" :key="r.id" class="lms-rec">
-                    <div class="lms-rec__glow" :style="{ background: `radial-gradient(circle,${r.glow},transparent 70%)` }"></div>
-                    <div style="position: relative; display: flex; align-items: center; gap: 10px">
-                        <span class="lms-type" :style="typeStyle(r.type)">{{ r.type }}</span>
-                    </div>
-                    <div class="lms-rec__title">{{ r.title }}</div>
-                    <div class="lms-rec__meta">
-                        <span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6-7-11a7 7 0 0 1 14 0c0 5-7 11-7 11z" /><circle cx="12" cy="10" r="2.5" /></svg>{{ r.location }}</span>
-                        <span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>{{ r.deadline }}</span>
-                    </div>
-                    <div class="lms-rec__match">
-                        <div class="lms-rec__matchbar"><div :style="{ width: r.match + '%' }"></div></div>
-                        <span style="font-size: 12px; font-weight: 800; color: #059669; white-space: nowrap">{{ r.match }}% cocok</span>
-                    </div>
-                    <Link href="/karir/landing-page" class="lms-rec__btn">
-                        Lamar Sekarang
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
-                    </Link>
-                </div>
-            </div>
-
             <div style="height: 20px"></div>
-        </div>
-
-        <!-- ═══ DRAWER DETAIL (riwayat dummy) ═══ -->
-        <div class="lms-overlay" :class="{ 'is-on': !!app }" @click="app = null"></div>
-        <section class="lms-drawer" :class="{ 'is-on': !!app }" aria-label="Detail lamaran">
-            <template v-if="app">
-                <div class="lms-drawer__head">
-                    <div style="display: flex; align-items: flex-start; gap: 14px">
-                        <div class="lms-drawer__ico">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10L12 5 2 10l10 5 10-5z" /><path d="M6 12v5c3 3 9 3 12 0v-5" /></svg>
-                        </div>
-                        <div style="flex: 1; min-width: 0">
-                            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap">
-                                <span class="lms-type" :style="typeStyle(app.type)">{{ app.type }}</span>
-                                <span class="lms-pill" :style="pillStyle(app.status)">{{ app.statusLabel }}</span>
-                            </div>
-                            <div class="lms-drawer__title">{{ app.title }}</div>
-                            <div style="font-size: 12px; color: #8792a6; margin-top: 3px">Dilamar {{ app.applied }} · <span class="lms-mono">{{ app.code }}</span></div>
-                        </div>
-                        <button type="button" class="lms-drawer__close" @click="app = null">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
-                        </button>
-                    </div>
-                </div>
-
-                <div class="lms-drawer__body">
-                    <!-- banner status -->
-                    <div class="lms-banner" :style="{ background: ST[app.status].bg, borderColor: ST[app.status].bg }">
-                        <span class="lms-banner__ico" :style="{ background: ST[app.status].dot }">
-                            <svg v-if="app.status === 'lolos'" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M20 6L9 17l-5-5" /></svg>
-                            <svg v-else-if="app.status === 'gugur'" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9" /><path d="M15 9l-6 6M9 9l6 6" /></svg>
-                            <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
-                        </span>
-                        <div style="min-width: 0">
-                            <div style="font-size: 14px; font-weight: 800" :style="{ color: ST[app.status].c }">{{ app.banner.title }}</div>
-                            <div style="font-size: 12.5px; line-height: 1.55; opacity: 0.85; margin-top: 2px" :style="{ color: ST[app.status].c }">{{ app.banner.text }}</div>
-                        </div>
-                    </div>
-
-                    <!-- timeline tahap -->
-                    <div>
-                        <div class="lms-sec-label" style="margin-bottom: 14px; letter-spacing: 0.12em; color: #a2a9ba">TIMELINE TAHAP SELEKSI</div>
-                        <div class="lms-stl">
-                            <div class="lms-stl__line"></div>
-                            <div style="display: flex; flex-direction: column; gap: 16px">
-                                <div v-for="(sg, si) in app.stages" :key="si" style="position: relative">
-                                    <span class="lms-stl__node" :style="stlNode(sg.st)"><span :style="{ background: stlCol(sg.st) }"></span></span>
-                                    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 10px">
-                                        <div style="min-width: 0">
-                                            <div style="font-size: 14px; font-weight: 800" :style="{ color: sg.st === 'todo' ? '#94a3b8' : '#1e293b' }">{{ sg.name }}</div>
-                                            <div style="font-size: 12px; color: #8792a6; margin-top: 2px">{{ sg.note }}</div>
-                                        </div>
-                                        <span class="lms-stl__tag" :style="stlTag(sg.st)">{{ stlTagLabel(sg.st) }}</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- formulir & berkas -->
-                    <div>
-                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px">
-                            <div style="display: flex; align-items: center; gap: 9px; font-size: 15px; font-weight: 800; color: #1e293b">
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4z" /></svg>
-                                Formulir &amp; Berkas Saya
-                            </div>
-                            <span style="font-size: 11.5px; font-weight: 700; color: #8b93a7; background: #eef0f7; border-radius: 999px; padding: 4px 11px; flex: 0 0 auto">{{ app.forms.length }} formulir</span>
-                        </div>
-                        <div style="display: flex; flex-direction: column; gap: 12px">
-                            <div v-for="(f, fi) in app.forms" :key="fi" class="lms-form" :class="{ 'is-open': openForm === fi }">
-                                <button type="button" class="lms-form__head" @click="openForm = openForm === fi ? -1 : fi">
-                                    <span class="lms-form__step" :class="{ 'is-ok': f.pillType === 'ok' }">{{ String(fi + 1).padStart(2, '0') }}</span>
-                                    <span style="flex: 1; min-width: 0">
-                                        <span class="lms-form__title">{{ f.title }}</span>
-                                        <span class="lms-form__sub">{{ f.subtitle }}</span>
-                                    </span>
-                                    <span class="lms-form__pill" :class="f.pillType === 'ok' ? 'is-ok' : 'is-wait'">{{ f.pill }}</span>
-                                    <svg class="lms-form__chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2.4" stroke-linecap="round"><path d="M6 9l6 6 6-6" /></svg>
-                                </button>
-                                <div v-if="openForm === fi" class="lms-form__body">
-                                    <div v-if="f.fields.length" class="lms-fields">
-                                        <div v-for="fl in f.fields" :key="fl[0]" class="lms-field">
-                                            <div class="lms-field__k">{{ fl[0] }}</div>
-                                            <div class="lms-field__v">{{ fl[1] }}</div>
-                                        </div>
-                                    </div>
-                                    <div v-if="f.docs.length" style="margin-top: 14px; display: flex; flex-direction: column; gap: 9px">
-                                        <div class="lms-sec-label" style="letter-spacing: 0.12em; color: #a2a9ba; font-size: 11px">DOKUMEN &amp; VERIFIKASI</div>
-                                        <div v-for="d in f.docs" :key="d.name" class="lms-doc">
-                                            <span class="lms-doc__ico" :class="d.kind === 'img' ? 'is-img' : 'is-pdf'">
-                                                <svg v-if="d.kind === 'img'" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="M21 15l-5-5L5 21" /></svg>
-                                                <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /></svg>
-                                            </span>
-                                            <div style="flex: 1; min-width: 0">
-                                                <div style="display: flex; align-items: center; gap: 8px">
-                                                    <span class="lms-doc__name">{{ d.name }}</span>
-                                                    <span class="lms-doc__ext">{{ d.ext }}</span>
-                                                </div>
-                                                <div class="lms-doc__desc">{{ d.desc }}</div>
-                                            </div>
-                                            <button type="button" class="lms-doc__eye" title="Lihat berkas" @click="lightbox = d">
-                                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" /><circle cx="12" cy="12" r="3" /></svg>
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </template>
-        </section>
-
-        <!-- ═══ LIGHTBOX ═══ -->
-        <div class="lms-lb" :class="{ 'is-on': !!lightbox }" @click="lightbox = null">
-            <div v-if="lightbox" class="lms-lb__wrap" @click.stop>
-                <div class="lms-lb__bar">
-                    <div style="display: flex; align-items: center; gap: 11px; color: #fff; min-width: 0">
-                        <span class="lms-lb__ico">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="M21 15l-5-5L5 21" /></svg>
-                        </span>
-                        <div style="min-width: 0">
-                            <div style="font-size: 15px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{ lightbox.name }}</div>
-                            <div style="font-size: 12px; color: rgba(255, 255, 255, 0.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{ lightbox.desc }}</div>
-                        </div>
-                    </div>
-                    <button type="button" class="lms-lb__close" @click="lightbox = null">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
-                    </button>
-                </div>
-                <div class="lms-lb__card">
-                    <div class="lms-lb__ph">
-                        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="M21 15l-5-5L5 21" /></svg>
-                        <span>Foto verifikasi</span>
-                    </div>
-                    <div class="lms-lb__foot">
-                        <div style="font-size: 12px; color: #8b93a7">Berkas yang kamu unggah</div>
-                        <div style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 800; color: #059669; flex: 0 0 auto">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5" /></svg>
-                            Terverifikasi
-                        </div>
-                    </div>
-                </div>
-            </div>
         </div>
 
         <!-- ═══ KONFIRMASI HAPUS (fitur lama dipertahankan) ═══ -->
@@ -405,35 +229,6 @@ const ST = {
     gugur: { c: '#dc2626', bg: 'rgba(239,68,68,.1)', dot: '#ef4444' },
 };
 
-// ── DUMMY (sesuai kesepakatan: hanya riwayat & rekomendasi yang hardcode) ──
-const DEMO_FORMS = [
-    { title: 'Seleksi Administrasi', subtitle: 'Tahap 1 · Pendaftaran', pill: 'Lengkap', pillType: 'ok',
-        fields: [['Nama', 'HAMBA ALLAH'], ['Email', 'fransbachtiar4@gmail.com'], ['Tanggal Lahir', '03 Mei 2004'], ['No. HP', '+62 821-3444-4545'], ['Jenis Kelamin', 'Laki-Laki'], ['Status', 'Mahasiswa'], ['Kampus', 'Universitas Sriwijaya'], ['IPK', '4.00']],
-        docs: [{ name: 'verifikasi.jpg', ext: 'JPG', kind: 'img', desc: 'Foto selfie memegang KTP yang kamu unggah.' }] },
-    { title: 'Kelengkapan Berkas', subtitle: 'Tahap 3 · Dokumen pendukung', pill: 'Menunggu', pillType: 'wait',
-        fields: [],
-        docs: [{ name: 'ktp.pdf', ext: 'PDF', kind: 'doc', desc: 'Belum diunggah — lengkapi saat tahap kelengkapan data.' }, { name: 'ijazah.pdf', ext: 'PDF', kind: 'doc', desc: 'Belum diunggah.' }] },
-];
-const HISTORY = [
-    { id: 'sales', type: 'Rekrutmen', code: 'LMR-SLS-0413', title: 'Open Hiring Sales Sumsel', applied: '10 Mar 2026', status: 'gugur', statusLabel: 'Tidak Lolos', lastStage: 'Wawancara HR',
-        banner: { title: 'Belum lolos pada tahap ini', text: 'Terima kasih atas partisipasimu. Jangan menyerah — banyak lowongan lain menantimu.' },
-        stages: [{ name: 'Seleksi Administrasi', st: 'done', note: 'Lolos' }, { name: 'Tes Tertulis', st: 'done', note: 'Lolos' }, { name: 'Wawancara HR', st: 'fail', note: 'Tidak dilanjutkan · 28 Mar 2026' }],
-        forms: DEMO_FORMS },
-    { id: 'intern', type: 'Internship', code: 'LMR-INT-0087', title: 'EVO Internship Batch 5', applied: '05 Jan 2026', status: 'lolos', statusLabel: 'Diterima', lastStage: 'Onboarding',
-        banner: { title: 'Selamat, kamu diterima! 🎉', text: 'Kamu menyelesaikan seluruh tahap seleksi dan resmi bergabung di EVO Internship Batch 5.' },
-        stages: [{ name: 'Seleksi Administrasi', st: 'done', note: 'Lolos' }, { name: 'Wawancara', st: 'done', note: 'Lolos' }, { name: 'Onboarding', st: 'done', note: 'Selesai · 20 Jan 2026' }],
-        forms: DEMO_FORMS },
-    { id: 'q3', type: 'Rekrutmen', code: 'LMR-REK-2291', title: 'Rekrutmen Reguler Q3 2025', applied: '12 Agu 2025', status: 'menunggu', statusLabel: 'Menunggu Pengumuman', lastStage: 'Wawancara User',
-        banner: { title: 'Menunggu pengumuman hasil', text: 'Kamu telah menyelesaikan wawancara user. Hasil akhir akan diumumkan melalui email.' },
-        stages: [{ name: 'Seleksi Administrasi', st: 'done', note: 'Lolos' }, { name: 'Tes Tertulis', st: 'done', note: 'Lolos' }, { name: 'Wawancara User', st: 'done', note: 'Selesai' }, { name: 'Pengumuman', st: 'current', note: 'Sedang ditinjau' }],
-        forms: DEMO_FORMS },
-];
-const RECS = [
-    { id: 'r1', type: 'Management Trainee', title: 'Data Analyst Trainee 2026', location: 'Palembang', deadline: '14 hari lagi', match: 92, glow: 'rgba(99,102,241,.12)' },
-    { id: 'r2', type: 'Rekrutmen', title: 'Sales Executive Sumsel', location: 'Palembang', deadline: '9 hari lagi', match: 85, glow: 'rgba(99,102,241,.12)' },
-    { id: 'r3', type: 'Internship', title: 'HR Internship Batch 6', location: 'Palembang', deadline: '21 hari lagi', match: 78, glow: 'rgba(245,158,11,.12)' },
-];
-
 export default {
     components: { Head, Link },
     props: {
@@ -442,7 +237,7 @@ export default {
     },
     data() {
         return {
-            ST, RECS,
+            ST,
             FILTERS: [
                 { key: 'semua', label: 'Semua' },
                 { key: 'berjalan', label: 'Berjalan' },
@@ -450,9 +245,6 @@ export default {
                 { key: 'gugur', label: 'Tidak Lolos' },
             ],
             filter: 'semua',
-            app: null,
-            openForm: 0,
-            lightbox: null,
             target: null,
             menghapus: null,
             toast: '',
@@ -476,9 +268,21 @@ export default {
             const jalan = this.lamaran.filter((l) => l.status === 'BERJALAN');
             return jalan.length ? jalan : this.lamaran.slice(0, 1);
         },
+        // RIWAYAT = seluruh lamaran nyata (props.lamaran) dipetakan ke kartu
+        // ringkas, lalu difilter chip status (semua/berjalan/lolos/gugur).
         histTampil() {
-            if (this.filter === 'semua') return HISTORY;
-            return HISTORY.filter((h) => h.status === this.filter);
+            const rows = this.lamaran.map((l) => ({
+                id: l.id,
+                code: l.kode,
+                type: this.katLabel(l.kategori),
+                title: l.posisi || l.program,
+                applied: this.tglLamar(l.waktuLamar),
+                status: this.stKey(l.status),
+                statusLabel: this.stLabel(l.status),
+                lastStage: this.riwayatTahap(l),
+            }));
+            if (this.filter === 'semua') return rows;
+            return rows.filter((h) => h.status === this.filter);
         },
     },
     methods: {
@@ -504,8 +308,8 @@ export default {
         },
         k(l) { return l.kartu || {}; },
         katLabel(k) { return { REKRUTMEN: 'Rekrutmen', MT: 'Management Trainee', INTERNSHIP: 'Internship' }[k] || k || '—'; },
-        stLabel(s) { return { BERJALAN: 'Berjalan', LULUS: 'Diterima', GUGUR: 'Tidak Lolos', MUNDUR: 'Mengundurkan Diri' }[s] || s; },
-        stKey(s) { return { BERJALAN: 'berjalan', LULUS: 'lolos', GUGUR: 'gugur', MUNDUR: 'gugur' }[s] || 'berjalan'; },
+        stLabel(s) { return { BERJALAN: 'Berjalan', LULUS: 'Diterima', GUGUR: 'Tidak Lolos', MUNDUR: 'Mengundurkan Diri', TALENT_POOL: 'Cadangan (Talent Pool)' }[s] || s; },
+        stKey(s) { return { BERJALAN: 'berjalan', LULUS: 'lolos', GUGUR: 'gugur', MUNDUR: 'gugur', TALENT_POOL: 'menunggu' }[s] || 'berjalan'; },
         katChipStyle(kat) {
             return kat === 'MT'
                 ? { background: 'rgba(245,158,11,.14)', color: '#b45309' }
@@ -576,16 +380,20 @@ export default {
             const cur = steps.some((s) => s.st === 'current' || s.st === 'fail') ? 0.5 : 0;
             return Math.round(((done + cur) / steps.length) * 100);
         },
-        // ── DRAWER dummy ──
-        bukaApp(h) { this.app = h; this.openForm = 0; },
-        stlCol(st) { return st === 'done' ? '#10b981' : st === 'current' ? '#f59e0b' : st === 'fail' ? '#ef4444' : '#cbd2e0'; },
-        stlNode(st) { return { borderColor: this.stlCol(st), animation: st === 'current' ? 'lmsPulse 2s infinite' : 'none' }; },
-        stlTagLabel(st) { return st === 'done' ? 'Selesai' : st === 'current' ? 'Berlangsung' : st === 'fail' ? 'Berhenti' : 'Menunggu'; },
-        stlTag(st) {
-            return st === 'done' ? { background: 'rgba(16,185,129,.12)', color: '#059669' }
-                : st === 'current' ? { background: 'rgba(245,158,11,.14)', color: '#b45309' }
-                    : st === 'fail' ? { background: 'rgba(239,68,68,.1)', color: '#dc2626' }
-                        : { background: '#eef0f7', color: '#94a3b8' };
+        // ── RIWAYAT: klik kartu -> halaman detail lamaran nyata ──
+        bukaDetail(h) { router.visit('/kandidat/lamaran/' + h.id); },
+        // Ringkasan tahap terakhir/aktif untuk baris kartu riwayat.
+        riwayatTahap(l) {
+            if (l.status === 'GUGUR' && l.gugurDi) return l.gugurDi;
+            const tahapan = Array.isArray(l.tahapan) ? l.tahapan : [];
+            if (tahapan.length) {
+                const jalan = tahapan.find((t) => t.status === 'BERJALAN');
+                if (jalan) return jalan.label;
+                const selesai = [...tahapan].reverse().find((t) => t.status === 'SELESAI');
+                return (selesai || tahapan[tahapan.length - 1]).label;
+            }
+            if (l.urutanTahap && l.totalTahap) return 'Tahap ' + l.urutanTahap + ' dari ' + l.totalTahap;
+            return 'Seleksi';
         },
         // ── Hapus lamaran (fitur lama, tetap ada) ──
         minta(l) { this.target = l; },

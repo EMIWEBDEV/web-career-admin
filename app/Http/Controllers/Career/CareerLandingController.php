@@ -304,24 +304,14 @@ class CareerLandingController extends Controller
                 'tipe' => 'FORM',
                 'judul' => 'Pendidikan',
                 'ikon' => 'bi-mortarboard',
+                // CASCADE: Jenjang → Jenis Institusi → Nama Kampus/Sekolah (master).
                 'fields' => [
-                    [
-                        'key' => 'jenjang',
-                        'label' => 'Jenjang',
-                        'tipe' => 'select',
-                        'required' => true,
-                        'opsi' => ['SMA', 'SMK', 'D3', 'D4', 'S1', 'S2'],
-                    ],
-                    ['key' => 'kampus', 'label' => 'Institusi / Kampus', 'tipe' => 'text', 'required' => true],
-                    ['key' => 'jurusan', 'label' => 'Jurusan', 'tipe' => 'text', 'required' => true],
-                    ['key' => 'ipk', 'label' => 'IPK', 'tipe' => 'number', 'required' => true, 'ph' => '3.50'],
-                    [
-                        'key' => 'lulus',
-                        'label' => 'Tahun Lulus',
-                        'tipe' => 'number',
-                        'required' => true,
-                        'ph' => '2024',
-                    ],
+                    ['key' => 'jenjang', 'label' => 'Jenjang Pendidikan', 'tipe' => 'select', 'required' => true, 'sumber_api' => 'jenjang'],
+                    ['key' => 'institusi', 'label' => 'Jenis Institusi Pendidikan', 'tipe' => 'select', 'required' => true, 'sumber_api' => 'jenis_institusi', 'tergantung' => 'jenjang'],
+                    ['key' => 'kampus', 'label' => 'Nama Kampus / Sekolah', 'tipe' => 'select', 'required' => true, 'sumber_api' => 'kampus', 'cari_async' => true, 'tergantung' => 'institusi', 'full' => true],
+                    ['key' => 'jurusan', 'label' => 'Jurusan / Fakultas', 'tipe' => 'select', 'required' => true, 'sumber_api' => 'fakultas', 'tergantung' => 'kampus', 'boleh_ketik' => true],
+                    ['key' => 'ipk', 'label' => 'IPK', 'tipe' => 'number', 'required' => true, 'ph' => '3.50', 'tergantung' => 'institusi'],
+                    ['key' => 'lulus', 'label' => 'Tahun Lulus', 'tipe' => 'number', 'required' => true, 'ph' => '2024', 'tergantung' => 'institusi'],
                 ],
             ],
             [
@@ -471,38 +461,27 @@ class CareerLandingController extends Controller
                 'tipe' => 'FORM',
                 'judul' => 'Pendidikan',
                 'ikon' => 'bi-mortarboard',
+                // CASCADE: Jenjang → Jenis Institusi → Nama Kampus (opsi dari master
+                // via sumber_api; kampus dicari server-side terfilter jenis). Field
+                // di bawah kampus baru muncul setelah jenis institusi dipilih.
                 'fields' => [
+                    ['key' => 'jenjang', 'label' => 'Jenjang Pendidikan', 'tipe' => 'select', 'required' => true, 'sumber_api' => 'jenjang'],
+                    ['key' => 'institusi', 'label' => 'Jenis Institusi Pendidikan', 'tipe' => 'select', 'required' => true, 'sumber_api' => 'jenis_institusi', 'tergantung' => 'jenjang'],
+                    ['key' => 'kampus', 'label' => 'Nama Kampus / Sekolah', 'tipe' => 'select', 'required' => true, 'sumber_api' => 'kampus', 'cari_async' => true, 'tergantung' => 'institusi', 'full' => true],
+                    // Jurusan & Prodi menyusul kampus (bukan jenis institusi):
+                    // daftarnya milik kampus itu. 'boleh_ketik' membiarkan
+                    // pelamar mengetik sendiri — master prodi tidak akan pernah
+                    // lengkap, dan mengunci pilihan bikin orang mentok.
+                    ['key' => 'jurusan', 'label' => 'Jurusan / Fakultas', 'tipe' => 'select', 'required' => true, 'sumber_api' => 'fakultas', 'tergantung' => 'kampus', 'boleh_ketik' => true],
+                    ['key' => 'prodi', 'label' => 'Program Studi', 'tipe' => 'select', 'required' => true, 'sumber_api' => 'prodi', 'cari_async' => true, 'tergantung' => 'kampus', 'saring_dari' => 'jurusan', 'boleh_ketik' => true],
+                    ['key' => 'ipk', 'label' => 'IPK', 'tipe' => 'number', 'required' => true, 'ph' => '3.50', 'tergantung' => 'institusi'],
                     [
-                        'key' => 'kampus',
-                        'label' => 'Nama Kampus',
-                        'tipe' => 'select',
-                        'required' => true,
-                        'opsi' => $kampus,
-                    ],
-                    [
-                        'key' => 'institusi',
-                        'label' => 'Jenis Institusi Pendidikan',
-                        'tipe' => 'select',
-                        'required' => true,
-                        'opsi' => ['Politeknik', 'Universitas'],
-                    ],
-                    ['key' => 'jurusan', 'label' => 'Jurusan / Fakultas', 'tipe' => 'text', 'required' => true],
-                    ['key' => 'prodi', 'label' => 'Program Studi', 'tipe' => 'text', 'required' => true],
-                    [
-                        'key' => 'jenjang',
-                        'label' => 'Jenjang Pendidikan',
-                        'tipe' => 'select',
-                        'required' => true,
-                        'opsi' => ['D3', 'D4', 'S1', 'S2'],
-                    ],
-                    ['key' => 'ipk', 'label' => 'IPK', 'tipe' => 'number', 'required' => true, 'ph' => '3.50'],
-                    [
+                        // Tanpa 'full' → sebaris dengan IPK (kiri-kanan).
                         'key' => 'bersediaBanyuasin',
                         'label' => 'Bersedia ditempatkan di Pabrik Banyuasin?',
                         'tipe' => 'select',
                         'required' => true,
                         'opsi' => ['Ya', 'Tidak'],
-                        'full' => true,
                     ],
                 ],
             ],

@@ -93,91 +93,110 @@ export const SKEMA = {
                             tampil_jika: { field: 'status_kemahasiswaan', operator: '=', nilai: 'Mahasiswa' },
                         },
 
+                        // ══ CASCADE PENDIDIKAN — Jenjang → Jenis Institusi → Nama Kampus ══
+                        // Data dari master (opsi via sumber_api). Kandidat pilih JENJANG
+                        // dulu; jenis institusi menyesuaikan jenjang (tabel binding); nama
+                        // kampus/sekolah dicari server-side terfilter jenis (autocomplete).
                         {
-                            key: 'nama_kampus',
-                            label: 'Nama Kampus / Universitas',
+                            key: 'jenjang',
+                            label: 'Jenjang Pendidikan',
                             tipe: 'select',
                             wajib: true,
-                            ph: 'Cari nama kampus lalu pilih',
-                            bantuan: 'Ketik untuk mencari, lalu pilih dari daftar resmi. Tidak ada? Hubungi admin.',
+                            // Opsi dari /api/v1/pendidikan/jenjang (Master Jenjang).
+                            sumber_api: 'jenjang',
+                            // Seluruh keturunan disebut eksplisit — pengosongan
+                            // hanya satu tingkat, tidak menurun sendiri.
+                            reset_anak: ['jenis_institusi', 'nama_kampus', 'jurusan', 'program_studi'],
+                            ph: 'Pilih jenjang pendidikan',
+                            bantuan: 'Pilih jenjang lebih dulu — menentukan jenis institusi & daftar kampus/sekolah.',
                             dapat_disaring: true,
-                            // Opsi diambil dari MASTER KAMPUS (daftar resmi, bisa dicari).
-                            // Channel UMUM/KAMPUS sudah digabung — kandidat WAJIB memilih
-                            // dari daftar ini dan tidak boleh mengetik bebas (lihat FieldRenderer).
-                            sumber_opsi: 'kampus',
                         },
                         {
                             key: 'jenis_institusi',
                             label: 'Jenis Institusi Pendidikan',
                             tipe: 'select',
                             wajib: true,
-                            opsi: ['Politeknik', 'Universitas'],
-                            bantuan: 'Menentukan pertanyaan pendidikan berikutnya.',
+                            // Opsi menyesuaikan jenjang terpilih (tabel binding Jenis↔Jenjang).
+                            sumber_api: 'jenis_institusi',
+                            tergantung: 'jenjang',
+                            reset_anak: ['nama_kampus', 'jurusan', 'program_studi'],
+                            ph: 'Pilih jenis institusi',
+                            bantuan: 'Universitas, Politeknik, SMA, SMK, dst — sesuai jenjang.',
+                            tampil_jika: { field: 'jenjang', operator: '!=', nilai: '' },
                             dapat_disaring: true,
                         },
-
-                        // ── Percabangan Politeknik vs Universitas ──
-                        // Menambah jalur baru (mis. Sekolah Vokasi) cukup menambah
-                        // entri di sini — tidak ada if yang perlu disunting.
+                        {
+                            key: 'nama_kampus',
+                            label: 'Nama Kampus / Sekolah',
+                            tipe: 'select',
+                            wajib: true,
+                            penuh: true, // col-12 (lebar penuh) — muncul setelah jenjang + jenis
+                            // Pencarian server-side (autocomplete) terfilter jenis institusi.
+                            sumber_api: 'kampus',
+                            cari_async: true,
+                            tergantung: 'jenis_institusi',
+                            reset_anak: ['jurusan', 'program_studi'],
+                            ph: 'Ketik untuk mencari nama…',
+                            bantuan: 'Ketik nama lalu pilih dari daftar. Tidak ada? Ketik langsung lalu tekan Enter.',
+                            tampil_jika: { field: 'jenis_institusi', operator: '!=', nilai: '' },
+                            dapat_disaring: true,
+                        },
+                        // Jurusan & Program Studi ikut cascade dari kampus terpilih,
+                        // tapi TETAP boleh diketik sendiri (boleh_ketik). Master prodi
+                        // tidak akan pernah lengkap — prodi baru dibuka tiap tahun, dan
+                        // kampus luar negeri penamaannya bebas. Mengunci pilihan hanya
+                        // akan membuat pelamar mentok di tengah formulir.
                         {
                             key: 'jurusan',
-                            label: 'Jurusan',
-                            tipe: 'text',
-                            wajib: true,
-                            ph: 'mis. Teknik Mesin',
-                            tampil_jika: { field: 'jenis_institusi', operator: '=', nilai: 'Politeknik' },
-                        },
-                        {
-                            key: 'fakultas',
-                            label: 'Fakultas',
-                            tipe: 'text',
-                            wajib: true,
-                            ph: 'mis. Fakultas Teknik',
-                            tampil_jika: { field: 'jenis_institusi', operator: '=', nilai: 'Universitas' },
-                        },
-                        {
-                            key: 'jenjang_politeknik',
-                            label: 'Jenjang Pendidikan',
+                            label: 'Jurusan / Fakultas / Program Keahlian',
                             tipe: 'select',
                             wajib: true,
-                            opsi: ['D3', 'D4'],
+                            sumber_api: 'fakultas',
+                            tergantung: 'nama_kampus',
+                            reset_anak: ['program_studi'],
+                            boleh_ketik: true,
+                            ph: 'Pilih atau ketik sendiri',
+                            bantuan: 'Tidak ada di daftar? Ketik langsung lalu tekan Enter.',
+                            tampil_jika: { field: 'nama_kampus', operator: '!=', nilai: '' },
                             dapat_disaring: true,
-                            tampil_jika: { field: 'jenis_institusi', operator: '=', nilai: 'Politeknik' },
                         },
                         {
-                            key: 'jenjang_universitas',
-                            label: 'Jenjang Pendidikan',
+                            key: 'program_studi',
+                            label: 'Program Studi',
                             tipe: 'select',
                             wajib: true,
-                            opsi: ['S1', 'S2'],
+                            sumber_api: 'prodi',
+                            cari_async: true,
+                            tergantung: 'nama_kampus',
+                            // Dipersempit oleh jurusan/fakultas yang dipilih di atas.
+                            saring_dari: 'jurusan',
+                            boleh_ketik: true,
+                            ph: 'Ketik untuk mencari, atau ketik sendiri',
+                            bantuan: 'Tidak ada di daftar? Ketik langsung lalu tekan Enter.',
+                            tampil_jika: { field: 'nama_kampus', operator: '!=', nilai: '' },
                             dapat_disaring: true,
-                            tampil_jika: { field: 'jenis_institusi', operator: '=', nilai: 'Universitas' },
                         },
-
-                        { key: 'program_studi', label: 'Program Studi', tipe: 'text', wajib: true, ph: 'mis. Teknik Industri' },
                         {
                             key: 'ipk',
-                            label: 'IPK',
+                            label: 'IPK / Nilai Akhir',
                             tipe: 'number',
                             wajib: true,
                             min: 0,
                             maks: 4,
                             desimal: 2,
                             ph: 'mis. 3.25',
+                            tampil_jika: { field: 'jenis_institusi', operator: '!=', nilai: '' },
                             dapat_disaring: true,
                         },
-                    ],
-                },
-                {
-                    judul: 'C. Kesediaan',
-                    field: [
                         {
+                            // Sebaris dengan IPK (kiri-kanan). Ditaruh di bagian
+                            // yang sama karena tiap bagian punya grid sendiri —
+                            // beda bagian tidak akan pernah bersebelahan.
                             key: 'bersedia_ditempatkan',
-                            label: 'Apakah bersedia ditempatkan di Pabrik Banyuasin?',
+                            label: 'Bersedia ditempatkan di Pabrik Banyuasin?',
                             tipe: 'select',
                             wajib: true,
                             opsi: ['Ya', 'Tidak'],
-                            penuh: true,
                             dapat_disaring: true,
                         },
                     ],

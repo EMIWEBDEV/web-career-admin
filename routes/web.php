@@ -51,6 +51,9 @@ Route::get('/logout', function (Request $request) {
 require __DIR__ . '/kpi/fransDevEvo.php';
 require __DIR__ . '/kpi/ridhoDevEvo.php';
 
+// Endpoint pendidikan untuk formulir kandidat (cascade jenjang→jenis→kampus).
+require __DIR__ . '/career/Pendidikan/PendidikanWeb.php';
+
 // SELURUH modul master & operasional (17 modul) adalah milik ADMIN.
 // Dikunci di satu tempat, bukan ditempel satu per satu di tiap berkas modul —
 // supaya modul baru otomatis ikut terlindungi dan tidak ada yang kelewat.
