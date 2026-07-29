@@ -113,8 +113,10 @@ class FeedbackAdminController extends Controller
             'Created_At' => $now,
         ], 'Id_Export');
 
-        FeedbackExportJob::dispatch($exportId, (int) $validated['form_id'], $validated)
-            ->onQueue('async_export');
+        // Nama queue ditentukan job-nya sendiri (hanya berlaku di Cloud Tasks) —
+        // lihat AntreanWebCareers. Dipaksa di sini dulu, sehingga
+        // `php artisan queue:work` yang mendengarkan queue 'default' tak melihatnya.
+        FeedbackExportJob::dispatch($exportId, (int) $validated['form_id'], $validated);
 
         return ResponseHelper::success(['export_id' => $exportId], 'Export dimulai');
     }
