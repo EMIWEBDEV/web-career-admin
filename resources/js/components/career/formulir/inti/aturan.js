@@ -16,6 +16,10 @@
  *
  *   tampil_jika: { field: 'jenis_kelamin', operator: '=', nilai: 'Perempuan' }
  *
+ * Operator: = != > < >= <= ADA_DI TIDAK_ADA_DI
+ * (dua terakhir menerima `nilai` berupa array — kosakatanya sengaja sama
+ * dengan MesinSyarat di sisi PHP supaya admin tidak menghafal dua daftar.)
+ *
  * Menambah syarat baru cukup menyunting skema.js — berkas ini tidak
  * perlu disentuh lagi.
  */
@@ -24,6 +28,17 @@ export function syaratTerpenuhi(syarat, jawaban) {
 
     const kiri = jawaban?.[syarat.field];
     const kanan = syarat.nilai;
+
+    // Keanggotaan himpunan. Dipakai syarat seperti "hanya jenjang perguruan
+    // tinggi", yang mustahil ditulis dengan satu perbandingan tunggal.
+    if (syarat.operator === 'ADA_DI' || syarat.operator === 'TIDAK_ADA_DI') {
+        const daftar = (Array.isArray(kanan) ? kanan : [kanan]).map((v) =>
+            String(v ?? '').trim().toLowerCase(),
+        );
+        const punya = (v) => daftar.includes(String(v ?? '').trim().toLowerCase());
+        const ada = Array.isArray(kiri) ? kiri.some(punya) : punya(kiri);
+        return syarat.operator === 'ADA_DI' ? ada : !ada;
+    }
 
     // Checkbox menyimpan array -> "=" berarti "mengandung nilai ini".
     if (Array.isArray(kiri)) {
@@ -55,9 +70,18 @@ export function fieldTampil(field, jawaban) {
     return (field || []).filter((f) => syaratTerpenuhi(f.tampil_jika, jawaban));
 }
 
-/** Bagian yang masih punya minimal satu field terlihat. */
+/**
+ * Bagian yang layak tampil: lolos syarat bagian (bila ada) DAN masih menyisakan
+ * minimal satu field terlihat. Bagian berulang tidak dinilai per field karena
+ * isinya baru muncul setelah kandidat menambah baris.
+ *
+ * Syarat di tingkat bagian dipakai untuk blok yang seluruhnya tidak relevan —
+ * mis. "Riwayat Pekerjaan" bagi pelamar yang menjawab belum punya pengalaman.
+ */
 export function bagianTampil(bagian, jawaban) {
-    return (bagian || []).filter((b) => b.berulang || fieldTampil(b.field, jawaban).length > 0);
+    return (bagian || []).filter(
+        (b) => syaratTerpenuhi(b.tampil_jika, jawaban) && (b.berulang || fieldTampil(b.field, jawaban).length > 0),
+    );
 }
 
 /** Semua field sebuah skema, diratakan. */
@@ -134,6 +158,10 @@ export function periksaLangkah(langkah, jawaban) {
     const galat = [];
 
     (langkah?.bagian || []).forEach((B) => {
+        // Bagian yang sedang tersembunyi tidak divalidasi — alasannya sama
+        // dengan field tersembunyi: menuntut isian yang tak terlihat = jebakan.
+        if (!syaratTerpenuhi(B.tampil_jika, jawaban)) return;
+
         if (B.berulang) {
             const baris = jawaban[kunciBagian(B)] || [];
             baris.forEach((r, i) => {

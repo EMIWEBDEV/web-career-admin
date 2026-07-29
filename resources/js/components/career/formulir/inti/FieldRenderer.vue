@@ -99,6 +99,31 @@
             />
         </template>
 
+        <!-- referensi: opsi DICARI ke server sambil mengetik, bukan dikirim di
+             muka. Master Kampus berisi ratusan ribu baris — mustahil dimuat
+             seluruhnya. Field terkunci ke daftar resmi (tanpa allow-create). -->
+        <el-select
+            v-else-if="field.tipe === 'referensi'"
+            :model-value="nilai || undefined"
+            filterable
+            remote
+            clearable
+            :remote-method="cariReferensi"
+            :loading="memuat"
+            default-first-option
+            :disabled="disabled || indukBelumDiisi"
+            :placeholder="placeholderReferensi"
+            reserve-keyword
+            style="width: 100%"
+            @visible-change="(buka) => buka && cariReferensi('')"
+            @update:model-value="(v) => ubah(v ?? '')"
+        >
+            <el-option v-for="o in opsiReferensi" :key="o.nilai" :value="o.nilai" :label="o.label">
+                <span class="fr__opsi">{{ o.label }}</span>
+                <span v-if="o.ket" class="fr__opsi-ket">{{ o.ket }}</span>
+            </el-option>
+        </el-select>
+
         <el-radio-group
             v-else-if="field.tipe === 'radio'"
             :model-value="nilai"
@@ -159,16 +184,21 @@
 </template>
 
 <script setup>
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
+import { ambilOpsi, tunda } from './referensi';
 
 const props = defineProps({
     field: { type: Object, required: true },
     modelValue: { type: [String, Number, Boolean, Array, Object, null], default: null },
     disabled: { type: Boolean, default: false },
     galat: { type: String, default: '' },
-    // Konteks opsi dinamis (mis. { kampus: ['ITB', ...] } dari Master Kampus).
-    // Mengisi opsi field ber-sumber_opsi tanpa mengubah skema di kode.
+    // Konteks opsi dinamis (mis. { kampus: ['ITB', ...] }) untuk field
+    // ber-sumber_opsi. Daftar panjang sekarang memakai tipe `referensi`.
     konteks: { type: Object, default: () => ({}) },
+    // Jawaban tetangga — acuan field bertipe `referensi` untuk merantai
+    // penyaringnya (jenjang -> jenis institusi -> kampus). Di bagian berulang
+    // isinya jawaban BARIS itu, bukan seluruh formulir.
+    jawabanKonteks: { type: Object, default: () => ({}) },
 });
 
 const emit = defineEmits(['update:modelValue', 'berkas']);
@@ -189,6 +219,89 @@ const opsiEfektif = computed(() => {
 // Consent & textarea selalu memakan lebar penuh — dipaksa di sini supaya
 // admin tidak perlu ingat mencentang "lebar penuh" untuk keduanya.
 const lebarPenuh = computed(() => ['textarea', 'consent', 'checkbox'].includes(props.field.tipe));
+
+/* ── Field bertipe `referensi` ──────────────────────────────────────────
+   Dua macam penyaring, dan bedanya penting:
+     bergantung — induk yang WAJIB terisi lebih dulu. Selama kosong, field
+                  ini terkunci; menawarkan 328 ribu kampus tanpa jenjang
+                  hanya membuat kandidat tersesat.
+     saring     — penyempit opsional. Kalau terisi dipakai, kalau belum
+                  daftar tetap bisa dibuka (cuma lebih lebar).
+*/
+const opsiReferensi = ref([]);
+const memuat = ref(false);
+
+function nilaiInduk(peta) {
+    const out = {};
+    for (const [param, key] of Object.entries(peta || {})) {
+        const v = props.jawabanKonteks?.[key];
+        out[param] = v === null || v === undefined ? '' : String(v);
+    }
+    return out;
+}
+
+const indukWajib = computed(() => nilaiInduk(props.field.bergantung));
+const indukSaring = computed(() => nilaiInduk(props.field.saring));
+const indukBelumDiisi = computed(() => Object.values(indukWajib.value).some((v) => v === ''));
+
+const placeholderReferensi = computed(() => {
+    if (!indukBelumDiisi.value) return props.field.ph || 'Ketik untuk mencari';
+    return props.field.ph_terkunci || 'Lengkapi pertanyaan sebelumnya dulu';
+});
+
+async function muat(cari) {
+    if (indukBelumDiisi.value) {
+        opsiReferensi.value = [];
+        return;
+    }
+    memuat.value = true;
+    const hasil = await ambilOpsi(
+        props.field.sumber,
+        { cari, ...indukWajib.value, ...indukSaring.value },
+        props.field.key,
+    );
+    // null = permintaan dibatalkan karena ada ketikan lebih baru; jangan
+    // menimpa daftar yang sedang tampil dengan hasil usang.
+    if (hasil !== null) opsiReferensi.value = sertakanNilaiTerpilih(hasil);
+    memuat.value = false;
+}
+
+/**
+ * Jawaban yang sudah tersimpan harus tetap terbaca walau tidak ikut terbawa
+ * hasil pencarian terakhir — kalau tidak, membuka kembali formulir yang sudah
+ * diisi memperlihatkan kolom kosong seolah jawabannya hilang.
+ */
+function sertakanNilaiTerpilih(daftar) {
+    const v = props.modelValue;
+    if (!v || daftar.some((o) => o.nilai === v)) return daftar;
+    return [{ nilai: v, label: String(v), ket: null }, ...daftar];
+}
+
+const cariReferensi = tunda((cari) => muat(String(cari || '')));
+
+// Induk berubah -> pilihan anak hampir pasti tidak berlaku lagi (prodi S1
+// tidak masuk akal setelah jenjang diganti SMK). Dikosongkan supaya tidak ada
+// kombinasi mustahil yang lolos ke database.
+watch(
+    () => JSON.stringify([indukWajib.value, indukSaring.value]),
+    () => {
+        opsiReferensi.value = [];
+        if (props.disabled) return;
+        if (props.modelValue) emit('update:modelValue', '');
+    },
+);
+
+// Nilai tersimpan perlu dimunculkan sebagai opsi sejak awal, tanpa menunggu
+// kandidat membuka dropdown-nya.
+watch(
+    () => props.modelValue,
+    (v) => {
+        if (v && !opsiReferensi.value.some((o) => o.nilai === v)) {
+            opsiReferensi.value = sertakanNilaiTerpilih(opsiReferensi.value);
+        }
+    },
+    { immediate: true },
+);
 
 function ubah(v) {
     emit('update:modelValue', v);
@@ -253,4 +366,8 @@ function pilihBerkas(uf) {
 .fr__btn:disabled { opacity: .5; cursor: not-allowed; }
 
 .fr__consent { white-space: normal; height: auto; align-items: flex-start; }
+
+/* Opsi referensi: nama di kiri, keterangan (kota / gelar) menepi ke kanan. */
+.fr__opsi { float: left; }
+.fr__opsi-ket { float: right; margin-left: 1.2rem; color: #94a3b8; font-size: 11.5px; }
 </style>

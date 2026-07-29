@@ -15,9 +15,15 @@ use Carbon\Carbon;
  *      Yang benar disimpan tanggal lahir, usianya dihitung saat dievaluasi.
  *
  *   2. Field yang di formulir sengaja bercabang.
- *      Formulir 1 punya jenjang_politeknik DAN jenjang_universitas — dua
- *      field terpisah karena pertanyaannya memang berbeda per jalur. Syarat
- *      "jenjang = S1" tidak akan kena keduanya. Field turunan menyatukannya.
+ *      Pertanyaan pendidikan berbeda per jalur: pelamar perguruan tinggi
+ *      ditanya fakultas, pelamar SMK ditanya jurusan sekolah. Syarat
+ *      "jurusan = Teknik Mesin" tidak akan kena keduanya. Field turunan
+ *      menyatukannya jadi satu nama yang bisa dirujuk admin.
+ *
+ *      Sumber lama `jenjang_politeknik` & `jenjang_universitas` tetap
+ *      terdaftar walau formulir sekarang memakai `jenjang_pendidikan` —
+ *      pengisian yang sudah tersimpan sebelum penyatuan itu harus tetap
+ *      bisa dievaluasi ulang tanpa ditulis ulang.
  *
  * Bagi admin, hasil turunan terlihat seperti field biasa di daftar pilihan
  * syarat — bedanya ditandai "otomatis" supaya jelas ini bukan ketikan kandidat.
@@ -41,7 +47,7 @@ class FieldTurunan
             'satuan' => 'tahun',
         ],
         'jenjang' => [
-            'sumber' => ['jenjang_politeknik', 'jenjang_universitas', 'jenjang_pendidikan'],
+            'sumber' => ['jenjang_pendidikan', 'jenjang_politeknik', 'jenjang_universitas'],
             'label' => 'Jenjang Pendidikan (gabungan semua jalur)',
             'tipe' => 'TEKS',
             'satuan' => null,
