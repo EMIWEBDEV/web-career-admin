@@ -332,22 +332,27 @@ function statusLabelId(s) { return { BERJALAN: 'Sedang Diproses', GUGUR: 'Tidak 
 const hasilStatus = computed(() => {
     if (doneKo.value.length) return 'gagal';
     if (hasilServer.value && hasilServer.value.status === 'DIPROSES') return 'pending';
+    // Belum ada tahap yang diputus lolos → tahap pertamanya bermode manual dan
+    // masih menunggu admin. Jangan ucapkan selamat atas kelulusan yang belum ada.
+    if (hasilServer.value && hasilServer.value.menungguKeputusan) return 'pending';
     return 'lolos';
 });
 const progressLabel = computed(() => {
+    const total = (hasilServer.value && hasilServer.value.totalTahap) || 5;
     if (hasilStatus.value === 'lolos') {
         const t = (hasilServer.value && hasilServer.value.tahap) || 2;
-        const total = (hasilServer.value && hasilServer.value.totalTahap) || 5;
         return `Tahap ${t} dari ${total} · lanjut ke tahap berikutnya`;
     }
-    return 'Tahap 1 dari 5 · Menunggu peninjauan';
+    const t = (hasilServer.value && hasilServer.value.tahap) || 1;
+    const label = (hasilServer.value && hasilServer.value.tahapLabel) || 'peninjauan';
+    return `Tahap ${t} dari ${total} · menunggu hasil ${label}`;
 });
 function segClass(n) {
+    const t = (hasilServer.value && hasilServer.value.tahap) || (hasilStatus.value === 'lolos' ? 2 : 1);
     if (hasilStatus.value === 'lolos') {
-        const t = (hasilServer.value && hasilServer.value.tahap) || 2;
         return n < t ? 'done' : (n === t ? 'active' : 'idle');
     }
-    return n === 1 ? 'active' : 'idle';
+    return n < t ? 'done' : (n === t ? 'active' : 'idle');
 }
 const CONFETTI = [['12%', '#34d399', '2.4s', '.05s'], ['22%', '#6366f1', '2.7s', '.3s'], ['34%', '#f59e0b', '2.2s', '.15s'], ['46%', '#8b5cf6', '2.9s', '.4s'], ['56%', '#10b981', '2.5s', '.1s'], ['66%', '#6366f1', '2.6s', '.5s'], ['76%', '#f59e0b', '2.3s', '.22s'], ['86%', '#34d399', '2.8s', '.35s'], ['40%', '#a78bfa', '3s', '.6s'], ['60%', '#f59e0b', '2.4s', '.48s']];
 function confettiStyle(n) {
@@ -604,7 +609,8 @@ async function finalize() {
     for (let i = 0; i < steps.length; i++) { step.value = i; if (!validateStep()) { mengirim.value = false; return; } }
     stopCamera();
     const isForm2 = props.flow.form === 2;
-    const ko = !isForm2 ? checkKnockout(jenis, form) : [];
+    // Syarat dari Master Program (DB), bukan daftar tetap di careerSession.
+    const ko = !isForm2 ? checkKnockout(jenis, form, props.flow.syarat) : [];
     let procId = null; // id proses queue (untuk poll hasil nyata)
 
     // FINALISASI = benar-benar MENGAJUKAN lamaran ke sistem (DB), bukan sekadar
@@ -646,7 +652,8 @@ async function finalize() {
     }
     // Snapshot sessionStorage (legacy card) — tetap dibuat, tapi TAMPILAN akhir ikut server.
     const existing = getApp(lowongan.id);
-    const pipeline = existing?.pipeline || flowFor(jenis);
+    // Tahapan seleksi = Master Alur milik program ini (dikirim server).
+    const pipeline = existing?.pipeline || flowFor(jenis, props.flow.pipeline);
     const base = {
         step: steps.length,
         pipeline,
