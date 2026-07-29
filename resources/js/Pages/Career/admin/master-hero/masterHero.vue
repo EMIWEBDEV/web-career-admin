@@ -6,19 +6,9 @@
         <div class="wca-phead">
             <div>
                 <h1>Master Hero</h1>
-                <p>
-                    Kelola slide carousel hero di landing page karir — <b>urutan tampil</b>,
-                    <b>gambar desktop &amp; mobile</b>, <b>video</b>, dan slide mana saja yang
-                    menampilkan lapisan konten tetap (headline, pencarian, tombol, kartu statistik).
-                    Ubah field lalu klik <b>Simpan Semua</b> untuk menerapkan perubahan.
-                </p>
             </div>
             <div class="wca-phead__actions">
-                <button
-                    class="wca-btn wca-btn--dark"
-                    :disabled="!hasDirty || savingAll"
-                    @click="saveAll"
-                >
+                <button class="wca-btn wca-btn--dark" :disabled="!hasDirty || savingAll" @click="saveAll">
                     <span v-if="savingAll" class="wca-spin" aria-hidden="true"></span>
                     <i v-else class="bi bi-save"></i>
                     {{ savingAll ? 'Menyimpan…' : hasDirty ? `Simpan Semua (${dirtyCount})` : 'Simpan Semua' }}
@@ -33,30 +23,28 @@
         <div v-loading="loading" class="mh-list">
             <div v-for="s in sortedList" :key="s.id" class="mh-card" :class="{ off: s.status !== 'AKTIF' }">
                 <div v-if="s.tipe === 'IMAGE'" class="mh-media mh-media--image">
-                    <div class="mh-slot mh-slot--desktop" v-loading="s._busy.desktop" @click="pickMedia(s, 'desktop')">
+                    <div class="mh-slot mh-slot--desktop" v-loading="s._busy.desktop" @click="handleSlotClick(s, 'desktop')">
                         <img v-if="mediaExact(s, 'desktop')" :src="mediaExact(s, 'desktop')" alt="Gambar Desktop" />
                         <div v-else class="mh-slot__empty"><i class="bi bi-display"></i><span>Desktop Image</span></div>
                         <span class="mh-slot__tag">Desktop Image</span>
-                        <button
-                            v-if="mediaExact(s, 'desktop')"
-                            class="mh-slot__del"
-                            title="Hapus gambar desktop"
-                            @click.stop="removeMedia(s, 'desktop')"
-                        >
-                            <i class="bi bi-trash"></i>
-                        </button>
+                        <div v-if="hasMedia(s, 'desktop')" class="mh-slot__actions">
+                            <button class="mh-slot__action" title="Ganti gambar desktop" @click.stop="pickMedia(s, 'desktop')"><i class="bi bi-pencil"></i></button>
+                            <button class="mh-slot__action mh-slot__action--danger" title="Hapus gambar desktop" @click.stop="removeMedia(s, 'desktop')">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
                     </div>
 
-                    <div v-if="mediaExact(s, 'mobile')" class="mh-slot mh-slot--mobile" v-loading="s._busy.mobile" @click="pickMedia(s, 'mobile')">
-                        <img :src="mediaExact(s, 'mobile')" alt="Gambar Mobile" />
+                    <div class="mh-slot mh-slot--mobile" v-loading="s._busy.mobile" @click="handleSlotClick(s, 'mobile')">
+                        <img v-if="mediaExact(s, 'mobile')" :src="mediaExact(s, 'mobile')" alt="Gambar Mobile" />
+                        <div v-else class="mh-slot__empty"><i class="bi bi-phone"></i><span>Mobile Image</span></div>
                         <span class="mh-slot__tag">Mobile Image</span>
-                        <button
-                            class="mh-slot__del"
-                            title="Hapus gambar mobile"
-                            @click.stop="removeMedia(s, 'mobile')"
-                        >
-                            <i class="bi bi-trash"></i>
-                        </button>
+                        <div v-if="hasMedia(s, 'mobile')" class="mh-slot__actions">
+                            <button class="mh-slot__action" title="Ganti gambar mobile" @click.stop="pickMedia(s, 'mobile')"><i class="bi bi-pencil"></i></button>
+                            <button class="mh-slot__action mh-slot__action--danger" title="Hapus gambar mobile" @click.stop="removeMedia(s, 'mobile')">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -64,78 +52,108 @@
                     <div class="mh-device">
                         <div class="mh-device__head"><i class="bi bi-display"></i><span>Desktop Video</span></div>
 
-                        <div class="mh-slot mh-slot--poster" v-loading="s._busy.poster_desktop" @click="pickMedia(s, 'poster_desktop')">
-                            <img v-if="mediaExact(s, 'poster_desktop')" :src="mediaExact(s, 'poster_desktop')" alt="Poster Video Desktop" />
-                            <div v-else class="mh-slot__empty"><i class="bi bi-image"></i><span>Desktop Poster</span></div>
-                            <span class="mh-slot__tag">Desktop Poster</span>
-                            <button
+                        <div
+                            class="mh-slot mh-slot--poster"
+                            v-loading="s._busy.poster_desktop"
+                            @click="handleSlotClick(s, 'poster_desktop')"
+                        >
+                            <img
                                 v-if="mediaExact(s, 'poster_desktop')"
-                                class="mh-slot__del"
-                                title="Hapus poster desktop"
-                                @click.stop="removeMedia(s, 'poster_desktop')"
-                            >
-                                <i class="bi bi-trash"></i>
-                            </button>
+                                :src="mediaExact(s, 'poster_desktop')"
+                                alt="Poster Video Desktop"
+                            />
+                            <div v-else class="mh-slot__empty">
+                                <i class="bi bi-image"></i><span>Desktop Poster</span>
+                            </div>
+                            <span class="mh-slot__tag">Desktop Poster</span>
+                            <div v-if="hasMedia(s, 'poster_desktop')" class="mh-slot__actions">
+                                <button class="mh-slot__action" title="Ganti poster desktop" @click.stop="pickMedia(s, 'poster_desktop')"><i class="bi bi-pencil"></i></button>
+                                <button class="mh-slot__action mh-slot__action--danger" title="Hapus poster desktop" @click.stop="removeMedia(s, 'poster_desktop')">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
                         </div>
 
-                        <div class="mh-slot mh-slot--video" v-loading="s._busy.video_desktop" @click="pickMedia(s, 'video_desktop')">
+                        <div
+                            class="mh-slot mh-slot--video"
+                            v-loading="s._busy.video_desktop"
+                            @click="handleSlotClick(s, 'video_desktop')"
+                        >
                             <video
                                 v-if="mediaExact(s, 'video_desktop')"
                                 :src="mediaExact(s, 'video_desktop')"
                                 :poster="mediaExact(s, 'poster_desktop')"
+                                controls
                                 muted
+                                autoplay
+                                loop
                                 playsinline
                                 preload="metadata"
                             ></video>
-                            <div v-else class="mh-slot__empty"><i class="bi bi-camera-video"></i><span>Desktop Video</span></div>
+                            <div v-else class="mh-slot__empty">
+                                <i class="bi bi-camera-video"></i><span>Desktop Video</span>
+                            </div>
                             <span class="mh-slot__tag">Desktop Video</span>
-                            <button
-                                v-if="mediaExact(s, 'video_desktop')"
-                                class="mh-slot__del"
-                                title="Hapus video desktop"
-                                @click.stop="removeMedia(s, 'video_desktop')"
-                            >
-                                <i class="bi bi-trash"></i>
-                            </button>
+                            <div v-if="hasMedia(s, 'video_desktop')" class="mh-slot__actions">
+                                <button class="mh-slot__action" title="Ganti video desktop" @click.stop="pickMedia(s, 'video_desktop')"><i class="bi bi-pencil"></i></button>
+                                <button class="mh-slot__action mh-slot__action--danger" title="Hapus video desktop" @click.stop="removeMedia(s, 'video_desktop')">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
                         </div>
                     </div>
 
-                    <div v-if="hasMobileVideo(s)" class="mh-device mh-device--mobile">
+                    <div class="mh-device mh-device--mobile">
                         <div class="mh-device__head"><i class="bi bi-phone"></i><span>Mobile Video</span></div>
 
-                        <div class="mh-slot mh-slot--mobile-poster" v-loading="s._busy.poster_mobile" @click="pickMedia(s, 'poster_mobile')">
-                            <img v-if="mediaExact(s, 'poster_mobile')" :src="mediaExact(s, 'poster_mobile')" alt="Poster Video Mobile" />
-                            <div v-else class="mh-slot__empty"><i class="bi bi-image"></i><span>Mobile Poster</span></div>
-                            <span class="mh-slot__tag">Mobile Poster</span>
-                            <button
+                        <div
+                            class="mh-slot mh-slot--mobile-poster"
+                            v-loading="s._busy.poster_mobile"
+                            @click="handleSlotClick(s, 'poster_mobile')"
+                        >
+                            <img
                                 v-if="mediaExact(s, 'poster_mobile')"
-                                class="mh-slot__del"
-                                title="Hapus poster mobile"
-                                @click.stop="removeMedia(s, 'poster_mobile')"
-                            >
-                                <i class="bi bi-trash"></i>
-                            </button>
+                                :src="mediaExact(s, 'poster_mobile')"
+                                alt="Poster Video Mobile"
+                            />
+                            <div v-else class="mh-slot__empty">
+                                <i class="bi bi-image"></i><span>Mobile Poster</span>
+                            </div>
+                            <span class="mh-slot__tag">Mobile Poster</span>
+                            <div v-if="hasMedia(s, 'poster_mobile')" class="mh-slot__actions">
+                                <button class="mh-slot__action" title="Ganti poster mobile" @click.stop="pickMedia(s, 'poster_mobile')"><i class="bi bi-pencil"></i></button>
+                                <button class="mh-slot__action mh-slot__action--danger" title="Hapus poster mobile" @click.stop="removeMedia(s, 'poster_mobile')">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
                         </div>
 
-                        <div class="mh-slot mh-slot--mobile-video" v-loading="s._busy.video_mobile" @click="pickMedia(s, 'video_mobile')">
+                        <div
+                            class="mh-slot mh-slot--mobile-video"
+                            v-loading="s._busy.video_mobile"
+                            @click="handleSlotClick(s, 'video_mobile')"
+                        >
                             <video
                                 v-if="mediaExact(s, 'video_mobile')"
                                 :src="mediaExact(s, 'video_mobile')"
                                 :poster="mediaExact(s, 'poster_mobile')"
+                                controls
                                 muted
+                                autoplay
+                                loop
                                 playsinline
                                 preload="metadata"
                             ></video>
-                            <div v-else class="mh-slot__empty"><i class="bi bi-camera-video"></i><span>Mobile Video</span></div>
+                            <div v-else class="mh-slot__empty">
+                                <i class="bi bi-camera-video"></i><span>Mobile Video</span>
+                            </div>
                             <span class="mh-slot__tag">Mobile Video</span>
-                            <button
-                                v-if="mediaExact(s, 'video_mobile')"
-                                class="mh-slot__del"
-                                title="Hapus video mobile"
-                                @click.stop="removeMedia(s, 'video_mobile')"
-                            >
-                                <i class="bi bi-trash"></i>
-                            </button>
+                            <div v-if="hasMedia(s, 'video_mobile')" class="mh-slot__actions">
+                                <button class="mh-slot__action" title="Ganti video mobile" @click.stop="pickMedia(s, 'video_mobile')"><i class="bi bi-pencil"></i></button>
+                                <button class="mh-slot__action mh-slot__action--danger" title="Hapus video mobile" @click.stop="removeMedia(s, 'video_mobile')">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -167,13 +185,33 @@
                                 <el-option label="Tanpa overlay" value="NONE" />
                             </el-select>
                         </label>
+                        <label class="mh-metafield">
+                            <span>Zoom Animation</span>
+                            <el-select v-model="s.zoomAnimation" size="small" @change="markDirty(s)">
+                                <el-option label="Ya" value="Y" />
+                                <el-option label="Tidak" value="N" />
+                            </el-select>
+                        </label>
                         <label class="mh-metafield mh-metafield--num">
                             <span>Urutan</span>
-                            <el-input-number v-model="s.urutan" :min="0" :max="9999" size="small" @change="markDirty(s)" />
+                            <el-input-number
+                                v-model="s.urutan"
+                                :min="0"
+                                :max="9999"
+                                size="small"
+                                @change="markDirty(s)"
+                            />
                         </label>
                         <label class="mh-metafield mh-metafield--num">
                             <span>Durasi (ms)</span>
-                            <el-input-number v-model="s.durasiMs" :min="1000" :max="60000" :step="500" size="small" @change="markDirty(s)" />
+                            <el-input-number
+                                v-model="s.durasiMs"
+                                :min="1000"
+                                :max="60000"
+                                :step="500"
+                                size="small"
+                                @change="markDirty(s)"
+                            />
                         </label>
                     </div>
 
@@ -214,7 +252,13 @@
         >
 
         <!-- input file tersembunyi (dipakai semua slot) -->
-        <input ref="fileInput" type="file" accept=".jpg,.jpeg,.png,.webp,.mp4,.webm" style="display: none" @change="onFilePicked" />
+        <input
+            ref="fileInput"
+            type="file"
+            accept=".jpg,.jpeg,.png,.webp,.mp4,.webm"
+            style="display: none"
+            @change="onFilePicked"
+        />
     </div>
 </template>
 
@@ -265,6 +309,7 @@ export default {
         decorate(row) {
             return {
                 ...row,
+                zoomAnimation: row.zoomAnimation || 'N',
                 videoDesktopUrl: row.videoDesktopUrl || row.videoUrl || null,
                 videoMobileUrl: row.videoMobileUrl || null,
                 videoDesktopPoster: row.videoDesktopPoster || row.videoPoster || null,
@@ -293,8 +338,12 @@ export default {
 
             return media[slot] || null;
         },
-        hasMobileVideo(s) {
-            return !!(s.videoMobileUrl || s.videoMobilePoster);
+        hasMedia(s, slot) {
+            return !!this.mediaExact(s, slot);
+        },
+        handleSlotClick(s, slot) {
+            if (this.hasMedia(s, slot)) return;
+            this.pickMedia(s, slot);
         },
         async load() {
             this.loading = true;
@@ -311,7 +360,15 @@ export default {
             if (this.creating) return;
             this.creating = true;
             const nextUrutan = this.list.length ? Math.max(...this.list.map((x) => x.urutan)) + 1 : 0;
-            const payload = { label: 'Slide Baru', tipe: 'IMAGE', overlay: 'DARK', urutan: nextUrutan, durasiMs: 5000, tampilkanKonten: false };
+            const payload = {
+                label: 'Slide Baru',
+                tipe: 'IMAGE',
+                overlay: 'DARK',
+                zoomAnimation: 'N',
+                urutan: nextUrutan,
+                durasiMs: 5000,
+                tampilkanKonten: false,
+            };
             try {
                 await axios.post(API, payload, CFG);
                 await this.load();
@@ -338,6 +395,7 @@ export default {
                     label: s.label,
                     tipe: s.tipe,
                     overlay: s.overlay,
+                    zoomAnimation: s.zoomAnimation || 'N',
                     urutan: s.urutan,
                     durasiMs: s.durasiMs,
                     tampilkanKonten: s.tampilkanKonten,
@@ -448,7 +506,7 @@ export default {
 }
 .mh-card {
     display: grid;
-    grid-template-columns: minmax(520px, 3fr) minmax(190px, 1fr);
+    grid-template-columns: minmax(460px, 2.35fr) minmax(220px, 1.1fr);
     gap: 18px;
     padding: 16px;
     border-radius: 16px;
@@ -464,14 +522,18 @@ export default {
     align-items: flex-start;
     gap: 8px;
 }
+.mh-media {
+    width: 100%;
+    min-width: 0;
+}
 .mh-media--image {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) clamp(150px, 26%, 220px);
+    grid-template-columns: minmax(0, 0.76fr) clamp(180px, 26%, 250px);
     align-items: start;
 }
 .mh-media--video {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
+    grid-template-columns: minmax(0, 0.76fr) clamp(180px, 26%, 250px);
     gap: 12px;
     width: 100%;
 }
@@ -545,20 +607,35 @@ export default {
     letter-spacing: 0.04em;
     pointer-events: none;
 }
-.mh-slot__del {
+.mh-slot__actions {
     position: absolute;
     top: 6px;
     right: 6px;
-    width: 24px;
-    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.mh-slot__action {
     border: none;
-    border-radius: 50%;
-    background: rgba(220, 38, 38, 0.85);
+    border-radius: 999px;
+    background: rgba(15, 18, 53, 0.84);
     color: #fff;
-    display: grid;
-    place-items: center;
-    font-size: 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    height: 28px;
+    padding: 0 10px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
     cursor: pointer;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+}
+.mh-slot__action--danger {
+    background: rgba(220, 38, 38, 0.92);
+    padding: 0;
+    width: 28px;
 }
 .mh-fields {
     display: flex;
