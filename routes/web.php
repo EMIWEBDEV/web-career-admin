@@ -54,6 +54,11 @@ require __DIR__ . '/kpi/ridhoDevEvo.php';
 // Endpoint pendidikan untuk formulir kandidat (cascade jenjang→jenis→kampus).
 require __DIR__ . '/career/Pendidikan/PendidikanWeb.php';
 
+// Media hero slide (PUBLIK — dipakai landing page & preview admin).
+Route::get('/karir/hero-media/{id}/{slot}', [\App\Http\Controllers\Career\MasterHero\MasterHeroController::class, 'mediaPublik'])
+    ->where(['slot' => 'desktop|mobile|video_desktop|video_mobile|poster_desktop|poster_mobile'])
+    ->name('career.hero.media');
+
 // SELURUH modul master & operasional (17 modul) adalah milik ADMIN.
 // Dikunci di satu tempat, bukan ditempel satu per satu di tiap berkas modul —
 // supaya modul baru otomatis ikut terlindungi dan tidak ada yang kelewat.
