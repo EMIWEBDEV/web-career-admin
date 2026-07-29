@@ -3,6 +3,7 @@
 namespace App\Jobs\Career;
 
 use App\Helpers\FormatTanggalHelper;
+use App\Jobs\Career\Concerns\AntreanWebCareers;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -16,7 +17,9 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 class FeedbackExportJob implements ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    use AntreanWebCareers, Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+
+    public const QUEUE = 'async_export';
 
     public $timeout = 600;
     public $tries = 2;
@@ -26,7 +29,9 @@ class FeedbackExportJob implements ShouldQueue
         private int $exportId,
         private int $formId,
         private array $filters
-    ) {}
+    ) {
+        $this->aturAntrean(self::QUEUE);
+    }
 
     public function handle()
     {

@@ -12,7 +12,20 @@ return [
     |
     */
 
-    'default' => env('QUEUE_CONNECTION', 'sync'),
+    /*
+    | Bawaan proyek ini 'webcareers' — antreannya sendiri (N_WEB_CAREERS_Jobs),
+    | terpisah dari N_LMS_Jobs milik modul tetangga di basis data yang sama.
+    |
+    | Karena job TIDAK lagi memaksa koneksinya sendiri, satu perintah cukup:
+    |
+    |     php artisan queue:work
+    |
+    | Ganti lewat QUEUE_CONNECTION saja:
+    |     webcareers  → worker lokal / VM
+    |     cloudtasks  → Cloud Run; task dikirim & dibaca otomatis, tanpa worker
+    |     sync        → dijalankan langsung dalam request (uji cepat)
+    */
+    'default' => env('QUEUE_CONNECTION', 'webcareers'),
 
     /*
     |--------------------------------------------------------------------------
@@ -48,10 +61,9 @@ return [
             'after_commit' => false,
         ],
 
-        // Koneksi khusus modul WEB CAREERS — antrean terpisah dari N_LMS_Jobs.
-        // Dipakai job WC saat LOCAL (driver database). Worker lokal:
-        //   php artisan queue:work webcareers
-        // Non-local WC pakai connection 'cloudtasks' (tak menyentuh tabel ini).
+        // Antrean modul WEB CAREERS — tabelnya sendiri, tidak menyentuh
+        // N_LMS_Jobs milik modul tetangga di basis data yang sama.
+        // Ini koneksi BAWAAN proyek ini, jadi cukup: php artisan queue:work
         'webcareers' => [
             'driver' => 'database',
             'connection' => env('DB_CONNECTION', 'sqlsrv'),

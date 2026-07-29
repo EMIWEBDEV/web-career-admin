@@ -2,6 +2,7 @@
 
 namespace App\Jobs\Career;
 
+use App\Jobs\Career\Concerns\AntreanWebCareers;
 use App\Jobs\Career\Concerns\CatatGagalWebCareers;
 use App\Mail\Career\HasilLamaranMail;
 use Illuminate\Bus\Queueable;
@@ -30,7 +31,7 @@ use Illuminate\Support\Facades\Storage;
  */
 class WcApplyEmailJob implements ShouldQueue
 {
-    use CatatGagalWebCareers, Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    use AntreanWebCareers, CatatGagalWebCareers, Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public const QUEUE = 'wc-applymail';
 
@@ -53,13 +54,7 @@ class WcApplyEmailJob implements ShouldQueue
         $this->status = $status;
         $this->data = $data;
 
-        // Non-local → cloudtasks queue 'wc-applymail'. Local → koneksi 'webcareers'
-        // (antrean N_WEB_CAREERS_Jobs, terpisah dari N_LMS_Jobs).
-        if (env('QUEUE_CONNECTION') === 'cloudtasks') {
-            $this->onConnection('cloudtasks')->onQueue(self::QUEUE);
-        } else {
-            $this->onConnection('webcareers');
-        }
+        $this->aturAntrean(self::QUEUE);
     }
 
     public function handle(): void
