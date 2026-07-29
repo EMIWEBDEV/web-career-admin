@@ -709,7 +709,7 @@
                 </div>
                 <div class="gid-list">
                     <div v-for="d in divisiBelum" :key="d.id" class="gid-item">
-                        <span class="gid-item__l"><i class="bi bi-diagram-3"></i> <b>{{ d.nama }}</b> <span class="gid-item__badge">0/0 belum diisi</span></span>
+                        <span class="gid-item__l"><i class="bi bi-diagram-3"></i> <b>{{ d.nama }}</b> <span class="gid-item__badge">{{ d.alasan || 'belum lengkap' }}</span></span>
                         <button type="button" class="gid-item__btn" @click="gotoInfoDivisi(d.id)"><i class="bi bi-pencil-square"></i> Isi Sekarang</button>
                     </div>
                 </div>

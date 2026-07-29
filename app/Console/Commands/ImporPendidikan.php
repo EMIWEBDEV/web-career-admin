@@ -16,8 +16,6 @@ use Illuminate\Support\Facades\Schema;
  *   N_WEB_CAREERS_Master_Bidang_Ilmu   rumpun/fakultas (ISCED-F 2013, UNESCO)
  *   N_WEB_CAREERS_Master_Prodi         nama prodi/jurusan
  *   N_WEB_CAREERS_Prodi_Jenjang        prodi berlaku di jenjang mana
- *   N_WEB_CAREERS_Kampus_Prodi         (dibuat, diisi belakangan) prodi yang
- *                                      benar-benar dibuka tiap kampus
  *
  * AMAN DIULANG: baris dicocokkan dengan Kode, jadi menjalankan ulang hanya
  * memperbarui yang berubah — tidak menggandakan. Baris yang diubah admin lewat
@@ -31,7 +29,7 @@ use Illuminate\Support\Facades\Schema;
 class ImporPendidikan extends Command
 {
     protected $signature = 'career:impor-pendidikan
-        {--hanya= : Batasi ke satu bagian: jenis|bidang|prodi|jenjang|kampus}
+        {--hanya= : Batasi ke satu bagian: jenis|bidang|prodi|jenjang}
         {--paksa : Timpa juga baris yang sudah disunting admin}';
 
     protected $description = 'Impor master bidang ilmu (ISCED) & program studi dari database/data/pendidikan';
@@ -41,8 +39,6 @@ class ImporPendidikan extends Command
     private const T_PRODI = 'N_WEB_CAREERS_Master_Prodi';
 
     private const T_PJ = 'N_WEB_CAREERS_Prodi_Jenjang';
-
-    private const T_KP = 'N_WEB_CAREERS_Kampus_Prodi';
 
     private const T_JI = 'N_WEB_CAREERS_Master_Jenis_Institusi';
 
@@ -75,9 +71,6 @@ class ImporPendidikan extends Command
             if ($hanya === '' || $hanya === 'jenjang') {
                 $this->imporJenjang("{$dir}/prodi-jenjang.csv");
             }
-            if ($hanya === '' || $hanya === 'kampus') {
-                $this->imporKampusProdi("{$dir}/kampus-prodi.csv");
-            }
 
             $this->newLine();
             $this->line('  <fg=green>Selesai.</> Isi tabel sekarang:');
@@ -85,7 +78,6 @@ class ImporPendidikan extends Command
             $this->line('    bidang ilmu : ' . DB::table(self::T_BIDANG)->count());
             $this->line('    prodi       : ' . DB::table(self::T_PRODI)->count());
             $this->line('    relasi      : ' . DB::table(self::T_PJ)->count());
-            $this->line('    kampus×prodi: ' . DB::table(self::T_KP)->count() . ' (diisi saat data resmi tersedia)');
 
             Log::channel('web_career')->info('[IMPOR] Master pendidikan selesai diimpor.');
 
@@ -163,32 +155,6 @@ class ImporPendidikan extends Command
                 )');
             DB::statement('CREATE UNIQUE INDEX UX_PJ ON ' . self::T_PJ . ' (Kode_Prodi, Kode_Jenjang)');
             DB::statement('CREATE INDEX IX_PJ_Jenjang ON ' . self::T_PJ . ' (Kode_Jenjang)');
-        }
-
-        // Binding kampus ↔ prodi: "kampus INI membuka prodi APA".
-        // Sengaja tabel terpisah dan boleh kosong — selama sebuah kampus belum
-        // punya baris di sini, cascade memakai aturan cadangan (jenis institusi
-        // → jenjang → prodi) supaya SEMUA kampus tetap terlayani.
-        if (! Schema::hasTable(self::T_KP)) {
-            $this->line('  membuat tabel ' . self::T_KP);
-            DB::statement('
-                CREATE TABLE ' . self::T_KP . ' (
-                    Id_Kampus_Prodi INT IDENTITY(1,1) PRIMARY KEY,
-                    Kode_Kampus  VARCHAR(60)   NOT NULL,
-                    Kode_Prodi   VARCHAR(80)   NOT NULL,
-                    Kode_Jenjang VARCHAR(20)   NOT NULL,
-                    Nama_Fakultas NVARCHAR(200) NULL,
-                    Akreditasi   NVARCHAR(20)  NULL,
-                    Kode_Prodi_PT VARCHAR(40)  NULL,
-                    Sumber       VARCHAR(20)   NULL,
-                    Flag_Aktif   CHAR(1)       NOT NULL CONSTRAINT DF_KPR_Aktif DEFAULT (\'Y\'),
-                    Created_At   DATETIME      NULL,
-                    Created_By   NVARCHAR(100) NULL,
-                    Updated_At   DATETIME      NULL,
-                    Updated_By   NVARCHAR(100) NULL
-                )');
-            DB::statement('CREATE UNIQUE INDEX UX_KPR ON ' . self::T_KP . ' (Kode_Kampus, Kode_Prodi, Kode_Jenjang)');
-            DB::statement('CREATE INDEX IX_KPR_Kampus ON ' . self::T_KP . ' (Kode_Kampus, Kode_Jenjang)');
         }
     }
 
@@ -435,92 +401,5 @@ class ImporPendidikan extends Command
         if ($jenjangTakDikenal) {
             $this->warn('    jenjang tak dikenal di Master Jenjang: ' . implode(', ', array_keys($jenjangTakDikenal)));
         }
-    }
-
-    /**
-     * BINDING RESMI kampus ↔ prodi.
-     *
-     * Berkas kampus-prodi.csv sengaja dikirim kosong (hanya baris judul). Isinya
-     * menyusul begitu daftar prodi per kampus didapat — mis. ekspor PDDIKTI atau
-     * data dari kampus itu sendiri. Selama kosong, cascade memakai aturan
-     * cadangan, jadi formulir tetap jalan.
-     *
-     * Kolom: kode_kampus;kode_prodi;kode_jenjang;nama_fakultas;akreditasi;kode_prodi_pt;sumber
-     */
-    private function imporKampusProdi(string $path): void
-    {
-        if (! is_file($path)) {
-            $this->line('  kampus × prodi');
-            $this->line('    <fg=gray>berkas belum ada — dilewati</>');
-
-            return;
-        }
-
-        $baris = $this->baca($path);
-        if (! $baris) {
-            $this->line('  kampus × prodi');
-            $this->line('    <fg=gray>belum ada isi — cascade memakai aturan cadangan</>');
-
-            return;
-        }
-
-        $now = now();
-        $prodiSah = DB::table(self::T_PRODI)->pluck('Kode')->flip();
-        $jenjangSah = DB::table('N_WEB_CAREERS_Master_Jenjang')->pluck('Kode')->flip();
-        $sudah = DB::table(self::T_KP)->get(['Kode_Kampus', 'Kode_Prodi', 'Kode_Jenjang'])
-            ->mapWithKeys(fn ($r) => [$r->Kode_Kampus . '|' . $r->Kode_Prodi . '|' . $r->Kode_Jenjang => true])->all();
-
-        $baru = $lewat = 0;
-        $kampusTakDikenal = 0;
-        $antre = [];
-
-        $bar = $this->output->createProgressBar(count($baris));
-        $bar->setFormat('  kampus×prodi %current%/%max% [%bar%] %percent:3s%%');
-        foreach ($baris as $b) {
-            $bar->advance();
-            $kunci = $b['kode_kampus'] . '|' . $b['kode_prodi'] . '|' . $b['kode_jenjang'];
-            if (isset($sudah[$kunci])) {
-                $lewat++;
-                continue;
-            }
-            if (! isset($prodiSah[$b['kode_prodi']]) || ! isset($jenjangSah[$b['kode_jenjang']])) {
-                $lewat++;
-                continue;
-            }
-            // Kampus dicek per-baris lewat exists() agar tidak memuat 328 ribu
-            // kode ke memori hanya untuk validasi.
-            if (! DB::table('N_WEB_CAREERS_Master_Kampus')->where('Kode', $b['kode_kampus'])->exists()) {
-                $kampusTakDikenal++;
-                $lewat++;
-                continue;
-            }
-
-            $antre[] = [
-                'Kode_Kampus' => $b['kode_kampus'],
-                'Kode_Prodi' => $b['kode_prodi'],
-                'Kode_Jenjang' => $b['kode_jenjang'],
-                'Nama_Fakultas' => ($b['nama_fakultas'] ?? '') ?: null,
-                'Akreditasi' => ($b['akreditasi'] ?? '') ?: null,
-                'Kode_Prodi_PT' => ($b['kode_prodi_pt'] ?? '') ?: null,
-                'Sumber' => ($b['sumber'] ?? '') ?: 'impor',
-                'Flag_Aktif' => 'Y',
-                'Created_At' => $now, 'Created_By' => 'IMPOR',
-                'Updated_At' => $now, 'Updated_By' => 'IMPOR',
-            ];
-            $sudah[$kunci] = true;
-            $baru++;
-
-            if (count($antre) >= 500) {
-                DB::table(self::T_KP)->insert($antre);
-                $antre = [];
-            }
-        }
-        if ($antre) {
-            DB::table(self::T_KP)->insert($antre);
-        }
-        $bar->finish();
-        $this->newLine();
-        $this->line("    baru {$baru} · dilewati {$lewat}"
-            . ($kampusTakDikenal ? " · <fg=yellow>{$kampusTakDikenal} kode kampus tak dikenal</>" : ''));
     }
 }

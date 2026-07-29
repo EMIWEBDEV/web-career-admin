@@ -64,6 +64,8 @@ class PembukaanProgramController extends Controller
 
             $rows = $dasar()
                 ->when($kategori !== '', fn ($w) => $w->where('p.Kategori', $kategori))
+                // Terbaru → terlama: berdasarkan waktu dibuat, ID sebagai cadangan.
+                ->orderByDesc('pb.Created_At')
                 ->orderByDesc('pb.Id_Pembukaan')
                 ->select('pb.*', 'u.Nama as Pembuat', 'p.Nama as ProgramNama', 'p.Kode as ProgramKode', 'p.Kategori as ProgramKategori', 'b.Nama as BatchNama')
                 ->get();
@@ -107,6 +109,58 @@ class PembukaanProgramController extends Controller
         }
     }
 
+    /** Daftar program (BERJALAN) + detail untuk KARTU picker di modal "Buka Program". */
+    public function programs()
+    {
+        try {
+            $izin = AksesService::kategoriDiizinkan('pembukaanPage');
+
+            $rows = DB::table('N_WEB_CAREERS_Program as p')
+                ->leftJoin('N_WEB_CAREERS_Master_Alur as a', 'a.Kode', '=', 'p.Alur_Kode')
+                ->leftJoin('N_WEB_CAREERS_Master_Jadwal as j', 'j.Kode', '=', 'p.Jadwal_Kode')
+                ->where('p.Status', 'BERJALAN')
+                ->when($izin, fn ($w) => $w->whereIn('p.Kategori', $izin))
+                // Terbaru → terlama (program yang baru dibuat paling atas).
+                ->orderByDesc('p.Id_Program')
+                ->select('p.Kode', 'p.Nama', 'p.Kategori', 'p.Penyelenggara', 'p.Jadwal_Kode', 'a.Nama as AlurNama', 'j.Kegiatan as JadwalNama')
+                ->get();
+
+            // Jumlah posisi per program.
+            $posisiCount = DB::table('N_WEB_CAREERS_Program_Posisi as x')
+                ->join('N_WEB_CAREERS_Program as p', 'p.Id_Program', '=', 'x.Program_Id')
+                ->whereIn('p.Kode', $rows->pluck('Kode')->all() ?: [''])
+                ->select('p.Kode', DB::raw('COUNT(*) as J'))->groupBy('p.Kode')->pluck('J', 'Kode');
+
+            // Rentang tanggal dari agenda jadwal (mulai paling awal – selesai paling akhir).
+            $jadwalKodes = $rows->pluck('Jadwal_Kode')->filter()->unique()->all();
+            $range = $jadwalKodes
+                ? DB::table('N_WEB_CAREERS_Master_Jadwal_Agenda as ag')
+                    ->join('N_WEB_CAREERS_Master_Jadwal as j', 'j.Id_Master_Jadwal', '=', 'ag.Master_Jadwal_Id')
+                    ->whereIn('j.Kode', $jadwalKodes)
+                    ->select('j.Kode', DB::raw('MIN(ag.Tanggal_Mulai) as mulai'), DB::raw('MAX(ag.Tanggal_Selesai) as selesai'))
+                    ->groupBy('j.Kode')->get()->keyBy('Kode')
+                : collect();
+
+            $data = $rows->map(fn ($r) => [
+                'kode' => $r->Kode,
+                'nama' => $r->Nama,
+                'kategori' => $r->Kategori,
+                'penyelenggara' => $r->Penyelenggara ?: 'EVO Group',
+                'alur' => $r->AlurNama,
+                'jadwal' => $r->JadwalNama,
+                'jumlahPosisi' => (int) ($posisiCount[$r->Kode] ?? 0),
+                'tglMulai' => $r->Jadwal_Kode ? ($range[$r->Jadwal_Kode]->mulai ?? null) : null,
+                'tglSelesai' => $r->Jadwal_Kode ? ($range[$r->Jadwal_Kode]->selesai ?? null) : null,
+            ])->values();
+
+            return ResponseHelper::success($data, 'Daftar program');
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->error('Gagal memuat program picker: ' . $e->getMessage());
+
+            return ResponseHelper::error('Gagal memuat program', 500);
+        }
+    }
+
     private function rules(): array
     {
         return [
@@ -114,7 +168,9 @@ class PembukaanProgramController extends Controller
             'masaBerlaku' => 'required|in:BERBATAS,EVERGREEN',
             'buka' => 'nullable|date',
             'tutup' => 'nullable|date',
-            'statusPublish' => 'required|in:DRAFT,TERBIT',
+            // Status publish tak lagi diisi di form CREATE (otomatis TERBIT).
+            // Tetap diterima untuk UPDATE / toggle dari daftar.
+            'statusPublish' => 'nullable|in:DRAFT,TERBIT',
         ];
     }
 
@@ -140,7 +196,8 @@ class PembukaanProgramController extends Controller
             DB::table('N_WEB_CAREERS_Pembukaan')->insert([
                 'Kode' => $kode, 'Program_Id' => $programId, 'Channel' => self::CHANNEL, 'Masa_Berlaku' => $data['masaBerlaku'],
                 'Tanggal_Buka' => $data['buka'] ?? null, 'Tanggal_Tutup' => $data['masaBerlaku'] === 'EVERGREEN' ? null : ($data['tutup'] ?? null),
-                'Program_Batch_Id' => null, 'Status_Publish' => $data['statusPublish'],
+                // Buka Program = langsung TERBIT. Draft diatur belakangan lewat toggle di daftar.
+                'Program_Batch_Id' => null, 'Status_Publish' => 'TERBIT',
                 'Created_At' => $now, 'Created_By' => $userName, 'Created_By_Id' => $userId, 'Updated_At' => $now, 'Updated_By' => $userName, 'Updated_By_Id' => $userId,
             ]);
 
@@ -175,7 +232,8 @@ class PembukaanProgramController extends Controller
             DB::table('N_WEB_CAREERS_Pembukaan')->where('Id_Pembukaan', $realId)->update([
                 'Program_Id' => $programId, 'Channel' => self::CHANNEL, 'Masa_Berlaku' => $data['masaBerlaku'],
                 'Tanggal_Buka' => $data['buka'] ?? null, 'Tanggal_Tutup' => $data['masaBerlaku'] === 'EVERGREEN' ? null : ($data['tutup'] ?? null),
-                'Status_Publish' => $data['statusPublish'],
+                // Pertahankan status lama bila tak dikirim (field disembunyikan di form).
+                'Status_Publish' => $data['statusPublish'] ?? $row->Status_Publish,
                 'Updated_At' => now(), 'Updated_By' => $userName, 'Updated_By_Id' => $userId,
             ]);
 

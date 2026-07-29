@@ -552,14 +552,10 @@ class LamaranController extends Controller
         // memilih kampus dari MASTER KAMPUS (daftar penuh, bisa dicari), dan
         // TIDAK boleh menambah sendiri. Pembatasan kampus mitra (bila perlu)
         // dilakukan lewat SYARAT auto-gugur (operator ADA_DI), bukan channel.
-        $konteks = [
-            'kampus' => DB::table('N_WEB_CAREERS_Master_Kampus')
-                ->where('Flag_Aktif', 'Y')
-                ->orderBy('Nama')
-                ->pluck('Nama')
-                ->values()
-                ->all(),
-        ];
+        // Nama Kampus kini DICARI server-side (autocomplete) via
+        // /api/v1/pendidikan/kampus — jadi TIDAK lagi mengirim seluruh daftar
+        // (ratusan ribu baris) ke form. Konteks opsi dibiarkan kosong.
+        $konteks = [];
 
         // FORMULIR & BERKAS yang SUDAH kandidat kirim (panel "Formulir & Berkas Saya").
         $formulir = $this->formulirTerkirim($realId, '/kandidat/lamaran/berkas/file/');
