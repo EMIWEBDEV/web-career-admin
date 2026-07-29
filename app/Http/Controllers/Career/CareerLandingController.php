@@ -177,7 +177,69 @@ class CareerLandingController extends Controller
             'kandidat' => $kandidat,
             'kelayakan' => $kelayakan,
             'sudahLamar' => $sudahLamar,
+            // Tahapan seleksi NYATA milik alur program ini (Master Alur di DB).
+            // Dulu halaman apply memakai daftar tahap yang ditulis di berkas JS,
+            // jadi kandidat melihat alur karangan — bukan alur yang benar-benar
+            // dijalankan. Kosong hanya bila program belum punya alur.
+            'pipeline' => $mt['pipeline'] ?? ($lo['pipeline'] ?? []),
+            // Syarat asli tahap pertama, apa adanya dari Master Program → Syarat.
+            'syarat' => $this->syaratTahapPertama($job['pembukaanId'] ?? null),
         ];
+    }
+
+    /**
+     * Aturan syarat tahap PERTAMA sebuah pembukaan — dikirim ke formulir apply
+     * supaya peringatan di layar memakai aturan yang sama dengan yang dinilai
+     * server. Sebelumnya klien memakai daftar tetap di careerSession.js yang
+     * tidak ada hubungannya dengan syarat program, sehingga bisa menyatakan
+     * "tidak memenuhi syarat" untuk aturan yang sebenarnya tidak dipakai.
+     *
+     * Keputusan akhir tetap milik server (LamaranService::evaluasiSyarat).
+     */
+    private function syaratTahapPertama(?string $pembukaanEnc): array
+    {
+        $pembukaanId = $pembukaanEnc ? (Hashids::decode($pembukaanEnc)[0] ?? null) : null;
+        if (! $pembukaanId) {
+            return [];
+        }
+
+        try {
+            $pb = DB::table('N_WEB_CAREERS_Pembukaan')->where('Id_Pembukaan', $pembukaanId)->first(['Program_Id']);
+            if (! $pb) {
+                return [];
+            }
+
+            $program = DB::table('N_WEB_CAREERS_Program')->where('Id_Program', $pb->Program_Id)->first(['Alur_Kode']);
+            $tahap1 = DB::table('N_WEB_CAREERS_Master_Alur_Tahap as t')
+                ->join('N_WEB_CAREERS_Master_Alur as a', 'a.Id_Master_Alur', '=', 't.Master_Alur_Id')
+                ->where('a.Kode', $program->Alur_Kode ?? '')
+                ->orderBy('t.Urutan')
+                ->first(['t.Id_Master_Alur_Tahap']);
+            if (! $tahap1) {
+                return [];
+            }
+
+            return DB::table('N_WEB_CAREERS_Program_Syarat')
+                ->where('Program_Id', $pb->Program_Id)
+                ->where('Master_Alur_Tahap_Id', $tahap1->Id_Master_Alur_Tahap)
+                ->where('Flag_Aktif', 'Y')
+                ->orderBy('Urutan')
+                ->get(['Nama', 'Aturan_Json', 'Aksi', 'Pesan_Gugur', 'Flag_Uji'])
+                ->map(fn ($s) => [
+                    'nama' => $s->Nama,
+                    // Hanya GUGUR yang boleh memblokir; TANDAI cuma menandai untuk admin.
+                    'aksi' => $s->Aksi,
+                    // Mode uji: dihitung tapi tidak boleh memengaruhi kandidat.
+                    'uji' => $s->Flag_Uji === 'Y',
+                    'pesan' => $s->Pesan_Gugur,
+                    'aturan' => json_decode($s->Aturan_Json ?: '{}', true) ?: [],
+                ])
+                ->values()->all();
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->warning('Gagal memuat syarat tahap pertama: ' . $e->getMessage());
+
+            return [];
+        }
     }
 
     /**

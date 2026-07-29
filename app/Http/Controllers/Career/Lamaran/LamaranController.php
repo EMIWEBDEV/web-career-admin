@@ -293,15 +293,32 @@ class LamaranController extends Controller
 
         if ($row->Status === 'SELESAI' && $row->Lamaran_Id) {
             $l = DB::table('N_WEB_CAREERS_Lamaran')->where('Id_Lamaran', $row->Lamaran_Id)->first();
+
+            // Sudah ada tahap yang benar-benar diputus LULUS?
+            // Kalau belum, kandidat masih MENUNGGU keputusan admin — tahap
+            // pertamanya bermode manual. Tanpa penanda ini layar hasil akan
+            // menyatakan "Lolos Seleksi Administrasi" untuk lamaran yang belum
+            // diputus siapa pun. Memakai kolom Hasil (bukan Status) karena saat
+            // lolos tahap disimpan Status='SELESAI' + Hasil='LULUS'.
+            $adaLulus = $l && DB::table('N_WEB_CAREERS_Lamaran_Tahap')
+                ->where('Lamaran_Id', $l->Id_Lamaran)->where('Hasil', 'LULUS')->exists();
+
+            $tahapKini = $l ? DB::table('N_WEB_CAREERS_Lamaran_Tahap')
+                ->where('Lamaran_Id', $l->Id_Lamaran)->where('Urutan', $l->Urutan_Tahap)
+                ->value('Label') : null;
+
             $out['lamaran'] = $l ? [
                 'id' => Hashids::encode($l->Id_Lamaran),
                 'kode' => $l->Kode,
-                'status' => $l->Status,          // BERJALAN (lolos administrasi) / GUGUR
+                'status' => $l->Status,          // BERJALAN / GUGUR
                 'hasilAkhir' => $l->Hasil_Akhir,
                 'gugurDi' => $l->Gugur_Di_Tahap,
                 'alasanGugur' => $l->Alasan_Gugur,
                 'tahap' => (int) $l->Urutan_Tahap,
                 'totalTahap' => (int) $l->Total_Tahap,
+                'tahapLabel' => $tahapKini,
+                // true → belum ada tahap yang diputus lolos; jangan ucapkan selamat.
+                'menungguKeputusan' => $l->Status === 'BERJALAN' && ! $adaLulus,
             ] : null;
         }
 
@@ -1070,7 +1087,7 @@ class LamaranController extends Controller
                 ->select('Lamaran_Tahap_Id', DB::raw('COUNT(*) as J'))->groupBy('Lamaran_Tahap_Id')->pluck('J', 'Lamaran_Tahap_Id')
             : collect();
 
-        $pelamar = $lamaran->map(function ($l) use ($tahapPer, $subPer, $kuotaPosisi, $terisiKuota, $berkasCount) {
+        $pelamar = $lamaran->map(function ($l) use ($tahapPer, $subPer, $kuotaPosisi, $terisiKuota, $berkasCount) { // NOSONAR
             $tahapList = collect($tahapPer->get($l->Id_Lamaran, []));
 
             if ($l->Status === 'GUGUR') {
@@ -1086,13 +1103,42 @@ class LamaranController extends Controller
             $tAktif = $l->Status === 'BERJALAN' ? $tahapList->firstWhere('Status', 'BERJALAN') : null;
             $skor = $tk->Skor ?? null;
             $isTes = ($tk->Provider ?? null) === 'THIRD_PARTY';
-            // BUTUH KEPUTUSAN = berbasis STATE mesin, bukan sekadar provider:
-            //  - Siap_Diputus='Y' → mesin sudah mengumpulkan semua hasil (multi-tes),
-            //    admin tinggal memutuskan — termasuk pada tahap pihak ke-3.
-            //  - Tahap manual (bukan THIRD_PARTY) tetap bisa diputus kapan pun.
+
+            // ── SIAPA YANG BOLEH MEMUTUS TAHAP INI ──────────────────────────
+            // Ditentukan Master Alur, bukan ditebak dari provider.
+            //
+            //  SYSTEM  "Otomatis — maju sendiri bila lulus". Mesin yang memutus
+            //          begitu aktivitasnya selesai. Admin TIDAK boleh menekan
+            //          Loloskan/Tidak Lolos — kalau boleh, mode otomatis yang
+            //          disetel di Master Alur jadi tak ada artinya.
+            //  MANUAL  Admin yang memutus — tapi hanya setelah hasil aktivitas
+            //          penentu tercatat. Meloloskan tes yang nilainya belum ada
+            //          sama saja memutus tanpa dasar.
+            $modeKeputusan = strtoupper((string) ($tAktif->Keputusan_Mode ?? 'MANUAL'));
+            $otomatis = $modeKeputusan === 'SYSTEM';
+
+            $subAktif = collect($subPer->get($tAktif->Id_Lamaran_Tahap ?? 0, []));
+            // Aktivitas yang WAJIB punya hasil dulu = penentu & benar-benar tes
+            // (punya jenis tes / dari pihak ke-3). Aktivitas tanpa jenis tes —
+            // mis. wawancara atau verifikasi berkas — hasilnya ya keputusan
+            // admin itu sendiri, jadi tidak boleh saling mengunci.
+            $belumTercatat = $subAktif->filter(fn ($s) => ($s->Peran ?? 'PENENTU') === 'PENENTU'
+                && (! empty($s->Jenis_Tes_Kode) || ($s->Provider ?? '') === 'THIRD_PARTY')
+                && ($s->Flag_Selesai ?? 'N') !== 'Y')->count();
+
             $siap = $tAktif && ($tAktif->Siap_Diputus ?? 'N') === 'Y';
-            $nungguSistem = $tAktif && $tAktif->Provider === 'THIRD_PARTY' && ! $siap;
-            $butuhKeputusan = $tAktif && $tAktif->Status === 'BERJALAN' && ($siap || $tAktif->Provider !== 'THIRD_PARTY');
+            $nungguSistem = $tAktif && ! $siap && ($otomatis || $belumTercatat > 0);
+            $butuhKeputusan = $tAktif
+                && $tAktif->Status === 'BERJALAN'
+                && ! $otomatis
+                && ($siap || $belumTercatat === 0);
+
+            $alasanKunci = null;
+            if ($tAktif && ! $butuhKeputusan && $tAktif->Status === 'BERJALAN') {
+                $alasanKunci = $otomatis
+                    ? 'Tahap ini disetel OTOMATIS di Master Alur — sistem yang memutuskan begitu aktivitasnya selesai.'
+                    : "Menunggu hasil {$belumTercatat} aktivitas penentu dicatat lebih dulu.";
+            }
 
             // Sadar-kuota: kursi terisi (LULUS) vs kuota MPP posisi. Loloskan hanya
             // dibatasi bila kandidat berada di TAHAP TERAKHIR (LULUS = diterima).
@@ -1145,6 +1191,12 @@ class LamaranController extends Controller
                 'butuhKeputusan' => (bool) $butuhKeputusan,
                 'nungguSistem' => (bool) $nungguSistem,
                 'siapDiputus' => (bool) $siap,
+                // Mode keputusan tahap aktif + kenapa tombolnya dikunci —
+                // dipakai worklist untuk menyembunyikan / menonaktifkan tombol.
+                'modeKeputusan' => $tAktif ? $modeKeputusan : null,
+                'otomatis' => (bool) $otomatis,
+                'aktivitasBelumTercatat' => (int) $belumTercatat,
+                'alasanKunci' => $alasanKunci,
                 'skor' => $skor,
                 'rekomendasi' => $tAktif->Rekomendasi ?? null,
                 'alasan' => $tAktif->Rekomendasi_Alasan ?? $l->Alasan_Gugur,

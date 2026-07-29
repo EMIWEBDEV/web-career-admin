@@ -17,8 +17,18 @@ export const STAGES = ['Lamaran Masuk', 'Screening', 'Tes Online', 'Wawancara', 
 // Link tes online eksternal (CAT) — dipakai saat kandidat berada di tahap TES.
 export const CAT_URL = 'https://cat-evo-stagging-595840247695.asia-southeast1.run.app';
 
-// ── ALUR RESMI ── (dipakai kandidat + admin, identik) ──
-// MT: Registrasi → Tes 1 → Biodata Lanjutan → Tes 2 → Wawancara 1 → Wawancara 2 → Onboarding
+// ══════════════════════════════════════════════════════════════
+//  ⛔ DAFTAR DI BAWAH INI BUKAN SUMBER KEBENARAN
+//
+//  Alur seleksi yang sesungguhnya ada di Master Alur (database) dan dikirim
+//  server sebagai `flow.pipeline`. Daftar di sini hanya CADANGAN untuk kasus
+//  program belum punya alur sama sekali.
+//
+//  Dulu halaman apply memakai daftar ini apa adanya, sehingga kandidat melihat
+//  tahapan karangan — "Wawancara 1, Wawancara 2, Onboarding" — padahal alur
+//  yang benar-benar dijalankan berbeda. Jangan menambah/mengubah tahap di sini;
+//  ubahlah di Master Alur.
+// ══════════════════════════════════════════════════════════════
 export const MT_FLOW = [
     { tipe: 'FORM', label: 'Registrasi & Seleksi Administrasi' },
     { tipe: 'TES', label: 'Tes Potensi Akademik & Psikotes', cat: true },
@@ -35,10 +45,24 @@ export const REK_FLOW = [
     { tipe: 'INTERVIEW', label: 'Wawancara User' },
     { tipe: 'OFFERING', label: 'Penawaran & Onboarding' },
 ];
-export function flowFor(jenis) { return (jenis === 'MT' ? MT_FLOW : REK_FLOW).map((s) => ({ ...s })); }
+/**
+ * Alur seleksi yang dipakai kandidat.
+ * @param jenis   'MT' | 'REKRUTMEN' — hanya menentukan daftar cadangan
+ * @param dariDb  pipeline dari server (Master Alur). Dipakai bila ada.
+ */
+export function flowFor(jenis, dariDb = null) {
+    if (Array.isArray(dariDb) && dariDb.length) {
+        return dariDb.map((s) => ({ ...s }));
+    }
+    return (jenis === 'MT' ? MT_FLOW : REK_FLOW).map((s) => ({ ...s }));
+}
 
-// ── Syarat wajib (knock-out) — dievaluasi saat finalisasi. Gagal → langsung Tidak Lolos.
-// Selaras dengan Master Kriteria admin (MT: IPK ≥ 3.00 & min S1; Rekrutmen: IPK ≥ 2.50).
+// ⛔ CADANGAN — bukan sumber kebenaran.
+// Syarat yang berlaku ada di Master Program → Syarat (database) dan dikirim
+// server sebagai `flow.syarat`. Daftar tetap di bawah hanya dipakai bila
+// program belum punya syarat sama sekali. Dulu daftar inilah yang dipakai,
+// sehingga kandidat bisa divonis "tidak memenuhi syarat" oleh aturan yang
+// tidak pernah dipasang di programnya.
 export const KNOCKOUT = {
     MT: [
         { field: 'ipk', op: '>=', value: 3.0, hint: 'IPK minimal 3.00' },
@@ -48,16 +72,71 @@ export const KNOCKOUT = {
         { field: 'ipk', op: '>=', value: 2.5, hint: 'IPK minimal 2.50' },
     ],
 };
-const JENJANG_RANK = { SMA: 1, SMK: 1, D3: 2, D4: 3, S1: 4, S2: 5 };
-export function checkKnockout(jenis, form) {
+const JENJANG_RANK = { SMA: 1, SMK: 1, D3: 2, D4: 3, S1: 4, S2: 5, S3: 6 };
+
+/** Bandingkan satu aturan syarat. Jenjang dibandingkan berdasarkan tingkat. */
+function bandingkan(field, nilai, operator, pembanding) {
+    if (field === 'jenjang') {
+        const a = JENJANG_RANK[String(nilai).toUpperCase()] || 0;
+        const b = JENJANG_RANK[String(pembanding).toUpperCase()] || 0;
+        nilai = a; pembanding = b;
+    }
+    const angkaA = Number(nilai);
+    const angkaB = Number(pembanding);
+    const numerik = !Number.isNaN(angkaA) && !Number.isNaN(angkaB);
+    switch (operator) {
+        case '>=': return numerik ? angkaA >= angkaB : String(nilai) >= String(pembanding);
+        case '>': return numerik ? angkaA > angkaB : String(nilai) > String(pembanding);
+        case '<=': return numerik ? angkaA <= angkaB : String(nilai) <= String(pembanding);
+        case '<': return numerik ? angkaA < angkaB : String(nilai) < String(pembanding);
+        case '!=': return String(nilai) !== String(pembanding);
+        case '=':
+        default: return String(nilai) === String(pembanding);
+    }
+}
+
+/**
+ * Syarat wajib yang MEMBLOKIR kandidat.
+ *
+ * @param jenis     'MT' | 'REKRUTMEN' — hanya untuk daftar cadangan
+ * @param form      jawaban formulir
+ * @param dariDb    flow.syarat dari server (Master Program → Syarat)
+ *
+ * Hanya syarat ber-Aksi GUGUR yang memblokir. Aksi TANDAI berarti "tandai
+ * untuk admin" — kandidat tetap lanjut dan adminlah yang memutuskan. Syarat
+ * mode uji diabaikan seluruhnya.
+ */
+export function checkKnockout(jenis, form, dariDb = null) {
+    if (Array.isArray(dariDb) && dariDb.length) {
+        const fails = [];
+        dariDb.forEach((s) => {
+            if (s.uji || String(s.aksi).toUpperCase() !== 'GUGUR') return;
+
+            const daftar = s.aturan?.aturan || [];
+            if (!daftar.length) return;
+            const penghubung = String(s.aturan?.penghubung || 'DAN').toUpperCase();
+
+            const hasil = daftar.map((r) => {
+                const val = form[r.field];
+                if (val == null || val === '') return null; // belum diisi → belum dinilai
+                return bandingkan(r.field, val, r.operator, r.nilai);
+            });
+
+            if (hasil.every((h) => h === null)) return; // tidak ada yang bisa dinilai
+            const dinilai = hasil.filter((h) => h !== null);
+            const lolos = penghubung === 'ATAU' ? dinilai.some(Boolean) : dinilai.every(Boolean);
+
+            if (!lolos) fails.push(s.pesan || s.nama || 'Syarat wajib belum terpenuhi');
+        });
+        return fails;
+    }
+
+    // Cadangan: program belum punya syarat di database.
     const fails = [];
     (KNOCKOUT[jenis] || []).forEach((r) => {
         const val = form[r.field];
-        if (val == null || val === '') return; // tidak diisi → tidak dievaluasi
-        let ok = true;
-        if (r.field === 'jenjang') ok = (JENJANG_RANK[val] || 0) >= (JENJANG_RANK[r.value] || 0);
-        else ok = Number(val) >= Number(r.value);
-        if (!ok) fails.push(r.hint);
+        if (val == null || val === '') return;
+        if (!bandingkan(r.field, val, r.op, r.value)) fails.push(r.hint);
     });
     return fails; // [] = memenuhi syarat
 }
