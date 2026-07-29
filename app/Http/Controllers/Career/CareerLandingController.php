@@ -51,6 +51,7 @@ class CareerLandingController extends Controller
             'offices' => $this->offices(),
             'benefits' => $this->benefits(),
             'tim' => $this->timCards(),
+            'heroSlides' => $this->heroSlides(),
         ]);
     }
 
@@ -1983,6 +1984,47 @@ class CareerLandingController extends Controller
     }
 
     /** Alasan bergabung — highlight chip di hero. */
+    /**
+     * Slide hero landing (Master Hero) — hanya yang AKTIF, terurut sesuai Urutan.
+     * Landing publik tidak boleh tumbang karena tabel/berkas media bermasalah.
+     */
+    private function heroSlides(): array
+    {
+        try {
+            return DB::table('N_WEB_CAREERS_Master_Hero_Slide')
+                ->where('Flag_Aktif', 'Y')
+                ->orderBy('Urutan')
+                ->orderBy('Id_Master_Hero_Slide')
+                ->get()
+                ->map(function ($r) {
+                    $id = (int) $r->Id_Master_Hero_Slide;
+                    $v = $r->Updated_At ? strtotime($r->Updated_At) : 0;
+                    $media = fn (string $slot, ?string $path) => $path
+                        ? '/karir/hero-media/' . Hashids::encode($id) . '/' . $slot . '?v=' . $v
+                        : null;
+
+                    return [
+                        'id' => Hashids::encode($id),
+                        'label' => $r->Label,
+                        'tipe' => $r->Tipe,
+                        'tampilkanKonten' => $r->Flag_Tampilkan_Konten === 'Y',
+                        'overlay' => strtolower($r->Overlay),
+                        'durasiMs' => (int) $r->Durasi_Ms,
+                        'gambarDesktop' => $media('desktop', $r->Gambar_Desktop),
+                        'gambarMobile' => $media('mobile', $r->Gambar_Mobile),
+                        'videoDesktopUrl' => $media('video_desktop', $r->Video_Desktop_Url),
+                        'videoMobileUrl' => $media('video_mobile', $r->Video_Mobile_Url),
+                        'videoDesktopPoster' => $media('poster_desktop', $r->Video_Desktop_Poster),
+                        'videoMobilePoster' => $media('poster_mobile', $r->Video_Mobile_Poster),
+                    ];
+                })
+                ->values()
+                ->all();
+        } catch (\Throwable $e) {
+            return [];
+        }
+    }
+
     private function benefits(): array
     {
         return [
