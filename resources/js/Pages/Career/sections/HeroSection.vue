@@ -15,10 +15,10 @@
                     v-if="slide.type === 'video' && slide.video"
                     :ref="(el) => setVideoRef(el, i)"
                     class="wc-hero2__media-el"
+                    :class="{ 'has-zoom': slide.zoomAnimation === 'Y' }"
                     :src="slide.video"
                     :poster="slide.poster"
                     muted
-                    loop
                     playsinline
                     autoplay
                     preload="metadata"
@@ -29,6 +29,7 @@
                     <source v-if="slide.imgMobile" media="(max-width: 1023px)" :srcset="slide.imgMobile" />
                     <img
                         class="wc-hero2__media-el"
+                        :class="{ 'has-zoom': slide.zoomAnimation === 'Y' }"
                         :src="slide.image"
                         :alt="slide.label"
                         decoding="async"
@@ -163,7 +164,6 @@ const FALLBACK_SLIDES = [
     {
         id: 'fallback-evo-group',
         type: 'image',
-        imgDesktop: '/img/IMG_5417.JPG',
         imgMobile: null,
         video: null,
         poster: null,
@@ -171,8 +171,13 @@ const FALLBACK_SLIDES = [
         duration: 7000,
         showContent: true,
         overlay: 'brand',
+        zoomAnimation: 'N',
     },
 ];
+
+function pick(...values) {
+    return values.find(Boolean) || null;
+}
 
 /* Normalisasi slide dari API (Master Hero) ke bentuk internal komponen. */
 const resolvedSlides = computed(() => {
@@ -186,23 +191,24 @@ const resolvedSlides = computed(() => {
         const mobilePoster = r.videoMobilePoster || desktopPoster || null;
         const desktopVideo = r.videoDesktopUrl || null;
         const mobileVideo = r.videoMobileUrl || desktopVideo || null;
+        const mobile = isMobile.value;
 
         return {
             id: r.id,
             type: r.tipe === 'VIDEO' ? 'video' : 'image',
-            imgDesktop: desktopImage,
             imgMobile: mobileImage,
-            video: isMobile.value ? mobileVideo : desktopVideo,
-            poster: isMobile.value
-                ? mobilePoster || mobileImage || desktopPoster || desktopImage || null
-                : desktopPoster || desktopImage || mobilePoster || mobileImage || null,
-            image: isMobile.value
-                ? mobileImage || desktopImage || mobilePoster || desktopPoster || null
-                : desktopImage || mobileImage || desktopPoster || mobilePoster || null,
+            video: mobile ? pick(mobileVideo, desktopVideo) : pick(desktopVideo, mobileVideo),
+            poster: mobile
+                ? pick(mobilePoster, mobileImage, desktopPoster, desktopImage)
+                : pick(desktopPoster, desktopImage, mobilePoster, mobileImage),
+            image: mobile
+                ? pick(mobileImage, desktopImage, mobilePoster, desktopPoster)
+                : pick(desktopImage, mobileImage, desktopPoster, mobilePoster),
             label: r.label,
             duration: r.durasiMs || 5000,
             showContent: !!r.tampilkanKonten,
             overlay: r.overlay || 'dark',
+            zoomAnimation: r.zoomAnimation || 'N',
         };
     });
 });
@@ -344,6 +350,19 @@ onBeforeUnmount(() => {
     height: 100%;
     object-fit: cover;
     object-position: center 32%;
+}
+.wc-hero2__media-el.has-zoom {
+    transform: scale(1.06);
+    animation: wcHeroZoom 22s ease-in-out infinite alternate;
+    will-change: transform;
+}
+@keyframes wcHeroZoom {
+    from {
+        transform: scale(1.06);
+    }
+    to {
+        transform: scale(1.16);
+    }
 }
 /* Scrim tipis default — hanya menegaskan gradasi bawah agar pagination tetap terbaca, foto/video tetap terang seperti pertamina.com. */
 .wc-hero2__slide-scrim {

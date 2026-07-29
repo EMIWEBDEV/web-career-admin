@@ -73,8 +73,9 @@ class MasterHeroController extends Controller
             $id = DB::table(self::TBL)->insertGetId([
                 'Label' => $data['label'],
                 'Tipe' => $data['tipe'],
-                'Flag_Tampilkan_Konten' => $data['tampilkanKonten'] ? 'Y' : 'N',
+                'Flag_Tampilkan_Konten' => $this->yn($data['tampilkanKonten'] ?? false),
                 'Overlay' => $data['overlay'],
+                'Zoom_Animation' => $this->yn($data['zoomAnimation'] ?? 'N'),
                 'Durasi_Ms' => $data['durasiMs'] ?? 5000,
                 'Urutan' => $data['urutan'] ?? 0,
                 'Flag_Aktif' => 'Y',
@@ -111,8 +112,9 @@ class MasterHeroController extends Controller
             DB::table(self::TBL)->where('Id_Master_Hero_Slide', $realId)->update([
                 'Label' => $data['label'],
                 'Tipe' => $data['tipe'],
-                'Flag_Tampilkan_Konten' => $data['tampilkanKonten'] ? 'Y' : 'N',
+                'Flag_Tampilkan_Konten' => $this->yn($data['tampilkanKonten'] ?? false),
                 'Overlay' => $data['overlay'],
+                'Zoom_Animation' => $this->yn($data['zoomAnimation'] ?? 'N'),
                 'Durasi_Ms' => $data['durasiMs'] ?? 5000,
                 'Urutan' => $data['urutan'] ?? $row->Urutan,
                 'Updated_At' => now(),
@@ -319,6 +321,7 @@ class MasterHeroController extends Controller
             'tipe' => 'required|in:IMAGE,VIDEO',
             'tampilkanKonten' => 'nullable|boolean',
             'overlay' => 'required|in:BRAND,DARK,LIGHT,NONE',
+            'zoomAnimation' => 'nullable|in:Y,N',
             'durasiMs' => 'nullable|integer|min:1000|max:60000',
             'urutan' => 'nullable|integer|min:0|max:9999',
         ];
@@ -332,8 +335,9 @@ class MasterHeroController extends Controller
             'id' => Hashids::encode($id),
             'label' => $r->Label,
             'tipe' => $r->Tipe,
-            'tampilkanKonten' => $r->Flag_Tampilkan_Konten === 'Y',
+            'tampilkanKonten' => $this->yn($r->Flag_Tampilkan_Konten) === 'Y',
             'overlay' => $r->Overlay,
+            'zoomAnimation' => $this->yn($r->Zoom_Animation),
             'durasiMs' => (int) $r->Durasi_Ms,
             'urutan' => (int) $r->Urutan,
             'status' => $r->Flag_Aktif === 'Y' ? 'AKTIF' : 'NONAKTIF',
@@ -359,5 +363,10 @@ class MasterHeroController extends Controller
     private function namaAdmin(string $nama): string
     {
         return Str::limit($nama, 100, '');
+    }
+
+    private function yn(mixed $value): string
+    {
+        return in_array($value, [true, 1, '1', 'Y', 'y', 'true', 'TRUE'], true) ? 'Y' : 'N';
     }
 }

@@ -2071,6 +2071,7 @@ class CareerLandingController extends Controller
                         'tipe' => $r->Tipe,
                         'tampilkanKonten' => $r->Flag_Tampilkan_Konten === 'Y',
                         'overlay' => strtolower($r->Overlay),
+                        'zoomAnimation' => $r->Zoom_Animation === 'Y' ? 'Y' : 'N',
                         'durasiMs' => (int) $r->Durasi_Ms,
                         'gambarDesktop' => $media('desktop', $r->Gambar_Desktop),
                         'gambarMobile' => $media('mobile', $r->Gambar_Mobile),
