@@ -30,7 +30,7 @@
                         :model-value="baris[f.key]"
                         :disabled="disabled"
                         :konteks="konteksOpsi"
-                        :jawaban="baris"
+                        :jawaban-konteks="baris"
                         @update:model-value="(v) => ubahBaris(i, f.key, v)"
                         @berkas="(e) => $emit('berkas', { ...e, bagian: kunci, baris: i })"
                     />
@@ -57,7 +57,7 @@
                 :model-value="jawaban[f.key]"
                 :disabled="disabled"
                 :konteks="konteksOpsi"
-                :jawaban="jawaban"
+                :jawaban-konteks="jawaban"
                 :galat="galat[f.key] || ''"
                 @update:model-value="(v) => $emit('ubah', f.key, v)"
                 @berkas="(e) => $emit('berkas', e)"

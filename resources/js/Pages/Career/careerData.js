@@ -65,22 +65,37 @@ export function stageTypeLabel(tipe) {
     );
 }
 
-export function isFull(item) {
-    if (!item) return false;
-    return item.status === 'PENUH' || (item.kuota && item.kuotaTerisi >= item.kuota);
-}
+/*
+ * TIDAK ADA isFull()/kuotaPct() lagi.
+ *
+ * Landing publik tidak menerima `kuota`/`kuotaTerisi` dari backend, jadi kedua
+ * helper itu tidak punya bahan: satu-satunya yang menutup lowongan di mata
+ * publik adalah TANGGAL TUTUP (lihat visibleLowongan di CareerLandingController,
+ * yang memang sudah menyaringnya). Kuota tetap ditegakkan di sisi internal —
+ * LamaranService menolak penerimaan begitu kursi posisi habis.
+ */
 
-export function kuotaPct(item) {
-    if (!item || !item.kuota) return 0;
-    return Math.min(100, Math.round(((item.kuotaTerisi || 0) / item.kuota) * 100));
+/**
+ * "Palembang · On-site" — lokasi penempatan digabung tipe tempat kerja.
+ * Sebagian `Program_Posisi.Lokasi` memang diisi tipe tempat kerja ("On-site
+ * (WFO)"), sehingga penggabungan mentah menghasilkan "On-site (WFO) · On-site
+ * (WFO)". Yang kembar cukup ditulis sekali.
+ */
+export function lokasiLabel(item) {
+    const lokasi = (item?.lokasi || '').trim();
+    const tempat = (item?.tempatKerja || '').trim();
+    if (!tempat || !lokasi) return lokasi || tempat || '—';
+    const sama = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (sama(lokasi) === sama(tempat) || sama(lokasi).includes(sama(tempat))) return lokasi;
+    return `${lokasi} · ${tempat}`;
 }
 
 export function statusLabel(status) {
-    return { BUKA: 'Pendaftaran Dibuka', PENUH: 'Kuota Penuh', SEGERA: 'Segera Dibuka' }[status] || status;
+    return { BUKA: 'Pendaftaran Dibuka', SEGERA: 'Segera Dibuka' }[status] || status;
 }
 
 export function statusClass(status) {
-    return { BUKA: 'wc-st--open', PENUH: 'wc-st--full', SEGERA: 'wc-st--soon' }[status] || 'wc-st--open';
+    return { BUKA: 'wc-st--open', SEGERA: 'wc-st--soon' }[status] || 'wc-st--open';
 }
 
 // ── Navigation (works from landing & from inner/detail pages) ──

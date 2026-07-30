@@ -1,9 +1,7 @@
 <!-- WEB CAREER — Kartu Lowongan Ultra-Premium (Grid & List View + Bookmark Support + Ultra-Compact Mobile Density) -->
 <template>
     <div class="rek__card-wrapper" :class="{ 'is-list-mode': viewMode === 'list' }">
-        <Link class="rek__card" :class="{ 'is-full': isFull(job), 'is-list': viewMode === 'list' }" :href="lowonganUrl(job.id)">
-            <div v-if="isFull(job)" class="rek__ribbon">PENUH</div>
-            
+        <Link class="rek__card" :class="{ 'is-list': viewMode === 'list' }" :href="lowonganUrl(job.id)">
             <div class="rek__top">
                 <span class="rek__type" :class="typeClass(job.tipeKerja)">
                     <i class="bi" :class="typeIcon(job.tipeKerja)"></i> {{ job.tipeKerja }}
@@ -11,9 +9,15 @@
                 <span v-if="job.unggulan" class="rek__star">
                     <i class="bi bi-star-fill"></i> Unggulan
                 </span>
+                <!-- Posisi milik program MT: tandai asalnya. Di halaman program
+                     induknya sudah jelas, jadi badge ini disembunyikan di sana. -->
+                <span v-if="job.induk && showInduk" class="rek__mt">
+                    <i class="bi bi-mortarboard-fill"></i> {{ job.induk.nama }}
+                </span>
 
                 <!-- Bookmark Button -->
                 <button
+                    v-if="showSave"
                     type="button"
                     class="rek__bookmark-btn"
                     :class="{ 'is-saved': isSaved }"
@@ -37,7 +41,7 @@
             </div>
 
             <div class="rek__meta">
-                <span><i class="bi bi-geo-alt-fill"></i> {{ job.lokasi }} · {{ job.tempatKerja }}</span>
+                <span><i class="bi bi-geo-alt-fill"></i> {{ lokasiLabel(job) }}</span>
                 <span v-if="job.pengalaman && job.pengalaman !== '—'"><i class="bi bi-briefcase-fill"></i> {{ job.pengalaman }}</span>
             </div>
 
@@ -47,9 +51,10 @@
             </div>
 
             <div class="rek__foot">
+                <!-- Hanya JUMLAH PELAMAR. Kuota tidak lagi dikirim backend:
+                     jumlah kursi adalah angka perencanaan internal. -->
                 <div class="rek__people">
-                    <span class="rek__quota-txt"><i class="bi bi-people-fill"></i> <b>{{ job.kuotaTerisi }}/{{ job.kuota }}</b> kursi</span>
-                    <span class="rek__applicant-txt">· {{ job.pelamar }} pelamar</span>
+                    <span class="rek__applicant-txt"><i class="bi bi-people-fill"></i> {{ job.pelamar }} pelamar</span>
                 </div>
                 <span class="rek__cta">Lihat detail <i class="bi bi-arrow-right"></i></span>
             </div>
@@ -59,12 +64,16 @@
 
 <script setup>
 import { Link } from '@inertiajs/vue3';
-import { isFull, lowonganUrl } from '../careerData';
+import { lokasiLabel, lowonganUrl } from '../careerData';
 
 defineProps({
     job: { type: Object, required: true },
     isSaved: { type: Boolean, default: false },
     viewMode: { type: String, default: 'grid' },
+    // Daftar simpanan hanya hidup di halaman /karir/lowongan. Di halaman lain
+    // (mis. daftar posisi sebuah program MT) tombolnya tidak punya penampung.
+    showSave: { type: Boolean, default: true },
+    showInduk: { type: Boolean, default: true },
 });
 
 defineEmits(['toggle-save']);
@@ -112,23 +121,6 @@ function typeIcon(type) {
     border-color: rgba(139, 92, 246, 0.4);
     box-shadow: 0 20px 40px rgba(99, 102, 241, 0.14);
 }
-.rek__card.is-full {
-    opacity: 0.92;
-}
-.rek__ribbon {
-    position: absolute;
-    top: 15px;
-    right: -36px;
-    transform: rotate(45deg);
-    background: linear-gradient(135deg, #fb7185, #e11d48);
-    color: #fff;
-    font-size: 0.62rem;
-    font-weight: 800;
-    letter-spacing: 0.14em;
-    padding: 5px 42px;
-    box-shadow: 0 8px 18px rgba(225, 29, 72, 0.34);
-    z-index: 3;
-}
 .rek__top {
     display: flex;
     align-items: center;
@@ -163,6 +155,22 @@ function typeIcon(type) {
     color: #b45309;
     background: rgba(245, 158, 11, 0.14);
     border: 1px solid rgba(245, 158, 11, 0.28);
+    border-radius: 999px;
+    padding: 5px 10px;
+}
+.rek__mt {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    max-width: 12rem;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: 0.63rem;
+    font-weight: 800;
+    color: #7c3aed;
+    background: rgba(139, 92, 246, 0.11);
+    border: 1px solid rgba(139, 92, 246, 0.24);
     border-radius: 999px;
     padding: 5px 10px;
 }
@@ -278,10 +286,6 @@ function typeIcon(type) {
     font-size: 0.72rem;
     color: #64748b;
 }
-.rek__people b {
-    color: #6366f1;
-    font-weight: 800;
-}
 .rek__cta {
     display: inline-flex;
     align-items: center;
@@ -340,12 +344,6 @@ function typeIcon(type) {
     .rek__card {
         padding: 12px 12px;
         border-radius: 14px;
-    }
-    .rek__ribbon {
-        top: 12px;
-        right: -38px;
-        font-size: 0.58rem;
-        padding: 4px 38px;
     }
     .rek__title {
         font-size: 0.96rem;
@@ -420,10 +418,6 @@ function typeIcon(type) {
         transform: scale(0.99);
         background: #f8fafc;
     }
-    .rek__card.is-list .rek__ribbon {
-        display: none;
-    }
-    
     /* Order 1: Top Header Bar (Type Badge on Left, Bookmark on Right) */
     .rek__card.is-list .rek__top {
         display: flex;

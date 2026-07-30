@@ -20,13 +20,17 @@
 
         <!-- Telepon Indonesia: WAJIB berawalan 62. Apa pun yang diketik
              (08.., 8.., +62..) dinormalkan jadi 628.. saat mengetik. -->
-        <TeleponNegara
+        <el-input
             v-else-if="field.tipe === 'phone'"
-            :model-value="nilai || ''"
+            :model-value="nilai"
             :disabled="disabled"
-            :placeholder="field.ph || '81234567890'"
-            @update:model-value="ubah"
-        />
+            :placeholder="field.ph || '628xxxxxxxxxx'"
+            inputmode="numeric"
+            maxlength="16"
+            @update:model-value="ubahTelepon"
+        >
+            <template #prepend>+</template>
+        </el-input>
 
         <el-input
             v-else-if="field.tipe === 'textarea'"
@@ -64,36 +68,13 @@
             @update:model-value="ubah"
         />
 
-        <!-- select: (1) OPSI DARI API + cascade (sumber_api: jenjang/jenis/kampus) —
-             opsi menyesuaikan field induk (tergantung) & pencarian server-side utk
-             kampus; (2) opsi dinamis konteks (sumber_opsi); (3) opsi statis skema.
-             Field ber-sumber_opsi/api DIKUNCI ke daftar resmi (tanpa ketik bebas). -->
+        <!-- select: opsi statis dari skema, ATAU dinamis dari konteks (sumber_opsi,
+             mis. kampus dari Master Kampus). Field ber-sumber_opsi DIKUNCI ke daftar
+             resmi: bisa dicari (filterable) tapi kandidat TIDAK boleh mengetik bebas
+             (tanpa allow-create). Kalau daftar belum ada -> input terkunci, bukan bebas. -->
         <template v-else-if="field.tipe === 'select'">
             <el-select
-                v-if="field.sumber_api"
-                :model-value="nilai"
-                filterable
-                :remote="!!field.cari_async"
-                :remote-method="field.cari_async ? cariJarakJauh : undefined"
-                :allow-create="bolehKetik"
-                :default-first-option="!!field.cari_async"
-                :reserve-keyword="false"
-                :loading="apiLoading"
-                :disabled="disabled || (!!field.tergantung && !depNilai)"
-                :placeholder="apiPlaceholder"
-                style="width: 100%"
-                @update:model-value="ubah"
-                @visible-change="onDropdown"
-            >
-                <el-option v-for="o in opsiApiRender" :key="o.value" :value="o.value" :label="o.label">
-                    <span style="display:inline-flex;align-items:center;gap:9px;min-width:0">
-                        <img v-if="o.flag" :src="o.flag" width="22" height="16" style="border-radius:2px;flex:none;object-fit:cover;box-shadow:0 0 0 1px rgba(0,0,0,.08)" alt="" loading="lazy" />
-                        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ o.label }}</span>
-                    </span>
-                </el-option>
-            </el-select>
-            <el-select
-                v-else-if="opsiEfektif.length"
+                v-if="opsiEfektif.length"
                 :model-value="nilai"
                 filterable
                 :disabled="disabled"
@@ -104,7 +85,7 @@
                 <el-option v-for="o in opsiEfektif" :key="o" :value="o" :label="o" />
             </el-select>
             <el-input
-                v-else-if="field.sumber_opsi || field.sumber_api"
+                v-else-if="field.sumber_opsi"
                 model-value=""
                 disabled
                 placeholder="Daftar pilihan belum tersedia — hubungi admin"
@@ -117,6 +98,31 @@
                 @update:model-value="ubah"
             />
         </template>
+
+        <!-- referensi: opsi DICARI ke server sambil mengetik, bukan dikirim di
+             muka. Master Kampus berisi ratusan ribu baris — mustahil dimuat
+             seluruhnya. Field terkunci ke daftar resmi (tanpa allow-create). -->
+        <el-select
+            v-else-if="field.tipe === 'referensi'"
+            :model-value="nilai || undefined"
+            filterable
+            remote
+            clearable
+            :remote-method="cariReferensi"
+            :loading="memuat"
+            default-first-option
+            :disabled="disabled || indukBelumDiisi"
+            :placeholder="placeholderReferensi"
+            reserve-keyword
+            style="width: 100%"
+            @visible-change="(buka) => buka && cariReferensi('')"
+            @update:model-value="(v) => ubah(v ?? '')"
+        >
+            <el-option v-for="o in opsiReferensi" :key="o.nilai" :value="o.nilai" :label="o.label">
+                <span class="fr__opsi">{{ o.label }}</span>
+                <span v-if="o.ket" class="fr__opsi-ket">{{ o.ket }}</span>
+            </el-option>
+        </el-select>
 
         <el-radio-group
             v-else-if="field.tipe === 'radio'"
@@ -178,19 +184,21 @@
 </template>
 
 <script setup>
-import { computed, ref, watch, onMounted } from 'vue';
-import axios from 'axios';
-import TeleponNegara from '@career/TeleponNegara.vue';
+import { computed, ref, watch } from 'vue';
+import { ambilOpsi, tunda } from './referensi';
 
 const props = defineProps({
     field: { type: Object, required: true },
     modelValue: { type: [String, Number, Boolean, Array, Object, null], default: null },
     disabled: { type: Boolean, default: false },
     galat: { type: String, default: '' },
-    // Konteks opsi dinamis (mis. { kampus: ['ITB', ...] } dari Master Kampus).
+    // Konteks opsi dinamis (mis. { kampus: ['ITB', ...] }) untuk field
+    // ber-sumber_opsi. Daftar panjang sekarang memakai tipe `referensi`.
     konteks: { type: Object, default: () => ({}) },
-    // Seluruh jawaban bagian ini — dipakai field cascade untuk membaca induknya.
-    jawaban: { type: Object, default: () => ({}) },
+    // Jawaban tetangga — acuan field bertipe `referensi` untuk merantai
+    // penyaringnya (jenjang -> jenis institusi -> kampus). Di bagian berulang
+    // isinya jawaban BARIS itu, bukan seluruh formulir.
+    jawabanKonteks: { type: Object, default: () => ({}) },
 });
 
 const emit = defineEmits(['update:modelValue', 'berkas']);
@@ -198,7 +206,8 @@ const emit = defineEmits(['update:modelValue', 'berkas']);
 const nilai = computed(() => props.modelValue);
 
 /**
- * Opsi statis/konteks (sumber_opsi). Untuk sumber_api dipakai jalur terpisah.
+ * Opsi yang benar-benar dipakai: dari konteks bila field menandai `sumber_opsi`
+ * (mis. kampus dari whitelist pembukaan), selain itu dari opsi statis skema.
  */
 const opsiEfektif = computed(() => {
     if (props.field.sumber_opsi) {
@@ -207,132 +216,92 @@ const opsiEfektif = computed(() => {
     return props.field.opsi || [];
 });
 
+// Consent & textarea selalu memakan lebar penuh — dipaksa di sini supaya
+// admin tidak perlu ingat mencentang "lebar penuh" untuk keduanya.
 const lebarPenuh = computed(() => ['textarea', 'consent', 'checkbox'].includes(props.field.tipe));
 
-// ══════════════ CASCADE PENDIDIKAN (sumber_api) ══════════════
-const CFG = { headers: { Accept: 'application/json' } };
-const ENDPOINT = {
-    jenjang: '/api/v1/pendidikan/jenjang',
-    jenis_institusi: '/api/v1/pendidikan/jenis-institusi',
-    kampus: '/api/v1/pendidikan/kampus',
-    fakultas: '/api/v1/pendidikan/fakultas',
-    prodi: '/api/v1/pendidikan/prodi',
-};
+/* ── Field bertipe `referensi` ──────────────────────────────────────────
+   Dua macam penyaring, dan bedanya penting:
+     bergantung — induk yang WAJIB terisi lebih dulu. Selama kosong, field
+                  ini terkunci; menawarkan 328 ribu kampus tanpa jenjang
+                  hanya membuat kandidat tersesat.
+     saring     — penyempit opsional. Kalau terisi dipakai, kalau belum
+                  daftar tetap bisa dibuka (cuma lebih lebar).
+*/
+const opsiReferensi = ref([]);
+const memuat = ref(false);
 
-// Field yang boleh diisi di luar daftar. Master kampus & prodi tidak akan
-// pernah lengkap — prodi baru dibuka tiap tahun dan kampus luar negeri
-// penamaannya bebas. Mengunci pilihan hanya membuat pelamar mentok.
-const bolehKetik = computed(() => !!props.field.boleh_ketik || !!props.field.cari_async);
-const apiOpsi = ref([]); // [{ value, label, meta? }]
-const apiLoading = ref(false);
-
-// Nilai field INDUK (yang jadi acuan cascade), mis. jenis_institusi butuh jenjang.
-const depNilai = computed(() => (props.field.tergantung ? (props.jawaban?.[props.field.tergantung] ?? '') : ''));
-
-async function muatJenjang() {
-    try {
-        const r = await axios.get(ENDPOINT.jenjang, CFG);
-        apiOpsi.value = (r.data.result || []).map((o) => ({ value: o.kode, label: o.nama }));
-    } catch (e) { apiOpsi.value = []; }
-}
-async function muatJenis() {
-    if (!depNilai.value) { apiOpsi.value = []; return; }
-    try {
-        const r = await axios.get(ENDPOINT.jenis_institusi, { ...CFG, params: { jenjang: depNilai.value } });
-        apiOpsi.value = (r.data.result || []).map((o) => ({ value: o.kode, label: o.nama }));
-    } catch (e) { apiOpsi.value = []; }
-}
-async function cariKampus(q) {
-    if (!depNilai.value) { apiOpsi.value = []; return; }
-    apiLoading.value = true;
-    try {
-        const r = await axios.get(ENDPOINT.kampus, { ...CFG, params: { jenis: depNilai.value, q: q || '', limit: 30 } });
-        apiOpsi.value = (r.data.result || []).map((o) => ({
-            value: o.value,
-            label: o.label,
-            flag: o.negaraKode ? `https://flagcdn.com/24x18/${String(o.negaraKode).toLowerCase()}.png` : '',
-        }));
-    } catch (e) { apiOpsi.value = []; } finally { apiLoading.value = false; }
-}
-// Jenjang yang sedang dipilih — dibutuhkan endpoint fakultas & prodi karena
-// daftar prodi berbeda antara SMK, D3, dan S2 di kampus yang sama.
-const jenjangNilai = computed(() => props.jawaban?.jenjang ?? '');
-// Fakultas/jurusan terpilih (skema: saring_dari) → mempersempit daftar prodi.
-const saringNilai = computed(() => (props.field.saring_dari ? (props.jawaban?.[props.field.saring_dari] ?? '') : ''));
-
-async function muatFakultas() {
-    if (!depNilai.value) { apiOpsi.value = []; return; }
-    apiLoading.value = true;
-    try {
-        const r = await axios.get(ENDPOINT.fakultas, { ...CFG, params: { kampus: depNilai.value, jenjang: jenjangNilai.value } });
-        // Cukup namanya — jumlah prodi tidak menolong pelamar memilih.
-        apiOpsi.value = (r.data.result || []).map((o) => ({ value: o.value, label: o.nama }));
-    } catch (e) { apiOpsi.value = []; } finally { apiLoading.value = false; }
-}
-
-async function cariProdi(q) {
-    if (!depNilai.value) { apiOpsi.value = []; return; }
-    apiLoading.value = true;
-    try {
-        const r = await axios.get(ENDPOINT.prodi, {
-            ...CFG,
-            params: { kampus: depNilai.value, jenjang: jenjangNilai.value, bidang: saringNilai.value, q: q || '', limit: 30 },
-        });
-        // Nama prodi saja, tanpa gelar — yang tersimpan pun namanya.
-        apiOpsi.value = (r.data.result || []).map((o) => ({ value: o.value, label: o.label }));
-    } catch (e) { apiOpsi.value = []; } finally { apiLoading.value = false; }
-}
-
-/** Pencarian jarak jauh (remote) — tujuannya ditentukan sumber_api field. */
-function cariJarakJauh(q) {
-    if (props.field.sumber_api === 'prodi') return cariProdi(q);
-    return cariKampus(q);
-}
-
-function muatOpsiApi() {
-    const s = props.field.sumber_api;
-    if (s === 'jenjang') muatJenjang();
-    else if (s === 'jenis_institusi') muatJenis();
-    else if (s === 'fakultas') muatFakultas();
-    else if (s === 'kampus') { apiOpsi.value = []; if (depNilai.value) cariKampus(''); }
-    else if (s === 'prodi') { apiOpsi.value = []; if (depNilai.value) cariProdi(''); }
-}
-
-onMounted(() => { if (props.field.sumber_api) muatOpsiApi(); });
-
-// Induk berubah → muat ulang opsi. Pengosongan nilai anak ditangani layout
-// (reset_anak) supaya rantai jenjang→jenis→kampus konsisten.
-watch(depNilai, () => { if (props.field.sumber_api) muatOpsiApi(); });
-
-// Ganti fakultas → daftar prodi ikut menyempit. Nilai prodi yang terlanjur
-// terisi dikosongkan lewat reset_anak di layout, bukan di sini.
-watch(saringNilai, () => { if (props.field.sumber_api === 'prodi') cariProdi(''); });
-
-function onDropdown(open) {
-    if (!open || apiOpsi.value.length || !depNilai.value) return;
-    if (props.field.sumber_api === 'kampus') cariKampus('');
-    else if (props.field.sumber_api === 'prodi') cariProdi('');
-    else if (props.field.sumber_api === 'fakultas') muatFakultas();
-}
-
-// Opsi API + jamin nilai tersimpan tetap tampil (mis. saat meninjau lamaran).
-const opsiApiRender = computed(() => {
-    const list = apiOpsi.value.slice();
-    const v = props.modelValue;
-    if (v && !list.some((o) => o.value === v)) list.unshift({ value: v, label: v });
-    return list;
-});
-
-const apiPlaceholder = computed(() => {
-    if (props.field.tergantung && !depNilai.value) {
-        return {
-            jenjang: 'Pilih jenjang dulu',
-            jenis_institusi: 'Pilih jenis institusi dulu',
-            nama_kampus: 'Pilih nama kampus / sekolah dulu',
-        }[props.field.tergantung] || 'Lengkapi isian sebelumnya';
+function nilaiInduk(peta) {
+    const out = {};
+    for (const [param, key] of Object.entries(peta || {})) {
+        const v = props.jawabanKonteks?.[key];
+        out[param] = v === null || v === undefined ? '' : String(v);
     }
-    return props.field.ph || 'Pilih';
+    return out;
+}
+
+const indukWajib = computed(() => nilaiInduk(props.field.bergantung));
+const indukSaring = computed(() => nilaiInduk(props.field.saring));
+const indukBelumDiisi = computed(() => Object.values(indukWajib.value).some((v) => v === ''));
+
+const placeholderReferensi = computed(() => {
+    if (!indukBelumDiisi.value) return props.field.ph || 'Ketik untuk mencari';
+    return props.field.ph_terkunci || 'Lengkapi pertanyaan sebelumnya dulu';
 });
+
+async function muat(cari) {
+    if (indukBelumDiisi.value) {
+        opsiReferensi.value = [];
+        return;
+    }
+    memuat.value = true;
+    const hasil = await ambilOpsi(
+        props.field.sumber,
+        { cari, ...indukWajib.value, ...indukSaring.value },
+        props.field.key,
+    );
+    // null = permintaan dibatalkan karena ada ketikan lebih baru; jangan
+    // menimpa daftar yang sedang tampil dengan hasil usang.
+    if (hasil !== null) opsiReferensi.value = sertakanNilaiTerpilih(hasil);
+    memuat.value = false;
+}
+
+/**
+ * Jawaban yang sudah tersimpan harus tetap terbaca walau tidak ikut terbawa
+ * hasil pencarian terakhir — kalau tidak, membuka kembali formulir yang sudah
+ * diisi memperlihatkan kolom kosong seolah jawabannya hilang.
+ */
+function sertakanNilaiTerpilih(daftar) {
+    const v = props.modelValue;
+    if (!v || daftar.some((o) => o.nilai === v)) return daftar;
+    return [{ nilai: v, label: String(v), ket: null }, ...daftar];
+}
+
+const cariReferensi = tunda((cari) => muat(String(cari || '')));
+
+// Induk berubah -> pilihan anak hampir pasti tidak berlaku lagi (prodi S1
+// tidak masuk akal setelah jenjang diganti SMK). Dikosongkan supaya tidak ada
+// kombinasi mustahil yang lolos ke database.
+watch(
+    () => JSON.stringify([indukWajib.value, indukSaring.value]),
+    () => {
+        opsiReferensi.value = [];
+        if (props.disabled) return;
+        if (props.modelValue) emit('update:modelValue', '');
+    },
+);
+
+// Nilai tersimpan perlu dimunculkan sebagai opsi sejak awal, tanpa menunggu
+// kandidat membuka dropdown-nya.
+watch(
+    () => props.modelValue,
+    (v) => {
+        if (v && !opsiReferensi.value.some((o) => o.nilai === v)) {
+            opsiReferensi.value = sertakanNilaiTerpilih(opsiReferensi.value);
+        }
+    },
+    { immediate: true },
+);
 
 function ubah(v) {
     emit('update:modelValue', v);
@@ -340,6 +309,11 @@ function ubah(v) {
 
 /**
  * Normalkan nomor telepon Indonesia agar SELALU berawalan 62 (tanpa +).
+ *   08123..  -> 628123..   (0 diganti 62)
+ *   8123..   -> 628123..   (langsung ditambah 62)
+ *   +62 / 62 -> tetap 62..
+ *   620..    -> 62..        (buang 0 setelah 62, mis. hasil ketik 62 lalu 08)
+ * Disimpan sebagai '628xxxxxxxxx'; tampilan diberi awalan '+' oleh prepend.
  */
 function normalTelepon(raw) {
     let s = String(raw ?? '').replace(/\D/g, '');
@@ -379,9 +353,6 @@ function pilihBerkas(uf) {
 .fr__bantuan { font-size: 11px; color: #94a3b8; line-height: 1.5; }
 .fr__galat { font-size: 11.5px; color: #dc2626; display: flex; align-items: center; gap: .25rem; }
 
-.fr__optmain { font-weight: 600; }
-.fr__optmeta { display: block; font-size: 10.5px; color: #94a3b8; line-height: 1.2; }
-
 .fr__file { display: flex; align-items: center; gap: .5rem; }
 .fr__file-box { flex: 1; min-width: 0; display: flex; align-items: center; gap: .5rem; padding: .5rem .65rem; border: 1px dashed rgba(11, 16, 51, .18); border-radius: 10px; background: #f8fafc; }
 .fr__file-box.is-ada { border-style: solid; border-color: rgba(16, 185, 129, .4); background: rgba(16, 185, 129, .06); }
@@ -395,4 +366,8 @@ function pilihBerkas(uf) {
 .fr__btn:disabled { opacity: .5; cursor: not-allowed; }
 
 .fr__consent { white-space: normal; height: auto; align-items: flex-start; }
+
+/* Opsi referensi: nama di kiri, keterangan (kota / gelar) menepi ke kanan. */
+.fr__opsi { float: left; }
+.fr__opsi-ket { float: right; margin-left: 1.2rem; color: #94a3b8; font-size: 11.5px; }
 </style>

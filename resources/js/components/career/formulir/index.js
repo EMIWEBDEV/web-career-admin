@@ -8,16 +8,17 @@
  *       aturan.js              syarat tampil, nilai awal, validasi
  *       FieldRenderer.vue      render satu field sesuai tipenya
  *       BagianRenderer.vue     render satu bagian (biasa / berulang)
+ *       blok.js                blok pertanyaan siap pakai (data diri, pendidikan)
+ *       referensi.js           pengambil opsi dari server untuk tipe `referensi`
  *     template-1/            <- satu keluarga tampilan
  *       layout/
  *         SatuHalaman.vue      semua pertanyaan dalam satu layar
  *         Bertahap.vue         stepper, validasi per langkah
- *       form-1/
- *         skema.js             PERTANYAAN & SYARAT form pendaftaran
- *         Form1.vue            tampilan (memakai layout SatuHalaman)
- *       form-2/
- *         skema.js             PERTANYAAN & SYARAT form identitas lanjutan
- *         Form2.vue            tampilan (memakai layout Bertahap)
+ *       form-1/                pendaftaran MT
+ *       form-2/                identitas peserta MT (lanjutan)
+ *       form-3/                pendaftaran rekrutmen umum
+ *       form-4/                pendaftaran magang
+ *       (tiap folder: skema.js = PERTANYAAN & SYARAT, FormN.vue = tampilan)
  *
  * Database hanya menyimpan KODE (Master_Formulir.Komponen_Kode). Peta di
  * bawah yang menerjemahkannya jadi komponen — jadi tidak ada "if nama
@@ -32,16 +33,20 @@
  */
 import Form1 from './template-1/form-1/Form1.vue';
 import Form2 from './template-1/form-2/Form2.vue';
+import Form3 from './template-1/form-3/Form3.vue';
+import Form4 from './template-1/form-4/Form4.vue';
 import { SKEMA as SKEMA_FORM_1 } from './template-1/form-1/skema';
 import { SKEMA as SKEMA_FORM_2 } from './template-1/form-2/skema';
+import { SKEMA as SKEMA_FORM_3 } from './template-1/form-3/skema';
+import { SKEMA as SKEMA_FORM_4 } from './template-1/form-4/skema';
 import { semuaField } from './inti/aturan';
 
 export const FORMULIR = {
     FORMULIR_1: {
         komponen: Form1,
         skema: SKEMA_FORM_1,
-        nama: 'Form 1 — Pendaftaran',
-        keterangan: 'Satu halaman. Pertanyaan pendidikan bercabang mengikuti jenis institusi.',
+        nama: 'Form 1 — Pendaftaran MT',
+        keterangan: 'Satu halaman. Jenjang, institusi, dan jurusan dipilih berantai dari master pendidikan.',
         template: 'Template 1',
         layout: 'Satu halaman',
         berkas: 'template-1/form-1/skema.js',
@@ -49,11 +54,29 @@ export const FORMULIR = {
     FORMULIR_2: {
         komponen: Form2,
         skema: SKEMA_FORM_2,
-        nama: 'Form 2 — Identitas Peserta',
+        nama: 'Form 2 — Identitas Peserta MT',
         keterangan: 'Empat langkah: validasi data, identitas tambahan, kesiapan & dokumen, pernyataan.',
         template: 'Template 1',
         layout: 'Bertahap',
         berkas: 'template-1/form-2/skema.js',
+    },
+    FORMULIR_3: {
+        komponen: Form3,
+        skema: SKEMA_FORM_3,
+        nama: 'Form 3 — Pendaftaran Rekrutmen',
+        keterangan: 'Satu halaman. Terbuka semua jenjang, menimbang pengalaman kerja & kesediaan.',
+        template: 'Template 1',
+        layout: 'Satu halaman',
+        berkas: 'template-1/form-3/skema.js',
+    },
+    FORMULIR_4: {
+        komponen: Form4,
+        skema: SKEMA_FORM_4,
+        nama: 'Form 4 — Pendaftaran Magang',
+        keterangan: 'Tiga langkah: data & pendidikan, rencana magang, dokumen & pernyataan.',
+        template: 'Template 1',
+        layout: 'Bertahap',
+        berkas: 'template-1/form-4/skema.js',
     },
 };
 

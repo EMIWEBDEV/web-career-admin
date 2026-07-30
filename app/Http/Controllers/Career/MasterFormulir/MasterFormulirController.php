@@ -32,7 +32,7 @@ class MasterFormulirController extends Controller
      * resources/js/Components/career/formulir/registry.js — daftar di sini
      * mencegah kode asing tersimpan dan merender halaman kosong di sisi kandidat.
      */
-    private const KOMPONEN = ['FORMULIR_1', 'FORMULIR_2'];
+    private const KOMPONEN = ['FORMULIR_1', 'FORMULIR_2', 'FORMULIR_3', 'FORMULIR_4'];
 
     public function index()
     {

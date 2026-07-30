@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Career\CareerAdminController;
 use App\Http\Controllers\Career\Lamaran\LamaranController;
+use App\Http\Controllers\Career\Monitoring\MonitoringController;
 use App\Http\Controllers\Career\TalentPool\TalentPoolController;
 use Illuminate\Support\Facades\Route;
 
@@ -26,7 +27,10 @@ Route::prefix('karir')
         // dari Monitoring MPP (routes/career/MppLowongan/MppLowonganWeb.php).
         // Seleksi — worklist pelamar ditangani modul Lamaran (mesin syarat + ketuk palu).
         Route::get('/pelamar', [LamaranController::class, 'worklist'])->name('pelamar')->middleware('career.permission:pelamarPage,VIEW');
-        Route::get('/hasil-tes', [$c, 'hasil_page'])->name('hasil')->middleware('career.permission:hasilTesPage,VIEW');
+        // Monitoring Rekrutmen (dulu "Hasil Tes") — pengawasan read-only untuk
+        // atasan/super admin: Live View (funnel semua program) + Full Process.
+        Route::get('/monitoring', [MonitoringController::class, 'index'])->name('monitoring')->middleware('career.permission:hasilTesPage,VIEW');
+        Route::redirect('/hasil-tes', '/karir/monitoring', 301); // URL lama di bookmark/menu tetap hidup
         Route::get('/pengumuman', [$c, 'pengumuman_page'])->name('pengumuman')->middleware('career.permission:pengumumanPage,VIEW');
         // Talent Pool — kolam kandidat bagus yang belum terpakai (diisi dari Worklist).
         Route::get('/talent-pool', [TalentPoolController::class, 'index'])->name('talent-pool')->middleware('career.permission:talentPoolPage,VIEW');
@@ -66,6 +70,16 @@ Route::prefix('api/v1/karir')
         Route::get('/lamaran/tahap/berkas/file/{id}', [LamaranController::class, 'berkasTahapFile'])->name('lamaran.tahap.berkas.file')->middleware('career.permission:pelamarPage,VIEW');
         Route::delete('/lamaran/tahap/berkas/{id}', [LamaranController::class, 'hapusBerkasTahap'])->name('lamaran.tahap.berkas.hapus')->middleware('career.permission:pelamarPage,EDIT');
 
+        // Monitoring Rekrutmen — read-only; permission ikut key lama hasilTesPage.
+        Route::get('/monitoring/live', [MonitoringController::class, 'live'])->name('monitoring.live')->middleware('career.permission:hasilTesPage,VIEW');
+        Route::get('/monitoring/program/{id}/papan', [MonitoringController::class, 'papan'])->name('monitoring.papan')->middleware('career.permission:hasilTesPage,VIEW');
+        Route::get('/monitoring/program/{id}/tahap/{urutan}/detail', [MonitoringController::class, 'stageDetail'])->name('monitoring.tahap.detail')->middleware('career.permission:hasilTesPage,VIEW');
+        Route::get('/monitoring/pelamar/{id}', [MonitoringController::class, 'detail'])->name('monitoring.pelamar.detail')->middleware('career.permission:hasilTesPage,VIEW');
+        // Detail satu tahap milik satu pelamar + berkasnya (offcanvas tumpukan ke-3).
+        Route::get('/monitoring/pelamar/{id}/tahap/{urutan}', [MonitoringController::class, 'tahapPelamar'])->name('monitoring.pelamar.tahap')->middleware('career.permission:hasilTesPage,VIEW');
+        Route::get('/monitoring/pelamar/{lamaran}/berkas-tahap/{berkas}', [MonitoringController::class, 'berkasTahapFile'])->name('monitoring.berkas.tahap')->middleware('career.permission:hasilTesPage,VIEW');
+        Route::get('/monitoring/pelamar/{lamaran}/berkas-formulir/{berkas}', [MonitoringController::class, 'berkasFormulirFile'])->name('monitoring.berkas.formulir')->middleware('career.permission:hasilTesPage,VIEW');
+
         // Talent Pool — data kartu + kelola status/tag/catatan.
         Route::get('/talent-pool', [TalentPoolController::class, 'list'])->name('talent-pool.list')->middleware('career.permission:talentPoolPage,VIEW');
         Route::get('/talent-pool/export', [TalentPoolController::class, 'export'])->name('talent-pool.export')->middleware('career.permission:talentPoolPage,VIEW');
@@ -95,6 +109,19 @@ Route::prefix('kandidat')
         Route::get('/lamaran/{id}', [LamaranController::class, 'portalDetail'])->name('detail')->middleware('career.permission:portalPage,VIEW');
         // Pratinjau berkas milik kandidat sendiri (signed URL GCS).
         Route::get('/lamaran/berkas/file/{id}', [LamaranController::class, 'portalBerkasFile'])->name('berkas.file');
+    });
+
+// ── Referensi pendidikan untuk formulir (login saja) ──
+// Dipakai field ber-tipe `referensi`: jenjang, jenis institusi, kampus, prodi.
+// Kandidat memakainya saat mengisi formulir; admin memakainya di pratinjau
+// Master Formulir — jadi cukup career.auth, tanpa gerbang peran.
+Route::prefix('api/v1/referensi')
+    ->middleware('career.auth')
+    ->name('career.referensi.')
+    ->group(function () {
+        Route::get('/{sumber}', [\App\Http\Controllers\Career\Referensi\ReferensiController::class, 'opsi'])
+            ->where('sumber', 'jenjang|jenis_institusi|kampus|prodi')
+            ->name('opsi');
     });
 
 // ── WEBHOOK hasil tes dari CAT/HCLearn (server-to-server, TANPA login) ──

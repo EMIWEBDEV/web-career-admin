@@ -1271,10 +1271,6 @@ h6,
     background: #dcfce7;
     color: #15803d;
 }
-.wc-st--full {
-    background: #fee2e2;
-    color: #b91c1c;
-}
 .wc-st--soon {
     background: #fef3c7;
     color: #b45309;
@@ -1737,6 +1733,8 @@ h6,
     margin: 0 auto;
     padding: 6.5rem 0 4rem;
 }
+/* Dipakai sebagai <button> (kembali ke seksi landing) maupun <a>/<Link>
+   (kembali ke halaman program induk) — karena itu text-decoration ikut diatur. */
 .wc-back {
     display: inline-flex;
     align-items: center;
@@ -1750,6 +1748,7 @@ h6,
     font: inherit;
     font-size: 0.82rem;
     font-weight: 900;
+    text-decoration: none;
     cursor: pointer;
     transition: all 0.18s ease;
 }
@@ -1911,81 +1910,6 @@ h6,
 }
 .wc-dhead--mt .wc-dhead__meta i {
     color: #8b5cf6;
-}
-
-/* Kuota banner */
-/* Desain: kartu kuota PUTIH (bukan panel lavender). */
-.wc-quota-banner {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1.25rem;
-    flex-wrap: wrap;
-    padding: 18px 22px;
-    border-radius: 18px;
-    border: 1px solid rgba(226, 232, 240, 0.9);
-    background: rgba(255, 255, 255, 0.92);
-    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
-}
-.wc-quota-banner.is-full {
-    border-color: rgba(239, 68, 68, 0.3);
-    background: linear-gradient(135deg, rgba(239, 68, 68, 0.07), rgba(251, 113, 133, 0.07));
-}
-.wc-quota-banner__info {
-    flex: 1;
-    min-width: 220px;
-}
-.wc-quota-banner__head {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 0.75rem;
-    margin-bottom: 0.6rem;
-    flex-wrap: wrap;
-}
-.wc-quota-banner__head strong {
-    font-size: 0.95rem;
-    font-weight: 900;
-    color: var(--ink);
-    display: inline-flex;
-    align-items: center;
-    gap: 0.45rem;
-}
-.wc-quota-banner__head strong i {
-    color: var(--indigo);
-}
-.wc-quota-banner.is-full .wc-quota-banner__head strong i {
-    color: #ef4444;
-}
-.wc-quota-banner__head span {
-    color: var(--muted);
-    font-size: 0.8rem;
-    font-weight: 800;
-}
-.wc-quota-banner__bar {
-    height: 8px;
-    border-radius: 999px;
-    background: #eef0f7;
-    overflow: hidden;
-}
-.wc-quota-banner__bar span {
-    display: block;
-    height: 100%;
-    border-radius: 999px;
-    background: linear-gradient(90deg, #6366f1, #8b5cf6);
-    transition: width 0.6s ease;
-}
-.wc-quota-banner__bar span.full {
-    background: linear-gradient(90deg, #ef4444, #fb7185);
-}
-.wc-quota-banner__badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    padding: 0.5rem 0.95rem;
-    border-radius: 0.75rem;
-    font-size: 0.8rem;
-    font-weight: 900;
 }
 
 .wc-block {
@@ -2593,9 +2517,6 @@ h6,
     }
     .wc-block {
         padding: 1.35rem;
-    }
-    .wc-quota-banner {
-        padding: 1.2rem;
     }
     .wc-toolbar__filters {
         width: 100%;

@@ -8,6 +8,7 @@ use App\Jobs\Career\WcApplyEmailJob;
 use App\Jobs\Career\WcApplyFormJob;
 use App\Support\Career\GcsBerkas;
 use App\Support\Career\LamaranService;
+use App\Support\Career\PipelineProgress;
 use App\Support\CareerShell;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -564,15 +565,20 @@ class LamaranController extends Controller
             'komponen' => $aktif->Komponen_Kode,
         ] : null;
 
-        // KONTEKS FORMULIR. Field ber-sumber_opsi (mis. Nama Kampus) mengambil
-        // pilihannya dari sini. Channel UMUM/KAMPUS SUDAH DIGABUNG: semua pelamar
-        // memilih kampus dari MASTER KAMPUS (daftar penuh, bisa dicari), dan
-        // TIDAK boleh menambah sendiri. Pembatasan kampus mitra (bila perlu)
-        // dilakukan lewat SYARAT auto-gugur (operator ADA_DI), bukan channel.
-        // Nama Kampus kini DICARI server-side (autocomplete) via
-        // /api/v1/pendidikan/kampus — jadi TIDAK lagi mengirim seluruh daftar
-        // (ratusan ribu baris) ke form. Konteks opsi dibiarkan kosong.
-        $konteks = [];
+        // KONTEKS FORMULIR — opsi yang memang PENDEK dan khusus lamaran ini.
+        //
+        // Daftar kampus TIDAK lagi dikirim dari sini. Master Kampus berisi
+        // 328.998 baris hasil impor Dapodik/PDDIKTI (±7,8 MB JSON) — mengirimnya
+        // di setiap pembukaan halaman membuat halaman berat tanpa guna, karena
+        // kandidat hanya memilih satu. Field bertipe `referensi` sekarang
+        // mencarinya sendiri ke /api/v1/referensi/{sumber} sambil mengetik.
+        //
+        // Pembatasan kampus mitra (bila perlu) tetap lewat SYARAT auto-gugur
+        // (operator ADA_DI) di Program Kegiatan, bukan lewat daftar opsi.
+        //
+        // Dicetak sebagai objek, bukan array: array PHP kosong menjadi `[]` di
+        // JSON, sedangkan prop `konteks` di sisi Vue bertipe Object.
+        $konteks = (object) [];
 
         // FORMULIR & BERKAS yang SUDAH kandidat kirim (panel "Formulir & Berkas Saya").
         $formulir = $this->formulirTerkirim($realId, '/kandidat/lamaran/berkas/file/');
@@ -1090,82 +1096,26 @@ class LamaranController extends Controller
         $pelamar = $lamaran->map(function ($l) use ($tahapPer, $subPer, $kuotaPosisi, $terisiKuota, $berkasCount) { // NOSONAR
             $tahapList = collect($tahapPer->get($l->Id_Lamaran, []));
 
-            if ($l->Status === 'GUGUR') {
-                $tk = $tahapList->firstWhere('Hasil', 'GUGUR') ?? $tahapList->last();
-            } elseif ($l->Status === 'TALENT_POOL') {
-                $tk = $tahapList->firstWhere('Hasil', 'TALENT_POOL') ?? $tahapList->last();
-            } elseif ($l->Status === 'LULUS') {
-                $tk = $tahapList->last();
-            } else {
-                $tk = $tahapList->firstWhere('Status', 'BERJALAN') ?? $tahapList->first();
-            }
+            // Aturan penempatan + badge + kuota dipusatkan di PipelineProgress
+            // (dipakai juga oleh halaman Monitoring Rekrutmen).
+            $tk = PipelineProgress::tahapKini($l, $tahapList);
+            $tAktif = PipelineProgress::tahapAktif($l, $tahapList);
+            // Sub-tes tahap aktif ikut dikirim: mode keputusan & kesiapan tahap
+            // dinilai dari sana (lihat PipelineProgress::state).
+            $st = PipelineProgress::state($l, $tAktif, $tk, $subPer->get($tAktif->Id_Lamaran_Tahap ?? 0, []));
+            $skor = $st['skor'];
+            $siap = $st['siap'];
+            $nungguSistem = $st['nungguSistem'];
+            $butuhKeputusan = $st['butuhKeputusan'];
 
-            $tAktif = $l->Status === 'BERJALAN' ? $tahapList->firstWhere('Status', 'BERJALAN') : null;
-            $skor = $tk->Skor ?? null;
-            $isTes = ($tk->Provider ?? null) === 'THIRD_PARTY';
+            $ku = PipelineProgress::infoKuota(
+                (int) ($kuotaPosisi[$l->Program_Posisi_Id] ?? 0),
+                (int) ($terisiKuota[$l->Program_Posisi_Id] ?? 0),
+                (int) ($tAktif->Urutan ?? 0),
+                (int) $l->Total_Tahap
+            );
 
-            // ── SIAPA YANG BOLEH MEMUTUS TAHAP INI ──────────────────────────
-            // Ditentukan Master Alur, bukan ditebak dari provider.
-            //
-            //  SYSTEM  "Otomatis — maju sendiri bila lulus". Mesin yang memutus
-            //          begitu aktivitasnya selesai. Admin TIDAK boleh menekan
-            //          Loloskan/Tidak Lolos — kalau boleh, mode otomatis yang
-            //          disetel di Master Alur jadi tak ada artinya.
-            //  MANUAL  Admin yang memutus — tapi hanya setelah hasil aktivitas
-            //          penentu tercatat. Meloloskan tes yang nilainya belum ada
-            //          sama saja memutus tanpa dasar.
-            $modeKeputusan = strtoupper((string) ($tAktif->Keputusan_Mode ?? 'MANUAL'));
-            $otomatis = $modeKeputusan === 'SYSTEM';
-
-            $subAktif = collect($subPer->get($tAktif->Id_Lamaran_Tahap ?? 0, []));
-            // Aktivitas yang WAJIB punya hasil dulu = penentu & benar-benar tes
-            // (punya jenis tes / dari pihak ke-3). Aktivitas tanpa jenis tes —
-            // mis. wawancara atau verifikasi berkas — hasilnya ya keputusan
-            // admin itu sendiri, jadi tidak boleh saling mengunci.
-            $belumTercatat = $subAktif->filter(fn ($s) => ($s->Peran ?? 'PENENTU') === 'PENENTU'
-                && (! empty($s->Jenis_Tes_Kode) || ($s->Provider ?? '') === 'THIRD_PARTY')
-                && ($s->Flag_Selesai ?? 'N') !== 'Y')->count();
-
-            $siap = $tAktif && ($tAktif->Siap_Diputus ?? 'N') === 'Y';
-            $nungguSistem = $tAktif && ! $siap && ($otomatis || $belumTercatat > 0);
-            $butuhKeputusan = $tAktif
-                && $tAktif->Status === 'BERJALAN'
-                && ! $otomatis
-                && ($siap || $belumTercatat === 0);
-
-            $alasanKunci = null;
-            if ($tAktif && ! $butuhKeputusan && $tAktif->Status === 'BERJALAN') {
-                $alasanKunci = $otomatis
-                    ? 'Tahap ini disetel OTOMATIS di Master Alur — sistem yang memutuskan begitu aktivitasnya selesai.'
-                    : "Menunggu hasil {$belumTercatat} aktivitas penentu dicatat lebih dulu.";
-            }
-
-            // Sadar-kuota: kursi terisi (LULUS) vs kuota MPP posisi. Loloskan hanya
-            // dibatasi bila kandidat berada di TAHAP TERAKHIR (LULUS = diterima).
-            $kuota = (int) ($kuotaPosisi[$l->Program_Posisi_Id] ?? 0);
-            $terisiK = (int) ($terisiKuota[$l->Program_Posisi_Id] ?? 0);
-            $sisaKuota = $kuota > 0 ? max(0, $kuota - $terisiK) : null;
-            $kuotaPenuh = $kuota > 0 && $terisiK >= $kuota;
-            $urutanAktif = (int) ($tAktif->Urutan ?? 0);
-            $diTahapAkhir = $urutanAktif > 0 && $urutanAktif >= (int) $l->Total_Tahap;
-
-            if ($l->Status === 'GUGUR') {
-                $badge = ['tone' => 'gugur', 'teks' => 'Tidak Lolos'];
-            } elseif ($l->Status === 'TALENT_POOL') {
-                $badge = ['tone' => 'talent', 'teks' => 'Talent Pool'];
-            } elseif ($l->Status === 'LULUS') {
-                $badge = ['tone' => 'lolos', 'teks' => 'Diterima'];
-            } elseif ($siap) {
-                $badge = ['tone' => 'perlu', 'teks' => 'Siap Diputus'];
-            } elseif ($isTes && $skor !== null) {
-                $badge = ['tone' => 'skor', 'teks' => (string) $skor];
-            } elseif ($nungguSistem) {
-                $badge = ['tone' => 'nunggu', 'teks' => 'Menunggu Tes'];
-            } elseif ($butuhKeputusan) {
-                $badge = ['tone' => 'perlu', 'teks' => $tAktif->Rekomendasi === 'GUGUR' ? 'Borderline' : 'Perlu Keputusan'];
-            } else {
-                $badge = ['tone' => 'berjalan', 'teks' => 'Berjalan'];
-            }
+            $badge = PipelineProgress::badge($l, $st, $tAktif);
 
             return [
                 'id' => Hashids::encode($l->Id_Lamaran),
@@ -1179,11 +1129,11 @@ class LamaranController extends Controller
                 'tahap' => $tk->Label ?? '—',
                 'urutan' => (int) ($tk->Urutan ?? $l->Urutan_Tahap),
                 // Info kuota (untuk tombol adaptif & indikator "sisa kursi").
-                'kuota' => $kuota,
-                'terisiKuota' => $terisiK,
-                'sisaKuota' => $sisaKuota,
-                'kuotaPenuh' => $kuotaPenuh,
-                'diTahapAkhir' => $diTahapAkhir,
+                'kuota' => $ku['kuota'],
+                'terisiKuota' => $ku['terisiKuota'],
+                'sisaKuota' => $ku['sisaKuota'],
+                'kuotaPenuh' => $ku['kuotaPenuh'],
+                'diTahapAkhir' => $ku['diTahapAkhir'],
                 // Berkas hasil pada tahap aktif (untuk unggah/preview + gate wajib).
                 'jmlBerkas' => (int) ($tAktif ? ($berkasCount[$tAktif->Id_Lamaran_Tahap] ?? 0) : 0),
                 'totalTahap' => (int) $l->Total_Tahap,
@@ -1192,11 +1142,11 @@ class LamaranController extends Controller
                 'nungguSistem' => (bool) $nungguSistem,
                 'siapDiputus' => (bool) $siap,
                 // Mode keputusan tahap aktif + kenapa tombolnya dikunci —
-                // dipakai worklist untuk menyembunyikan / menonaktifkan tombol.
-                'modeKeputusan' => $tAktif ? $modeKeputusan : null,
-                'otomatis' => (bool) $otomatis,
-                'aktivitasBelumTercatat' => (int) $belumTercatat,
-                'alasanKunci' => $alasanKunci,
+                // dipakai worklist menyembunyikan / menonaktifkan tombol.
+                'modeKeputusan' => $st['modeKeputusan'],
+                'otomatis' => (bool) $st['otomatis'],
+                'aktivitasBelumTercatat' => (int) $st['aktivitasBelumTercatat'],
+                'alasanKunci' => $st['alasanKunci'],
                 'skor' => $skor,
                 'rekomendasi' => $tAktif->Rekomendasi ?? null,
                 'alasan' => $tAktif->Rekomendasi_Alasan ?? $l->Alasan_Gugur,

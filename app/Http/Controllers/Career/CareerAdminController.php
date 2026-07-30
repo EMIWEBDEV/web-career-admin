@@ -109,16 +109,8 @@ class CareerAdminController extends Controller
         );
     }
 
-    /** /karir/hasil-tes — ringkasan hasil dari HCLearn (sumber skor ada di sana). */
-    public function hasil_page()
-    {
-        return Inertia::render(
-            'Career/admin/HasilTes',
-            CareerShell::props('/karir/hasil-tes', 'Hasil Tes', [
-                'hasil' => [],
-            ]),
-        );
-    }
+    // hasil_page() DIHAPUS — /karir/hasil-tes kini 301 ke /karir/monitoring
+    // (MonitoringController), halaman Monitoring Rekrutmen.
 
     /** /karir/kandidat — basis data kandidat terdaftar. */
     public function kandidat_page()

@@ -23,7 +23,8 @@ Pages/Career/
 ├── admin/                    # ADMIN PANEL (memakai shell HCIS asli)
 │   ├── AdminModal.vue        #   modal reusable (header gradient + ikon emas)
 │   ├── careerAdmin.js        #   helper admin (initials, statusBadge)
-│   ├── Dashboard.vue  Pelamar.vue  Penjadwalan.vue  HasilTes.vue
+│   ├── Dashboard.vue  Pelamar.vue  Penjadwalan.vue
+│   ├── monitoring/           #   Monitoring Rekrutmen (Live View + Full Process)
 │   └── Kegiatan.vue  Lowongan.vue  Kandidat.vue  Pengumuman.vue
 │
 ├── portal/                   # PORTAL KANDIDAT (shell HCIS asli, sama persis dgn admin)
