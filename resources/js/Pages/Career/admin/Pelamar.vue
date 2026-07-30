@@ -113,6 +113,37 @@
                         </button>
                     </div>
 
+                    <!-- LOWONGAN PROGRAM INI — sekaligus penyaring papan.
+                         Satu program MT menaungi beberapa posisi dengan kuota
+                         sendiri-sendiri; tanpa ini admin tidak bisa menjawab
+                         "posisi mana yang pelamarnya kurang / kuotanya penuh". -->
+                    <div v-if="(detail.posisi || []).length" class="plw-lows">
+                        <button type="button" class="plw-low" :class="{ 'is-on': posisiPilih === '' }" @click="posisiPilih = ''">
+                            <span class="plw-low__nama">Semua Lowongan</span>
+                            <span class="plw-low__meta">{{ (detail.pelamar || []).length }} pelamar</span>
+                        </button>
+                        <button
+                            v-for="p in detail.posisi" :key="p.id" type="button"
+                            class="plw-low" :class="{ 'is-on': posisiPilih === p.id, 'is-penuh': p.kuota > 0 && p.lolos >= p.kuota }"
+                            @click="posisiPilih = posisiPilih === p.id ? '' : p.id"
+                        >
+                            <span class="plw-low__nama">
+                                {{ p.posisi }}
+                                <span v-if="p.level" class="plw-low__lvl">{{ p.level }}</span>
+                            </span>
+                            <span class="plw-low__meta">
+                                <span v-if="p.departemen" class="plw-ell"><i class="bi bi-diagram-3"></i> {{ p.departemen }}</span>
+                                <span v-if="p.lokasi"><i class="bi bi-geo-alt"></i> {{ p.lokasi }}</span>
+                                <span v-if="p.mppRef" class="plw-low__mpp">{{ p.mppRef }}</span>
+                            </span>
+                            <span class="plw-low__angka">
+                                <b>{{ p.berjalan }}</b> berjalan ·
+                                <b>{{ p.lolos }}</b>/{{ p.kuota || '—' }} kursi
+                                <template v-if="p.gugur"> · {{ p.gugur }} gugur</template>
+                            </span>
+                        </button>
+                    </div>
+
                     <div v-if="loadingDetail" class="plw-load" style="padding: 3rem 0"><span class="plw-spin"></span> Memuat papan seleksi…</div>
 
                     <!-- KANBAN -->
@@ -136,7 +167,19 @@
                                         </span>
                                     </span>
                                     <span class="plw-card__pos">{{ r.posisi }}</span>
-                                    <span class="plw-card__chip" :class="'tone-' + r.badge.tone">{{ r.badge.teks.toUpperCase() }}</span>
+                                    <!-- Konteks lowongan langsung di kartu: admin tidak
+                                         perlu membuka satu per satu untuk tahu departemen,
+                                         lokasi, dan sudah berapa lama menunggu. -->
+                                    <span v-if="r.departemen || r.lokasi" class="plw-card__meta">
+                                        <span v-if="r.departemen" class="plw-ell"><i class="bi bi-diagram-3"></i> {{ r.departemen }}</span>
+                                        <span v-if="r.lokasi"><i class="bi bi-geo-alt"></i> {{ r.lokasi }}</span>
+                                    </span>
+                                    <span class="plw-card__foot">
+                                        <span class="plw-card__chip" :class="'tone-' + r.badge.tone">{{ r.badge.teks.toUpperCase() }}</span>
+                                        <span v-if="r.waktuLamar" class="plw-card__umur" :title="'Melamar ' + tglId(r.waktuLamar)">
+                                            <i class="bi bi-clock-history"></i> {{ umurHari(r.waktuLamar) }}
+                                        </span>
+                                    </span>
                                 </button>
                                 <div v-if="!kartuKolom(col).length" class="plw-col__empty">—</div>
                             </div>
@@ -157,6 +200,17 @@
                         <div style="flex: 1; min-width: 0">
                             <div class="plw-drawer__name">{{ detailKandidat.pelamar }}</div>
                             <div class="plw-drawer__meta">{{ detailKandidat.posisi }} · <span class="plw-mono">{{ detailKandidat.lamaranKode }}</span></div>
+                            <!-- Konteks lowongan & kontak: dulu admin harus menebak
+                                 atau membuka layar lain untuk tahu ini. -->
+                            <div class="plw-drawer__chips">
+                                <span v-if="detailKandidat.departemen"><i class="bi bi-diagram-3"></i> {{ detailKandidat.departemen }}</span>
+                                <span v-if="detailKandidat.lokasi"><i class="bi bi-geo-alt"></i> {{ detailKandidat.lokasi }}</span>
+                                <span v-if="detailKandidat.level"><i class="bi bi-bar-chart-steps"></i> {{ detailKandidat.level }}</span>
+                                <span v-if="detailKandidat.mppRef" class="is-mpp">{{ detailKandidat.mppRef }}</span>
+                                <span v-if="detailKandidat.waktuLamar"><i class="bi bi-clock-history"></i> {{ tglId(detailKandidat.waktuLamar) }} · {{ umurHari(detailKandidat.waktuLamar) }}</span>
+                                <a v-if="detailKandidat.email" :href="`mailto:${detailKandidat.email}`" class="is-link"><i class="bi bi-envelope"></i> {{ detailKandidat.email }}</a>
+                                <a v-if="detailKandidat.hp" :href="`https://wa.me/${String(detailKandidat.hp).replace(/\D/g, '')}`" target="_blank" rel="noopener" class="is-link"><i class="bi bi-whatsapp"></i> {{ detailKandidat.hp }}</a>
+                            </div>
                         </div>
                         <div style="display: flex; align-items: center; gap: 9px; flex: 0 0 auto">
                             <span class="plw-drawer__tag" :class="detailKandidat.kategori === 'MT' ? 'is-mt' : 'is-rek'">{{ katLabel(detailKandidat.kategori) }}</span>
@@ -248,15 +302,21 @@
                                 </div>
                                 <span v-if="t.nilai != null" class="plw-test__score">{{ t.nilai }}</span>
                                 <span class="plw-test__pill" :class="pillTes(t)">{{ labelTes(t) }}</span>
+                                <!-- Tombol ini HANYA untuk aktivitas yang punya hasil
+                                     sendiri (tes ber-jenis, atau tahap berisi beberapa
+                                     aktivitas). Untuk tahap satu-aktivitas seperti
+                                     Seleksi Administrasi / formulir, hasilnya ADALAH
+                                     keputusan Loloskan / Tidak Lolos di bawah — server
+                                     yang menentukan lewat dapatDicatat. -->
                                 <button
                                     v-if="bisaCatat(t)"
-                                    type="button" class="plw-test__rec" title="Rekam hasil aktivitas manual ini (wawancara/FGD) — mesin langsung mengevaluasi tahap"
+                                    type="button" class="plw-test__rec" title="Rekam hasil aktivitas ini — mesin langsung mengevaluasi tahap"
                                     @click="askCatat(t)"
                                 >
                                     <i class="bi bi-pencil-square"></i> Catat Hasil
                                 </button>
                                 <button
-                                    v-if="detailKandidat.statusLamaran === 'BERJALAN' && t.status !== 'SELESAI' && t.status !== 'TIDAK_HADIR'"
+                                    v-if="bisaTidakHadir(t)"
                                     type="button" class="plw-test__skip" title="Tandai kandidat tidak hadir pada tes ini (tahap tidak lagi menunggu hasilnya)"
                                     @click="tandaiTidakHadir(t)"
                                 >
@@ -420,14 +480,44 @@
             :danger="putusHasil === 'GUGUR'"
             :confirm-label="putusLabelKonfirm"
             :busy="sibuk"
+            :confirm-disabled="!bolehKonfirmPutus"
             @confirm="konfirmPutus"
             @cancel="konfirmShow = false"
         >
-            <p v-if="putusHasil === 'TALENT_POOL'" class="plw-tp-hint">
-                <i class="bi bi-stars"></i>
-                Kandidat <b>tidak melanjutkan</b> di lowongan ini, tetapi disimpan di <b>Talent Pool</b> untuk kesempatan berikutnya. Kuota tidak terpotong.
-            </p>
+            <!-- Ringkas apa yang akan terjadi. Keputusan ini mengirim email ke
+                 kandidat dan tidak bisa ditarik kembali, jadi disebutkan di muka
+                 alih-alih membiarkan admin menebak. -->
+            <div class="plw-putus__ring" :class="`is-${(putusHasil || '').toLowerCase()}`">
+                <div v-if="putusTarget" class="plw-putus__row">
+                    <i class="bi bi-person-badge"></i>
+                    <span><b>{{ putusTarget.pelamar }}</b> · {{ putusTarget.posisi || '—' }}<template v-if="putusTarget.departemen"> · {{ putusTarget.departemen }}</template></span>
+                </div>
+                <div v-if="putusHasil === 'LULUS'" class="plw-putus__row">
+                    <i class="bi bi-arrow-right-circle"></i>
+                    <span>Maju ke tahap berikutnya dan <b>email pemberitahuan dikirim</b> ke kandidat.</span>
+                </div>
+                <div v-else-if="putusHasil === 'GUGUR'" class="plw-putus__row">
+                    <i class="bi bi-x-octagon"></i>
+                    <span>Proses seleksi <b>dihentikan</b> dan <b>email pemberitahuan dikirim</b> ke kandidat.</span>
+                </div>
+                <div v-else class="plw-putus__row">
+                    <i class="bi bi-stars"></i>
+                    <span>Tidak melanjutkan di lowongan ini, tetapi disimpan di <b>Talent Pool</b>. Kuota tidak terpotong, dan <b>tidak ada email</b> yang dikirim.</span>
+                </div>
+                <div v-if="putusTarget && putusTarget.email" class="plw-putus__row is-mail">
+                    <i class="bi bi-envelope"></i>
+                    <span>{{ putusHasil === 'TALENT_POOL' ? 'Tidak dikirimi email' : putusTarget.email }}</span>
+                </div>
+            </div>
+
             <el-input v-model="putusCatatan" type="textarea" :rows="2" :placeholder="putusHasil === 'TALENT_POOL' ? 'Catatan / tag (mis. kuat wawancara, cocok Finance)' : 'Catatan (mis. sesuai rekomendasi sistem / alasan khusus)'" />
+
+            <!-- Menggugurkan itu tak bisa dibatalkan dan kandidat langsung
+                 dikabari. Centang ini memaksa jeda sadar sebelum mengirim. -->
+            <label v-if="putusHasil === 'GUGUR'" class="plw-putus__cek">
+                <input v-model="putusSetuju" type="checkbox" />
+                <span>Saya paham keputusan ini <b>final</b> dan email pemberitahuan akan <b>langsung dikirim</b> ke kandidat.</span>
+            </label>
         </ConfirmModal>
 
         <!-- Catat hasil sub-tes MANUAL (wawancara/FGD) — masuk mesin keputusan yang sama. -->
@@ -483,7 +573,7 @@ export default {
             jenis: '',
             loadingProg: false,
             selectedId: null,
-            detail: { program: null, kolom: [], pelamar: [] },
+            detail: { program: null, posisi: [], kolom: [], pelamar: [] },
             loadingDetail: false,
             statusTab: 'AKTIF',
             detailKandidat: null,
@@ -499,6 +589,7 @@ export default {
             konfirmShow: false,
             putusTarget: null,
             putusHasil: '',
+            putusSetuju: false, // centang wajib sebelum menggugurkan
             putusCatatan: '',
             catatShow: false,
             catatTarget: null,
@@ -510,6 +601,7 @@ export default {
             toastErr: false,
             tm: null,
             cariTm: null,
+            posisiPilih: '', // '' = semua lowongan
         };
     },
     computed: {
@@ -518,13 +610,19 @@ export default {
         pelamarTampil() {
             const terminal = (r) => r.statusLamaran === 'GUGUR' || r.statusLamaran === 'TALENT_POOL';
             const aktif = this.statusTab !== 'GUGUR';
-            return (this.detail.pelamar || []).filter((r) => terminal(r) !== aktif);
+            return (this.detail.pelamar || [])
+                .filter((r) => terminal(r) !== aktif)
+                // Penyaring lowongan berlaku untuk KEDUA tab, supaya angka
+                // "berjalan" dan "tidak lolos" satu lowongan bisa dibandingkan.
+                .filter((r) => !this.posisiPilih || r.posisiId === this.posisiPilih);
         },
         jmlAktif() { return (this.detail.pelamar || []).filter((r) => r.statusLamaran !== 'GUGUR' && r.statusLamaran !== 'TALENT_POOL').length; },
         jmlGugur() { return (this.detail.pelamar || []).filter((r) => r.statusLamaran === 'GUGUR' || r.statusLamaran === 'TALENT_POOL').length; },
         // Judul & label tombol konfirmasi untuk 3 keputusan.
         putusJudul() { return { LULUS: 'Loloskan Kandidat', GUGUR: 'Gugurkan Kandidat', TALENT_POOL: 'Simpan ke Talent Pool' }[this.putusHasil] || 'Keputusan'; },
-        putusLabelKonfirm() { return { LULUS: 'Ya, Loloskan', GUGUR: 'Ya, Gugurkan', TALENT_POOL: 'Ya, Simpan' }[this.putusHasil] || 'Ya'; },
+        putusLabelKonfirm() { return { LULUS: 'Ya, Loloskan', GUGUR: 'Ya, Gugurkan & Kirim Email', TALENT_POOL: 'Ya, Simpan' }[this.putusHasil] || 'Ya'; },
+        /** Menggugurkan menuntut centang persetujuan dulu; yang lain langsung boleh. */
+        bolehKonfirmPutus() { return this.putusHasil !== 'GUGUR' || this.putusSetuju; },
         // KEDUA tab memakai kolom tahap alur yang sama. Kandidat gugur tetap
         // "diam" di tahap tempat ia gugur (backend mengirim kolomUrutan dari
         // tahap ber-Hasil GUGUR), bukan ditumpuk jadi satu kolom — supaya admin
@@ -540,6 +638,22 @@ export default {
         inisial(n) { return (n || '?').split(' ').slice(0, 2).map((s) => s[0]).join('').toUpperCase(); },
         katLabel(k) { return { REKRUTMEN: 'Rekrutmen', MT: 'Management Trainee', INTERNSHIP: 'Internship / Magang' }[k] || k || '—'; },
         statusLabel(s) { return { BERJALAN: 'Berjalan', LULUS: 'Diterima', GUGUR: 'Tidak Lolos', TALENT_POOL: 'Talent Pool' }[s] || s; },
+        tglId(v) {
+            if (!v) return '—';
+            const d = new Date(String(v).replace(' ', 'T'));
+            return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+        },
+        /** Sudah berapa lama sejak melamar — penanda kandidat yang terlalu lama menunggu. */
+        umurHari(v) {
+            if (!v) return '';
+            const d = new Date(String(v).replace(' ', 'T'));
+            if (Number.isNaN(d.getTime())) return '';
+            const hari = Math.max(0, Math.floor((Date.now() - d.getTime()) / 86400000));
+            if (hari === 0) return 'hari ini';
+            if (hari < 30) return `${hari} hari`;
+            const bulan = Math.floor(hari / 30);
+            return `${bulan} bln`;
+        },
         aksen(p) { return p.warna || (p.kategori === 'MT' ? '#f59e0b' : '#6366f1'); },
         avatarBg(r) {
             if (r.statusLamaran === 'GUGUR') return 'linear-gradient(135deg,#f87171,#ef4444)';
@@ -710,11 +824,17 @@ export default {
             if (t.peran === 'INFORMATIF') return 'Selesai';
             return t.hasil === 'LULUS' ? 'Lulus' : 'Gagal';
         },
-        /** Sub-tes manual yang belum final → boleh dicatat hasilnya. */
+        /**
+         * Boleh dicatat hasilnya? Server yang memutuskan (lihat rapotTes di
+         * LamaranController) — aktivitas tunggal tanpa jenis tes tidak punya
+         * hasil sendiri, jadi tombolnya tidak ditampilkan.
+         */
         bisaCatat(t) {
-            return this.detailKandidat?.statusLamaran === 'BERJALAN'
-                && t.provider !== 'THIRD_PARTY'
-                && t.status !== 'SELESAI' && t.status !== 'TIDAK_HADIR';
+            return this.detailKandidat?.statusLamaran === 'BERJALAN' && !!t.dapatDicatat;
+        },
+        /** Kehadiran hanya relevan untuk aktivitas yang benar-benar sesi/tes. */
+        bisaTidakHadir(t) {
+            return this.detailKandidat?.statusLamaran === 'BERJALAN' && !!t.dapatTidakHadir;
         },
         askCatat(t) {
             this.catatTarget = t;
@@ -759,7 +879,13 @@ export default {
         },
 
         /* ── Keputusan ── */
-        askPutus(r, hasil) { this.putusTarget = r; this.putusHasil = hasil; this.putusCatatan = ''; this.konfirmShow = true; },
+        askPutus(r, hasil) {
+            this.putusTarget = r;
+            this.putusHasil = hasil;
+            this.putusCatatan = '';
+            this.putusSetuju = false; // selalu minta ulang, jangan warisi centang sebelumnya
+            this.konfirmShow = true;
+        },
         async konfirmPutus() {
             if (this.sibuk || !this.putusTarget?.tahapId) return;
             this.sibuk = true;
@@ -884,6 +1010,27 @@ export default {
 .plw-card__name { font-size: 14px; font-weight: 800; color: #1e293b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .plw-card__code { font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; color: #aab2c5; font-family: 'JetBrains Mono', monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .plw-card__pos { display: block; margin-top: 10px; font-size: 12.5px; font-weight: 600; color: #6366f1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Konteks lowongan di kartu — dibuat kecil & abu supaya nama kandidat tetap
+   jadi hal pertama yang terbaca. */
+.plw-card__meta { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 5px; font-size: 11px; color: #94a3b8; min-width: 0; }
+.plw-card__meta span { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
+.plw-card__foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; }
+.plw-card__umur { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 600; color: #94a3b8; flex: none; }
+
+/* ── Daftar lowongan sekaligus penyaring papan ─────────────────────────── */
+.plw-lows { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; margin-bottom: 18px; }
+.plw-low { appearance: none; cursor: pointer; text-align: left; font-family: inherit; background: #fff; border: 1px solid #eef0f7; border-radius: 14px; padding: 11px 13px; transition: all .18s; display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.plw-low:hover { border-color: #c7d2fe; box-shadow: 0 6px 16px rgba(15, 23, 42, .06); transform: translateY(-1px); }
+.plw-low.is-on { border-color: #6366f1; background: linear-gradient(180deg, #f5f3ff, #fff); box-shadow: 0 6px 18px rgba(99, 102, 241, .16); }
+.plw-low.is-penuh { border-left: 3px solid #10b981; }
+.plw-low__nama { display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 800; color: #0f172a; letter-spacing: -.01em; min-width: 0; }
+.plw-low__lvl { flex: none; font-size: 9.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #6366f1; background: rgba(99, 102, 241, .1); padding: 2px 6px; border-radius: 999px; }
+.plw-low__meta { display: flex; flex-wrap: wrap; gap: 3px 9px; font-size: 10.5px; color: #94a3b8; min-width: 0; }
+.plw-low__meta span { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
+.plw-low__mpp { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 9.5px; color: #64748b; background: #f1f5f9; padding: 1px 5px; border-radius: 4px; }
+.plw-low__angka { font-size: 11px; color: #64748b; }
+.plw-low__angka b { color: #0f172a; }
 .plw-card__chip { display: inline-block; margin-top: 11px; font-size: 9.5px; font-weight: 800; letter-spacing: 0.08em; padding: 4px 9px; border-radius: 7px; background: #eef0f7; color: #64748b; }
 .plw-card__chip.tone-nunggu { background: rgba(245, 158, 11, 0.14); color: #b45309; }
 .plw-card__chip.tone-perlu { background: rgba(99, 102, 241, 0.12); color: #4f46e5; }
@@ -902,6 +1049,11 @@ export default {
 .plw-drawer__avatar { width: 52px; height: 52px; border-radius: 15px; color: #fff; font-size: 17px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex: 0 0 auto; box-shadow: 0 10px 24px rgba(99, 102, 241, 0.28); }
 .plw-drawer__name { font-size: 19px; font-weight: 800; color: #0f172a; letter-spacing: -0.015em; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .plw-drawer__meta { font-size: 12.5px; color: #7c869a; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.plw-drawer__chips { display: flex; flex-wrap: wrap; gap: 5px 10px; margin-top: 7px; font-size: 11px; color: #94a3b8; }
+.plw-drawer__chips span, .plw-drawer__chips a { display: inline-flex; align-items: center; gap: 4px; }
+.plw-drawer__chips .is-mpp { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; color: #64748b; background: #f1f5f9; padding: 1px 6px; border-radius: 4px; }
+.plw-drawer__chips .is-link { color: #6366f1; font-weight: 600; text-decoration: none; }
+.plw-drawer__chips .is-link:hover { text-decoration: underline; }
 .plw-drawer__tag { display: inline-block; padding: 6px 12px; border-radius: 999px; color: #fff; font-size: 11.5px; font-weight: 800; white-space: nowrap; }
 .plw-drawer__tag.is-mt { background: linear-gradient(135deg, #fbbf24, #f59e0b); box-shadow: 0 6px 16px rgba(245, 158, 11, 0.34); }
 .plw-drawer__tag.is-rek { background: linear-gradient(135deg, #8b5cf6, #6366f1); box-shadow: 0 6px 16px rgba(99, 102, 241, 0.34); }
@@ -1013,6 +1165,19 @@ export default {
 .plw-actions.is-three .plw-btn-lolos, .plw-actions.is-three .plw-btn-talent, .plw-actions.is-three .plw-btn-gugur { min-width: 130px; }
 .plw-tp-hint { display: flex; align-items: flex-start; gap: 8px; margin: 0 0 12px; padding: 10px 12px; border-radius: 10px; font-size: 12px; line-height: 1.55; color: #92400e; background: rgba(234, 179, 8, 0.1); border: 1px solid rgba(234, 179, 8, 0.28); }
 .plw-tp-hint .bi { color: #d97706; margin-top: 1px; flex: none; }
+
+/* Ringkasan akibat keputusan — nadanya mengikuti jenis keputusan. */
+.plw-putus__ring { text-align: left; margin: 0 0 12px; padding: 11px 13px; border-radius: 12px; border: 1px solid #eef0f7; background: #f8fafc; display: flex; flex-direction: column; gap: 7px; }
+.plw-putus__ring.is-lulus { background: rgba(16, 185, 129, .07); border-color: rgba(16, 185, 129, .25); }
+.plw-putus__ring.is-gugur { background: rgba(220, 38, 38, .06); border-color: rgba(220, 38, 38, .22); }
+.plw-putus__ring.is-talent_pool { background: rgba(234, 179, 8, .08); border-color: rgba(234, 179, 8, .26); }
+.plw-putus__row { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; line-height: 1.55; color: #334155; }
+.plw-putus__row .bi { flex: none; margin-top: 2px; color: #64748b; }
+.plw-putus__row.is-mail { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: #64748b; }
+
+/* Centang wajib sebelum menggugurkan — sengaja mencolok, bukan sekadar teks. */
+.plw-putus__cek { display: flex; align-items: flex-start; gap: 9px; margin-top: 12px; padding: 10px 12px; border-radius: 10px; cursor: pointer; font-size: 12px; line-height: 1.55; color: #7f1d1d; background: rgba(220, 38, 38, .06); border: 1px solid rgba(220, 38, 38, .22); text-align: left; }
+.plw-putus__cek input { margin-top: 2px; width: 15px; height: 15px; accent-color: #dc2626; flex: none; cursor: pointer; }
 /* Indikator kuota di area keputusan */
 .plw-kuota { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; padding: 9px 12px; border-radius: 10px; font-size: 12px; font-weight: 700; color: #3730a3; background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.25); }
 .plw-kuota.is-penuh { color: #b91c1c; background: rgba(239, 68, 68, 0.09); border-color: rgba(239, 68, 68, 0.28); }

@@ -1062,7 +1062,10 @@ class LamaranController extends Controller
             ->leftJoin('N_WEB_CAREERS_Program_Posisi as x', 'x.Id_Program_Posisi', '=', 'l.Program_Posisi_Id')
             ->where('l.Program_Id', $programId)
             ->orderByDesc('l.Id_Lamaran')
-            ->select('l.*', 'u.Nama as Pelamar', 'x.Posisi')
+            // Rincian lowongan ikut dibawa: worklist perlu menyaring & menampilkan
+            // departemen/lokasi/MPP di kartu, sama seperti di halaman lowongan.
+            ->select('l.*', 'u.Nama as Pelamar', 'u.Email as Email', 'u.No_Hp as NoHp',
+                'x.Posisi', 'x.Departemen', 'x.Lokasi', 'x.Level', 'x.Mpp_Ref')
             ->get();
 
         $tahapPer = DB::table('N_WEB_CAREERS_Lamaran_Tahap')
@@ -1122,7 +1125,16 @@ class LamaranController extends Controller
                 'tahapId' => $tAktif ? Hashids::encode($tAktif->Id_Lamaran_Tahap) : null,
                 'lamaranKode' => $l->Kode,
                 'pelamar' => $l->Pelamar ?: $l->Created_By,
+                'email' => $l->Email ?? null,
+                'hp' => $l->NoHp ?? null,
                 'posisi' => $l->Posisi ?: $l->Kategori,
+                // Identitas + rincian lowongan — dasar penyaring & isi kartu.
+                'posisiId' => $l->Program_Posisi_Id ? Hashids::encode($l->Program_Posisi_Id) : null,
+                'departemen' => $l->Departemen ?? null,
+                'lokasi' => $l->Lokasi ?? null,
+                'level' => $l->Level ?? null,
+                'mppRef' => $l->Mpp_Ref ?? null,
+                'waktuLamar' => $l->Waktu_Lamar,
                 'kategori' => $l->Kategori,
                 'statusLamaran' => $l->Status,
                 'kolomUrutan' => (int) ($tk->Urutan ?? $l->Urutan_Tahap),
@@ -1153,20 +1165,40 @@ class LamaranController extends Controller
                 'pengisianId' => ($tAktif && $tAktif->Formulir_Pengisian_Id) ? Hashids::encode($tAktif->Formulir_Pengisian_Id) : null,
                 // RAPOR sub-tes tahap yang ditampilkan (baterai multi-tes): admin
                 // melihat semua skor — termasuk tes informatif — sebelum memutus.
-                'tests' => collect($subPer->get($tk->Id_Lamaran_Tahap ?? 0, []))->map(fn ($x) => [
-                    'id' => Hashids::encode($x->Id_Lamaran_Tahap_Tes),
-                    'label' => $x->Label,
-                    'jenisTes' => $x->Jenis_Tes_Kode,
-                    'provider' => $x->Provider,
-                    'peran' => $x->Peran,
-                    'wajib' => $x->Wajib === 'Y',
-                    'status' => $x->Status,
-                    'hasil' => $x->Hasil,
-                    'nilai' => $x->Nilai !== null ? (float) $x->Nilai : null,
-                    'catatan' => $x->Catatan ?? null,
-                ])->values(),
+                'tests' => collect($subPer->get($tk->Id_Lamaran_Tahap ?? 0, []))->map(fn ($x) => self::rapotTes(
+                    $x,
+                    count($subPer->get($tk->Id_Lamaran_Tahap ?? 0, []))
+                ))->values(),
             ];
         })->all();
+
+        // Lowongan/posisi program ini + jumlah pelamarnya — dipakai penyaring
+        // worklist dan kartu ringkas, sepola dengan tampilan di landing page.
+        $rekap = collect($pelamar)->groupBy('posisiId');
+        $posisi = DB::table('N_WEB_CAREERS_Program_Posisi')
+            ->where('Program_Id', $programId)
+            ->orderBy('Id_Program_Posisi')
+            ->get()
+            ->map(function ($x) use ($rekap) {
+                $isi = $rekap->get(Hashids::encode($x->Id_Program_Posisi), collect());
+
+                return [
+                    'id' => Hashids::encode($x->Id_Program_Posisi),
+                    'posisi' => $x->Posisi,
+                    'level' => $x->Level ?? null,
+                    'departemen' => $x->Departemen ?? null,
+                    'lokasi' => $x->Lokasi ?? null,
+                    'mppRef' => $x->Mpp_Ref ?? null,
+                    'kuota' => (int) ($x->Kuota ?? 0),
+                    'status' => $x->Status ?? null,
+                    // Angka yang paling sering ditanya HR: berapa yang masih
+                    // jalan, berapa diterima, berapa gugur — per lowongan.
+                    'pelamar' => $isi->count(),
+                    'berjalan' => $isi->where('statusLamaran', 'BERJALAN')->count(),
+                    'lolos' => $isi->where('statusLamaran', 'LULUS')->count(),
+                    'gugur' => $isi->where('statusLamaran', 'GUGUR')->count(),
+                ];
+            })->values();
 
         return [
             'program' => [
@@ -1175,8 +1207,44 @@ class LamaranController extends Controller
                 'kategori' => $program->Kategori,
                 'alur' => $alur->Nama ?? null,
             ],
+            'posisi' => $posisi,
             'kolom' => $kolom,
             'pelamar' => $pelamar,
+        ];
+    }
+
+    /**
+     * Satu baris RAPOR aktivitas tahap.
+     *
+     * `dapatDicatat` menentukan munculnya tombol "Catat Hasil" / "Tidak hadir".
+     * Tidak semua aktivitas punya hasil sendiri: tahap ber-aktivitas TUNGGAL
+     * tanpa jenis tes (mis. Seleksi Administrasi, formulir, wawancara satu
+     * sesi) hasilnya ADALAH keputusan admin di tombol Loloskan/Tidak Lolos —
+     * menyediakan "Catat Hasil" di situ hanya menduplikasi keputusan yang sama
+     * dan membuat admin bertanya-tanya mana yang berlaku. Yang perlu dicatat
+     * sendiri hanya aktivitas yang benar-benar tes (punya Jenis Tes) atau tahap
+     * berisi beberapa aktivitas sekaligus (mis. FGD = psikotes + wawancara).
+     */
+    private static function rapotTes(object $x, int $jumlahAktivitasTahap): array
+    {
+        $adalahTes = ! empty($x->Jenis_Tes_Kode) || $jumlahAktivitasTahap > 1;
+        $final = in_array($x->Status, ['SELESAI', 'TIDAK_HADIR'], true);
+
+        return [
+            'id' => Hashids::encode($x->Id_Lamaran_Tahap_Tes),
+            'label' => $x->Label,
+            'jenisTes' => $x->Jenis_Tes_Kode,
+            'provider' => $x->Provider,
+            'peran' => $x->Peran,
+            'wajib' => $x->Wajib === 'Y',
+            'status' => $x->Status,
+            'hasil' => $x->Hasil,
+            'nilai' => $x->Nilai !== null ? (float) $x->Nilai : null,
+            'catatan' => $x->Catatan ?? null,
+            // Hasil dari pihak ke-3 masuk sendiri lewat callback — admin tidak
+            // mencatatnya manual.
+            'dapatDicatat' => $adalahTes && ! $final && ($x->Provider ?? '') !== 'THIRD_PARTY',
+            'dapatTidakHadir' => $adalahTes && ! $final,
         ];
     }
 
@@ -1194,9 +1262,22 @@ class LamaranController extends Controller
         ]);
 
         try {
+            $tahap = DB::table('N_WEB_CAREERS_Lamaran_Tahap')->where('Id_Lamaran_Tahap', $realId)->first(['Lamaran_Id']);
+
             $hasil = $this->svc->ketukPalu((int) $realId, $data['hasil'], $data['catatan'] ?? null, (int) session('career_auth.id'));
             if (! $hasil['ok']) {
                 return ResponseHelper::error($hasil['pesan'], 422);
+            }
+
+            // KABARI KANDIDAT. Keputusan admin sebelumnya tidak mengirim email
+            // sama sekali — kandidat baru tahu kalau kebetulan membuka portal.
+            //
+            // TALENT_POOL sengaja TIDAK dikabari: ia bukan hasil seleksi yang
+            // perlu diumumkan, melainkan catatan internal bahwa kandidat
+            // disimpan untuk kesempatan lain. Mengirim email untuk itu justru
+            // membingungkan — kandidat merasa diterima padahal tidak.
+            if ($tahap && in_array($data['hasil'], ['LULUS', 'GUGUR'], true)) {
+                $this->kirimEmailHasilTahap((int) $tahap->Lamaran_Id, $data['hasil'] === 'LULUS');
             }
 
             return ResponseHelper::success(null, $hasil['pesan']);
