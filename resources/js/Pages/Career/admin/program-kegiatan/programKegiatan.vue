@@ -129,9 +129,19 @@
 
                 <!-- expanded detail -->
                 <div v-if="open === p.id" class="pkg-detail">
-                    <!-- syarat auto-gugur -->
+                    <!-- Syarat penyaringan. Judulnya SENGAJA bukan "auto-gugur":
+                         tidak semua syarat menggugurkan. Yang menggugurkan hanya
+                         yang beraksi "Gugur langsung"; aksi "Tandai" membiarkan
+                         kandidat lanjut dan hanya menandainya untuk admin. Judul
+                         lama membuat aturan ber-aksi Tandai dikira menolak
+                         otomatis, padahal tidak. -->
                     <template v-if="p.syarat && p.syarat.length">
-                        <div class="pkg-dhead pkg-dhead--amber"><i class="bi bi-sliders2"></i> SYARAT AUTO-GUGUR ({{ p.syarat.length }})</div>
+                        <div class="pkg-dhead pkg-dhead--amber">
+                            <i class="bi bi-sliders2"></i> SYARAT PENYARINGAN ({{ p.syarat.length }})
+                            <span class="pkg-dhead__note">
+                                {{ jmlGugur(p) }} menggugurkan otomatis · {{ p.syarat.length - jmlGugur(p) }} hanya menandai
+                            </span>
+                        </div>
                         <div class="pkg-rules">
                             <div v-for="(s, i) in p.syarat" :key="i" class="pkg-rule">
                                 <span class="pkg-rule__bar"></span>
@@ -871,6 +881,8 @@ export default {
         statusBadge(s) { return { DRAFT: 'wca-b--amber', BERJALAN: 'wca-b--green', SELESAI: 'wca-b--slate' }[s] || 'wca-b--slate'; },
         statusIkon(s) { return { DRAFT: 'bi-pencil-square', BERJALAN: 'bi-play-circle', SELESAI: 'bi-lock-fill' }[s] || 'bi-dot'; },
         totalKuota(p) { return (p.posisi || []).reduce((n, x) => n + (Number(x.kuota) || 0), 0); },
+        /** Berapa syarat yang benar-benar MENGGUGURKAN (sisanya hanya menandai). */
+        jmlGugur(p) { return (p.syarat || []).filter((s) => s.aksi === 'GUGUR').length; },
 
         // ── Desain "Program Kegiatan": hitung per kategori, pil warna, inisial pembuat ──
         countKat(k) { return this.list.filter((p) => p.kategori === k).length; },
@@ -1418,6 +1430,8 @@ export default {
 .pkg-dhead { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 800; letter-spacing: .1em; color: #64748b; margin-bottom: 12px; }
 .pkg-dhead--amber { color: #b45309; }
 .pkg-dhead--amber i { color: #d97706; }
+/* Rincian kecil di sebelah judul: berapa syarat yang menggugurkan vs menandai. */
+.pkg-dhead__note { margin-left: .5rem; font-size: 11px; font-weight: 600; color: #94a3b8; letter-spacing: 0; text-transform: none; }
 .pkg-dhead--indigo { color: #4338ca; }
 .pkg-dhead--indigo i { color: #6366f1; }
 .pkg-rules { display: flex; flex-direction: column; gap: 10px; }

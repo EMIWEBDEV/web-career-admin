@@ -10,7 +10,7 @@
         </div>
         <template #footer>
             <button class="wca-btn wca-btn--ghost" type="button" @click="$emit('cancel')"><i class="bi bi-x-circle"></i> {{ cancelLabel }}</button>
-            <button class="wca-btn" :class="danger ? 'wca-btn--danger' : 'wca-btn--dark'" type="button" :disabled="busy" @click="$emit('confirm')">
+            <button class="wca-btn" :class="danger ? 'wca-btn--danger' : 'wca-btn--dark'" type="button" :disabled="busy || confirmDisabled" @click="$emit('confirm')">
                 <span v-if="busy" class="wca-spin" aria-hidden="true"></span>
                 <i v-else class="bi" :class="danger ? 'bi-trash' : 'bi-check-lg'"></i>
                 {{ busy ? busyLabel : confirmLabel }}
@@ -32,6 +32,9 @@ export default {
         note: { type: String, default: '' },
         danger: { type: Boolean, default: true },
         busy: { type: Boolean, default: false },
+        // Kunci tombol konfirmasi selama syarat di dalam modal belum terpenuhi
+        // (mis. centang persetujuan sebelum menggugurkan kandidat).
+        confirmDisabled: { type: Boolean, default: false },
         confirmLabel: { type: String, default: 'Ya, Lanjutkan' },
         cancelLabel: { type: String, default: 'Batal' },
         busyLabel: { type: String, default: 'Memproses…' },
