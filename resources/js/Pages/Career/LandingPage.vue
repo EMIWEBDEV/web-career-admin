@@ -15,7 +15,7 @@
         <TimSection :tim="tim" />
         <MtSection :program-mt="programMt" />
         <LokasiSection :offices="offices" />
-        <FaqSection />
+        <FaqSection :faqs="faq" />
         <CtaSection />
         <StickyApplyBar :has-mt="hasMt" />
     </CareerLayout>
@@ -46,6 +46,8 @@ const props = defineProps({
     benefits: { type: Array, default: () => [] },
     tim: { type: Array, default: () => [] },
     heroSlides: { type: Array, default: () => [] },
+    // FAQ pilihan admin (Master FAQ → Flag_Tampil_Landing).
+    faq: { type: Array, default: () => [] },
 });
 
 const tim = computed(() => props.tim || []);
@@ -54,6 +56,7 @@ const achievements = computed(() => props.achievements || []);
 const offices = computed(() => props.offices || []);
 const benefits = computed(() => props.benefits || []);
 const heroSlides = computed(() => props.heroSlides || []);
+const faq = computed(() => props.faq || []);
 const hasMt = computed(() => programMt.value.length > 0);
 
 // Reveal-on-scroll untuk seluruh elemen .wc-reveal di semua section
