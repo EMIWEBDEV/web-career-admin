@@ -29,9 +29,13 @@
                             <span class="sl-stat__ico sl-stat__ico--amber"><i class="bi bi-mortarboard-fill"></i></span>
                             <span><b>{{ programMt.length }}</b> Program MT</span>
                         </div>
+                        <!-- Statistik ketiga TIDAK lagi "Kuota". Jumlah kursi
+                             adalah angka perencanaan internal dan tidak lagi
+                             dikirim backend; kota penempatan sama informatifnya
+                             bagi pelamar dan memang terdata. -->
                         <div class="sl-stat">
-                            <span class="sl-stat__ico sl-stat__ico--green"><i class="bi bi-people-fill"></i></span>
-                            <span><b>{{ totalKursi }}</b> Kuota</span>
+                            <span class="sl-stat__ico sl-stat__ico--green"><i class="bi bi-geo-alt-fill"></i></span>
+                            <span><b>{{ lokasiOptions.length }}</b> Kota</span>
                         </div>
                     </div>
                 </div>
@@ -107,7 +111,7 @@
                                 <span class="sl-sort__lbl">Urutkan</span>
                                 <select v-model="sortBy" class="sl-sort__select" aria-label="Urutkan lowongan">
                                     <option value="newest">Terbaru</option>
-                                    <option value="urgency">Kuota Hampir Penuh</option>
+                                    <option value="deadline">Paling Cepat Ditutup</option>
                                     <option value="name">Nama Posisi (A-Z)</option>
                                 </select>
                                 <i class="bi bi-chevron-down sl-sort__chev"></i>
@@ -299,7 +303,6 @@
                             v-for="(mt, i) in pagedMt"
                             :key="mt.id"
                             class="mtl__card"
-                            :class="{ 'is-full': isFull(mt) }"
                             :style="{ '--d': i * 60 + 'ms' }"
                             :href="mtUrl(mt.id)"
                         >
@@ -310,25 +313,38 @@
                             <h3 class="mtl__title">{{ mt.nama }}</h3>
                             <div class="mtl__tag">{{ mt.tagline || 'Program Management Trainee EVO Group.' }}</div>
                             <p class="mtl__desc">{{ mt.ringkasan }}</p>
+
+                            <!-- Isi program: posisi apa saja yang dibuka. Chip yang
+                                 cocok dengan kata pencarian dinaikkan ke depan &
+                                 disorot, supaya jelas MENGAPA program ini muncul. -->
+                            <div v-if="(mt.posisi || []).length" class="mtl__posisi">
+                                <span class="mtl__posisi-lbl"><i class="bi bi-diagram-3"></i> {{ mt.jumlahPosisi }} posisi</span>
+                                <span
+                                    v-for="p in chipPosisi(mt)"
+                                    :key="p.id"
+                                    class="mtl__chip"
+                                    :class="{ 'is-hit': p.cocok }"
+                                >{{ p.posisi }}</span>
+                                <span v-if="mt.jumlahPosisi > 3" class="mtl__chip mtl__chip--more">+{{ mt.jumlahPosisi - 3 }}</span>
+                            </div>
+
+                            <!-- Hanya fakta terdata. "Jenis kegiatan" & "durasi
+                                 program" dihapus — dulu teks mati yang sama untuk
+                                 setiap program MT, bukan data. -->
                             <div class="mtl__meta">
-                                <span><i class="bi bi-people"></i> {{ mt.tipeKegiatan }}</span>
-                                <span><i class="bi bi-geo-alt"></i> {{ mt.penempatan }}</span>
-                                <span><i class="bi bi-clock-history"></i> {{ mt.durasi }}</span>
-                                <span><i class="bi bi-grid-1x2"></i> {{ mt.kuota }} kursi</span>
+                                <span v-if="mt.penempatan"><i class="bi bi-geo-alt"></i> {{ mt.penempatan }}</span>
+                                <span><i class="bi bi-person-lines-fill"></i> {{ mt.pelamar }} pelamar</span>
                             </div>
-                            <div class="mtl__quota">
-                                <div class="mtl__quota-head">
-                                    <span>Kuota terisi</span>
-                                    <b :class="{ full: isFull(mt) }">{{ mt.kuotaTerisi }} / {{ mt.kuota }}</b>
-                                </div>
-                                <div class="mtl__bar"><span :class="{ full: isFull(mt) }" :style="{ width: kuotaPct(mt) + '%' }"></span></div>
-                            </div>
+                            <!-- Bar "kuota terisi" DIHAPUS bersama datanya. -->
                             <div class="mtl__foot">
-                                <span class="mtl__deadline" :class="{ soon: !isFull(mt) && daysLeft(mt.tanggalTutup) <= 7 }">
-                                    <i class="bi" :class="isFull(mt) ? 'bi-lock-fill' : 'bi-calendar-event'"></i>
-                                    {{ isFull(mt) ? 'Pendaftaran ditutup' : 'Ditutup ' + formatDate(mt.tanggalTutup) }}
+                                <span class="mtl__deadline" :class="{ soon: daysLeft(mt.tanggalTutup) <= 7 }">
+                                    <i class="bi bi-calendar-event"></i>
+                                    Ditutup {{ formatDate(mt.tanggalTutup) }}
                                 </span>
-                                <span class="mtl__cta">Pelajari <i class="bi bi-arrow-right"></i></span>
+                                <span class="mtl__cta">
+                                    {{ mt.jumlahPosisi ? `Lihat ${mt.jumlahPosisi} posisi` : 'Pelajari' }}
+                                    <i class="bi bi-arrow-right"></i>
+                                </span>
                             </div>
                         </Link>
                     </div>
@@ -490,7 +506,7 @@ import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { Head, Link } from '@inertiajs/vue3';
 import CareerLayout from './Layouts/CareerLayout.vue';
 import LowonganCard from './components/LowonganCard.vue';
-import { daysLeft, formatDate, isFull, kuotaPct, mtUrl, statusClass, statusLabel } from './careerData';
+import { daysLeft, formatDate, mtUrl, statusClass, statusLabel } from './careerData';
 
 defineOptions({ layout: null });
 
@@ -649,9 +665,6 @@ const mtPage = ref(1);
 watch([search, tab], () => { mtPage.value = 1; });
 
 const hasMt = computed(() => props.programMt.length > 0);
-const totalKursi = computed(
-    () => props.lowongan.reduce((a, j) => a + (j.kuota || 0), 0) + props.programMt.reduce((a, m) => a + (m.kuota || 0), 0),
-);
 
 const filteredJobs = computed(() => {
     const q = search.value.trim().toLowerCase();
@@ -665,10 +678,12 @@ const filteredJobs = computed(() => {
     });
 
     return jobs.sort((a, b) => {
-        if (sortBy.value === 'urgency') {
-            const sisaA = (a.kuota || 0) - (a.kuotaTerisi || 0);
-            const sisaB = (b.kuota || 0) - (b.kuotaTerisi || 0);
-            return sisaA - sisaB;
+        // Dulu "Kuota Hampir Penuh" (sisa kursi paling sedikit). Kuota tidak
+        // lagi dikirim, jadi urgensi diukur dari yang paling dekat ditutup.
+        // EVERGREEN (tanpa tanggal tutup) tidak urgen -> dibuang ke belakang.
+        if (sortBy.value === 'deadline') {
+            const tutup = (x) => (x.tanggalTutup ? new Date(x.tanggalTutup).getTime() : Infinity);
+            return tutup(a) - tutup(b);
         }
         if (sortBy.value === 'name') return (a.posisi || '').localeCompare(b.posisi || '');
         // Terbaru = tanggal pembukaan lowongan (bukan `id`, yang berupa string
@@ -691,11 +706,34 @@ const groupedJobs = computed(() => {
         .map((d) => ({ slug: d.slug, nama: d.nama, jobs: peta.get(d.slug) }));
 });
 
+/** Teks satu posisi yang ikut dicari (nama, unit, lokasi, level, skill). */
+const teksPosisi = (p) => [p.posisi, p.departemen, p.lokasi, p.level, ...(p.skill || [])].join(' ').toLowerCase();
+
+/**
+ * Program MT ikut tersaring lewat POSISI di dalamnya, bukan hanya nama program.
+ * Mengetik "ui/ux" atau "talent" harus memunculkan program yang memuat posisi
+ * itu — kalau tidak, posisi MT jadi tak terjangkau pencarian sama sekali.
+ */
 const filteredMt = computed(() => {
     const q = search.value.trim().toLowerCase();
     if (!q) return props.programMt;
-    return props.programMt.filter((mt) => [mt.nama, mt.tagline, mt.penempatan, mt.ringkasan].join(' ').toLowerCase().includes(q));
+    return props.programMt.filter((mt) => {
+        if ([mt.nama, mt.tagline, mt.penempatan, mt.ringkasan].join(' ').toLowerCase().includes(q)) return true;
+        return (mt.posisi || []).some((p) => teksPosisi(p).includes(q));
+    });
 });
+
+/** 3 chip posisi untuk kartu program — yang cocok pencarian didahulukan. */
+function chipPosisi(mt) {
+    const q = search.value.trim().toLowerCase();
+    const daftar = (mt.posisi || []).map((p) => ({
+        id: p.id,
+        posisi: p.posisi,
+        cocok: !!q && teksPosisi(p).includes(q),
+    }));
+    if (q) daftar.sort((a, b) => Number(b.cocok) - Number(a.cocok));
+    return daftar.slice(0, 3);
+}
 
 const mtTotalPages = computed(() => Math.max(1, Math.ceil(filteredMt.value.length / PER_PAGE)));
 const pagedMt = computed(() => filteredMt.value.slice((mtPage.value - 1) * PER_PAGE, mtPage.value * PER_PAGE));
@@ -1307,7 +1345,6 @@ function goMtPage(p) { if (p >= 1 && p <= mtTotalPages.value) { mtPage.value = p
 
 .mtl__card { display: flex; flex-direction: column; background: rgba(255, 255, 255, 0.92); border: 1px solid rgba(226, 232, 240, 0.9); border-radius: 20px; padding: 18px; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05); text-decoration: none; transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease; }
 .mtl__card:hover { transform: translateY(-5px); border-color: rgba(139, 92, 246, 0.4); box-shadow: 0 20px 44px rgba(124, 110, 222, 0.18); }
-.mtl__card.is-full { opacity: 0.9; }
 .mtl__cardtop { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .mtl__batch { display: inline-flex; align-items: center; gap: 6px; font-size: 0.66rem; font-weight: 800; color: #b45309; background: rgba(245, 158, 11, 0.13); border: 1px solid rgba(245, 158, 11, 0.26); border-radius: 8px; padding: 4px 9px; }
 .mtl__status { font-size: 0.63rem; font-weight: 800; border-radius: 8px; padding: 4px 9px; color: #059669; background: rgba(16, 185, 129, 0.12); }
@@ -1316,16 +1353,15 @@ function goMtPage(p) { if (p >= 1 && p <= mtTotalPages.value) { mtPage.value = p
 .mtl__title { margin: 13px 0 0; font-size: 1.03rem; font-weight: 800; color: #1e293b; letter-spacing: -0.01em; line-height: 1.25; text-wrap: pretty; }
 .mtl__tag { font-size: 0.72rem; font-weight: 700; color: #8b5cf6; margin-top: 5px; }
 .mtl__desc { margin: 9px 0 0; font-size: 0.78rem; line-height: 1.55; color: #64748b; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.mtl__posisi { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 12px; }
+.mtl__posisi-lbl { display: inline-flex; align-items: center; gap: 5px; font-size: 0.67rem; font-weight: 800; color: #6d28d9; }
+.mtl__posisi-lbl i { font-size: 0.76rem; }
+.mtl__chip { max-width: 13rem; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 0.65rem; font-weight: 700; color: #4f46e5; background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.16); border-radius: 7px; padding: 3px 8px; }
+.mtl__chip.is-hit { color: #6d28d9; background: rgba(139, 92, 246, 0.18); border-color: rgba(139, 92, 246, 0.42); font-weight: 800; }
+.mtl__chip--more { color: #64748b; background: #f1f5f9; border-color: #e2e8f0; }
 .mtl__meta { display: grid; grid-template-columns: 1fr 1fr; gap: 9px 12px; margin-top: 14px; }
 .mtl__meta span { display: inline-flex; align-items: center; gap: 6px; font-size: 0.72rem; color: #64748b; }
 .mtl__meta i { color: #8b5cf6; font-size: 0.82rem; }
-.mtl__quota { margin-top: 14px; }
-.mtl__quota-head { display: flex; align-items: center; justify-content: space-between; font-size: 0.66rem; color: #94a3b8; margin-bottom: 5px; }
-.mtl__quota-head b { font-family: 'JetBrains Mono', ui-monospace, monospace; font-weight: 700; color: #6366f1; }
-.mtl__quota-head b.full { color: #e11d48; }
-.mtl__bar { height: 6px; border-radius: 99px; background: #eef0f7; overflow: hidden; }
-.mtl__bar span { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, #8b5cf6, #6366f1); transition: width 0.5s ease; }
-.mtl__bar span.full { background: linear-gradient(90deg, #fb7185, #e11d48); }
 .mtl__foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 15px; padding-top: 14px; border-top: 1px solid #f1f2f9; }
 .mtl__deadline { display: inline-flex; align-items: center; gap: 6px; font-size: 0.68rem; color: #94a3b8; }
 .mtl__deadline.soon { color: #b45309; font-weight: 700; }

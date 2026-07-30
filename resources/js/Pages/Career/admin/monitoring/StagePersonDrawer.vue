@@ -26,8 +26,11 @@
                 </header>
 
                 <div class="wcm-dw3__body">
-                    <div v-if="loading" class="wcm-dw3__load"><i class="bi bi-arrow-repeat wcm-spin"></i> Memuat detail tahap…</div>
-                    <div v-else-if="error" class="wcm-dw3__load">Gagal memuat. <button class="wca-btn wca-btn--ghost wca-btn--sm" @click="fetchDetail">Coba lagi</button></div>
+                    <KeadaanPanel v-if="loading" keadaan="memuat" rapat teks="Memuat detail tahap…" />
+                    <KeadaanPanel v-else-if="error" keadaan="galat" rapat
+                        teks="Gagal memuat detail tahap"
+                        ket="Isian dan hasil tes pelamar di tahap ini tidak berhasil diambil."
+                        @ulang="fetchDetail" />
 
                     <template v-else>
                         <p v-if="tahap.tipeDeskripsi" class="wcm-dw3__desc">{{ tahap.tipeDeskripsi }}</p>
@@ -149,7 +152,10 @@
                                     </template>
                                 </dl>
                             </template>
-                            <div v-else class="wcm-kosong3">Formulir belum berisi jawaban.</div>
+                            <KeadaanPanel v-else keadaan="kosong" rapat
+                                ikon="bi-ui-checks"
+                                teks="Formulir belum diisi"
+                                ket="Pelamar belum mengirim jawaban untuk formulir tahap ini." />
                         </section>
 
                         <!-- 5. BERKAS HASIL TAHAP -->
@@ -218,6 +224,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import axios from 'axios'
 import BerkasLightbox from './BerkasLightbox.vue'
+import KeadaanPanel from './KeadaanPanel.vue'
 import { formatTanggal, formatUkuran, jenisPratinjau, labelStatusTes, tesBermakna } from './monitoringHelpers'
 import { useLapisEsc } from '../../../../composables/useLapisEsc'
 
@@ -336,30 +343,34 @@ onMounted(fetchDetail)
    terbaca sebagai tumpukan. Backdrop tidak menangkap klik, jadi papan di
    belakang tetap bisa dipakai. */
 .wcm-dw3 { position: fixed; inset: 0; z-index: 1300; display: flex; justify-content: flex-end; padding-right: 44px; pointer-events: none; }
-.wcm-dw3__panel { pointer-events: auto; width: min(520px, calc(100vw - 44px)); height: 100vh; background: #fff; box-shadow: -26px 0 70px rgba(15, 23, 42, 0.36); display: flex; flex-direction: column; animation: wcmSlide3 0.22s cubic-bezier(0.22, 1, 0.36, 1); }
-@keyframes wcmSlide3 { from { transform: translateX(26px); opacity: 0.5; } to { transform: none; opacity: 1; } }
+/* Metrik disamakan dengan dua laci lain — hanya lebarnya sedikit lebih besar
+   karena laci ini bertumpuk di atasnya (offset 44px agar tepi laci di bawah
+   tetap terlihat). */
+.wcm-dw3__panel { pointer-events: auto; width: min(500px, calc(100vw - 44px)); height: 100vh; background: #fff; box-shadow: -20px 0 60px rgba(15, 23, 42, 0.26); border-left: 1px solid rgba(226, 232, 240, 0.9); display: flex; flex-direction: column; animation: wcmSlide3 0.25s cubic-bezier(0.16, 1, 0.3, 1); }
+@keyframes wcmSlide3 { from { transform: translateX(40px); opacity: 0.3; } to { transform: none; opacity: 1; } }
 
-.wcm-dw3__head { flex: none; display: flex; align-items: center; gap: 11px; padding: 13px 16px; border-bottom: 1px solid #eef0f7; background: linear-gradient(135deg, #f8f9ff, #fff); }
+.wcm-dw3__head { flex: none; display: flex; align-items: center; gap: 11px; padding: 15px 22px; border-bottom: 1px solid #f1f5f9; background: #fff; }
 .wcm-dw3__ttl { flex: 1; min-width: 0; }
 .wcm-dw3__crumb { font-size: 11px; color: #9ca3af; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wcm-dw3__crumb .bi { font-size: 9px; }
 .wcm-dw3__label { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 800; color: #111827; margin-top: 1px; }
 .wcm-dw3__label .bi { color: #6366f1; }
 .wcm-dw3__tipe { flex: none; font-size: 10.5px; font-weight: 800; color: #4338ca; background: #eef2ff; border-radius: 99px; padding: 3px 10px; }
-.wcm-dw3__body { flex: 1; overflow-y: auto; padding: 15px 16px 30px; }
-.wcm-dw3__load { font-size: 12.5px; color: #6b7280; }
-.wcm-dw3__desc { margin: 0 0 15px; font-size: 12px; line-height: 1.6; color: #6b7280; background: #fafbff; border: 1px solid #eef0f7; border-radius: 11px; padding: 9px 12px; }
+.wcm-dw3__body { flex: 1; overflow-y: auto; padding: 20px 22px 34px; background: #f8fafc; }
+.wcm-dw3__desc { margin: 0 0 15px; font-size: 12px; line-height: 1.6; color: #6b7280; background: #fff; border: 1px solid #eef0f7; border-radius: 11px; padding: 9px 12px; }
 
 .wcm-belum3 { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 16px; padding: 11px 13px; border-radius: 12px; background: #fffbeb; border: 1px solid #fde68a; font-size: 12.5px; color: #92660a; line-height: 1.55; }
 .wcm-belum3 b { display: block; }
 
-.wcm-sec { margin-bottom: 20px; }
+/* Seksi jadi kartu bersekat di atas latar abu laci — metrik sama dengan
+   .wcm-det__sec (DetailPerjalanan) & .wcm-sd__sec (StageDetailPanel). */
+.wcm-sec { margin-bottom: 14px; background: #fff; border: 1px solid #f1f5f9; border-radius: 18px; padding: 16px; box-shadow: 0 2px 10px rgba(15, 23, 42, 0.02); }
 .wcm-sec__ttl { display: flex; align-items: center; gap: 7px; font-size: 11.5px; font-weight: 800; color: #4b5563; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 9px; }
 .wcm-sec__sub { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 600; color: #9ca3af; font-size: 11px; }
 
 .wcm-kep { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 9px; }
 .wcm-kep__skor { font-size: 12px; font-weight: 800; color: #4f46e5; }
-.wcm-catatan { margin: 7px 0 0; font-size: 12px; line-height: 1.55; color: #6b7280; background: #fff; border: 1px solid #eef0f7; border-radius: 10px; padding: 8px 11px; }
+.wcm-catatan { margin: 7px 0 0; font-size: 12px; line-height: 1.55; color: #6b7280; background: #f8fafc; border: 1px solid #eef0f7; border-radius: 10px; padding: 8px 11px; }
 
 .wcm-fakta { display: grid; grid-template-columns: minmax(96px, auto) 1fr; gap: 4px 12px; margin: 0; font-size: 12px; }
 .wcm-fakta dt { color: #9ca3af; }
@@ -367,16 +378,16 @@ onMounted(fetchDetail)
 
 /* Isian formulir bisa puluhan baris — dilipat, dan tiap baris diberi
    pemisah halus supaya tidak terbaca sebagai dinding teks. */
-.wcm-isian__head { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; border: 1px solid #eef0f7; border-radius: 11px; background: #fff; padding: 8px 11px; font-size: 12.5px; font-weight: 700; color: #4b5563; cursor: pointer; }
+.wcm-isian__head { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; border: 1px solid #eef0f7; border-radius: 11px; background: #f8fafc; padding: 8px 11px; font-size: 12.5px; font-weight: 700; color: #4b5563; cursor: pointer; }
 .wcm-isian__head:hover { border-color: #c7d2fe; background: #f8f9ff; }
 .wcm-isian__n { margin-left: auto; font-size: 11px; font-weight: 800; color: #4f46e5; background: #eef2ff; border-radius: 99px; padding: 1px 8px; }
 .wcm-isian { display: grid; grid-template-columns: minmax(110px, 38%) 1fr; margin: 7px 0 0; font-size: 12px; border: 1px solid #eef0f7; border-radius: 11px; overflow: hidden; }
 .wcm-isian dt, .wcm-isian dd { padding: 7px 11px; border-bottom: 1px solid #f4f5fa; }
-.wcm-isian dt { color: #6b7280; background: #fafbff; }
+.wcm-isian dt { color: #6b7280; background: #f8fafc; }
 .wcm-isian dd { margin: 0; color: #1f2937; font-weight: 600; overflow-wrap: anywhere; }
 .wcm-isian dt:nth-last-of-type(1), .wcm-isian dd:nth-last-of-type(1) { border-bottom: 0; }
 
-.wcm-tes3, .wcm-ujian { border: 1px solid #eef0f7; border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; background: #fff; }
+.wcm-tes3, .wcm-ujian { border: 1px solid #eef0f7; border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; background: #f8fafc; }
 .wcm-tes3__head, .wcm-ujian__head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; color: #111827; margin-bottom: 5px; }
 .wcm-tes3__meta { display: flex; gap: 11px; flex-wrap: wrap; font-size: 11.5px; color: #6b7280; }
 .wcm-tes3__meta b { color: #4f46e5; }
@@ -394,7 +405,7 @@ onMounted(fetchDetail)
 .wcm-rincian__row b { color: #374151; }
 
 .wcm-dok { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
-.wcm-dok__item { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; border: 1px solid #eef0f7; border-radius: 11px; background: #fff; padding: 8px 11px; cursor: pointer; }
+.wcm-dok__item { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; border: 1px solid #eef0f7; border-radius: 11px; background: #f8fafc; padding: 8px 11px; cursor: pointer; }
 .wcm-dok__item:hover { border-color: #c7d2fe; background: #f8f9ff; }
 .wcm-dok__item > .bi { font-size: 18px; color: #6366f1; flex: none; }
 .wcm-dok__txt { flex: 1; min-width: 0; }
@@ -409,9 +420,6 @@ onMounted(fetchDetail)
 .wcm-rencanates { margin-top: 10px; border-top: 1px solid #f1f3f9; padding-top: 8px; }
 .wcm-rencanates__row { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; color: #374151; padding: 3px 0; }
 .wcm-rencanates__tag { font-size: 11px; color: #9ca3af; white-space: nowrap; }
-.wcm-kosong3 { font-size: 12.5px; color: #9ca3af; }
-.wcm-spin { animation: wcmSpin 0.9s linear infinite; display: inline-block; }
-@keyframes wcmSpin { to { transform: rotate(360deg); } }
 
 @media (max-width: 860px) {
     .wcm-dw3 { padding-right: 0; }

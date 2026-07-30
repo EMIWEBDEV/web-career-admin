@@ -16,8 +16,11 @@
                 </header>
 
                 <div class="wcm-dw__body">
-                    <div v-if="loading" class="wcm-sd__load"><i class="bi bi-arrow-repeat wcm-spin"></i> Memuat detail tahap…</div>
-                    <div v-else-if="error" class="wcm-sd__load">Gagal memuat. <button class="wca-btn wca-btn--ghost wca-btn--sm" @click="fetchDetail">Coba lagi</button></div>
+                    <KeadaanPanel v-if="loading" keadaan="memuat" rapat teks="Memuat detail tahap…" />
+                    <KeadaanPanel v-else-if="error" keadaan="galat" rapat
+                        teks="Gagal memuat detail tahap"
+                        ket="Statistik dan daftar peserta tahap ini tidak berhasil diambil."
+                        @ulang="fetchDetail" />
 
                     <template v-else>
                         <!-- 1. STATISTIK -->
@@ -53,7 +56,10 @@
                             <div class="wcm-sd__ttl"><i class="bi bi-people"></i> Pelamar di Tahap Ini
                                 <span class="wcm-sd__n">{{ orangUrut.length }}</span>
                             </div>
-                            <div v-if="!orangUrut.length" class="wcm-sd__kosong">Belum ada pelamar di tahap ini.</div>
+                            <KeadaanPanel v-if="!orangUrut.length" keadaan="kosong" rapat
+                                ikon="bi-people"
+                                teks="Belum ada pelamar di tahap ini"
+                                ket="Belum ada kandidat yang sampai ke tahap ini, atau semuanya sudah melewatinya." />
                             <div v-else class="wcm-sd__orang">
                                 <button v-for="o in orangUrut" :key="o.id" type="button" class="wcm-orang" @click="$emit('open-person', o.id)">
                                     <span class="wca-avatar wca-avatar--sm">{{ initials(o.nama) }}</span>
@@ -130,6 +136,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import axios from 'axios'
 import { initials } from '../careerAdmin'
 import { formatAging, formatTanggal, toneClass } from './monitoringHelpers'
+import KeadaanPanel from './KeadaanPanel.vue'
 import { useLapisEsc } from '../../../../composables/useLapisEsc'
 
 const props = defineProps({
@@ -209,11 +216,9 @@ defineExpose({ refresh: fetchDetail })
 .wcm-dw__sub { font-size: 0.78rem; color: #64748b; margin-top: 3px; font-weight: 500; }
 .wcm-dw__body { flex: 1; overflow-y: auto; padding: 20px 22px 34px; background: #f8fafc; }
 
-.wcm-sd__load { font-size: 0.82rem; color: #64748b; font-weight: 600; }
 .wcm-sd__sec { margin-bottom: 24px; background: #ffffff; border: 1px solid #f1f5f9; border-radius: 18px; padding: 16px; box-shadow: 0 2px 10px rgba(15, 23, 42, 0.02); }
 .wcm-sd__ttl { display: flex; align-items: center; gap: 8px; font-size: 0.75rem; font-weight: 800; color: #475569; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px; }
 .wcm-sd__n { background: #eef2ff; color: #4338ca; border-radius: 99px; padding: 2px 8px; font-size: 0.68rem; font-weight: 800; }
-.wcm-sd__kosong { font-size: 0.78rem; color: #94a3b8; font-weight: 500; }
 
 .wcm-sd__stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
 .wcm-sd__stat { border: 1px solid #f1f5f9; border-radius: 14px; padding: 12px 10px; text-align: center; background: #f8fafc; transition: all 0.2s ease; }
@@ -259,6 +264,4 @@ defineExpose({ refresh: fetchDetail })
 .wcm-jdw__peserta { font-size: 0.72rem; color: #4338ca; margin-top: 8px; font-weight: 700; }
 .wcm-jdw__bar { margin-top: 5px; height: 5px; border-radius: 99px; background: #cbd5e1; overflow: hidden; }
 .wcm-jdw__bar div { height: 100%; border-radius: 99px; background: linear-gradient(90deg, #6366f1, #10b981); }
-.wcm-spin { animation: wcmSpin 0.9s linear infinite; display: inline-block; }
-@keyframes wcmSpin { to { transform: rotate(360deg); } }
 </style>

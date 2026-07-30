@@ -6,7 +6,12 @@
 
     <CareerLayout :has-mt="hasMt" :offices="offices">
         <section class="wc-detail">
-            <button type="button" class="wc-back" @click="goToSection('lowongan')">
+            <!-- Posisi milik program MT kembali ke PROGRAMNYA, bukan ke daftar
+                 lowongan umum — di sanalah posisi ini berada. -->
+            <Link v-if="job.induk" class="wc-back" :href="mtUrl(job.induk.id)">
+                <i class="bi bi-arrow-left"></i> Kembali ke {{ job.induk.nama }}
+            </Link>
+            <button v-else type="button" class="wc-back" @click="goToSection('lowongan')">
                 <i class="bi bi-arrow-left"></i> Kembali ke Lowongan
             </button>
 
@@ -15,6 +20,9 @@
                     <header class="wc-dhead wc-reveal">
                         <div class="wc-dhead__pattern" aria-hidden="true"></div>
                         <div class="wc-dhead__badges">
+                            <span v-if="job.induk" class="wc-badge wc-badge--violet">
+                                <i class="bi bi-mortarboard-fill"></i> Management Trainee<template v-if="job.induk.batch"> · {{ job.induk.batch }}</template>
+                            </span>
                             <span class="wc-badge" :class="typeClass(job.tipeKerja)">{{ job.tipeKerja }}</span>
                             <span v-if="job.unggulan" class="wc-badge wc-badge--star"
                                 ><i class="bi bi-star-fill"></i> Unggulan</span
@@ -27,29 +35,15 @@
                         <!-- TANPA info perusahaan/divisi — sorot benefit teratas dari MPP. -->
                         <p v-if="(job.benefit || []).length" class="wc-dhead__co"><i class="bi bi-gift"></i> {{ job.benefit[0] }}<template v-if="job.benefit.length > 1"> · +{{ job.benefit.length - 1 }} benefit lain</template></p>
                         <div class="wc-dhead__meta">
-                            <span><i class="bi bi-geo-alt"></i> {{ job.lokasi }} · {{ job.tempatKerja }}</span>
+                            <span><i class="bi bi-geo-alt"></i> {{ lokasiLabel(job) }}</span>
                             <span v-if="job.pengalaman && job.pengalaman !== '—'"><i class="bi bi-briefcase"></i> {{ job.pengalaman }}</span>
                         </div>
                     </header>
 
-                    <section class="wc-quota-banner wc-reveal" :class="{ 'is-full': isFull(job) }" style="--d: 60ms">
-                        <div class="wc-quota-banner__info">
-                            <div class="wc-quota-banner__head">
-                                <strong
-                                    ><i class="bi" :class="isFull(job) ? 'bi-lock-fill' : 'bi-people-fill'"></i> Kuota
-                                    Posisi</strong
-                                >
-                                <span>{{ job.kuotaTerisi }} dari {{ job.kuota }} posisi terisi</span>
-                            </div>
-                            <div class="wc-quota-banner__bar">
-                                <span :class="{ full: isFull(job) }" :style="{ width: kuotaPct(job) + '%' }"></span>
-                            </div>
-                        </div>
-                        <div class="wc-quota-banner__badge" :class="isFull(job) ? 'wc-st--full' : 'wc-st--open'">
-                            <i class="bi" :class="isFull(job) ? 'bi-x-octagon-fill' : 'bi-check-circle-fill'"></i>
-                            {{ isFull(job) ? 'Kuota Penuh' : 'Masih Menerima' }}
-                        </div>
-                    </section>
+                    <!-- Banner kuota DIHAPUS. Angka kursi adalah rencana internal,
+                         dan bar "x dari y terisi" membuat pelamar menakar peluang
+                         dari data yang bukan urusannya. Yang menutup lowongan di
+                         halaman ini cuma tanggal tutup. -->
 
                     <section class="wc-block wc-reveal">
                         <h2><i class="bi bi-file-text"></i> Deskripsi Pekerjaan</h2>
@@ -105,10 +99,6 @@
                         <div class="wc-apply__title"><i class="bi bi-briefcase-fill"></i> Info Lamaran</div>
                         <ul class="wc-apply__facts">
                             <li>
-                                <span><i class="bi bi-people"></i> Kuota</span
-                                ><b>{{ job.kuotaTerisi }}/{{ job.kuota }} posisi</b>
-                            </li>
-                            <li>
                                 <span><i class="bi bi-person-lines-fill"></i> Pelamar</span
                                 ><b>{{ job.pelamar }} orang</b>
                             </li>
@@ -121,21 +111,16 @@
                             </li>
                             <li>
                                 <span><i class="bi bi-clock"></i> Sisa waktu</span
-                                ><b :class="{ 'wc-danger': isFull(job) || daysLeft(job.tanggalTutup) <= 7 }">{{
-                                    isFull(job) ? 'Ditutup' : deadlineLabel(job.tanggalTutup)
+                                ><b :class="{ 'wc-danger': daysLeft(job.tanggalTutup) <= 7 }">{{
+                                    deadlineLabel(job.tanggalTutup)
                                 }}</b>
                             </li>
                         </ul>
-                        <button
-                            v-if="!isFull(job)"
-                            type="button"
-                            class="wc-btn wc-btn--primary wc-btn--full"
-                            @click="goApply(job)"
-                        >
+                        <!-- Tombol tidak lagi punya varian "Kuota Telah Penuh":
+                             lowongan yang lewat tanggal tutup sudah tidak sampai
+                             ke halaman ini (disaring visibleLowongan di backend). -->
+                        <button type="button" class="wc-btn wc-btn--primary wc-btn--full" @click="goApply(job)">
                             <i class="bi bi-send-fill"></i> Lamar Sekarang
-                        </button>
-                        <button v-else type="button" class="wc-btn wc-btn--disabled wc-btn--full" disabled>
-                            <i class="bi bi-lock-fill"></i> Kuota Telah Penuh
                         </button>
                     </div>
                 </aside>
@@ -145,7 +130,7 @@
 </template>
 
 <script setup>
-import { Head } from '@inertiajs/vue3';
+import { Head, Link } from '@inertiajs/vue3';
 import { computed, nextTick, onMounted, onUnmounted } from 'vue';
 import CareerLayout from './Layouts/CareerLayout.vue';
 import {
@@ -154,8 +139,8 @@ import {
     formatDateTime,
     goApply,
     goToSection,
-    isFull,
-    kuotaPct,
+    lokasiLabel,
+    mtUrl,
     observeReveal,
     stageTypeLabel,
     typeClass,

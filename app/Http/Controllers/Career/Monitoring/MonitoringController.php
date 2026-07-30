@@ -342,7 +342,27 @@ class MonitoringController extends Controller
                 $kuota = (int) DB::table('N_WEB_CAREERS_Program_Posisi')->where('Program_Id', $programId)->sum('Kuota');
                 $terisi = (int) DB::table('N_WEB_CAREERS_Lamaran')->where('Program_Id', $programId)->where('Status', 'LULUS')->count();
 
-                return compact('program', 'kolom', 'lamaran', 'tahapPer', 'pengisian', 'kuota', 'terisi');
+                // RINCIAN PER POSISI. Satu program (terutama MT) bisa menaungi
+                // banyak posisi dengan kuota masing-masing; angka gabungan di
+                // atas tidak pernah bisa menjawab "posisi MANA yang sudah penuh".
+                // Dua kueri agregat, bukan per-posisi, supaya jumlah kueri tetap.
+                $posisiRows = DB::table('N_WEB_CAREERS_Program_Posisi')
+                    ->where('Program_Id', $programId)
+                    ->orderBy('Id_Program_Posisi')
+                    ->get(['Id_Program_Posisi', 'Posisi', 'Departemen', 'Kuota', 'Status']);
+
+                $rekapPosisi = DB::table('N_WEB_CAREERS_Lamaran')
+                    ->where('Program_Id', $programId)
+                    ->whereNotNull('Program_Posisi_Id')
+                    ->groupBy('Program_Posisi_Id')
+                    ->selectRaw("Program_Posisi_Id,
+                                 SUM(CASE WHEN Status = 'LULUS' THEN 1 ELSE 0 END) as lulus,
+                                 SUM(CASE WHEN Status = 'BERJALAN' THEN 1 ELSE 0 END) as berjalan,
+                                 COUNT(*) as total")
+                    ->get()
+                    ->keyBy('Program_Posisi_Id');
+
+                return compact('program', 'kolom', 'lamaran', 'tahapPer', 'pengisian', 'kuota', 'terisi', 'posisiRows', 'rekapPosisi');
             });
 
             if (! $data) {
@@ -424,6 +444,22 @@ class MonitoringController extends Controller
                     'alur' => $p->Alur_Nama,
                     'kuota' => $data['kuota'],
                     'terisi' => $data['terisi'],
+                    // Rincian kursi per posisi — dipakai papan untuk menunjukkan
+                    // posisi mana yang sudah penuh, bukan cuma total programnya.
+                    'posisi' => $data['posisiRows']->map(function ($x) use ($data) {
+                        $r = $data['rekapPosisi'][$x->Id_Program_Posisi] ?? null;
+
+                        return [
+                            'id' => Hashids::encode($x->Id_Program_Posisi),
+                            'nama' => $x->Posisi,
+                            'departemen' => $x->Departemen,
+                            'status' => $x->Status,
+                            'kuota' => (int) $x->Kuota,
+                            'terisi' => (int) ($r->lulus ?? 0),
+                            'berjalan' => (int) ($r->berjalan ?? 0),
+                            'pelamar' => (int) ($r->total ?? 0),
+                        ];
+                    })->values(),
                 ],
                 'kolom' => $data['kolom']->map(fn ($t) => [
                     'urutan' => (int) $t->Urutan,
