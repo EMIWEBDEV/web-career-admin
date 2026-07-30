@@ -80,85 +80,44 @@
                     <i class="bi bi-megaphone-fill"></i><span>{{ mt.catatanKegiatan }}</span>
                 </div>
 
-                <!-- EXECUTIVE HUB: 2 KOLOM PENDAFTARAN & JADWAL KEGIATAN -->
-                <div class="mtd-hub__grid">
-                    <!-- JENDELA PENDAFTARAN -->
-                    <article class="mtd-card mtd-card--window">
-                        <h3><i class="bi bi-calendar2-check-fill"></i> Jendela Pendaftaran</h3>
+                <!-- JENDELA PENDAFTARAN — kartu selebar halaman, sejajar Jadwal
+                     Kegiatan & Tahapan Seleksi di bawahnya. Jadwal Kegiatan
+                     TIDAK lagi berdampingan di sini (lihat catatan di sana),
+                     jadi tidak ada lagi wrapper grid dua kolom: satu kartu di
+                     dalam grid 1fr 1fr justru terpotong jadi separuh lebar. -->
+                <article class="mtd-card">
+                    <h3><i class="bi bi-calendar2-check-fill"></i> Jendela Pendaftaran</h3>
 
-                        <div class="mtd-win__lead" :class="jendela.kelas">
-                            <div class="mtd-win__status">
-                                <span class="mtd-win__dot"></span>
-                                <span>Status Pendaftaran</span>
-                            </div>
-                            <strong>{{ jendela.utama }}</strong>
-                            <p>{{ jendela.sub }}</p>
+                    <div class="mtd-win__lead" :class="jendela.kelas">
+                        <span>Status Pendaftaran</span>
+                        <strong>{{ jendela.utama }}</strong>
+                        <span>{{ jendela.sub }}</span>
+                    </div>
+
+                    <div v-if="jendela.persen !== null" class="mtd-win__rail">
+                        <div class="mtd-win__track">
+                            <span class="mtd-win__fill" :style="{ width: jendela.persen + '%' }"></span>
+                            <span class="mtd-win__now" :style="{ left: jendela.persen + '%' }"></span>
                         </div>
+                    </div>
 
-                        <div v-if="jendela.persen !== null" class="mtd-win__rail">
-                            <div class="mtd-win__track">
-                                <span class="mtd-win__fill" :style="{ width: jendela.persen + '%' }"></span>
-                                <span class="mtd-win__now" :style="{ left: jendela.persen + '%' }"></span>
-                            </div>
+                    <!-- Dua ujung jendela: dibuka di kiri, ditutup di kanan —
+                         sejajar dengan kedua ujung rel di atasnya. -->
+                    <div class="mtd-win__ends">
+                        <div>
+                            <small><i class="bi bi-play-circle-fill"></i> Dibuka</small>
+                            <b>{{ formatDateTime(mt.tanggalBuka) }}</b>
                         </div>
-
-                        <div class="mtd-win__dates-grid">
-                            <div class="mtd-datecard mtd-datecard--open">
-                                <span class="mtd-datecard__icon"><i class="bi bi-play-circle-fill"></i></span>
-                                <div>
-                                    <small>TANGGAL DIBUKA</small>
-                                    <b>{{ formatDateTime(mt.tanggalBuka) }}</b>
-                                </div>
-                            </div>
-                            <div class="mtd-datecard mtd-datecard--close">
-                                <span class="mtd-datecard__icon"><i class="bi bi-stop-circle-fill"></i></span>
-                                <div>
-                                    <small>TANGGAL DITUTUP</small>
-                                    <b>{{ mt.tanggalTutup ? formatDateTime(mt.tanggalTutup) : 'Tanpa batas waktu' }}</b>
-                                </div>
-                            </div>
+                        <div class="is-end">
+                            <small><i class="bi bi-stop-circle-fill"></i> Ditutup</small>
+                            <b>{{ mt.tanggalTutup ? formatDateTime(mt.tanggalTutup) : 'Tanpa batas waktu' }}</b>
                         </div>
+                    </div>
 
-                        <div v-if="mt.tanggalPengumuman" class="mtd-win__extra">
-                            <i class="bi bi-megaphone-fill"></i>
-                            <span>Pengumuman Hasil: <b>{{ formatDate(mt.tanggalPengumuman) }}</b></span>
-                        </div>
-                    </article>
-
-                    <!-- JADWAL KEGIATAN -->
-                    <article v-if="agenda.length" class="mtd-card mtd-card--jadwal">
-                        <div class="mtd-card__head">
-                            <h3><i class="bi bi-calendar-range-fill"></i> Jadwal Kegiatan</h3>
-                            <span class="mtd-card__tag">{{ agendaLewat }}/{{ agenda.length }} selesai</span>
-                        </div>
-
-                        <div v-if="agendaBerikutnya" class="mtd-jw__next" :class="{ 'is-kini': agendaBerikutnya.keadaan === 'kini' }">
-                            <span class="mtd-jw__next-pulse"></span>
-                            <div class="mtd-jw__next-body">
-                                <small>{{ agendaBerikutnya.keadaan === 'kini' ? 'Sedang berlangsung' : 'Agenda berikutnya' }}</small>
-                                <strong>{{ agendaBerikutnya.label }}</strong>
-                            </div>
-                            <span class="mtd-jw__next-chip">{{ agendaBerikutnyaRelatif }}</span>
-                        </div>
-
-                        <ol class="mtd-timeline">
-                            <li v-for="(j, i) in agenda" :key="i" :class="`is-${j.keadaan}`" class="mtd-timeline__item">
-                                <span class="mtd-timeline__dot">
-                                    <i v-if="j.keadaan === 'lewat'" class="bi bi-check-lg"></i>
-                                    <span v-else-if="j.keadaan === 'kini'" class="mtd-timeline__pulse"></span>
-                                </span>
-                                <div class="mtd-timeline__card">
-                                    <div class="mtd-timeline__card-head">
-                                        <strong>{{ j.label }}</strong>
-                                        <span v-if="j.keadaan === 'kini'" class="mtd-timeline__kini"><i class="bi bi-record-fill"></i> Sedang Berlangsung</span>
-                                        <span v-else-if="j.keadaan === 'lewat'" class="mtd-timeline__tag is-done"><i class="bi bi-check2"></i> Selesai</span>
-                                    </div>
-                                    <span class="mtd-timeline__date"><i class="bi bi-calendar3"></i> {{ j.tanggal }}</span>
-                                </div>
-                            </li>
-                        </ol>
-                    </article>
-                </div>
+                    <div v-if="mt.tanggalPengumuman" class="mtd-win__extra">
+                        <span><i class="bi bi-megaphone-fill"></i> Pengumuman Hasil: <b>{{ formatDate(mt.tanggalPengumuman) }}</b></span>
+                    </div>
+                </article>
 
                 <!-- KRITERIA & KAMPUS SASARAN -->
                 <div class="mtd-subcards">
@@ -188,7 +147,7 @@
                 <article v-if="agenda.length" class="mtd-card mtd-jadwal">
                     <div class="mtd-card__head">
                         <h3><i class="bi bi-calendar-range-fill"></i> Jadwal Kegiatan</h3>
-                        <span class="mtd-card__tag">{{ agendaLewat }}/{{ agenda.length }} lewat</span>
+                        <span class="mtd-card__tag">{{ agendaLewat }}/{{ agenda.length }} selesai</span>
                     </div>
 
                     <div v-if="agendaBerikutnya" class="mtd-jw__next" :class="{ 'is-kini': agendaBerikutnya.keadaan === 'kini' }">
@@ -965,27 +924,7 @@ onUnmounted(() => revealObs?.disconnect());
     color: #94a3b8;
 }
 
-.mtd-hub__grid {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 1.25rem;
-    align-items: stretch;
-    margin-bottom: 1.25rem;
-}
-@media (min-width: 992px) {
-    .mtd-hub__grid {
-        grid-template-columns: 1fr 1fr;
-    }
-}
-
 .mtd-subcards {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(285px, 1fr));
-    gap: 1.05rem;
-    align-items: start;
-}
-
-.mtd-cards {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(285px, 1fr));
     gap: 1.05rem;
@@ -1371,6 +1310,8 @@ onUnmounted(() => revealObs?.disconnect());
    Tahapan Seleksi menjawab "urutan apa", jadwal ini menjawab "kapan". Bentuk
    blok tanggal ala tiket/boarding-pass + pengelompokan per bulan menegaskan
    bahwa ini kalender, bukan sekadar daftar bernomor kedua kalinya. */
+/* Grid kelompok-per-bulan. `.mtd-jcal__grp` SENGAJA tanpa aturan sendiri:
+   dia cuma grid-item di sini, jaraknya sudah diatur `gap` ini. */
 .mtd-jcal {
     margin-top: 18px;
     display: grid;
@@ -2180,10 +2121,6 @@ onUnmounted(() => revealObs?.disconnect());
     }
     .mtd-about {
         padding: 0.4rem 1rem 0;
-    }
-    .mtd-cards {
-        grid-template-columns: minmax(0, 1fr);
-        gap: 0.8rem;
     }
     .mtd-jcal {
         gap: 16px;
