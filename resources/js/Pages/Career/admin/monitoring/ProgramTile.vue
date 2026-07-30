@@ -222,8 +222,8 @@ const funnelTitle = computed(() =>
     -webkit-box-orient: vertical;
 }
 .wcm-tile__meta-row { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin-top: 1px; }
-.wcm-tile__badge { font-size: 0.63rem; padding: 2px 7px; border-radius: 999px; font-weight: 700; }
-.wcm-tile__status-badge { font-size: 0.63rem; padding: 2px 7px; border-radius: 999px; font-weight: 800; }
+.wcm-tile__badge { font-size: 0.63rem; padding: 2px 7px; border-radius: 999px; font-weight: 700; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wcm-tile__status-badge { font-size: 0.63rem; padding: 2px 7px; border-radius: 999px; font-weight: 800; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wcm-tile__kode-pill {
     font-size: 0.64rem;
     font-weight: 800;
@@ -232,6 +232,10 @@ const funnelTitle = computed(() =>
     padding: 1px 6px;
     border-radius: 4px;
     border: 1px solid rgba(99, 102, 241, 0.15);
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 .wcm-tile__sub {
     font-size: 0.71rem;
@@ -242,8 +246,8 @@ const funnelTitle = computed(() =>
     gap: 8px;
     flex-wrap: wrap;
 }
-.wcm-tile__sub-item { display: inline-flex; align-items: center; gap: 3px; }
-.wcm-tile__sub-item i { color: #94a3b8; font-size: 0.75rem; }
+.wcm-tile__sub-item { display: inline-flex; align-items: center; gap: 3px; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wcm-tile__sub-item i { color: #94a3b8; font-size: 0.75rem; flex-shrink: 0; }
 
 .wcm-tile__funnel-container {
     background: #f8fafc;
@@ -258,8 +262,8 @@ const funnelTitle = computed(() =>
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 6px;
-    overflow: hidden;
+    gap: 8px;
+    flex-wrap: wrap;
 }
 .wcm-tile__funnel-ttl {
     font-size: 0.65rem;
@@ -271,16 +275,50 @@ const funnelTitle = computed(() =>
     align-items: center;
     gap: 4px;
     min-width: 0;
+    flex: 1 1 auto;
 }
 .wcm-tile__funnel-ttl i { color: #6366f1; }
 .wcm-tile__funnel-status {
-    font-size: 0.60rem;
+    font-size: 0.64rem;
     font-weight: 800;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
-    white-space: nowrap;
+    letter-spacing: 0.02em;
+    padding: 2px 8px;
+    border-radius: 99px;
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    color: #475569;
     flex-shrink: 0;
-    padding-right: 2px;
+    line-height: 1.2;
+    transition: all 0.2s ease;
+    max-width: 170px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.wcm-tile__funnel-status.is-kritis {
+    background: rgba(244, 63, 94, 0.1);
+    border-color: rgba(244, 63, 94, 0.3);
+    color: #e11d48 !important;
+}
+.wcm-tile__funnel-status.is-warn {
+    background: rgba(245, 158, 11, 0.1);
+    border-color: rgba(245, 158, 11, 0.3);
+    color: #d97706 !important;
+}
+.wcm-tile__funnel-status.is-aktif {
+    background: #eef2ff;
+    border-color: rgba(99, 102, 241, 0.25);
+    color: #4338ca !important;
+}
+.wcm-tile__funnel-status.is-selesai {
+    background: #f1f5f9;
+    border-color: #e2e8f0;
+    color: #475569 !important;
+}
+.wcm-tile__funnel-status.is-idle {
+    background: #f8fafc;
+    border-color: #f1f5f9;
+    color: #94a3b8 !important;
 }
 
 .wcm-tile__funnel { display: flex; align-items: flex-end; gap: 4px; height: 28px; padding: 0 2px; }

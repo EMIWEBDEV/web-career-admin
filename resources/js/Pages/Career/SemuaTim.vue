@@ -1,7 +1,8 @@
 <!-- ══════════════════════════════════════════════════════════
      WEB CAREER — Semua Tim / Fungsi Perusahaan (route: /karir/tim)
      Kartu ringkasan tiap tim: status hiring, jumlah lowongan,
-     lokasi, benefit, skill, kuota, dan pelamar.
+     lokasi, benefit, skill, dan pelamar. TANPA kuota — jumlah kursi
+     tidak lagi dipublikasi (lihat timCards di CareerLandingController).
      Data masih statis di file ini — sesuaikan sesuai kebutuhan.
      ══════════════════════════════════════════════════════════ -->
 <template>
@@ -90,9 +91,12 @@
                     </div>
 
                     <div class="st-foot">
-                        <span class="st-foot__kuota">
+                        <!-- Tanpa "total kuota": jumlah kursi divisi tidak lagi
+                             dikirim backend. Yang relevan bagi pelamar adalah
+                             berapa posisi dibuka & berapa yang sudah melamar. -->
+                        <span class="st-foot__stat">
                             <i class="bi bi-people"></i>
-                            Total kuota <b>{{ t.kuotaTerisi }}/{{ t.kuota }}</b> terisi · {{ t.pelamar }} pelamar
+                            <b>{{ t.lowongan }}</b> posisi dibuka · {{ t.pelamar }} pelamar
                         </span>
                         <span class="st-foot__cta">Lihat posisi <i class="bi bi-arrow-right"></i></span>
                     </div>
@@ -523,7 +527,7 @@ watch(timTampil, () =>
     padding-top: 0.95rem;
     border-top: 1px solid #f1f2f9;
 }
-.st-foot__kuota {
+.st-foot__stat {
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
@@ -531,7 +535,7 @@ watch(timTampil, () =>
     font-size: 0.7rem;
     font-weight: 600;
 }
-.st-foot__kuota b {
+.st-foot__stat b {
     color: #6366f1;
 }
 .st-foot__cta {

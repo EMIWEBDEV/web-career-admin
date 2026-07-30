@@ -6,8 +6,11 @@
 -->
 <template>
     <div class="wcm-det">
-        <div v-if="loading" class="wcm-det__load"><i class="bi bi-arrow-repeat wcm-spin"></i> Memuat perjalanan…</div>
-        <div v-else-if="error" class="wcm-det__load">Gagal memuat detail. <button class="wca-btn wca-btn--ghost wca-btn--sm" @click="fetchDetail">Coba lagi</button></div>
+        <KeadaanPanel v-if="loading" keadaan="memuat" rapat teks="Memuat perjalanan…" />
+        <KeadaanPanel v-else-if="error" keadaan="galat" rapat
+            teks="Gagal memuat perjalanan"
+            ket="Detail lamaran ini tidak berhasil diambil. Periksa koneksi lalu coba lagi."
+            @ulang="fetchDetail" />
 
         <template v-else-if="d">
             <div class="wcm-idn">
@@ -22,7 +25,7 @@
 
             <div class="wcm-det__grid">
                 <!-- Stepper tahap -->
-                <div class="wcm-det__steps">
+                <section class="wcm-det__sec">
                     <div class="wcm-det__ttl"><i class="bi bi-signpost-split"></i> Perjalanan Tahap</div>
                     <div class="wcm-det__meta">
                         Melamar: <b>{{ formatTanggal(d.lamaran.waktuLamar) }}</b>
@@ -30,7 +33,10 @@
                         <template v-if="d.lamaran.mulaiDariUrutan && d.lamaran.mulaiDariUrutan > 1"> · Masuk langsung di tahap {{ d.lamaran.mulaiDariUrutan }} (tarikan talent pool)</template>
                     </div>
 
-                    <div v-if="!d.tahap.length" class="wcm-det__load">Belum ada tahap tercatat untuk lamaran ini.</div>
+                    <KeadaanPanel v-if="!d.tahap.length" keadaan="kosong" rapat
+                        ikon="bi-signpost-split"
+                        teks="Belum ada tahap tercatat"
+                        ket="Lamaran ini belum memiliki jejak tahap — kemungkinan alur seleksinya belum diatur saat pendaftaran." />
 
                     <div v-for="t in d.tahap" :key="t.urutan" class="wcm-step" :class="['st-' + stepState(t), { 'is-klik': bisaBuka }]">
                         <div class="wcm-step__rail"><span class="wcm-step__dot"></span></div>
@@ -63,24 +69,28 @@
                     </div>
 
                     <div v-if="d.lamaran.alasanGugur" class="wcm-gugur"><i class="bi bi-x-octagon"></i> {{ d.lamaran.alasanGugur }}</div>
-                </div>
+                </section>
 
-                <!-- Jejak + talent pool -->
-                <div class="wcm-det__side">
-                    <div v-if="d.asalTalentPool" class="wcm-pool wcm-pool--asal">
-                        <div class="wcm-det__ttl"><i class="bi bi-box-arrow-in-right"></i> Asal Talent Pool</div>
-                        <p>Ditarik dari pool <b>{{ d.asalTalentPool.programNama || '—' }}</b><template v-if="d.asalTalentPool.tahapAsal"> (tahap asal: {{ d.asalTalentPool.tahapAsal }})</template>, masuk pool {{ formatTanggal(d.asalTalentPool.tanggalMasuk) }}.</p>
+                <section v-if="d.asalTalentPool" class="wcm-det__sec wcm-pool wcm-pool--asal">
+                    <div class="wcm-det__ttl"><i class="bi bi-box-arrow-in-right"></i> Asal Talent Pool</div>
+                    <p>Ditarik dari pool <b>{{ d.asalTalentPool.programNama || '—' }}</b><template v-if="d.asalTalentPool.tahapAsal"> (tahap asal: {{ d.asalTalentPool.tahapAsal }})</template>, masuk pool {{ formatTanggal(d.asalTalentPool.tanggalMasuk) }}.</p>
+                </section>
+
+                <section v-if="d.talentPool" class="wcm-det__sec wcm-pool">
+                    <div class="wcm-det__ttl"><i class="bi bi-droplet"></i> Talent Pool</div>
+                    <p>Status <b>{{ d.talentPool.status }}</b><template v-if="d.talentPool.tahapAsal"> · dari tahap {{ d.talentPool.tahapAsal }}</template><template v-if="d.talentPool.tanggalMasuk"> · masuk {{ formatTanggal(d.talentPool.tanggalMasuk) }}</template><template v-if="d.talentPool.tanggalKedaluwarsa"> · kedaluwarsa {{ formatTanggal(d.talentPool.tanggalKedaluwarsa) }}</template>.</p>
+                    <p v-if="d.talentPool.ditarikKeKode">Sudah ditarik ke lamaran <b>{{ d.talentPool.ditarikKeKode }}</b> pada {{ formatTanggal(d.talentPool.ditarikAt) }}.</p>
+                    <p v-if="d.talentPool.catatan" class="wcm-pool__note">{{ d.talentPool.catatan }}</p>
+                </section>
+
+                <section class="wcm-det__sec">
+                    <div class="wcm-det__ttl"><i class="bi bi-journal-text"></i> Jejak Keputusan
+                        <span v-if="d.jejak.length" class="wcm-det__n">{{ d.jejak.length }}</span>
                     </div>
-
-                    <div v-if="d.talentPool" class="wcm-pool">
-                        <div class="wcm-det__ttl"><i class="bi bi-droplet"></i> Talent Pool</div>
-                        <p>Status <b>{{ d.talentPool.status }}</b><template v-if="d.talentPool.tahapAsal"> · dari tahap {{ d.talentPool.tahapAsal }}</template><template v-if="d.talentPool.tanggalMasuk"> · masuk {{ formatTanggal(d.talentPool.tanggalMasuk) }}</template><template v-if="d.talentPool.tanggalKedaluwarsa"> · kedaluwarsa {{ formatTanggal(d.talentPool.tanggalKedaluwarsa) }}</template>.</p>
-                        <p v-if="d.talentPool.ditarikKeKode">Sudah ditarik ke lamaran <b>{{ d.talentPool.ditarikKeKode }}</b> pada {{ formatTanggal(d.talentPool.ditarikAt) }}.</p>
-                        <p v-if="d.talentPool.catatan" class="wcm-pool__note">{{ d.talentPool.catatan }}</p>
-                    </div>
-
-                    <div class="wcm-det__ttl"><i class="bi bi-journal-text"></i> Jejak Keputusan</div>
-                    <div v-if="!d.jejak.length" class="wcm-jejak__kosong">Belum ada keputusan tercatat.</div>
+                    <KeadaanPanel v-if="!d.jejak.length" keadaan="kosong" rapat
+                        ikon="bi-journal-text"
+                        teks="Belum ada keputusan"
+                        ket="Belum ada tahap yang diputus untuk lamaran ini." />
                     <div v-else class="wcm-jejak">
                         <div v-for="(j, i) in d.jejak" :key="i" class="wcm-jejak__row">
                             <span class="wca-badge" :class="verdictBadge(j.verdict)">{{ j.verdict }}</span>
@@ -90,7 +100,7 @@
                             </div>
                         </div>
                     </div>
-                </div>
+                </section>
             </div>
         </template>
     </div>
@@ -101,6 +111,7 @@ import { ref, watch, onMounted } from 'vue'
 import axios from 'axios'
 import { initials } from '../careerAdmin'
 import { formatTanggal, labelStatusTes, tesBermakna } from './monitoringHelpers'
+import KeadaanPanel from './KeadaanPanel.vue'
 
 const props = defineProps({
     lamaranId: { type: String, required: true },
@@ -179,12 +190,18 @@ defineExpose({ refresh: fetchDetail })
 </script>
 
 <style scoped>
-.wcm-det__load { font-size: 0.82rem; color: #64748b; font-weight: 600; }
-.wcm-det__grid { display: grid; grid-template-columns: 1fr; gap: 20px; }
-.wcm-det__ttl { display: flex; align-items: center; gap: 8px; font-size: 0.76rem; font-weight: 800; color: #475569; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 10px; }
+/* Isi laci disusun sebagai KARTU BERSEKAT di atas latar abu — bukan satu
+   tumpukan panjang. Metriknya menyalin .wcm-sd__sec di StageDetailPanel supaya
+   kedua laci terasa satu keluarga. */
+.wcm-det__grid { display: flex; flex-direction: column; gap: 14px; }
+.wcm-det__sec { background: #fff; border: 1px solid #f1f5f9; border-radius: 18px; padding: 16px; box-shadow: 0 2px 10px rgba(15, 23, 42, 0.02); }
+.wcm-det__ttl { display: flex; align-items: center; gap: 8px; font-size: 0.75rem; font-weight: 800; color: #475569; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px; }
+.wcm-det__n { background: #eef2ff; color: #4338ca; border-radius: 99px; padding: 2px 8px; font-size: 0.68rem; font-weight: 800; letter-spacing: 0; }
 .wcm-det__meta { font-size: 0.75rem; color: #64748b; margin-bottom: 16px; font-weight: 500; }
 
-.wcm-idn { display: flex; align-items: center; gap: 14px; padding: 14px 18px; margin-bottom: 18px; border-radius: 16px; background: linear-gradient(135deg, #eef2ff, #f8fafc); border: 1px solid rgba(99, 102, 241, 0.2); box-shadow: 0 4px 14px rgba(99, 102, 241, 0.06); }
+/* Identitas MENEMPEL di atas: saat menggulir perjalanan yang panjang, "ini
+   perjalanan siapa" tidak boleh ikut hilang dari layar. */
+.wcm-idn { position: sticky; top: -20px; z-index: 2; display: flex; align-items: center; gap: 14px; padding: 14px 16px; margin: -20px -22px 14px; border-bottom: 1px solid rgba(99, 102, 241, 0.16); background: linear-gradient(135deg, #eef2ff, #f6f8ff); backdrop-filter: blur(6px); }
 .wcm-idn__txt { flex: 1; min-width: 0; }
 .wcm-idn__nama { font-size: 1rem; font-weight: 800; color: #0f172a; letter-spacing: -0.01em; }
 .wcm-idn__sub { font-size: 0.75rem; color: #64748b; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
@@ -204,30 +221,35 @@ defineExpose({ refresh: fetchDetail })
 .wcm-step__head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 0.82rem; color: #0f172a; font-weight: 800; }
 .wcm-step__head .bi-robot { color: #d97706; font-size: 0.78rem; }
 
-button.wcm-step__head { width: 100%; text-align: left; border: 1px solid transparent; background: transparent; padding: 6px 10px; margin: -6px -10px 0; border-radius: 12px; cursor: pointer; font: inherit; transition: all 0.2s ease; }
+/* Padding negatif dihapus: di dalam kartu selebar ±420px, `margin: -6px -10px`
+   membuat tombol menjorok keluar tepi kartu saat di-hover. */
+button.wcm-step__head { width: 100%; text-align: left; border: 1px solid transparent; background: transparent; padding: 6px 8px; margin-left: -8px; border-radius: 10px; cursor: pointer; font: inherit; transition: all 0.2s ease; }
 button.wcm-step__head:hover { border-color: rgba(99, 102, 241, 0.3); background: #eef2ff; }
 .wcm-step__go { margin-left: auto; color: #94a3b8; font-size: 0.75rem; transition: transform 0.2s ease; }
 button.wcm-step__head:hover .wcm-step__go { color: #6366f1; transform: translateX(2px); }
 .wcm-step__skor { font-size: 0.72rem; font-weight: 800; color: #4338ca; background: #eef2ff; padding: 2px 7px; border-radius: 6px; }
 .wcm-step__waktu { font-size: 0.72rem; color: #64748b; margin-top: 4px; font-weight: 500; }
-.wcm-step__note { margin-top: 8px; font-size: 0.75rem; color: #475569; background: #ffffff; border: 1px solid #f1f5f9; border-radius: 12px; padding: 9px 12px; font-weight: 500; }
+/* Elemen bersarang di dalam kartu putih diberi isian abu — kalau tetap putih
+   dengan garis #f1f5f9, keduanya melebur dan tak terbaca sebagai kotak sendiri. */
+.wcm-step__note { margin-top: 8px; font-size: 0.75rem; color: #475569; background: #f8fafc; border: 1px solid #eef1f7; border-left: 3px solid #cbd5e1; border-radius: 10px; padding: 9px 12px; font-weight: 500; line-height: 1.55; }
 .wcm-tests { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
-.wcm-test { display: flex; align-items: center; gap: 10px; background: #ffffff; border: 1px solid #f1f5f9; border-radius: 12px; padding: 8px 12px; font-size: 0.75rem; }
+.wcm-test { display: flex; align-items: center; gap: 10px; background: #f8fafc; border: 1px solid #eef1f7; border-radius: 10px; padding: 8px 12px; font-size: 0.75rem; }
 .wcm-test__label { flex: 1; font-weight: 700; color: #0f172a; }
 .wcm-test__info { margin-left: 8px; font-size: 0.64rem; font-weight: 800; color: #64748b; background: #e2e8f0; padding: 2px 7px; border-radius: 99px; }
 .wcm-test__nilai { font-weight: 800; color: #4338ca; font-variant-numeric: tabular-nums; }
 .wcm-gugur { display: flex; gap: 10px; align-items: center; margin-top: 6px; font-size: 0.78rem; color: #be123c; background: #fff1f2; border: 1px solid #fecdd3; border-radius: 12px; padding: 10px 14px; font-weight: 600; }
 
-.wcm-pool { margin-bottom: 18px; background: #ffffff; border: 1px solid #bae6fd; border-radius: 14px; padding: 12px 15px; }
+/* Blok talent pool tetap kartu bersekat, hanya diberi aksen biru agar
+   terbedakan dari kartu perjalanan & jejak di sekitarnya. */
+.wcm-pool { border-color: #bae6fd; }
 .wcm-pool p { font-size: 0.78rem; color: #0f172a; margin: 0 0 4px; line-height: 1.55; font-weight: 600; }
+.wcm-pool p:last-child { margin-bottom: 0; }
 .wcm-pool--asal { border-color: #7dd3fc; background: #f0f9ff; }
 .wcm-pool__note { color: #64748b; font-style: italic; font-weight: 500; }
 .wcm-jejak { display: flex; flex-direction: column; gap: 8px; }
-.wcm-jejak__kosong { font-size: 0.78rem; color: #94a3b8; font-weight: 500; }
-.wcm-jejak__row { display: flex; gap: 10px; align-items: flex-start; background: #ffffff; border: 1px solid #f1f5f9; border-radius: 12px; padding: 10px 12px; }
+.wcm-jejak__row { display: flex; gap: 10px; align-items: flex-start; background: #f8fafc; border: 1px solid #eef1f7; border-radius: 10px; padding: 10px 12px; }
 .wcm-jejak__txt { font-size: 0.78rem; color: #334155; min-width: 0; font-weight: 500; }
 .wcm-jejak__meta { font-size: 0.70rem; color: #94a3b8; margin-top: 3px; font-weight: 500; }
-.wcm-spin { animation: wcmSpin 0.9s linear infinite; display: inline-block; }
-@keyframes wcmSpin { to { transform: rotate(360deg); } }
-@media (max-width: 900px) { .wcm-det__grid { grid-template-columns: 1fr; } }
+/* Tahap terakhir tidak perlu jarak bawah — menyisakan celah kosong di kaki kartu. */
+.wcm-step:last-of-type .wcm-step__body { padding-bottom: 0; }
 </style>

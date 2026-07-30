@@ -7,13 +7,16 @@
 <template>
     <div>
         <!-- Skeleton load pertama -->
-        <div v-if="loading && !ready" class="wca-card"><div class="wca-empty"><i class="bi bi-arrow-repeat wcm-spin"></i><h4>Memuat data monitoring…</h4></div></div>
+        <div v-if="loading && !ready" class="wca-card">
+            <KeadaanPanel keadaan="memuat" teks="Memuat data monitoring…" />
+        </div>
 
-        <div v-else-if="error" class="wca-card"><div class="wca-empty">
-            <i class="bi bi-wifi-off"></i>
-            <h4>Gagal memuat data monitoring</h4>
-            <button class="wca-btn wca-btn--primary wca-btn--sm" @click="fetchLive"><i class="bi bi-arrow-clockwise"></i> Coba lagi</button>
-        </div></div>
+        <div v-else-if="error" class="wca-card">
+            <KeadaanPanel keadaan="galat"
+                teks="Gagal memuat data monitoring"
+                ket="Data program dan pelamar tidak berhasil diambil. Periksa koneksi lalu coba lagi."
+                @ulang="fetchLive" />
+        </div>
 
         <template v-else>
             <!-- 🏛️ NATIVE WEB CAREER KPI CARDS GRID -->
@@ -79,13 +82,22 @@
                 :jumlah-tampil="programsUrut.length" :jumlah-total="programs.length" :ada-filter="adaFilter"
                 @ubah="filter[$event.key] = $event.val" @reset="resetFilter" />
 
-            <div v-if="!programsUrut.length" class="wca-card"><div class="wca-empty">
-                <i class="bi bi-inbox"></i>
-                <h4>{{ programs.length ? 'Tidak ada program yang cocok dengan filter' : 'Belum ada program' }}</h4>
-                <button v-if="adaFilter" class="wca-btn wca-btn--ghost wca-btn--sm" @click="resetFilter">
-                    <i class="bi bi-x-circle"></i> Bersihkan filter
-                </button>
-            </div></div>
+            <!-- Dua sebab kosong yang BERBEDA: tersaring habis (bisa dibersihkan)
+                 versus memang belum ada program sama sekali (tak ada yang bisa
+                 dilakukan di sini). Pesan & tombolnya ikut berbeda. -->
+            <div v-if="!programsUrut.length" class="wca-card">
+                <KeadaanPanel keadaan="kosong"
+                    :ikon="programs.length ? 'bi-funnel' : 'bi-inbox'"
+                    :teks="programs.length ? 'Tidak ada program yang cocok' : 'Belum ada program rekrutmen'"
+                    :ket="programs.length
+                        ? 'Tidak ada program yang memenuhi penyaring saat ini.'
+                        : 'Belum ada program yang berjalan. Program baru akan muncul di sini begitu dibuat dan dijalankan.'" />
+                <div v-if="adaFilter" class="wcm-kosong__aksi">
+                    <button class="wca-btn wca-btn--ghost wca-btn--sm" @click="resetFilter">
+                        <i class="bi bi-x-circle"></i> Bersihkan filter
+                    </button>
+                </div>
+            </div>
 
             <div v-else class="wcm-grid" :class="{ 'wcm-dim': loading }">
                 <ProgramTile v-for="p in programsUrut" :key="p.id" :program="p" @open="bukaSpotlight(p.id)" />
@@ -105,6 +117,7 @@ import PerluPerhatian from './PerluPerhatian.vue'
 import ProgramTile from './ProgramTile.vue'
 import SpotlightBoard from './SpotlightBoard.vue'
 import FilterProgram from './FilterProgram.vue'
+import KeadaanPanel from './KeadaanPanel.vue'
 
 const emit = defineEmits(['checkpoint'])
 
@@ -325,9 +338,12 @@ defineExpose({ refresh: fetchLive })
 }
 
 .wcm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
-.wcm-dim { opacity: 0.55; pointer-events: none; transition: opacity 0.15s; }
-.wcm-spin { animation: wcmSpin 0.9s linear infinite; }
-@keyframes wcmSpin { to { transform: rotate(360deg); } }
+/* Penyegaran otomatis: konten diredupkan seperlunya saja — cukup untuk
+   menandakan "sedang diperbarui" tanpa membuat angka jadi sulit dibaca.
+   0,55 terlalu pucat untuk data yang justru sedang dipelototi atasan. */
+.wcm-dim { opacity: 0.72; pointer-events: none; transition: opacity 0.15s; }
+
+.wcm-kosong__aksi { display: flex; justify-content: center; padding: 0 1rem 2rem; margin-top: -1.4rem; }
 
 @media (max-width: 720px) {
     .wca-kpi-grid { grid-template-columns: repeat(2, 1fr); }

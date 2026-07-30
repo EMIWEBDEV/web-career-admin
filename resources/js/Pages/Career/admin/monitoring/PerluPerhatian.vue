@@ -5,33 +5,7 @@
    - MACET        : tahap manual berjalan melebihi ambang macet
 -->
 <template>
-    <div v-if="items.length" class="wca-card wcm-warncard">
-        <button type="button" class="wcm-warnhead" @click="open = !open">
-            <span class="wcm-warnhead__ttl"><i class="bi bi-exclamation-triangle-fill"></i> Perlu Perhatian
-                <span class="wcm-warnhead__n">{{ items.length }}</span></span>
-            <span class="wcm-warnhead__hint">Macet &gt; {{ meta.macetHari }} hari · sorot merah &gt; {{ meta.sorotHari }} hari
-                <i class="bi" :class="open ? 'bi-chevron-up' : 'bi-chevron-down'"></i></span>
-        </button>
-        <div v-show="open" class="wcm-warnbody">
-            <div v-for="g in grup" :key="g.jenis" class="wcm-warngrp">
-                <div class="wcm-warngrp__ttl"><i class="bi" :class="g.icon"></i> {{ g.label }} ({{ g.rows.length }})</div>
-                <div class="wcm-warnrows">
-                    <button v-for="r in g.rows" :key="r.lamaranId + r.tahapLabel" type="button" class="wcm-warnrow"
-                        :class="{ 'is-red': r.agingHari > meta.sorotHari }"
-                        :title="`Buka papan ${r.programNama} & perjalanan ${r.nama}`"
-                        @click="$emit('open', r)">
-                        <span class="wca-avatar wca-avatar--sm">{{ initials(r.nama) }}</span>
-                        <span class="wcm-warnrow__nama">{{ r.nama || '—' }}</span>
-                        <span class="wcm-warnrow__info">{{ r.programNama }} · {{ r.tahapLabel }}</span>
-                        <span class="wcm-warnrow__aging">{{ formatAging(r.agingHari) }}</span>
-                        <i class="bi bi-arrow-right-short wcm-warnrow__go"></i>
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-    <!-- Saat tidak ada yang lewat ambang, panel ini tidak menampilkan apa pun:
-         halaman monitoring menyajikan fakta, bukan menyatakan keadaan aman. -->
+    <!-- Card Perlu Perhatian disembunyikan sesuai arahan UI/UX -->
 </template>
 
 <script setup>

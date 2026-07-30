@@ -28,9 +28,12 @@
             </button>
         </div>
 
-        <div v-if="!pelamar.length" class="wcm-fg__kosong">
-            <i class="bi bi-inbox"></i> Tidak ada pelamar yang cocok dengan penyaring saat ini.
-        </div>
+        <!-- Kosong di sini hampir selalu akibat PENYARING, bukan program tanpa
+             pelamar — maka pesannya menunjuk ke sana, bukan sekadar "tidak ada". -->
+        <KeadaanPanel v-if="!pelamar.length" keadaan="kosong"
+            ikon="bi-funnel"
+            teks="Tidak ada pelamar yang cocok"
+            ket="Tidak ada yang memenuhi penyaring saat ini. Longgarkan atau bersihkan penyaring untuk melihat pelamar lain." />
 
         <!-- Baris dikelompokkan per status lamaran: yang masih perlu tindakan
              selalu di atas, yang sudah selesai tidak mengganggu pandangan. -->
@@ -91,6 +94,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { initials } from '../careerAdmin'
+import KeadaanPanel from './KeadaanPanel.vue'
 
 const props = defineProps({
     kolom: { type: Array, default: () => [] },
@@ -299,7 +303,6 @@ function judulSel(o, s) {
 .wcm-fg__lagi:hover { background: #eef2ff; }
 .wcm-fg__lagi small { font-weight: 500; color: #94a3b8; }
 
-.wcm-fg__kosong { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 40px; color: #94a3b8; font-size: 12.5px; }
 
 .wcm-fg__legenda { position: sticky; left: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-top: 16px; padding-top: 12px; border-top: 1px solid #eef0f7; font-size: 11px; color: #94a3b8; }
 .wcm-fg__lg { display: inline-flex; align-items: center; gap: 6px; }

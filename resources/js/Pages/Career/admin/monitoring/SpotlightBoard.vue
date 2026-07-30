@@ -59,6 +59,24 @@
                     </div>
                 </div>
 
+                <!-- KURSI PER POSISI — satu program (terutama MT) bisa menaungi
+                     banyak posisi dengan kuota masing-masing. Bar tunggal di
+                     header hanya menjawab "berapa total"; strip ini menjawab
+                     "posisi MANA yang sudah penuh" — pertanyaan yang sebenarnya
+                     dipakai atasan saat memutuskan. Hanya muncul bila memang
+                     lebih dari satu posisi; program berposisi tunggal sudah
+                     terjawab tuntas oleh bar di header. -->
+                <div v-if="!loading && !error && posisiBanyak" class="wcm-sl__posisi">
+                    <span class="wcm-sl__posisi-lbl"><i class="bi bi-diagram-3"></i> Kursi per posisi</span>
+                    <span v-for="x in program.posisi" :key="x.id" class="wcm-pos"
+                        :class="{ 'is-full': x.kuota > 0 && x.terisi >= x.kuota, 'is-tutup': x.status && x.status !== 'BUKA' }"
+                        :title="`${x.nama}${x.departemen ? ' · ' + x.departemen : ''} — ${x.terisi} dari ${x.kuota} kursi terisi · ${x.berjalan} berproses · ${x.pelamar} pelamar`">
+                        <i v-if="x.kuota > 0 && x.terisi >= x.kuota" class="bi bi-lock-fill"></i>
+                        {{ x.nama }} <b>{{ x.terisi }}/{{ x.kuota }}</b>
+                        <em v-if="x.berjalan">· {{ x.berjalan }} berproses</em>
+                    </span>
+                </div>
+
                 <FilterPapan v-if="!loading && !error" :nilai="filter" :pelamar="pelamar"
                     :filter-atribut="filterAtribut" :jumlah-tampil="pelamarTerfilter.length"
                     :jumlah-total="pelamar.length" :ada-filter="adaFilter"
@@ -66,11 +84,15 @@
 
                 <!-- PAPAN -->
                 <div class="wcm-sl__body">
-                    <div v-if="loading" class="wcm-sl__load"><i class="bi bi-arrow-repeat wcm-spin"></i> Memuat papan proses…</div>
-                    <div v-else-if="error" class="wcm-sl__load">Gagal memuat papan.
-                        <button class="wca-btn wca-btn--primary wca-btn--sm" @click="fetchPapan"><i class="bi bi-arrow-clockwise"></i> Coba lagi</button>
-                    </div>
-                    <div v-else-if="!kolom.length" class="wcm-sl__load">Alur belum dikonfigurasi untuk program ini.</div>
+                    <KeadaanPanel v-if="loading" keadaan="memuat" teks="Memuat papan proses…" />
+                    <KeadaanPanel v-else-if="error" keadaan="galat"
+                        teks="Gagal memuat papan proses"
+                        ket="Data pelamar program ini tidak berhasil diambil. Periksa koneksi lalu coba lagi."
+                        @ulang="fetchPapan" />
+                    <KeadaanPanel v-else-if="!kolom.length" keadaan="kosong"
+                        ikon="bi-signpost-2"
+                        teks="Alur seleksi belum diatur"
+                        ket="Program ini belum punya tahapan, jadi papan proses tidak bisa dibentuk. Atur alurnya lebih dulu di Master Alur." />
 
                     <FullProcessGrid v-else-if="mode === 'FULL'" :kolom="kolom" :pelamar="pelamarTerfilter"
                         :orang-terbuka="orangTerbuka"
@@ -89,7 +111,14 @@
                             </button>
 
                             <div class="wcm-col__body">
-                                <div v-if="!perKolom(k.urutan).length" class="wcm-col__kosong">—</div>
+                                <!-- Kolom kosong itu keadaan NORMAL di papan kanban
+                                     (belum ada yang sampai tahap ini), jadi cukup
+                                     penanda samar — bukan panel penuh yang berteriak
+                                     seolah ada yang salah. Tapi tetap berkata sesuatu;
+                                     tanda "—" saja tidak terbaca sebagai apa pun. -->
+                                <div v-if="!perKolom(k.urutan).length" class="wcm-col__kosong">
+                                    <i class="bi bi-dash-circle"></i> Belum ada
+                                </div>
                                 <button v-for="o in perKolom(k.urutan)" :key="o.id" type="button" class="wcm-kartu"
                                     :class="[{ 'is-alert': o.siapDiputus, 'is-open': orangTerbuka === o.id }, 'st-' + o.status.toLowerCase()]"
                                     @click="bukaOrang(o.id)">
@@ -140,6 +169,7 @@ import StageDetailPanel from './StageDetailPanel.vue'
 import StagePersonDrawer from './StagePersonDrawer.vue'
 import FilterPapan from './FilterPapan.vue'
 import FullProcessGrid from './FullProcessGrid.vue'
+import KeadaanPanel from './KeadaanPanel.vue'
 import { initials, statusBadge } from '../careerAdmin'
 import { formatAging, toneClass } from './monitoringHelpers'
 import { useLapisEsc } from '../../../../composables/useLapisEsc'
@@ -229,6 +259,9 @@ function resetFilter() {
 const kuotaPct = computed(() =>
     program.value.kuota > 0 ? Math.min(100, Math.round((program.value.terisi / program.value.kuota) * 100)) : 0,
 )
+
+// Strip kursi per posisi hanya berguna bila posisinya memang lebih dari satu.
+const posisiBanyak = computed(() => (program.value.posisi?.length ?? 0) > 1)
 
 // Nama untuk breadcrumb lapis 3 — diambil dari payload papan (tanpa fetch lagi).
 const namaOrangTerbuka = computed(
@@ -372,13 +405,12 @@ defineExpose({ refresh: fetchPapan })
     padding: 18px 24px;
     background: #ffffff;
     border-bottom: 1px solid #f1f5f9;
-    flex-wrap: wrap;
 }
-.wcm-sl__id { display: flex; gap: 14px; align-items: center; min-width: 0; }
+.wcm-sl__id { display: flex; gap: 14px; align-items: center; min-width: 0; flex: 1 1 320px; }
 .wcm-sl__dot { flex: none; width: 14px; height: 14px; border-radius: 50%; box-shadow: 0 0 10px rgba(99, 102, 241, 0.4); }
-.wcm-sl__nama { display: flex; align-items: center; gap: 10px; font-size: 1.15rem; font-weight: 800; color: #0f172a; flex-wrap: wrap; letter-spacing: -0.01em; }
-.wcm-sl__sub { font-size: 0.76rem; color: #64748b; margin-top: 2px; font-weight: 500; }
-.wcm-sl__meta { display: flex; align-items: center; gap: 18px; }
+.wcm-sl__nama { display: flex; align-items: center; gap: 10px; font-size: 1.15rem; font-weight: 800; color: #0f172a; flex-wrap: wrap; letter-spacing: -0.01em; line-height: 1.35; }
+.wcm-sl__sub { font-size: 0.76rem; color: #64748b; margin-top: 4px; font-weight: 500; line-height: 1.4; word-break: break-word; }
+.wcm-sl__meta { display: flex; align-items: center; gap: 18px; flex-shrink: 0; }
 .wcm-sl__ring { text-align: right; }
 .wcm-sl__ringnum { display: block; font-size: 1.5rem; font-weight: 900; color: #4338ca; line-height: 1; font-variant-numeric: tabular-nums; }
 .wcm-sl__ringlbl { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; color: #64748b; letter-spacing: 0.04em; }
@@ -393,7 +425,19 @@ defineExpose({ refresh: fetchPapan })
 .wcm-ch.is-green { color: #047857; background: rgba(16, 185, 129, 0.14); }
 .wcm-ch.is-red { color: #be123c; background: rgba(244, 63, 94, 0.12); }
 .wcm-ch.is-sky { color: #0369a1; background: rgba(14, 165, 233, 0.13); }
-.wcm-sl__hint { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 0.70rem; color: #94a3b8; font-weight: 500; }
+.wcm-sl__hint { display: inline-flex; align-items: center; gap: 6px; font-size: 0.70rem; color: #94a3b8; font-weight: 500; }
+
+/* Kursi per posisi — sebaris chip yang bisa dipindai cepat. */
+.wcm-sl__posisi { display: flex; align-items: center; gap: 8px; padding: 10px 24px; background: #fbfcfe; border-bottom: 1px solid #f1f5f9; flex-wrap: wrap; }
+.wcm-sl__posisi-lbl { display: inline-flex; align-items: center; gap: 6px; font-size: 0.68rem; font-weight: 800; letter-spacing: 0.03em; text-transform: uppercase; color: #94a3b8; }
+.wcm-pos { display: inline-flex; align-items: center; gap: 5px; max-width: 22rem; overflow: hidden; white-space: nowrap; font-size: 0.71rem; font-weight: 600; color: #475569; background: #fff; border: 1px solid #e4e7f0; border-radius: 99px; padding: 4px 11px; font-variant-numeric: tabular-nums; }
+.wcm-pos b { font-weight: 800; color: #4338ca; }
+.wcm-pos em { font-style: normal; font-weight: 600; color: #94a3b8; }
+/* Penuh: tidak bisa lagi menerima: satu-satunya keadaan yang perlu menonjol. */
+.wcm-pos.is-full { color: #be123c; border-color: rgba(244, 63, 94, 0.32); background: rgba(244, 63, 94, 0.07); }
+.wcm-pos.is-full b { color: #be123c; }
+/* Posisi yang ditutup admin — diredupkan, bukan disorot. */
+.wcm-pos.is-tutup { opacity: 0.55; }
 
 /* Pengalih mode Live / Full Process — segmented control. */
 .wcm-mode { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid #e4e7f0; border-radius: 10px; background: #f6f7fb; }
@@ -402,7 +446,6 @@ defineExpose({ refresh: fetchPapan })
 .wcm-mode__b.is-active { background: #fff; color: #4338ca; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12); }
 
 .wcm-sl__body { flex: 1; overflow: hidden; padding: 16px 24px 20px; }
-.wcm-sl__load { font-size: 0.85rem; color: #64748b; display: flex; align-items: center; gap: 10px; padding: 30px 2px; font-weight: 600; }
 
 .wcm-board { display: flex; gap: 14px; height: 100%; overflow-x: auto; padding-bottom: 8px; }
 .wcm-col { flex: 0 0 270px; display: flex; flex-direction: column; background: #ffffff; border: 1px solid rgba(226, 232, 240, 0.95); border-radius: 18px; overflow: hidden; box-shadow: 0 2px 10px rgba(15, 23, 42, 0.02); }
@@ -416,7 +459,7 @@ defineExpose({ refresh: fetchPapan })
 .wcm-col__go { color: #94a3b8; font-size: 0.72rem; transition: transform 0.2s ease; }
 .wcm-col__head:hover .wcm-col__go { transform: translateX(2px); color: #6366f1; }
 .wcm-col__body { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
-.wcm-col__kosong { text-align: center; color: #cbd5e1; font-size: 1.1rem; padding: 20px 0; font-weight: 600; }
+.wcm-col__kosong { display: flex; align-items: center; justify-content: center; gap: 5px; color: #b9c2d4; font-size: 0.72rem; font-weight: 600; padding: 18px 8px; border: 1px dashed #e4e7f0; border-radius: 10px; }
 
 .wcm-kartu { display: flex; gap: 10px; align-items: flex-start; width: 100%; text-align: left; border: 1px solid #f1f5f9; border-radius: 14px; background: #ffffff; padding: 10px 12px; cursor: pointer; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); box-shadow: 0 1px 4px rgba(15, 23, 42, 0.02); }
 .wcm-kartu:hover { transform: translateY(-2px); border-color: rgba(99, 102, 241, 0.4); box-shadow: 0 8px 18px rgba(99, 102, 241, 0.1); }
@@ -432,8 +475,6 @@ defineExpose({ refresh: fetchPapan })
 .wcm-kartu__bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .wcm-kartu__age { font-size: 0.65rem; color: #94a3b8; font-weight: 700; font-variant-numeric: tabular-nums; }
 .wcm-kartu__age.is-tua { color: #e11d48; }
-.wcm-spin { animation: wcmSpin 0.9s linear infinite; display: inline-block; }
-@keyframes wcmSpin { to { transform: rotate(360deg); } }
 
 @media (max-width: 860px) {
     .wcm-sl { padding: 0; }

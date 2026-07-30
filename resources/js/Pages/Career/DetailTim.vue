@@ -248,8 +248,6 @@ const contohLowongan = [
         tempatKerja: 'On-site (WFO)',
         pengalaman: 'Min. 1 - 2 Tahun',
         skill: ['Laravel', 'MySQL', 'REST API', 'Git'],
-        kuota: 2,
-        kuotaTerisi: 0,
         pelamar: 8,
     },
     {
@@ -263,8 +261,6 @@ const contohLowongan = [
         tempatKerja: 'On-site (WFO)',
         pengalaman: 'Min. 1 Tahun',
         skill: ['Vue.js', 'Inertia', 'CSS', 'Figma'],
-        kuota: 1,
-        kuotaTerisi: 0,
         pelamar: 12,
     },
     {
@@ -278,8 +274,6 @@ const contohLowongan = [
         tempatKerja: 'On-site (WFO)',
         pengalaman: 'Fresh Graduate',
         skill: ['Troubleshooting', 'Jaringan', 'Hardware'],
-        kuota: 2,
-        kuotaTerisi: 2,
         pelamar: 21,
     },
 ];

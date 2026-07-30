@@ -15,7 +15,6 @@
                     v-for="(mt, i) in tampil"
                     :key="mt.id"
                     class="mtl__card wc-reveal"
-                    :class="{ 'is-full': isFull(mt) }"
                     :style="{ '--d': i * 80 + 'ms' }"
                     :href="mtUrl(mt.id)"
                 >
@@ -28,27 +27,31 @@
                     <div class="mtl__tag">{{ mt.tagline || 'Program Management Trainee EVO Group.' }}</div>
                     <p class="mtl__desc">{{ mt.ringkasan }}</p>
 
-                    <div class="mtl__meta">
-                        <span><i class="bi bi-people"></i> {{ mt.tipeKegiatan }}</span>
-                        <span><i class="bi bi-geo-alt"></i> {{ mt.penempatan }}</span>
-                        <span><i class="bi bi-clock-history"></i> {{ mt.durasi }}</span>
-                        <span><i class="bi bi-grid-1x2"></i> {{ mt.kuota }} kursi</span>
+                    <!-- Isi program: posisi apa saja yang dibuka di dalamnya. -->
+                    <div v-if="(mt.posisi || []).length" class="mtl__posisi">
+                        <span class="mtl__posisi-lbl"><i class="bi bi-diagram-3"></i> {{ mt.jumlahPosisi }} posisi</span>
+                        <span v-for="p in mt.posisi.slice(0, 3)" :key="p.id" class="mtl__chip">{{ p.posisi }}</span>
+                        <span v-if="mt.jumlahPosisi > 3" class="mtl__chip mtl__chip--more">+{{ mt.jumlahPosisi - 3 }}</span>
                     </div>
 
-                    <div class="mtl__quota">
-                        <div class="mtl__quota-head">
-                            <span>Kuota terisi</span>
-                            <b :class="{ full: isFull(mt) }">{{ mt.kuotaTerisi }} / {{ mt.kuota }}</b>
-                        </div>
-                        <div class="mtl__bar"><span :class="{ full: isFull(mt) }" :style="{ width: kuotaPct(mt) + '%' }"></span></div>
+                    <!-- Hanya fakta terdata — lihat catatan di SemuaLowongan.vue. -->
+                    <div class="mtl__meta">
+                        <span v-if="mt.penempatan"><i class="bi bi-geo-alt"></i> {{ mt.penempatan }}</span>
+                        <span><i class="bi bi-person-lines-fill"></i> {{ mt.pelamar }} pelamar</span>
                     </div>
+
+                    <!-- Bar "kuota terisi" DIHAPUS bersama datanya — sama seperti
+                         di /karir/lowongan; jumlah kursi tidak lagi dipublikasi. -->
 
                     <div class="mtl__foot">
-                        <span class="mtl__deadline" :class="{ soon: !isFull(mt) && daysLeft(mt.tanggalTutup) <= 7 }">
-                            <i class="bi" :class="isFull(mt) ? 'bi-lock-fill' : 'bi-calendar-event'"></i>
-                            {{ isFull(mt) ? 'Pendaftaran ditutup' : 'Ditutup ' + formatDate(mt.tanggalTutup) }}
+                        <span class="mtl__deadline" :class="{ soon: daysLeft(mt.tanggalTutup) <= 7 }">
+                            <i class="bi bi-calendar-event"></i>
+                            Ditutup {{ formatDate(mt.tanggalTutup) }}
                         </span>
-                        <span class="mtl__cta">Pelajari <i class="bi bi-arrow-right"></i></span>
+                        <span class="mtl__cta">
+                            {{ mt.jumlahPosisi ? `Lihat ${mt.jumlahPosisi} posisi` : 'Pelajari' }}
+                            <i class="bi bi-arrow-right"></i>
+                        </span>
                     </div>
                 </Link>
             </div>
@@ -67,7 +70,7 @@
 <script setup>
 import { computed } from 'vue';
 import { Link } from '@inertiajs/vue3';
-import { daysLeft, formatDate, isFull, kuotaPct, mtUrl, statusClass, statusLabel } from '../careerData';
+import { daysLeft, formatDate, mtUrl, statusClass, statusLabel } from '../careerData';
 
 const props = defineProps({
     programMt: { type: Array, default: () => [] },
@@ -167,9 +170,6 @@ const tampil = computed(() => props.programMt.slice(0, MAKS));
     border-color: rgba(139, 92, 246, 0.4);
     box-shadow: 0 20px 44px rgba(124, 110, 222, 0.18);
 }
-.mtl__card.is-full {
-    opacity: 0.9;
-}
 .mtl__cardtop {
     display: flex;
     align-items: center;
@@ -229,6 +229,42 @@ const tampil = computed(() => props.programMt.slice(0, MAKS));
     -webkit-box-orient: vertical;
     overflow: hidden;
 }
+.mtl__posisi {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-top: 12px;
+}
+.mtl__posisi-lbl {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.67rem;
+    font-weight: 800;
+    color: #6d28d9;
+}
+.mtl__posisi-lbl i {
+    font-size: 0.76rem;
+}
+.mtl__chip {
+    max-width: 13rem;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: #4f46e5;
+    background: rgba(99, 102, 241, 0.08);
+    border: 1px solid rgba(99, 102, 241, 0.16);
+    border-radius: 7px;
+    padding: 3px 8px;
+}
+.mtl__chip--more {
+    color: #64748b;
+    background: #f1f5f9;
+    border-color: #e2e8f0;
+}
 .mtl__meta {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -245,41 +281,6 @@ const tampil = computed(() => props.programMt.slice(0, MAKS));
 .mtl__meta i {
     color: #8b5cf6;
     font-size: 0.82rem;
-}
-.mtl__quota {
-    margin-top: 14px;
-}
-.mtl__quota-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    font-size: 0.66rem;
-    color: #94a3b8;
-    margin-bottom: 5px;
-}
-.mtl__quota-head b {
-    font-family: 'JetBrains Mono', ui-monospace, monospace;
-    font-weight: 700;
-    color: #6366f1;
-}
-.mtl__quota-head b.full {
-    color: #e11d48;
-}
-.mtl__bar {
-    height: 6px;
-    border-radius: 99px;
-    background: #eef0f7;
-    overflow: hidden;
-}
-.mtl__bar span {
-    display: block;
-    height: 100%;
-    border-radius: 99px;
-    background: linear-gradient(90deg, #8b5cf6, #6366f1);
-    transition: width 0.5s ease;
-}
-.mtl__bar span.full {
-    background: linear-gradient(90deg, #fb7185, #e11d48);
 }
 .mtl__foot {
     display: flex;
