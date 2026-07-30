@@ -9,10 +9,11 @@ use Illuminate\Support\Facades\Route;
 | - Data & CRUD (JSON, ResponseHelper) di prefix api/v1 — BUKAN halaman Inertia.
 |
 | Permission key: masterFaqPage
-| CATATAN: menu & hak akses TIDAK didaftarkan di kode. Setelah deploy, daftarkan
-| menu "Master FAQ" → /master-faq di halaman /master-menu dengan key
-| masterFaqPage, lalu beri VIEW/CREATE/EDIT/DELETE di /hak-akses. Tanpa itu
-| middleware di bawah menolak semua orang.
+| CATATAN: menu & hak akses TIDAK didaftarkan di kode. Setelah deploy, jalankan
+| database/sql/2026-07-30-master-faq-menu.sql (mendaftarkan menu "Master FAQ" →
+| /master-faq beserta VIEW/CREATE/EDIT/DELETE untuk semua admin aktif), atau
+| lakukan manual lewat /master-menu + /hak-akses. Tanpa itu middleware di bawah
+| menolak semua orang.
 */
 
 // Halaman Inertia

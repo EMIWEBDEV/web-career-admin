@@ -22,8 +22,11 @@
                 :aria-expanded="terbuka(item) ? 'true' : 'false'"
                 @click="toggle(item)"
             >
-                <span class="wc-faq__icon"><i class="bi" :class="item.ikon || 'bi-question-circle-fill'"></i></span>
-                <h3 class="wc-faq__title">{{ item.pertanyaan }}</h3>
+                <span class="wc-faq__icon"><i class="bi" :class="item.ikon || 'bi-patch-question-fill'"></i></span>
+                <div class="wc-faq__title-wrap">
+                    <h3 class="wc-faq__title">{{ item.pertanyaan }}</h3>
+                    <span v-if="item.kategoriNama" class="wc-faq__cat-badge">{{ item.kategoriNama }}</span>
+                </div>
                 <span class="wc-faq__toggle" :class="{ 'is-open': terbuka(item) }">
                     <i class="bi bi-chevron-down"></i>
                 </span>
@@ -153,24 +156,40 @@ function leave(el) {
     gap: 1rem;
 }
 .wc-faq__item {
+    position: relative;
     /* Deep link menggulir ke elemen ini — sisakan ruang untuk navbar sticky. */
     scroll-margin-top: 96px;
-    background: rgba(255, 255, 255, 0.88);
-    border: 1px solid rgba(226, 232, 240, 0.9);
+    background: #ffffff;
+    border: 1.5px solid rgba(226, 232, 240, 0.95);
     border-radius: 1.25rem;
     padding: 1.25rem 1.5rem;
-    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
-    transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease, border-color 0.25s ease, background 0.25s ease;
+    box-shadow: 0 4px 18px rgba(15, 23, 42, 0.03);
+    overflow: hidden;
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.wc-faq__item::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 4px;
+    height: 100%;
+    background: linear-gradient(180deg, #6366f1 0%, #a855f7 100%);
+    opacity: 0;
+    transition: opacity 0.25s ease;
 }
 .wc-faq__item:hover {
-    border-color: rgba(139, 92, 246, 0.4);
+    border-color: rgba(99, 102, 241, 0.35);
     transform: translateY(-2px);
-    box-shadow: 0 14px 30px rgba(99, 102, 241, 0.12);
+    box-shadow: 0 12px 28px rgba(99, 102, 241, 0.1);
 }
 .wc-faq__item.is-open {
     background: #ffffff;
-    border-color: rgba(139, 92, 246, 0.6);
-    box-shadow: 0 18px 40px rgba(99, 102, 241, 0.16), 0 0 0 1px rgba(139, 92, 246, 0.3);
+    border-color: rgba(99, 102, 241, 0.5);
+    box-shadow: 0 16px 36px rgba(99, 102, 241, 0.14);
+}
+.wc-faq__item.is-open::before {
+    opacity: 1;
 }
 .wc-faq__question {
     display: flex;
@@ -193,27 +212,45 @@ function leave(el) {
 .wc-faq__icon {
     display: grid;
     place-items: center;
-    width: 2.5rem;
-    height: 2.5rem;
+    width: 2.6rem;
+    height: 2.6rem;
     border-radius: 0.85rem;
-    background: rgba(99, 102, 241, 0.1);
+    background: rgba(99, 102, 241, 0.08);
     color: #6366f1;
-    font-size: 1.1rem;
+    font-size: 1.15rem;
     flex: none;
-    transition: background 0.25s ease, color 0.25s ease, transform 0.25s ease;
+    transition: all 0.25s ease;
 }
 .wc-faq__item.is-open .wc-faq__icon {
-    background: linear-gradient(135deg, #8b5cf6, #6366f1);
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
     color: #ffffff;
     transform: scale(1.05);
+    box-shadow: 0 6px 16px rgba(99, 102, 241, 0.25);
+}
+.wc-faq__title-wrap {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    min-width: 0;
 }
 .wc-faq__title {
-    flex: 1;
     margin: 0;
     font-size: 1.05rem;
     font-weight: 800;
     color: #1e1b4b;
     letter-spacing: -0.01em;
+    line-height: 1.4;
+}
+.wc-faq__cat-badge {
+    display: inline-flex;
+    align-self: flex-start;
+    padding: 0.15rem 0.6rem;
+    border-radius: 999px;
+    background: rgba(99, 102, 241, 0.08);
+    color: #4f46e5;
+    font-size: 0.72rem;
+    font-weight: 700;
 }
 .wc-faq__toggle {
     display: grid;
@@ -225,7 +262,7 @@ function leave(el) {
     color: #6366f1;
     font-size: 1.1rem;
     flex: none;
-    transition: background 0.3s ease, color 0.3s ease, transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .wc-faq__toggle i {
     transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
@@ -233,6 +270,7 @@ function leave(el) {
 .wc-faq__toggle.is-open {
     background: #6366f1;
     color: #ffffff;
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
 }
 .wc-faq__toggle.is-open i {
     transform: rotate(180deg);
@@ -245,59 +283,68 @@ function leave(el) {
 .wc-faq__answer {
     margin-top: 1rem;
     padding-top: 1rem;
-    padding-left: 3.5rem;
-    border-top: 1px dashed rgba(226, 232, 240, 0.9);
+    padding-left: 3.6rem;
+    border-top: 1px dashed rgba(226, 232, 240, 0.95);
 }
 .wc-faq__ringkas {
     margin: 0;
-    color: #475569;
-    font-size: 0.94rem;
+    color: #334155;
+    font-size: 0.95rem;
     line-height: 1.7;
     font-weight: 500;
 }
 .wc-faq__detail {
-    margin-top: 0.9rem;
-    color: #475569;
+    margin-top: 1rem;
+    padding: 1.1rem 1.25rem;
+    border-radius: 0.9rem;
+    background: #f8fafc;
+    border: 1px solid #f1f5f9;
+    color: #334155;
     font-size: 0.94rem;
     line-height: 1.75;
 }
 /* :deep — isi dari v-html tidak terjangkau scoped style biasa. */
 .wc-faq__detail :deep(p) {
-    margin: 0 0 0.75rem;
+    margin: 0 0 0.85rem;
 }
 .wc-faq__detail :deep(p:last-child) {
     margin-bottom: 0;
 }
 .wc-faq__detail :deep(h3),
 .wc-faq__detail :deep(h4) {
-    margin: 1.1rem 0 0.5rem;
-    font-size: 1rem;
+    margin: 1.2rem 0 0.6rem;
+    font-size: 1.02rem;
     font-weight: 800;
     color: #1e1b4b;
 }
 .wc-faq__detail :deep(ul),
 .wc-faq__detail :deep(ol) {
-    margin: 0 0 0.75rem;
-    padding-left: 1.35rem;
+    margin: 0 0 0.85rem;
+    padding-left: 1.4rem;
 }
 .wc-faq__detail :deep(li) {
-    margin-bottom: 0.35rem;
+    margin-bottom: 0.4rem;
 }
 .wc-faq__detail :deep(a) {
-    color: #6366f1;
+    color: #4f46e5;
     font-weight: 700;
     text-decoration: underline;
-    text-underline-offset: 2px;
+    text-underline-offset: 3px;
+    transition: color 0.15s ease;
+}
+.wc-faq__detail :deep(a:hover) {
+    color: #7c3aed;
 }
 .wc-faq__detail :deep(blockquote) {
-    margin: 0 0 0.75rem;
-    padding: 0.65rem 1rem;
-    border-left: 3px solid rgba(139, 92, 246, 0.5);
+    margin: 0 0 0.85rem;
+    padding: 0.75rem 1.1rem;
+    border-left: 4px solid #6366f1;
     background: rgba(99, 102, 241, 0.06);
-    border-radius: 0 0.6rem 0.6rem 0;
+    border-radius: 0 0.75rem 0.75rem 0;
 }
 .wc-faq__detail :deep(strong) {
     color: #1e1b4b;
+    font-weight: 700;
 }
 @media (max-width: 640px) {
     .wc-faq__answer {
