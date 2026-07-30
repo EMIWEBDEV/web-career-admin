@@ -638,8 +638,11 @@ export default {
             page: this.programAwal.page || 1,
             totalPage: this.programAwal.totalPage || 1,
             total: this.programAwal.total || 0,
-            q: '',
-            jenis: '',
+            // Disemai dari URL supaya tautan dari Dashboard ("Butuh Aksi")
+            // mendarat langsung pada program yang dimaksud, bukan di daftar
+            // penuh. Keduanya param yang memang sudah diterima worklistProgram.
+            q: new URLSearchParams(window.location.search).get('q') || '',
+            jenis: new URLSearchParams(window.location.search).get('jenis') || '',
             loadingProg: false,
             selectedId: null,
             detail: { program: null, posisi: [], kolom: [], pelamar: [] },
@@ -707,7 +710,16 @@ export default {
             return this.detail.kolom || [];
         },
     },
-    mounted() {
+    async mounted() {
+        // programAwal dari server dihitung TANPA saringan, jadi kalau URL
+        // membawa q/jenis daftarnya diambil ulang dulu — kalau tidak, yang
+        // terpilih otomatis adalah program pertama dari daftar penuh, bukan
+        // yang ditunjuk tautan Dashboard. Menunggu (await) sebelum memilih,
+        // karena muatProgram() sendiri tidak memilih apa pun.
+        if (this.q || this.jenis) {
+            this.page = 1;
+            await this.muatProgram();
+        }
         if (this.programs.length) this.pilihProgram(this.programs[0]);
     },
     methods: {

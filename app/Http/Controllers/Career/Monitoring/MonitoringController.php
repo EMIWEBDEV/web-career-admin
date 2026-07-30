@@ -6,6 +6,7 @@ use App\Helpers\ResponseHelper;
 use App\Http\Controllers\Career\Lamaran\LamaranController;
 use App\Http\Controllers\Controller;
 use App\Support\Career\GcsBerkas;
+use App\Support\Career\MetrikRekrutmen;
 use App\Support\Career\PipelineProgress;
 use App\Support\CareerShell;
 use Carbon\Carbon;
@@ -96,7 +97,7 @@ class MonitoringController extends Controller
                 $penempatan = collect();
                 if ($programIds) {
                     $in = implode(',', $programIds);
-                    $penempatan = DB::table(DB::raw('(' . self::sqlUrutanDisplay("l.Program_Id IN ({$in})") . ') d'))
+                    $penempatan = DB::table(DB::raw('(' . MetrikRekrutmen::sqlUrutanDisplay("l.Program_Id IN ({$in})") . ') d'))
                         ->groupBy('d.Program_Id', 'd.UrutanDisplay')
                         ->select('d.Program_Id', 'd.UrutanDisplay',
                             DB::raw("SUM(CASE WHEN d.Status = 'BERJALAN' THEN 1 ELSE 0 END) as aktif"),
@@ -132,36 +133,15 @@ class MonitoringController extends Controller
                         ->groupBy('Program_Id')->select('Program_Id', DB::raw('COUNT(*) as J'))->pluck('J', 'Program_Id')
                     : collect();
 
-                $macetHari = (int) config('career_monitoring.macet_hari');
-                $sorotHari = (int) config('career_monitoring.siap_diputus_sorot_hari');
+                $macetHari = MetrikRekrutmen::macetHari();
+                $sorotHari = MetrikRekrutmen::sorotHari();
                 $maks = (int) config('career_monitoring.perhatian_maks');
-                $agingSql = "CASE WHEN lt.Siap_Diputus = 'Y'
-                                  THEN DATEDIFF(day, COALESCE(lt.Rekomendasi_At, lt.Updated_At, lt.Created_At), GETDATE())
-                                  ELSE DATEDIFF(day, COALESCE(lt.Waktu_Mulai, lt.Created_At), GETDATE()) END";
+                $agingSql = MetrikRekrutmen::sqlAging('lt');
 
                 // 6) SKOR KESEHATAN per program — bahan ring di kartu Overview.
                 //    Satu query agregat untuk semua program: berapa yang tersendat
                 //    (macet) & berapa keputusan menggantung terlalu lama.
-                $sehatPer = $programIds
-                    ? DB::table('N_WEB_CAREERS_Lamaran_Tahap as lt')
-                        ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'lt.Lamaran_Id')
-                        ->where('lt.Status', 'BERJALAN')->where('l.Status', 'BERJALAN')
-                        ->whereIn('l.Program_Id', $programIds)
-                        ->groupBy('l.Program_Id')
-                        ->selectRaw("l.Program_Id,
-                                     COUNT(*) as aktif,
-                                     SUM(CASE WHEN lt.Siap_Diputus <> 'Y'
-                                               AND DATEDIFF(day, COALESCE(lt.Waktu_Mulai, lt.Created_At), GETDATE()) > {$macetHari}
-                                              THEN 1 ELSE 0 END) as macet,
-                                     SUM(CASE WHEN lt.Siap_Diputus = 'Y'
-                                               AND DATEDIFF(day, COALESCE(lt.Rekomendasi_At, lt.Updated_At, lt.Created_At), GETDATE()) > {$sorotHari}
-                                              THEN 1 ELSE 0 END) as siapTua,
-                                     SUM(CASE WHEN lt.Siap_Diputus = 'Y' THEN 1 ELSE 0 END) as siap,
-                                     SUM(CASE WHEN lt.Provider = 'THIRD_PARTY' AND lt.Siap_Diputus = 'N' THEN 1 ELSE 0 END) as nungguTes,
-                                     MAX({$agingSql}) as maxAging")
-                        ->get()
-                        ->keyBy('Program_Id')
-                    : collect();
+                $sehatPer = MetrikRekrutmen::agregatSehat($programIds);
 
                 // 7) PERLU PERHATIAN: Siap Diputus yang menggantung + tahap macet.
                 $perhatian = $programIds
@@ -241,7 +221,7 @@ class MonitoringController extends Controller
                     'terisi' => (int) ($data['terisiPer'][$p->Id_Program] ?? 0),
                     'tahap' => $tahap,
                     'totalPelamar' => $total,
-                    'sehat' => self::skorSehat($data['sehatPer']->get($p->Id_Program), $total),
+                    'sehat' => MetrikRekrutmen::skorSehat($data['sehatPer']->get($p->Id_Program), $total),
                 ];
             })->values();
 
@@ -506,7 +486,7 @@ class MonitoringController extends Controller
             }
 
             $macetHari = (int) config('career_monitoring.macet_hari');
-            $agingSql = "DATEDIFF(day, COALESCE(lt.Waktu_Mulai, lt.Created_At), GETDATE())";
+            $agingSql = MetrikRekrutmen::sqlUmurTahap('lt');
 
             $data = DB::transaction(function () use ($programId, $urutan, $agingSql, $macetHari) {
                 // 1) Statistik tahap (semua lamaran yang PERNAH menyentuh tahap ini).
@@ -1210,27 +1190,12 @@ class MonitoringController extends Controller
         }, $kata));
     }
 
-    /**
-     * Derived table: satu baris per lamaran + UrutanDisplay (tahap yang
-     * mewakili) — mirror SQL dari PipelineProgress::tahapKini():
-     *  GUGUR/TALENT_POOL → tahap Hasil ybs (fallback tahap terakhir);
-     *  LULUS → tahap terakhir; lainnya → tahap BERJALAN (fallback pertama).
-     * LEFT JOIN + COALESCE(...,1): lamaran tanpa tahap masuk kolom 1.
-     */
-    private static function sqlUrutanDisplay(string $whereLamaran): string
-    {
-        return "SELECT l.Id_Lamaran, l.Program_Id, l.Status,
-                       COALESCE(CASE l.Status
-                           WHEN 'GUGUR'       THEN COALESCE(MIN(CASE WHEN lt.Hasil = 'GUGUR' THEN lt.Urutan END), MAX(lt.Urutan))
-                           WHEN 'TALENT_POOL' THEN COALESCE(MIN(CASE WHEN lt.Hasil = 'TALENT_POOL' THEN lt.Urutan END), MAX(lt.Urutan))
-                           WHEN 'LULUS'       THEN MAX(lt.Urutan)
-                           ELSE COALESCE(MIN(CASE WHEN lt.Status = 'BERJALAN' THEN lt.Urutan END), MIN(lt.Urutan))
-                       END, 1) AS UrutanDisplay
-                FROM N_WEB_CAREERS_Lamaran l
-                LEFT JOIN N_WEB_CAREERS_Lamaran_Tahap lt ON lt.Lamaran_Id = l.Id_Lamaran
-                WHERE {$whereLamaran}
-                GROUP BY l.Id_Lamaran, l.Program_Id, l.Status";
-    }
+    // sqlUrutanDisplay() DIPINDAH ke App\Support\Career\MetrikRekrutmen.
+    // Alasannya: Dashboard butuh hitungan penempatan yang SAMA PERSIS dengan
+    // funnel di sini. Selama ekspresinya privat di kelas ini, satu-satunya cara
+    // memakainya adalah menyalin — dan dua salinan pasti berbeda begitu salah
+    // satunya diperbaiki. Aturan badge/penempatan tetap satu: PipelineProgress
+    // di sisi PHP, MetrikRekrutmen::sqlUrutanDisplay() di sisi SQL.
 
     /**
      * FILTER PENDIDIKAN — kelompok yang SELALU ditawarkan bila datanya ada.
@@ -1426,49 +1391,9 @@ class MonitoringController extends Controller
         return array_merge($urut, $lain);
     }
 
-    /**
-     * SKOR KESEHATAN program (0-100) — bahan ring di kartu program.
-     *
-     * Turun dari 100 sebanding porsi proses yang tersendat:
-     *  - 80 poin dibebankan ke rasio keputusan MENGGANTUNG (Siap_Diputus
-     *    melewati ambang) — mesin sudah mengumpulkan semua hasil, jadi ini
-     *    murni antrean keputusan internal: paling layak disorot ke atasan;
-     *  - 60 poin ke rasio tahap MACET (berjalan melewati ambang) — sebagian
-     *    sebabnya di luar kendali (kandidat/penyedia tes belum menuntaskan).
-     *
-     * Tanpa proses berjalan skor null (netral, bukan 0), dengan DUA label
-     * berbeda — keduanya sering tertukar dan menyesatkan kalau disamakan:
-     *  - KOSONG  : belum ada pelamar sama sekali;
-     *  - SELESAI : pernah ada pelamar, tapi semuanya sudah tuntas
-     *              (diterima/gugur/talent pool) sehingga tak ada lagi
-     *              yang berproses.
-     */
-    private static function skorSehat(?object $agg, int $totalPelamar = 0): array
-    {
-        $aktif = (int) ($agg->aktif ?? 0);
-        $macet = (int) ($agg->macet ?? 0);
-        $siapTua = (int) ($agg->siapTua ?? 0);
-
-        if ($aktif < 1) {
-            return ['skor' => null, 'label' => $totalPelamar > 0 ? 'SELESAI' : 'KOSONG',
-                'aktif' => 0, 'macet' => 0, 'siapMenggantung' => 0,
-                'siapDiputus' => (int) ($agg->siap ?? 0),
-                'menungguTes' => (int) ($agg->nungguTes ?? 0), 'maxAging' => null];
-        }
-
-        $skor = (int) max(5, round(100 - 60 * ($macet / $aktif) - 80 * ($siapTua / $aktif)));
-
-        return [
-            'skor' => $skor,
-            'label' => $skor >= 80 ? 'SEHAT' : ($skor >= 50 ? 'PERLU_AKSI' : 'KRITIS'),
-            'aktif' => $aktif,
-            'macet' => $macet,
-            'siapMenggantung' => $siapTua,
-            'siapDiputus' => (int) ($agg->siap ?? 0),
-            'menungguTes' => (int) ($agg->nungguTes ?? 0),
-            'maxAging' => $agg->maxAging !== null ? max(0, (int) $agg->maxAging) : null,
-        ];
-    }
+    // skorSehat() + agregatnya DIPINDAH ke App\Support\Career\MetrikRekrutmen
+    // (bersama sqlUrutanDisplay & sqlAging) supaya Dashboard menilai kesehatan
+    // program dengan rumus yang sama, bukan rumus keduanya.
 
     /**
      * JEJAK SATU PELAMAR di seluruh tahap alur — bahan mode "Full Process",
