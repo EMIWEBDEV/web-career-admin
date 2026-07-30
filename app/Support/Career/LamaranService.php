@@ -170,9 +170,17 @@ class LamaranService
             return $id;
         });
 
-        // ── Snapshot jawaban pendaftaran ke tahap 1 + keputusan OTOMATIS ──
-        // Registrasi = gerbang otomatis: syarat terpenuhi → langsung maju ke tahap
-        // berikutnya (mis. Psikotes); syarat wajib gagal → GUGUR. Tanpa admin.
+        // ── Snapshot jawaban pendaftaran ke tahap 1 ──
+        //
+        // Syarat AUTO-GUGUR selalu dinilai server saat jawaban masuk (mis. IPK
+        // minimal): tidak memenuhi → GUGUR di sini juga.
+        //
+        // Yang TIDAK boleh otomatis adalah MELOLOSKAN. Dulu tahap 1 selalu
+        // diloloskan begitu formulir terkirim, mengabaikan mode keputusan yang
+        // diatur di Master Alur — akibatnya tahap yang jelas-jelas disetel
+        // "Manual — admin memutuskan" tetap dilewati sendiri oleh sistem, dan
+        // kandidat sudah berada di tahap berikutnya sebelum admin sempat melihat.
+        // Sekarang yang menentukan adalah Keputusan_Mode tahap itu sendiri.
         if ($pakaiSyaratServer) {
             $stage1 = DB::table('N_WEB_CAREERS_Lamaran_Tahap')
                 ->where('Lamaran_Id', $lamaranId)
@@ -182,16 +190,27 @@ class LamaranService
             if ($stage1 && $stage1->Status === 'BERJALAN') {
                 $hasilIsi = $this->simpanPengisian($stage1->Id_Lamaran_Tahap, $userId, $jawaban);
 
-                // Bila TIDAK auto-gugur (rekomendasi LOLOS) → loloskan otomatis & maju.
-                $stage1Kini = DB::table('N_WEB_CAREERS_Lamaran_Tahap')->where('Id_Lamaran_Tahap', $stage1->Id_Lamaran_Tahap)->first();
-                if ($stage1Kini && $stage1Kini->Status === 'BERJALAN') {
+                $stage1Kini = DB::table('N_WEB_CAREERS_Lamaran_Tahap')
+                    ->where('Id_Lamaran_Tahap', $stage1->Id_Lamaran_Tahap)->first();
+
+                // Sudah gugur otomatis oleh syarat wajib → selesai di sini.
+                if (! $stage1Kini || $stage1Kini->Status !== 'BERJALAN') {
+                    return ['ok' => true, 'pesan' => $hasilIsi['pesan'] ?? 'Lamaran tercatat (tidak lolos).', 'lamaranId' => $lamaranId];
+                }
+
+                // Hanya tahap ber-mode SYSTEM yang boleh maju tanpa admin.
+                if (($stage1Kini->Keputusan_Mode ?? 'MANUAL') === 'SYSTEM') {
                     $this->tetapkanTahap($stage1->Id_Lamaran_Tahap, 'LULUS', 'Lolos seleksi administrasi otomatis — seluruh syarat terpenuhi.', null, now());
 
                     return ['ok' => true, 'pesan' => 'Lamaran terkirim. Anda lolos seleksi administrasi dan lanjut ke tahap berikutnya.', 'lamaranId' => $lamaranId];
                 }
 
-                // Auto-gugur di tahap administrasi.
-                return ['ok' => true, 'pesan' => $hasilIsi['pesan'] ?? 'Lamaran tercatat (tidak lolos).', 'lamaranId' => $lamaranId];
+                // MANUAL → tetap di tahap 1, menunggu keputusan admin.
+                return [
+                    'ok' => true,
+                    'pesan' => 'Lamaran terkirim. Berkas Anda sedang diperiksa tim rekrutmen — hasilnya akan diumumkan.',
+                    'lamaranId' => $lamaranId,
+                ];
             }
         }
 
@@ -322,6 +341,31 @@ class LamaranService
         }
         if ($tahap->Status === 'SELESAI') {
             return ['ok' => false, 'pesan' => 'Tahap ini sudah diputus.'];
+        }
+
+        // ── GERBANG MODE KEPUTUSAN (dari Master Alur) ────────────────────────
+        // Tahap ber-mode OTOMATIS diputus mesin begitu aktivitasnya selesai.
+        // Kalau admin masih bisa mengetuk palu di sini, mode otomatis yang
+        // disetel di Master Alur jadi tak berarti dan hasilnya bisa berbeda
+        // dari yang dihitung mesin. Diblokir di server, bukan hanya di layar.
+        if (strtoupper((string) ($tahap->Keputusan_Mode ?? 'MANUAL')) === 'SYSTEM') {
+            return ['ok' => false, 'pesan' => 'Tahap ini disetel OTOMATIS di Master Alur — keputusannya ditentukan sistem setelah seluruh aktivitas selesai, bukan oleh admin.'];
+        }
+
+        // ── GERBANG HASIL AKTIVITAS ──────────────────────────────────────────
+        // Aktivitas penentu yang berupa TES (punya jenis tes / dari pihak ke-3)
+        // wajib punya hasil sebelum tahapnya diputus. Meloloskan tes yang
+        // nilainya belum tercatat berarti memutus tanpa dasar.
+        $belum = DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')
+            ->where('Lamaran_Tahap_Id', $lamaranTahapId)
+            ->where('Peran', 'PENENTU')
+            ->where('Flag_Selesai', '<>', 'Y')
+            ->where(fn ($q) => $q->whereNotNull('Jenis_Tes_Kode')->orWhere('Provider', 'THIRD_PARTY'))
+            ->get(['Label']);
+        if ($belum->isNotEmpty() && ($tahap->Siap_Diputus ?? 'N') !== 'Y') {
+            $nama = $belum->pluck('Label')->filter()->implode(', ');
+
+            return ['ok' => false, 'pesan' => 'Hasil aktivitas berikut belum dicatat: ' . ($nama ?: $belum->count() . ' aktivitas') . '. Catat hasilnya dulu sebelum memutuskan.'];
         }
 
         // GATE WAJIB UPLOAD: tahap dgn "upload hasil WAJIB" (mis. MCU) tak bisa

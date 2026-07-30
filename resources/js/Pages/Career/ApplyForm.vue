@@ -138,17 +138,38 @@
                             <template v-for="f in cur.fields" :key="f.key">
                                 <div v-if="showField(f)" class="wca-aform__fld" :class="{ full: f.full }">
                                     <label class="wca-field-lbl">{{ f.label }} <span v-if="f.required" class="wca-req">*</span></label>
-                                    <el-select v-if="f.tipe === 'select'" v-model="form[f.key]" :placeholder="'Pilih ' + f.label" filterable clearable style="width:100%">
-                                        <el-option v-for="o in f.opsi" :key="o" :label="o" :value="o" />
+                                    <el-select v-if="f.tipe === 'select'"
+                                        :model-value="form[f.key]"
+                                        :placeholder="selectPh(f)"
+                                        filterable clearable
+                                        :remote="!!f.cari_async"
+                                        :remote-method="f.cari_async ? (q) => loadApiOptions(f, q) : undefined"
+                                        :allow-create="!!f.cari_async || !!f.boleh_ketik"
+                                        :default-first-option="!!f.cari_async || !!f.boleh_ketik"
+                                        :reserve-keyword="false"
+                                        :loading="!!apiLoading[f.key]"
+                                        :disabled="!fieldEnabled(f)"
+                                        style="width:100%"
+                                        @update:model-value="(v) => onChangeField(f, v)"
+                                        @visible-change="(vis) => onSelectOpen(f, vis)">
+                                        <template v-if="f.sumber_api">
+                                            <el-option v-for="o in (apiOpts[f.key] || [])" :key="o.value" :label="o.label" :value="o.value">
+                                                <span style="display:inline-flex;align-items:center;gap:9px;min-width:0">
+                                                    <img v-if="o.flag" :src="o.flag" width="22" height="16" style="border-radius:2px;flex:none;object-fit:cover;box-shadow:0 0 0 1px rgba(0,0,0,.08)" alt="" loading="lazy" />
+                                                    <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ o.label }}</span>
+                                                </span>
+                                            </el-option>
+                                        </template>
+                                        <template v-else>
+                                            <el-option v-for="o in f.opsi" :key="o" :label="o" :value="o" />
+                                        </template>
                                     </el-select>
-                                    <el-date-picker v-else-if="f.tipe === 'date'" v-model="form[f.key]" type="date" value-format="YYYY-MM-DD" placeholder="Pilih tanggal" style="width:100%" />
-                                    <el-input v-else-if="f.tipe === 'textarea'" v-model="form[f.key]" type="textarea" :rows="2" :placeholder="f.ph" :disabled="f.readonly" />
-                                    <el-input-number v-else-if="f.tipe === 'number'" v-model="form[f.key]" :min="0" :max="f.key === 'ipk' ? 4 : undefined" :precision="f.key === 'ipk' ? 2 : 0" :step="f.key === 'ipk' ? 0.05 : 1" controls-position="right" :placeholder="f.ph" style="width:100%" />
-                                    <!-- Telepon: WAJIB berawalan 62. Ketik 08.. otomatis jadi 628.. -->
-                                    <el-input v-else-if="f.tipe === 'phone'" :model-value="form[f.key]" :placeholder="f.ph || '628xxxxxxxxx'" inputmode="numeric" maxlength="16" @update:model-value="(v) => (form[f.key] = normalTelepon(v))">
-                                        <template #prepend>+</template>
-                                    </el-input>
-                                    <el-input v-else v-model="form[f.key]" :placeholder="f.ph" :disabled="f.readonly" />
+                                    <el-date-picker v-else-if="f.tipe === 'date'" v-model="form[f.key]" type="date" value-format="YYYY-MM-DD" placeholder="Pilih tanggal" style="width:100%" :disabled="!fieldEnabled(f)" />
+                                    <el-input v-else-if="f.tipe === 'textarea'" v-model="form[f.key]" type="textarea" :rows="2" :placeholder="fieldPh(f)" :disabled="f.readonly || !fieldEnabled(f)" />
+                                    <el-input-number v-else-if="f.tipe === 'number'" v-model="form[f.key]" :min="0" :max="f.key === 'ipk' ? 4 : undefined" :precision="f.key === 'ipk' ? 2 : 0" :step="f.key === 'ipk' ? 0.05 : 1" controls-position="right" :placeholder="fieldPh(f)" :disabled="!fieldEnabled(f)" style="width:100%" />
+                                    <!-- Telepon dengan pemilih KODE NEGARA (default Indonesia +62, bisa dicari). -->
+                                    <TeleponNegara v-else-if="f.tipe === 'phone'" :model-value="form[f.key]" :disabled="!fieldEnabled(f)" :placeholder="f.ph || '81234567890'" @update:model-value="(v) => (form[f.key] = v)" />
+                                    <el-input v-else v-model="form[f.key]" :placeholder="fieldPh(f)" :disabled="f.readonly || !fieldEnabled(f)" />
                                 </div>
                             </template>
                         </div>
@@ -281,6 +302,7 @@ import axios from 'axios';
 import { Head, router } from '@inertiajs/vue3';
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import CareerLayout from './Layouts/CareerLayout.vue';
+import TeleponNegara from '@career/TeleponNegara.vue';
 import { checkKnockout, clearApps, flowFor, getApp, nextActionFor, removeApp, upsertApp } from './careerSession';
 
 defineOptions({ layout: null }); // tanpa shell HCIS — pakai CareerLayout (situs karir)
@@ -310,22 +332,27 @@ function statusLabelId(s) { return { BERJALAN: 'Sedang Diproses', GUGUR: 'Tidak 
 const hasilStatus = computed(() => {
     if (doneKo.value.length) return 'gagal';
     if (hasilServer.value && hasilServer.value.status === 'DIPROSES') return 'pending';
+    // Belum ada tahap yang diputus lolos → tahap pertamanya bermode manual dan
+    // masih menunggu admin. Jangan ucapkan selamat atas kelulusan yang belum ada.
+    if (hasilServer.value && hasilServer.value.menungguKeputusan) return 'pending';
     return 'lolos';
 });
 const progressLabel = computed(() => {
+    const total = (hasilServer.value && hasilServer.value.totalTahap) || 5;
     if (hasilStatus.value === 'lolos') {
         const t = (hasilServer.value && hasilServer.value.tahap) || 2;
-        const total = (hasilServer.value && hasilServer.value.totalTahap) || 5;
         return `Tahap ${t} dari ${total} · lanjut ke tahap berikutnya`;
     }
-    return 'Tahap 1 dari 5 · Menunggu peninjauan';
+    const t = (hasilServer.value && hasilServer.value.tahap) || 1;
+    const label = (hasilServer.value && hasilServer.value.tahapLabel) || 'peninjauan';
+    return `Tahap ${t} dari ${total} · menunggu hasil ${label}`;
 });
 function segClass(n) {
+    const t = (hasilServer.value && hasilServer.value.tahap) || (hasilStatus.value === 'lolos' ? 2 : 1);
     if (hasilStatus.value === 'lolos') {
-        const t = (hasilServer.value && hasilServer.value.tahap) || 2;
         return n < t ? 'done' : (n === t ? 'active' : 'idle');
     }
-    return n === 1 ? 'active' : 'idle';
+    return n < t ? 'done' : (n === t ? 'active' : 'idle');
 }
 const CONFETTI = [['12%', '#34d399', '2.4s', '.05s'], ['22%', '#6366f1', '2.7s', '.3s'], ['34%', '#f59e0b', '2.2s', '.15s'], ['46%', '#8b5cf6', '2.9s', '.4s'], ['56%', '#10b981', '2.5s', '.1s'], ['66%', '#6366f1', '2.6s', '.5s'], ['76%', '#f59e0b', '2.3s', '.22s'], ['86%', '#34d399', '2.8s', '.35s'], ['40%', '#a78bfa', '3s', '.6s'], ['60%', '#f59e0b', '2.4s', '.48s']];
 function confettiStyle(n) {
@@ -339,6 +366,10 @@ const uploadErr = ref('');
 
 const form = reactive({});
 const files = reactive({});
+// ── Cascade pendidikan (Jenjang → Jenis Institusi → Nama Kampus) ──
+const apiOpts = reactive({});    // key field → [{ value, label, meta? }]
+const apiLoading = reactive({});
+const PDK = { headers: { Accept: 'application/json' } };
 const checks = reactive([]);
 const fileList = computed(() => Object.values(files).filter(Boolean).map((v) => v.name));
 
@@ -395,8 +426,113 @@ function stepShort(k) {
         FACE: 'Verifikasi', REVIEW: 'Finalisasi',
     }[k] || k;
 }
-// Kondisional field (showIf) — hanya tampil bila syarat terpenuhi.
-function showField(f) { return !f.showIf || form[f.showIf.key] === f.showIf.value; }
+// showIf → SEMBUNYIKAN field (mis. semester hanya untuk Mahasiswa).
+function showField(f) {
+    return !f.showIf || form[f.showIf.key] === f.showIf.value;
+}
+// tergantung → field cascade TETAP TAMPIL tapi DISABLED (tak bisa diklik)
+// sampai induknya terisi; placeholder memberi tahu harus mengisi apa dulu.
+function fieldEnabled(f) {
+    return !(f.tergantung && !form[f.tergantung]);
+}
+function tergantungPh(f) {
+    return {
+        jenjang: 'Pilih jenjang pendidikan dulu',
+        institusi: 'Pilih jenis institusi dulu',
+        kampus: 'Pilih nama kampus / sekolah dulu',
+    }[f.tergantung] || 'Lengkapi isian sebelumnya';
+}
+function selectPh(f) {
+    if (f.tergantung && !form[f.tergantung]) return tergantungPh(f);
+    return 'Pilih ' + f.label;
+}
+function fieldPh(f) {
+    if (f.tergantung && !form[f.tergantung]) return tergantungPh(f);
+    return f.ph || '';
+}
+
+// URL bendera negara (gambar asli — emoji bendera tak tampil di Windows/Chrome).
+function benderaUrl(code) { return code ? `https://flagcdn.com/24x18/${String(code).toLowerCase()}.png` : ''; }
+
+// Muat opsi field ber-sumber_api (jenjang/jenis) atau pencarian async (kampus).
+async function loadApiOptions(f, q = '') {
+    const dep = f.tergantung ? (form[f.tergantung] || '') : '';
+    try {
+        if (f.sumber_api === 'jenjang') {
+            const r = await axios.get('/api/v1/pendidikan/jenjang', PDK);
+            apiOpts[f.key] = (r.data.result || []).map((o) => ({ value: o.kode, label: o.nama }));
+        } else if (f.sumber_api === 'jenis_institusi') {
+            if (!dep) { apiOpts[f.key] = []; return; }
+            const r = await axios.get('/api/v1/pendidikan/jenis-institusi', { ...PDK, params: { jenjang: dep } });
+            apiOpts[f.key] = (r.data.result || []).map((o) => ({ value: o.kode, label: o.nama }));
+        } else if (f.sumber_api === 'kampus') {
+            if (!dep) { apiOpts[f.key] = []; return; }
+            apiLoading[f.key] = true;
+            const r = await axios.get('/api/v1/pendidikan/kampus', { ...PDK, params: { jenis: dep, q: q || '', limit: 30 } });
+            apiOpts[f.key] = (r.data.result || []).map((o) => ({ value: o.value, label: o.label, flag: benderaUrl(o.negaraKode) }));
+        } else if (f.sumber_api === 'fakultas') {
+            // Fakultas/rumpun yang tersedia di kampus + jenjang terpilih.
+            if (!dep) { apiOpts[f.key] = []; return; }
+            apiLoading[f.key] = true;
+            const r = await axios.get('/api/v1/pendidikan/fakultas', { ...PDK, params: { kampus: dep, jenjang: form.jenjang || '' } });
+            // Cukup namanya — jumlah prodi tidak menolong pelamar memilih.
+            apiOpts[f.key] = (r.data.result || []).map((o) => ({ value: o.value, label: o.nama }));
+        } else if (f.sumber_api === 'prodi') {
+            if (!dep) { apiOpts[f.key] = []; return; }
+            apiLoading[f.key] = true;
+            const r = await axios.get('/api/v1/pendidikan/prodi', {
+                ...PDK,
+                params: {
+                    kampus: dep,
+                    jenjang: form.jenjang || '',
+                    // Dipersempit fakultas yang dipilih; kalau diketik bebas dan
+                    // tak dikenali, server mengabaikannya (semua prodi tampil).
+                    bidang: f.saring_dari ? (form[f.saring_dari] || '') : '',
+                    q: q || '',
+                    limit: 30,
+                },
+            });
+            // Nama prodi saja, tanpa gelar — yang tersimpan pun namanya.
+            apiOpts[f.key] = (r.data.result || []).map((o) => ({ value: o.value, label: o.label }));
+        }
+    } catch (e) {
+        apiOpts[f.key] = apiOpts[f.key] || [];
+    } finally {
+        apiLoading[f.key] = false;
+    }
+}
+// Reset semua anak (rekursif) saat induk berubah → rantai jenjang→jenis→kampus konsisten.
+function resetChildren(parentKey) {
+    (cur.value.fields || []).forEach((g) => {
+        if (g.tergantung === parentKey) {
+            form[g.key] = g.tipe === 'number' ? null : '';
+            if (g.sumber_api) apiOpts[g.key] = [];
+            resetChildren(g.key);
+        }
+    });
+}
+function onChangeField(f, value) {
+    // Nilai ketik-bebas (allow-create kampus) dirapikan spasinya.
+    form[f.key] = typeof value === 'string' ? value.trim() : value;
+    resetChildren(f.key);
+    (cur.value.fields || []).forEach((g) => {
+        // Anak langsung: opsinya dimuat ulang mengikuti induk baru.
+        if (g.tergantung === f.key && g.sumber_api) loadApiOptions(g);
+        // Field yang DIPERSEMPIT oleh field ini (mis. prodi disaring fakultas).
+        // Pilihan lama dikosongkan: prodi dari fakultas sebelumnya tidak lagi
+        // masuk akal setelah fakultasnya diganti.
+        if (g.saring_dari === f.key && g.sumber_api) {
+            form[g.key] = '';
+            loadApiOptions(g);
+        }
+    });
+    persistDraft();
+}
+function onSelectOpen(f, vis) {
+    if (!vis || !f.sumber_api || (apiOpts[f.key] || []).length) return;
+    // Dimuat saat dropdown dibuka supaya tidak memanggil API sebelum diperlukan.
+    if (['kampus', 'fakultas', 'prodi'].includes(f.sumber_api) && form[f.tergantung]) loadApiOptions(f, '');
+}
 
 // Telepon Indonesia: SELALU berawalan 62. 08.. -> 628.. ; 8.. -> 628.. ;
 // 62/ +62 tetap ; 620.. -> 62.. (buang 0 setelah 62). Disimpan '628xxxxxxxxx'.
@@ -451,7 +587,7 @@ function validateStep() {
     const s = cur.value;
     if (s.tipe === 'FACE' && !facePhoto.value) { err.value = 'Ambil foto wajah dulu untuk melanjutkan.'; return false; }
     if (s.tipe === 'FORM' && !s.opsional) {
-        const miss = (s.fields || []).filter((f) => f.required && showField(f) && !form[f.key]);
+        const miss = (s.fields || []).filter((f) => f.required && showField(f) && fieldEnabled(f) && !form[f.key]);
         if (miss.length) { err.value = `Lengkapi: ${miss.map((f) => f.label).join(', ')}.`; return false; }
     }
     if (s.tipe === 'UPLOAD') {
@@ -473,7 +609,8 @@ async function finalize() {
     for (let i = 0; i < steps.length; i++) { step.value = i; if (!validateStep()) { mengirim.value = false; return; } }
     stopCamera();
     const isForm2 = props.flow.form === 2;
-    const ko = !isForm2 ? checkKnockout(jenis, form) : [];
+    // Syarat dari Master Program (DB), bukan daftar tetap di careerSession.
+    const ko = !isForm2 ? checkKnockout(jenis, form, props.flow.syarat) : [];
     let procId = null; // id proses queue (untuk poll hasil nyata)
 
     // FINALISASI = benar-benar MENGAJUKAN lamaran ke sistem (DB), bukan sekadar
@@ -515,7 +652,8 @@ async function finalize() {
     }
     // Snapshot sessionStorage (legacy card) — tetap dibuat, tapi TAMPILAN akhir ikut server.
     const existing = getApp(lowongan.id);
-    const pipeline = existing?.pipeline || flowFor(jenis);
+    // Tahapan seleksi = Master Alur milik program ini (dikirim server).
+    const pipeline = existing?.pipeline || flowFor(jenis, props.flow.pipeline);
     const base = {
         step: steps.length,
         pipeline,
@@ -636,6 +774,14 @@ onMounted(() => {
     // Prefill identitas dari akun login (isi bila kosong).
     if (!form.nama) form.nama = akun.nama || '';
     if (!form.email) form.email = akun.email || '';
+    // Muat opsi cascade pendidikan: jenjang selalu; jenis/kampus bila draf terisi.
+    steps.forEach((s) => (s.fields || []).forEach((f) => {
+        if (!f.sumber_api) return;
+        // Nilai draf yang diketik sendiri tidak ada di daftar server — dititipkan
+        // dulu sebagai opsi supaya tidak tampil kosong saat draf dibuka lagi.
+        if ((f.cari_async || f.boleh_ketik) && form[f.key]) apiOpts[f.key] = [{ value: form[f.key], label: form[f.key] }];
+        if (!f.tergantung || form[f.tergantung]) loadApiOptions(f);
+    }));
 });
 
 // Review generik: kumpulkan semua field FORM yang terisi (label + nilai), lintas Form 1 / Form 2 / rekrutmen.

@@ -10,6 +10,8 @@ Route::get('/karir/pembukaan', [PembukaanProgramController::class, 'index'])->na
 
 Route::prefix('api/v1')->name('career.api.pembukaan.')->group(function () {
     Route::get('/pembukaan', [PembukaanProgramController::class, 'list'])->name('list')->middleware('career.permission:pembukaanPage,VIEW');
+    // Daftar program + detail untuk kartu picker di modal "Buka Program".
+    Route::get('/pembukaan/programs', [PembukaanProgramController::class, 'programs'])->name('programs')->middleware('career.permission:pembukaanPage,VIEW');
     Route::post('/pembukaan', [PembukaanProgramController::class, 'store'])->name('store')->middleware('career.permission:pembukaanPage,CREATE');
     Route::put('/pembukaan/{id}', [PembukaanProgramController::class, 'update'])->name('update')->middleware('career.permission:pembukaanPage,EDIT');
     Route::patch('/pembukaan/{id}/toggle', [PembukaanProgramController::class, 'toggle'])->name('toggle')->middleware('career.permission:pembukaanPage,EDIT');

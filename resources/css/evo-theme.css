@@ -6527,17 +6527,23 @@ h6,
     from { opacity: 0; transform: translateY(22px) scale(0.97); }
     to { opacity: 1; transform: translateY(0) scale(1); }
 }
-/* Header gradien lavender + glow radial pojok kanan */
+/* Header gradien lavender + glow radial pojok kanan.
+   PENTING: header adalah bar TETAP (body yang scroll). Beri garis + bayangan
+   supaya ada pemisah jelas — tanpa ini, konten yang tergulir terlihat "menyatu"
+   dengan header dan modal tampak rusak. */
 .wca-modal__head {
     position: relative;
+    z-index: 2;
+    flex: none;
     overflow: hidden;
     display: flex;
-    align-items: flex-start;
-    gap: 15px;
-    padding: 22px 26px;
+    align-items: center;
+    gap: 14px;
+    padding: 18px 24px;
     color: #1e1b4b;
     background: linear-gradient(135deg, #efeafe 0%, #eef2ff 52%, #e9f0ff 100%);
-    border-bottom: none;
+    border-bottom: 1px solid rgba(99, 102, 241, 0.14);
+    box-shadow: 0 6px 18px -10px rgba(30, 27, 75, 0.22);
 }
 .wca-modal__head::after {
     content: '';
@@ -6609,11 +6615,20 @@ h6,
     transform: rotate(90deg);
 }
 .wca-modal__body {
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 1.35rem;
+    overflow-y: auto;
+    overscroll-behavior: contain;
     background: linear-gradient(180deg, #fbfbfe, #ffffff);
 }
 .wca-modal__foot {
+    flex: none;
+    position: relative;
+    z-index: 2;
     background: #fff;
     border-top: 1px solid #eef0f7;
+    box-shadow: 0 -6px 18px -10px rgba(30, 27, 75, 0.18);
     gap: 0.85rem;
     justify-content: space-between;
     align-items: center;

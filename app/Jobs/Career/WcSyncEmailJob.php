@@ -2,6 +2,7 @@
 
 namespace App\Jobs\Career;
 
+use App\Jobs\Career\Concerns\AntreanWebCareers;
 use App\Jobs\Career\Concerns\CatatGagalWebCareers;
 use App\Mail\Career\ResetOtpMail;
 use App\Mail\Career\ResetSelesaiMail;
@@ -27,7 +28,7 @@ use Illuminate\Support\Facades\Mail;
  */
 class WcSyncEmailJob implements ShouldQueue
 {
-    use CatatGagalWebCareers, Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    use AntreanWebCareers, CatatGagalWebCareers, Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public const QUEUE = 'wc-syncemailjob';
 
@@ -56,19 +57,7 @@ class WcSyncEmailJob implements ShouldQueue
         $this->userId = $userId;
         $this->data = $data;
 
-        // Pemilihan koneksi antrean berdasarkan QUEUE_CONNECTION aktif:
-        //  - cloudtasks → Cloud Tasks, queue 'wc-syncemailjob' (harus sudah dibuat).
-        //  - sync       → kirim LANGSUNG saat request (dev lokal; tanpa worker/tunnel).
-        //  - lainnya (mis. database) → koneksi 'webcareers' → antrean
-        //    N_WEB_CAREERS_Jobs (TERPISAH dari N_LMS_Jobs). Worker: `php artisan queue:work webcareers`.
-        $conn = config('queue.default');
-        if ($conn === 'cloudtasks') {
-            $this->onConnection('cloudtasks')->onQueue(self::QUEUE);
-        } elseif ($conn === 'sync') {
-            $this->onConnection('sync');
-        } else {
-            $this->onConnection('webcareers');
-        }
+        $this->aturAntrean(self::QUEUE);
     }
 
     /**

@@ -125,7 +125,10 @@
                 </div>
 
                 <div v-loading="memuatKandidat" class="wca-kandlist">
-                    <el-empty v-if="!memuatKandidat && !kandidat.length" :image-size="60" description="Tidak ada kandidat" />
+                    <!-- Kosong itu wajar; yang tidak boleh adalah kosong tanpa sebab.
+                         Pesan dari server menjelaskan kenapa (tahap belum sampai,
+                         jenis tes lain, atau semua sudah dijadwalkan). -->
+                    <el-empty v-if="!memuatKandidat && !kandidat.length" :image-size="60" :description="alasanKandidat || 'Tidak ada kandidat'" />
 
                     <label v-for="k in kandidat" :key="k.kode" class="wca-kand" :class="{ 'is-active': form.peserta.includes(k.kode) }">
                         <el-checkbox :model-value="form.peserta.includes(k.kode)" @change="toggleKandidat(k.kode)" />
@@ -133,6 +136,10 @@
                         <span class="wca-kandinfo">
                             <span class="wca-kandnama">{{ k.nama }}</span>
                             <span class="wca-kandmeta">{{ k.posisi || '—' }} · {{ k.kode }}</span>
+                            <!-- Satu tahap bisa berisi beberapa tes — sebutkan yang mana. -->
+                            <span v-if="k.tes" class="wca-kandtes">
+                                <i class="bi bi-diagram-3"></i> {{ k.tahap }} › {{ k.tes }}
+                            </span>
                         </span>
                     </label>
                 </div>
@@ -246,6 +253,8 @@ export default {
             opsi: { talent: [], program: [], jenisTes: [] },
             paket: [],
             kandidat: [],
+            // Penjelasan dari server saat daftar kandidat kosong.
+            alasanKandidat: '',
             daftar: [],
             cariPaket: '',
             cariKandidat: '',
@@ -345,9 +354,10 @@ export default {
             this.form.namaUjian = p.Nama_Ujian;
         },
         async muatKandidat() {
-            // Kandidat = pelamar NYATA program terpilih yang di tahap tes pihak-3.
-            // Tanpa program → daftar kosong (tidak ada dummy).
-            if (!this.form.programId) { this.kandidat = []; this.form.peserta = []; return; }
+            // Kandidat = pelamar NYATA program terpilih yang punya SUB-TES pihak
+            // ke-3 menunggu jadwal. Satu tahap bisa berisi beberapa tes, jadi
+            // orang yang sama bisa muncul lagi untuk tes berikutnya di tahap itu.
+            if (!this.form.programId) { this.kandidat = []; this.form.peserta = []; this.alasanKandidat = ''; return; }
             this.memuatKandidat = true;
             try {
                 const params = { programId: this.form.programId };
@@ -355,6 +365,7 @@ export default {
                 if (this.cariKandidat) params.q = this.cariKandidat;
                 const res = await axios.get('/api/v1/penjadwalan/kandidat', { params, headers: { Accept: 'application/json' } });
                 this.kandidat = res.data.result || [];
+                this.alasanKandidat = this.kandidat.length ? '' : (res.data.message || '');
                 // Buang peserta terpilih yang tak lagi ada di daftar terbaru.
                 this.form.peserta = this.form.peserta.filter((k) => this.kandidat.some((c) => c.kode === k));
             } catch (e) {
@@ -503,6 +514,7 @@ export default {
 .wca-kandinfo { display: flex; flex-direction: column; min-width: 0; }
 .wca-kandnama { font-weight: 600; font-size: .9rem; }
 .wca-kandmeta { font-size: .76rem; color: var(--el-text-color-secondary); }
+.wca-kandtes { display: inline-flex; align-items: center; gap: .3rem; margin-top: .15rem; font-size: .72rem; font-weight: 600; color: #4338ca; }
 
 /* Daftar penjadwalan */
 .wca-jadwal { border: 1px solid var(--el-border-color); border-radius: 12px; padding: .85rem; margin-bottom: .85rem; }

@@ -51,16 +51,61 @@ class PipelineProgress
      *    admin tinggal memutuskan — termasuk pada tahap pihak ke-3.
      *  - Tahap manual (bukan THIRD_PARTY) tetap bisa diputus kapan pun.
      */
-    public static function state(object $l, ?object $tAktif, ?object $tk): array
+    /**
+     * @param  iterable  $subAktif  sub-tes (aktivitas) TAHAP AKTIF — dipakai
+     *                              menilai apakah hasilnya sudah tercatat
+     */
+    public static function state(object $l, ?object $tAktif, ?object $tk, iterable $subAktif = []): array
     {
         $siap = $tAktif && ($tAktif->Siap_Diputus ?? 'N') === 'Y';
+
+        // ── SIAPA YANG BOLEH MEMUTUS TAHAP INI ──────────────────────────────
+        // Ditentukan Master Alur, bukan ditebak dari provider.
+        //
+        //  SYSTEM  "Otomatis — maju sendiri bila lulus". Mesin yang memutus
+        //          begitu aktivitasnya selesai; admin tidak mengetuk palu. Kalau
+        //          admin tetap bisa, mode otomatis yang disetel di Master Alur
+        //          jadi tak ada artinya.
+        //  MANUAL  Admin yang memutus — tapi hanya setelah hasil aktivitas
+        //          penentu tercatat. Meloloskan tes yang nilainya belum ada
+        //          sama saja memutus tanpa dasar.
+        $otomatis = strtoupper((string) ($tAktif->Keputusan_Mode ?? 'MANUAL')) === 'SYSTEM';
+
+        // Aktivitas yang WAJIB punya hasil dulu = penentu & benar-benar tes
+        // (punya jenis tes / dari pihak ke-3). Aktivitas tanpa jenis tes — mis.
+        // wawancara atau verifikasi berkas — hasilnya ya keputusan admin itu
+        // sendiri, jadi tidak boleh saling mengunci.
+        $belumTercatat = 0;
+        foreach ($subAktif as $s) {
+            $penentu = ($s->Peran ?? 'PENENTU') === 'PENENTU';
+            $adalahTes = ! empty($s->Jenis_Tes_Kode) || ($s->Provider ?? '') === 'THIRD_PARTY';
+            if ($penentu && $adalahTes && ($s->Flag_Selesai ?? 'N') !== 'Y') {
+                $belumTercatat++;
+            }
+        }
+
+        $butuhKeputusan = $tAktif
+            && $tAktif->Status === 'BERJALAN'
+            && ! $otomatis
+            && ($siap || $belumTercatat === 0);
+
+        $alasanKunci = null;
+        if ($tAktif && $tAktif->Status === 'BERJALAN' && ! $butuhKeputusan) {
+            $alasanKunci = $otomatis
+                ? 'Tahap ini disetel OTOMATIS di Master Alur — sistem yang memutuskan begitu aktivitasnya selesai.'
+                : "Menunggu hasil {$belumTercatat} aktivitas penentu dicatat lebih dulu.";
+        }
 
         return [
             'skor' => $tk->Skor ?? null,
             'isTes' => ($tk->Provider ?? null) === 'THIRD_PARTY',
             'siap' => $siap,
-            'nungguSistem' => $tAktif && $tAktif->Provider === 'THIRD_PARTY' && ! $siap,
-            'butuhKeputusan' => $tAktif && $tAktif->Status === 'BERJALAN' && ($siap || $tAktif->Provider !== 'THIRD_PARTY'),
+            'nungguSistem' => $tAktif && ! $siap && ($otomatis || $belumTercatat > 0),
+            'butuhKeputusan' => $butuhKeputusan,
+            'modeKeputusan' => $tAktif ? ($otomatis ? 'SYSTEM' : 'MANUAL') : null,
+            'otomatis' => $otomatis && $tAktif !== null,
+            'aktivitasBelumTercatat' => $belumTercatat,
+            'alasanKunci' => $alasanKunci,
         ];
     }
 

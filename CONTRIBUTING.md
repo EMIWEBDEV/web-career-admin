@@ -196,6 +196,45 @@ Bukan kodenya rusak — hak aksesmu belum ada di database.
 
 ---
 
+## Antrean (queue)
+
+Satu perintah untuk semuanya — apply, email, export:
+
+```bash
+php artisan queue:work
+```
+
+Tidak perlu lagi `queue:work webcareers`. Job tidak lagi memaksa koneksinya
+sendiri; yang menentukan adalah `QUEUE_CONNECTION`:
+
+| `QUEUE_CONNECTION` | Perilaku |
+|---|---|
+| `webcareers` *(bawaan)* | tabel `N_WEB_CAREERS_Jobs`, dibaca `queue:work` |
+| `cloudtasks` | dikirim ke Cloud Tasks & dibaca lewat `/handle-task` — tanpa worker |
+| `sync` | dijalankan langsung dalam request, untuk uji cepat |
+
+Nama queue (`wc-applyform`, `wc-applymail`, …) **hanya** dipasang saat
+`cloudtasks`, karena di sana tiap queue adalah sumber daya tersendiri. Untuk
+driver database sengaja dibiarkan `default` — kalau dinamai, `queue:work`
+tidak akan pernah melihatnya. Aturan ini ada di
+`app/Jobs/Career/Concerns/AntreanWebCareers.php`; ikuti saat menambah job baru:
+
+```php
+use AntreanWebCareers;
+
+public const QUEUE = 'wc-anu';
+
+public function __construct(...)
+{
+    $this->aturAntrean(self::QUEUE);
+}
+```
+
+⚠️ `N_LMS_Jobs` dan `N_LMS_Failed_Jobs` milik modul tetangga di basis data yang
+sama. Jangan arahkan antrean Web Careers ke sana.
+
+---
+
 ## Catatan teknis singkat
 
 - **Jangan pakai `env()` di luar `config/`** — nilainya jadi `null` begitu

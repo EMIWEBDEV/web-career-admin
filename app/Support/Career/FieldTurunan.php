@@ -47,7 +47,10 @@ class FieldTurunan
             'satuan' => 'tahun',
         ],
         'jenjang' => [
-            'sumber' => ['jenjang_pendidikan', 'jenjang_politeknik', 'jenjang_universitas'],
+            // Dua nama field baru didahulukan — 'jenjang_pendidikan' dari blok
+            // pendidikan bersama, 'jenjang' dari cascade formulir apply. Dua
+            // nama lama disisakan agar lamaran yang sudah tersimpan tetap terbaca.
+            'sumber' => ['jenjang_pendidikan', 'jenjang', 'jenjang_politeknik', 'jenjang_universitas'],
             'label' => 'Jenjang Pendidikan (gabungan semua jalur)',
             'tipe' => 'TEKS',
             'satuan' => null,

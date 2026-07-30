@@ -2,6 +2,7 @@
 
 namespace App\Jobs\Career;
 
+use App\Jobs\Career\Concerns\AntreanWebCareers;
 use App\Jobs\Career\Concerns\CatatGagalWebCareers;
 use App\Support\Career\GcsBerkas;
 use App\Support\Career\LamaranService;
@@ -28,7 +29,7 @@ use Illuminate\Support\Facades\Log;
  */
 class WcApplyFormJob implements ShouldQueue, ShouldBeUnique
 {
-    use CatatGagalWebCareers, Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    use AntreanWebCareers, CatatGagalWebCareers, Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public const QUEUE = 'wc-applyform';
 
@@ -46,14 +47,7 @@ class WcApplyFormJob implements ShouldQueue, ShouldBeUnique
     {
         $this->processId = $processId;
 
-        // Non-local → cloudtasks queue 'wc-applyform'. Local → koneksi 'webcareers'
-        // → antrean N_WEB_CAREERS_Jobs (TERPISAH dari N_LMS_Jobs).
-        // Worker lokal: `php artisan queue:work webcareers`.
-        if (env('QUEUE_CONNECTION') === 'cloudtasks') {
-            $this->onConnection('cloudtasks')->onQueue(self::QUEUE);
-        } else {
-            $this->onConnection('webcareers');
-        }
+        $this->aturAntrean(self::QUEUE);
     }
 
     public function uniqueId(): string
