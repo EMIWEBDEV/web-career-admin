@@ -15,12 +15,26 @@ use Vinkla\Hashids\Facades\Hashids;
 /**
  * WEB CAREER — PENJADWALAN.
  *
- * Semua sumber dari DB, TIDAK ADA hardcode: tab kategori dari Master Talent Acquisition,
- * program dari Program, jenis tes dari Master Jenis Tes (Flag_Cat='Y'), paket/nama ujian
- * dari HCLearn lewat HclClient di sisi server.
+ * Semua sumber dari DB, TIDAK ADA hardcode: tab kategori dari Master Talent
+ * Acquisition, program dari Program, paket/nama ujian dari HCLearn lewat
+ * HclClient di sisi server.
  *
- * Rantai keterhubungan: Program → Alur_Kode → Master Alur → tahap ber-Provider
- * 'THIRD_PARTY' yang Jenis_Tes_Kode-nya cocok. Tahap itulah yang dikirim ke HCLearn.
+ * YANG DIJADWALKAN = TAHAP DI ALUR PROGRAM, BUKAN "JENIS TES".
+ *
+ * Dulu admin memilih jenis tes dari Master Jenis Tes — daftar global yang tidak
+ * tahu-menahu soal alur program. Dua akibatnya: (1) jenis tes yang dipilih bisa
+ * tidak ada di alur program mana pun, sehingga daftar kandidat kosong tanpa
+ * sebab yang jelas; (2) tahap "Tes Online" yang Jenis Tes-nya dikosongkan di
+ * Master Alur — dan builder alur memang tidak lagi menanyakannya — mustahil
+ * dijadwalkan sama sekali.
+ *
+ * Sekarang: pilih Program → muncul tahap/aktivitas TES ONLINE milik alur program
+ * itu (lengkap dengan jumlah kandidat yang menunggu) → pilih paket ujian HCLearn
+ * → generate. Jenis tes turun jadi keterangan yang ikut dari alur, bukan kunci
+ * pencarian. Acuannya urutan tahap + urutan sub-tes, yang stabil per alur.
+ *
+ * Rantai keterhubungan: Program → Alur_Kode → Master Alur → tahap yang layak
+ * dijadwalkan (Provider 'THIRD_PARTY' ATAU tipe tahap ber-Perilaku 'CAT').
  *
  * Vue TIDAK PERNAH memanggil domain CAT — kredensial HMAC tetap di server.
  */
@@ -35,7 +49,7 @@ class PenjadwalanController extends Controller
         return Inertia::render('Career/admin/penjadwalan/penjadwalan', CareerShell::props('/karir/penjadwalan', 'Penjadwalan'));
     }
 
-    /** Tab kategori, program, dan jenis tes — semuanya dari DB. */
+    /** Tab kategori & program — dari DB. Jenis tes TIDAK lagi dikirim (lihat tesAlur). */
     public function opsi()
     {
         try {
@@ -53,18 +67,120 @@ class PenjadwalanController extends Controller
                     'a.Id_Master_Alur as alurId', 'a.Nama as alurNama',
                 ]);
 
-            $jenisTes = DB::table('N_WEB_CAREERS_Master_Jenis_Tes')
-                ->where('Flag_Aktif', 'Y')
-                ->where('Flag_Cat', 'Y')
-                ->orderBy('Nama')
-                ->get(['Id_Master_Jenis_Tes as id', 'Kode as kode', 'Nama as nama', 'Kategori as kategori', 'Metode as metode', 'Pelaksana as pelaksana']);
-
-            return ResponseHelper::success(compact('talent', 'program', 'jenisTes'), 'Opsi dimuat');
+            return ResponseHelper::success(compact('talent', 'program'), 'Opsi dimuat');
         } catch (\Throwable $e) {
             Log::channel('web_career')->error('Gagal memuat opsi penjadwalan: ' . $e->getMessage());
 
             return ResponseHelper::error('Gagal memuat opsi', 500);
         }
+    }
+
+    /**
+     * Kode tipe yang perilakunya CAT (ujian online) — dari master, bukan hardcode.
+     *
+     * Dipakai untuk menyaring AKTIVITAS, bukan tahap: satu tahap boleh berisi
+     * ujian online, tes manual, dan wawancara sekaligus, dan yang dijadwalkan
+     * lewat HCLearn hanya yang ujian online.
+     */
+    private function tipeCat(): array
+    {
+        return DB::table('N_WEB_CAREERS_Master_Tipe_Tahap')
+            ->where('Perilaku_Kode', 'CAT')
+            ->pluck('Kode')
+            ->all();
+    }
+
+    /**
+     * GET /api/v1/penjadwalan/tes?programId= — tahap/aktivitas yang bisa dijadwalkan.
+     *
+     * Dibaca dari ALUR SELEKSI program, jadi yang tampil di layar admin persis
+     * tahap yang dilihat kandidat di portalnya. Setiap baris membawa jumlah
+     * kandidat yang saat ini menunggu jadwal untuk tahap itu, supaya admin tahu
+     * mana yang perlu dikerjakan tanpa harus mencoba satu per satu.
+     */
+    public function tesAlur(Request $request)
+    {
+        try {
+            $programId = (int) $request->query('programId', 0);
+            if (! $programId) {
+                return ResponseHelper::success([], 'Pilih program terlebih dahulu.');
+            }
+
+            $program = DB::table('N_WEB_CAREERS_Program')->where('Id_Program', $programId)->first();
+            if (! $program) {
+                return ResponseHelper::error('Program tidak ditemukan.', 404);
+            }
+
+            $alur = DB::table('N_WEB_CAREERS_Master_Alur')->where('Kode', $program->Alur_Kode)->first();
+            if (! $alur) {
+                return ResponseHelper::success([], "Program '{$program->Nama}' belum terhubung ke alur seleksi. Atur Alur di Program Kegiatan.");
+            }
+
+            $tahap = DB::table('N_WEB_CAREERS_Master_Alur_Tahap')
+                ->where('Master_Alur_Id', $alur->Id_Master_Alur)
+                ->orderBy('Urutan')
+                ->get();
+
+            $subTes = $tahap->isEmpty() ? collect() : DB::table('N_WEB_CAREERS_Master_Alur_Tahap_Tes')
+                ->whereIn('Master_Alur_Tahap_Id', $tahap->pluck('Id_Master_Alur_Tahap')->all())
+                ->orderBy('Urutan')
+                ->get()
+                ->groupBy('Master_Alur_Tahap_Id');
+
+            $cat = $this->tipeCat();
+            $menunggu = $this->hitungMenunggu($programId);
+
+            $namaTipe = DB::table('N_WEB_CAREERS_Master_Tipe_Tahap')->pluck('Nama', 'Kode');
+
+            $daftar = [];
+            foreach ($tahap as $t) {
+                $anak = collect($subTes->get($t->Id_Master_Alur_Tahap, []));
+                foreach ($anak as $s) {
+                    // Yang dijadwalkan lewat HCLearn hanya aktivitas yang TIPE-NYA
+                    // ujian online. Aktivitas lain di tahap yang sama (tes manual,
+                    // wawancara) dikerjakan tim dan hasilnya dicatat di worklist.
+                    $tipeTes = $s->Tipe_Tahap_Kode ?: $t->Tipe_Tahap_Kode;
+                    if (! in_array($tipeTes, $cat, true) && $s->Provider !== 'THIRD_PARTY') {
+                        continue;
+                    }
+
+                    $daftar[] = [
+                        'tahapUrutan' => (int) $t->Urutan,
+                        'tahapLabel' => $t->Label,
+                        'tipe' => $tipeTes,
+                        'tipeNama' => $namaTipe[$tipeTes] ?? null,
+                        'tesUrutan' => (int) $s->Urutan,
+                        'tesLabel' => $s->Label,
+                        'peran' => $s->Peran,
+                        // Tahap dengan >1 aktivitas dijadwalkan satu per satu.
+                        'multi' => $anak->count() > 1,
+                        'menunggu' => (int) ($menunggu[$t->Urutan . '-' . $s->Urutan] ?? 0),
+                    ];
+                }
+            }
+
+            return ResponseHelper::success(
+                $daftar,
+                $daftar
+                    ? 'Tes alur dimuat'
+                    : "Alur '{$alur->Nama}' belum punya tahap tes online. Tambahkan tahap bertipe Tes Online di Master Alur."
+            );
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->error('Gagal memuat tes alur: ' . $e->getMessage());
+
+            return ResponseHelper::error('Gagal memuat tes pada alur program', 500);
+        }
+    }
+
+    /** Jumlah kandidat menunggu jadwal per tahap+sub-tes: ['{tahap}-{tes}' => n]. */
+    private function hitungMenunggu(int $programId): array
+    {
+        return $this->kueriKandidat($programId, null, null)
+            ->groupBy('t.Urutan', 'st.Urutan')
+            ->select('t.Urutan as tahapUrutan', 'st.Urutan as tesUrutan', DB::raw('COUNT(*) as jml'))
+            ->get()
+            ->mapWithKeys(fn ($r) => [$r->tahapUrutan . '-' . $r->tesUrutan => (int) $r->jml])
+            ->all();
     }
 
     /** Paket / nama ujian dari HCLearn — ditampilkan sebagai kartu pilihan. */
@@ -99,7 +215,7 @@ class PenjadwalanController extends Controller
     }
 
     /**
-     * Kandidat yang layak dijadwalkan untuk SATU JENIS TES.
+     * Kandidat yang layak dijadwalkan untuk SATU TAHAP (dan sub-tes) di alur.
      *
      * Acuannya SUB-TES, bukan tahap. Satu tahap bisa memuat beberapa tes
      * sekaligus — mis. tahap "FGD Dan Wawancara HR" berisi Psikotes 2 + DISC +
@@ -107,32 +223,36 @@ class PenjadwalanController extends Controller
      * dan kandidat yang sama muncul lagi untuk tes berikutnya selama sub-tes itu
      * belum punya jadwal.
      *
-     * Dulu penyaringnya `Lamaran_Tahap.Provider` + `Lamaran_Tahap.Jenis_Tes_Kode`
-     * — satu tahap hanya bisa mewakili SATU jenis tes, sehingga tes kedua dan
-     * ketiga di tahap yang sama mustahil dijadwalkan.
+     * Penyaringnya URUTAN tahap + urutan sub-tes, bukan Jenis_Tes_Kode. Jenis tes
+     * boleh kosong (tahap "Tes Online" yang paketnya baru dipilih di sini), jadi
+     * memakainya sebagai kunci berarti tahap seperti itu tak pernah ketemu.
      *
-     * Sub-tes ikut disaring: hanya yang Provider THIRD_PARTY, belum selesai, dan
-     * belum tertaut jadwal. Yang sudah dijadwalkan sengaja disembunyikan supaya
-     * tidak terkirim dua kali ke HCLearn; batalkan jadwalnya untuk mengulang.
+     * Sub-tes ikut disaring: hanya yang butuh jadwal pihak ke-3, belum selesai,
+     * dan belum tertaut jadwal. Yang sudah dijadwalkan sengaja disembunyikan
+     * supaya tidak terkirim dua kali ke HCLearn; batalkan jadwalnya untuk mengulang.
      */
     public function kandidat(Request $request)
     {
         try {
             $programId = (int) $request->query('programId', 0);
-            $jenisTesKode = trim((string) $request->query('jenisTesKode', ''));
+            $tahapUrutan = (int) $request->query('tahapUrutan', 0) ?: null;
+            $tesUrutan = (int) $request->query('tesUrutan', 0) ?: null;
             $cari = trim((string) $request->query('q', ''));
 
             if (! $programId) {
                 return ResponseHelper::success([], 'Pilih program terlebih dahulu.');
             }
+            if (! $tahapUrutan) {
+                return ResponseHelper::success([], 'Pilih tes/tahap yang mau dijadwalkan.');
+            }
 
-            $rows = $this->kueriKandidat($programId, $jenisTesKode, $cari)
+            $rows = $this->kueriKandidat($programId, $tahapUrutan, $tesUrutan, $cari)
                 ->orderBy('u.Nama')
                 ->limit(500)
                 ->get([
                     'l.Kode as kode', 'u.Nama as nama', 'u.No_Hp as hp', 'u.Email as email',
                     'pos.Posisi as posisi', 't.Label as tahap', 't.Urutan as urutanTahap',
-                    'st.Label as tes', 'st.Jenis_Tes_Kode as jenisTes', 'st.Urutan as urutanTes',
+                    'st.Label as tes', 'st.Urutan as urutanTes',
                 ])
                 ->map(fn ($r) => [
                     'kode' => $r->kode,
@@ -144,14 +264,13 @@ class PenjadwalanController extends Controller
                     // Tes mana di dalam tahap itu — penting saat satu tahap berisi
                     // beberapa tes, supaya admin tahu yang mana sedang dijadwalkan.
                     'tes' => $r->tes,
-                    'jenisTes' => $r->jenisTes,
                     'urutanTes' => (int) $r->urutanTes,
                 ])
                 ->values();
 
             return ResponseHelper::success(
                 $rows,
-                $rows->isEmpty() ? $this->alasanKosong($programId, $jenisTesKode) : 'Kandidat dimuat'
+                $rows->isEmpty() ? $this->alasanKosong($programId, $tahapUrutan, $tesUrutan) : 'Kandidat dimuat'
             );
         } catch (\Throwable $e) {
             Log::channel('web_career')->error('Gagal memuat kandidat: ' . $e->getMessage());
@@ -160,9 +279,11 @@ class PenjadwalanController extends Controller
         }
     }
 
-    /** Kueri dasar kandidat: sub-tes pihak ke-3 yang menunggu jadwal. */
-    private function kueriKandidat(int $programId, string $jenisTesKode, string $cari = '')
+    /** Kueri dasar kandidat: sub-tes yang butuh jadwal pihak ke-3 & belum punya. */
+    private function kueriKandidat(int $programId, ?int $tahapUrutan, ?int $tesUrutan, string $cari = '')
     {
+        $cat = $this->tipeCat();
+
         return DB::table('N_WEB_CAREERS_Lamaran as l')
             // Tahap SAAT INI kandidat = baris tahap dengan Urutan = Lamaran.Urutan_Tahap.
             ->join('N_WEB_CAREERS_Lamaran_Tahap as t', fn ($j) => $j
@@ -174,10 +295,17 @@ class PenjadwalanController extends Controller
             ->where('l.Program_Id', $programId)
             ->where('l.Status', 'BERJALAN')
             ->where('t.Status', 'BERJALAN')
-            ->where('st.Provider', 'THIRD_PARTY')
+            // Butuh jadwal HCLearn bila TIPE AKTIVITAS itu ujian online. Aktivitas
+            // manual di tahap yang sama (tes tulis, wawancara) sengaja tidak ikut:
+            // tak ada ujian CAT yang bisa dikirim untuknya. Provider dipakai
+            // sebagai cadangan untuk baris lama yang tipenya belum terisi.
+            ->where(fn ($q) => $q
+                ->where('st.Provider', 'THIRD_PARTY')
+                ->when($cat, fn ($w) => $w->orWhereIn(DB::raw('COALESCE(st.Tipe_Tahap_Kode, t.Tipe_Tahap_Kode)'), $cat)))
             ->where('st.Flag_Selesai', 'N')
             ->whereNull('st.Penjadwalan_Tahap_Id')
-            ->when($jenisTesKode !== '', fn ($q) => $q->where('st.Jenis_Tes_Kode', $jenisTesKode))
+            ->when($tahapUrutan, fn ($q) => $q->where('t.Urutan', $tahapUrutan))
+            ->when($tesUrutan, fn ($q) => $q->where('st.Urutan', $tesUrutan))
             ->when($cari !== '', fn ($q) => $q->where(function ($w) use ($cari) {
                 $w->where('u.Nama', 'like', "%{$cari}%")
                     ->orWhere('l.Kode', 'like', "%{$cari}%")
@@ -193,7 +321,7 @@ class PenjadwalanController extends Controller
      * atau semuanya memang sudah dijadwalkan. Ditelusuri bertingkat dari yang
      * paling umum ke paling khusus.
      */
-    private function alasanKosong(int $programId, string $jenisTesKode): string
+    private function alasanKosong(int $programId, ?int $tahapUrutan, ?int $tesUrutan): string
     {
         $berjalan = DB::table('N_WEB_CAREERS_Lamaran')
             ->where('Program_Id', $programId)->where('Status', 'BERJALAN')->count();
@@ -201,10 +329,10 @@ class PenjadwalanController extends Controller
             return 'Belum ada pelamar berjalan di program ini.';
         }
 
-        // Abaikan saringan jenis tes → apakah ada sub-tes pihak ke-3 sama sekali?
-        $tanpaJenis = $this->kueriKandidat($programId, '')->count();
-        if ($tanpaJenis > 0 && $jenisTesKode !== '') {
-            return "Ada {$tanpaJenis} kandidat menunggu jadwal, tetapi tidak untuk jenis tes ini. Pilih jenis tes lain.";
+        // Abaikan saringan tahap → apakah ada yang menunggu jadwal sama sekali?
+        $tanpaTahap = $this->kueriKandidat($programId, null, null)->count();
+        if ($tanpaTahap > 0 && $tahapUrutan) {
+            return "Ada {$tanpaTahap} kandidat menunggu jadwal, tetapi bukan di tahap ini. Pilih tes/tahap lain di daftar sebelah.";
         }
 
         // Sudah dijadwalkan semua?
@@ -213,15 +341,15 @@ class PenjadwalanController extends Controller
                 ->on('t.Lamaran_Id', '=', 'l.Id_Lamaran')->on('t.Urutan', '=', 'l.Urutan_Tahap'))
             ->join('N_WEB_CAREERS_Lamaran_Tahap_Tes as st', 'st.Lamaran_Tahap_Id', '=', 't.Id_Lamaran_Tahap')
             ->where('l.Program_Id', $programId)->where('l.Status', 'BERJALAN')
-            ->where('st.Provider', 'THIRD_PARTY')
             ->whereNotNull('st.Penjadwalan_Tahap_Id')
-            ->when($jenisTesKode !== '', fn ($q) => $q->where('st.Jenis_Tes_Kode', $jenisTesKode))
+            ->when($tahapUrutan, fn ($q) => $q->where('t.Urutan', $tahapUrutan))
+            ->when($tesUrutan, fn ($q) => $q->where('st.Urutan', $tesUrutan))
             ->count();
         if ($terjadwal > 0) {
             return "Semua kandidat untuk tes ini sudah dijadwalkan ({$terjadwal}). Batalkan jadwalnya bila ingin mengulang.";
         }
 
-        // Tahap yang sedang dijalani pelamar bukan tes pihak ke-3.
+        // Tahap yang sedang dijalani pelamar bukan tahap yang dipilih.
         $tahapSekarang = DB::table('N_WEB_CAREERS_Lamaran as l')
             ->join('N_WEB_CAREERS_Lamaran_Tahap as t', fn ($j) => $j
                 ->on('t.Lamaran_Id', '=', 'l.Id_Lamaran')->on('t.Urutan', '=', 'l.Urutan_Tahap'))
@@ -231,8 +359,7 @@ class PenjadwalanController extends Controller
 
         $ringkas = $tahapSekarang->map(fn ($x) => "{$x->Label} ({$x->n})")->implode(', ');
 
-        return "Tidak ada pelamar yang tahapnya berupa tes pihak ke-3. Saat ini mereka di: {$ringkas}. "
-            . 'Periksa Master Alur — tahap tes online harus punya Jenis Tes; yang dikosongkan dianggap penilaian manual.';
+        return "Belum ada pelamar yang sampai di tahap ini. Saat ini mereka di: {$ringkas}.";
     }
 
     public function list()
@@ -300,13 +427,18 @@ class PenjadwalanController extends Controller
         try {
             $data = $request->validate([
                 'programId' => 'required|integer',
-                'jenisTesKode' => 'required|string|max:30',
+                // Tahap yang dijadwalkan — acuan urutan di alur program, bukan
+                // jenis tes. tesUrutan hanya perlu bila tahapnya multi-aktivitas.
+                'tahapUrutan' => 'required|integer|min:1',
+                'tesUrutan' => 'nullable|integer|min:1',
                 'idMasterUjian' => 'required|string',
                 'namaUjian' => 'required|string|max:255',
                 'waktuMulai' => 'required|date',
                 'waktuAkhir' => 'required|date|after:waktuMulai',
                 'peserta' => 'required|array|min:1|max:500',
                 'peserta.*' => 'required|string|max:20',
+            ], [
+                'tahapUrutan.required' => 'Pilih dulu tes/tahap yang mau dijadwalkan.',
             ]);
 
             $program = DB::table('N_WEB_CAREERS_Program')->where('Id_Program', $data['programId'])->first();
@@ -324,19 +456,33 @@ class PenjadwalanController extends Controller
                 ->orderBy('Urutan')
                 ->get();
 
-            // Cari tahap pemilik jenis tes ini lewat SUB-TES (1 tahap bisa punya
-            // banyak tes). Fallback ke kolom lama demi alur yang belum bermigrasi.
-            $idTahapTes = DB::table('N_WEB_CAREERS_Master_Alur_Tahap_Tes')
-                ->whereIn('Master_Alur_Tahap_Id', $semuaTahap->pluck('Id_Master_Alur_Tahap')->all())
-                ->where('Jenis_Tes_Kode', $data['jenisTesKode'])
-                ->orderBy('Urutan')
-                ->value('Master_Alur_Tahap_Id');
-
-            $tahapTes = $idTahapTes ? $semuaTahap->firstWhere('Id_Master_Alur_Tahap', $idTahapTes) : null;
-            $tahapTes ??= $semuaTahap->first(fn ($t) => $t->Provider === 'THIRD_PARTY' && $t->Jenis_Tes_Kode === $data['jenisTesKode']);
+            // Tahap yang dijadwalkan dikenali dari URUTANNYA di alur — nilai yang
+            // sama dipakai daftar tes, daftar kandidat, dan Lamaran_Tahap.
+            $tahapTes = $semuaTahap->firstWhere('Urutan', $data['tahapUrutan']);
             if (! $tahapTes) {
-                return ResponseHelper::error("Alur '{$alur->Nama}' tidak punya tahap pihak ke-3 untuk jenis tes ini. Tambahkan tahapnya di Master Alur.", 422);
+                return ResponseHelper::error("Alur '{$alur->Nama}' tidak punya tahap ke-{$data['tahapUrutan']}. Muat ulang halaman — alurnya mungkin baru berubah.", 422);
             }
+
+            // Sub-tes yang dijadwalkan (tahap multi-aktivitas dijadwalkan satu per satu).
+            $subTes = DB::table('N_WEB_CAREERS_Master_Alur_Tahap_Tes')
+                ->where('Master_Alur_Tahap_Id', $tahapTes->Id_Master_Alur_Tahap)
+                ->when($data['tesUrutan'] ?? null, fn ($q, $u) => $q->where('Urutan', $u))
+                ->orderBy('Urutan')
+                ->first();
+
+            // Layak dijadwalkan = TIPE AKTIVITAS itu ujian online. Menolak di sini
+            // penting: tanpa gerbang ini, wawancara di dalam tahap tes ikut
+            // dikirim ke HCLearn dan kandidat menerima token untuk sesi tatap muka.
+            $tipeTes = ($subTes->Tipe_Tahap_Kode ?? null) ?: $tahapTes->Tipe_Tahap_Kode;
+            $layak = in_array($tipeTes, $this->tipeCat(), true)
+                || ($subTes && $subTes->Provider === 'THIRD_PARTY');
+            if (! $layak) {
+                $nama = $subTes->Label ?? $tahapTes->Label;
+
+                return ResponseHelper::error("Aktivitas '{$nama}' bukan ujian online — dilaksanakan tim rekrutmen dan hasilnya dicatat di Worklist, bukan dijadwalkan lewat HCLearn.", 422);
+            }
+
+            $tesUrutan = $subTes->Urutan ?? null;
 
             // Peserta = lamaran NYATA (by Kode) pada program ini. Bukan lagi HRIS dummy.
             // Kode_Calon (WCyymmdd-xxxxxx) = identitas peserta di HCLearn (HRIS_Rekrutmen).
@@ -363,7 +509,7 @@ class PenjadwalanController extends Controller
             $now = now();
             $kode = 'JDW-' . str_pad((string) (DB::table('N_WEB_CAREERS_Penjadwalan')->max('Id_Penjadwalan') + 1), 4, '0', STR_PAD_LEFT);
 
-            $ids = DB::transaction(function () use ($data, $program, $alur, $semuaTahap, $tahapTes, $kandidat, $kode, $userId, $userName, $now) {
+            $ids = DB::transaction(function () use ($data, $program, $alur, $semuaTahap, $tahapTes, $tesUrutan, $kandidat, $kode, $userId, $userName, $now) {
                 $penjadwalanId = DB::table('N_WEB_CAREERS_Penjadwalan')->insertGetId([
                     'Kode' => $kode,
                     'Nama' => $data['namaUjian'] . ' — ' . $program->Nama,
@@ -392,10 +538,11 @@ class PenjadwalanController extends Controller
                         'Tipe_Tahap_Kode' => $t->Tipe_Tahap_Kode,
                         'Provider' => $t->Provider,
                         'Keputusan' => $t->Keputusan,
-                        // Tahap terpilih menyimpan jenis tes yang BENAR-BENAR dijadwalkan
-                        // (multi-tes: bisa berbeda dari kolom default level tahap).
-                        'Jenis_Tes_Kode' => $dipilih ? $data['jenisTesKode'] : $t->Jenis_Tes_Kode,
+                        // Jenis tes sudah tidak dipakai — yang menerangkan ujian ini
+                        // adalah Nama_Ujian + Id_Master_Ujian dari paket HCLearn.
+                        'Jenis_Tes_Kode' => null,
                         'Formulir_Kode' => $t->Formulir_Kode,
+                        'Id_Master_Ujian' => $dipilih && is_numeric($data['idMasterUjian']) ? (int) $data['idMasterUjian'] : null,
                         'Flag_Kirim_Hclearn' => $t->Provider === 'THIRD_PARTY' ? 'Y' : 'T',
                         'Nama_Ujian' => $dipilih ? $data['namaUjian'] : null,
                         'Waktu_Mulai' => $dipilih ? $data['waktuMulai'] : null,
@@ -439,7 +586,9 @@ class PenjadwalanController extends Controller
                     ->update(['Penjadwalan_Tahap_Id' => $tahapTerpilihId, 'Updated_At' => $now]);
 
                 // Tandai SUB-TES yang dijadwalkan (baterai multi-tes: hanya sub-tes
-                // ber-jenis ini yang berubah; sub-tes lain menunggu jadwalnya sendiri).
+                // pada urutan ini yang berubah; yang lain menunggu jadwalnya sendiri).
+                // Dikunci lewat Urutan, bukan Jenis_Tes_Kode — jenis tes boleh kosong
+                // dan dua sub-tes bisa memakai jenis yang sama.
                 $lamaranTahapIds = DB::table('N_WEB_CAREERS_Lamaran_Tahap')
                     ->whereIn('Lamaran_Id', $kandidat->pluck('Id_Lamaran')->all())
                     ->where('Urutan', $tahapTes->Urutan)
@@ -447,8 +596,9 @@ class PenjadwalanController extends Controller
                 if ($lamaranTahapIds) {
                     DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')
                         ->whereIn('Lamaran_Tahap_Id', $lamaranTahapIds)
-                        ->where('Jenis_Tes_Kode', $data['jenisTesKode'])
+                        ->when($tesUrutan, fn ($q, $u) => $q->where('Urutan', $u))
                         ->where('Flag_Selesai', 'N')
+                        ->whereNull('Penjadwalan_Tahap_Id')
                         ->update(['Status' => 'DIJADWALKAN', 'Penjadwalan_Tahap_Id' => $tahapTerpilihId, 'Updated_At' => $now]);
                 }
 

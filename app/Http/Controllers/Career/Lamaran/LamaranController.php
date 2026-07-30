@@ -33,6 +33,26 @@ class LamaranController extends Controller
     {
     }
 
+    /**
+     * MASTER TIPE TAHAP — satu-satunya sumber "aktivitas ini dijalankan bagaimana".
+     *
+     * Dikunci per-request supaya tidak dikueri berulang di dalam perulangan
+     * tahap/aktivitas. Kolomnya yang menggantikan kode-kode yang dulu ditulis
+     * langsung di PHP & Vue:
+     *   Perilaku_Kode 'CAT' → ujian online berjadwal (dulu: cek Provider/jenis tes)
+     *   Flag_Formulir       → tipe ini menempelkan formulir (dulu: 'FORM'/'DOCUMENT')
+     *   Flag_Upload_Hasil   → tipe ini berbasis berkas hasil (dulu: 'MCU')
+     *   Pesan_Kandidat      → kalimat yang dibaca kandidat saat menunggu di sini
+     */
+    private static ?\Illuminate\Support\Collection $tipeCache = null;
+
+    public static function masterTipeTahap(): \Illuminate\Support\Collection
+    {
+        return self::$tipeCache ??= DB::table('N_WEB_CAREERS_Master_Tipe_Tahap')
+            ->get(['Kode', 'Nama', 'Ikon', 'Perilaku_Kode', 'Flag_Formulir', 'Flag_Upload_Hasil', 'Pesan_Kandidat'])
+            ->keyBy('Kode');
+    }
+
     // ═══════════════════════ KANDIDAT ═══════════════════════
 
     /** /kandidat/loker — daftar posisi yang sedang dibuka. */
@@ -482,7 +502,18 @@ class LamaranController extends Controller
             ->orderBy('Urutan')
             ->get();
 
-        $penjadwalanTahapIds = $tahapRows->pluck('Penjadwalan_Tahap_Id')->filter()->unique()->all();
+        // SUB-TES tiap tahap. Satu tahap bisa berisi beberapa aktivitas (mis.
+        // Psikotes 2 + DISC + Wawancara) yang dijadwalkan sendiri-sendiri, jadi
+        // status "sudah/belum dijadwalkan" hidup di sini, bukan di level tahap.
+        $subTesRows = DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')
+            ->whereIn('Lamaran_Tahap_Id', $tahapRows->pluck('Id_Lamaran_Tahap')->all())
+            ->orderBy('Urutan')
+            ->get()
+            ->groupBy('Lamaran_Tahap_Id');
+
+        $penjadwalanTahapIds = $tahapRows->pluck('Penjadwalan_Tahap_Id')
+            ->merge($subTesRows->flatten(1)->pluck('Penjadwalan_Tahap_Id'))
+            ->filter()->unique()->values()->all();
 
         $ujianByTahap = collect();
         if ($penjadwalanTahapIds) {
@@ -499,40 +530,87 @@ class LamaranController extends Controller
 
         $sekarang = now();
 
-        $tahap = $tahapRows->map(function ($t) use ($ujianByTahap, $sekarang) {
-            $ujian = null;
-            $u = $t->Penjadwalan_Tahap_Id ? $ujianByTahap->get($t->Penjadwalan_Tahap_Id) : null;
+        // Perilaku & kalimat tiap tipe — dipakai portal untuk bicara sesuai
+        // aktivitas yang sedang ditunggu, bukan "lamaranmu sedang diproses".
+        $tipeTahap = self::masterTipeTahap();
 
-            if ($u) {
-                $mulai = $u->Jendela_Mulai ? \Carbon\Carbon::parse($u->Jendela_Mulai) : null;
-                $akhir = $u->Jendela_Akhir ? \Carbon\Carbon::parse($u->Jendela_Akhir) : null;
-                $dalamJendela = $mulai && $akhir && $sekarang->betweenIncluded($mulai, $akhir);
-
-                $ujian = [
-                    'terjadwal' => (bool) $u->Link_Ujian || (bool) $u->Short_Token,
-                    'token' => $u->Short_Token,
-                    'otp' => $u->Akses_OTP,
-                    'link' => $u->Link_Ujian,
-                    'namaUjian' => $u->Nama_Ujian,
-                    'waktuMulai' => optional($mulai)->toIso8601String(),
-                    'waktuSelesai' => optional($akhir)->toIso8601String(),
-                    'statusKirim' => $u->Status_Kirim,
-                    'statusPengerjaan' => $u->Status_Pengerjaan,
-                    'nilai' => $u->Total_Nilai,
-                    'kelulusan' => $u->Status_Kelulusan,
-                    'belumMulai' => $mulai ? $sekarang->lt($mulai) : false,
-                    'sudahLewat' => $akhir ? $sekarang->gt($akhir) : false,
-                    'bisaAkses' => $dalamJendela && (bool) $u->Link_Ujian && $u->Status_Pengerjaan !== 'selesai',
-                ];
+        $bentukUjian = function ($u) use ($sekarang) {
+            if (! $u) {
+                return null;
             }
+            $mulai = $u->Jendela_Mulai ? \Carbon\Carbon::parse($u->Jendela_Mulai) : null;
+            $akhir = $u->Jendela_Akhir ? \Carbon\Carbon::parse($u->Jendela_Akhir) : null;
+            $dalamJendela = $mulai && $akhir && $sekarang->betweenIncluded($mulai, $akhir);
+
+            return [
+                'terjadwal' => (bool) $u->Link_Ujian || (bool) $u->Short_Token,
+                'token' => $u->Short_Token,
+                'otp' => $u->Akses_OTP,
+                'link' => $u->Link_Ujian,
+                'namaUjian' => $u->Nama_Ujian,
+                'waktuMulai' => optional($mulai)->toIso8601String(),
+                'waktuSelesai' => optional($akhir)->toIso8601String(),
+                'statusKirim' => $u->Status_Kirim,
+                'statusPengerjaan' => $u->Status_Pengerjaan,
+                'nilai' => $u->Total_Nilai,
+                'kelulusan' => $u->Status_Kelulusan,
+                'belumMulai' => $mulai ? $sekarang->lt($mulai) : false,
+                'sudahLewat' => $akhir ? $sekarang->gt($akhir) : false,
+                'bisaAkses' => $dalamJendela && (bool) $u->Link_Ujian && $u->Status_Pengerjaan !== 'selesai',
+            ];
+        };
+
+        $tahap = $tahapRows->map(function ($t) use ($ujianByTahap, $subTesRows, $tipeTahap, $bentukUjian) {
+            $u = $t->Penjadwalan_Tahap_Id ? $ujianByTahap->get($t->Penjadwalan_Tahap_Id) : null;
+            $ujian = $bentukUjian($u);
+
+            $info = $tipeTahap->get($t->Tipe_Tahap_Kode);
+
+            // TIAP AKTIVITAS punya tipenya sendiri: satu tahap boleh berisi ujian
+            // online, tes manual, dan wawancara sekaligus. Yang dikatakan kepada
+            // kandidat mengikuti tipe AKTIVITAS, bukan tipe tahap — kalau tidak,
+            // sesi wawancara ikut diberi kalimat "menunggu token ujian".
+            $tes = collect($subTesRows->get($t->Id_Lamaran_Tahap, []))->map(function ($s) use ($ujianByTahap, $bentukUjian, $tipeTahap, $t) {
+                $su = $s->Penjadwalan_Tahap_Id ? $ujianByTahap->get($s->Penjadwalan_Tahap_Id) : null;
+                $ti = $tipeTahap->get($s->Tipe_Tahap_Kode ?: $t->Tipe_Tahap_Kode);
+                $online = ($ti->Perilaku_Kode ?? 'MANUAL') === 'CAT';
+
+                return [
+                    'urutan' => (int) $s->Urutan,
+                    'label' => $s->Label,
+                    'tipe' => $s->Tipe_Tahap_Kode ?: $t->Tipe_Tahap_Kode,
+                    'tipeNama' => $ti->Nama ?? null,
+                    'tipeIkon' => $ti->Ikon ?? null,
+                    // Kalimat tunggu untuk aktivitas ini — dari master, bukan
+                    // peta teks di dalam kode.
+                    'pesan' => $ti->Pesan_Kandidat ?? null,
+                    'eksternal' => $online,
+                    'peran' => $s->Peran,
+                    'status' => $s->Status,
+                    'hasil' => $s->Hasil,
+                    'nilai' => $s->Nilai,
+                    'selesai' => $s->Flag_Selesai === 'Y',
+                    'butuhJadwal' => $online && $s->Flag_Selesai !== 'Y' && ! $su,
+                    'ujian' => $bentukUjian($su),
+                ];
+            })->values();
+
+            // Tahap menunggu dijadwalkan bila ada aktivitas ujian online yang
+            // belum punya sesi. Aktivitas manual tidak ikut dihitung.
+            $butuhJadwal = ! $ujian && $tes->contains(fn ($x) => $x['butuhJadwal']);
 
             return [
                 'id' => Hashids::encode($t->Id_Lamaran_Tahap),
                 'urutan' => (int) $t->Urutan,
                 'label' => $t->Label,
                 'tipe' => $t->Tipe_Tahap_Kode,
+                'tipeNama' => $info->Nama ?? null,
+                'tipeIkon' => $info->Ikon ?? null,
+                // 'CAT' = ujian online berjadwal; 'MANUAL' = diatur/dinilai tim.
+                'perilaku' => $info->Perilaku_Kode ?? 'MANUAL',
+                // Kalimat tunggu bawaan tahap (dipakai bila aktivitasnya tunggal).
+                'pesan' => $info->Pesan_Kandidat ?? null,
                 'provider' => $t->Provider,
-                'jenisTes' => $t->Jenis_Tes_Kode,
                 'formulir' => $t->Formulir_Kode,
                 'status' => $t->Status,
                 'hasil' => $t->Hasil,
@@ -541,8 +619,17 @@ class LamaranController extends Controller
                 'waktuMulai' => optional($t->Waktu_Mulai)->__toString(),
                 'waktuSelesai' => optional($t->Waktu_Selesai)->__toString(),
                 'sudahIsi' => (bool) $t->Formulir_Pengisian_Id,
-                'butuhJadwal' => $t->Provider === 'THIRD_PARTY' && ! $u,
+                'butuhJadwal' => $butuhJadwal,
+                // Setelah tes dikerjakan, yang ditunggu kandidat berbeda-beda:
+                //   otomatis  → sistem langsung memutuskan, tak ada jeda manusia;
+                //   manual    → hasil masuk lalu ditinjau tim sebelum diumumkan.
+                // Tanpa dua penanda ini, kandidat yang sudah selesai tes hanya
+                // melihat layar yang sama dengan yang belum — dan mengira bisa
+                // (atau harus) mengulang tesnya.
+                'otomatis' => strtoupper((string) ($t->Keputusan_Mode ?? 'MANUAL')) === 'SYSTEM',
+                'siapDiputus' => ($t->Siap_Diputus ?? 'N') === 'Y',
                 'ujian' => $ujian,
+                'tes' => $tes,
             ];
         })->values();
 
@@ -764,6 +851,31 @@ class LamaranController extends Controller
             return ResponseHelper::error('Peserta penjadwalan tidak ditemukan.', 404);
         }
 
+        $hasil = $this->prosesHasilUjian($peserta, $data, 'CALLBACK');
+
+        if (! $hasil['diproses']) {
+            return ResponseHelper::success($hasil, 'Hasil diterima (tahap sudah final).');
+        }
+
+        return ResponseHelper::success($hasil, 'Hasil tes diproses.');
+    }
+
+    /**
+     * SATU JALUR untuk memasukkan hasil ujian pihak ke-3 ke mesin keputusan.
+     *
+     * Dipakai dua pemanggil yang membawa data dari sumber yang sama (CAT):
+     *   - webhook `hasilUjianCallback` — CAT mendorong begitu tes difinalisasi;
+     *   - `subTesSinkron` — admin menarik sendiri saat dorongan itu tak sampai.
+     *
+     * Disatukan supaya keduanya mustahil berbeda perilaku: verdict dihitung
+     * dengan aturan yang sama, nilai disimpan ke kolom yang sama, mesin tahap
+     * dievaluasi lewat pintu yang sama, dan emailnya pun sama. Idempoten:
+     * tahap yang sudah final tidak diproses ulang.
+     *
+     * @return array{diproses:bool, hasil?:string, outcome?:string}
+     */
+    private function prosesHasilUjian(object $peserta, array $data, string $asal): array
+    {
         // Verdict LULUS/GUGUR dari CAT (bool 'lulus' diprioritaskan; fallback teks).
         $teks = strtoupper((string) ($data['Status_Kelulusan'] ?? ''));
         $lulus = array_key_exists('lulus', $data) && $data['lulus'] !== null
@@ -792,22 +904,17 @@ class LamaranController extends Controller
             ->first();
 
         if (! $tahap || $tahap->Status !== 'BERJALAN') {
-            // Sudah diproses sebelumnya (idempoten) — cukup balas ok.
-            return ResponseHelper::success(['diproses' => false], 'Hasil diterima (tahap sudah final).');
+            return ['diproses' => false]; // sudah diproses sebelumnya (idempoten)
         }
-
-        // Jenis tes diambil dari JADWAL yang memicu hasil ini (bukan kolom level
-        // tahap) — pada baterai multi-tes, tiap jadwal menunjuk sub-tes berbeda.
-        $jenisTesJadwal = DB::table('N_WEB_CAREERS_Penjadwalan_Tahap')
-            ->where('Id_Penjadwalan_Tahap', $peserta->Penjadwalan_Tahap_Id)
-            ->value('Jenis_Tes_Kode');
 
         // MESIN KEPUTUSAN: rekam hasil SUB-TES ini, lalu evaluasi mode tahap.
         // Tahap 1-tes → identik dgn perilaku lama (maju/gugur). Tahap multi-tes →
         // tahap hanya maju/gugur bila kondisi mode terpenuhi; selain itu menunggu.
+        // Sub-tes dikenali lewat Penjadwalan_Tahap_Id — ikatan pasti antara sesi
+        // ujian dan aktivitas, penting saat satu tahap memuat beberapa ujian.
         $eval = $this->svc->rekamHasilTesEksternal(
             (int) $tahap->Id_Lamaran_Tahap,
-            $jenisTesJadwal ?: ($tahap->Jenis_Tes_Kode ?? null),
+            null,
             $hasil,
             isset($data['Total_Nilai']) ? (float) $data['Total_Nilai'] : null,
             isset($data['Total_Soal']) ? (int) $data['Total_Soal'] : null,
@@ -821,9 +928,9 @@ class LamaranController extends Controller
             $this->kirimEmailHasilTahap((int) $peserta->Lamaran_Id, $outcome === 'LANJUT');
         }
 
-        Log::channel('web_career')->info("[CALLBACK] hasil tes peserta #{$peserta->Id_Penjadwalan_Peserta} = {$hasil} → tahap {$tahap->Label}: {$outcome}.");
+        Log::channel('web_career')->info("[{$asal}] hasil tes peserta #{$peserta->Id_Penjadwalan_Peserta} = {$hasil} → tahap {$tahap->Label}: {$outcome}.");
 
-        return ResponseHelper::success(['diproses' => true, 'hasil' => $hasil, 'outcome' => $outcome], 'Hasil tes diproses.');
+        return ['diproses' => true, 'hasil' => $hasil, 'outcome' => $outcome];
     }
 
     /** Kirim email hasil setelah tahap tes diputus otomatis. */
@@ -1035,6 +1142,9 @@ class LamaranController extends Controller
 
         $alur = DB::table('N_WEB_CAREERS_Master_Alur')->where('Kode', $program->Alur_Kode)->first();
 
+        // Perilaku tipe dari master — tak ada kode tipe yang ditulis di sini.
+        $tipe = self::masterTipeTahap();
+
         // Kolom = tahap alur program ini, urut Urutan.
         $kolom = $alur
             ? DB::table('N_WEB_CAREERS_Master_Alur_Tahap')
@@ -1047,11 +1157,14 @@ class LamaranController extends Controller
                     'label' => $t->Label,
                     'provider' => $t->Provider,
                     'tipe' => $t->Tipe_Tahap_Kode,
+                    'tipeNama' => $tipe[$t->Tipe_Tahap_Kode]->Nama ?? null,
                     // Cut-off Talent Pool aktif untuk tahap ini? Dipakai worklist
                     // memunculkan tombol "Masuk Talent Pool" sesuai urutan tahap.
                     'talentPool' => ($t->Flag_Talent_Pool ?? 'T') === 'Y',
-                    // Upload berkas hasil (MCU/Interview) — aktif & wajib/tidak.
-                    'uploadHasil' => ($t->Flag_Upload_Hasil ?? 'T') === 'Y' || $t->Tipe_Tahap_Kode === 'MCU',
+                    // Upload berkas hasil — dari flag tahap, atau dari tipe yang
+                    // memang berbasis berkas (Master Tipe Tahap → Flag_Upload_Hasil).
+                    'uploadHasil' => ($t->Flag_Upload_Hasil ?? 'T') === 'Y'
+                        || ($tipe[$t->Tipe_Tahap_Kode]->Flag_Upload_Hasil ?? 'T') === 'Y',
                     'wajibUpload' => ($t->Flag_Wajib_Upload ?? 'T') === 'Y',
                 ])->all()
             : [];
@@ -1159,6 +1272,11 @@ class LamaranController extends Controller
                 'otomatis' => (bool) $st['otomatis'],
                 'aktivitasBelumTercatat' => (int) $st['aktivitasBelumTercatat'],
                 'alasanKunci' => $st['alasanKunci'],
+                // Kesimpulan MESIN atas hasil tes tahap ini (LULUS/GAGAL/SEBAGIAN).
+                // Admin melihatnya sebelum mengetuk palu — tanpa ini layar hanya
+                // bilang "Siap Diputus" dan hasil tesnya harus ditebak sendiri.
+                'hasilData' => $st['hasilData'],
+                'ringkasHasil' => $st['ringkasHasil'],
                 'skor' => $skor,
                 'rekomendasi' => $tAktif->Rekomendasi ?? null,
                 'alasan' => $tAktif->Rekomendasi_Alasan ?? $l->Alasan_Gugur,
@@ -1217,23 +1335,38 @@ class LamaranController extends Controller
      * Satu baris RAPOR aktivitas tahap.
      *
      * `dapatDicatat` menentukan munculnya tombol "Catat Hasil" / "Tidak hadir".
-     * Tidak semua aktivitas punya hasil sendiri: tahap ber-aktivitas TUNGGAL
-     * tanpa jenis tes (mis. Seleksi Administrasi, formulir, wawancara satu
-     * sesi) hasilnya ADALAH keputusan admin di tombol Loloskan/Tidak Lolos —
-     * menyediakan "Catat Hasil" di situ hanya menduplikasi keputusan yang sama
-     * dan membuat admin bertanya-tanya mana yang berlaku. Yang perlu dicatat
-     * sendiri hanya aktivitas yang benar-benar tes (punya Jenis Tes) atau tahap
-     * berisi beberapa aktivitas sekaligus (mis. FGD = psikotes + wawancara).
+     * SIAPA YANG MENCATAT HASIL — mengikuti cara aktivitas itu dijalankan:
+     *
+     *  UJIAN ONLINE (CAT).  Hasilnya datang sendiri dari HCLearn. "Catat Hasil"
+     *      TIDAK ditawarkan: admin tak punya angka untuk diisi, dan mengisinya
+     *      manual justru menimpa nilai resmi yang sebentar lagi masuk. Yang
+     *      masuk akal hanya "Tidak hadir" — itu fakta yang cuma diketahui tim,
+     *      dan sekaligus jalan keluar bila kandidat tak pernah mengerjakan.
+     *
+     *  DIKERJAKAN TIM (wawancara, tes offline, FGD).  Tak ada sistem lain yang
+     *      mengirim hasilnya, jadi admin yang mencatat.
+     *
+     * Kecuali: tahap ber-aktivitas TUNGGAL yang ditangani tim (mis. Seleksi
+     * Administrasi) hasilnya ADALAH keputusan Loloskan/Tidak Lolos itu sendiri —
+     * menyediakan "Catat Hasil" di situ hanya menduplikasi keputusan yang sama.
      */
     private static function rapotTes(object $x, int $jumlahAktivitasTahap): array
     {
-        $adalahTes = ! empty($x->Jenis_Tes_Kode) || $jumlahAktivitasTahap > 1;
         $final = in_array($x->Status, ['SELESAI', 'TIDAK_HADIR'], true);
+        $tipe = self::masterTipeTahap()[$x->Tipe_Tahap_Kode ?? ''] ?? null;
+        $online = ($tipe->Perilaku_Kode ?? null) === 'CAT' || ($x->Provider ?? '') === 'THIRD_PARTY';
+        // Punya hasil sendiri yang harus dicatat tim: aktivitas manual pada tahap
+        // multi-aktivitas (di tahap tunggal, keputusan tahap sudah mewakilinya).
+        $dicatatTim = ! $online && $jumlahAktivitasTahap > 1;
 
         return [
             'id' => Hashids::encode($x->Id_Lamaran_Tahap_Tes),
             'label' => $x->Label,
-            'jenisTes' => $x->Jenis_Tes_Kode,
+            // Tipe MILIK AKTIVITAS INI — dalam satu tahap bisa bercampur ujian
+            // online, tes manual, dan wawancara; admin harus bisa membedakannya.
+            'tipe' => $x->Tipe_Tahap_Kode ?? null,
+            'tipeNama' => $tipe->Nama ?? null,
+            'tipeIkon' => $tipe->Ikon ?? null,
             'provider' => $x->Provider,
             'peran' => $x->Peran,
             'wajib' => $x->Wajib === 'Y',
@@ -1241,10 +1374,16 @@ class LamaranController extends Controller
             'hasil' => $x->Hasil,
             'nilai' => $x->Nilai !== null ? (float) $x->Nilai : null,
             'catatan' => $x->Catatan ?? null,
-            // Hasil dari pihak ke-3 masuk sendiri lewat callback — admin tidak
-            // mencatatnya manual.
-            'dapatDicatat' => $adalahTes && ! $final && ($x->Provider ?? '') !== 'THIRD_PARTY',
-            'dapatTidakHadir' => $adalahTes && ! $final,
+            // Ujian online: hasilnya dari HCLearn → tak ada "Catat Hasil".
+            'dapatDicatat' => $dicatatTim && ! $final,
+            // Ujian online yang sudah dijadwalkan boleh ditarik hasilnya kapan
+            // pun — jaring pengaman saat webhook CAT tidak sampai.
+            'dapatSinkron' => $online && ! $final && ! empty($x->Penjadwalan_Tahap_Id),
+            // "Tidak hadir" berlaku untuk keduanya — hanya tim yang tahu, dan
+            // untuk ujian online inilah jalan keluar bila kandidat tak mengerjakan.
+            'dapatTidakHadir' => ($online || $dicatatTim) && ! $final,
+            // Penanda UI: aktivitas ini menunggu hasil dari sistem lain.
+            'online' => $online,
         ];
     }
 
@@ -1392,6 +1531,110 @@ class LamaranController extends Controller
     }
 
     /**
+     * POST /api/v1/lamaran/sub-tes/{id}/sinkron — TARIK HASIL DARI HCLEARN.
+     *
+     * Pengganti "catat manual" untuk ujian online. Kalau webhook CAT tak sampai
+     * (jaringan putus, aplikasi restart, secret salah), dulu satu-satunya jalan
+     * adalah admin mengetik nilai sendiri — menebak angka yang bukan miliknya.
+     * Sekarang admin cukup menarik: nilainya dibaca LANGSUNG dari tabel CAT
+     * (`HRIS_KANDIDAT_Ujian_Token` + `..._Ujian_Nilai_Akhir`, satu database),
+     * lalu masuk lewat pintu yang sama dengan webhook. Yang tersimpan tetap
+     * angka resmi penyedia, bukan ketikan orang.
+     *
+     * Aman diulang: bila hasilnya sudah tercatat, tahap tidak diproses dua kali.
+     */
+    public function subTesSinkron(string $id)
+    {
+        $realId = Hashids::decode($id)[0] ?? null;
+        if (! $realId) {
+            return ResponseHelper::error('Aktivitas tidak valid.', 422);
+        }
+
+        try {
+            $sub = DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')->where('Id_Lamaran_Tahap_Tes', $realId)->first();
+            if (! $sub) {
+                return ResponseHelper::error('Aktivitas tidak ditemukan.', 404);
+            }
+            if ($sub->Flag_Selesai === 'Y') {
+                return ResponseHelper::error('Hasil aktivitas ini sudah final — tidak perlu disinkronkan.', 422);
+            }
+
+            $tipeSub = self::masterTipeTahap()[$sub->Tipe_Tahap_Kode ?? ''] ?? null;
+            $online = ($tipeSub->Perilaku_Kode ?? null) === 'CAT' || ($sub->Provider ?? '') === 'THIRD_PARTY';
+            if (! $online) {
+                return ResponseHelper::error("\"{$sub->Label}\" dikerjakan tim — hasilnya dicatat lewat tombol Catat Hasil, bukan ditarik dari HCLearn.", 422);
+            }
+            if (! $sub->Penjadwalan_Tahap_Id) {
+                return ResponseHelper::error("\"{$sub->Label}\" belum dijadwalkan — belum ada sesi ujian yang bisa ditarik hasilnya.", 422);
+            }
+
+            $lamaranId = (int) DB::table('N_WEB_CAREERS_Lamaran_Tahap')
+                ->where('Id_Lamaran_Tahap', $sub->Lamaran_Tahap_Id)->value('Lamaran_Id');
+
+            $peserta = DB::table('N_WEB_CAREERS_Penjadwalan_Peserta')
+                ->where('Penjadwalan_Tahap_Id', $sub->Penjadwalan_Tahap_Id)
+                ->where('Lamaran_Id', $lamaranId)
+                ->first();
+            if (! $peserta) {
+                return ResponseHelper::error('Peserta ujian untuk aktivitas ini tidak ditemukan.', 404);
+            }
+
+            // SESI UJIAN DI CAT — dicari lewat id peserta yang dibawa saat
+            // penjadwalan; Short_Token jadi cadangan untuk baris lama.
+            $token = DB::table('HRIS_KANDIDAT_Ujian_Token')
+                ->where('Sumber_Aplikasi', 'WEB_CAREERS')
+                // Digrupkan: tanpa kurung, OR akan membatalkan penyaring di atas
+                // dan bisa memungut sesi ujian milik kandidat lain.
+                ->where(fn ($q) => $q
+                    ->where('Id_WC_Penjadwalan_Peserta', $peserta->Id_Penjadwalan_Peserta)
+                    ->when($peserta->Short_Token, fn ($w, $t) => $w->orWhere('Short_Token', $t)))
+                ->orderByDesc('Id_Ujian_Token')
+                ->first();
+            if (! $token) {
+                return ResponseHelper::error('Sesi ujian tidak ditemukan di HCLearn. Periksa penjadwalannya.', 404);
+            }
+
+            $nilai = DB::table('HRIS_KANDIDAT_Ujian_Nilai_Akhir')
+                ->where('Id_Ujian_Token', $token->Id_Ujian_Token)
+                ->orderByDesc('Id_Ujian_Nilai_Akhir')
+                ->first();
+
+            // Belum ada nilai → jangan mengarang. Sampaikan apa adanya, sekaligus
+            // segarkan status pengerjaan supaya admin melihat perkembangan nyata.
+            if (! $nilai) {
+                DB::table('N_WEB_CAREERS_Penjadwalan_Peserta')
+                    ->where('Id_Penjadwalan_Peserta', $peserta->Id_Penjadwalan_Peserta)
+                    ->update(['Status_Pengerjaan' => $token->Status_Pengerjaan, 'Updated_At' => now()]);
+
+                $status = $token->Status_Pengerjaan ?: 'belum dimulai';
+
+                return ResponseHelper::error("Belum ada nilai di HCLearn untuk \"{$sub->Label}\" — status pengerjaan saat ini: {$status}. Coba lagi setelah kandidat menyelesaikan tesnya.", 422);
+            }
+
+            $hasil = $this->prosesHasilUjian($peserta, [
+                'Status_Kelulusan' => $nilai->Status_Kelulusan,
+                'Total_Nilai' => $nilai->Total_Nilai,
+                'Total_Soal' => $nilai->Total_Soal,
+                'Ambang_Batas_Nilai' => $nilai->Ambang_Batas_Nilai,
+                'Status_Pengerjaan' => $token->Status_Pengerjaan ?: 'selesai',
+            ], 'SINKRON');
+
+            if (! $hasil['diproses']) {
+                return ResponseHelper::success($hasil, 'Hasil sudah tercatat sebelumnya — tidak ada yang berubah.');
+            }
+
+            return ResponseHelper::success(
+                $hasil,
+                "Hasil \"{$sub->Label}\" ditarik dari HCLearn: {$nilai->Status_Kelulusan} (nilai {$nilai->Total_Nilai})."
+            );
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->error("Gagal sinkron hasil sub-tes #{$id}: " . $e->getMessage());
+
+            return ResponseHelper::error('Gagal menarik hasil dari HCLearn.', 500);
+        }
+    }
+
+    /**
      * PATCH /api/v1/lamaran/sub-tes/{id}/tidak-hadir — ESCAPE HATCH admin.
      * Sub-tes yang kandidatnya tidak hadir / token hangus ditandai TIDAK_HADIR
      * supaya tahap tidak menggantung menunggu hasil yang tak akan datang; mesin
@@ -1462,23 +1705,44 @@ class LamaranController extends Controller
             if ($sub->Flag_Selesai === 'Y') {
                 return ResponseHelper::error('Sub-tes ini sudah final.', 422);
             }
-            if ($sub->Provider === 'THIRD_PARTY') {
-                return ResponseHelper::error('Hasil tes pihak ke-3 hanya boleh datang dari HCLearn — gunakan "Tidak hadir" bila kandidat absen.', 422);
+
+            // UJIAN ONLINE TIDAK DICATAT MANUAL.
+            //
+            // Nilainya dihitung dan dilaporkan HCLearn; mengetiknya sendiri di
+            // sini berarti menimpa angka resmi dengan tebakan, dan admin tak
+            // punya sumber angka itu. Kalau kandidat memang tak mengerjakan,
+            // yang benar adalah menandainya TIDAK HADIR — itu fakta yang cuma
+            // diketahui tim, dan tetap melepas tahap dari status menunggu.
+            //
+            // Aktivitas yang dikerjakan tim (wawancara, tes offline, FGD) justru
+            // sebaliknya: tak ada sistem lain yang mengirim hasilnya.
+            $tipeSub = self::masterTipeTahap()[$sub->Tipe_Tahap_Kode ?? ''] ?? null;
+            $online = ($tipeSub->Perilaku_Kode ?? null) === 'CAT' || ($sub->Provider ?? '') === 'THIRD_PARTY';
+            if ($online) {
+                return ResponseHelper::error(
+                    "\"{$sub->Label}\" adalah ujian online — hasilnya masuk sendiri dari HCLearn dan tidak dicatat manual. "
+                    . 'Bila kandidat tidak mengerjakannya, tandai "Tidak hadir".',
+                    422
+                );
             }
+
             // Sub-tes PENENTU wajib membawa verdict; INFORMATIF cukup selesai + nilai.
             if ($sub->Peran === 'PENENTU' && empty($data['hasil'])) {
                 return ResponseHelper::error('Pilih hasil (Lulus / Gagal) untuk aktivitas penentu.', 422);
             }
 
+            $nama = session('career_auth.nama', 'ADMIN');
+            $catatan = $data['catatan'] ?? null;
+
             DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')->where('Id_Lamaran_Tahap_Tes', $realId)->update([
                 'Status' => 'SELESAI',
                 'Hasil' => $sub->Peran === 'INFORMATIF' ? null : $data['hasil'],
                 'Nilai' => $data['nilai'] ?? null,
-                'Catatan' => $data['catatan'] ?? null,
+                'Catatan' => $catatan,
                 'Flag_Selesai' => 'Y',
                 'Waktu_Selesai' => now(),
                 'Updated_At' => now(),
-                'Updated_By' => session('career_auth.nama', 'ADMIN'),
+                'Updated_By' => $nama,
                 'Updated_By_Id' => session('career_auth.id'),
             ]);
 

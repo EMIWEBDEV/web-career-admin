@@ -345,7 +345,21 @@ class CareerAdminController extends Controller
         $rows = $q
             ->orderBy($labCol)
             ->get()
-            ->map(fn($r) => ['value' => $r->{$valCol}, 'label' => $r->{$labCol}])
+            // Tipe tahap membawa PERILAKU & FLAG-nya. Builder Alur Seleksi
+            // memakainya untuk tahu sebuah aktivitas itu ujian online (CAT) atau
+            // ditangani tim, dan apakah tipe itu menempelkan formulir — hal-hal
+            // yang dulu ditulis sebagai daftar kode di dalam file Vue.
+            ->map(function ($r) use ($valCol, $labCol, $type) {
+                $baris = ['value' => $r->{$valCol}, 'label' => $r->{$labCol}];
+                if ($type === 'tipe') {
+                    $baris['perilaku'] = $r->Perilaku_Kode ?? null;
+                    $baris['ikon'] = $r->Ikon ?? null;
+                    $baris['formulir'] = ($r->Flag_Formulir ?? 'T') === 'Y';
+                    $baris['uploadHasil'] = ($r->Flag_Upload_Hasil ?? 'T') === 'Y';
+                }
+
+                return $baris;
+            })
             ->values();
 
         return ResponseHelper::success($rows, 'Opsi ' . $type);

@@ -368,11 +368,14 @@ class LamaranService
             return ['ok' => false, 'pesan' => 'Hasil aktivitas berikut belum dicatat: ' . ($nama ?: $belum->count() . ' aktivitas') . '. Catat hasilnya dulu sebelum memutuskan.'];
         }
 
-        // GATE WAJIB UPLOAD: tahap dgn "upload hasil WAJIB" (mis. MCU) tak bisa
-        // diloloskan sebelum berkas hasil diunggah.
+        // GATE WAJIB UPLOAD: tahap dgn "upload hasil WAJIB" tak bisa diloloskan
+        // sebelum berkas hasil diunggah. Tipe apa saja yang berbasis berkas
+        // dibaca dari Master Tipe Tahap (Flag_Upload_Hasil) — bukan kode tipe
+        // yang ditulis di sini, supaya tipe baru tak perlu menyentuh file ini.
         if ($hasil === 'LULUS' && ! empty($tahap->Master_Alur_Tahap_Id)) {
             $m = DB::table('N_WEB_CAREERS_Master_Alur_Tahap')->where('Id_Master_Alur_Tahap', $tahap->Master_Alur_Tahap_Id)->first();
-            $uploadAktif = $m && (($m->Flag_Upload_Hasil ?? 'T') === 'Y' || ($m->Tipe_Tahap_Kode ?? '') === 'MCU');
+            $tipeBerkas = $m ? DB::table('N_WEB_CAREERS_Master_Tipe_Tahap')->where('Kode', $m->Tipe_Tahap_Kode)->value('Flag_Upload_Hasil') : null;
+            $uploadAktif = $m && (($m->Flag_Upload_Hasil ?? 'T') === 'Y' || $tipeBerkas === 'Y');
             if ($m && $uploadAktif && ($m->Flag_Wajib_Upload ?? 'T') === 'Y') {
                 $adaBerkas = DB::table('N_WEB_CAREERS_Lamaran_Tahap_Berkas')->where('Lamaran_Tahap_Id', $lamaranTahapId)->exists();
                 if (! $adaBerkas) {
@@ -870,6 +873,9 @@ class LamaranService
                 'Master_Alur_Tahap_Tes_Id' => $x->Id_Master_Alur_Tahap_Tes,
                 'Urutan' => $x->Urutan,
                 'Jenis_Tes_Kode' => $x->Jenis_Tes_Kode,
+                // Tipe aktivitas ikut dibekukan: alur boleh berubah nanti, tapi
+                // yang dijalani kandidat ini harus tetap seperti saat ia melamar.
+                'Tipe_Tahap_Kode' => $x->Tipe_Tahap_Kode,
                 'Provider' => $x->Provider,
                 'Peran' => $x->Peran,
                 'Wajib' => $x->Wajib,
@@ -900,6 +906,7 @@ class LamaranService
             DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')->insert([
                 'Lamaran_Tahap_Id' => $lamaranTahapId, 'Urutan' => 1,
                 'Jenis_Tes_Kode' => $t->Jenis_Tes_Kode, 'Provider' => $t->Provider ?? 'INTERNAL',
+                'Tipe_Tahap_Kode' => $t->Tipe_Tahap_Kode,
                 'Peran' => 'PENENTU', 'Wajib' => 'Y', 'Label' => $t->Label, 'Status' => 'BELUM',
                 'Created_At' => now(), 'Created_By' => 'SISTEM', 'Updated_At' => now(), 'Updated_By' => 'SISTEM',
             ]);
@@ -920,8 +927,15 @@ class LamaranService
             ->where('Lamaran_Tahap_Id', $lamaranTahapId)
             ->where('Flag_Selesai', 'N');
 
-        // Arahkan ke sub-tes yang cocok: jenis tes → THIRD_PARTY → apa saja.
-        $sub = $jenisTesKode ? (clone $base)->where('Jenis_Tes_Kode', $jenisTesKode)->orderBy('Urutan')->first() : null;
+        // Arahkan ke sub-tes yang cocok. URUTAN PENCARIAN PENTING: hasil harus
+        // mendarat di aktivitas yang BENAR, karena satu tahap bisa berisi
+        // beberapa ujian yang dijadwalkan terpisah.
+        //   1. Penjadwalan_Tahap_Id — ikatan pasti antara sesi ujian & sub-tes,
+        //      dibuat saat penjadwalan. Ini yang paling dipercaya.
+        //   2. Jenis tes — hanya untuk data lama; alur baru tak menyimpannya.
+        //   3. Sub-tes pihak ke-3 pertama yang belum selesai.
+        $sub = $penjadwalanTahapId ? (clone $base)->where('Penjadwalan_Tahap_Id', $penjadwalanTahapId)->orderBy('Urutan')->first() : null;
+        $sub ??= $jenisTesKode ? (clone $base)->where('Jenis_Tes_Kode', $jenisTesKode)->orderBy('Urutan')->first() : null;
         $sub ??= (clone $base)->where('Provider', 'THIRD_PARTY')->orderBy('Urutan')->first();
         $sub ??= (clone $base)->orderBy('Urutan')->first();
 

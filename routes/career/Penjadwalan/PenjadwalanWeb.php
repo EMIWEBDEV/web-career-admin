@@ -16,6 +16,8 @@ Route::prefix('api/v1')->name('career.api.penjadwalan.')->group(function () {
     Route::delete('/penjadwalan/{id}', [PenjadwalanController::class, 'destroy'])->name('destroy')->middleware('career.permission:penjadwalanPage,DELETE');
 
     Route::get('/penjadwalan/opsi', [PenjadwalanController::class, 'opsi'])->name('opsi')->middleware('career.permission:penjadwalanPage,VIEW');
+    // Tahap/aktivitas tes milik ALUR program terpilih — pengganti daftar jenis tes global.
+    Route::get('/penjadwalan/tes', [PenjadwalanController::class, 'tesAlur'])->name('tes')->middleware('career.permission:penjadwalanPage,VIEW');
     Route::get('/penjadwalan/kandidat', [PenjadwalanController::class, 'kandidat'])->name('kandidat')->middleware('career.permission:penjadwalanPage,VIEW');
     Route::get('/penjadwalan/paket-ujian', [PenjadwalanController::class, 'paketUjian'])->name('paket')->middleware('career.permission:penjadwalanPage,VIEW');
 });

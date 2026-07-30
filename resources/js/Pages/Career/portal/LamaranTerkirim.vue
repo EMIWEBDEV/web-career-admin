@@ -306,7 +306,7 @@ const jenis = computed(() => app.value?.jenis || props.catalog?.jenis || 'REKRUT
 // Tahapan = pipeline tersimpan di sessionStorage (admin-aligned). Fallback ke katalog/stages.
 const pipeline = computed(() => app.value?.pipeline?.length ? app.value.pipeline : (props.catalog?.pipeline?.length ? props.catalog.pipeline : (props.stages || []).map((s) => ({ tipe: s.key, label: s.label }))));
 const curIdx = computed(() => Math.min(app.value?.stageIdx || 0, Math.max(0, pipeline.value.length - 1)));
-const current = computed(() => pipeline.value[curIdx.value] || { label: '—', tipe: 'FORM' });
+const current = computed(() => pipeline.value[curIdx.value] || { label: '—', tipe: null });
 
 const resultKey = computed(() => (app.value?.result === 'GAGAL' ? 'fail' : (app.value?.result === 'LULUS' ? 'pass' : 'run')));
 const isFailed = computed(() => resultKey.value === 'fail');

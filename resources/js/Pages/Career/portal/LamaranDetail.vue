@@ -103,61 +103,78 @@
             </div>
 
             <div class="ld-mainc">
-                    <!-- ── Tahap aktif: tes HCLearn ── -->
+                    <!-- ── Tahap aktif: tes online (HCLearn) ── -->
                     <div v-if="tahapTes" class="ld-card ld-act">
                         <div class="ld-act__head">
                             <span class="ld-act__ico">
                                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10L12 5 2 10l10 5 10-5z" /><path d="M6 12v5c3 3 9 3 12 0v-5" /></svg>
                             </span>
                             <div style="min-width: 0">
-                                <div class="ld-eyebrow">TAHAP AKTIF · TES ONLINE</div>
-                                <div class="ld-act__title">{{ tahapTes.ujian?.namaUjian || tahapTes.label }}</div>
+                                <div class="ld-eyebrow">TAHAP {{ tahapTes.urutan }} DARI {{ totalTahap }} · {{ (tahapTes.tipeNama || 'Tes Online').toUpperCase() }}</div>
+                                <div class="ld-act__title">{{ sesi.ujian?.namaUjian || sesi.label }}</div>
                                 <div class="ld-act__sub">Tes ini diselenggarakan melalui platform HCLearn.</div>
                             </div>
                         </div>
 
-                        <div v-if="tahapTes.butuhJadwal || !tahapTes.ujian?.terjadwal" class="ld-notice ld-notice--wait">
+                        <!-- Satu tahap bisa mencampur ujian online, tes manual, dan
+                             wawancara. Semuanya ditampilkan beserta TIPE masing-masing,
+                             supaya kandidat tidak menunggu token untuk sesi tatap muka. -->
+                        <div v-if="aktivitas.length > 1" class="ld-subtes">
+                            <span v-for="x in aktivitas" :key="x.urutan" class="ld-subtes__i" :class="'is-' + subState(x)">
+                                <i></i>{{ x.label }}
+                                <em>{{ x.tipeNama }} · {{ subLabel(x) }}</em>
+                            </span>
+                        </div>
+
+                        <div v-if="!sesi.ujian?.terjadwal" class="ld-notice ld-notice--wait">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex: 0 0 auto"><path d="M5 3h14l-6 8v7l-2 1v-8L5 3z" /></svg>
-                            <div><b>Menunggu penjadwalan</b><p>Tim rekrutmen belum menetapkan jadwal tes Anda. Token &amp; waktu pengerjaan akan muncul di sini setelah dijadwalkan.</p></div>
+                            <div><b>Menunggu dijadwalkan</b><p>Kamu sudah masuk tahap ini. Tim rekrutmen sedang menyiapkan jadwalnya — token, kode OTP, dan waktu pengerjaan akan muncul di sini begitu terbit, dan kamu diberi tahu lewat email.</p></div>
                         </div>
 
                         <template v-else>
                             <div class="ld-cred">
                                 <div class="ld-cred__item">
                                     <span class="ld-cred__lbl">TOKEN AKSES</span>
-                                    <span class="ld-cred__val ld-mono">{{ tahapTes.ujian.token || '—' }}</span>
+                                    <span class="ld-cred__val ld-mono">{{ sesi.ujian.token || '—' }}</span>
                                 </div>
                                 <div class="ld-cred__item">
                                     <span class="ld-cred__lbl">KODE OTP</span>
-                                    <span class="ld-cred__val ld-mono">{{ tahapTes.ujian.otp || '—' }}</span>
+                                    <span class="ld-cred__val ld-mono">{{ sesi.ujian.otp || '—' }}</span>
                                 </div>
                                 <div class="ld-cred__item">
                                     <span class="ld-cred__lbl">WAKTU MULAI</span>
-                                    <span class="ld-cred__val">{{ fmtWaktu(tahapTes.ujian.waktuMulai) }}</span>
+                                    <span class="ld-cred__val">{{ fmtWaktu(sesi.ujian.waktuMulai) }}</span>
                                 </div>
                                 <div class="ld-cred__item">
                                     <span class="ld-cred__lbl">WAKTU BERAKHIR</span>
-                                    <span class="ld-cred__val">{{ fmtWaktu(tahapTes.ujian.waktuSelesai) }}</span>
+                                    <span class="ld-cred__val">{{ fmtWaktu(sesi.ujian.waktuSelesai) }}</span>
                                 </div>
                             </div>
 
-                            <div v-if="sudahSelesai(tahapTes)" class="ld-notice ld-notice--done">
+                            <!-- SUDAH DIKERJAKAN — tes tidak bisa diulang. Yang ditunggu
+                                 berikutnya berbeda tergantung cara tahap menyimpulkan. -->
+                            <div v-if="sudahSelesai(sesi)" class="ld-notice ld-notice--done">
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2.4" stroke-linecap="round" style="flex: 0 0 auto"><path d="M20 6L9 17l-5-5" /></svg>
-                                <div><b>Tes selesai dikerjakan</b><p v-if="tahapTes.ujian.nilai !== null && tahapTes.ujian.nilai !== undefined">Nilai Anda: <b>{{ tahapTes.ujian.nilai }}</b> — {{ tahapTes.ujian.kelulusan || 'menunggu keputusan' }}.</p></div>
+                                <div>
+                                    <b>Tes sudah kamu kerjakan — tidak dapat diulang</b>
+                                    <p>{{ pesanSetelahTes }}</p>
+                                </div>
                             </div>
-                            <div v-else-if="belumMulai(tahapTes)" class="ld-notice ld-notice--wait">
+                            <div v-else-if="belumMulai(sesi)" class="ld-notice ld-notice--wait">
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2.2" stroke-linecap="round" style="flex: 0 0 auto"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
-                                <div><b>Tes belum dibuka</b><p>Tombol akan aktif otomatis saat waktu mulai tiba{{ hitungMundur(tahapTes) ? ' — ' + hitungMundur(tahapTes) : '' }}.</p></div>
+                                <div><b>Tes belum dibuka</b><p>Tombol akan aktif otomatis saat waktu mulai tiba{{ hitungMundur(sesi) ? ' — ' + hitungMundur(sesi) : '' }}.</p></div>
                             </div>
-                            <div v-else-if="sudahLewat(tahapTes)" class="ld-notice ld-notice--err">
+                            <div v-else-if="sudahLewat(sesi)" class="ld-notice ld-notice--err">
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2.2" stroke-linecap="round" style="flex: 0 0 auto"><path d="M10.3 3.8L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.8a2 2 0 0 0-3.4 0z" /><path d="M12 9v4M12 17h.01" /></svg>
                                 <div><b>Waktu tes berakhir</b><p>Jendela pengerjaan sudah lewat. Hubungi tim rekrutmen bila ada kendala.</p></div>
                             </div>
 
-                            <button class="ld-btn-tes" :disabled="!bisaAkses(tahapTes)" @click="bukaTes(tahapTes)">
-                                <svg v-if="bisaAkses(tahapTes)" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M10 14L21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></svg>
+                            <!-- Tombol DISEMBUNYIKAN setelah tes dikerjakan. Menampilkannya
+                                 dalam keadaan mati tetap mengesankan tes bisa diulang. -->
+                            <button v-if="!sudahSelesai(sesi)" class="ld-btn-tes" :disabled="!bisaAkses(sesi)" @click="bukaTes(sesi)">
+                                <svg v-if="bisaAkses(sesi)" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M10 14L21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></svg>
                                 <svg v-else width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>
-                                {{ bisaAkses(tahapTes) ? 'Mulai Tes Sekarang' : 'Tes Terkunci' }}
+                                {{ bisaAkses(sesi) ? 'Mulai Tes Sekarang' : 'Tes Terkunci' }}
                             </button>
                         </template>
                     </div>
@@ -176,6 +193,26 @@
                         </div>
                         <div class="ld-act__form">
                             <component :is="komponen" v-model="jawaban" :konteks="konteks" label-kirim="Kirim & Lanjutkan" @kirim="kirim" @berkas="onBerkas" />
+                        </div>
+                    </div>
+
+                    <!-- ── Tahap aktif: ditangani tim rekrutmen (wawancara, MCU,
+                         screening, penawaran). Tanpa kartu ini halaman terlihat
+                         kosong dan kandidat tidak tahu sedang menunggu apa. ── -->
+                    <div v-else-if="tahapAktif" class="ld-card ld-act">
+                        <div class="ld-act__head">
+                            <span class="ld-act__ico">
+                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /></svg>
+                            </span>
+                            <div style="min-width: 0">
+                                <div class="ld-eyebrow">TAHAP {{ tahapAktif.urutan }} DARI {{ totalTahap }} · {{ (tahapAktif.tipeNama || 'Proses Seleksi').toUpperCase() }}</div>
+                                <div class="ld-act__title">{{ tahapAktif.label }}</div>
+                                <div class="ld-act__sub">{{ pesanTahap.sub }}</div>
+                            </div>
+                        </div>
+                        <div class="ld-notice ld-notice--wait">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2.2" stroke-linecap="round" style="flex: 0 0 auto"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
+                            <div><b>{{ pesanTahap.judul }}</b><p>{{ pesanTahap.teks }}</p></div>
                         </div>
                     </div>
 
@@ -384,6 +421,12 @@ const P = {
     doc: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>',
 };
 
+// Kalimat "sedang menunggu apa" TIDAK ditulis di sini. Setiap tipe aktivitas
+// membawa Pesan_Kandidat-nya sendiri dari Master Tipe Tahap, jadi menambah tipe
+// baru (mis. "Tes Praktik Lapangan") cukup lewat master tanpa menyentuh file
+// ini. Satu kalimat cadangan di bawah hanya dipakai bila master belum diisi.
+const PESAN_UMUM = 'Tidak ada yang perlu kamu kerjakan sekarang — tim rekrutmen akan mengabarimu lewat email dan halaman ini.';
+
 export default {
     components: { Head, Link },
     props: {
@@ -444,12 +487,89 @@ export default {
             const selesai = this.tahap.filter((t) => t.status === 'SELESAI' && t.hasil !== 'GUGUR').length;
             return Math.round((selesai / this.totalTahap) * 100);
         },
-        tahapTes() { return this.tahap.find((t) => t.status === 'BERJALAN' && t.provider === 'THIRD_PARTY') || null; },
+        tahapAktif() { return this.tahap.find((t) => t.status === 'BERJALAN') || null; },
+        // Seluruh aktivitas tahap aktif, apa pun tipenya.
+        aktivitas() { return this.tahapAktif?.tes || []; },
+        // Aktivitas ujian online saja — hanya inilah yang punya token & jendela
+        // waktu. Wawancara/tes manual di tahap yang sama TIDAK ikut ke sini.
+        tesList() { return this.aktivitas.filter((x) => x.eksternal); },
+        // Tahap ini menampilkan kartu ujian online bila ada aktivitas online di
+        // dalamnya — bukan karena tipe tahapnya kebetulan "Tes Online".
+        tahapTes() { return this.tesList.length ? this.tahapAktif : null; },
+        // Aktivitas non-online yang masih ditunggu (wawancara, tes manual, MCU).
+        aktivitasManual() { return this.aktivitas.filter((x) => !x.eksternal && !x.selesai); },
+        // Sesi ujian yang sedang relevan: yang bisa dikerjakan → yang sudah
+        // terjadwal → yang pertama menunggu jadwal.
+        sesi() {
+            const t = this.tahapTes;
+            if (!t) return { label: '', ujian: null };
+            const belum = this.tesList.filter((x) => !x.selesai);
+            const pilih = belum.find((x) => x.ujian?.bisaAkses) || belum.find((x) => x.ujian) || belum[0] || this.tesList[0];
+            if (pilih) return { label: pilih.label || t.label, ujian: pilih.ujian || t.ujian };
+            return { label: t.label, ujian: t.ujian };
+        },
+        // Apa yang terjadi SETELAH tes dikerjakan. Sengaja TIDAK menyebut lulus
+        // atau tidak: kapan hasil boleh dilihat kandidat diatur Mode Pengumuman
+        // tahap, jadi membocorkannya di sini akan mendahului aturan itu.
+        pesanSetelahTes() {
+            const t = this.tahapTes;
+            if (t?.otomatis) {
+                return 'Hasilnya diproses otomatis oleh sistem. Begitu keputusan tahap ini terbit, status di halaman ini langsung berubah — kamu juga diberi tahu lewat email.';
+            }
+            if (this.tesList.some((x) => !x.selesai)) {
+                return 'Masih ada aktivitas lain di tahap ini yang harus kamu selesaikan. Keputusan tahap diambil setelah semuanya rampung.';
+            }
+
+            return 'Hasilnya sudah masuk dan sedang ditinjau tim rekrutmen. Keputusan tahap ini akan muncul di halaman ini begitu terbit.';
+        },
+        // Kalimat untuk tahap yang ditangani tim — diambil dari aktivitas yang
+        // sedang ditunggu, teksnya dari Master Tipe Tahap (bukan dari kode ini).
+        pesanTahap() {
+            const t = this.tahapAktif;
+            if (!t) return { judul: '', sub: '', teks: '' };
+            const a = this.aktivitasManual[0] || null;
+            const nama = a?.tipeNama || t.tipeNama;
+            return {
+                judul: nama ? `Menunggu ${nama.toLowerCase()}` : 'Sedang ditangani tim rekrutmen',
+                sub: a && this.aktivitas.length > 1 ? a.label : (nama || 'Proses seleksi'),
+                teks: a?.pesan || t.pesan || PESAN_UMUM,
+            };
+        },
         banner() {
-            const cur = this.tahap.find((t) => t.status === 'BERJALAN');
             if (this.stKey === 'lolos') return { title: 'Selamat, kamu diterima! 🎉', text: 'Seluruh tahap seleksi telah kamu selesaikan. Tim rekrutmen akan menghubungimu.' };
             if (this.stKey === 'gugur') return { title: 'Belum lolos pada tahap ini', text: this.lamaran.alasanGugur || 'Terima kasih atas partisipasimu. Jangan menyerah — banyak peluang lain menantimu.' };
-            return { title: 'Lamaranmu sedang diproses', text: cur ? `Saat ini di tahap ${cur.label}. Pantau halaman ini untuk perkembangannya.` : 'Pantau halaman ini untuk perkembangan seleksimu.' };
+
+            const cur = this.tahapAktif;
+            if (!cur) return { title: 'Lamaranmu sedang diproses', text: 'Pantau halaman ini untuk perkembangan seleksimu.' };
+
+            const posisi = `Tahap ${cur.urutan} dari ${this.totalTahap}`;
+
+            // Ada yang harus DIKERJAKAN kandidat → itu yang disebut lebih dulu.
+            if (this.tugas && this.komponen) {
+                return { title: `${posisi} · ${cur.label}`, text: `Lengkapi ${this.tugas.formulirNama || 'formulir'} di bawah untuk melanjutkan ke tahap berikutnya.` };
+            }
+
+            if (this.tahapTes) {
+                const u = this.sesi.ujian;
+                const nama = this.sesi.label || cur.label;
+                if (!u || !u.terjadwal) {
+                    const akt = this.tesList.find((x) => !x.selesai);
+                    return { title: `${posisi} · ${nama} — menunggu jadwal`, text: akt?.pesan || cur.pesan || PESAN_UMUM };
+                }
+                if (u.statusPengerjaan === 'selesai') {
+                    return { title: `${nama} sudah kamu kerjakan`, text: this.pesanSetelahTes };
+                }
+                if (u.belumMulai) {
+                    const mundur = this.hitungMundur(this.sesi);
+                    return { title: `${nama} dijadwalkan ${this.fmtWaktu(u.waktuMulai)}`, text: `Tesnya belum dibuka${mundur ? ` — ${mundur}` : ''}. Siapkan koneksi internet, kamera, dan ruangan yang tenang.` };
+                }
+                if (u.sudahLewat) {
+                    return { title: `Jendela ${nama} sudah lewat`, text: 'Waktu pengerjaan berakhir. Hubungi tim rekrutmen bila kamu terkendala saat tes.' };
+                }
+                return { title: `${nama} bisa dikerjakan sekarang`, text: `Tesnya terbuka sampai ${this.fmtWaktu(u.waktuSelesai)}. Tekan "Mulai Tes Sekarang" di bawah.` };
+            }
+
+            return { title: `${posisi} · ${cur.label}`, text: this.pesanTahap.teks };
         },
         k() { return this.kartu || {}; },
         ringkasan() { return this.k.ringkasan || this.k.deskripsi || ''; },
@@ -547,6 +667,22 @@ export default {
             if (t.status === 'SELESAI') return t.hasil === 'GUGUR' ? 'Gugur' : 'Lulus';
             if (t.status === 'BERJALAN') return 'Berlangsung';
             return 'Menunggu';
+        },
+        // ── Aktivitas dalam satu tahap (mis. Psikotes 2 · DISC · Wawancara) ──
+        // Aktivitas ONLINE punya token & jendela waktu; aktivitas manual tidak —
+        // yang ditunggu di sana adalah kabar dari tim, bukan tombol mulai tes.
+        subState(x) {
+            if (x.selesai) return x.hasil === 'GAGAL' ? 'fail' : 'done';
+            if (!x.eksternal) return 'tim';
+            if (x.ujian?.bisaAkses) return 'open';
+            if (x.ujian?.terjadwal) return 'sched';
+            return 'wait';
+        },
+        subLabel(x) {
+            return {
+                done: 'selesai', fail: 'tidak lolos', open: 'bisa dikerjakan',
+                sched: 'terjadwal', wait: 'menunggu jadwal', tim: 'diatur tim rekrutmen',
+            }[this.subState(x)];
         },
         // Timeline node styling (design).
         tlState(t) {
@@ -711,6 +847,18 @@ export default {
 .ld-act__title { font-size: 17px; font-weight: 800; color: #0f172a; margin-top: 3px; letter-spacing: -0.01em; }
 .ld-act__sub { font-size: 12.5px; color: #8792a6; margin-top: 2px; }
 .ld-act__form { padding: 18px 20px; }
+
+/* Daftar aktivitas dalam satu tahap (tahap multi-tes) */
+.ld-subtes { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 20px 0; }
+.ld-subtes__i { display: inline-flex; align-items: center; gap: 7px; padding: 6px 11px; border-radius: 999px; font-size: 12px; font-weight: 700; color: #334155; background: #f6f7fb; border: 1px solid #e7eaf3; }
+.ld-subtes__i > i { width: 7px; height: 7px; border-radius: 50%; background: #cbd5e1; flex: 0 0 auto; }
+.ld-subtes__i em { font-style: normal; font-weight: 600; font-size: 11px; color: #94a3b8; }
+.ld-subtes__i.is-done > i { background: #10b981; }
+.ld-subtes__i.is-fail > i { background: #ef4444; }
+.ld-subtes__i.is-open { border-color: #a5b4fc; background: #eef0fe; }
+.ld-subtes__i.is-open > i { background: #6366f1; animation: ldPulse 2s infinite; }
+.ld-subtes__i.is-sched > i { background: #f59e0b; }
+.ld-subtes__i.is-tim > i { background: #94a3b8; }
 
 .ld-cred { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: #eef0f7; border: 1px solid #eef0f7; border-radius: 14px; overflow: hidden; margin: 18px 20px 0; }
 .ld-cred__item { background: #fff; padding: 13px 15px; min-width: 0; }
