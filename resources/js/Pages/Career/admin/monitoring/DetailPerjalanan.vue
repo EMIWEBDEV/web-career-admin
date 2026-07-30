@@ -60,7 +60,7 @@
 
                             <div v-if="tesBermakna(t.tests).length" class="wcm-tests">
                                 <div v-for="(x, i) in tesBermakna(t.tests)" :key="i" class="wcm-test">
-                                    <span class="wcm-test__label">{{ x.label || x.jenisTes }}<span v-if="x.peran === 'INFORMATIF'" class="wcm-test__info">informatif</span></span>
+                                    <span class="wcm-test__label">{{ x.label }}<span v-if="x.tipeNama" class="wcm-test__info">{{ x.tipeNama }}</span><span v-if="x.peran === 'INFORMATIF'" class="wcm-test__info">informatif</span></span>
                                     <span v-if="x.nilai !== null" class="wcm-test__nilai">{{ x.nilai }}</span>
                                     <span class="wca-badge" :class="testBadge(x)">{{ labelStatusTes(x) }}</span>
                                 </div>

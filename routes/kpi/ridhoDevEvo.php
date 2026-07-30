@@ -63,6 +63,8 @@ Route::prefix('api/v1/karir')
         Route::patch('/lamaran/sub-tes/{id}/tidak-hadir', [LamaranController::class, 'subTesTidakHadir'])->name('lamaran.subtes.tidakhadir')->middleware('career.permission:pelamarPage,EDIT');
         // Catat hasil sub-tes MANUAL (wawancara/FGD di tahap campuran) → mesin yang sama.
         Route::patch('/lamaran/sub-tes/{id}/catat-hasil', [LamaranController::class, 'subTesCatatHasil'])->name('lamaran.subtes.catathasil')->middleware('career.permission:pelamarPage,EDIT');
+        // Tarik hasil ujian online dari HCLearn bila webhook-nya tak sampai.
+        Route::post('/lamaran/sub-tes/{id}/sinkron', [LamaranController::class, 'subTesSinkron'])->name('lamaran.subtes.sinkron')->middleware('career.permission:pelamarPage,EDIT');
 
         // Berkas hasil tahap (MCU/Interview) — unggah PDF/JPG, daftar, preview, hapus.
         Route::get('/lamaran/tahap/{id}/berkas', [LamaranController::class, 'berkasTahap'])->name('lamaran.tahap.berkas')->middleware('career.permission:pelamarPage,VIEW');

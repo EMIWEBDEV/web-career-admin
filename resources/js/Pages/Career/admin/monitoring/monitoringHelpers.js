@@ -57,12 +57,12 @@ export function labelStatusTes(x) {
  * Sub-tes yang layak ditampilkan. Setiap tahap otomatis mendapat satu sub-tes
  * bawaan saat alur dibuat; pada tahap non-tes (formulir, screening, penawaran)
  * baris itu tidak pernah dipakai sehingga selamanya "BELUM" — menampilkannya
- * hanya membingungkan. Yang punya jenis tes tetap ditampilkan walau belum
- * dikerjakan, karena itu memang tes sungguhan.
+ * hanya membingungkan. Ujian pihak ke-3 tetap ditampilkan walau belum
+ * dikerjakan, karena itu memang tes sungguhan yang sedang ditunggu.
  */
 export function tesBermakna(daftar) {
     return (daftar || []).filter(
-        (x) => x.jenisTes || x.nilai !== null || (x.status && x.status !== 'BELUM'),
+        (x) => x.provider === 'THIRD_PARTY' || x.nilai !== null || (x.status && x.status !== 'BELUM'),
     )
 }
 

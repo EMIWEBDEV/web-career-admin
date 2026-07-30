@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Career\Monitoring;
 
 use App\Helpers\ResponseHelper;
+use App\Http\Controllers\Career\Lamaran\LamaranController;
 use App\Http\Controllers\Controller;
 use App\Support\Career\GcsBerkas;
 use App\Support\Career\PipelineProgress;
@@ -530,8 +531,8 @@ class MonitoringController extends Controller
                     ->join('N_WEB_CAREERS_Lamaran_Tahap as lt', 'lt.Id_Lamaran_Tahap', '=', 'tt.Lamaran_Tahap_Id')
                     ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'lt.Lamaran_Id')
                     ->where('l.Program_Id', $programId)->where('lt.Urutan', $urutan)
-                    ->groupByRaw('COALESCE(tt.Label, tt.Jenis_Tes_Kode), tt.Peran, tt.Provider')
-                    ->selectRaw("COALESCE(tt.Label, tt.Jenis_Tes_Kode) as Label, tt.Peran, tt.Provider,
+                    ->groupByRaw('tt.Label, tt.Peran, tt.Provider')
+                    ->selectRaw("tt.Label as Label, tt.Peran, tt.Provider,
                                  COUNT(*) as jml,
                                  SUM(CASE WHEN tt.Status = 'SELESAI' THEN 1 ELSE 0 END) as selesai,
                                  SUM(CASE WHEN tt.Status = 'TIDAK_HADIR' THEN 1 ELSE 0 END) as tidakHadir,
@@ -553,7 +554,7 @@ class MonitoringController extends Controller
                     ->orderBy('u.Nama')
                     ->limit(30)
                     ->selectRaw('l.Id_Lamaran, u.Nama as Pelamar, l.Created_By as FallbackNama,
-                                 COALESCE(tt.Label, tt.Jenis_Tes_Kode) as TesLabel, tt.Status')
+                                 tt.Label as TesLabel, tt.Status')
                     ->get();
 
                 // 4) Sesi penjadwalan yang dipakai tahap ini + jumlah pesertanya.
@@ -669,6 +670,9 @@ class MonitoringController extends Controller
                 return ResponseHelper::error('Lamaran tidak ditemukan', 404);
             }
 
+            // Perilaku tipe dari master — tak ada kode tipe yang ditulis di sini.
+            $tipeTahap = LamaranController::masterTipeTahap();
+
             $data = DB::transaction(function () use ($realId) {
                 $l = DB::table('N_WEB_CAREERS_Lamaran as l')
                     ->leftJoin('N_WEB_CAREERS_Users as u', 'u.Id_Users', '=', 'l.Id_Users')
@@ -729,7 +733,10 @@ class MonitoringController extends Controller
                 'siapDiputus' => ($t->Siap_Diputus ?? 'N') === 'Y',
                 'tests' => collect($data['tests']->get($t->Id_Lamaran_Tahap, []))->map(fn ($x) => [
                     'label' => $x->Label,
-                    'jenisTes' => $x->Jenis_Tes_Kode,
+                    // Tipe MILIK AKTIVITAS: satu tahap bisa mencampur ujian online,
+                    // tes manual, dan wawancara — admin harus bisa membedakannya.
+                    'tipe' => $x->Tipe_Tahap_Kode,
+                    'tipeNama' => $tipeTahap[$x->Tipe_Tahap_Kode]->Nama ?? null,
                     'provider' => $x->Provider,
                     'peran' => $x->Peran,
                     'wajib' => $x->Wajib === 'Y',
@@ -796,12 +803,15 @@ class MonitoringController extends Controller
      * GET /api/v1/karir/monitoring/pelamar/{id}/tahap/{urutan}
      * Isi satu tahap untuk satu pelamar — sumber offcanvas tumpukan ke-3.
      *
-     * Blok yang dikirim MUNCUL SESUAI DATA, bukan berdasarkan Tipe_Tahap_Kode:
-     * di project ini tipe tahap hampir tidak dipakai untuk logika (hanya 'MCU'
-     * yang di-hardcode), sedangkan yang benar-benar menentukan isi tahap adalah
-     * Provider / Formulir_Kode / Flag_Upload_Hasil. Dengan begitu tipe tahap
-     * kustom buatan admin tetap tampil benar. Tipe hanya dipakai untuk
-     * ikon & label.
+     * Blok yang dikirim MUNCUL SESUAI DATA, bukan dari daftar kode tipe yang
+     * ditulis di sini: yang menentukan isi tahap adalah Provider / Formulir_Kode
+     * / Flag_Upload_Hasil, dan perilaku tiap tipe dibaca dari Master Tipe Tahap
+     * (Perilaku_Kode, Flag_Formulir, Flag_Upload_Hasil). Dengan begitu tipe
+     * kustom buatan admin tetap tampil benar tanpa menyentuh file ini.
+     *
+     * Perlu diingat: TIPE MELEKAT PADA AKTIVITAS, bukan pada tahap. Satu tahap
+     * bisa berisi ujian online + tes manual + wawancara sekaligus, jadi rapor
+     * tes menampilkan tipe tiap aktivitas, bukan tipe tahapnya.
      *
      * Tahap yang BELUM dijalani (baris Lamaran_Tahap belum ada) tetap dapat
      * dibuka: yang dikirim blok `rencana` dari template alur.
@@ -813,6 +823,9 @@ class MonitoringController extends Controller
             if (! $lamaranId || $urutan < 1) {
                 return ResponseHelper::error('Parameter tidak valid', 422);
             }
+
+            // Perilaku tipe dari master — tak ada kode tipe yang ditulis di sini.
+            $tipeTahap = LamaranController::masterTipeTahap();
 
             $data = DB::transaction(function () use ($lamaranId, $urutan) {
                 $l = DB::table('N_WEB_CAREERS_Lamaran as l')
@@ -972,8 +985,9 @@ class MonitoringController extends Controller
                     ])->values(),
                 ] : null,
                 'subtes' => $data['subtes']->map(fn ($x) => [
-                    'label' => $x->Label ?: $x->Jenis_Tes_Kode,
-                    'jenisTes' => $x->Jenis_Tes_Kode,
+                    'label' => $x->Label,
+                    'tipe' => $x->Tipe_Tahap_Kode,
+                    'tipeNama' => $tipeTahap[$x->Tipe_Tahap_Kode]->Nama ?? null,
                     'provider' => $x->Provider,
                     'peran' => $x->Peran,
                     'wajib' => $x->Wajib === 'Y',
@@ -1018,16 +1032,19 @@ class MonitoringController extends Controller
                     'label' => $m->Label,
                     'provider' => $m->Provider,
                     'formulirKode' => $m->Formulir_Kode,
-                    'jenisTesKode' => $m->Jenis_Tes_Kode,
                     'modeKeputusan' => $m->Mode_Keputusan_Kode,
                     'modePengumuman' => $m->Mode_Pengumuman,
                     'sla' => $m->SLA,
-                    'uploadHasil' => ($m->Flag_Upload_Hasil ?? 'T') === 'Y' || $m->Tipe_Tahap_Kode === 'MCU',
+                    // Berbasis berkas: dari flag tahap ATAU dari tipe yang memang
+                    // berkas (Master Tipe Tahap) — dulu kode 'MCU' ditulis di sini.
+                    'uploadHasil' => ($m->Flag_Upload_Hasil ?? 'T') === 'Y'
+                        || ($tipeTahap[$m->Tipe_Tahap_Kode]->Flag_Upload_Hasil ?? 'T') === 'Y',
                     'wajibUpload' => ($m->Flag_Wajib_Upload ?? 'T') === 'Y',
                     'talentPool' => ($m->Flag_Talent_Pool ?? 'T') === 'Y',
                     'tes' => $data['rencanaTes']->map(fn ($x) => [
                         'label' => $x->Label,
-                        'jenisTes' => $x->Jenis_Tes_Kode,
+                        'tipe' => $x->Tipe_Tahap_Kode,
+                        'tipeNama' => $tipeTahap[$x->Tipe_Tahap_Kode]->Nama ?? null,
                         'provider' => $x->Provider,
                         'peran' => $x->Peran,
                         'wajib' => $x->Wajib === 'Y',

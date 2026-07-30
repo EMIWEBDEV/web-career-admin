@@ -127,9 +127,9 @@
                                     <!-- Sub-tes tahap: inilah yang dinilai mesin keputusan. -->
                                     <ul v-if="(s.tests || []).length" class="alr-subtes">
                                         <li v-for="(t, k) in s.tests" :key="k" :class="t.peran === 'INFORMATIF' ? 'is-info' : 'is-penentu'">
-                                            <i class="bi" :class="t.jenisTes ? 'bi-robot' : 'bi-person-workspace'"></i>
+                                            <i class="bi" :class="tesOnline(t.tipe || s.tipe) ? 'bi-robot' : 'bi-person-workspace'"></i>
                                             <b>{{ t.label }}</b>
-                                            <span v-if="t.jenisTes" class="alr-subtes__tes">{{ t.jenisTes }}</span>
+                                            <span class="alr-subtes__tes">{{ namaTipe(t.tipe || s.tipe) }}</span>
                                             <span class="alr-subtes__peran">{{ t.peran === 'INFORMATIF' ? 'informatif' : 'penentu' }}</span>
                                             <span v-if="!t.wajib" class="alr-subtes__opt">opsional</span>
                                         </li>
@@ -189,7 +189,10 @@
                         <div class="wca-frow">
                             <div><label class="wca-field-lbl">Nama Tahap</label><el-input v-model="s.label" placeholder="mis. Psikotes Online" /></div>
                             <div><label class="wca-field-lbl">Tipe</label>
-                                <RefSelect type="tipe" v-model="s.tipe" placeholder="Pilih tipe" />
+                                <!-- Ganti tipe bisa membuat mode keputusan yang dipilih
+                                     tak berlaku lagi (mis. jadi ujian online) — selaraskan
+                                     saat itu juga, jangan biarkan ketahuan saat menyimpan. -->
+                                <RefSelect type="tipe" v-model="s.tipe" placeholder="Pilih tipe" @update:model-value="samakanMode(s)" />
                             </div>
                         </div>
                         <div v-if="butuhFormulir(s)" class="wca-frow">
@@ -199,8 +202,10 @@
                         </div>
 
                         <!-- DAFTAR TES / AKTIVITAS — satu tahap bisa berisi banyak tes.
-                             Ada Jenis Tes = tes HC Learn (otomatis); kosong = aktivitas
-                             manual (wawancara/FGD). Peran INFORMATIF tidak menentukan lulus. -->
+                             Online atau manual ditentukan TIPE TAHAP di atas, bukan
+                             per aktivitas: tipe "Tes Online" = semua aktivitasnya ujian
+                             HC Learn yang dijadwalkan; tipe lain = ditangani tim.
+                             Peran INFORMATIF tidak menentukan lulus. -->
                         <div class="alr-tests">
                             <div class="alr-tests__head">
                                 <span><i class="bi bi-list-check"></i> Daftar Tes / Aktivitas <template v-if="(s.tests || []).length">({{ s.tests.length }})</template><span v-else class="alr-tests__opt">— opsional</span></span>
@@ -219,8 +224,8 @@
                                 <div class="alr-test__body">
                                     <div class="wca-frow">
                                         <div><label class="wca-field-lbl">Nama Tes / Aktivitas</label><el-input v-model="t.label" placeholder="mis. Papi Kostick" /></div>
-                                        <div><label class="wca-field-lbl">Jenis Tes (kosong = manual)</label>
-                                            <RefSelect type="tes" v-model="t.jenisTes" placeholder="Pilih jenis tes HC Learn" clearable />
+                                        <div><label class="wca-field-lbl">Tipe Aktivitas</label>
+                                            <RefSelect type="tipe" v-model="t.tipe" :placeholder="`Ikut tahap (${namaTipe(s.tipe)})`" clearable @update:model-value="samakanMode(s)" />
                                         </div>
                                     </div>
                                     <div class="wca-frow">
@@ -231,9 +236,9 @@
                                             </el-select>
                                         </div>
                                         <div class="alr-test__flags">
-                                            <span class="alr-test__prov" :class="t.jenisTes ? 'is-sys' : 'is-man'">
-                                                <i class="bi" :class="t.jenisTes ? 'bi-robot' : 'bi-person-workspace'"></i>
-                                                {{ t.jenisTes ? 'Pihak ke-3 (otomatis)' : 'Internal (manual)' }}
+                                            <span class="alr-test__prov" :class="tesOnline(t.tipe || s.tipe) ? 'is-sys' : 'is-man'">
+                                                <i class="bi" :class="tesOnline(t.tipe || s.tipe) ? 'bi-robot' : 'bi-person-workspace'"></i>
+                                                {{ tesOnline(t.tipe || s.tipe) ? 'Ujian online — dijadwalkan di Penjadwalan' : 'Ditangani tim — hasilnya dicatat di Worklist' }}
                                             </span>
                                         </div>
                                     </div>
@@ -351,6 +356,8 @@ export default {
             modePengumuman: [],
             // Mode keputusan AKTIF — bagaimana tahap menyimpulkan (multi-tes).
             modeKeputusan: [],
+            // Tipe tahap + perilakunya ('CAT' = ujian online berjadwal).
+            tipeTahap: [],
             // talentPoolMulai: 0 = nonaktif; N = cut-off Talent Pool mulai tahap ke-N (sampai akhir).
             form: { nama: '', kategori: '', deskripsi: '', stages: [], talentPoolMulai: 0 },
             delShow: false,
@@ -371,6 +378,7 @@ export default {
         this.load();
         this.loadModePengumuman();
         this.loadModeKeputusan();
+        this.loadTipeTahap();
     },
     computed: {
         // Peta Kode Mode -> objek mode, untuk render label/ikon/catatan di daftar.
@@ -389,8 +397,31 @@ export default {
     methods: {
         katLabel(k) { return { REKRUTMEN: 'Rekrutmen', MT: 'Management Trainee', INTERNSHIP: 'Internship' }[k] || k; },
 
-        /** Tipe pengumpulan formulir/berkas menempelkan Master Formulir. */
-        butuhFormulir(s) { return s.tipe === 'FORM' || s.tipe === 'DOCUMENT'; },
+        /** Info satu tipe dari master (bukan daftar kode yang ditulis di sini). */
+        infoTipe(kode) { return this.tipeTahap.find((t) => t.value === kode) || null; },
+        namaTipe(kode) { return this.infoTipe(kode)?.label || kode || '—'; },
+
+        /**
+         * Tipe ini menempelkan Master Formulir? — dari flag master, bukan daftar
+         * kode. Dulu di sini tertulis `tipe === 'FORM' || tipe === 'DOCUMENT'`,
+         * sehingga tipe baru yang juga berbasis formulir tak akan pernah bisa
+         * memilih formulirnya tanpa mengubah file ini.
+         */
+        butuhFormulir(s) { return this.infoTipe(s.tipe)?.formulir === true; },
+
+        /**
+         * Aktivitas bertipe ini ujian online (CAT)? — dari Perilaku di Master
+         * Tipe Tahap. Menentukan aktivitas itu dijadwalkan lewat Penjadwalan
+         * (token HCLearn) atau dikerjakan tim & dicatat di Worklist.
+         */
+        tesOnline(kode) { return this.infoTipe(kode)?.perilaku === 'CAT'; },
+
+        /** Muat tipe tahap AKTIF beserta perilaku & flag-nya. */
+        async loadTipeTahap() {
+            try {
+                this.tipeTahap = (await axios.get('/api/v1/karir/options/tipe', CFG)).data.result || [];
+            } catch (e) { this.tipeTahap = []; }
+        },
 
         /** Muat mode keputusan AKTIF (bagaimana tahap menyimpulkan). */
         async loadModeKeputusan() {
@@ -404,30 +435,52 @@ export default {
         /** Jumlah aktivitas nyata: daftar kosong tetap dihitung 1 (dibuat sistem). */
         jumlahTes(s) { return Math.max(1, (s.tests || []).length); },
 
+        /** Tahap ini memuat aktivitas ujian online? (daftar kosong = ikut tipe tahap) */
+        adaUjianOnline(s) {
+            const t = s.tests || [];
+
+            return t.length ? t.some((x) => this.tesOnline(x.tipe || s.tipe)) : this.tesOnline(s.tipe);
+        },
+
         /**
          * Pilihan mode yang MASUK AKAL untuk tahap ini.
          *
-         * Dengan 1 aktivitas, "tunggu semua" dan "tunggu tes terakhir" berakhir
-         * sama persis — menampilkan keduanya cuma membuat admin menebak-nebak.
-         * Maka disisakan satu wakil per perilaku maju: otomatis vs diputus admin.
-         * Begitu ada 2+ aktivitas, aturan menunggu jadi berarti → tampilkan semua.
+         * Dua penyaringan, keduanya berdasar KOLOM PERILAKU mode (bukan kodenya):
+         *
+         * 1. Tahap ber-UJIAN ONLINE tidak boleh memakai mode yang gagalnya
+         *    menggantung (`autoGugur` mati). Hasil CAT sudah final & objektif;
+         *    membiarkan kandidat yang jelas gagal menunggu keputusan admin cuma
+         *    menumpuk antrean. Server juga menolaknya — menawarkannya di sini
+         *    berarti menjanjikan sesuatu yang akan diam-diam diubah saat disimpan.
+         *
+         * 2. Dengan 1 aktivitas, "tunggu semua" dan "tunggu tes terakhir" berakhir
+         *    sama persis. Maka mode dikelompokkan per PASANGAN perilaku yang
+         *    benar-benar berbeda — maju-otomatis dan gugur-otomatis — dan tiap
+         *    pasangan diwakili satu. Dulu pengelompokannya hanya melihat
+         *    maju-otomatis, sehingga mode "gagal otomatis gugur, lulus tetap
+         *    dikonfirmasi admin" tak pernah muncul di layar sama sekali.
          */
         modeTampil(s) {
-            if (this.jumlahTes(s) >= 2) return this.modeKeputusan;
+            const online = this.adaUjianOnline(s);
+            const layak = this.modeKeputusan.filter((m) => !online || m.autoGugur);
+            if (this.jumlahTes(s) >= 2) return layak;
 
             const wakil = [];
-            for (const m of this.modeKeputusan) {
-                if (!wakil.some((w) => w.autoLanjut === m.autoLanjut)) wakil.push(m);
+            for (const m of layak) {
+                if (!wakil.some((w) => w.autoLanjut === m.autoLanjut && w.autoGugur === m.autoGugur)) wakil.push(m);
             }
+
             return wakil;
         },
 
         /** Label dropdown: disederhanakan saat tahap hanya satu aktivitas. */
         labelMode(m, s) {
             if (this.jumlahTes(s) >= 2) return m.label;
-            return m.autoLanjut
-                ? 'Otomatis — maju sendiri bila lulus'
-                : 'Manual — admin yang memutuskan';
+            if (m.autoLanjut) return 'Otomatis — lulus maju sendiri, gagal langsung tidak lolos';
+
+            return m.autoGugur
+                ? 'Gagal otomatis tidak lolos — kelulusan dikonfirmasi admin'
+                : 'Manual — admin yang memutuskan lulus maupun gagal';
         },
 
         /** Kalimat akibat, ditulis mengikuti jumlah aktivitas nyata di tahap ini. */
@@ -437,9 +490,13 @@ export default {
 
             const n = this.jumlahTes(s);
             if (n < 2) {
-                return m.autoLanjut
-                    ? 'Begitu aktivitas ini selesai & lulus, kandidat langsung maju ke tahap berikutnya.'
-                    : 'Setelah aktivitas ini selesai, tahap ditandai SIAP DIPUTUS — admin yang menekan lolos/tolak.';
+                if (m.autoLanjut) {
+                    return 'Begitu aktivitas ini selesai: lulus → kandidat langsung maju ke tahap berikutnya, gagal → langsung dinyatakan tidak lolos. Admin tidak mengetuk palu di tahap ini.';
+                }
+
+                return m.autoGugur
+                    ? 'Gagal → kandidat langsung dinyatakan tidak lolos tanpa menunggu admin. Lulus → kandidat TETAP di tahap ini sampai admin menekan Loloskan; di portalnya tertulis hasil sedang ditinjau.'
+                    : 'Setelah aktivitas ini selesai, tahap ditandai SIAP DIPUTUS — admin yang menekan lolos/tolak, baik untuk yang lulus maupun yang gagal.';
             }
 
             const tunggu = { SEMUA: `menunggu ${n} aktivitas selesai`, TERAKHIR: 'menunggu aktivitas terakhir selesai', SEGERA: 'dievaluasi begitu hasil pertama masuk' }[m.tunggu] || 'dievaluasi';
@@ -455,8 +512,17 @@ export default {
          * terakhir" (hanya masuk akal untuk 2+ tes) lalu menghapus tesnya.
          */
         samakanMode(s) {
-            const boleh = this.modeTampil(s).map((m) => m.value);
-            if (!boleh.includes(s.mode)) s.mode = boleh[0] || null;
+            const boleh = this.modeTampil(s);
+            if (boleh.some((m) => m.value === s.mode)) return;
+
+            // Mode lama tak lagi ditawarkan (mis. tipe tahap diubah jadi Tes
+            // Online, sehingga mode yang gagalnya menggantung tak berlaku lagi).
+            // Pilih penggantinya yang PERILAKU MAJU-nya sama, bukan sekadar
+            // yang pertama di daftar — jatuh ke "maju otomatis" tanpa diminta
+            // akan diam-diam mengubah arti tahap yang sudah disusun admin.
+            const lama = this.modeKeputusan.find((m) => m.value === s.mode);
+            const sepadan = lama ? boleh.find((m) => m.autoLanjut === lama.autoLanjut) : null;
+            s.mode = (sepadan || boleh[0])?.value || null;
         },
         /** Nama pendek mode untuk pil di daftar alur. */
         namaMode(kode) { return this.modeKeputusan.find((m) => m.value === kode)?.nama || kode || 'Manual'; },
@@ -470,20 +536,21 @@ export default {
         buangTesBawaan(s) {
             const t = s.tests || [];
             const bawaan = t.length === 1
-                && !t[0].jenisTes
                 && (t[0].peran || 'PENENTU') === 'PENENTU'
+                && (t[0].tipe || s.tipe) === s.tipe
                 && (t[0].label || '').trim() === (s.label || '').trim();
 
             return bawaan ? [] : t.map((x) => ({
                 label: x.label,
-                jenisTes: x.jenisTes ?? null,
+                // Kosongkan bila sama dengan tahap → tampil sebagai "ikut tahap".
+                tipe: x.tipe && x.tipe !== s.tipe ? x.tipe : null,
                 peran: x.peran || 'PENENTU',
                 ambang: x.ambang ?? null,
             }));
         },
         addTest(s) {
             if (!Array.isArray(s.tests)) s.tests = [];
-            s.tests.push({ label: '', jenisTes: null, peran: 'PENENTU', ambang: null });
+            s.tests.push({ label: '', tipe: null, peran: 'PENENTU', ambang: null });
             this.samakanMode(s);
         },
         removeTest(s, k) {
@@ -612,9 +679,10 @@ export default {
                     mode: s.mode || null,
                     // Provider tak dikirim — backend menurunkannya dari sub-tes.
                     formulirId: this.butuhFormulir(s) ? (s.formulirId || null) : null,
+                    // Tiap aktivitas membawa TIPE-nya sendiri; kosong = ikut tahap.
                     tests: (s.tests || []).filter((t) => (t.label || '').trim()).map((t) => ({
                         label: t.label,
-                        jenisTes: t.jenisTes || null,
+                        tipe: t.tipe || null,
                         peran: t.peran || 'PENENTU',
                         ambang: t.ambang ?? null,
                     })),

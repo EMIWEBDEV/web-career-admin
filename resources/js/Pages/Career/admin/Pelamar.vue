@@ -253,7 +253,7 @@
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2.2" stroke-linecap="round" style="flex: 0 0 auto; margin-top: 1px"><path d="M5 3h14l-6 8v7l-2 1v-8L5 3z" /></svg>
                             <div>
                                 <b>Tahap ini disetel OTOMATIS di Master Alur.</b>
-                                Sistem yang memutuskan begitu seluruh aktivitas penentu selesai — admin tidak mengetuk palu di sini.
+                                Begitu seluruh aktivitas penentu selesai, sistem yang memutuskan: gagal → langsung Tidak Lolos, lulus → langsung maju ke tahap berikutnya. Admin tidak mengetuk palu di sini.
                                 <template v-if="detailKandidat.aktivitasBelumTercatat">
                                     Masih menunggu {{ detailKandidat.aktivitasBelumTercatat }} hasil aktivitas.
                                 </template>
@@ -266,9 +266,19 @@
                                 Catat hasil {{ detailKandidat.aktivitasBelumTercatat || 'tes' }} aktivitas penentu di rapor bawah — keputusan baru bisa diambil setelah itu.
                             </div>
                         </div>
-                        <div v-else-if="detailKandidat.siapDiputus" class="plw-sysnote is-ready">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2.2" stroke-linecap="round" style="flex: 0 0 auto; margin-top: 1px"><path d="M20 6L9 17l-5-5" /></svg>
-                            <div><b>Semua hasil sudah masuk.</b> Tinjau rapor tes di bawah, lalu putuskan Loloskan / Tidak Lolos.</div>
+                        <!-- SIAP DIPUTUS — sebutkan apa KATA DATANYA. Admin tetap yang
+                             mengetuk palu, tapi ia tak boleh disuruh menebak hasil tes
+                             yang sudah dihitung sistem. -->
+                        <div v-else-if="detailKandidat.siapDiputus" class="plw-sysnote" :class="detailKandidat.hasilData === 'GAGAL' ? 'is-fail' : 'is-ready'">
+                            <svg v-if="detailKandidat.hasilData === 'GAGAL'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2.2" stroke-linecap="round" style="flex: 0 0 auto; margin-top: 1px"><circle cx="12" cy="12" r="9" /><path d="M15 9l-6 6M9 9l6 6" /></svg>
+                            <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2.2" stroke-linecap="round" style="flex: 0 0 auto; margin-top: 1px"><path d="M20 6L9 17l-5-5" /></svg>
+                            <div>
+                                <b v-if="detailKandidat.hasilData === 'LULUS'">Hasil tes: LULUS.</b>
+                                <b v-else-if="detailKandidat.hasilData === 'GAGAL'">Hasil tes: TIDAK LULUS.</b>
+                                <b v-else>Semua hasil sudah masuk.</b>
+                                {{ detailKandidat.ringkasHasil || 'Tinjau rapor tes di bawah, lalu putuskan.' }}
+                                Keputusan akhir tetap di tangan Anda — tekan Loloskan / Tidak Lolos.
+                            </div>
                         </div>
                         <div v-else-if="detailKandidat.alasan" class="plw-sysnote">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2.2" stroke-linecap="round" style="flex: 0 0 auto; margin-top: 1px"><circle cx="12" cy="12" r="9" /><path d="M12 8v5" /><path d="M12 16h.01" /></svg>
@@ -297,28 +307,46 @@
                                         <span v-if="t.peran === 'INFORMATIF'" class="plw-test__tag is-info" title="Skor hanya bahan pertimbangan — tidak menentukan lulus">informatif</span>
                                         <span v-if="!t.wajib" class="plw-test__tag">opsional</span>
                                     </div>
-                                    <div class="plw-test__sub">{{ t.jenisTes || 'Aktivitas internal' }}</div>
+                                    <!-- Tipe aktivitas, bukan tipe tahap: satu tahap bisa
+                                         berisi ujian online + tes manual + wawancara. -->
+                                    <div class="plw-test__sub">{{ t.tipeNama || '—' }} · {{ t.provider === 'THIRD_PARTY' ? 'dijadwalkan di Penjadwalan' : 'dilaksanakan tim' }}</div>
                                     <div v-if="t.catatan" class="plw-test__cat"><i class="bi bi-chat-left-text"></i> {{ t.catatan }}</div>
                                 </div>
                                 <span v-if="t.nilai != null" class="plw-test__score">{{ t.nilai }}</span>
                                 <span class="plw-test__pill" :class="pillTes(t)">{{ labelTes(t) }}</span>
-                                <!-- Tombol ini HANYA untuk aktivitas yang punya hasil
-                                     sendiri (tes ber-jenis, atau tahap berisi beberapa
-                                     aktivitas). Untuk tahap satu-aktivitas seperti
-                                     Seleksi Administrasi / formulir, hasilnya ADALAH
-                                     keputusan Loloskan / Tidak Lolos di bawah — server
-                                     yang menentukan lewat dapatDicatat. -->
+                                <!-- "Catat Hasil" HANYA untuk aktivitas yang dikerjakan tim
+                                     (wawancara, tes offline, FGD) pada tahap multi-aktivitas.
+                                     Ujian online tidak punya tombol ini: nilainya datang
+                                     sendiri dari HCLearn, dan mengisinya manual justru
+                                     menimpa angka resmi. Server yang menentukan lewat
+                                     dapatDicatat — lihat LamaranController::rapotTes. -->
                                 <button
                                     v-if="bisaCatat(t)"
-                                    type="button" class="plw-test__rec" title="Rekam hasil aktivitas ini — mesin langsung mengevaluasi tahap"
+                                    type="button" class="plw-test__rec"
+                                    title="Rekam hasil aktivitas ini — mesin langsung mengevaluasi tahap"
                                     @click="askCatat(t)"
                                 >
                                     <i class="bi bi-pencil-square"></i> Catat Hasil
                                 </button>
+                                <!-- SINKRON — jaring pengaman ujian online. Nilainya ditarik
+                                     dari HCLearn, bukan diketik admin, jadi yang tersimpan
+                                     tetap angka resmi penyedia. -->
+                                <button
+                                    v-if="t.dapatSinkron"
+                                    type="button" class="plw-test__sync" :disabled="sinkronId === t.id"
+                                    title="Tarik hasil ujian ini langsung dari HCLearn. Dipakai bila hasilnya belum masuk sendiri."
+                                    @click="sinkronHasil(t)"
+                                >
+                                    <i class="bi" :class="sinkronId === t.id ? 'bi-arrow-repeat plw-spin' : 'bi-cloud-download'"></i>
+                                    {{ sinkronId === t.id ? 'Menarik…' : 'Sinkronkan' }}
+                                </button>
                                 <button
                                     v-if="bisaTidakHadir(t)"
-                                    type="button" class="plw-test__skip" title="Tandai kandidat tidak hadir pada tes ini (tahap tidak lagi menunggu hasilnya)"
-                                    @click="tandaiTidakHadir(t)"
+                                    type="button" class="plw-test__skip"
+                                    :title="t.online
+                                        ? 'Kandidat tidak mengerjakan ujian ini. Tahap berhenti menunggu hasilnya dari HCLearn.'
+                                        : 'Tandai kandidat tidak hadir pada aktivitas ini (tahap tidak lagi menunggu hasilnya)'"
+                                    @click="askTidakHadir(t)"
                                 >
                                     <i class="bi bi-person-x"></i> Tidak hadir
                                 </button>
@@ -421,9 +449,13 @@
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M20 6L9 17l-5-5" /></svg>
                             Loloskan
                         </button>
-                        <button v-if="bolehTalentPool(detailKandidat)" type="button" class="plw-btn-talent" @click="askPutus(detailKandidat, 'TALENT_POOL')">
+                        <!-- Label dipendekkan jadi "Talent Pool": tiga tombol berbagi
+                             satu baris, dan "Masuk Talent Pool" selalu pecah dua baris
+                             di drawer sempit. Arti lengkapnya sudah dijelaskan di
+                             tooltip dan di modal konfirmasi. -->
+                        <button v-if="bolehTalentPool(detailKandidat)" type="button" class="plw-btn-talent" title="Tidak melanjutkan di lowongan ini, tetapi disimpan di Talent Pool untuk kesempatan berikutnya" @click="askPutus(detailKandidat, 'TALENT_POOL')">
                             <i class="bi bi-stars"></i>
-                            Masuk Talent Pool
+                            Talent Pool
                         </button>
                         <button type="button" class="plw-btn-gugur" @click="askPutus(detailKandidat, 'GUGUR')">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
@@ -527,10 +559,14 @@
             :subtitle="catatTarget ? `${catatTarget.label} — ${detailKandidat?.pelamar || ''}` : ''"
             confirm-label="Simpan Hasil"
             :busy="sibuk"
+            :confirm-disabled="!bolehSimpanCatat"
             @confirm="konfirmCatat"
             @cancel="catatShow = false"
         >
             <div class="plw-catat">
+                <!-- Hanya aktivitas yang DIKERJAKAN TIM yang sampai ke sini.
+                     Ujian online tak punya tombol Catat Hasil sama sekali —
+                     nilainya datang sendiri dari HCLearn. -->
                 <template v-if="catatTarget && catatTarget.peran !== 'INFORMATIF'">
                     <div class="plw-catat__lbl">Hasil</div>
                     <el-radio-group v-model="catatHasil">
@@ -542,7 +578,40 @@
                 <div class="plw-catat__lbl">Nilai (opsional)</div>
                 <el-input-number v-model="catatNilai" :min="0" :max="1000" controls-position="right" style="width:100%" />
                 <div class="plw-catat__lbl">Catatan penilai</div>
-                <el-input v-model="catatCatatan" type="textarea" :rows="2" placeholder="mis. Komunikatif, hasil FGD baik — direkomendasikan lanjut" />
+                <el-input
+                    v-model="catatCatatan" type="textarea" :rows="2"
+                    placeholder="mis. Komunikatif, hasil FGD baik — direkomendasikan lanjut"
+                />
+            </div>
+        </ConfirmModal>
+
+        <!-- TIDAK HADIR — WAJIB dikonfirmasi. Sekali diklik, aktivitasnya final
+             dan pada tahap ber-mode gugur-otomatis kandidat langsung dinyatakan
+             tidak lolos. Tanpa konfirmasi, satu klik keliru menutup lamaran orang
+             dan hanya bisa dibatalkan lewat query manual di database. -->
+        <ConfirmModal
+            :show="absenShow"
+            title="Tandai Tidak Hadir"
+            :subtitle="absenTarget ? `${absenTarget.label} — ${detailKandidat?.pelamar || ''}` : ''"
+            danger
+            confirm-label="Ya, Tandai Tidak Hadir"
+            :busy="sibuk"
+            @confirm="konfirmTidakHadir"
+            @cancel="absenShow = false"
+        >
+            <div class="plw-putus__ring is-gugur">
+                <div class="plw-putus__row">
+                    <i class="bi bi-person-x"></i>
+                    <span><b>{{ absenTarget?.label }}</b> ditandai <b>tidak hadir</b> dan hasilnya menjadi final — tidak bisa diulang lewat layar ini.</span>
+                </div>
+                <div v-if="absenTarget?.online" class="plw-putus__row">
+                    <i class="bi bi-cloud-slash"></i>
+                    <span>Tahap berhenti menunggu hasil dari <b>HCLearn</b>. Bila kandidat sebenarnya mengerjakan tes, pakai <b>Sinkronkan</b>, bukan ini.</span>
+                </div>
+                <div v-if="absenTarget?.peran !== 'INFORMATIF'" class="plw-putus__row">
+                    <i class="bi bi-exclamation-octagon"></i>
+                    <span>Ini aktivitas <b>penentu</b>. Pada tahap yang gugurnya otomatis, kandidat <b>langsung dinyatakan tidak lolos</b>.</span>
+                </div>
             </div>
         </ConfirmModal>
 
@@ -597,6 +666,11 @@ export default {
             catatNilai: null,
             catatCatatan: '',
             sibuk: false,
+            // Id aktivitas yang sedang ditarik hasilnya dari HCLearn.
+            sinkronId: null,
+            // Konfirmasi "Tidak hadir" — aksi final, tak boleh sekali klik.
+            absenShow: false,
+            absenTarget: null,
             toast: '',
             toastErr: false,
             tm: null,
@@ -623,6 +697,8 @@ export default {
         putusLabelKonfirm() { return { LULUS: 'Ya, Loloskan', GUGUR: 'Ya, Gugurkan & Kirim Email', TALENT_POOL: 'Ya, Simpan' }[this.putusHasil] || 'Ya'; },
         /** Menggugurkan menuntut centang persetujuan dulu; yang lain langsung boleh. */
         bolehKonfirmPutus() { return this.putusHasil !== 'GUGUR' || this.putusSetuju; },
+        /** Aktivitas yang dikerjakan tim: catatan bebas, tak ada syarat tambahan. */
+        bolehSimpanCatat() { return !!this.catatTarget; },
         // KEDUA tab memakai kolom tahap alur yang sama. Kandidat gugur tetap
         // "diam" di tahap tempat ia gugur (backend mengirim kolomUrutan dari
         // tahap ber-Hasil GUGUR), bukan ditumpuk jadi satu kolom — supaya admin
@@ -819,8 +895,10 @@ export default {
         },
         labelTes(t) {
             if (t.status === 'TIDAK_HADIR') return 'Tidak hadir';
-            if (t.status === 'DIJADWALKAN') return 'Dijadwalkan';
-            if (t.status !== 'SELESAI') return 'Menunggu';
+            // Ujian online: sebutkan yang sedang ditunggu. "Menunggu" saja bikin
+            // admin mengira ada yang harus ia kerjakan, padahal giliran sistem.
+            if (t.status === 'DIJADWALKAN') return t.online ? 'Menunggu hasil HCLearn' : 'Dijadwalkan';
+            if (t.status !== 'SELESAI') return t.online ? 'Belum dijadwalkan' : 'Menunggu';
             if (t.peran === 'INFORMATIF') return 'Selesai';
             return t.hasil === 'LULUS' ? 'Lulus' : 'Gagal';
         },
@@ -864,12 +942,37 @@ export default {
         },
 
         /** ESCAPE HATCH: kandidat tak hadir — tahap berhenti menunggu tes ini. */
-        async tandaiTidakHadir(t) {
-            if (this.sibuk) return;
+        /**
+         * Tarik hasil ujian online dari HCLearn.
+         *
+         * Dipakai saat webhook CAT tak sampai. Yang tersimpan tetap angka resmi
+         * penyedia — admin tidak pernah mengetik nilai. Aman diulang.
+         */
+        async sinkronHasil(t) {
+            if (this.sinkronId) return;
+            this.sinkronId = t.id;
+            try {
+                const res = await axios.post(`/api/v1/karir/lamaran/sub-tes/${t.id}/sinkron`, {}, CFG);
+                this.notice(res.data?.message || 'Hasil ditarik dari HCLearn.');
+                await this.muatDetail(this.selectedId);
+            } catch (e) {
+                this.notice(e.response?.data?.message || 'Gagal menarik hasil dari HCLearn.', true);
+            } finally {
+                this.sinkronId = null;
+            }
+        },
+        askTidakHadir(t) {
+            this.absenTarget = t;
+            this.absenShow = true;
+        },
+        async konfirmTidakHadir() {
+            const t = this.absenTarget;
+            if (this.sibuk || !t) return;
             this.sibuk = true;
             try {
                 const res = await axios.patch(`/api/v1/karir/lamaran/sub-tes/${t.id}/tidak-hadir`, {}, CFG);
-                this.notice(res.data?.message || 'Sub-tes ditandai tidak hadir.');
+                this.absenShow = false;
+                this.notice(res.data?.message || 'Aktivitas ditandai tidak hadir.');
                 await this.muatDetail(this.selectedId);
             } catch (e) {
                 this.notice(e.response?.data?.message || 'Gagal memproses.', true);
@@ -1083,6 +1186,8 @@ export default {
 .plw-sysnote b { color: #92660a; }
 .plw-sysnote.is-ready { background: linear-gradient(135deg, #ecfdf5, #f0fdf9); border-color: #a7f3d0; color: #065f46; }
 .plw-sysnote.is-ready b { color: #047857; }
+.plw-sysnote.is-fail { background: linear-gradient(135deg, #fef2f2, #fff5f5); border-color: #fecaca; color: #7f1d1d; }
+.plw-sysnote.is-fail b { color: #b91c1c; }
 
 /* ── Rapor tes tahap (baterai multi-tes) ── */
 .plw-tests { display: flex; flex-direction: column; gap: 8px; }
@@ -1105,6 +1210,11 @@ export default {
 .plw-test__pill.is-absent { background: rgba(148, 163, 184, .18); color: #475569; }
 .plw-test__skip { flex: none; display: inline-flex; align-items: center; gap: 5px; border: 1px solid #fca5a5; background: #fff; color: #b91c1c; font-size: 11px; font-weight: 700; border-radius: 9px; padding: 5px 9px; cursor: pointer; transition: background .15s; }
 .plw-test__skip:hover { background: #fef2f2; }
+.plw-test__sync { flex: none; display: inline-flex; align-items: center; gap: 5px; border: 1px solid #a5b4fc; background: #fff; color: #4338ca; font-size: 11px; font-weight: 700; border-radius: 9px; padding: 5px 9px; cursor: pointer; transition: background .15s; }
+.plw-test__sync:hover:not(:disabled) { background: #eef0fe; }
+.plw-test__sync:disabled { opacity: .6; cursor: default; }
+.plw-spin { display: inline-block; animation: plwSpin 1s linear infinite; }
+@keyframes plwSpin { to { transform: rotate(360deg); } }
 .plw-test__rec { flex: none; display: inline-flex; align-items: center; gap: 5px; border: 1px solid #a5b4fc; background: #eef2ff; color: #4338ca; font-size: 11px; font-weight: 700; border-radius: 9px; padding: 5px 9px; cursor: pointer; transition: background .15s; }
 .plw-test__rec:hover { background: #e0e7ff; }
 .plw-test__cat { margin-top: 3px; font-size: 11px; color: #64748b; display: flex; align-items: flex-start; gap: 5px; line-height: 1.45; }
@@ -1113,6 +1223,12 @@ export default {
 .plw-catat { display: flex; flex-direction: column; gap: 6px; }
 .plw-catat__lbl { font-size: 11.5px; font-weight: 700; color: #475569; margin-top: 6px; }
 .plw-catat__info { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #4338ca; background: #eef2ff; border-radius: 9px; padding: 8px 10px; }
+/* Peringatan pencatatan manual tes pihak ke-3 — jalan darurat, bukan jalur biasa. */
+.plw-catat__warn { display: flex; align-items: flex-start; gap: 8px; font-size: 11.5px; line-height: 1.55; color: #92400e; background: rgba(234, 179, 8, .1); border: 1px solid rgba(234, 179, 8, .3); border-radius: 10px; padding: 9px 11px; text-align: left; }
+.plw-catat__warn .bi { color: #d97706; flex: none; margin-top: 1px; }
+.plw-catat__wajib { margin-left: 5px; font-size: 9.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #b91c1c; background: rgba(220, 38, 38, .1); padding: 1px 5px; border-radius: 999px; }
+/* Tombol catat untuk tes pihak ke-3 dibedakan warnanya — menandai jalur darurat. */
+.plw-test__rec.is-manual { color: #b45309; border-color: rgba(234, 179, 8, .45); background: rgba(234, 179, 8, .08); }
 
 .plw-secrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
 .plw-sectitle { display: flex; align-items: center; gap: 9px; font-size: 15px; font-weight: 800; color: #1e293b; }
@@ -1152,17 +1268,46 @@ export default {
 .plw-doc__eye { appearance: none; border: 1px solid #d9def0; background: #fff; width: 38px; height: 38px; border-radius: 11px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #6366f1; flex: 0 0 auto; transition: all 0.16s; }
 .plw-doc__eye:hover { background: #6366f1; color: #fff; border-color: #6366f1; transform: translateY(-1px); }
 
-.plw-actions { display: flex; gap: 10px; flex-wrap: wrap; padding-top: 2px; }
-.plw-btn-lolos { flex: 1; min-width: 150px; appearance: none; border: none; cursor: pointer; padding: 13px 18px; border-radius: 13px; background: linear-gradient(135deg, #34d399, #10b981); color: #fff; font-family: inherit; font-size: 13.5px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 10px 24px rgba(16, 185, 129, 0.3); transition: transform 0.16s; }
+/* ── Tombol keputusan ────────────────────────────────────────────────────
+   Grid auto-fit, bukan flex ber-min-width tetap. Sebelumnya tiap tombol
+   dipaksa minimal 130–150px; di drawer 460px (breakpoint <1180px) tiga tombol
+   + gap sudah memakan 410px, sehingga label panjang pecah jadi dua baris dan
+   tingginya jadi tidak sama.
+
+   Dengan auto-fit, jumlah kolom menyesuaikan lebar yang tersedia sendiri:
+   drawer lebar → 3 sebaris; menyempit → 2 + 1; sangat sempit → menumpuk.
+   Tidak ada breakpoint yang perlu ditebak untuk tiap kombinasi tombol. */
+.plw-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; padding-top: 2px; }
+
+/* Sifat bersama ketiga tombol — dulu disalin tiga kali, mudah tidak sinkron. */
+.plw-btn-lolos, .plw-btn-talent, .plw-btn-gugur {
+    appearance: none; cursor: pointer; font-family: inherit;
+    padding: 13px 14px; border-radius: 13px;
+    font-size: 13.5px; font-weight: 800; line-height: 1.2;
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    /* Label tidak boleh pecah di tengah frasa; kalau benar-benar sempit,
+       dipotong dengan elipsis — bukan menambah tinggi tombol. */
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    min-width: 0; transition: transform .16s, background .16s;
+}
+.plw-btn-lolos, .plw-btn-talent, .plw-btn-gugur { min-height: 46px; }
+.plw-btn-lolos .bi, .plw-btn-talent .bi, .plw-btn-gugur .bi,
+.plw-btn-lolos svg, .plw-btn-gugur svg { flex: none; }
+
+.plw-btn-lolos { border: none; background: linear-gradient(135deg, #34d399, #10b981); color: #fff; box-shadow: 0 10px 24px rgba(16, 185, 129, 0.3); }
 .plw-btn-lolos:hover { transform: translateY(-2px); }
-.plw-btn-gugur { flex: 1; min-width: 150px; appearance: none; cursor: pointer; padding: 13px 18px; border-radius: 13px; background: #fff; border: 1px solid #f4c9c9; color: #dc2626; font-family: inherit; font-size: 13.5px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.16s; }
+.plw-btn-gugur { background: #fff; border: 1px solid #f4c9c9; color: #dc2626; }
 .plw-btn-gugur:hover { background: #fef2f2; }
 /* Tombol ke-3: Masuk Talent Pool — nada emas, di antara Loloskan & Tidak Lolos. */
-.plw-btn-talent { flex: 1; min-width: 150px; appearance: none; cursor: pointer; padding: 13px 18px; border-radius: 13px; background: linear-gradient(135deg, #fbbf24, #d97706); border: none; color: #fff; font-family: inherit; font-size: 13.5px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 10px 24px rgba(217, 119, 6, 0.28); transition: transform 0.16s; }
+.plw-btn-talent { background: linear-gradient(135deg, #fbbf24, #d97706); border: none; color: #fff; box-shadow: 0 10px 24px rgba(217, 119, 6, 0.28); }
 .plw-btn-talent:hover { transform: translateY(-2px); }
 .plw-btn-talent .bi { font-size: 15px; }
 /* Saat 3 tombol, izinkan membungkus rapi di layar sempit. */
-.plw-actions.is-three .plw-btn-lolos, .plw-actions.is-three .plw-btn-talent, .plw-actions.is-three .plw-btn-gugur { min-width: 130px; }
+/* Tiga tombol berbagi lebar yang sama: label agak dirapatkan supaya
+   "Talent Pool" tetap satu baris tanpa perlu memperkecil tombolnya. */
+.plw-actions.is-three .plw-btn-lolos,
+.plw-actions.is-three .plw-btn-talent,
+.plw-actions.is-three .plw-btn-gugur { padding-left: 10px; padding-right: 10px; font-size: 13px; gap: 6px; }
 .plw-tp-hint { display: flex; align-items: flex-start; gap: 8px; margin: 0 0 12px; padding: 10px 12px; border-radius: 10px; font-size: 12px; line-height: 1.55; color: #92400e; background: rgba(234, 179, 8, 0.1); border: 1px solid rgba(234, 179, 8, 0.28); }
 .plw-tp-hint .bi { color: #d97706; margin-top: 1px; flex: none; }
 
@@ -1242,5 +1387,14 @@ export default {
     .plw-col { width: 100%; flex: 1 1 auto; }
     .plw-drawer { width: 100%; }
     .plw-main { padding: 20px 16px 44px; }
+}
+/* Ponsel: tombol keputusan menumpuk penuh selebar drawer. Di lebar sekecil ini
+   tiga tombol sebaris membuat labelnya terpotong elipsis — lebih baik satu per
+   satu, dan sekalian lebih aman disentuh. */
+@media (max-width: 575.98px) {
+    .plw-actions, .plw-actions.is-three { grid-template-columns: 1fr; }
+    .plw-actions.is-three .plw-btn-lolos,
+    .plw-actions.is-three .plw-btn-talent,
+    .plw-actions.is-three .plw-btn-gugur { font-size: 13.5px; padding-left: 14px; padding-right: 14px; gap: 8px; }
 }
 </style>

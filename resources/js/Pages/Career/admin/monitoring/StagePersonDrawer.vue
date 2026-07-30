@@ -77,6 +77,8 @@
                             <div v-for="(x, i) in subtesTampil" :key="i" class="wcm-tes3">
                                 <div class="wcm-tes3__head">
                                     <b>{{ x.label }}</b>
+                                    <!-- Tipe aktivitas: ujian online, tes manual, atau wawancara. -->
+                                    <span v-if="x.tipeNama" class="wcm-tag">{{ x.tipeNama }}</span>
                                     <span v-if="x.peran === 'INFORMATIF'" class="wcm-tag">informatif</span>
                                     <span v-if="!x.wajib" class="wcm-tag">opsional</span>
                                     <span class="wca-badge" :class="badgeTes(x)">{{ labelStatusTes(x) }}</span>
@@ -189,9 +191,8 @@
                         <section v-if="rencana" class="wcm-sec">
                             <div class="wcm-sec__ttl"><i class="bi bi-map"></i> {{ tahap.sudahDijalani ? 'Ketentuan Tahap' : 'Rencana Tahap' }}</div>
                             <dl class="wcm-fakta">
-                                <template v-if="rencana.provider"><dt>Penyedia</dt><dd>{{ rencana.provider === 'THIRD_PARTY' ? 'Pihak ke-3 (otomatis)' : 'Internal' }}</dd></template>
+                                <template v-if="rencana.provider"><dt>Pelaksanaan</dt><dd>{{ rencana.provider === 'THIRD_PARTY' ? 'Ujian online — dijadwalkan (HCLearn)' : 'Ditangani tim rekrutmen' }}</dd></template>
                                 <template v-if="rencana.formulirKode"><dt>Formulir</dt><dd>{{ rencana.formulirKode }}</dd></template>
-                                <template v-if="rencana.jenisTesKode"><dt>Jenis tes</dt><dd>{{ rencana.jenisTesKode }}</dd></template>
                                 <template v-if="rencana.modeKeputusan"><dt>Mode keputusan</dt><dd>{{ rencana.modeKeputusan }}</dd></template>
                                 <template v-if="rencana.sla"><dt>SLA</dt><dd>{{ rencana.sla }}</dd></template>
                             </dl>

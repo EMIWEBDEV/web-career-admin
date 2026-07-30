@@ -71,16 +71,47 @@ class PipelineProgress
         //          sama saja memutus tanpa dasar.
         $otomatis = strtoupper((string) ($tAktif->Keputusan_Mode ?? 'MANUAL')) === 'SYSTEM';
 
-        // Aktivitas yang WAJIB punya hasil dulu = penentu & benar-benar tes
-        // (punya jenis tes / dari pihak ke-3). Aktivitas tanpa jenis tes — mis.
-        // wawancara atau verifikasi berkas — hasilnya ya keputusan admin itu
-        // sendiri, jadi tidak boleh saling mengunci.
+        // Aktivitas yang WAJIB punya hasil dulu = penentu & dijalankan pihak ke-3
+        // (ujian online). Aktivitas yang dikerjakan tim — wawancara, verifikasi
+        // berkas — hasilnya ya keputusan admin itu sendiri, jadi tidak boleh
+        // saling mengunci.
         $belumTercatat = 0;
+        $penentuFinal = [];
         foreach ($subAktif as $s) {
             $penentu = ($s->Peran ?? 'PENENTU') === 'PENENTU';
-            $adalahTes = ! empty($s->Jenis_Tes_Kode) || ($s->Provider ?? '') === 'THIRD_PARTY';
-            if ($penentu && $adalahTes && ($s->Flag_Selesai ?? 'N') !== 'Y') {
+            if (! $penentu) {
+                continue;
+            }
+            $final = ($s->Flag_Selesai ?? 'N') === 'Y';
+            if ($final) {
+                $penentuFinal[] = $s;
+            } elseif (($s->Provider ?? '') === 'THIRD_PARTY') {
                 $belumTercatat++;
+            }
+        }
+
+        // ── APA KATA DATANYA ────────────────────────────────────────────────
+        // Admin yang memutus tahap ber-ujian online butuh tahu hasil tesnya
+        // SEBELUM mengetuk palu. Tanpa ini, layar cuma bilang "Siap Diputus" dan
+        // admin harus menebak — atau membuka rapor satu per satu — padahal
+        // sistem sudah tahu kandidat ini lulus semua atau ada yang gagal.
+        $hasilData = null;
+        $ringkasHasil = null;
+        if ($penentuFinal) {
+            $gagal = array_values(array_filter($penentuFinal, fn ($s) => ($s->Hasil ?? null) === 'GAGAL'));
+            $lulus = array_values(array_filter($penentuFinal, fn ($s) => ($s->Hasil ?? null) === 'LULUS'));
+            $semuaFinal = $belumTercatat === 0;
+
+            if ($gagal) {
+                $hasilData = 'GAGAL';
+                $nama = implode(', ', array_map(fn ($s) => $s->Label ?? 'tes', $gagal));
+                $ringkasHasil = 'Data menyatakan TIDAK LULUS pada: ' . $nama . '.';
+            } elseif ($lulus && $semuaFinal) {
+                $hasilData = 'LULUS';
+                $ringkasHasil = 'Seluruh tes penentu sudah selesai dan LULUS — tinggal dikonfirmasi.';
+            } elseif ($lulus) {
+                $hasilData = 'SEBAGIAN';
+                $ringkasHasil = 'Sebagian tes penentu sudah lulus; ' . $belumTercatat . ' aktivitas lagi menunggu hasil.';
             }
         }
 
@@ -106,6 +137,9 @@ class PipelineProgress
             'otomatis' => $otomatis && $tAktif !== null,
             'aktivitasBelumTercatat' => $belumTercatat,
             'alasanKunci' => $alasanKunci,
+            // Kesimpulan MESIN atas hasil tes — bukan keputusan admin.
+            'hasilData' => $hasilData,
+            'ringkasHasil' => $ringkasHasil,
         ];
     }
 
@@ -121,7 +155,16 @@ class PipelineProgress
         if ($l->Status === 'LULUS') {
             return ['tone' => 'lolos', 'teks' => 'Diterima'];
         }
+        // Siap diputus + data sudah bicara → sebutkan kesimpulannya di badge,
+        // supaya admin tahu mana yang tinggal diketuk dan mana yang perlu ditimbang.
         if ($state['siap']) {
+            if (($state['hasilData'] ?? null) === 'LULUS') {
+                return ['tone' => 'perlu', 'teks' => 'Lulus — Konfirmasi'];
+            }
+            if (($state['hasilData'] ?? null) === 'GAGAL') {
+                return ['tone' => 'perlu', 'teks' => 'Tidak Lulus — Konfirmasi'];
+            }
+
             return ['tone' => 'perlu', 'teks' => 'Siap Diputus'];
         }
         if ($state['isTes'] && $state['skor'] !== null) {

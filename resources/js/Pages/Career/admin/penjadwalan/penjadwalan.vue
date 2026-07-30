@@ -36,13 +36,49 @@
                         </div>
                     </el-form-item>
 
-                    <el-form-item label="Jenis Tes (pihak ke-3)">
-                        <el-select v-model="form.jenisTesKode" filterable placeholder="Pilih jenis tes" class="wca-w" @change="onJenisTes">
-                            <el-option v-for="j in opsi.jenisTes" :key="j.kode" :label="j.nama" :value="j.kode">
-                                <span>{{ j.nama }}</span>
-                                <span class="wca-opttag">{{ j.pelaksana }}</span>
-                            </el-option>
-                        </el-select>
+                    <!-- Tes DIAMBIL DARI ALUR PROGRAM, bukan daftar jenis tes global.
+                         Yang dipilih admin = tahap yang juga dilihat kandidat di
+                         portalnya, jadi tidak mungkin memilih tes yang tak ada di
+                         alur program ini. -->
+                    <el-form-item :label="tesAlur.length > 1 ? 'Ujian Mana yang Dijadwalkan' : 'Ujian yang Dijadwalkan'">
+                        <!-- Satu program bisa punya BEBERAPA ujian online di alurnya
+                             (mis. Psikotes di tahap 2 dan Psikotes 2 di tahap 4), dan
+                             masing-masing butuh paket + jendela waktunya sendiri. Jadi
+                             pilihan ini tak bisa dihilangkan — tapi kalau ujiannya cuma
+                             satu, ia dipilih otomatis dan tampil sebagai keterangan. -->
+                        <div v-if="tesAlur.length === 1" class="wca-hint" style="margin-top:-.2rem">
+                            <i class="bi bi-info-circle"></i>
+                            Alur program ini hanya punya satu ujian online — sudah dipilih otomatis.
+                        </div>
+
+                        <div v-loading="memuatTes" class="wca-teslist">
+                            <el-empty
+                                v-if="!memuatTes && !tesAlur.length"
+                                :image-size="52"
+                                :description="alasanTes || 'Pilih program terlebih dahulu'"
+                            />
+
+                            <button
+                                v-for="t in tesAlur"
+                                :key="t.tahapUrutan + '-' + t.tesUrutan"
+                                type="button"
+                                class="wca-tes"
+                                :class="{ 'is-active': tesTerpilihKey === t.tahapUrutan + '-' + t.tesUrutan }"
+                                @click="pilihTes(t)"
+                            >
+                                <span class="wca-tes__no">{{ t.tahapUrutan }}</span>
+                                <span class="wca-tes__info">
+                                    <span class="wca-tes__nama">{{ t.tahapLabel }}<template v-if="t.multi"> › {{ t.tesLabel }}</template></span>
+                                    <span class="wca-tes__meta">
+                                        <span v-if="t.tipeNama"><i class="bi bi-pc-display"></i> {{ t.tipeNama }}</span>
+                                        <span v-if="t.peran === 'INFORMATIF'"><i class="bi bi-info-circle"></i> informatif</span>
+                                    </span>
+                                </span>
+                                <el-tag size="small" :type="t.menunggu ? 'warning' : 'info'" effect="light">
+                                    {{ t.menunggu }} menunggu
+                                </el-tag>
+                            </button>
+                        </div>
                     </el-form-item>
 
                     <el-form-item label="Nama Ujian / Paket Tes">
@@ -248,10 +284,14 @@ export default {
             memuat: false,
             memuatPaket: false,
             memuatKandidat: false,
+            memuatTes: false,
             menyimpan: false,
             kategori: '',
-            opsi: { talent: [], program: [], jenisTes: [] },
+            opsi: { talent: [], program: [] },
             paket: [],
+            // Tes/tahap yang bisa dijadwalkan pada alur program terpilih.
+            tesAlur: [],
+            alasanTes: '',
             kandidat: [],
             // Penjelasan dari server saat daftar kandidat kosong.
             alasanKandidat: '',
@@ -269,7 +309,7 @@ export default {
             editSibuk: false,
             notice: '',
             noticeType: 'success',
-            form: { programId: null, jenisTesKode: '', idMasterUjian: null, namaUjian: '', waktuMulai: '', waktuAkhir: '', peserta: [] },
+            form: { programId: null, tahapUrutan: null, tesUrutan: null, idMasterUjian: null, namaUjian: '', waktuMulai: '', waktuAkhir: '', peserta: [] },
         };
     },
     computed: {
@@ -279,6 +319,9 @@ export default {
         programTerpilih() {
             return this.opsi.program.find((p) => p.id === this.form.programId) || null;
         },
+        tesTerpilihKey() {
+            return this.form.tahapUrutan ? `${this.form.tahapUrutan}-${this.form.tesUrutan}` : '';
+        },
         semuaTercentang() {
             return this.kandidat.length > 0 && this.kandidat.every((k) => this.form.peserta.includes(k.kode));
         },
@@ -287,12 +330,12 @@ export default {
         },
         bisaGenerate() {
             const f = this.form;
-            return !!(f.programId && f.jenisTesKode && f.idMasterUjian && f.waktuMulai && f.waktuAkhir && f.peserta.length);
+            return !!(f.programId && f.tahapUrutan && f.idMasterUjian && f.waktuMulai && f.waktuAkhir && f.peserta.length);
         },
     },
     mounted() {
         this.muatOpsi();
-        this.muatKandidat();
+        this.muatPaket();
         this.muat();
     },
     methods: {
@@ -306,26 +349,61 @@ export default {
         async muatOpsi() {
             try {
                 const res = await axios.get('/api/v1/penjadwalan/opsi', { headers: { Accept: 'application/json' } });
-                this.opsi = res.data.result || { talent: [], program: [], jenisTes: [] };
+                this.opsi = res.data.result || { talent: [], program: [] };
                 if (!this.kategori && this.opsi.talent.length) this.kategori = this.opsi.talent[0].kode;
-                if (!this.form.jenisTesKode && this.opsi.jenisTes.length) {
-                    this.form.jenisTesKode = this.opsi.jenisTes[0].kode;
-                    this.muatPaket();
-                }
             } catch (e) {
-                this.beritahu('Gagal memuat opsi program / jenis tes', 'error');
+                this.beritahu('Gagal memuat opsi program', 'error');
             }
         },
         gantiKategori(kode) {
             this.kategori = kode;
             this.form.programId = null;
+            this.lupakanTes();
+            this.muatTesAlur(); // tanpa program → daftar tes ikut dikosongkan
         },
         onProgram() {
-            this.form.peserta = [];
-            this.muatKandidat();
+            // Ganti program = ganti alur, jadi pilihan tes lama tidak berlaku lagi.
+            this.lupakanTes();
+            this.muatTesAlur();
         },
-        onJenisTes() {
-            this.muatPaket();
+        // Kosongkan pilihan tes + turunannya (kandidat ikut tahap yang dipilih).
+        lupakanTes() {
+            this.form.tahapUrutan = null;
+            this.form.tesUrutan = null;
+            this.form.peserta = [];
+            this.kandidat = [];
+            this.alasanKandidat = '';
+        },
+        async muatTesAlur() {
+            if (!this.form.programId) { this.tesAlur = []; this.alasanTes = ''; return; }
+            this.memuatTes = true;
+            try {
+                const res = await axios.get('/api/v1/penjadwalan/tes', {
+                    params: { programId: this.form.programId },
+                    headers: { Accept: 'application/json' },
+                });
+                this.tesAlur = res.data.result || [];
+                this.alasanTes = this.tesAlur.length ? '' : (res.data.message || '');
+                // Belum memilih apa pun → pilihkan. Satu ujian saja: langsung itu.
+                // Beberapa: arahkan ke yang benar-benar ada kandidat menunggu —
+                // itu yang dicari admin saat membuka halaman ini. Kalau admin
+                // sudah memilih sendiri, jangan digeser.
+                if (!this.form.tahapUrutan) {
+                    const perlu = this.tesAlur.length === 1
+                        ? this.tesAlur[0]
+                        : this.tesAlur.find((t) => t.menunggu > 0);
+                    if (perlu) this.pilihTes(perlu);
+                }
+            } catch (e) {
+                this.beritahu('Gagal memuat tes pada alur program', 'error');
+            } finally {
+                this.memuatTes = false;
+            }
+        },
+        pilihTes(t) {
+            this.form.tahapUrutan = t.tahapUrutan;
+            this.form.tesUrutan = t.tesUrutan;
+            this.form.peserta = [];
             this.muatKandidat();
         },
         async muatPaket() {
@@ -357,11 +435,11 @@ export default {
             // Kandidat = pelamar NYATA program terpilih yang punya SUB-TES pihak
             // ke-3 menunggu jadwal. Satu tahap bisa berisi beberapa tes, jadi
             // orang yang sama bisa muncul lagi untuk tes berikutnya di tahap itu.
-            if (!this.form.programId) { this.kandidat = []; this.form.peserta = []; this.alasanKandidat = ''; return; }
+            if (!this.form.programId || !this.form.tahapUrutan) { this.kandidat = []; this.form.peserta = []; this.alasanKandidat = ''; return; }
             this.memuatKandidat = true;
             try {
-                const params = { programId: this.form.programId };
-                if (this.form.jenisTesKode) params.jenisTesKode = this.form.jenisTesKode;
+                const params = { programId: this.form.programId, tahapUrutan: this.form.tahapUrutan };
+                if (this.form.tesUrutan) params.tesUrutan = this.form.tesUrutan;
                 if (this.cariKandidat) params.q = this.cariKandidat;
                 const res = await axios.get('/api/v1/penjadwalan/kandidat', { params, headers: { Accept: 'application/json' } });
                 this.kandidat = res.data.result || [];
@@ -404,6 +482,9 @@ export default {
                 this.beritahu(res.data.message || 'Penjadwalan dibuat');
                 this.form.peserta = [];
                 this.muat();
+                // Yang barusan dijadwalkan hilang dari antrean — segarkan hitungannya.
+                this.muatTesAlur();
+                this.muatKandidat();
             } catch (e) {
                 this.beritahu(e.response?.data?.message || 'Gagal membuat penjadwalan', 'error');
             } finally {
@@ -454,6 +535,9 @@ export default {
                 this.hapusTampil = false;
                 this.beritahu('Penjadwalan dihapus');
                 this.muat();
+                // Pesertanya kembali ke antrean menunggu jadwal.
+                this.muatTesAlur();
+                this.muatKandidat();
             } catch (e) {
                 this.beritahu('Gagal menghapus penjadwalan', 'error');
             }
@@ -490,6 +574,17 @@ export default {
 .wca-hint--warn { color: var(--el-color-warning); }
 .wca-opttag { float: right; color: var(--el-text-color-secondary); font-size: .78rem; margin-left: 1rem; }
 .wca-muted { color: var(--el-text-color-secondary); }
+
+/* Tes/tahap dari alur program — pengganti dropdown jenis tes */
+.wca-teslist { display: flex; flex-direction: column; gap: .45rem; max-height: 250px; overflow-y: auto; padding: .15rem; }
+.wca-tes { display: flex; align-items: center; gap: .65rem; width: 100%; text-align: left; padding: .55rem .7rem; border: 1.5px solid var(--el-border-color); border-radius: 11px; background: #fff; cursor: pointer; transition: border-color .15s, box-shadow .15s; }
+.wca-tes:hover { border-color: #a5a6f6; }
+.wca-tes.is-active { border-color: #4f46e5; box-shadow: 0 0 0 3px #eef0fe; }
+.wca-tes__no { width: 26px; height: 26px; flex: 0 0 26px; border-radius: 8px; display: grid; place-items: center; background: #eef0fe; color: #4f46e5; font-size: .78rem; font-weight: 700; }
+.wca-tes.is-active .wca-tes__no { background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; }
+.wca-tes__info { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.wca-tes__nama { font-weight: 600; font-size: .88rem; line-height: 1.35; }
+.wca-tes__meta { display: flex; flex-wrap: wrap; gap: .15rem .7rem; font-size: .72rem; color: var(--el-text-color-secondary); }
 
 /* Kartu paket tes — dua kolom (col-6) */
 .wca-paketgrid { display: grid; gap: .7rem; grid-template-columns: 1fr; max-height: 340px; overflow-y: auto; padding: .15rem; }
