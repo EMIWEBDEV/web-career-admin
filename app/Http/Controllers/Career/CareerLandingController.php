@@ -51,6 +51,7 @@ class CareerLandingController extends Controller
             'offices' => $this->offices(),
             'benefits' => $this->benefits(),
             'tim' => $this->timCards(),
+            'heroSlides' => $this->heroSlides(),
         ]);
     }
 
@@ -176,7 +177,69 @@ class CareerLandingController extends Controller
             'kandidat' => $kandidat,
             'kelayakan' => $kelayakan,
             'sudahLamar' => $sudahLamar,
+            // Tahapan seleksi NYATA milik alur program ini (Master Alur di DB).
+            // Dulu halaman apply memakai daftar tahap yang ditulis di berkas JS,
+            // jadi kandidat melihat alur karangan — bukan alur yang benar-benar
+            // dijalankan. Kosong hanya bila program belum punya alur.
+            'pipeline' => $mt['pipeline'] ?? ($lo['pipeline'] ?? []),
+            // Syarat asli tahap pertama, apa adanya dari Master Program → Syarat.
+            'syarat' => $this->syaratTahapPertama($job['pembukaanId'] ?? null),
         ];
+    }
+
+    /**
+     * Aturan syarat tahap PERTAMA sebuah pembukaan — dikirim ke formulir apply
+     * supaya peringatan di layar memakai aturan yang sama dengan yang dinilai
+     * server. Sebelumnya klien memakai daftar tetap di careerSession.js yang
+     * tidak ada hubungannya dengan syarat program, sehingga bisa menyatakan
+     * "tidak memenuhi syarat" untuk aturan yang sebenarnya tidak dipakai.
+     *
+     * Keputusan akhir tetap milik server (LamaranService::evaluasiSyarat).
+     */
+    private function syaratTahapPertama(?string $pembukaanEnc): array
+    {
+        $pembukaanId = $pembukaanEnc ? (Hashids::decode($pembukaanEnc)[0] ?? null) : null;
+        if (! $pembukaanId) {
+            return [];
+        }
+
+        try {
+            $pb = DB::table('N_WEB_CAREERS_Pembukaan')->where('Id_Pembukaan', $pembukaanId)->first(['Program_Id']);
+            if (! $pb) {
+                return [];
+            }
+
+            $program = DB::table('N_WEB_CAREERS_Program')->where('Id_Program', $pb->Program_Id)->first(['Alur_Kode']);
+            $tahap1 = DB::table('N_WEB_CAREERS_Master_Alur_Tahap as t')
+                ->join('N_WEB_CAREERS_Master_Alur as a', 'a.Id_Master_Alur', '=', 't.Master_Alur_Id')
+                ->where('a.Kode', $program->Alur_Kode ?? '')
+                ->orderBy('t.Urutan')
+                ->first(['t.Id_Master_Alur_Tahap']);
+            if (! $tahap1) {
+                return [];
+            }
+
+            return DB::table('N_WEB_CAREERS_Program_Syarat')
+                ->where('Program_Id', $pb->Program_Id)
+                ->where('Master_Alur_Tahap_Id', $tahap1->Id_Master_Alur_Tahap)
+                ->where('Flag_Aktif', 'Y')
+                ->orderBy('Urutan')
+                ->get(['Nama', 'Aturan_Json', 'Aksi', 'Pesan_Gugur', 'Flag_Uji'])
+                ->map(fn ($s) => [
+                    'nama' => $s->Nama,
+                    // Hanya GUGUR yang boleh memblokir; TANDAI cuma menandai untuk admin.
+                    'aksi' => $s->Aksi,
+                    // Mode uji: dihitung tapi tidak boleh memengaruhi kandidat.
+                    'uji' => $s->Flag_Uji === 'Y',
+                    'pesan' => $s->Pesan_Gugur,
+                    'aturan' => json_decode($s->Aturan_Json ?: '{}', true) ?: [],
+                ])
+                ->values()->all();
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->warning('Gagal memuat syarat tahap pertama: ' . $e->getMessage());
+
+            return [];
+        }
     }
 
     /**
@@ -304,24 +367,14 @@ class CareerLandingController extends Controller
                 'tipe' => 'FORM',
                 'judul' => 'Pendidikan',
                 'ikon' => 'bi-mortarboard',
+                // CASCADE: Jenjang → Jenis Institusi → Nama Kampus/Sekolah (master).
                 'fields' => [
-                    [
-                        'key' => 'jenjang',
-                        'label' => 'Jenjang',
-                        'tipe' => 'select',
-                        'required' => true,
-                        'opsi' => ['SMA', 'SMK', 'D3', 'D4', 'S1', 'S2'],
-                    ],
-                    ['key' => 'kampus', 'label' => 'Institusi / Kampus', 'tipe' => 'text', 'required' => true],
-                    ['key' => 'jurusan', 'label' => 'Jurusan', 'tipe' => 'text', 'required' => true],
-                    ['key' => 'ipk', 'label' => 'IPK', 'tipe' => 'number', 'required' => true, 'ph' => '3.50'],
-                    [
-                        'key' => 'lulus',
-                        'label' => 'Tahun Lulus',
-                        'tipe' => 'number',
-                        'required' => true,
-                        'ph' => '2024',
-                    ],
+                    ['key' => 'jenjang', 'label' => 'Jenjang Pendidikan', 'tipe' => 'select', 'required' => true, 'sumber_api' => 'jenjang'],
+                    ['key' => 'institusi', 'label' => 'Jenis Institusi Pendidikan', 'tipe' => 'select', 'required' => true, 'sumber_api' => 'jenis_institusi', 'tergantung' => 'jenjang'],
+                    ['key' => 'kampus', 'label' => 'Nama Kampus / Sekolah', 'tipe' => 'select', 'required' => true, 'sumber_api' => 'kampus', 'cari_async' => true, 'tergantung' => 'institusi', 'full' => true],
+                    ['key' => 'jurusan', 'label' => 'Jurusan / Fakultas', 'tipe' => 'select', 'required' => true, 'sumber_api' => 'fakultas', 'tergantung' => 'kampus', 'boleh_ketik' => true],
+                    ['key' => 'ipk', 'label' => 'IPK', 'tipe' => 'number', 'required' => true, 'ph' => '3.50', 'tergantung' => 'institusi'],
+                    ['key' => 'lulus', 'label' => 'Tahun Lulus', 'tipe' => 'number', 'required' => true, 'ph' => '2024', 'tergantung' => 'institusi'],
                 ],
             ],
             [
@@ -471,38 +524,27 @@ class CareerLandingController extends Controller
                 'tipe' => 'FORM',
                 'judul' => 'Pendidikan',
                 'ikon' => 'bi-mortarboard',
+                // CASCADE: Jenjang → Jenis Institusi → Nama Kampus (opsi dari master
+                // via sumber_api; kampus dicari server-side terfilter jenis). Field
+                // di bawah kampus baru muncul setelah jenis institusi dipilih.
                 'fields' => [
+                    ['key' => 'jenjang', 'label' => 'Jenjang Pendidikan', 'tipe' => 'select', 'required' => true, 'sumber_api' => 'jenjang'],
+                    ['key' => 'institusi', 'label' => 'Jenis Institusi Pendidikan', 'tipe' => 'select', 'required' => true, 'sumber_api' => 'jenis_institusi', 'tergantung' => 'jenjang'],
+                    ['key' => 'kampus', 'label' => 'Nama Kampus / Sekolah', 'tipe' => 'select', 'required' => true, 'sumber_api' => 'kampus', 'cari_async' => true, 'tergantung' => 'institusi', 'full' => true],
+                    // Jurusan & Prodi menyusul kampus (bukan jenis institusi):
+                    // daftarnya milik kampus itu. 'boleh_ketik' membiarkan
+                    // pelamar mengetik sendiri — master prodi tidak akan pernah
+                    // lengkap, dan mengunci pilihan bikin orang mentok.
+                    ['key' => 'jurusan', 'label' => 'Jurusan / Fakultas', 'tipe' => 'select', 'required' => true, 'sumber_api' => 'fakultas', 'tergantung' => 'kampus', 'boleh_ketik' => true],
+                    ['key' => 'prodi', 'label' => 'Program Studi', 'tipe' => 'select', 'required' => true, 'sumber_api' => 'prodi', 'cari_async' => true, 'tergantung' => 'kampus', 'saring_dari' => 'jurusan', 'boleh_ketik' => true],
+                    ['key' => 'ipk', 'label' => 'IPK', 'tipe' => 'number', 'required' => true, 'ph' => '3.50', 'tergantung' => 'institusi'],
                     [
-                        'key' => 'kampus',
-                        'label' => 'Nama Kampus',
-                        'tipe' => 'select',
-                        'required' => true,
-                        'opsi' => $kampus,
-                    ],
-                    [
-                        'key' => 'institusi',
-                        'label' => 'Jenis Institusi Pendidikan',
-                        'tipe' => 'select',
-                        'required' => true,
-                        'opsi' => ['Politeknik', 'Universitas'],
-                    ],
-                    ['key' => 'jurusan', 'label' => 'Jurusan / Fakultas', 'tipe' => 'text', 'required' => true],
-                    ['key' => 'prodi', 'label' => 'Program Studi', 'tipe' => 'text', 'required' => true],
-                    [
-                        'key' => 'jenjang',
-                        'label' => 'Jenjang Pendidikan',
-                        'tipe' => 'select',
-                        'required' => true,
-                        'opsi' => ['D3', 'D4', 'S1', 'S2'],
-                    ],
-                    ['key' => 'ipk', 'label' => 'IPK', 'tipe' => 'number', 'required' => true, 'ph' => '3.50'],
-                    [
+                        // Tanpa 'full' → sebaris dengan IPK (kiri-kanan).
                         'key' => 'bersediaBanyuasin',
                         'label' => 'Bersedia ditempatkan di Pabrik Banyuasin?',
                         'tipe' => 'select',
                         'required' => true,
                         'opsi' => ['Ya', 'Tidak'],
-                        'full' => true,
                     ],
                 ],
             ],
@@ -2004,6 +2046,48 @@ class CareerLandingController extends Controller
     }
 
     /** Alasan bergabung — highlight chip di hero. */
+    /**
+     * Slide hero landing (Master Hero) — hanya yang AKTIF, terurut sesuai Urutan.
+     * Landing publik tidak boleh tumbang karena tabel/berkas media bermasalah.
+     */
+    private function heroSlides(): array
+    {
+        try {
+            return DB::table('N_WEB_CAREERS_Master_Hero_Slide')
+                ->where('Flag_Aktif', 'Y')
+                ->orderBy('Urutan')
+                ->orderBy('Id_Master_Hero_Slide')
+                ->get()
+                ->map(function ($r) {
+                    $id = (int) $r->Id_Master_Hero_Slide;
+                    $v = $r->Updated_At ? strtotime($r->Updated_At) : 0;
+                    $media = fn (string $slot, ?string $path) => $path
+                        ? '/karir/hero-media/' . Hashids::encode($id) . '/' . $slot . '?v=' . $v
+                        : null;
+
+                    return [
+                        'id' => Hashids::encode($id),
+                        'label' => $r->Label,
+                        'tipe' => $r->Tipe,
+                        'tampilkanKonten' => $r->Flag_Tampilkan_Konten === 'Y',
+                        'overlay' => strtolower($r->Overlay),
+                        'zoomAnimation' => $r->Zoom_Animation === 'Y' ? 'Y' : 'N',
+                        'durasiMs' => (int) $r->Durasi_Ms,
+                        'gambarDesktop' => $media('desktop', $r->Gambar_Desktop),
+                        'gambarMobile' => $media('mobile', $r->Gambar_Mobile),
+                        'videoDesktopUrl' => $media('video_desktop', $r->Video_Desktop_Url),
+                        'videoMobileUrl' => $media('video_mobile', $r->Video_Mobile_Url),
+                        'videoDesktopPoster' => $media('poster_desktop', $r->Video_Desktop_Poster),
+                        'videoMobilePoster' => $media('poster_mobile', $r->Video_Mobile_Poster),
+                    ];
+                })
+                ->values()
+                ->all();
+        } catch (\Throwable $e) {
+            return [];
+        }
+    }
+
     private function benefits(): array
     {
         return [

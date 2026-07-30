@@ -99,11 +99,21 @@ class PenjadwalanController extends Controller
     }
 
     /**
-     * Kandidat NYATA yang layak dijadwalkan tes: pelamar program terpilih yang
-     * TAHAP SAAT INI adalah tahap tes pihak ke-3 (Provider THIRD_PARTY) & masih
-     * BERJALAN. Bila jenis tes dipilih, disaring ke Jenis_Tes_Kode itu.
-     * Tanpa programId, atau tak ada pelamar di tahap tes → daftar KOSONG.
-     * Identitas peserta = Kode lamaran (LMR-...).
+     * Kandidat yang layak dijadwalkan untuk SATU JENIS TES.
+     *
+     * Acuannya SUB-TES, bukan tahap. Satu tahap bisa memuat beberapa tes
+     * sekaligus — mis. tahap "FGD Dan Wawancara HR" berisi Psikotes 2 + DISC +
+     * Wawancara. Ketiganya dijadwalkan SENDIRI-SENDIRI, bisa di hari berbeda,
+     * dan kandidat yang sama muncul lagi untuk tes berikutnya selama sub-tes itu
+     * belum punya jadwal.
+     *
+     * Dulu penyaringnya `Lamaran_Tahap.Provider` + `Lamaran_Tahap.Jenis_Tes_Kode`
+     * — satu tahap hanya bisa mewakili SATU jenis tes, sehingga tes kedua dan
+     * ketiga di tahap yang sama mustahil dijadwalkan.
+     *
+     * Sub-tes ikut disaring: hanya yang Provider THIRD_PARTY, belum selesai, dan
+     * belum tertaut jadwal. Yang sudah dijadwalkan sengaja disembunyikan supaya
+     * tidak terkirim dua kali ke HCLearn; batalkan jadwalnya untuk mengulang.
      */
     public function kandidat(Request $request)
     {
@@ -116,26 +126,14 @@ class PenjadwalanController extends Controller
                 return ResponseHelper::success([], 'Pilih program terlebih dahulu.');
             }
 
-            $rows = DB::table('N_WEB_CAREERS_Lamaran as l')
-                // Tahap SAAT INI kandidat = baris tahap dengan Urutan = Lamaran.Urutan_Tahap.
-                ->join('N_WEB_CAREERS_Lamaran_Tahap as t', fn ($j) => $j
-                    ->on('t.Lamaran_Id', '=', 'l.Id_Lamaran')
-                    ->on('t.Urutan', '=', 'l.Urutan_Tahap'))
-                ->join('N_WEB_CAREERS_Users as u', 'u.Id_Users', '=', 'l.Id_Users')
-                ->leftJoin('N_WEB_CAREERS_Program_Posisi as pos', 'pos.Id_Program_Posisi', '=', 'l.Program_Posisi_Id')
-                ->where('l.Program_Id', $programId)
-                ->where('l.Status', 'BERJALAN')
-                ->where('t.Status', 'BERJALAN')
-                ->where('t.Provider', 'THIRD_PARTY')
-                ->when($jenisTesKode !== '', fn ($q) => $q->where('t.Jenis_Tes_Kode', $jenisTesKode))
-                ->when($cari !== '', fn ($q) => $q->where(function ($w) use ($cari) {
-                    $w->where('u.Nama', 'like', "%{$cari}%")
-                        ->orWhere('l.Kode', 'like', "%{$cari}%")
-                        ->orWhere('pos.Posisi', 'like', "%{$cari}%");
-                }))
+            $rows = $this->kueriKandidat($programId, $jenisTesKode, $cari)
                 ->orderBy('u.Nama')
                 ->limit(500)
-                ->get(['l.Kode as kode', 'u.Nama as nama', 'u.No_Hp as hp', 'u.Email as email', 'pos.Posisi as posisi', 't.Label as tahap'])
+                ->get([
+                    'l.Kode as kode', 'u.Nama as nama', 'u.No_Hp as hp', 'u.Email as email',
+                    'pos.Posisi as posisi', 't.Label as tahap', 't.Urutan as urutanTahap',
+                    'st.Label as tes', 'st.Jenis_Tes_Kode as jenisTes', 'st.Urutan as urutanTes',
+                ])
                 ->map(fn ($r) => [
                     'kode' => $r->kode,
                     'nama' => $r->nama,
@@ -143,14 +141,98 @@ class PenjadwalanController extends Controller
                     'email' => $r->email,
                     'posisi' => $r->posisi,
                     'tahap' => $r->tahap,
-                ]);
+                    // Tes mana di dalam tahap itu — penting saat satu tahap berisi
+                    // beberapa tes, supaya admin tahu yang mana sedang dijadwalkan.
+                    'tes' => $r->tes,
+                    'jenisTes' => $r->jenisTes,
+                    'urutanTes' => (int) $r->urutanTes,
+                ])
+                ->values();
 
-            return ResponseHelper::success($rows, 'Kandidat dimuat');
+            return ResponseHelper::success(
+                $rows,
+                $rows->isEmpty() ? $this->alasanKosong($programId, $jenisTesKode) : 'Kandidat dimuat'
+            );
         } catch (\Throwable $e) {
             Log::channel('web_career')->error('Gagal memuat kandidat: ' . $e->getMessage());
 
             return ResponseHelper::error('Gagal memuat kandidat', 500);
         }
+    }
+
+    /** Kueri dasar kandidat: sub-tes pihak ke-3 yang menunggu jadwal. */
+    private function kueriKandidat(int $programId, string $jenisTesKode, string $cari = '')
+    {
+        return DB::table('N_WEB_CAREERS_Lamaran as l')
+            // Tahap SAAT INI kandidat = baris tahap dengan Urutan = Lamaran.Urutan_Tahap.
+            ->join('N_WEB_CAREERS_Lamaran_Tahap as t', fn ($j) => $j
+                ->on('t.Lamaran_Id', '=', 'l.Id_Lamaran')
+                ->on('t.Urutan', '=', 'l.Urutan_Tahap'))
+            ->join('N_WEB_CAREERS_Lamaran_Tahap_Tes as st', 'st.Lamaran_Tahap_Id', '=', 't.Id_Lamaran_Tahap')
+            ->join('N_WEB_CAREERS_Users as u', 'u.Id_Users', '=', 'l.Id_Users')
+            ->leftJoin('N_WEB_CAREERS_Program_Posisi as pos', 'pos.Id_Program_Posisi', '=', 'l.Program_Posisi_Id')
+            ->where('l.Program_Id', $programId)
+            ->where('l.Status', 'BERJALAN')
+            ->where('t.Status', 'BERJALAN')
+            ->where('st.Provider', 'THIRD_PARTY')
+            ->where('st.Flag_Selesai', 'N')
+            ->whereNull('st.Penjadwalan_Tahap_Id')
+            ->when($jenisTesKode !== '', fn ($q) => $q->where('st.Jenis_Tes_Kode', $jenisTesKode))
+            ->when($cari !== '', fn ($q) => $q->where(function ($w) use ($cari) {
+                $w->where('u.Nama', 'like', "%{$cari}%")
+                    ->orWhere('l.Kode', 'like', "%{$cari}%")
+                    ->orWhere('pos.Posisi', 'like', "%{$cari}%");
+            }));
+    }
+
+    /**
+     * Kenapa daftarnya kosong.
+     *
+     * Daftar kosong tanpa penjelasan adalah keluhan nyata: admin melihat nol
+     * kandidat dan tidak tahu apakah datanya belum ada, tahapnya belum sampai,
+     * atau semuanya memang sudah dijadwalkan. Ditelusuri bertingkat dari yang
+     * paling umum ke paling khusus.
+     */
+    private function alasanKosong(int $programId, string $jenisTesKode): string
+    {
+        $berjalan = DB::table('N_WEB_CAREERS_Lamaran')
+            ->where('Program_Id', $programId)->where('Status', 'BERJALAN')->count();
+        if ($berjalan === 0) {
+            return 'Belum ada pelamar berjalan di program ini.';
+        }
+
+        // Abaikan saringan jenis tes → apakah ada sub-tes pihak ke-3 sama sekali?
+        $tanpaJenis = $this->kueriKandidat($programId, '')->count();
+        if ($tanpaJenis > 0 && $jenisTesKode !== '') {
+            return "Ada {$tanpaJenis} kandidat menunggu jadwal, tetapi tidak untuk jenis tes ini. Pilih jenis tes lain.";
+        }
+
+        // Sudah dijadwalkan semua?
+        $terjadwal = DB::table('N_WEB_CAREERS_Lamaran as l')
+            ->join('N_WEB_CAREERS_Lamaran_Tahap as t', fn ($j) => $j
+                ->on('t.Lamaran_Id', '=', 'l.Id_Lamaran')->on('t.Urutan', '=', 'l.Urutan_Tahap'))
+            ->join('N_WEB_CAREERS_Lamaran_Tahap_Tes as st', 'st.Lamaran_Tahap_Id', '=', 't.Id_Lamaran_Tahap')
+            ->where('l.Program_Id', $programId)->where('l.Status', 'BERJALAN')
+            ->where('st.Provider', 'THIRD_PARTY')
+            ->whereNotNull('st.Penjadwalan_Tahap_Id')
+            ->when($jenisTesKode !== '', fn ($q) => $q->where('st.Jenis_Tes_Kode', $jenisTesKode))
+            ->count();
+        if ($terjadwal > 0) {
+            return "Semua kandidat untuk tes ini sudah dijadwalkan ({$terjadwal}). Batalkan jadwalnya bila ingin mengulang.";
+        }
+
+        // Tahap yang sedang dijalani pelamar bukan tes pihak ke-3.
+        $tahapSekarang = DB::table('N_WEB_CAREERS_Lamaran as l')
+            ->join('N_WEB_CAREERS_Lamaran_Tahap as t', fn ($j) => $j
+                ->on('t.Lamaran_Id', '=', 'l.Id_Lamaran')->on('t.Urutan', '=', 'l.Urutan_Tahap'))
+            ->where('l.Program_Id', $programId)->where('l.Status', 'BERJALAN')
+            ->select('t.Label', DB::raw('COUNT(*) as n'))
+            ->groupBy('t.Label')->orderByDesc(DB::raw('COUNT(*)'))->limit(3)->get();
+
+        $ringkas = $tahapSekarang->map(fn ($x) => "{$x->Label} ({$x->n})")->implode(', ');
+
+        return "Tidak ada pelamar yang tahapnya berupa tes pihak ke-3. Saat ini mereka di: {$ringkas}. "
+            . 'Periksa Master Alur — tahap tes online harus punya Jenis Tes; yang dikosongkan dianggap penilaian manual.';
     }
 
     public function list()
@@ -498,20 +580,39 @@ class PenjadwalanController extends Controller
         return ['sukses' => $sukses, 'gagal' => $gagal, 'mode' => 'LANGSUNG', 'pesan' => $pesanGagal];
     }
 
+    /**
+     * Lepaskan tautan jadwal dari tahap DAN sub-tes kandidat.
+     *
+     * Harus dua-duanya. Sub-tes yang masih menyimpan Penjadwalan_Tahap_Id akan
+     * terus dianggap "sudah dijadwalkan", sehingga kandidatnya tidak pernah
+     * muncul lagi di daftar — jadwalnya sendiri sudah dihapus, tapi orangnya
+     * terkunci tanpa jalan keluar.
+     */
+    private function lepaskanTautan(array $tahapIds): void
+    {
+        if (! $tahapIds) {
+            return;
+        }
+
+        DB::table('N_WEB_CAREERS_Lamaran_Tahap')
+            ->whereIn('Penjadwalan_Tahap_Id', $tahapIds)
+            ->update(['Penjadwalan_Tahap_Id' => null, 'Updated_At' => now()]);
+
+        DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')
+            ->whereIn('Penjadwalan_Tahap_Id', $tahapIds)
+            ->where('Flag_Selesai', 'N') // yang sudah dikerjakan jangan diusik
+            ->update(['Penjadwalan_Tahap_Id' => null, 'Status' => 'BELUM', 'Updated_At' => now()]);
+    }
+
     /** Rollback penjadwalan yang gagal terkirim total ke HCLearn (dipakai store). */
     private function batalkanPenjadwalan(int $penjadwalanId): void
     {
         try {
             DB::transaction(function () use ($penjadwalanId) {
                 $tahapIds = DB::table('N_WEB_CAREERS_Penjadwalan_Tahap')
-                    ->where('Penjadwalan_Id', $penjadwalanId)->pluck('Id_Penjadwalan_Tahap');
+                    ->where('Penjadwalan_Id', $penjadwalanId)->pluck('Id_Penjadwalan_Tahap')->all();
 
-                if ($tahapIds->isNotEmpty()) {
-                    // Lepaskan tautan tahap lamaran agar kandidat kembali "menunggu jadwal".
-                    DB::table('N_WEB_CAREERS_Lamaran_Tahap')
-                        ->whereIn('Penjadwalan_Tahap_Id', $tahapIds->all())
-                        ->update(['Penjadwalan_Tahap_Id' => null]);
-                }
+                $this->lepaskanTautan($tahapIds);
 
                 DB::table('N_WEB_CAREERS_Penjadwalan_Peserta')->where('Penjadwalan_Id', $penjadwalanId)->delete();
                 DB::table('N_WEB_CAREERS_Penjadwalan_Tahap')->where('Penjadwalan_Id', $penjadwalanId)->delete();
@@ -611,6 +712,11 @@ class PenjadwalanController extends Controller
             }
 
             DB::transaction(function () use ($realId) {
+                // Kandidat harus kembali bisa dijadwalkan setelah jadwalnya dihapus.
+                $tahapIds = DB::table('N_WEB_CAREERS_Penjadwalan_Tahap')
+                    ->where('Penjadwalan_Id', $realId)->pluck('Id_Penjadwalan_Tahap')->all();
+                $this->lepaskanTautan($tahapIds);
+
                 DB::table('N_WEB_CAREERS_Penjadwalan_Peserta')->where('Penjadwalan_Id', $realId)->delete();
                 DB::table('N_WEB_CAREERS_Penjadwalan_Tahap')->where('Penjadwalan_Id', $realId)->delete();
                 DB::table('N_WEB_CAREERS_Penjadwalan')->where('Id_Penjadwalan', $realId)->delete();

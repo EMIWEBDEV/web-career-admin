@@ -34,7 +34,7 @@
                 <span class="pkg-stat__glow" style="background:radial-gradient(circle,rgba(139,92,246,.2),transparent 70%)"></span>
                 <span class="pkg-stat__ico" style="background:rgba(139,92,246,.12);color:#7c3aed"><i class="bi bi-infinity"></i></span>
                 <div class="pkg-stat__num">{{ jmlEvergreen }}</div>
-                <div class="pkg-stat__label">Evergreen</div>
+                <div class="pkg-stat__label">Selalu Terbuka</div>
             </div>
         </div>
 
@@ -113,7 +113,7 @@
                             <span class="pkg-pill" :class="katPill(b.kategori)"><i class="bi" :class="katIkon(b.kategori)"></i> {{ katLabel(b.kategori) }}</span>
                             <span class="pkg-pill" :class="b.masaBerlaku === 'EVERGREEN' ? 'pkg-pill--green' : 'pkg-pill--struct'">
                                 <i class="bi" :class="b.masaBerlaku === 'EVERGREEN' ? 'bi-infinity' : 'bi-hourglass-split'"></i>
-                                {{ b.masaBerlaku === 'EVERGREEN' ? 'Evergreen' : 'Berbatas' }}
+                                {{ b.masaBerlaku === 'EVERGREEN' ? 'Selalu Terbuka' : 'Berbatas' }}
                             </span>
                             <span class="pkg-pill" :class="b.statusPublish === 'TERBIT' ? 'pkg-pill--green' : 'pkg-pill--slate'"><span class="pkg-pill__dot"></span> {{ b.statusPublish === 'TERBIT' ? 'Terbit' : 'Draft' }}</span>
                         </div>
@@ -168,29 +168,49 @@
         </div>
 
         <!-- Modal buka/ubah -->
-        <AdminModal :busy="saving" :show="show" :title="editingId ? 'Ubah Pembukaan' : 'Buka Program'" subtitle="Publikasikan program ke landing + window pendaftaran" icon="bi-megaphone" :save-label="editingId ? 'Perbarui' : 'Buka'" @close="show = false" @save="save">
+        <AdminModal :busy="saving" :show="show" lg :title="editingId ? 'Ubah Pembukaan' : 'Buka Program'" subtitle="Publikasikan program ke landing + window pendaftaran" icon="bi-megaphone" :save-label="editingId ? 'Perbarui' : 'Buka'" @close="show = false" @save="save">
             <div class="wca-fsection">
                 <div class="wca-fsection__label"><i class="bi bi-megaphone"></i> Detail Pembukaan</div>
                 <div class="wca-form">
                     <div><label class="wca-field-lbl">Program</label>
-                        <RefSelect type="program" v-model="form.program" placeholder="Pilih program" />
+                        <div class="pbk-prog">
+                            <!-- Kotak cari hanya muncul saat program banyak (>6) — kalau sedikit tak perlu. -->
+                            <el-input v-if="programs.length > 6" v-model="programCari" placeholder="Cari program…" clearable size="default" style="margin-bottom:.5rem">
+                                <template #prefix><i class="bi bi-search"></i></template>
+                            </el-input>
+                            <div class="pbk-proglist">
+                                <div v-if="programsLoading" class="pbk-progload"><span class="pbk-spin"></span> Memuat program…</div>
+                                <button v-for="p in programsTampil" v-else :key="p.kode" type="button" class="pbk-progcard" :class="{ 'is-on': form.program === p.kode }" @click="form.program = p.kode">
+                                    <div class="pbk-progcard__head">
+                                        <span class="pbk-progcard__ico" :class="katPill(p.kategori)"><i class="bi" :class="katIkon(p.kategori)"></i></span>
+                                        <div class="pbk-progcard__id">
+                                            <strong>{{ p.nama }}</strong>
+                                            <small>{{ katLabel(p.kategori) }} · {{ p.penyelenggara }}</small>
+                                        </div>
+                                        <i v-if="form.program === p.kode" class="bi bi-check-circle-fill pbk-progcard__chk"></i>
+                                    </div>
+                                    <div class="pbk-progcard__meta">
+                                        <span v-if="p.alur"><i class="bi bi-signpost-split"></i> {{ p.alur }}</span>
+                                        <span v-if="p.jumlahPosisi"><i class="bi bi-briefcase"></i> {{ p.jumlahPosisi }} posisi</span>
+                                        <span v-if="p.tglMulai" class="pbk-progcard__date"><i class="bi bi-calendar3"></i> {{ fmtTgl(p.tglMulai) }}<template v-if="p.tglSelesai"> – {{ fmtTgl(p.tglSelesai) }}</template></span>
+                                        <span v-else-if="p.jadwal"><i class="bi bi-calendar3"></i> {{ p.jadwal }}</span>
+                                    </div>
+                                </button>
+                                <div v-if="!programsLoading && !programsTampil.length" class="pbk-progempty"><i class="bi bi-inbox"></i> Tidak ada program berjalan yang cocok.</div>
+                            </div>
+                        </div>
                     </div>
                     <div><label class="wca-field-lbl">Masa Berlaku</label>
                         <el-select filterable v-model="form.masaBerlaku" placeholder="Pilih" style="width:100%" @change="onMasa">
                             <el-option label="Berbatas (ada tanggal tutup)" value="BERBATAS" />
-                            <el-option label="Evergreen (tanpa tanggal)" value="EVERGREEN" />
+                            <el-option label="Selalu Terbuka (tanpa tanggal tutup)" value="EVERGREEN" />
                         </el-select>
                     </div>
                     <div class="wca-frow">
                         <div><label class="wca-field-lbl">Tanggal &amp; Jam Buka</label><el-date-picker v-model="form.buka" type="datetime" value-format="YYYY-MM-DD HH:mm:ss" format="DD MMM YYYY HH:mm" placeholder="Pilih tanggal &amp; jam" style="width:100%" /></div>
-                        <div><label class="wca-field-lbl">Tanggal &amp; Jam Tutup</label><el-date-picker v-model="form.tutup" type="datetime" value-format="YYYY-MM-DD HH:mm:ss" format="DD MMM YYYY HH:mm" placeholder="Pilih tanggal &amp; jam" style="width:100%" :disabled="form.masaBerlaku === 'EVERGREEN'" /></div>
+                        <div><label class="wca-field-lbl">Tanggal &amp; Jam Tutup</label><el-date-picker v-model="form.tutup" type="datetime" value-format="YYYY-MM-DD HH:mm:ss" format="DD MMM YYYY HH:mm" placeholder="Pilih tanggal &amp; jam" style="width:100%" :default-time="akhirHari" :disabled="form.masaBerlaku === 'EVERGREEN'" /></div>
                     </div>
-                    <div><label class="wca-field-lbl">Status Publish</label>
-                        <el-select filterable v-model="form.statusPublish" placeholder="Pilih status" style="width:100%">
-                            <el-option label="Draft" value="DRAFT" />
-                            <el-option label="Terbit" value="TERBIT" />
-                        </el-select>
-                    </div>
+                    <p class="pbk-note"><i class="bi bi-info-circle"></i> Begitu disimpan, program <b>langsung terbit</b> ke landing. Ingin menundanya? Jadikan draft lewat tombol status di daftar.</p>
                 </div>
             </div>
         </AdminModal>
@@ -234,7 +254,13 @@ export default {
             show: false,
             editingId: null,
             saving: false,
-            form: { program: '', masaBerlaku: 'BERBATAS', buka: null, tutup: null, statusPublish: 'DRAFT' },
+            // Picker program (kartu detail) — dimuat dari endpoint programs.
+            programs: [],
+            programsLoading: false,
+            programCari: '',
+            // Default jam saat memilih Tanggal Tutup = 23:59:59 (akhir hari), bukan 00:00.
+            akhirHari: new Date(2000, 0, 1, 23, 59, 59),
+            form: { program: '', masaBerlaku: 'BERBATAS', buka: null, tutup: null, statusPublish: 'TERBIT' },
             delShow: false,
             delTarget: null,
             deleting: false,
@@ -245,6 +271,11 @@ export default {
     computed: {
         jmlTerbit() { return this.list.filter((b) => b.statusPublish === 'TERBIT').length; },
         jmlEvergreen() { return this.list.filter((b) => b.masaBerlaku === 'EVERGREEN').length; },
+        programsTampil() {
+            const s = this.programCari.trim().toLowerCase();
+            if (!s) return this.programs;
+            return this.programs.filter((p) => `${p.nama} ${p.kategori} ${p.alur || ''} ${p.penyelenggara || ''}`.toLowerCase().includes(s));
+        },
         adaFilter() {
             return !!(this.filters.q || this.filters.status || (this.filters.rentang && this.filters.rentang.length));
         },
@@ -302,11 +333,32 @@ export default {
         cariDebounce() { if (this.cariTimer) clearTimeout(this.cariTimer); this.cariTimer = setTimeout(() => { this.page = 1; this.load(); }, 400); },
         resetFilter() { this.filters = { q: '', status: null, rentang: null }; this.page = 1; this.load(); },
 
-        blankForm() { return { program: '', masaBerlaku: 'BERBATAS', buka: null, tutup: null, statusPublish: 'DRAFT' }; },
+        blankForm() { return { program: '', masaBerlaku: 'BERBATAS', buka: null, tutup: null, statusPublish: 'TERBIT' }; },
         onMasa() { if (this.form.masaBerlaku === 'EVERGREEN') this.form.tutup = null; },
+        /** Format tanggal (tanpa jam) untuk kartu program. */
+        fmtTgl(iso) {
+            if (!iso) return '';
+            const d = new Date(String(iso).replace(' ', 'T'));
+            if (Number.isNaN(d.getTime())) return iso;
+            return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+        },
+        async loadPrograms() {
+            // Selalu ambil fresh saat modal dibuka → loader tampil + urutan terbaru ikut program baru.
+            this.programsLoading = true;
+            this.programs = [];
+            try {
+                this.programs = (await axios.get(`${API}/programs`, CFG)).data.result || [];
+            } catch (e) {
+                this.programs = [];
+            } finally {
+                this.programsLoading = false;
+            }
+        },
         openCreate() {
             this.editingId = null;
             this.form = this.blankForm();
+            this.programCari = '';
+            this.loadPrograms();
             this.show = true;
         },
         openEdit(b) {
@@ -316,8 +368,11 @@ export default {
                 masaBerlaku: b.masaBerlaku || 'BERBATAS',
                 buka: b.buka || null,
                 tutup: b.tutup || null,
-                statusPublish: b.statusPublish || 'DRAFT',
+                // Field disembunyikan; nilai lama dipertahankan (dikirim saat update).
+                statusPublish: b.statusPublish || 'TERBIT',
             };
+            this.programCari = '';
+            this.loadPrograms();
             this.show = true;
         },
         async save() {
@@ -795,5 +850,35 @@ export default {
     .pgk-syarat__id { grid-template-columns: 1fr auto; }
     .pgk-syarat__opt { grid-template-columns: 1fr; }
 }
+
+/* ── Picker Program (kartu detail, gaya MPP) ── */
+.pbk-proglist { max-height: 340px; overflow-y: auto; display: grid; grid-template-columns: repeat(2, 1fr); gap: .55rem; padding-right: 2px; }
+@media (max-width: 640px) { .pbk-proglist { grid-template-columns: 1fr; } }
+.pbk-progcard { text-align: left; border: 1px solid rgba(15, 23, 42, .1); background: #fff; border-radius: 13px; padding: .7rem .85rem; cursor: pointer; transition: all .15s; display: flex; flex-direction: column; gap: .5rem; }
+.pbk-progcard:hover { border-color: rgba(99, 102, 241, .4); background: #f8fafc; transform: translateY(-1px); }
+.pbk-progcard.is-on { border-color: #6366f1; background: #eef2ff; box-shadow: 0 4px 14px rgba(79, 70, 229, .12); }
+.pbk-progcard__head { display: flex; align-items: center; gap: .6rem; }
+.pbk-progcard__ico { flex: none; width: 2.2rem; height: 2.2rem; border-radius: 10px; display: grid; place-items: center; font-size: 1rem; }
+.pbk-progcard__id { min-width: 0; flex: 1; display: flex; flex-direction: column; }
+.pbk-progcard__id strong { font-size: 13.5px; color: #1e293b; line-height: 1.25; }
+.pbk-progcard__id small { font-size: 11px; color: #94a3b8; }
+.pbk-progcard__chk { color: #4f46e5; font-size: 17px; flex: none; }
+.pbk-progcard__meta { display: flex; flex-wrap: wrap; gap: .3rem .9rem; font-size: 11.5px; color: #64748b; }
+.pbk-progcard__meta span { display: inline-flex; align-items: center; gap: .3rem; }
+.pbk-progcard__meta > span > i { color: #94a3b8; }
+.pbk-progcard__date { color: #4338ca; font-weight: 700; }
+.pbk-progcard__date > i { color: #6366f1 !important; }
+.pbk-progload { grid-column: 1 / -1; display: flex; align-items: center; justify-content: center; gap: .5rem; color: #64748b; font-size: 12.5px; font-weight: 600; padding: 2rem 0; }
+.pbk-spin { width: 16px; height: 16px; border: 2px solid rgba(99, 102, 241, .25); border-top-color: #6366f1; border-radius: 50%; animation: pbkspin .7s linear infinite; }
+@keyframes pbkspin { to { transform: rotate(360deg); } }
+.pbk-progempty { grid-column: 1 / -1; text-align: center; color: #94a3b8; font-size: 12.5px; padding: 1.6rem 0; }
+.pbk-progempty > i { display: block; font-size: 1.5rem; margin-bottom: .3rem; opacity: .6; }
+/* Reuse pil kategori sebagai warna ikon kartu */
+.pbk-progcard__ico.pkg-pill--gold { background: rgba(234, 179, 8, .16); color: #a16207; }
+.pbk-progcard__ico.pkg-pill--green { background: rgba(16, 185, 129, .14); color: #059669; }
+.pbk-progcard__ico.pkg-pill--sky { background: rgba(14, 165, 233, .14); color: #0369a1; }
+.pbk-progcard__ico.pkg-pill--slate { background: #eef0f7; color: #64748b; }
+.pbk-note { display: flex; align-items: flex-start; gap: .4rem; margin: .2rem 0 0; font-size: 11.5px; line-height: 1.55; color: #64748b; }
+.pbk-note > i { color: #6366f1; margin-top: 1px; }
 </style>
 

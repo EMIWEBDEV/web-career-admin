@@ -294,15 +294,32 @@ class LamaranController extends Controller
 
         if ($row->Status === 'SELESAI' && $row->Lamaran_Id) {
             $l = DB::table('N_WEB_CAREERS_Lamaran')->where('Id_Lamaran', $row->Lamaran_Id)->first();
+
+            // Sudah ada tahap yang benar-benar diputus LULUS?
+            // Kalau belum, kandidat masih MENUNGGU keputusan admin — tahap
+            // pertamanya bermode manual. Tanpa penanda ini layar hasil akan
+            // menyatakan "Lolos Seleksi Administrasi" untuk lamaran yang belum
+            // diputus siapa pun. Memakai kolom Hasil (bukan Status) karena saat
+            // lolos tahap disimpan Status='SELESAI' + Hasil='LULUS'.
+            $adaLulus = $l && DB::table('N_WEB_CAREERS_Lamaran_Tahap')
+                ->where('Lamaran_Id', $l->Id_Lamaran)->where('Hasil', 'LULUS')->exists();
+
+            $tahapKini = $l ? DB::table('N_WEB_CAREERS_Lamaran_Tahap')
+                ->where('Lamaran_Id', $l->Id_Lamaran)->where('Urutan', $l->Urutan_Tahap)
+                ->value('Label') : null;
+
             $out['lamaran'] = $l ? [
                 'id' => Hashids::encode($l->Id_Lamaran),
                 'kode' => $l->Kode,
-                'status' => $l->Status,          // BERJALAN (lolos administrasi) / GUGUR
+                'status' => $l->Status,          // BERJALAN / GUGUR
                 'hasilAkhir' => $l->Hasil_Akhir,
                 'gugurDi' => $l->Gugur_Di_Tahap,
                 'alasanGugur' => $l->Alasan_Gugur,
                 'tahap' => (int) $l->Urutan_Tahap,
                 'totalTahap' => (int) $l->Total_Tahap,
+                'tahapLabel' => $tahapKini,
+                // true → belum ada tahap yang diputus lolos; jangan ucapkan selamat.
+                'menungguKeputusan' => $l->Status === 'BERJALAN' && ! $adaLulus,
             ] : null;
         }
 
@@ -1076,14 +1093,16 @@ class LamaranController extends Controller
                 ->select('Lamaran_Tahap_Id', DB::raw('COUNT(*) as J'))->groupBy('Lamaran_Tahap_Id')->pluck('J', 'Lamaran_Tahap_Id')
             : collect();
 
-        $pelamar = $lamaran->map(function ($l) use ($tahapPer, $subPer, $kuotaPosisi, $terisiKuota, $berkasCount) {
+        $pelamar = $lamaran->map(function ($l) use ($tahapPer, $subPer, $kuotaPosisi, $terisiKuota, $berkasCount) { // NOSONAR
             $tahapList = collect($tahapPer->get($l->Id_Lamaran, []));
 
             // Aturan penempatan + badge + kuota dipusatkan di PipelineProgress
             // (dipakai juga oleh halaman Monitoring Rekrutmen).
             $tk = PipelineProgress::tahapKini($l, $tahapList);
             $tAktif = PipelineProgress::tahapAktif($l, $tahapList);
-            $st = PipelineProgress::state($l, $tAktif, $tk);
+            // Sub-tes tahap aktif ikut dikirim: mode keputusan & kesiapan tahap
+            // dinilai dari sana (lihat PipelineProgress::state).
+            $st = PipelineProgress::state($l, $tAktif, $tk, $subPer->get($tAktif->Id_Lamaran_Tahap ?? 0, []));
             $skor = $st['skor'];
             $siap = $st['siap'];
             $nungguSistem = $st['nungguSistem'];
@@ -1122,6 +1141,12 @@ class LamaranController extends Controller
                 'butuhKeputusan' => (bool) $butuhKeputusan,
                 'nungguSistem' => (bool) $nungguSistem,
                 'siapDiputus' => (bool) $siap,
+                // Mode keputusan tahap aktif + kenapa tombolnya dikunci —
+                // dipakai worklist menyembunyikan / menonaktifkan tombol.
+                'modeKeputusan' => $st['modeKeputusan'],
+                'otomatis' => (bool) $st['otomatis'],
+                'aktivitasBelumTercatat' => (int) $st['aktivitasBelumTercatat'],
+                'alasanKunci' => $st['alasanKunci'],
                 'skor' => $skor,
                 'rekomendasi' => $tAktif->Rekomendasi ?? null,
                 'alasan' => $tAktif->Rekomendasi_Alasan ?? $l->Alasan_Gugur,

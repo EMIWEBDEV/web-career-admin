@@ -192,9 +192,25 @@
                                 </div>
                             </div>
                         </div>
-                        <div v-if="detailKandidat.nungguSistem" class="plw-sysnote">
+                        <!-- Mode OTOMATIS di Master Alur: admin memang tidak berperan
+                             memutus di sini, jadi alasannya dijelaskan, bukan sekadar
+                             tombolnya hilang tanpa keterangan. -->
+                        <div v-if="detailKandidat.otomatis" class="plw-sysnote">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2.2" stroke-linecap="round" style="flex: 0 0 auto; margin-top: 1px"><path d="M5 3h14l-6 8v7l-2 1v-8L5 3z" /></svg>
-                            <div><b>Tahap ini digerakkan sistem</b> (tes pihak ke-3). Kandidat bergerak otomatis setelah seluruh hasil tesnya masuk — pantau rapor tes di bawah.</div>
+                            <div>
+                                <b>Tahap ini disetel OTOMATIS di Master Alur.</b>
+                                Sistem yang memutuskan begitu seluruh aktivitas penentu selesai — admin tidak mengetuk palu di sini.
+                                <template v-if="detailKandidat.aktivitasBelumTercatat">
+                                    Masih menunggu {{ detailKandidat.aktivitasBelumTercatat }} hasil aktivitas.
+                                </template>
+                            </div>
+                        </div>
+                        <div v-else-if="detailKandidat.nungguSistem" class="plw-sysnote">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2.2" stroke-linecap="round" style="flex: 0 0 auto; margin-top: 1px"><path d="M5 3h14l-6 8v7l-2 1v-8L5 3z" /></svg>
+                            <div>
+                                <b>Menunggu hasil aktivitas.</b>
+                                Catat hasil {{ detailKandidat.aktivitasBelumTercatat || 'tes' }} aktivitas penentu di rapor bawah — keputusan baru bisa diambil setelah itu.
+                            </div>
                         </div>
                         <div v-else-if="detailKandidat.siapDiputus" class="plw-sysnote is-ready">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2.2" stroke-linecap="round" style="flex: 0 0 auto; margin-top: 1px"><path d="M20 6L9 17l-5-5" /></svg>

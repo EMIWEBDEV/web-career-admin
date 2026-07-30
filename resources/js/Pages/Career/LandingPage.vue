@@ -9,7 +9,7 @@
     </Head>
 
     <CareerLayout :has-mt="hasMt" :offices="offices">
-        <HeroSection :benefits="benefits" :has-mt="hasMt" />
+        <HeroSection :benefits="benefits" :has-mt="hasMt" :hero-slides="heroSlides" />
         <TentangSection />
         <AchievementSection :achievements="achievements" />
         <TimSection :tim="tim" />
@@ -45,6 +45,7 @@ const props = defineProps({
     offices: { type: Array, default: () => [] },
     benefits: { type: Array, default: () => [] },
     tim: { type: Array, default: () => [] },
+    heroSlides: { type: Array, default: () => [] },
 });
 
 const tim = computed(() => props.tim || []);
@@ -52,6 +53,7 @@ const programMt = computed(() => props.programMt || []);
 const achievements = computed(() => props.achievements || []);
 const offices = computed(() => props.offices || []);
 const benefits = computed(() => props.benefits || []);
+const heroSlides = computed(() => props.heroSlides || []);
 const hasMt = computed(() => programMt.value.length > 0);
 
 // Reveal-on-scroll untuk seluruh elemen .wc-reveal di semua section

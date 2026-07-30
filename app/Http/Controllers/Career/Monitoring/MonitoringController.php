@@ -329,6 +329,16 @@ class MonitoringController extends Controller
                     ->get()
                     ->groupBy('Lamaran_Id');
 
+                // Sub-tes per tahap — dipakai PipelineProgress menilai apakah
+                // hasil aktivitas sudah tercatat. Satu query bergrup, bukan per
+                // pelamar, supaya papan tetap ringan. Tanpa ini badge Monitoring
+                // bisa berbeda dari worklist untuk kandidat yang sama.
+                $subPer = DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')
+                    ->whereIn('Lamaran_Tahap_Id', $tahapPer->flatten(1)->pluck('Id_Lamaran_Tahap')->all() ?: [0])
+                    ->orderBy('Urutan')
+                    ->get()
+                    ->groupBy('Lamaran_Tahap_Id');
+
                 // Atribut kandidat (kampus, jurusan, jenjang, IPK, …) diambil dari
                 // jawaban formulir. Tabel Formulir_Jawaban_Index TIDAK dipakai
                 // karena hanya memuat field yang dibutuhkan mesin syarat, bukan
@@ -342,7 +352,7 @@ class MonitoringController extends Controller
                 $kuota = (int) DB::table('N_WEB_CAREERS_Program_Posisi')->where('Program_Id', $programId)->sum('Kuota');
                 $terisi = (int) DB::table('N_WEB_CAREERS_Lamaran')->where('Program_Id', $programId)->where('Status', 'LULUS')->count();
 
-                return compact('program', 'kolom', 'lamaran', 'tahapPer', 'pengisian', 'kuota', 'terisi');
+                return compact('program', 'kolom', 'lamaran', 'tahapPer', 'subPer', 'pengisian', 'kuota', 'terisi');
             });
 
             if (! $data) {
@@ -380,7 +390,7 @@ class MonitoringController extends Controller
                 $tahapList = collect($data['tahapPer']->get($l->Id_Lamaran, []));
                 $tk = PipelineProgress::tahapKini($l, $tahapList);
                 $tAktif = PipelineProgress::tahapAktif($l, $tahapList);
-                $st = PipelineProgress::state($l, $tAktif, $tk);
+                $st = PipelineProgress::state($l, $tAktif, $tk, $data['subPer']->get($tAktif->Id_Lamaran_Tahap ?? 0, []));
                 $acuan = $tAktif ?? $tk;
 
                 // Clamp ke kolom terakhir bila urutannya di luar alur saat ini —
