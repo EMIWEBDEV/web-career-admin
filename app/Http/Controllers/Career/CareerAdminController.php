@@ -32,70 +32,14 @@ class CareerAdminController extends Controller
 {
     // ═══════════════════════ HALAMAN OPERASIONAL ═══════════════════════
 
-    /** /karir — ringkasan operasional. Angkanya dihitung dari data nyata. */
-    public function dashboard()
-    {
-        $program = DB::table('N_WEB_CAREERS_Program')->get();
-        $posisi = DB::table('N_WEB_CAREERS_Program_Posisi')->get();
-
-        // Tabel Lamaran baru ada mulai Batch 9 — dashboard tetap tampil
-        // walau batch itu belum dijalankan.
-        $jumlahLamaran = 0;
-        try {
-            $jumlahLamaran = DB::table('N_WEB_CAREERS_Lamaran')->count();
-        } catch (\Throwable $e) {
-            $jumlahLamaran = 0;
-        }
-
-        $stats = [
-            [
-                'label' => 'Program Berjalan',
-                'nilai' => $program->where('Status', 'BERJALAN')->count(),
-                'ikon' => 'bi bi-broadcast',
-                'warna' => '#059669',
-            ],
-            [
-                'label' => 'Posisi Dibuka',
-                'nilai' => $posisi->where('Status', 'BUKA')->count(),
-                'ikon' => 'bi bi-briefcase',
-                'warna' => '#4f46e5',
-            ],
-            [
-                'label' => 'Total Kuota',
-                'nilai' => (int) $posisi->sum('Kuota'),
-                'ikon' => 'bi bi-people',
-                'warna' => '#7c3aed',
-            ],
-            [
-                'label' => 'Pelamar Masuk',
-                'nilai' => $jumlahLamaran,
-                'ikon' => 'bi bi-person-plus',
-                'warna' => '#d97706',
-            ],
-        ];
-
-        $kegiatan = $program
-            ->map(
-                fn($p) => [
-                    'id' => $p->Kode,
-                    'nama' => $p->Nama,
-                    'kategori' => $p->Kategori,
-                    'status' => $p->Status,
-                    'warna' => $p->Warna,
-                ],
-            )
-            ->values();
-
-        return Inertia::render(
-            'Career/admin/Dashboard',
-            CareerShell::props('/karir', 'Dashboard Web Career', [
-                'stats' => $stats,
-                'funnel' => [],
-                'recent' => [],
-                'kegiatan' => $kegiatan,
-            ]),
-        );
-    }
+    // dashboard() DIHAPUS — /karir kini ditangani
+    // App\Http\Controllers\Career\Dashboard\DashboardController.
+    //
+    // Versi lama mengirim 'funnel' => [] dan 'recent' => [] secara hardcode,
+    // jadi dua kartunya permanen kosong tanpa empty-state; kartu statistiknya
+    // pun tak pernah tampil angkanya karena controller mengirim
+    // label/nilai/ikon sementara template membaca value/icon/trend. Tidak ada
+    // yang bisa diselamatkan dari sini, jadi diganti utuh, bukan ditambal.
 
     /** /karir/pelamar — worklist seleksi. Diisi mesin lamaran (Batch 9-10). */
     public function pelamar()

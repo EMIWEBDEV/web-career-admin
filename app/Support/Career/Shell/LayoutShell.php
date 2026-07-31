@@ -17,11 +17,18 @@ class LayoutShell
         $label = (string) config('career_shell.label', 'Web Career');
         $beranda = IdentitasShell::beranda();
 
+        // Item yang URL-nya = beranda DIBUANG dari grup: beranda sudah punya
+        // tombolnya sendiri di navigation.home. Ini bukan kosmetik semata —
+        // halaman dashboard perlu baris N_WEB_CAREERS_Menu ('dashboardPage')
+        // supaya bisa diberi batasan kategori di /hak-akses, dan baris itu
+        // otomatis ikut jadi item sidebar. Tanpa penyaring ini, "Dashboard"
+        // muncul dua kali: sebagai tombol beranda dan sebagai item grup.
         $groups = collect(NavigasiShell::untukPenggunaSaatIni())
             ->map(fn ($g) => [
                 'id' => $g['id'],
                 'title' => $g['title'],
                 'items' => collect($g['items'])
+                    ->reject(fn ($it) => ($it['url'] ?? '') === $beranda)
                     ->map(fn ($it) => [
                         'id' => $it['key'],
                         'jenisPage' => strtolower($kode) . '-' . $it['key'],
@@ -32,8 +39,11 @@ class LayoutShell
                         'target' => 'self',
                         'isActive' => $it['url'] === $activeUrl,
                     ])
+                    ->values()
                     ->all(),
             ])
+            ->reject(fn ($g) => ! $g['items'])   // grup yang jadi kosong ikut hilang
+            ->values()
             ->all();
 
         $activeItem = collect($groups)->flatMap(fn ($g) => $g['items'])->firstWhere('isActive', true);

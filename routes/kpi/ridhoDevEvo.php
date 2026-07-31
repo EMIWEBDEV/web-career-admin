@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Career\CareerAdminController;
+use App\Http\Controllers\Career\Dashboard\DashboardController;
 use App\Http\Controllers\Career\Lamaran\LamaranController;
 use App\Http\Controllers\Career\Monitoring\MonitoringController;
 use App\Http\Controllers\Career\TalentPool\TalentPoolController;
@@ -21,7 +22,12 @@ Route::prefix('karir')
     ->name('career.admin.')
     ->group(function () {
         $c = CareerAdminController::class;
-        Route::get('/', [$c, 'dashboard'])->name('dashboard');
+        // Dashboard bertab per kategori (Rekrutmen/Magang/MT). SENGAJA tanpa
+        // career.permission: ini halaman beranda admin — yang dibatasi adalah
+        // kategori yang tampil, ditegakkan di dalam controller lewat
+        // AksesService::kategoriDiizinkan('dashboardPage'). Memasang gerbang
+        // halaman di sini akan mengunci admin baru dari berandanya sendiri.
+        Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
         // Program Kegiatan & Pembukaan DIPINDAH ke struktur per-modul (routes/career/*).
         // Lowongan lama (/karir/lowongan) DIHAPUS — sumber lowongan kini SATU-satunya
         // dari Monitoring MPP (routes/career/MppLowongan/MppLowonganWeb.php).
@@ -51,6 +57,13 @@ Route::prefix('api/v1/karir')
         $c = CareerAdminController::class;
         // OPTIONS dropdown (semua dari DB; icons dari bootstrap-icons) — dihit RefSelect/IconPicker
         Route::get('/options/{type}', [$c, 'options'])->name('options');
+
+        // Dashboard — tiga endpoint terpisah supaya halaman terbit cepat dan
+        // tiap seksi punya keadaan muat/galat sendiri. Kategori divalidasi di
+        // controller terhadap Role_Konten_Access, bukan lewat middleware.
+        Route::get('/dashboard/ringkas', [DashboardController::class, 'ringkas'])->name('dashboard.ringkas');
+        Route::get('/dashboard/analitik', [DashboardController::class, 'analitik'])->name('dashboard.analitik');
+        Route::get('/dashboard/khas', [DashboardController::class, 'khas'])->name('dashboard.khas');
 
         // Worklist admin: daftar program (panel kiri) + kanban seleksi (panel kanan) & ketuk palu.
         Route::get('/lamaran/worklist/program', [LamaranController::class, 'worklistProgram'])->name('lamaran.worklist.program')->middleware('career.permission:pelamarPage,VIEW');
