@@ -41,6 +41,7 @@
                     <strong>Tentang</strong>
                     <button type="button" @click="goToSection('achievement')">Pencapaian</button>
                     <button type="button" @click="goToSection('lokasi')">Lokasi Kami</button>
+                    <a href="/karir/faq">FAQ Kandidat</a>
                 </div>
                 <div class="wc-footer__col wc-footer__col--office">
                     <strong>Kantor Kami</strong>
