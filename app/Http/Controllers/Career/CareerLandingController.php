@@ -61,6 +61,9 @@ class CareerLandingController extends Controller
             'benefits' => $this->benefits(),
             'tim' => $this->timCards(),
             'heroSlides' => $this->heroSlides(),
+            // FAQ dari Master FAQ — hanya yang ditandai admin untuk landing.
+            // Seluruh pertanyaan ada di halaman /karir/faq.
+            'faq' => (new \App\Support\Career\FaqPublik())->landing(6),
         ]);
     }
 
@@ -1076,8 +1079,13 @@ class CareerLandingController extends Controller
             ->all();
     }
 
-    /** Payload bersama yang dibutuhkan CareerLayout (navbar + footer) di semua halaman. */
-    private function layoutShared(): array
+    /**
+     * Payload bersama yang dibutuhkan CareerLayout (navbar + footer) di semua halaman.
+     * PUBLIC karena halaman publik yang tinggal di controller lain (mis.
+     * FaqPublikController) harus memakai sumber yang sama — kalau disalin,
+     * navbar/footer antar halaman bisa berbeda isi.
+     */
+    public function layoutShared(): array
     {
         return [
             'hasMt' => count($this->programMt()) > 0,

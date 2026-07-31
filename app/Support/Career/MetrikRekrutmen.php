@@ -84,6 +84,49 @@ class MetrikRekrutmen
                      ELSE " . self::sqlUmurTahap($alias) . ' END';
     }
 
+    /**
+     * GILIRAN ADMIN — apakah tahap ini tidak akan bergerak sampai admin bertindak.
+     *
+     * Ini bukan tebakan per kode tahap melainkan turunan dari master, supaya
+     * tipe tahap baru ikut terbaca sendiri tanpa menyentuh kode:
+     *
+     *   Perilaku_Kode = 'CAT'    → ujian online. Yang menilai sistem, TAPI
+     *       jadwalnya dibuat admin. Jadi giliran admin hanya selama
+     *       Penjadwalan_Tahap_Id masih NULL; begitu terjadwal, yang ditunggu
+     *       kandidat mengerjakan & penyedia menilai.
+     *   Perilaku_Kode = 'MANUAL' + Flag_Formulir <> 'Y' → wawancara, MCU,
+     *       screening, penawaran. Tidak ada mesin yang akan menyelesaikannya;
+     *       giliran admin sejak detik tahap itu berjalan.
+     *   Perilaku_Kode = 'MANUAL' + Flag_Formulir = 'Y' → tahap berformulir.
+     *       Selama isian kandidat belum masuk (Formulir_Pengisian_Id NULL) yang
+     *       ditunggu KANDIDAT, bukan admin. Setelah masuk, giliran admin
+     *       memverifikasi.
+     *
+     * Pengecualian terakhir itulah yang membuat angkanya layak dipercaya:
+     * tanpa itu setiap tahap formulir yang baru dibuka akan tampil sebagai
+     * "kamu belum mengerjakan ini", dan admin berhenti mempercayai lencananya.
+     *
+     * Tahap yang Siap_Diputus = 'Y' TIDAK dikecualikan di sini — pemanggil yang
+     * memutuskan, karena "siap diputus" punya keranjangnya sendiri.
+     *
+     * @param  string  $lt   alias N_WEB_CAREERS_Lamaran_Tahap
+     * @param  string  $mtt  alias N_WEB_CAREERS_Master_Tipe_Tahap (LEFT JOIN via Kode)
+     */
+    public static function sqlGiliranAdmin(string $lt = 'lt', string $mtt = 'mtt'): string
+    {
+        // COALESCE: tahap lama bisa punya Tipe_Tahap_Kode NULL sehingga tidak
+        // ketemu barisnya di master. Diperlakukan MANUAL non-formulir — lebih
+        // baik muncul dan diabaikan daripada hilang tanpa ada yang tahu.
+        $perilaku = "COALESCE({$mtt}.Perilaku_Kode, 'MANUAL')";
+        $formulir = "COALESCE({$mtt}.Flag_Formulir, 'T')";
+
+        return "(
+            ({$perilaku} = 'CAT' AND {$lt}.Penjadwalan_Tahap_Id IS NULL)
+         OR ({$perilaku} = 'MANUAL' AND {$formulir} <> 'Y')
+         OR ({$perilaku} = 'MANUAL' AND {$formulir} = 'Y' AND {$lt}.Formulir_Pengisian_Id IS NOT NULL)
+        )";
+    }
+
     /** Ambang "macet" (hari) — tahap BERJALAN lebih lama dari ini dianggap tersendat. */
     public static function macetHari(): int
     {

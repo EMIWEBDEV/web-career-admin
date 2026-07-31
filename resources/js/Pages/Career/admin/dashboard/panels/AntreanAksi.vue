@@ -1,15 +1,21 @@
 <!--
   ZONA B — ANTREAN "BUTUH AKSI KAMU".
 
-  Lima keranjang, diurut dari yang paling jelas tanggung jawab admin (keputusan
-  menggantung) ke yang paling di luar kendalinya (menunggu penyedia tes).
+  Enam keranjang, diurut dari yang paling jelas tanggung jawab admin ke yang
+  paling di luar kendalinya (menunggu penyedia tes).
 
-  Dua hal yang membuat panel ini bukan sekadar daftar:
-   1. tiap baris menautkan ke Worklist yang SUDAH tersaring ke program orangnya,
-      jadi bertindak butuh satu klik, bukan menelusuri daftar program;
+  Tiga hal yang membuat panel ini bukan sekadar daftar:
+   1. tiap baris menautkan ke tempat pekerjaannya benar-benar ada — Worklist
+      yang sudah tersaring ke program orangnya, atau Penjadwalan untuk ujian
+      yang belum punya sesi. Bertindak butuh satu klik, bukan menelusuri menu;
    2. "Lamaran gagal masuk" ditarik ke atas sebagai spanduk kalau isinya > 0 —
       itu pelamar yang benar-benar hilang, dan tidak ada halaman lain yang
-      menampilkannya.
+      menampilkannya;
+   3. "Menunggu tindakan kamu" juga bersuara lebih dulu sebagai spanduk, dengan
+      pekerjaannya DIRINGKAS PER JENIS ("3 jadwalkan tes online", "2 kirim
+      penawaran"). Admin membaca jenis pekerjaan dulu, baru turun ke nama orang
+      — bukan sebaliknya. Mengklik satu jenis menyaring daftarnya ke jenis itu
+      saja, jadi satu sesi kerja = satu jenis pekerjaan.
 -->
 <template>
     <div>
@@ -26,11 +32,40 @@
             <button type="button" @click="pilih = 'gagalLamar'">Lihat daftar</button>
         </div>
 
+        <!-- Penanda kesadaran: pekerjaan yang menunggu admin, diringkas per
+             jenis. Ini bagian yang paling mudah luput karena kandidatnya tidak
+             "salah" apa pun — dia hanya diam menunggu giliran admin. -->
+        <div v-if="adaTindakan" class="ak-sadar">
+            <div class="ak-sadar__kepala">
+                <span class="ak-sadar__ic"><i class="bi bi-bell-fill"></i></span>
+                <div class="ak-sadar__teks">
+                    <strong>{{ angka(aksi.tindakanAdmin.total) }} kandidat menunggu tindakan kamu.</strong>
+                    Prosesnya tidak akan jalan sendiri — tidak ada mesin atau kandidat yang
+                    bisa menyelesaikan bagian ini.
+                </div>
+            </div>
+
+            <!-- Daftar "apa saja yang perlu dilakukan". Klik = saring ke jenis itu. -->
+            <div class="ak-kerja">
+                <button v-for="r in aksi.tindakanAdmin.ringkas" :key="r.kode" type="button"
+                    class="ak-kerja__item" :class="{ 'is-on': pilih === 'tindakanAdmin' && saring === r.kode }"
+                    :title="`Terlama menunggu ${r.terlamaHari} hari`"
+                    @click="bukaKerja(r.kode)">
+                    <i class="bi" :class="r.ikon"></i>
+                    <span class="ak-kerja__aksi">{{ r.aksi }}</span>
+                    <em>{{ angka(r.jumlah) }}</em>
+                    <span v-if="r.terlamaHari >= ambang.macetHari" class="ak-kerja__tua">
+                        <i class="bi bi-clock-history"></i> {{ r.terlamaHari }}h
+                    </span>
+                </button>
+            </div>
+        </div>
+
         <div v-if="totalSemua === 0" class="ak-bersih">
             <i class="bi bi-check2-circle"></i>
             <div>
                 <strong>Tidak ada yang menunggu tindakan.</strong>
-                <span>Tidak ada keputusan menggantung, tahap macet, atau pembukaan yang segera tutup.</span>
+                <span>Tidak ada pekerjaan yang menunggumu, keputusan menggantung, tahap macet, atau pembukaan yang segera tutup.</span>
             </div>
         </div>
 
@@ -52,8 +87,57 @@
                 <i class="bi bi-info-circle"></i> {{ keranjangAktif.jelas }}
             </p>
 
+            <!-- ── Menunggu tindakan admin: satu kolom lebih, yaitu PEKERJAANNYA ── -->
+            <div v-if="pilih === 'tindakanAdmin'">
+                <p v-if="saring" class="ak-saring">
+                    Disaring ke <b>{{ labelSaring }}</b>.
+                    <button type="button" @click="saring = ''">Tampilkan semua</button>
+                </p>
+
+                <div v-if="barisTindakan.length" class="wcd-tw">
+                    <table class="wcd-tbl">
+                        <thead>
+                            <tr>
+                                <th>Pelamar</th><th>Tahap</th><th>Yang perlu dilakukan</th>
+                                <th class="wcd-num">Menunggu</th><th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="b in barisTindakan" :key="b.id + b.tahap">
+                                <td class="wcd-tbl__utama">
+                                    {{ b.nama }}
+                                    <span class="wcd-tbl__sub">{{ b.posisi || b.program }}</span>
+                                </td>
+                                <td>{{ b.tahap }}</td>
+                                <td>
+                                    <span class="ak-kerja__lb">
+                                        <i class="bi" :class="ikonKode(b.kode)"></i> {{ b.aksi }}
+                                    </span>
+                                </td>
+                                <td class="wcd-num">
+                                    <span class="wcd-lb" :style="nadaMenunggu(b.umurHari)">
+                                        <i class="bi" :class="nadaUmur(b.umurHari, ambang.macetHari).ikon"></i>
+                                        {{ b.umurHari }} hari
+                                    </span>
+                                </td>
+                                <td>
+                                    <a :href="b.tautan" class="ak-aksi is-kerja"
+                                        :title="b.tautan.includes('penjadwalan')
+                                            ? 'Buka Penjadwalan untuk membuat sesi ujiannya'
+                                            : 'Buka Worklist, program sudah tersaring'">
+                                        Kerjakan <i class="bi bi-arrow-right-short"></i>
+                                    </a>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <KeadaanPanel v-else keadaan="kosong" rapat teks="Tidak ada yang menunggu tindakanmu" />
+            </div>
+
             <!-- ── Pembukaan segera tutup: bentuknya beda (tanggal + kursi) ── -->
-            <div v-if="pilih === 'tutupSegera'" class="wcd-tw">
+            <div v-else-if="pilih === 'tutupSegera'" class="wcd-tw">
                 <table class="wcd-tbl">
                     <thead>
                         <tr>
@@ -166,6 +250,10 @@ const props = defineProps({
 
 const DEF = [
     {
+        id: 'tindakanAdmin', label: 'Menunggu tindakanmu', ikon: 'bi-bell-fill', warna: '#4f46e5',
+        jelas: 'Tahap yang tidak akan bergerak sampai admin mengerjakannya: jadwal ujian yang belum dibuat, wawancara yang belum diatur, penawaran yang belum dikirim. Sengaja TANPA ambang umur — muncul sejak hari pertama, supaya tidak perlu menunggu jadi macet dulu.',
+    },
+    {
         id: 'keputusan', label: 'Keputusan menggantung', ikon: 'bi-hourglass-split', warna: '#d97706',
         jelas: 'Mesin sudah mengumpulkan semua hasil dan menunggu palu diketuk. Ini antrean yang murni ada di tangan admin.',
     },
@@ -175,7 +263,7 @@ const DEF = [
     },
     {
         id: 'menungguTes', label: 'Menunggu hasil tes', ikon: 'bi-clipboard-check', warna: '#0284c7',
-        jelas: 'Menunggu penyedia tes pihak ketiga menuntaskan penilaian. Di luar kendali admin, tapi perlu dikejar kalau terlalu lama.',
+        jelas: 'Sudah dijadwalkan, tinggal menunggu penyedia tes pihak ketiga menuntaskan penilaian. Yang ujiannya BELUM dijadwalkan tidak ada di sini — itu pekerjaan admin dan tempatnya di keranjang "Menunggu tindakanmu".',
     },
     {
         id: 'tutupSegera', label: 'Segera tutup', ikon: 'bi-calendar-x-fill', warna: '#7c3aed',
@@ -196,8 +284,41 @@ const pilih = ref(DEF.find((d) => (props.aksi[d.id]?.total || 0) > 0)?.id || 'ke
 
 const keranjangAktif = computed(() => keranjang.value.find((k) => k.id === pilih.value) || keranjang.value[0]);
 const barisAktif = computed(() => props.aksi[pilih.value]?.baris || []);
-const barisTampil = computed(() => (props.aksi[pilih.value]?.baris || []).length);
-const terpotong = computed(() => barisTampil.value > 0 && barisTampil.value < (keranjangAktif.value?.total || 0));
+
+/* ── Keranjang "menunggu tindakanmu" ── */
+const adaTindakan = computed(() => (props.aksi.tindakanAdmin?.total || 0) > 0);
+const saring = ref('');   // kode tipe tahap; '' = semua
+
+const barisTindakan = computed(() => {
+    const b = props.aksi.tindakanAdmin?.baris || [];
+    return saring.value ? b.filter((x) => x.kode === saring.value) : b;
+});
+const labelSaring = computed(
+    () => props.aksi.tindakanAdmin?.ringkas?.find((r) => r.kode === saring.value)?.aksi || saring.value,
+);
+
+/** Klik pada satu jenis pekerjaan: buka keranjangnya sekaligus saring ke jenis itu. */
+function bukaKerja(kode) {
+    // Klik kedua pada jenis yang sama melepas saringan — tidak perlu mencari
+    // tombol "tampilkan semua" untuk membatalkan langkah barusan.
+    saring.value = pilih.value === 'tindakanAdmin' && saring.value === kode ? '' : kode;
+    pilih.value = 'tindakanAdmin';
+}
+
+function ikonKode(kode) {
+    return props.aksi.tindakanAdmin?.ringkas?.find((r) => r.kode === kode)?.ikon || 'bi-three-dots';
+}
+
+const barisTampil = computed(
+    () => (pilih.value === 'tindakanAdmin' ? barisTindakan.value : barisAktif.value).length,
+);
+/* Saat disaring, "N dari M" tidak berlaku — M-nya jumlah seluruh keranjang,
+   bukan jumlah jenis yang sedang dilihat. Jadi catatan pemotongan disembunyikan
+   daripada menampilkan perbandingan yang salah. */
+const terpotong = computed(() => {
+    if (pilih.value === 'tindakanAdmin' && saring.value) return false;
+    return barisTampil.value > 0 && barisTampil.value < (keranjangAktif.value?.total || 0);
+});
 
 function nadaMenunggu(hari) {
     const n = nadaUmur(hari, props.ambang.macetHari);
@@ -238,6 +359,104 @@ function nadaSisa(hari) {
     font-size: 0.74rem;
     font-weight: 800;
     cursor: pointer;
+}
+
+/* ══════════ PENANDA KESADARAN ══════════ */
+/* Indigo, bukan merah: ini bukan kegagalan — ini pekerjaan yang belum
+   dikerjakan. Merah disimpan untuk "lamaran gagal masuk", yang memang berarti
+   ada orang hilang. Kalau keduanya merah, keduanya berhenti berarti. */
+.ak-sadar {
+    padding: 12px 14px;
+    margin-bottom: 14px;
+    border-radius: 14px;
+    background: #eef2ff;
+    border: 1px solid #c7d2fe;
+}
+.ak-sadar__kepala { display: flex; align-items: flex-start; gap: 11px; }
+.ak-sadar__ic {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    flex: none;
+    border-radius: 10px;
+    background: #4f46e5;
+    color: #fff;
+    font-size: 14px;
+}
+.ak-sadar__teks { font-size: 0.77rem; line-height: 1.55; color: #3730a3; }
+.ak-sadar__teks strong { display: block; color: #312e81; }
+
+.ak-kerja { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 11px; }
+.ak-kerja__item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 11px;
+    border: 1px solid #c7d2fe;
+    border-radius: 999px;
+    background: #fff;
+    font: inherit;
+    font-size: 0.74rem;
+    font-weight: 800;
+    color: #3730a3;
+    cursor: pointer;
+    transition: background 0.14s, color 0.14s, border-color 0.14s;
+}
+.ak-kerja__item .bi { font-size: 13px; color: #6366f1; }
+.ak-kerja__item:hover { border-color: #6366f1; background: #f5f3ff; }
+.ak-kerja__item.is-on { background: #4f46e5; border-color: #4f46e5; color: #fff; }
+.ak-kerja__item.is-on .bi { color: #fff; }
+.ak-kerja__item em {
+    font-style: normal;
+    min-width: 19px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: #eef2ff;
+    color: #4338ca;
+    font-size: 0.69rem;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+.ak-kerja__item.is-on em { background: rgba(255, 255, 255, 0.26); color: #fff; }
+/* Penanda "sudah lama" — ikon + angka, tidak pernah warna sendirian. */
+.ak-kerja__tua {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 0.68rem;
+    font-weight: 800;
+    color: #b45309;
+}
+.ak-kerja__item.is-on .ak-kerja__tua { color: #fde68a; }
+.ak-kerja__tua .bi { font-size: 11px; color: inherit; }
+
+.ak-kerja__lb {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: #eef2ff;
+    color: #4338ca;
+    font-size: 0.72rem;
+    font-weight: 800;
+}
+.ak-kerja__lb .bi { font-size: 12px; }
+
+.ak-saring { margin: 0 0 10px; font-size: 0.74rem; color: #64748b; }
+.ak-saring b { color: #334155; }
+.ak-saring button {
+    margin-left: 6px;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    font: inherit;
+    font-size: 0.74rem;
+    font-weight: 800;
+    color: #4f46e5;
+    cursor: pointer;
+    text-decoration: underline;
 }
 
 .ak-bersih {
@@ -315,6 +534,8 @@ function nadaSisa(hari) {
     text-decoration: none;
 }
 .ak-aksi:hover { background: #4338ca; color: #fff; }
+.ak-aksi.is-kerja { background: #4f46e5; color: #fff; }
+.ak-aksi.is-kerja:hover { background: #4338ca; }
 
 .ak-galat { white-space: normal; max-width: 340px; font-size: 0.73rem; color: #b91c1c; }
 

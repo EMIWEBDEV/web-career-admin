@@ -65,6 +65,26 @@ class DashboardController extends Controller
     /** Batas baris tiap keranjang antrean aksi (jumlah sebenarnya tetap dilaporkan). */
     private const AKSI_MAKS = 25;
 
+    /**
+     * Kata kerja per tipe tahap untuk keranjang "Menunggu Tindakan Kamu".
+     *
+     * Nama & ikon tahap diambil dari Master_Tipe_Tahap (jadi tipe baru langsung
+     * tampil benar); yang tidak bisa diturunkan dari master hanyalah KATA
+     * KERJANYA — "Tes Online" tidak memberi tahu admin bahwa yang kurang adalah
+     * jadwalnya. Kode yang tidak terdaftar di sini jatuh ke kalimat umum, jadi
+     * tipe tahap baru tetap muncul, hanya dengan ajakan yang lebih datar.
+     */
+    private const AKSI_TIPE = [
+        'HCLEARN_TEST' => 'Jadwalkan tes online',
+        'TES_OFFLINE_MANUAL' => 'Jadwalkan tes offline',
+        'INTERVIEW' => 'Atur & catat wawancara',
+        'MCU' => 'Jadwalkan MCU',
+        'OFFERING' => 'Kirim penawaran',
+        'ADMIN_SCREENING' => 'Screening berkas',
+        'DOCUMENT' => 'Verifikasi dokumen',
+        'FORM' => 'Verifikasi isian',
+    ];
+
     // ═══════════════════════════ HALAMAN ═══════════════════════════
 
     /**
@@ -189,33 +209,54 @@ class DashboardController extends Controller
     }
 
     /**
-     * ANTREAN AKSI — lima keranjang, diurut dari yang paling jelas salah kita.
+     * ANTREAN AKSI — enam keranjang, diurut dari yang paling jelas salah kita.
      *
      * Tiap keranjang melaporkan `total` sebenarnya di samping baris yang
      * dikirim, supaya pemotongan di AKSI_MAKS terlihat ("25 dari 61") dan tidak
      * terbaca sebagai "cuma ada 25".
+     *
+     * TIDAK ADA baris yang muncul di dua keranjang. Urutan klaimnya:
+     * siap diputus → giliran admin → menunggu tes → macet. Kalau dibiarkan
+     * tumpang tindih, lencana ringkasan di kepala seksi akan menghitung orang
+     * yang sama dua kali dan angkanya berhenti bisa dipercaya.
      */
     private function antreanAksi(string $kategori, array $ids): array
     {
         $kosong = ['baris' => [], 'total' => 0];
-        $hasil = ['keputusan' => $kosong, 'macet' => $kosong, 'menungguTes' => $kosong,
+        $hasil = ['tindakanAdmin' => $kosong + ['ringkas' => []], 'keputusan' => $kosong,
+            'macet' => $kosong, 'menungguTes' => $kosong,
             'tutupSegera' => $kosong, 'gagalLamar' => $kosong];
 
         $umur = MetrikRekrutmen::sqlUmurTahap('lt');
         $aging = MetrikRekrutmen::sqlAging('lt');
         $macetHari = MetrikRekrutmen::macetHari();
+        $giliran = MetrikRekrutmen::sqlGiliranAdmin('lt', 'mtt');
 
         if ($ids) {
-            // Satu kueri untuk tiga keranjang pertama; pemilahan per Jenis
+            $hasil['tindakanAdmin'] = $this->tindakanAdmin($kategori, $ids);
+
+            // Satu kueri untuk tiga keranjang berikutnya; pemilahan per Jenis
             // dilakukan di PHP agar DB tidak dipanggil tiga kali untuk hal sama.
+            //
+            // MENUNGGU_TES kini berarti "sudah dijadwalkan, tinggal menunggu
+            // penyedia" — bukan lagi sekadar Provider = THIRD_PARTY. Yang belum
+            // dijadwalkan sama sekali dikeluarkan oleh NOT(giliran) di bawah dan
+            // masuk keranjang tindakanAdmin, karena itu justru pekerjaan admin,
+            // bukan hal yang di luar kendalinya. Sebelum ini keduanya tercampur
+            // di bawah label "di luar kendali admin" — dan yang belum
+            // terjadwal tidak pernah ada yang mengerjakan.
             $jenisSql = "CASE WHEN lt.Siap_Diputus = 'Y' THEN 'SIAP_DIPUTUS'
                               WHEN lt.Provider = 'THIRD_PARTY' THEN 'MENUNGGU_TES'
                               ELSE 'MACET' END";
 
             $dasar = fn () => DB::table('N_WEB_CAREERS_Lamaran_Tahap as lt')
                 ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'lt.Lamaran_Id')
+                ->leftJoin('N_WEB_CAREERS_Master_Tipe_Tahap as mtt', 'mtt.Kode', '=', 'lt.Tipe_Tahap_Kode')
                 ->where('lt.Status', 'BERJALAN')->where('l.Status', 'BERJALAN')
                 ->whereIn('l.Program_Id', $ids)
+                // Sudah diklaim keranjang tindakanAdmin (yang tidak memakai
+                // ambang umur, jadi selalu superset dari irisan ini).
+                ->whereRaw("(lt.Siap_Diputus = 'Y' OR NOT {$giliran})")
                 ->whereRaw("(lt.Siap_Diputus = 'Y' OR {$umur} > ?)", [$macetHari]);
 
             // Jumlah SEBENARNYA per keranjang (tanpa limit) — dasar label "N dari M".
@@ -257,6 +298,105 @@ class DashboardController extends Controller
         $hasil['gagalLamar'] = $this->lamaranGagalMasuk($kategori);
 
         return $hasil;
+    }
+
+    /**
+     * MENUNGGU TINDAKAN KAMU — kandidat yang berhenti bukan karena prosesnya,
+     * melainkan karena belum ada admin yang mengerjakan bagiannya.
+     *
+     * Ini keranjang yang paling mudah luput: kandidat di tahap Psikotes yang
+     * jadwalnya belum dibuat, atau di tahap Offering yang suratnya belum
+     * dikirim, TIDAK terlihat di halaman mana pun sebelum ini. Dia bukan
+     * "macet" (ambang macet baru menyala setelah 7 hari) dan bukan "menunggu
+     * tes" (tidak ada tes yang sedang berjalan) — dia hanya diam sampai ada
+     * yang sadar. Halaman kandidatnya bahkan sudah menulis "Tim rekrutmen
+     * sedang menyiapkan jadwal ujianmu" (Master_Tipe_Tahap.Pesan_Kandidat),
+     * jadi janjinya sudah terucap ke kandidat sebelum ada yang menagihnya ke
+     * admin.
+     *
+     * TANPA AMBANG UMUR — sengaja. Keranjang lain baru muncul setelah lewat
+     * ambang macet; yang ini muncul sejak hari pertama, karena tujuannya
+     * mencegah tahap jadi macet, bukan melaporkan setelah terlanjur.
+     *
+     * `ringkas` adalah daftar "apa saja yang perlu dilakukan" per jenis
+     * pekerjaan — itu yang dibaca dulu oleh admin, sebelum turun ke nama orang.
+     */
+    private function tindakanAdmin(string $kategori, array $ids): array
+    {
+        $umur = MetrikRekrutmen::sqlUmurTahap('lt');
+        $giliran = MetrikRekrutmen::sqlGiliranAdmin('lt', 'mtt');
+
+        $dasar = fn () => DB::table('N_WEB_CAREERS_Lamaran_Tahap as lt')
+            ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'lt.Lamaran_Id')
+            ->leftJoin('N_WEB_CAREERS_Master_Tipe_Tahap as mtt', 'mtt.Kode', '=', 'lt.Tipe_Tahap_Kode')
+            ->where('lt.Status', 'BERJALAN')->where('l.Status', 'BERJALAN')
+            ->whereIn('l.Program_Id', $ids)
+            // Siap diputus punya keranjangnya sendiri — di sana palunya yang
+            // ditunggu, bukan pekerjaan yang belum dikerjakan.
+            ->where('lt.Siap_Diputus', '<>', 'Y')
+            ->whereRaw($giliran);
+
+        // Ringkasan per jenis pekerjaan (tanpa limit) — ini yang jadi daftar
+        // "apa saja yang perlu dilakukan" begitu penanda diklik.
+        $ringkas = $dasar()
+            ->groupBy('lt.Tipe_Tahap_Kode', 'mtt.Nama', 'mtt.Ikon', 'mtt.Perilaku_Kode')
+            ->selectRaw("lt.Tipe_Tahap_Kode as Kode, mtt.Nama as TipeNama, mtt.Ikon as Ikon,
+                         mtt.Perilaku_Kode as Perilaku, COUNT(*) as J,
+                         MAX({$umur}) as TerlamaHari")
+            ->orderByDesc('J')
+            ->get();
+
+        $baris = $dasar()
+            ->leftJoin('N_WEB_CAREERS_Users as u', 'u.Id_Users', '=', 'l.Id_Users')
+            ->leftJoin('N_WEB_CAREERS_Program as p', 'p.Id_Program', '=', 'l.Program_Id')
+            ->leftJoin('N_WEB_CAREERS_Program_Posisi as pos', 'pos.Id_Program_Posisi', '=', 'l.Program_Posisi_Id')
+            ->selectRaw("l.Id_Lamaran, u.Nama as Pelamar, l.Created_By as FallbackNama,
+                         p.Nama as ProgramNama, pos.Posisi as PosisiNama,
+                         lt.Urutan as TahapUrutan, lt.Label as TahapLabel,
+                         lt.Tipe_Tahap_Kode as Kode, mtt.Perilaku_Kode as Perilaku,
+                         lt.Penjadwalan_Tahap_Id as JadwalId, {$umur} as UmurHari")
+            ->orderByDesc(DB::raw($umur))
+            ->limit(self::AKSI_MAKS)
+            ->get();
+
+        return [
+            'total' => (int) $ringkas->sum('J'),
+            'ringkas' => $ringkas->map(fn ($r) => [
+                'kode' => $r->Kode ?: 'LAIN',
+                'nama' => $r->TipeNama ?: 'Tahap lain',
+                'ikon' => $r->Ikon ?: 'bi-three-dots',
+                'aksi' => self::AKSI_TIPE[$r->Kode] ?? ('Tindak lanjuti ' . mb_strtolower($r->TipeNama ?: 'tahap ini')),
+                'jumlah' => (int) $r->J,
+                'terlamaHari' => max(0, (int) $r->TerlamaHari),
+            ])->all(),
+            'baris' => $baris->map(fn ($r) => [
+                'id' => Hashids::encode((int) $r->Id_Lamaran),
+                'nama' => $r->Pelamar ?: ($r->FallbackNama ?: 'Tanpa nama'),
+                'program' => $r->ProgramNama,
+                'posisi' => $r->PosisiNama,
+                'tahap' => trim(($r->TahapUrutan ? $r->TahapUrutan . '. ' : '') . ($r->TahapLabel ?: '—')),
+                'kode' => $r->Kode ?: 'LAIN',
+                'aksi' => self::AKSI_TIPE[$r->Kode] ?? 'Tindak lanjuti',
+                'umurHari' => max(0, (int) $r->UmurHari),
+                'tautan' => $this->tautanTindakan($kategori, $r),
+            ])->all(),
+        ];
+    }
+
+    /**
+     * Tujuan tombol "Kerjakan" — halaman tempat pekerjaannya benar-benar ada.
+     *
+     * Ujian online yang belum punya jadwal berakhir di Penjadwalan (di situ
+     * sesi dibuat dan token dikirim); sisanya di Worklist, tempat hasil dicatat
+     * dan tahap didorong maju. Mengirim keduanya ke Worklist akan membuat admin
+     * mencari menu Penjadwalan sendiri — dan itulah langkah yang selama ini
+     * hilang.
+     */
+    private function tautanTindakan(string $kategori, object $r): string
+    {
+        $belumTerjadwal = ($r->Perilaku ?? 'MANUAL') === 'CAT' && $r->JadwalId === null;
+
+        return $belumTerjadwal ? '/karir/penjadwalan' : $this->tautanWorklist($kategori, $r->ProgramNama);
     }
 
     /**

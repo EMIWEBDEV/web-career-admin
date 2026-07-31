@@ -98,6 +98,14 @@ Route::get('/karir/tim-img/{jenis}/{id}/{slot}', [\App\Http\Controllers\Career\M
     ->where(['jenis' => 'divisi|sub', 'slot' => 'header|utama|img2|img3'])
     ->name('career.tim.img');
 
+// ── Master FAQ (admin) — konten accordion landing + halaman /karir/faq ──
+Route::middleware(['career.auth', 'career.role:ADMIN,SUPERADMIN'])->group(function () {
+    require base_path('routes/career/MasterFaq/MasterFaqWeb.php');
+});
+
+// ── FAQ (PUBLIK — halaman baca selengkapnya + penghitung dilihat/membantu) ──
+require base_path('routes/career/MasterFaq/MasterFaqPublik.php');
+
 // ── Cek status feedback (kandidat auth) ──
 Route::middleware('career.auth')
     ->prefix('api/v1/kandidat/feedback')

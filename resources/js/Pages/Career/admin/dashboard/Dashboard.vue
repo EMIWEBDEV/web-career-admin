@@ -2,10 +2,12 @@
   WEB CAREER — DASHBOARD ADMIN, bertab per kategori (Rekrutmen / Magang / MT).
 
   Aksi DAN analitik dua-duanya seksi penuh, bukan salah satu jadi pelengkap.
-  Konsekuensinya halaman ini panjang — dan itu ditangani QUICK-NAV LEKAT di
-  bawah tab: chip yang melompat ke seksi dan menyala mengikuti posisi gulir,
-  plus seksi yang bisa dilipat dan lipatannya diingat. Tanpa itu, "dua-duanya
-  maksimal" berubah jadi halaman yang harus digulir jauh untuk apa pun.
+  Konsekuensinya halaman ini padat isi — ditangani dua hal: QUICK-NAV LEKAT di
+  bawah tab (chip yang melompat ke seksi dan menyala mengikuti posisi gulir,
+  ditambah seksi yang bisa dilipat), dan KERAPATAN yang dijaga di satu tempat:
+  semua bantalan/jarak chrome ditetapkan di blok <style> bawah, jadi merapatkan
+  atau melonggarkan halaman ini cukup disetel di sana, bukan diburu satu per
+  satu di sebelas komponen panel.
 
   Data TIDAK datang lewat props Inertia melainkan tiga endpoint terpisah, jadi
   KPI + antrean aksi sudah terbaca sementara analitik & seksi khas masih
@@ -242,21 +244,42 @@ const PERIODE = [
     { nilai: 'all', label: 'Semua' },
 ];
 
-const LS = 'wcd.';
-const simpan = (k, v) => { try { localStorage.setItem(LS + k, v); } catch (e) { /* mode privat */ } };
-const baca = (k, bawaan) => { try { return localStorage.getItem(LS + k) ?? bawaan; } catch (e) { return bawaan; } };
+/* ─────────────────── KEADAAN TAMPILAN ───────────────────
+ *
+ * TIDAK ADA localStorage di halaman ini. Yang perlu bertahan lintas muat
+ * ulang disimpan di URL saja (`?k=` kategori, `?p=` periode): satu sumber
+ * kebenaran, ikut terbawa saat tautannya dibagikan, dan tidak meninggalkan
+ * jejak di peramban bersama — dashboard ini dibuka di komputer kantor yang
+ * sering dipakai lebih dari satu admin, jadi "tab terakhir" milik orang
+ * sebelumnya tidak boleh bocor ke orang berikutnya.
+ *
+ * Lipatan seksi dan interval auto-refresh SENGAJA tidak diawetkan: keduanya
+ * kembali ke bawaan setiap kali halaman dibuka.
+ */
+const URL_TAB = 'k';
+const URL_PERIODE = 'p';
 
-/* Tab awal: URL menang atas localStorage menang atas bawaan server — URL
-   supaya tautan bisa dibagikan, localStorage supaya kembali ke tab terakhir. */
-const dariUrl = new URLSearchParams(window.location.search).get('k');
+const kueri = new URLSearchParams(window.location.search);
+
+/** Tulis satu parameter ke bilah alamat tanpa memuat ulang halaman. */
+function setKueri(kunci, nilai) {
+    const u = new URL(window.location.href);
+    u.searchParams.set(kunci, nilai);
+    // replaceState, bukan navigasi Inertia: ini keadaan tampilan, bukan
+    // halaman baru — memuat ulang seluruh shell untuk itu cuma pemborosan.
+    window.history.replaceState({}, '', u);
+}
+
 const sahKode = (k) => props.tabs.some((t) => t.kode === k);
-const kategori = ref(
-    (sahKode(dariUrl) && dariUrl) || (sahKode(baca('tab', '')) && baca('tab', '')) || props.tabAwal,
-);
-const periode = ref(PERIODE.some((p) => p.nilai === baca('periode', '')) ? baca('periode', '30') : '30');
+const dariUrl = kueri.get(URL_TAB);
+const kategori = ref((sahKode(dariUrl) && dariUrl) || props.tabAwal);
+
+const periodeUrl = kueri.get(URL_PERIODE);
+const periode = ref(PERIODE.some((p) => p.nilai === periodeUrl) ? periodeUrl : '30');
+
 const checkpoint = ref(props.checkpoint);
 
-const tutup = ref(new Set(JSON.parse(baca('tutup', '[]'))));
+const tutup = ref(new Set());
 const seksiAktif = ref('aksi');
 
 const zona = reactive({
@@ -355,19 +378,19 @@ async function muatSemua(ulang = false) {
     await Promise.all([muatAnalitik(ulang), muatKhas(ulang)]);
 }
 
-const { intervalSec, busy: sibuk, refreshNow } = useAutoRefresh(() => muatSemua(true), {
-    initial: Number(baca('interval', '0')) || 0,
-});
+/* Auto-refresh selalu mulai dari Mati. Menghidupkannya diam-diam karena
+   kunjungan sebelumnya berarti halaman menembak server sendiri tanpa ada yang
+   memintanya di sesi ini. */
+const { intervalSec, busy: sibuk, refreshNow } = useAutoRefresh(() => muatSemua(true), { initial: 0 });
 
 function setInterval_(n) {
     intervalSec.value = n;
-    simpan('interval', String(n));
 }
 
 function setPeriode(p) {
     if (periode.value === p) return;
     periode.value = p;
-    simpan('periode', p);
+    setKueri(URL_PERIODE, p);
     // Periode hanya menyentuh KPI "baru" + tren → cukup dua endpoint itu.
     muatRingkas(true);
     muatAnalitik(true);
@@ -376,13 +399,7 @@ function setPeriode(p) {
 function pilihTab(kode) {
     if (kategori.value === kode) return;
     kategori.value = kode;
-    simpan('tab', kode);
-
-    // replaceState, bukan navigasi Inertia: tab bukan halaman baru, dan
-    // memuat ulang seluruh halaman untuk itu membuang shell yang sudah ada.
-    const u = new URL(window.location.href);
-    u.searchParams.set('k', kode);
-    window.history.replaceState({}, '', u);
+    setKueri(URL_TAB, kode);
 
     zona.ringkas.data = null;
     zona.analitik.data = null;
@@ -391,10 +408,10 @@ function pilihTab(kode) {
 }
 
 function lipat(id) {
+    // Set baru (bukan mutasi) supaya v-show ikut ter-render ulang.
     const s = new Set(tutup.value);
     s.has(id) ? s.delete(id) : s.add(id);
     tutup.value = s;
-    simpan('tutup', JSON.stringify([...s]));
 }
 
 async function lompat(id) {
@@ -444,35 +461,42 @@ onUnmounted(() => pengamat?.disconnect());
     --wcd-bg: #f8fafc;
 }
 
+/* ══════════ KERAPATAN ══════════
+   Halaman ini memuat tujuh seksi. Setiap 4px bantalan yang dipakai bersama
+   kepala, tab, quick-nav, dan tujuh kepala seksi berlipat jadi puluhan piksel
+   gulir yang tidak membawa informasi apa pun. Angka di bawah sudah dirapatkan
+   satu tingkat dari bawaan yang longgar — cukup untuk memuat lebih banyak
+   dalam satu layar, masih cukup lapang untuk sasaran sentuh 32px+. */
+
 /* ══════════ KEPALA ══════════ */
 .wcd-head {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 16px;
+    gap: 14px;
     flex-wrap: wrap;
-    padding: 18px 22px;
-    margin-bottom: 16px;
+    padding: 13px 18px;
+    margin-bottom: 11px;
     background: #fff;
     border: 1px solid var(--wcd-line);
     border-radius: 20px;
     box-shadow: 0 4px 20px rgba(15, 23, 42, 0.04);
 }
-.wcd-head__intro { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.wcd-head__intro { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .wcd-head__lencana {
     display: grid;
     place-items: center;
-    width: 46px;
-    height: 46px;
+    width: 40px;
+    height: 40px;
     flex: none;
-    border-radius: 15px;
-    font-size: 20px;
+    border-radius: 13px;
+    font-size: 18px;
     color: #fff;
     background: linear-gradient(135deg, var(--aksen), color-mix(in srgb, var(--aksen) 62%, #0f172a));
     box-shadow: 0 8px 20px color-mix(in srgb, var(--aksen) 32%, transparent);
 }
-.wcd-head__intro h1 { margin: 0; font-size: 1.15rem; font-weight: 900; color: var(--wcd-ink); letter-spacing: -0.01em; }
-.wcd-head__intro p { margin: 2px 0 0; font-size: 0.8rem; color: var(--wcd-ink2); line-height: 1.5; }
+.wcd-head__intro h1 { margin: 0; font-size: 1.05rem; font-weight: 900; color: var(--wcd-ink); letter-spacing: -0.01em; }
+.wcd-head__intro p { margin: 1px 0 0; font-size: 0.77rem; color: var(--wcd-ink2); line-height: 1.45; }
 .wcd-head__alat { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
 .wcd-cp {
@@ -516,7 +540,7 @@ onUnmounted(() => pengamat?.disconnect());
 .wcd-tabs {
     display: flex;
     gap: 8px;
-    margin-bottom: 14px;
+    margin-bottom: 10px;
     overflow-x: auto;
     padding-bottom: 2px;
     scrollbar-width: thin;
@@ -526,12 +550,12 @@ onUnmounted(() => pengamat?.disconnect());
     align-items: center;
     gap: 8px;
     flex: none;
-    padding: 11px 18px;
+    padding: 9px 15px;
     border: 1px solid var(--wcd-line);
-    border-radius: 14px;
+    border-radius: 13px;
     background: #fff;
     font: inherit;
-    font-size: 0.84rem;
+    font-size: 0.81rem;
     font-weight: 800;
     color: var(--wcd-ink2);
     cursor: pointer;
@@ -565,8 +589,8 @@ onUnmounted(() => pengamat?.disconnect());
     z-index: 20;
     display: flex;
     gap: 6px;
-    padding: 9px 0;
-    margin-bottom: 14px;
+    padding: 7px 0;
+    margin-bottom: 10px;
     overflow-x: auto;
     background: linear-gradient(#f6f7fb 72%, rgba(246, 247, 251, 0));
     backdrop-filter: blur(6px);
@@ -578,11 +602,11 @@ onUnmounted(() => pengamat?.disconnect());
     align-items: center;
     gap: 6px;
     flex: none;
-    padding: 7px 13px;
+    padding: 6px 12px;
     border-radius: 999px;
     border: 1px solid var(--wcd-line);
     background: #fff;
-    font-size: 0.74rem;
+    font-size: 0.73rem;
     font-weight: 800;
     color: var(--wcd-ink2);
     text-decoration: none;
@@ -605,12 +629,14 @@ onUnmounted(() => pengamat?.disconnect());
 
 /* ══════════ SEKSI ══════════ */
 .wcd-sec {
-    margin-bottom: 16px;
+    margin-bottom: 11px;
     background: #fff;
     border: 1px solid var(--wcd-line);
-    border-radius: 20px;
+    border-radius: 18px;
     box-shadow: 0 2px 12px rgba(15, 23, 42, 0.03);
-    scroll-margin-top: 64px;
+    /* Sepadan dengan tinggi quick-nav lekat, supaya judul seksi tidak
+       tersembunyi di baliknya setelah "lompat ke seksi". */
+    scroll-margin-top: 56px;
     overflow: hidden;
 }
 .wcd-sec__hd {
@@ -618,7 +644,7 @@ onUnmounted(() => pengamat?.disconnect());
     align-items: center;
     gap: 10px;
     width: 100%;
-    padding: 15px 20px;
+    padding: 11px 17px;
     border: 0;
     background: transparent;
     font: inherit;
@@ -640,7 +666,7 @@ onUnmounted(() => pengamat?.disconnect());
 }
 .wcd-sec__ket { font-size: 0.73rem; color: var(--wcd-redup); font-weight: 700; }
 .wcd-sec__chev { font-size: 13px; color: var(--wcd-redup); }
-.wcd-sec__bd { padding: 0 20px 20px; }
+.wcd-sec__bd { padding: 0 17px 15px; }
 
 /* Muat ulang: render lama ditahan, tidak dikedipkan jadi skeleton. */
 .wcd-basi { opacity: 0.55; transition: opacity 0.2s; pointer-events: none; }
@@ -649,15 +675,15 @@ onUnmounted(() => pengamat?.disconnect());
 .wcd-card {
     background: #fff;
     border: 1px solid var(--wcd-line);
-    border-radius: 16px;
-    padding: 16px;
+    border-radius: 15px;
+    padding: 13px;
 }
 .wcd-card--datar { background: var(--wcd-bg); border-color: transparent; }
 .wcd-card__hd {
     display: flex;
     align-items: center;
     gap: 8px;
-    margin: 0 0 12px;
+    margin: 0 0 10px;
     font-size: 0.8rem;
     font-weight: 900;
     color: var(--wcd-ink);
@@ -665,7 +691,7 @@ onUnmounted(() => pengamat?.disconnect());
 .wcd-card__hd .bi { color: #6366f1; }
 .wcd-card__hd small { margin-left: auto; font-weight: 700; color: var(--wcd-redup); font-size: 0.72rem; }
 
-.wcd-grid { display: grid; gap: 14px; }
+.wcd-grid { display: grid; gap: 11px; }
 .wcd-grid--2 { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
 .wcd-grid--3 { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
 .wcd-grid--4 { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
@@ -674,16 +700,16 @@ onUnmounted(() => pengamat?.disconnect());
 /* Dipakai KpiStrip, EkstraPanel, dan ketiga panel khas — karena itu di sini,
    bukan discoped di salah satunya. Warna nada masuk lewat --tone, jadi tidak
    ada deretan kelas .tone-xxx yang harus ditambah tiap ada nada baru. */
-.wcd-kpi { display: grid; grid-template-columns: repeat(auto-fit, minmax(178px, 1fr)); gap: 12px; }
-.wcd-kpi--rapat { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.wcd-kpi { display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 10px; }
+.wcd-kpi--rapat { grid-template-columns: repeat(auto-fit, minmax(146px, 1fr)); }
 
 .wcd-stat {
     display: block;
     width: 100%;
-    padding: 14px 16px;
+    padding: 11px 13px;
     background: #fff;
     border: 1px solid var(--wcd-line);
-    border-radius: 16px;
+    border-radius: 15px;
     text-align: left;
     text-decoration: none;
     font: inherit;
@@ -695,23 +721,23 @@ onUnmounted(() => pengamat?.disconnect());
     border-color: color-mix(in srgb, var(--tone, #6366f1) 40%, var(--wcd-line));
     box-shadow: 0 8px 20px rgba(15, 23, 42, 0.07);
 }
-.wcd-stat__top { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.wcd-stat__top { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
 .wcd-stat__ic {
     display: grid;
     place-items: center;
-    width: 30px;
-    height: 30px;
+    width: 27px;
+    height: 27px;
     flex: none;
-    border-radius: 10px;
-    font-size: 14px;
+    border-radius: 9px;
+    font-size: 13px;
     color: var(--tone, #6366f1);
     background: color-mix(in srgb, var(--tone, #6366f1) 13%, #fff);
 }
 /* Angka besar berdiri sendiri → figur proporsional, BUKAN tabular-nums
    (angka selebar-sama membuat "121" terlihat renggang di ukuran display). */
-.wcd-stat__num { font-size: 1.55rem; font-weight: 900; line-height: 1; color: var(--wcd-ink); }
-.wcd-stat__num small { font-size: 0.8rem; font-weight: 800; color: var(--wcd-redup); }
-.wcd-stat__lbl { margin-top: 5px; font-size: 0.74rem; font-weight: 700; color: var(--wcd-ink2); }
+.wcd-stat__num { font-size: 1.42rem; font-weight: 900; line-height: 1; color: var(--wcd-ink); }
+.wcd-stat__num small { font-size: 0.78rem; font-weight: 800; color: var(--wcd-redup); }
+.wcd-stat__lbl { margin-top: 4px; font-size: 0.73rem; font-weight: 700; color: var(--wcd-ink2); }
 .wcd-stat__ket { margin-top: 2px; font-size: 0.7rem; color: var(--wcd-redup); }
 .wcd-stat__delta { margin-left: auto; display: inline-flex; align-items: center; gap: 3px; font-size: 0.7rem; font-weight: 800; }
 
