@@ -163,15 +163,13 @@
             <section :id="`wcd-agenda`" ref="refAgenda" class="wcd-sec">
                 <button type="button" class="wcd-sec__hd" @click="lipat('agenda')">
                     <i class="bi bi-calendar-week-fill"></i>
-                    <h2>Agenda 14 Hari</h2>
-                    <span v-if="jmlAgenda" class="wcd-sec__jml">{{ jmlAgenda }}</span>
+                    <h2>Kalender Jadwal</h2>
+                    <span class="wcd-sec__ket">Command center</span>
                     <i class="bi wcd-sec__chev" :class="tutup.has('agenda') ? 'bi-chevron-down' : 'bi-chevron-up'"></i>
                 </button>
-                <div v-show="!tutup.has('agenda')" class="wcd-sec__bd" :class="{ 'wcd-basi': zona.analitik.segar }">
-                    <KeadaanPanel v-if="zona.analitik.keadaan === 'memuat' && !zona.analitik.data" keadaan="memuat" />
-                    <KeadaanPanel v-else-if="zona.analitik.keadaan === 'galat'" keadaan="galat"
-                        :ket="zona.analitik.pesan" @ulang="muatAnalitik()" />
-                    <AgendaPanel v-else-if="zona.analitik.data" :agenda="zona.analitik.data.agenda" />
+                <div v-show="!tutup.has('agenda')" class="wcd-sec__bd">
+                    <CalendarCommandCenter ref="refKalender" :category="kategori"
+                        :category-label="tabAktif?.nama" :accent="aksen" />
                 </div>
             </section>
 
@@ -223,7 +221,7 @@ import AntreanAksi from './panels/AntreanAksi.vue';
 import FunnelPanel from './panels/FunnelPanel.vue';
 import TrenPanel from './panels/TrenPanel.vue';
 import KesehatanPanel from './panels/KesehatanPanel.vue';
-import AgendaPanel from './panels/AgendaPanel.vue';
+import CalendarCommandCenter from './panels/CalendarCommandCenter.vue';
 import EkstraPanel from './panels/EkstraPanel.vue';
 import RekrutmenPanel from './tabs/RekrutmenPanel.vue';
 import MagangPanel from './tabs/MagangPanel.vue';
@@ -281,6 +279,7 @@ const checkpoint = ref(props.checkpoint);
 
 const tutup = ref(new Set());
 const seksiAktif = ref('aksi');
+const refKalender = ref(null);
 
 const zona = reactive({
     ringkas: { keadaan: 'memuat', data: null, pesan: '', segar: false },
@@ -314,8 +313,6 @@ const totalAksi = computed(() => {
     if (!a) return 0;
     return Object.values(a).reduce((n, b) => n + (b.total || 0), 0);
 });
-const jmlAgenda = computed(() => zona.analitik.data?.agenda?.length || 0);
-
 const khasJudul = computed(() => ({
     MT: 'Persaingan Antar-Posisi (MT)',
     MAGANG: 'Kampus, Kemitraan & Batch',
@@ -330,7 +327,7 @@ const seksiTampil = computed(() => [
     { id: 'funnel', label: 'Funnel', ikon: 'bi-funnel-fill' },
     { id: 'tren', label: 'Tren', ikon: 'bi-graph-up' },
     { id: 'program', label: 'Program', ikon: 'bi-heart-pulse-fill' },
-    { id: 'agenda', label: 'Agenda', ikon: 'bi-calendar-week-fill', lencana: jmlAgenda.value || null },
+    { id: 'agenda', label: 'Kalender', ikon: 'bi-calendar-week-fill' },
     { id: 'khas', label: khasJudul.value.split(' ')[0], ikon: khasIkon.value },
     { id: 'ekstra', label: 'Ekstra', ikon: 'bi-grid-1x2-fill' },
 ]);
@@ -376,6 +373,7 @@ async function muatSemua(ulang = false) {
     if (!kategori.value) return;
     await muatRingkas(ulang);
     await Promise.all([muatAnalitik(ulang), muatKhas(ulang)]);
+    if (ulang) refKalender.value?.refresh();
 }
 
 /* Auto-refresh selalu mulai dari Mati. Menghidupkannya diam-diam karena

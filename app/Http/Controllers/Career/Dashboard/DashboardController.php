@@ -518,7 +518,6 @@ class DashboardController extends Controller
                     'funnel' => $this->funnel($programs, $ids),
                     'tren' => $this->tren($ids, $periode),
                     'kesehatan' => $this->kesehatanProgram($programs, $ids),
-                    'agenda' => $this->agenda($kategori, $ids),
                 ];
             });
 
@@ -529,6 +528,319 @@ class DashboardController extends Controller
         } catch (\Throwable $e) {
             return $this->gagal('analitik', $kategori, $e);
         }
+    }
+
+    /**
+     * GET /api/v1/karir/dashboard/kalender
+     *
+     * Kalender memakai rentang yang sedang terlihat di FullCalendar. `akhir`
+     * bersifat eksklusif, sama seperti kontrak FullCalendar, agar event
+     * sepanjang hari tidak bergeser satu hari ketika melintasi bulan.
+     */
+    public function kalender(Request $request)
+    {
+        [$kategori, $galat] = $this->kategoriDiminta($request);
+        if ($galat) {
+            return $galat;
+        }
+
+        try {
+            $mulai = \Illuminate\Support\Carbon::createFromFormat('Y-m-d', (string) $request->query('mulai'))->startOfDay();
+            $akhir = \Illuminate\Support\Carbon::createFromFormat('Y-m-d', (string) $request->query('akhir'))->startOfDay();
+        } catch (\Throwable $e) {
+            return ResponseHelper::error('Rentang kalender tidak valid. Gunakan format YYYY-MM-DD.', 422);
+        }
+
+        if ($akhir->lte($mulai) || $mulai->diffInDays($akhir) > 92) {
+            return ResponseHelper::error('Rentang kalender harus 1 sampai 92 hari.', 422);
+        }
+
+        try {
+            $data = DB::transaction(function () use ($kategori, $mulai, $akhir) {
+                $programs = $this->programs($kategori);
+                $ids = $programs->pluck('Id_Program')->map(fn ($v) => (int) $v)->all();
+                $events = $this->eventKalender($kategori, $ids, $mulai, $akhir);
+
+                return [
+                    'events' => $events,
+                    'summary' => $this->ringkasanKalender($events),
+                ];
+            });
+
+            return ResponseHelper::success($data + [
+                'checkpoint' => MetrikRekrutmen::checkpoint(),
+            ], 'Kalender dashboard');
+        } catch (\Throwable $e) {
+            return $this->gagal('kalender', $kategori, $e);
+        }
+    }
+
+    /**
+     * Detail peserta satu sesi tes. Dipisah dari payload kalender agar membuka
+     * kalender bulanan tidak mengirim ratusan nama kandidat yang belum dilihat.
+     */
+    public function pesertaKalender(Request $request, string $id)
+    {
+        [$kategori, $galat] = $this->kategoriDiminta($request);
+        if ($galat) {
+            return $galat;
+        }
+
+        $realId = Hashids::decode($id)[0] ?? null;
+        if (! $realId) {
+            return ResponseHelper::error('Sesi kalender tidak ditemukan.', 404);
+        }
+
+        try {
+            $sesi = DB::table('N_WEB_CAREERS_Penjadwalan_Tahap as pt')
+                ->join('N_WEB_CAREERS_Penjadwalan as pj', 'pj.Id_Penjadwalan', '=', 'pt.Penjadwalan_Id')
+                ->join('N_WEB_CAREERS_Program as p', 'p.Id_Program', '=', 'pj.Program_Id')
+                ->where('pt.Id_Penjadwalan_Tahap', $realId)
+                ->where('p.Kategori', $kategori)
+                ->first(['pt.Id_Penjadwalan_Tahap', 'pt.Label', 'pt.Nama_Ujian', 'pt.Waktu_Mulai',
+                    'pt.Waktu_Akhir', 'p.Nama as ProgramNama']);
+
+            if (! $sesi) {
+                return ResponseHelper::error('Sesi tidak ditemukan atau berada di luar hak akses Anda.', 404);
+            }
+
+            $peserta = DB::table('N_WEB_CAREERS_Penjadwalan_Peserta')
+                ->where('Penjadwalan_Tahap_Id', $realId)
+                ->orderByRaw("CASE
+                    WHEN Status_Kirim = 'GAGAL' THEN 1
+                    WHEN Status_Kirim IS NULL OR Status_Kirim <> 'TERKIRIM' THEN 2
+                    WHEN Status_Pengerjaan = 'SELESAI' THEN 4
+                    ELSE 3 END")
+                ->orderBy('Nama')
+                ->get(['Kode_Peserta', 'Nama', 'Posisi_Dilamar', 'Status_Kirim', 'Status_Pengerjaan'])
+                ->map(fn ($p) => [
+                    'kode' => $p->Kode_Peserta,
+                    'nama' => $p->Nama ?: 'Tanpa nama',
+                    'posisi' => $p->Posisi_Dilamar,
+                    'statusKirim' => $p->Status_Kirim ?: 'MENUNGGU',
+                    'statusPengerjaan' => $p->Status_Pengerjaan ?: 'BELUM',
+                ])->values()->all();
+
+            return ResponseHelper::success([
+                'sesi' => [
+                    'judul' => $sesi->Nama_Ujian ?: ($sesi->Label ?: 'Sesi tes'),
+                    'program' => $sesi->ProgramNama,
+                    'mulai' => $sesi->Waktu_Mulai,
+                    'akhir' => $sesi->Waktu_Akhir,
+                ],
+                'peserta' => $peserta,
+                'total' => count($peserta),
+            ], 'Peserta sesi kalender');
+        } catch (\Throwable $e) {
+            return $this->gagal('kalender-peserta', $kategori, $e);
+        }
+    }
+
+    /** Gabungkan sesi tes, agenda program, dan deadline pendaftaran. */
+    private function eventKalender(string $kategori, array $ids, $mulai, $akhir): array
+    {
+        $events = [];
+        $bolehTes = AksesService::boleh('penjadwalanPage', 'VIEW');
+        $bolehAgenda = AksesService::boleh('masterJadwalPage', 'VIEW');
+        $bolehPembukaan = AksesService::boleh('pembukaanPage', 'VIEW');
+
+        if ($ids) {
+            $tes = DB::table('N_WEB_CAREERS_Penjadwalan_Tahap as pt')
+                ->join('N_WEB_CAREERS_Penjadwalan as pj', 'pj.Id_Penjadwalan', '=', 'pt.Penjadwalan_Id')
+                ->join('N_WEB_CAREERS_Program as p', 'p.Id_Program', '=', 'pj.Program_Id')
+                ->whereIn('pj.Program_Id', $ids)
+                ->whereNotNull('pt.Waktu_Mulai')
+                ->where('pt.Waktu_Mulai', '<', $akhir)
+                ->where(function ($q) use ($mulai) {
+                    $q->whereNull('pt.Waktu_Akhir')->where('pt.Waktu_Mulai', '>=', $mulai)
+                        ->orWhere('pt.Waktu_Akhir', '>', $mulai);
+                })
+                ->orderBy('pt.Waktu_Mulai')
+                ->get(['pt.Id_Penjadwalan_Tahap', 'pt.Penjadwalan_Id', 'pt.Label', 'pt.Nama_Ujian',
+                    'pt.Waktu_Mulai', 'pt.Waktu_Akhir', 'pt.Durasi_Menit', 'pt.Status',
+                    'pj.Nama as PenjadwalanNama', 'p.Id_Program', 'p.Nama as ProgramNama']);
+
+            $peserta = $tes->isEmpty()
+                ? collect()
+                : DB::table('N_WEB_CAREERS_Penjadwalan_Peserta')
+                    ->whereIn('Penjadwalan_Tahap_Id', $tes->pluck('Id_Penjadwalan_Tahap')->all())
+                    ->groupBy('Penjadwalan_Tahap_Id')
+                    ->selectRaw("Penjadwalan_Tahap_Id, COUNT(*) as total,
+                        SUM(CASE WHEN Status_Kirim = 'TERKIRIM' THEN 1 ELSE 0 END) as terkirim,
+                        SUM(CASE WHEN Status_Kirim = 'GAGAL' THEN 1 ELSE 0 END) as gagal,
+                        SUM(CASE WHEN Status_Kirim IS NULL OR Status_Kirim NOT IN ('TERKIRIM','GAGAL') THEN 1 ELSE 0 END) as menunggu")
+                    ->get()->keyBy('Penjadwalan_Tahap_Id');
+
+            foreach ($tes as $r) {
+                $p = $peserta->get($r->Id_Penjadwalan_Tahap);
+                $total = (int) ($p->total ?? 0);
+                $terkirim = (int) ($p->terkirim ?? 0);
+                $gagal = (int) ($p->gagal ?? 0);
+                $menunggu = (int) ($p->menunggu ?? 0);
+                $waktuMulai = \Illuminate\Support\Carbon::parse($r->Waktu_Mulai);
+                $waktuAkhir = $r->Waktu_Akhir ? \Illuminate\Support\Carbon::parse($r->Waktu_Akhir) : null;
+
+                if (($waktuAkhir && $waktuAkhir->isPast()) || strtoupper((string) $r->Status) === 'SELESAI') {
+                    $kesiapan = 'SELESAI';
+                } elseif ($gagal > 0 || ($waktuMulai->between(now(), now()->copy()->addDay()) && ($total === 0 || $terkirim < $total))) {
+                    $kesiapan = 'PERLU_PERHATIAN';
+                } elseif ($total > 0 && $terkirim === $total) {
+                    $kesiapan = 'SIAP';
+                } else {
+                    $kesiapan = 'MENUNGGU';
+                }
+
+                $events[] = [
+                    'id' => 'TES-' . Hashids::encode($r->Id_Penjadwalan_Tahap),
+                    'jenis' => 'TES',
+                    'judul' => $r->Nama_Ujian ?: ($r->Label ?: ($r->PenjadwalanNama ?: 'Sesi tes')),
+                    'program' => $r->ProgramNama,
+                    'programId' => Hashids::encode($r->Id_Program),
+                    'mulai' => (string) $r->Waktu_Mulai,
+                    'akhir' => $r->Waktu_Akhir ? (string) $r->Waktu_Akhir : null,
+                    'allDay' => false,
+                    'status' => $r->Status,
+                    'kesiapan' => $kesiapan,
+                    'jumlahPeserta' => $total,
+                    'pesertaTerkirim' => $terkirim,
+                    'pesertaMenunggu' => $menunggu,
+                    'pesertaGagal' => $gagal,
+                    'ket' => $r->Durasi_Menit ? $r->Durasi_Menit . ' menit' : null,
+                    'pesertaUrl' => '/api/v1/karir/dashboard/kalender/tes/' . Hashids::encode($r->Id_Penjadwalan_Tahap) . '/peserta',
+                    'sourceUrl' => $bolehTes ? '/karir/penjadwalan?fokus=' . Hashids::encode($r->Penjadwalan_Id) : null,
+                    'konflik' => false,
+                    'hariPadat' => false,
+                ];
+            }
+
+            $agenda = DB::table('N_WEB_CAREERS_Master_Jadwal_Agenda as ag')
+                ->join('N_WEB_CAREERS_Master_Jadwal as j', 'j.Id_Master_Jadwal', '=', 'ag.Master_Jadwal_Id')
+                ->join('N_WEB_CAREERS_Program as p', 'p.Jadwal_Kode', '=', 'j.Kode')
+                ->whereIn('p.Id_Program', $ids)
+                ->whereNotNull('ag.Tanggal_Mulai')
+                ->where('ag.Tanggal_Mulai', '<', $akhir->toDateString())
+                ->where(function ($q) use ($mulai) {
+                    $q->whereNull('ag.Tanggal_Selesai')->where('ag.Tanggal_Mulai', '>=', $mulai->toDateString())
+                        ->orWhere('ag.Tanggal_Selesai', '>=', $mulai->toDateString());
+                })
+                ->orderBy('ag.Tanggal_Mulai')
+                ->get(['ag.Id_Master_Jadwal_Agenda', 'ag.Master_Jadwal_Id', 'ag.Label', 'ag.Jenis',
+                    'ag.Tanggal_Mulai', 'ag.Tanggal_Selesai', 'p.Id_Program', 'p.Nama as ProgramNama']);
+
+            foreach ($agenda as $r) {
+                // FullCalendar memakai akhir eksklusif untuk event sepanjang hari.
+                $akhirEksklusif = $r->Tanggal_Selesai
+                    ? \Illuminate\Support\Carbon::parse($r->Tanggal_Selesai)->addDay()->toDateString()
+                    : \Illuminate\Support\Carbon::parse($r->Tanggal_Mulai)->addDay()->toDateString();
+                $events[] = [
+                    'id' => 'AGENDA-' . Hashids::encode($r->Id_Master_Jadwal_Agenda) . '-' . Hashids::encode($r->Id_Program),
+                    'jenis' => 'AGENDA',
+                    'judul' => $r->Label ?: 'Agenda program',
+                    'program' => $r->ProgramNama,
+                    'programId' => Hashids::encode($r->Id_Program),
+                    'mulai' => substr((string) $r->Tanggal_Mulai, 0, 10),
+                    'akhir' => $akhirEksklusif,
+                    'allDay' => true,
+                    'status' => null,
+                    'kesiapan' => null,
+                    'jumlahPeserta' => null,
+                    'ket' => $r->Jenis,
+                    'sourceUrl' => $bolehAgenda ? '/master-jadwal?fokus=' . Hashids::encode($r->Master_Jadwal_Id) : null,
+                    'konflik' => false,
+                    'hariPadat' => false,
+                ];
+            }
+        }
+
+        $tutup = DB::table('N_WEB_CAREERS_Pembukaan as pb')
+            ->join('N_WEB_CAREERS_Program as p', 'p.Id_Program', '=', 'pb.Program_Id')
+            ->where('p.Kategori', $kategori)
+            ->where('pb.Status_Publish', 'TERBIT')
+            ->whereNotNull('pb.Tanggal_Tutup')
+            ->where('pb.Tanggal_Tutup', '>=', $mulai)
+            ->where('pb.Tanggal_Tutup', '<', $akhir)
+            ->orderBy('pb.Tanggal_Tutup')
+            ->get(['pb.Id_Pembukaan', 'pb.Kode', 'pb.Tanggal_Tutup', 'p.Id_Program', 'p.Nama as ProgramNama']);
+
+        foreach ($tutup as $r) {
+            $events[] = [
+                'id' => 'TUTUP-' . Hashids::encode($r->Id_Pembukaan),
+                'jenis' => 'TUTUP',
+                'judul' => 'Pendaftaran ditutup',
+                'program' => $r->ProgramNama,
+                'programId' => Hashids::encode($r->Id_Program),
+                'mulai' => (string) $r->Tanggal_Tutup,
+                'akhir' => null,
+                'allDay' => false,
+                'status' => null,
+                'kesiapan' => null,
+                'jumlahPeserta' => null,
+                'ket' => $r->Kode,
+                'sourceUrl' => $bolehPembukaan ? '/karir/pembukaan?fokus=' . Hashids::encode($r->Id_Pembukaan) : null,
+                'konflik' => false,
+                'hariPadat' => false,
+            ];
+        }
+
+        $this->tandaiKonflik($events);
+        $this->tandaiHariPadat($events);
+        usort($events, fn ($a, $b) => strcmp((string) $a['mulai'], (string) $b['mulai']));
+
+        return $events;
+    }
+
+    /** Bentrok hanya bermakna untuk sesi berjam pada program yang sama. */
+    private function tandaiKonflik(array &$events): int
+    {
+        $pasangan = 0;
+        $indeks = array_keys(array_filter($events, fn ($e) => $e['jenis'] === 'TES' && ! empty($e['akhir'])));
+        for ($a = 0; $a < count($indeks); $a++) {
+            for ($b = $a + 1; $b < count($indeks); $b++) {
+                $i = $indeks[$a];
+                $j = $indeks[$b];
+                if ($events[$i]['programId'] !== $events[$j]['programId']) {
+                    continue;
+                }
+                if ($events[$i]['mulai'] < $events[$j]['akhir'] && $events[$j]['mulai'] < $events[$i]['akhir']) {
+                    $events[$i]['konflik'] = $events[$j]['konflik'] = true;
+                    $pasangan++;
+                }
+            }
+        }
+
+        return $pasangan;
+    }
+
+    private function tandaiHariPadat(array &$events): void
+    {
+        $jumlah = [];
+        foreach ($events as $event) {
+            $hari = substr((string) $event['mulai'], 0, 10);
+            $jumlah[$hari] = ($jumlah[$hari] ?? 0) + 1;
+        }
+        foreach ($events as &$event) {
+            $event['hariPadat'] = ($jumlah[substr((string) $event['mulai'], 0, 10)] ?? 0) >= 3;
+        }
+        unset($event);
+    }
+
+    private function ringkasanKalender(array $events): array
+    {
+        $hariIni = now()->toDateString();
+        $mendatang = array_filter($events, fn ($e) => (string) $e['mulai'] >= now()->toDateTimeString());
+        $deadline = array_values(array_filter($mendatang, fn ($e) => $e['jenis'] === 'TUTUP'));
+        $hariPadat = array_unique(array_map(
+            fn ($e) => substr((string) $e['mulai'], 0, 10),
+            array_filter($events, fn ($e) => $e['hariPadat'])
+        ));
+
+        return [
+            'hariIni' => count(array_filter($events, fn ($e) => substr((string) $e['mulai'], 0, 10) === $hariIni)),
+            'perluPerhatian' => count(array_filter($mendatang, fn ($e) => ($e['kesiapan'] ?? null) === 'PERLU_PERHATIAN')),
+            'bentrok' => count(array_filter($events, fn ($e) => $e['konflik'])),
+            'hariPadat' => count($hariPadat),
+            'deadlineTerdekat' => $deadline[0] ?? null,
+        ];
     }
 
     /**

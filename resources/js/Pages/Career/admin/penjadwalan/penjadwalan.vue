@@ -194,7 +194,7 @@
             <div v-loading="memuat">
                 <el-empty v-if="!memuat && !daftar.length" :image-size="70" description="Belum ada penjadwalan" />
 
-                <div v-for="j in daftar" :key="j.id" class="wca-jadwal">
+                <div v-for="j in daftar" :id="`penjadwalan-${j.id}`" :key="j.id" class="wca-jadwal" :class="{ 'is-focus': fokusId === j.id }">
                     <div class="wca-jadwalhead">
                         <div>
                             <span class="wca-kode">{{ j.kode }}</span>
@@ -309,6 +309,7 @@ export default {
             editSibuk: false,
             notice: '',
             noticeType: 'success',
+            fokusId: new URLSearchParams(window.location.search).get('fokus'),
             form: { programId: null, tahapUrutan: null, tesUrutan: null, idMasterUjian: null, namaUjian: '', waktuMulai: '', waktuAkhir: '', peserta: [] },
         };
     },
@@ -469,6 +470,9 @@ export default {
             try {
                 const res = await axios.get('/api/v1/penjadwalan', { headers: { Accept: 'application/json' } });
                 this.daftar = res.data.result || [];
+                if (this.fokusId && this.daftar.some((j) => j.id === this.fokusId)) {
+                    this.$nextTick(() => document.getElementById(`penjadwalan-${this.fokusId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+                }
             } catch (e) {
                 this.beritahu('Gagal memuat daftar penjadwalan', 'error');
             } finally {
@@ -622,6 +626,7 @@ export default {
 .wca-step { font-size: .76rem; padding: .22rem .55rem; border: 1px solid var(--el-border-color); border-radius: 999px; }
 .wca-step--hcl { border-color: #4f46e5; background: #eef0fe; color: #4f46e5; }
 .wca-step em { font-style: normal; opacity: .75; }
+.wca-jadwal.is-focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99, 102, 241, .14), 0 12px 28px rgba(15, 23, 42, .08); }
 
 @media (min-width: 900px) {
     .wca-split { grid-template-columns: 1fr 1fr; }

@@ -92,7 +92,7 @@
 
         <!-- Daftar pembukaan -->
         <div v-loading="loading" class="pkg-list">
-            <div v-for="b in paged" :key="b.id" class="pkg-card" :class="{ open: open === b.id }">
+            <div v-for="b in paged" :id="`pembukaan-${b.id}`" :key="b.id" class="pkg-card" :class="{ open: open === b.id, 'is-focus': fokusId === b.id }">
                 <div class="pkg-row">
                     <button type="button" class="pkg-chev" :class="{ open: open === b.id }" title="Buka detail" @click="open = (open === b.id ? null : b.id)"><i class="bi bi-chevron-right"></i></button>
                     <div class="pkg-row__main">
@@ -266,6 +266,7 @@ export default {
             deleting: false,
             toast: '',
             tm: null,
+            fokusId: new URLSearchParams(window.location.search).get('fokus'),
         };
     },
     computed: {
@@ -323,6 +324,12 @@ export default {
                 this.kategoriTab = r.kategori || [];
                 this.totalSemua = r.total || 0;
                 if (this.page > this.totalPages) this.page = 1;
+                const fokusIndex = this.list.findIndex((b) => b.id === this.fokusId);
+                if (fokusIndex >= 0) {
+                    this.page = Math.floor(fokusIndex / this.perPage) + 1;
+                    this.open = this.fokusId;
+                    this.$nextTick(() => document.getElementById(`pembukaan-${this.fokusId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+                }
             } catch (e) {
                 this.notice('Gagal memuat data pembukaan.');
             } finally {
@@ -880,5 +887,5 @@ export default {
 .pbk-progcard__ico.pkg-pill--slate { background: #eef0f7; color: #64748b; }
 .pbk-note { display: flex; align-items: flex-start; gap: .4rem; margin: .2rem 0 0; font-size: 11.5px; line-height: 1.55; color: #64748b; }
 .pbk-note > i { color: #6366f1; margin-top: 1px; }
+.pkg-card.is-focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99, 102, 241, .14), 0 14px 32px rgba(15, 23, 42, .08); }
 </style>
-
