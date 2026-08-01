@@ -1,39 +1,41 @@
 <!--
-  ZONA A — DERETAN KPI.
-
-  Server mengirim HANYA angka (satu peta datar). Label, ikon, warna, dan tujuan
-  klik ditentukan di sini. Itu disengaja: dashboard lama menaruh label & ikon di
-  controller, template membaca nama kunci yang berbeda, dan hasilnya kartu tampil
-  kosong tanpa satu pun error. Dengan kontrak sesempit "peta angka", salah kunci
-  langsung kelihatan sebagai "—", bukan diam-diam blank.
-
-  Tiap kartu punya tujuan: melompat ke seksi yang menjelaskannya, atau membuka
-  halaman tempat angka itu bisa dikerjakan. Kartu tanpa tujuan tidak dibuat
-  seolah bisa diklik.
+  ZONA A — DERETAN KPI (Redesigned)
 -->
 <template>
-    <div class="wcd-kpi" style="margin-bottom: 16px">
+    <div class="wcd-kpi-grid">
         <component v-for="k in kartu" :key="k.kunci"
             :is="k.tautan ? 'a' : (k.lompat ? 'button' : 'div')"
             :href="k.tautan || undefined" :type="k.lompat ? 'button' : undefined"
-            class="wcd-stat" :class="{ 'is-klik': !!(k.tautan || k.lompat) }"
+            class="wcd-kpi-card" :class="{ 'is-clickable': !!(k.tautan || k.lompat) }"
             :style="{ '--tone': k.warna }"
             :title="k.judul"
             @click="k.lompat ? $emit('lompat', k.lompat) : null">
-            <div class="wcd-stat__top">
-                <span class="wcd-stat__ic"><i class="bi" :class="k.ikon"></i></span>
-                <!-- Chip perubahan hanya untuk kartu bertren DAN hanya kalau ada
-                     pembanding. Periode "Semua" tidak punya periode sebelumnya,
-                     jadi chip-nya tidak dipaksa muncul dengan angka 0. -->
-                <span v-if="k.delta !== null && k.delta !== undefined" class="wcd-stat__delta"
-                    :style="{ color: k.delta === 0 ? INK.redup : (k.delta > 0 ? STATUS.good.warna : STATUS.critical.warna) }">
+            
+            <div class="wcd-kpi-card__glow"></div>
+            
+            <div class="wcd-kpi-card__top">
+                <span class="wcd-kpi-card__ic">
+                    <i class="bi" :class="k.ikon"></i>
+                </span>
+                
+                <span v-if="k.delta !== null && k.delta !== undefined" class="wcd-kpi-card__delta"
+                    :class="{ 
+                        'is-up': k.delta > 0, 
+                        'is-down': k.delta < 0, 
+                        'is-same': k.delta === 0 
+                    }">
                     <i class="bi" :class="k.delta === 0 ? 'bi-dash' : (k.delta > 0 ? 'bi-arrow-up-short' : 'bi-arrow-down-short')"></i>
-                    {{ k.delta === 0 ? 'tetap' : angka(Math.abs(k.delta)) }}
+                    <span>{{ k.delta === 0 ? 'tetap' : angka(Math.abs(k.delta)) }}</span>
                 </span>
             </div>
-            <div class="wcd-stat__num">{{ angka(k.nilai) }}</div>
-            <div class="wcd-stat__lbl">{{ k.label }}</div>
-            <div v-if="k.ket" class="wcd-stat__ket">{{ k.ket }}</div>
+
+            <div class="wcd-kpi-card__num">{{ angka(k.nilai) }}</div>
+            <div class="wcd-kpi-card__lbl">{{ k.label }}</div>
+            <div v-if="k.ket" class="wcd-kpi-card__ket">{{ k.ket }}</div>
+
+            <div v-if="k.tautan || k.lompat" class="wcd-kpi-card__arrow">
+                <i class="bi bi-chevron-right"></i>
+            </div>
         </component>
     </div>
 </template>
@@ -74,24 +76,24 @@ const kartu = computed(() => {
         },
         {
             kunci: 'macet', nilai: k.macet, label: `Macet > ${props.ambang.macetHari} hari`,
-            ket: 'tahap berjalan terlalu lama', ikon: 'bi-cone-striped', warna: '#d03b3b', lompat: 'aksi',
+            ket: 'tahap berjalan terlalu lama', ikon: 'bi-cone-striped', warna: '#ef4444', lompat: 'aksi',
         },
         {
             kunci: 'lulus', nilai: k.lulus, label: 'Diterima', ket: 'kursi MPP terisi',
-            ikon: 'bi-patch-check-fill', warna: '#0ca30c', lompat: 'program',
+            ikon: 'bi-patch-check-fill', warna: '#10b981', lompat: 'program',
         },
         {
             kunci: 'gugur', nilai: k.gugur, label: 'Tidak lolos', ket: 'selesai, tidak lanjut',
-            ikon: 'bi-x-circle', warna: '#64748b',
+            ikon: 'bi-x-circle-fill', warna: '#64748b',
         },
         {
             kunci: 'talent', nilai: k.talent, label: 'Talent pool', ket: 'disimpan untuk lain kali',
-            ikon: 'bi-bookmark-star-fill', warna: '#7c3aed', tautan: '/karir/talent-pool',
+            ikon: 'bi-bookmark-star-fill', warna: '#8b5cf6', tautan: '/karir/talent-pool',
             judul: 'Buka Talent Pool',
         },
         {
             kunci: 'baru', nilai: k.baru, label: 'Lamaran baru', ket: labelPeriode.value,
-            ikon: 'bi-plus-circle-fill', warna: '#6366f1', lompat: 'tren',
+            ikon: 'bi-plus-circle-fill', warna: '#06b6d4', lompat: 'tren',
             delta: k.baruSebelum === null || k.baruSebelum === undefined ? null : k.baru - k.baruSebelum,
             judul: k.baruSebelum === null || k.baruSebelum === undefined
                 ? 'Lihat grafik tren'
@@ -100,3 +102,129 @@ const kartu = computed(() => {
     ];
 });
 </script>
+
+<style scoped>
+.wcd-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 14px;
+}
+
+.wcd-kpi-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    padding: 16px 18px;
+    background: #ffffff;
+    border: 1px solid rgba(226, 232, 240, 0.9);
+    border-radius: 16px;
+    text-align: left;
+    text-decoration: none;
+    font: inherit;
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: 0 2px 8px -2px rgba(15, 23, 42, 0.04);
+    overflow: hidden;
+    cursor: default;
+}
+
+.wcd-kpi-card.is-clickable {
+    cursor: pointer;
+}
+
+.wcd-kpi-card.is-clickable:hover {
+    transform: translateY(-4px);
+    border-color: color-mix(in srgb, var(--tone, #6366f1) 45%, transparent);
+    box-shadow: 0 12px 28px -6px color-mix(in srgb, var(--tone, #6366f1) 18%, transparent);
+}
+
+.wcd-kpi-card__glow {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 90px;
+    height: 90px;
+    background: radial-gradient(circle at top right, color-mix(in srgb, var(--tone, #6366f1) 12%, transparent) 0%, transparent 70%);
+    pointer-events: none;
+}
+
+.wcd-kpi-card__top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.wcd-kpi-card__ic {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    font-size: 16px;
+    color: var(--tone, #6366f1);
+    background: color-mix(in srgb, var(--tone, #6366f1) 12%, #fff);
+    border: 1px solid color-mix(in srgb, var(--tone, #6366f1) 20%, transparent);
+}
+
+.wcd-kpi-card__delta {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 800;
+}
+
+.wcd-kpi-card__delta.is-up {
+    background: #ecfdf5;
+    color: #059669;
+}
+
+.wcd-kpi-card__delta.is-down {
+    background: #fef2f2;
+    color: #dc2626;
+}
+
+.wcd-kpi-card__delta.is-same {
+    background: #f1f5f9;
+    color: #64748b;
+}
+
+.wcd-kpi-card__num {
+    font-size: 1.65rem;
+    font-weight: 900;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    color: #0f172a;
+    margin-bottom: 6px;
+}
+
+.wcd-kpi-card__lbl {
+    font-size: 0.8rem;
+    font-weight: 800;
+    color: #334155;
+    line-height: 1.3;
+}
+
+.wcd-kpi-card__ket {
+    margin-top: 4px;
+    font-size: 0.71rem;
+    color: #64748b;
+    font-weight: 500;
+}
+
+.wcd-kpi-card__arrow {
+    position: absolute;
+    bottom: 12px;
+    right: 14px;
+    font-size: 12px;
+    color: #cbd5e1;
+    transition: transform 0.2s ease, color 0.2s ease;
+}
+
+.wcd-kpi-card.is-clickable:hover .wcd-kpi-card__arrow {
+    transform: translateX(3px);
+    color: var(--tone, #6366f1);
+}
+</style>

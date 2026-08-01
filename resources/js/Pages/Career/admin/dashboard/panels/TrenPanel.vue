@@ -1,18 +1,5 @@
 <!--
-  ZONA C — TREN LAMARAN.
-
-  DUA seri pada SATU sumbu. Keduanya satuan "orang", jadi boleh berdampingan —
-  dan justru karena itu tidak boleh dibuat dua sumbu-y: menyandingkan dua skala
-  berbeda pada satu plot mengarang korelasi yang tidak ada di datanya.
-
-  Sumbu waktu tiap seri BERBEDA MAKNANYA dan itu ditulis di legenda:
-   · "Masuk"    dihitung pada tanggal melamar;
-   · "Diterima" dihitung pada tanggal keputusan.
-  Kalau "diterima" ikut dikelompokkan pada tanggal melamar, grafiknya berubah
-  jadi kohort dan tidak lagi sebanding dengan garis di sebelahnya.
-
-  Warna: #6366f1 / #d97706 — lolos keenam pemeriksaan validator pada surface
-  putih (CVD ΔE 32.2, penglihatan normal 35.1, kontras keduanya ≥ 3:1).
+  ZONA C — TREN LAMARAN (Redesigned)
 -->
 <template>
     <div v-if="!tren.titik.length">
@@ -21,43 +8,46 @@
             ket="Coba perlebar periode, atau tunggu lamaran pertama masuk." />
     </div>
 
-    <div v-else>
-        <!-- Label langsung yang SELEKTIF: total per seri, bukan angka di setiap
-             titik (angka di tiap titik jadi kekacauan dan tidak terbaca). -->
+    <div v-else class="tr-container">
+        <!-- Label langsung & Rincian Total -->
         <div class="tr-total">
-            <span v-for="s in seri" :key="s.name" class="tr-total__i">
-                <i class="tr-dot" :style="{ background: s.color }"></i>
-                <b>{{ angka(s.total) }}</b>
-                <span>{{ s.name }}</span>
-                <small>{{ s.ket }}</small>
-            </span>
+            <div v-for="s in seri" :key="s.name" class="tr-stat-pill" :style="{ '--seri-color': s.color }">
+                <span class="tr-stat-pill__dot"></span>
+                <div class="tr-stat-pill__info">
+                    <span class="tr-stat-pill__val">{{ angka(s.total) }}</span>
+                    <span class="tr-stat-pill__lbl">{{ s.name }}</span>
+                </div>
+                <small class="tr-stat-pill__ket">{{ s.ket }}</small>
+            </div>
+
             <button type="button" class="tr-alih" @click="tabel = !tabel">
-                <i class="bi" :class="tabel ? 'bi-graph-up' : 'bi-table'"></i>
-                {{ tabel ? 'Lihat grafik' : 'Lihat tabel' }}
+                <i class="bi" :class="tabel ? 'bi-graph-up-arrow' : 'bi-table'"></i>
+                <span>{{ tabel ? 'Tampilkan grafik' : 'Tampilkan tabel' }}</span>
             </button>
         </div>
 
-        <!-- Tabel adalah padanan setara, bukan pelengkap: setiap nilai bisa
-             dibaca tanpa hover dan tanpa membedakan warna. -->
+        <!-- Tabel padanan setara -->
         <div v-if="tabel" class="wcd-tw tr-tw">
             <table class="wcd-tbl">
                 <thead>
-                    <tr><th>Tanggal</th><th class="wcd-num">Masuk</th><th class="wcd-num">Diterima</th></tr>
+                    <tr><th>Tanggal</th><th class="wcd-num">Lamaran Masuk</th><th class="wcd-num">Diterima</th></tr>
                 </thead>
                 <tbody>
                     <tr v-for="t in titikTerpakai" :key="t.tgl">
-                        <td>{{ tanggal(t.tgl) }}</td>
-                        <td class="wcd-num">{{ t.masuk }}</td>
-                        <td class="wcd-num">{{ t.diterima }}</td>
+                        <td class="wcd-tbl__utama">{{ tanggal(t.tgl) }}</td>
+                        <td class="wcd-num"><b>{{ t.masuk }}</b></td>
+                        <td class="wcd-num"><span class="wcd-lb" style="background:#f0fdf4; color:#059669;">{{ t.diterima }}</span></td>
                     </tr>
                 </tbody>
             </table>
             <p v-if="titikTerpakai.length < tren.titik.length" class="tr-nota">
-                Hanya hari yang berisi ditampilkan ({{ titikTerpakai.length }} dari {{ tren.titik.length }} hari).
+                Hanya hari yang memiliki aktivitas ditampilkan ({{ titikTerpakai.length }} dari {{ tren.titik.length }} hari).
             </p>
         </div>
 
-        <apexchart v-else type="area" height="290" :options="opsi" :series="seriChart" />
+        <div v-else class="tr-chart-wrapper">
+            <apexchart type="area" height="300" :options="opsi" :series="seriChart" />
+        </div>
     </div>
 </template>
 
@@ -76,9 +66,6 @@ const seri = computed(() => [
     { name: 'Diterima', color: SERI.diterima, total: props.tren.totalDiterima, ket: 'per tanggal keputusan' },
 ]);
 
-/* Tabel hanya menampilkan hari yang berisi — deretan nol sepanjang 90 baris
-   tidak menambah informasi apa pun dan menenggelamkan yang berisi. Grafiknya
-   tetap memakai seluruh hari supaya lubang tidak tersambung jadi garis naik. */
 const titikTerpakai = computed(() => props.tren.titik.filter((t) => t.masuk || t.diterima));
 
 const seriChart = computed(() => [
@@ -89,43 +76,41 @@ const seriChart = computed(() => [
 const opsi = computed(() => ({
     chart: {
         type: 'area',
-        fontFamily: 'Inter, system-ui, -apple-system, "Segoe UI", sans-serif',
+        fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
         toolbar: { show: false },
         zoom: { enabled: false },
-        animations: { enabled: true, speed: 320 },
+        animations: { enabled: true, speed: 350 },
     },
     colors: [SERI.masuk, SERI.diterima],
-    // Garis 2px; titik disembunyikan sampai disentuh, lalu 9px dengan cincin
-    // surface 2px supaya titik yang bertumpuk tetap terbaca terpisah.
-    stroke: { curve: 'smooth', width: 2 },
-    markers: { size: 0, strokeWidth: 2, strokeColors: '#fff', hover: { size: 5 } },
+    stroke: { curve: 'smooth', width: 3.5 },
+    markers: { size: 0, strokeWidth: 2, strokeColors: '#fff', hover: { size: 6 } },
     fill: {
         type: 'gradient',
-        gradient: { shadeIntensity: 0, opacityFrom: 0.22, opacityTo: 0.02, stops: [0, 100] },
+        gradient: { shadeIntensity: 0, opacityFrom: 0.28, opacityTo: 0.03, stops: [0, 100] },
     },
     dataLabels: { enabled: false },
     legend: {
         show: true,
         position: 'top',
         horizontalAlign: 'left',
-        fontSize: '12px',
+        fontSize: '13px',
         fontWeight: 700,
-        markers: { width: 9, height: 9, radius: 9 },
+        markers: { width: 10, height: 10, radius: 10 },
         labels: { colors: INK.kedua },
-        itemMargin: { horizontal: 10 },
+        itemMargin: { horizontal: 12 },
     },
     grid: {
         borderColor: INK.grid,
-        strokeDashArray: 0,          // garis rambut SOLID — putus-putus terbaca sebagai ambang
+        strokeDashArray: 0,
         xaxis: { lines: { show: false } },
-        padding: { left: 6, right: 12, top: 0 },
+        padding: { left: 8, right: 14, top: 0 },
     },
     xaxis: {
         type: 'datetime',
         axisBorder: { color: INK.sumbu },
         axisTicks: { color: INK.sumbu },
         labels: {
-            style: { colors: INK.redup, fontSize: '11px' },
+            style: { colors: INK.redup, fontSize: '11px', fontWeight: 600 },
             datetimeFormatter: { day: 'dd MMM', month: 'MMM yy' },
         },
         tooltip: { enabled: false },
@@ -134,12 +119,10 @@ const opsi = computed(() => ({
         min: 0,
         forceNiceScale: true,
         labels: {
-            style: { colors: INK.redup, fontSize: '11px' },
+            style: { colors: INK.redup, fontSize: '11px', fontWeight: 600 },
             formatter: (v) => (Number.isInteger(v) ? v : ''),
         },
     },
-    // Tooltip menyempurnakan, tidak menjadi satu-satunya jalan membaca nilai —
-    // itulah gunanya tombol "Lihat tabel" di atas.
     tooltip: {
         shared: true,
         intersect: false,
@@ -150,29 +133,82 @@ const opsi = computed(() => ({
 </script>
 
 <style scoped>
-.tr-total { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; margin-bottom: 6px; }
-.tr-total__i { display: inline-flex; align-items: baseline; gap: 6px; font-size: 0.75rem; color: #475569; }
-.tr-total__i b { font-size: 1.15rem; font-weight: 900; color: #0f172a; }
-.tr-total__i small { color: #94a3b8; font-size: 0.69rem; }
-.tr-dot { width: 9px; height: 9px; border-radius: 999px; align-self: center; flex: none; }
+.tr-container {
+    padding-top: 4px;
+}
+
+.tr-total {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+}
+
+.tr-stat-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.04);
+}
+
+.tr-stat-pill__dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    background: var(--seri-color, #6366f1);
+    flex: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--seri-color, #6366f1) 25%, transparent);
+}
+
+.tr-stat-pill__info {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+}
+
+.tr-stat-pill__val {
+    font-size: 1.2rem;
+    font-weight: 900;
+    color: #0f172a;
+    line-height: 1;
+}
+
+.tr-stat-pill__lbl {
+    font-size: 0.8rem;
+    font-weight: 800;
+    color: #334155;
+}
+
+.tr-stat-pill__ket {
+    font-size: 0.72rem;
+    color: #94a3b8;
+    font-weight: 500;
+}
 
 .tr-alih {
     margin-left: auto;
     display: inline-flex;
     align-items: center;
-    gap: 5px;
-    border: 1px solid #e8edf5;
-    background: #fff;
-    padding: 6px 12px;
-    border-radius: 10px;
+    gap: 6px;
+    border: 1px solid #c7d2fe;
+    background: #eef2ff;
+    padding: 8px 16px;
+    border-radius: 12px;
     font: inherit;
-    font-size: 0.73rem;
+    font-size: 0.78rem;
     font-weight: 800;
     color: #4f46e5;
     cursor: pointer;
+    transition: all 0.2s ease;
 }
-.tr-alih:hover { background: #eef2ff; }
+.tr-alih:hover { background: #4f46e5; color: #ffffff; border-color: #4f46e5; transform: translateY(-1px); }
 
 .tr-tw { margin-top: 10px; max-height: 340px; overflow-y: auto; }
-.tr-nota { margin: 8px 12px; font-size: 0.72rem; color: #94a3b8; }
+.tr-nota { margin: 10px 12px; font-size: 0.75rem; color: #94a3b8; }
+.tr-chart-wrapper { padding: 8px 0; }
 </style>
