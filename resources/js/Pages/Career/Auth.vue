@@ -76,7 +76,13 @@ export default {
     mounted() {
         // Bila datang dari logout, bersihkan sesi klien (sessionStorage).
         try {
-            if (new URLSearchParams(window.location.search).get('loggedout')) clearSession();
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('loggedout')) clearSession();
+            const email = params.get('email') || '';
+            if (EMAIL_RE.test(email)) this.form.email = email;
+            if (params.get('registered') === '1') {
+                this.flashNotice('info', 'Akun development berhasil dibuat dan email sudah otomatis terverifikasi. Silakan masuk.');
+            }
         } catch (e) { /* noop */ }
         if (this.isLogin) this.renderTurnstile();
     },
@@ -227,6 +233,17 @@ export default {
                 const res = await axios.post(url, payload, { headers: { Accept: 'application/json' } });
 
                 if (!this.isLogin) {
+                    const hasil = res.data && res.data.result;
+                    if (hasil && hasil.perlu_verifikasi === false) {
+                        const params = new URLSearchParams();
+                        params.set('registered', '1');
+                        params.set('email', this.form.email);
+                        if (this.redirectTarget && this.redirectTarget !== '/kandidat/portal') {
+                            params.set('redirect', this.redirectTarget);
+                        }
+                        router.visit('/login?' + params.toString());
+                        return;
+                    }
                     router.visit('/menunggu-verifikasi?email=' + encodeURIComponent(this.form.email));
                     return;
                 }

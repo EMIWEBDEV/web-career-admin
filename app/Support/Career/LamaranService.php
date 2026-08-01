@@ -70,43 +70,17 @@ class LamaranService
      */
     public function buatLamaran(int $userId, int $pembukaanId, int $posisiId, ?int $userAdminId = null, ?string $gugurAlasan = null, ?array $jawaban = null): array
     {
-        // Kandidat melamar lewat sebuah PEMBUKAAN — bukan program mentah. Pembukaan
-        // membawa konteks channel (UMUM/KAMPUS) + whitelist yang nanti dipakai form.
-        $pembukaan = DB::table('N_WEB_CAREERS_Pembukaan')->where('Id_Pembukaan', $pembukaanId)->first();
-        if (! $pembukaan) {
-            return ['ok' => false, 'pesan' => 'Pembukaan tidak ditemukan.'];
-        }
-        if ($pembukaan->Status_Publish !== 'TERBIT') {
-            return ['ok' => false, 'pesan' => 'Pembukaan ini belum terbit.'];
-        }
-        // Masa berlaku: EVERGREEN selalu buka; BERBATAS harus dalam rentang
-        // tanggal+JAM (window presisi sampai menit).
-        if ($pembukaan->Masa_Berlaku === 'BERBATAS') {
-            $kini = now();
-            if ($pembukaan->Tanggal_Buka && $kini->lt(\Illuminate\Support\Carbon::parse($pembukaan->Tanggal_Buka))) {
-                return ['ok' => false, 'pesan' => 'Pendaftaran belum dibuka.'];
-            }
-            if ($pembukaan->Tanggal_Tutup && $kini->gt(\Illuminate\Support\Carbon::parse($pembukaan->Tanggal_Tutup))) {
-                return ['ok' => false, 'pesan' => 'Pendaftaran sudah ditutup.'];
-            }
+        // Validasi dipisah agar controller dan job memakai aturan yang sama tanpa
+        // terus menambah ukuran LamaranService yang sudah menjadi hot spot konflik.
+        $target = app(LamaranTargetValidator::class)->validasi($pembukaanId, $posisiId);
+        if (! $target['ok']) {
+            return $target;
         }
 
-        $program = DB::table('N_WEB_CAREERS_Program')->where('Id_Program', $pembukaan->Program_Id)->first();
-        if (! $program || $program->Status !== 'BERJALAN') {
-            return ['ok' => false, 'pesan' => 'Program ini sedang tidak menerima lamaran.'];
-        }
+        $pembukaan = $target['pembukaan'];
+        $program = $target['program'];
+        $posisi = $target['posisi'];
         $programId = $program->Id_Program;
-
-        $posisi = DB::table('N_WEB_CAREERS_Program_Posisi')
-            ->where('Id_Program_Posisi', $posisiId)
-            ->where('Program_Id', $programId)
-            ->first();
-        if (! $posisi) {
-            return ['ok' => false, 'pesan' => 'Posisi tidak ditemukan pada program ini.'];
-        }
-        if (($posisi->Status ?? 'BUKA') !== 'BUKA') {
-            return ['ok' => false, 'pesan' => 'Posisi ini sudah tidak menerima pelamar.'];
-        }
 
         // Satu kandidat tidak boleh melamar posisi yang sama dua kali — apa pun
         // channel-nya (constraint DB: Users + Program + Posisi).

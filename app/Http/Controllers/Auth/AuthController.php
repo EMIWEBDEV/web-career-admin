@@ -50,6 +50,28 @@ class AuthController extends Controller
     private const RESET_OTP_WINDOW_MENIT = 60;
 
     /**
+     * Bypass verifikasi hanya boleh hidup di mesin development/test.
+     * Guard environment sengaja tetap ada walaupun flag .env salah disetel
+     * agar akun production tidak pernah terverifikasi otomatis.
+     */
+    private function autoVerifikasiEmailAktif(): bool
+    {
+        return app()->environment(['local', 'testing'])
+            && (bool) config('career_auth.auto_verify_email', false);
+    }
+
+    /** Nilai kolom verifikasi untuk akun yang di-auto-verify saat development. */
+    private function dataAutoVerifikasiEmail(Carbon $now): array
+    {
+        return [
+            'Flag_Email_Verified' => 'Y',
+            'Email_Verified_At' => $now,
+            'Email_Verif_Token' => null,
+            'Email_Verif_Expired_At' => null,
+        ];
+    }
+
+    /**
      * Siapkan verifikasi email: simpan HASH token di DB (token asli tidak
      * pernah disimpan), lalu antrekan pengiriman via queue 'wc-syncemailjob'.
      * Gagal kirim email TIDAK boleh menggagalkan registrasi → dibungkus try.
@@ -120,6 +142,7 @@ class AuthController extends Controller
         ]);
 
         $now = Carbon::now();
+        $autoVerifikasi = $this->autoVerifikasiEmailAktif();
 
         // ── CEK KTP (ulang, defense-in-depth): satu NIK hanya SATU akun kandidat.
         //    Bila NIK sudah terpakai akun lain, tolak & tunjukkan emailnya (mask). ──
@@ -165,7 +188,7 @@ class AuthController extends Controller
             //     mentok "email sudah terdaftar" tanpa pernah dapat email.
             //  2. Sudah terverifikasi tapi masa berlaku klasifikasinya habis
             //     (mis. trial 6 bulan lewat) / akun nonaktif.
-            DB::table($this->table)->where('Id_Users', $existing->Id_Users)->update([
+            $perubahan = [
                 'Nama' => $data['nama'],
                 'No_Hp' => $data['phone'] ?? $existing->No_Hp,
                 'NIK' => $data['nik'],
@@ -176,12 +199,29 @@ class AuthController extends Controller
                 'Valid_Until' => $validUntil,
                 'Updated_At' => $now,
                 'Updated_By' => $data['email'],
-            ]);
+            ];
+
+            if ($autoVerifikasi) {
+                $perubahan = array_merge($perubahan, $this->dataAutoVerifikasiEmail($now));
+            }
+
+            DB::table($this->table)->where('Id_Users', $existing->Id_Users)->update($perubahan);
 
             // Sinkron identitas ke HCLearn via API (buat/lengkapi calon).
             $this->daftarkanHrisRekrutmen((int) $existing->Id_Users, $data['nama'], $data['email'], $data['phone'] ?? $existing->No_Hp, $data['nik']);
 
-            $this->kirimEmailVerifikasi((int) $existing->Id_Users);
+            if ($autoVerifikasi) {
+                Log::info("[EMAIL] auto-verifikasi development untuk user #{$existing->Id_Users} ({$data['email']}).");
+            } else {
+                $this->kirimEmailVerifikasi((int) $existing->Id_Users);
+            }
+
+            if ($autoVerifikasi) {
+                return ResponseHelper::success(
+                    ['email' => $data['email'], 'perlu_verifikasi' => false],
+                    'Pendaftaran berhasil. Email otomatis terverifikasi dalam mode development; silakan masuk.'
+                );
+            }
 
             $pesan = $terverifikasi
                 ? 'Pendaftaran ulang berhasil (akun sebelumnya telah kedaluwarsa). Cek email kamu untuk verifikasi.'
@@ -194,7 +234,7 @@ class AuthController extends Controller
             );
         }
 
-        $id = DB::table($this->table)->insertGetId([
+        $akunBaru = [
             'Nama' => $data['nama'],
             'Email' => $data['email'],
             'No_Hp' => $data['phone'] ?? null,
@@ -209,10 +249,26 @@ class AuthController extends Controller
             'Created_By' => $data['email'],
             'Updated_At' => $now,
             'Updated_By' => $data['email'],
-        ], 'Id_Users');
+        ];
+
+        if ($autoVerifikasi) {
+            $akunBaru = array_merge($akunBaru, $this->dataAutoVerifikasiEmail($now));
+        }
+
+        $id = DB::table($this->table)->insertGetId($akunBaru, 'Id_Users');
 
         // Daftarkan ke HCLearn via API + set Kode_Calon (identitas HCLearn, prefix CK).
         $this->daftarkanHrisRekrutmen((int) $id, $data['nama'], $data['email'], $data['phone'] ?? null, $data['nik']);
+
+        if ($autoVerifikasi) {
+            Log::info("[EMAIL] auto-verifikasi development untuk user #{$id} ({$data['email']}).");
+
+            return ResponseHelper::success(
+                ['email' => $data['email'], 'perlu_verifikasi' => false],
+                'Registrasi berhasil. Email otomatis terverifikasi dalam mode development; silakan masuk.',
+                201
+            );
+        }
 
         $this->kirimEmailVerifikasi((int) $id);
 
