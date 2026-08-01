@@ -306,10 +306,18 @@
                                         {{ t.label }}
                                         <span v-if="t.peran === 'INFORMATIF'" class="plw-test__tag is-info" title="Skor hanya bahan pertimbangan — tidak menentukan lulus">informatif</span>
                                         <span v-if="!t.wajib" class="plw-test__tag">opsional</span>
+                                        <!-- Aktivitas inilah yang membuka pilihan jawaban
+                                             kandidat begitu hasilnya dicatat. -->
+                                        <span v-if="t.penawaran" class="plw-test__tag is-offer" title="Mencatat hasil aktivitas ini menandai penawaran sudah diajukan ke kandidat">penawaran</span>
                                     </div>
                                     <!-- Tipe aktivitas, bukan tipe tahap: satu tahap bisa
                                          berisi ujian online + tes manual + wawancara. -->
-                                    <div class="plw-test__sub">{{ t.tipeNama || '—' }} · {{ t.provider === 'THIRD_PARTY' ? 'dijadwalkan di Penjadwalan' : 'dilaksanakan tim' }}</div>
+                                    <div class="plw-test__sub">
+                                        {{ t.tipeNama || '—' }} ·
+                                        <template v-if="t.infoSaja">suratnya diunggah di jendela keputusan</template>
+                                        <template v-else-if="t.provider === 'THIRD_PARTY'">dijadwalkan di Penjadwalan</template>
+                                        <template v-else>dilaksanakan tim</template>
+                                    </div>
                                     <!-- Jadwal yang sudah ditetapkan ikut terbaca di
                                          barisnya. Tanpa ini admin harus membuka modal
                                          "Ubah Jadwal" hanya untuk mengingat kapan dan
@@ -492,9 +500,31 @@
                             <p v-if="detailKandidat.tanggapan.catatan">“{{ detailKandidat.tanggapan.catatan }}”</p>
                         </div>
                     </div>
-                    <!-- Tahap berpenawaran yang BELUM dijawab. Menunggu itu wajar,
-                         tapi menunggu tanpa batas tidak — jadi keadaannya disebut,
-                         bukan dibiarkan terbaca sebagai "tidak ada apa-apa". -->
+                    <!-- Penawarannya sendiri BELUM diajukan. Ini keadaan paling
+                         awal tahap ini, dan yang menahan segalanya: kandidat tidak
+                         punya apa pun untuk dijawab, jadi pilihan jawabannya pun
+                         belum ditawarkan kepada siapa-siapa. -->
+                    <div v-else-if="penawaranBelumDiajukan" class="plw-jawab is-wait">
+                        <i class="bi bi-send-plus"></i>
+                        <div style="min-width: 0">
+                            <b>Penawaran belum sampai ke kandidat.</b>
+                            <p>
+                                <template v-if="aktivitasPenawaran && aktivitasPenawaran.butuhJadwal">
+                                    Atur jadwal <b>{{ aktivitasPenawaran.label }}</b> di rapor tes di atas —
+                                    undangannya langsung terkirim ke kandidat.
+                                </template>
+                                <template v-else>
+                                    Unggah surat penawarannya lewat tombol keputusan di bawah.
+                                </template>
+                                Setelah itu kandidat bisa menjawab di portalnya, dan pilihan
+                                “Kandidat Menolak / Mundur” terbuka di sini.
+                            </p>
+                        </div>
+                    </div>
+                    <!-- Tahap berpenawaran yang sudah diajukan tapi BELUM dijawab.
+                         Menunggu itu wajar, tapi menunggu tanpa batas tidak — jadi
+                         keadaannya disebut, bukan dibiarkan terbaca sebagai
+                         "tidak ada apa-apa". -->
                     <div v-else-if="tahapPenawaran" class="plw-jawab is-wait">
                         <i class="bi bi-hourglass-split"></i>
                         <div style="min-width: 0">
@@ -538,7 +568,7 @@
                             @click="askPutus(detailKandidat, h.kode)"
                         >
                             <i class="bi" :class="h.ikon"></i>
-                            {{ h.labelTombol }}
+                            {{ labelPutus(h) }}
                         </button>
                     </div>
 
@@ -1182,14 +1212,43 @@ export default {
         jmlGugur() { return (this.detail.pelamar || []).filter((r) => r.statusLamaran === 'GUGUR' || r.statusLamaran === 'TALENT_POOL').length; },
         /** Definisi hasil yang sedang dipilih — semua labelnya dari master. */
         putusDef() { return this.hasilKeputusan.find((h) => h.kode === this.putusHasil) || null; },
-        putusJudul() { return this.putusDef ? `${this.putusDef.labelTombol} — ${this.putusDef.nama}` : 'Keputusan'; },
-        putusLabelKonfirm() { return this.putusDef?.labelKonfirmasi || 'Ya, Lanjutkan'; },
+        /**
+         * Tahap yang sedang diputus adalah TITIK TUNTAS?
+         *
+         * Di titik itu "Loloskan" bukan lagi meneruskan ke tahap berikutnya —
+         * kandidat DITERIMA bekerja. Kata yang dipakai ikut berubah, karena
+         * "Loloskan" pada langkah terakhir terbaca seolah masih ada lanjutannya.
+         */
+        putusTuntas() {
+            const col = (this.detail.kolom || []).find((k) => k.urutan === this.putusTarget?.urutan);
+
+            return !!(col && col.tuntas);
+        },
+        putusJudul() {
+            if (!this.putusDef) return 'Keputusan';
+
+            return this.putusDef.lolos && this.putusTuntas
+                ? 'Terima Kandidat — Diterima Bekerja'
+                : `${this.putusDef.labelTombol} — ${this.putusDef.nama}`;
+        },
+        putusLabelKonfirm() {
+            if (this.putusDef?.lolos && this.putusTuntas) return 'Ya, Terima Kandidat';
+
+            return this.putusDef?.labelKonfirmasi || 'Ya, Lanjutkan';
+        },
         /** Tahap aktif kandidat membawa penawaran yang harus dijawab? */
         tahapPenawaran() {
             if (!this.detailKandidat) return false;
             const col = (this.detail.kolom || []).find((k) => k.urutan === this.detailKandidat.urutan);
 
             return !!(col && col.penawaran);
+        },
+        /** Tahap aktif adalah titik tuntas — meloloskan di sini = diterima bekerja. */
+        tahapTuntas() {
+            if (!this.detailKandidat) return false;
+            const col = (this.detail.kolom || []).find((k) => k.urutan === this.detailKandidat.urutan);
+
+            return !!(col && col.tuntas);
         },
         /**
          * Keputusan PERUSAHAAN yang boleh muncul untuk kandidat ini.
@@ -1219,9 +1278,28 @@ export default {
         putusanKandidat() {
             if (!this.detailKandidat) return [];
 
+            // Pada tahap berpenawaran, TIDAK ADA jawaban kandidat yang masuk akal
+            // sebelum penawarannya benar-benar diajukan — belum ada yang bisa
+            // ditolak. Di tahap lain, mundur tetap boleh kapan saja.
+            if (this.tahapPenawaran && !this.detailKandidat.penawaranDiajukan) return [];
+
             return this.hasilKeputusan.filter(
                 (h) => h.olehKandidat && (this.tahapPenawaran || h.kode !== 'DITOLAK_KANDIDAT'),
             );
+        },
+        /** Tahap penawaran yang suratnya belum diajukan — tim masih menyiapkan. */
+        penawaranBelumDiajukan() {
+            return this.tahapPenawaran && !this.detailKandidat?.penawaranDiajukan;
+        },
+        /**
+         * Aktivitas penawaran yang menahan gerbang — untuk ditunjuk namanya.
+         * Yang berjadwal didahulukan: itulah langkah yang benar-benar bisa
+         * dikerjakan sekarang (mengatur pertemuan), bukan suratnya.
+         */
+        aktivitasPenawaran() {
+            const sisa = (this.detailKandidat?.tests || []).filter((t) => t.penawaran && !t.selesai);
+
+            return sisa.find((t) => t.butuhJadwal) || sisa[0] || null;
         },
         /** Menggugurkan menuntut centang persetujuan dulu; yang lain langsung boleh. */
         /** DARING wajib tautan, LURING wajib lokasi; keduanya wajib waktu mulai. */
@@ -1385,6 +1463,10 @@ export default {
             if (h.lolos) return 'is-lolos';
 
             return h.talentPool && !h.kirimEmail ? 'is-talent' : 'is-gugur';
+        },
+        /** "Loloskan" jadi "Terima" pada tahap yang menutup proses. */
+        labelPutus(h) {
+            return h.lolos && this.tahapTuntas ? 'Terima' : h.labelTombol;
         },
         ukuran(b) {
             if (!b) return '';
@@ -1612,12 +1694,16 @@ export default {
         /* ── Rapor tes (multi-tes) ── */
         pillTes(t) {
             if (t.status === 'TIDAK_HADIR') return 'is-absent';
+            // Surat penawaran tidak menunggu apa pun — dokumennya diunggah saat
+            // keputusan diambil, jadi lencana "Menunggu" hanya menyesatkan.
+            if (t.infoSaja && t.status !== 'SELESAI') return 'is-note';
             if (t.status !== 'SELESAI') return t.status === 'DIJADWALKAN' ? 'is-sched' : 'is-wait';
             if (t.peran === 'INFORMATIF') return 'is-done';
             return t.hasil === 'LULUS' ? 'is-pass' : 'is-fail';
         },
         labelTes(t) {
             if (t.status === 'TIDAK_HADIR') return 'Tidak hadir';
+            if (t.infoSaja && t.status !== 'SELESAI') return 'Diunggah saat keputusan';
             // Ujian online: sebutkan yang sedang ditunggu. "Menunggu" saja bikin
             // admin mengira ada yang harus ia kerjakan, padahal giliran sistem.
             if (t.status === 'DIJADWALKAN') return t.online ? 'Menunggu hasil HCLearn' : 'Dijadwalkan';
@@ -2054,6 +2140,7 @@ export default {
 .plw-test__name { font-size: 13px; font-weight: 700; color: #1e2447; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .plw-test__tag { font-size: 10px; font-weight: 700; border-radius: 999px; padding: 1px 7px; background: #f1f5f9; color: #64748b; }
 .plw-test__tag.is-info { background: #eef2ff; color: #4338ca; }
+.plw-test__tag.is-offer { background: rgba(124, 58, 237, .1); color: #6d28d9; }
 .plw-test__sub { font-size: 11px; color: #94a3b8; margin-top: 1px; }
 .plw-test__score { font-size: 15px; font-weight: 800; color: #4f46e5; font-variant-numeric: tabular-nums; }
 .plw-test__pill { flex: none; font-size: 11px; font-weight: 700; border-radius: 999px; padding: 3px 10px; }
@@ -2062,6 +2149,8 @@ export default {
 .plw-test__pill.is-done { background: rgba(99, 102, 241, .12); color: #4338ca; }
 .plw-test__pill.is-sched { background: rgba(14, 165, 233, .12); color: #0369a1; }
 .plw-test__pill.is-wait { background: #f1f5f9; color: #64748b; }
+/* Keterangan, bukan keadaan menunggu — nadanya sengaja paling tenang. */
+.plw-test__pill.is-note { background: rgba(124, 58, 237, .09); color: #6d28d9; font-weight: 600; }
 .plw-test__pill.is-absent { background: rgba(148, 163, 184, .18); color: #475569; }
 .plw-test__skip { flex: none; display: inline-flex; align-items: center; gap: 5px; border: 1px solid #fca5a5; background: #fff; color: #b91c1c; font-size: 11px; font-weight: 700; border-radius: 9px; padding: 5px 9px; cursor: pointer; transition: background .15s; }
 .plw-test__skip:hover { background: #fef2f2; }
