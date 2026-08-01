@@ -131,6 +131,29 @@
                             <td style="padding:5px 0 5px 12px;font-size:13px;font-weight:700;color:#334155;font-family:'Inter',Arial,sans-serif;text-align:right">{{ $tglLahir }}</td>
                         </tr>
                     @endif
+                    @if ($jkel)
+                        <tr><td colspan="2" style="border-top:1px solid #eef0f7;font-size:0;line-height:0">&nbsp;</td></tr>
+                        <tr>
+                            <td style="padding:5px 0;font-size:12px;color:#8b93a7;font-family:'Inter',Arial,sans-serif;white-space:nowrap;vertical-align:top">Jenis Kelamin</td>
+                            <td style="padding:5px 0 5px 12px;font-size:13px;font-weight:700;color:#334155;font-family:'Inter',Arial,sans-serif;text-align:right">{{ $jkel }}</td>
+                        </tr>
+                    @endif
+                    @if ($kampus)
+                        <tr><td colspan="2" style="border-top:1px solid #eef0f7;font-size:0;line-height:0">&nbsp;</td></tr>
+                        <tr>
+                            <td style="padding:5px 0;font-size:12px;color:#8b93a7;font-family:'Inter',Arial,sans-serif;white-space:nowrap;vertical-align:top">Asal Kampus</td>
+                            <td style="padding:5px 0 5px 12px;font-family:'Inter',Arial,sans-serif;text-align:right">
+                                <div title="{{ $kampus }}" style="max-width:210px;margin-left:auto;font-size:13px;font-weight:700;color:#334155;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ $kampus }}</div>
+                            </td>
+                        </tr>
+                    @endif
+                    @if ($hp)
+                        <tr><td colspan="2" style="border-top:1px solid #eef0f7;font-size:0;line-height:0">&nbsp;</td></tr>
+                        <tr>
+                            <td style="padding:5px 0;font-size:12px;color:#8b93a7;font-family:'Inter',Arial,sans-serif;white-space:nowrap;vertical-align:top">No. Telepon</td>
+                            <td style="padding:5px 0 5px 12px;font-size:13px;font-weight:700;color:#334155;font-family:'Inter',Arial,sans-serif;text-align:right">{{ $hp }}</td>
+                        </tr>
+                    @endif
                     @if ($email)
                         <tr><td colspan="2" style="border-top:1px solid #eef0f7;font-size:0;line-height:0">&nbsp;</td></tr>
                         <tr>

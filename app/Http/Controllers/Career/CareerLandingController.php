@@ -115,6 +115,10 @@ class CareerLandingController extends Controller
             $id = $posisiProgram[0]['id'];
         }
 
+        // ID asing/kedaluwarsa tidak boleh membuka formulir generik yang seolah
+        // berhasil tetapi tidak pernah mempunyai target lamaran di database.
+        abort_unless($this->cariKartuPosisi($id), 404);
+
         return Inertia::render(
             'Career/ApplyForm',
             array_merge($this->layoutShared(), [
@@ -131,26 +135,16 @@ class CareerLandingController extends Controller
         // sehingga langkah formulir & aturan kelayakan MT yang berlaku.
         $kartu = $this->cariKartuPosisi($id);
         $induk = $kartu['induk'] ?? null;
-        if ($kartu) {
-            $job = [
-                'posisi' => $kartu['posisi'],
-                'program' => $induk
-                    ? trim(($induk['batch'] ? $induk['batch'] . ' · ' : '') . $induk['nama'])
-                    : ($kartu['perusahaan'] ?? 'EVO Group'),
-                'kategori' => $induk ? 'MT' : 'REKRUTMEN',
-                'lokasi' => $this->lokasiLabel($kartu),
-            ];
-            // ID nyata (kalau kartu ini dari DB) agar finalisasi bisa membuat lamaran.
-            $job['pembukaanId'] = $kartu['pembukaanId'] ?? null;
-            $job['posisiId'] = $kartu['posisiId'] ?? null;
-        } else {
-            $job = [
-                'posisi' => 'Lowongan EVO Group',
-                'program' => 'EVO Group',
-                'kategori' => 'REKRUTMEN',
-                'lokasi' => 'Palembang',
-            ];
-        }
+        $job = [
+            'posisi' => $kartu['posisi'],
+            'program' => $induk
+                ? trim(($induk['batch'] ? $induk['batch'] . ' · ' : '') . $induk['nama'])
+                : ($kartu['perusahaan'] ?? 'EVO Group'),
+            'kategori' => $kartu['kategori'] ?? ($induk ? 'MT' : 'REKRUTMEN'),
+            'lokasi' => $this->lokasiLabel($kartu),
+            'pembukaanId' => $kartu['pembukaanId'],
+            'posisiId' => $kartu['posisiId'],
+        ];
         $isMt = $job['kategori'] === 'MT';
 
         if ($isMt && $form === 2) {
@@ -204,7 +198,7 @@ class CareerLandingController extends Controller
             // Dulu halaman apply memakai daftar tahap yang ditulis di berkas JS,
             // jadi kandidat melihat alur karangan — bukan alur yang benar-benar
             // dijalankan. Kosong hanya bila program belum punya alur.
-            'pipeline' => $mt['pipeline'] ?? ($lo['pipeline'] ?? []),
+            'pipeline' => $kartu['pipeline'] ?? [],
             // Syarat asli tahap pertama, apa adanya dari Master Program → Syarat.
             'syarat' => $this->syaratTahapPertama($job['pembukaanId'] ?? null),
         ];
@@ -1355,6 +1349,7 @@ class CareerLandingController extends Controller
             'sumberDb' => true,
             'pembukaanId' => Hashids::encode($pb->Id_Pembukaan),
             'posisiId' => Hashids::encode($x->Id_Program_Posisi),
+            'kategori' => $pb->Kategori,
             'posisi' => $x->Posisi,
             // Nama perusahaan internal DISEMBUNYIKAN — cukup grup.
             'perusahaan' => 'EVO Group',

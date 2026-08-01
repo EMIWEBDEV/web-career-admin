@@ -76,8 +76,14 @@ class MasterAlurController extends Controller
                         'mode' => $t->Mode_Keputusan_Kode ?? 'MANUAL_REVIEW',
                         'tests' => collect($subTes->get($t->Id_Master_Alur_Tahap, []))->map(fn ($x) => [
                             'label' => $x->Label,
-                            // Tipe milik aktivitas ini — boleh beda dari tahapnya.
-                            'tipe' => $x->Tipe_Tahap_Kode ?: $t->Tipe_Tahap_Kode,
+                            // Tipe milik aktivitas ini APA ADANYA — tidak diisi
+                            // diam-diam dengan tipe tahapnya. Builder memakai
+                            // nilai ini sebagai isi kotak "Tipe Aktivitas";
+                            // menggantinya di sini membuat layar tidak lagi
+                            // menampilkan apa yang benar-benar tersimpan.
+                            // Semua pemakai lain sudah punya cadangannya sendiri
+                            // (`?: tipe tahap`), jadi baris ini aman apa adanya.
+                            'tipe' => $x->Tipe_Tahap_Kode,
                             'provider' => $x->Provider,
                             'peran' => $x->Peran,
                             'wajib' => $x->Wajib === 'Y',
@@ -93,6 +99,8 @@ class MasterAlurController extends Controller
                         // Upload berkas hasil tahap (MCU/Interview) — aktif & wajib/tidak.
                         'uploadHasil' => ($t->Flag_Upload_Hasil ?? 'T') === 'Y',
                         'wajibUpload' => ($t->Flag_Wajib_Upload ?? 'T') === 'Y',
+                        // TITIK TUNTAS: tahap yang menutup proses seleksi.
+                        'tuntas' => ($t->Flag_Tuntas ?? 'T') === 'Y',
                     ])->values(),
                 ];
             })->values();
@@ -167,17 +175,42 @@ class MasterAlurController extends Controller
             // Upload berkas hasil tahap (MCU/Interview) + wajib/opsional.
             'stages.*.uploadHasil' => 'nullable|boolean',
             'stages.*.wajibUpload' => 'nullable|boolean',
+            // TITIK TUNTAS — "tahap ini menutup proses seleksi".
+            //
+            // Sempat hilang dari daftar ini. validate() hanya mengembalikan key
+            // yang PUNYA aturan, jadi `tuntas` yang dikirim layar ikut terbuang
+            // sebelum sampai ke simpanTahap(): saklarnya bisa dinyalakan,
+            // disimpan, dan Flag_Tuntas tetap 'T' tanpa satu pun pesan galat.
+            'stages.*.tuntas' => 'nullable|boolean',
         ];
     }
 
-    /** Hapus tahap sebuah alur BESERTA sub-tesnya (cegah baris yatim). */
-    private function hapusTahap(int $alurId): void
+    /**
+     * Buang tahap SISA — yang urutannya melampaui jumlah tahap versi baru.
+     *
+     * Dulu seluruh tahap dihapus lalu dibuat ulang setiap kali alur disimpan.
+     * Akibatnya Id_Master_Alur_Tahap selalu berganti, sementara setiap lamaran
+     * yang sedang berjalan menyimpan id itu di Lamaran_Tahap.Master_Alur_Tahap_Id.
+     * Sekali alurnya disunting, seluruh lamaran berjalan kehilangan rujukan ke
+     * definisi tahapnya — tahap yang belum dimulai tidak lagi bisa mengambil
+     * daftar aktivitasnya, dan yang muncul cuma satu aktivitas darurat bikinan
+     * pastikanSubTes(). Sekarang barisnya DIPAKAI ULANG per urutan; yang
+     * benar-benar dihapus hanya tahap yang memang dibuang dari alur.
+     */
+    private function hapusTahapSisa(int $alurId, int $jumlahBaru): void
     {
-        $tahapIds = DB::table('N_WEB_CAREERS_Master_Alur_Tahap')->where('Master_Alur_Id', $alurId)->pluck('Id_Master_Alur_Tahap')->all();
-        if ($tahapIds) {
-            DB::table('N_WEB_CAREERS_Master_Alur_Tahap_Tes')->whereIn('Master_Alur_Tahap_Id', $tahapIds)->delete();
+        $sisa = DB::table('N_WEB_CAREERS_Master_Alur_Tahap')
+            ->where('Master_Alur_Id', $alurId)
+            ->where('Urutan', '>', $jumlahBaru)
+            ->pluck('Id_Master_Alur_Tahap')
+            ->all();
+
+        if (! $sisa) {
+            return;
         }
-        DB::table('N_WEB_CAREERS_Master_Alur_Tahap')->where('Master_Alur_Id', $alurId)->delete();
+
+        DB::table('N_WEB_CAREERS_Master_Alur_Tahap_Tes')->whereIn('Master_Alur_Tahap_Id', $sisa)->delete();
+        DB::table('N_WEB_CAREERS_Master_Alur_Tahap')->whereIn('Id_Master_Alur_Tahap', $sisa)->delete();
     }
 
     private function simpanTahap(int $alurId, array $stages, ?int $userId, string $userName): void
@@ -196,6 +229,12 @@ class MasterAlurController extends Controller
         $modeSemua = DB::table('N_WEB_CAREERS_Master_Mode_Keputusan')->where('Flag_Aktif', 'Y')->orderBy('Urutan')->get();
         $autoLanjut = $modeSemua->pluck('Auto_Lanjut', 'Kode');
         $autoGugur = $modeSemua->pluck('Auto_Gugur', 'Kode');
+
+        // TITIK TUNTAS HANYA SATU per alur. Layar sudah menjaganya, tapi dua
+        // titik tuntas berarti dua momen "kandidat diterima" — kuota terpotong
+        // dua kali dan laporan penerimaan tak bisa dipercaya. Dijaga di sini
+        // juga karena permintaan bisa datang tanpa lewat layar.
+        $tuntasTerpakai = false;
 
         foreach (array_values($stages) as $i => $s) {
             $kode = trim(preg_replace('/[^A-Z0-9]+/', '_', strtoupper($s['label'])), '_') ?: ('TAHAP_' . ($i + 1));
@@ -267,7 +306,10 @@ class MasterAlurController extends Controller
             $pengumuman = $s['pengumuman'] ?? 'OTOMATIS';
             $jeda = ($modeButuhJeda[$pengumuman] ?? false) ? ($s['jedaHari'] ?? null) : null;
 
-            $tahapId = DB::table('N_WEB_CAREERS_Master_Alur_Tahap')->insertGetId([
+            $tuntas = ! $tuntasTerpakai && ($s['tuntas'] ?? false);
+            $tuntasTerpakai = $tuntasTerpakai || $tuntas;
+
+            $isi = [
                 'Master_Alur_Id' => $alurId,
                 'Urutan' => $i + 1,
                 'Kode' => substr($kode, 0, 30),
@@ -293,12 +335,33 @@ class MasterAlurController extends Controller
                 // Tahap; dulu kode 'MCU' ditulis langsung di beberapa file).
                 'Flag_Upload_Hasil' => (($s['uploadHasil'] ?? false) || ($tipe[$s['tipe']]->Flag_Upload_Hasil ?? 'T') === 'Y') ? 'Y' : 'T',
                 'Flag_Wajib_Upload' => ($s['wajibUpload'] ?? false) ? 'Y' : 'T',
-                'Created_At' => $now, 'Created_By' => $userName, 'Created_By_Id' => $userId,
+                'Flag_Tuntas' => $tuntas ? 'Y' : 'T',
                 'Updated_At' => $now, 'Updated_By' => $userName, 'Updated_By_Id' => $userId,
-            ], 'Id_Master_Alur_Tahap');
+            ];
+
+            // PAKAI ULANG baris yang sudah ada pada urutan ini — id-nya dipegang
+            // lamaran yang sedang berjalan, jadi tidak boleh berganti.
+            $tahapId = DB::table('N_WEB_CAREERS_Master_Alur_Tahap')
+                ->where('Master_Alur_Id', $alurId)
+                ->where('Urutan', $i + 1)
+                ->value('Id_Master_Alur_Tahap');
+
+            if ($tahapId) {
+                DB::table('N_WEB_CAREERS_Master_Alur_Tahap')->where('Id_Master_Alur_Tahap', $tahapId)->update($isi);
+            } else {
+                $tahapId = DB::table('N_WEB_CAREERS_Master_Alur_Tahap')->insertGetId(
+                    $isi + ['Created_At' => $now, 'Created_By' => $userName, 'Created_By_Id' => $userId],
+                    'Id_Master_Alur_Tahap',
+                );
+            }
+
+            // Sub-tes diperlakukan sama: dipakai ulang per urutan, sisanya dibuang.
+            $tesLama = DB::table('N_WEB_CAREERS_Master_Alur_Tahap_Tes')
+                ->where('Master_Alur_Tahap_Id', $tahapId)
+                ->pluck('Id_Master_Alur_Tahap_Tes', 'Urutan');
 
             foreach ($tests as $j => $t) {
-                DB::table('N_WEB_CAREERS_Master_Alur_Tahap_Tes')->insert([
+                $isiTes = [
                     'Master_Alur_Tahap_Id' => $tahapId,
                     'Urutan' => $j + 1,
                     'Jenis_Tes_Kode' => null,
@@ -311,11 +374,26 @@ class MasterAlurController extends Controller
                     'Wajib' => 'Y',
                     'Ambang_Batas' => $t['ambang'] ?? null,
                     'Label' => $t['label'],
-                    'Created_At' => $now, 'Created_By' => $userName, 'Created_By_Id' => $userId,
                     'Updated_At' => $now, 'Updated_By' => $userName, 'Updated_By_Id' => $userId,
-                ]);
+                ];
+
+                $tesId = $tesLama[$j + 1] ?? null;
+                if ($tesId) {
+                    DB::table('N_WEB_CAREERS_Master_Alur_Tahap_Tes')->where('Id_Master_Alur_Tahap_Tes', $tesId)->update($isiTes);
+                } else {
+                    DB::table('N_WEB_CAREERS_Master_Alur_Tahap_Tes')->insert(
+                        $isiTes + ['Created_At' => $now, 'Created_By' => $userName, 'Created_By_Id' => $userId],
+                    );
+                }
             }
+
+            DB::table('N_WEB_CAREERS_Master_Alur_Tahap_Tes')
+                ->where('Master_Alur_Tahap_Id', $tahapId)
+                ->where('Urutan', '>', count($tests))
+                ->delete();
         }
+
+        $this->hapusTahapSisa($alurId, count($stages));
     }
 
     public function store(Request $request)
@@ -373,7 +451,9 @@ class MasterAlurController extends Controller
                     'Deskripsi' => $data['deskripsi'] ?? null,
                     'Updated_At' => now(), 'Updated_By' => $userName, 'Updated_By_Id' => $userId,
                 ]);
-                $this->hapusTahap($realId);
+                // TIDAK dihapus lebih dulu: simpanTahap() memakai ulang baris per
+                // urutan dan membuang sisanya sendiri, supaya id tahap tetap sama
+                // bagi lamaran yang sedang berjalan di alur ini.
                 $this->simpanTahap($realId, $data['stages'] ?? [], $userId, $userName);
             });
 
@@ -420,7 +500,8 @@ class MasterAlurController extends Controller
                 return ResponseHelper::error('Data tidak ditemukan', 404);
             }
             DB::transaction(function () use ($realId) {
-                $this->hapusTahap($realId);
+                // Alurnya memang dibuang seluruhnya di sini — jumlah tahap baru 0.
+                $this->hapusTahapSisa($realId, 0);
                 DB::table('N_WEB_CAREERS_Master_Alur')->where('Id_Master_Alur', $realId)->delete();
             });
             Log::channel('web_career')->info("Master alur #{$realId} dihapus");

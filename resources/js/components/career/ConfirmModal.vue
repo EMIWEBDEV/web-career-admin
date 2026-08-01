@@ -1,7 +1,17 @@
 <!-- WEB CAREER — Modal konfirmasi reusable (hapus / aksi berbahaya). Elegan, tombol danger. -->
 <template>
     <AdminModal :show="show" :title="title" :subtitle="subtitle" :icon="icon" @close="$emit('cancel')">
-        <div class="cfm">
+        <!-- MODE FORMULIR. Isi modal ini biasanya satu kalimat konfirmasi, jadi
+             bawaannya rata tengah di dalam <p> dan diberi ikon peringatan besar.
+             Untuk modal yang isinya BORANG — label, input, pilihan — bentuk itu
+             salah pada dua hal sekaligus: <div> di dalam <p> dikeluarkan sendiri
+             oleh peramban (tata letaknya jadi tak bisa diatur), dan label rata
+             tengah membuat borang tidak punya garis baca. -->
+        <div v-if="formMode" class="cfm cfm--form">
+            <slot />
+            <p v-if="note" class="cfm__note">{{ note }}</p>
+        </div>
+        <div v-else class="cfm">
             <span class="cfm__ico" :class="danger ? 'is-danger' : 'is-warn'">
                 <i class="bi" :class="danger ? 'bi-trash3' : 'bi-exclamation-triangle'"></i>
             </span>
@@ -35,6 +45,9 @@ export default {
         // Kunci tombol konfirmasi selama syarat di dalam modal belum terpenuhi
         // (mis. centang persetujuan sebelum menggugurkan kandidat).
         confirmDisabled: { type: Boolean, default: false },
+        // Isi modal berupa BORANG, bukan kalimat konfirmasi: rata kiri, tanpa
+        // ikon peringatan, dan slot-nya tidak dibungkus <p>.
+        formMode: { type: Boolean, default: false },
         confirmLabel: { type: String, default: 'Ya, Lanjutkan' },
         cancelLabel: { type: String, default: 'Batal' },
         busyLabel: { type: String, default: 'Memproses…' },
@@ -45,6 +58,7 @@ export default {
 
 <style scoped>
 .cfm { text-align: center; padding: 8px 6px 2px; }
+.cfm--form { text-align: left; padding: 2px 2px 4px; }
 .cfm__ico {
     display: inline-grid;
     place-items: center;

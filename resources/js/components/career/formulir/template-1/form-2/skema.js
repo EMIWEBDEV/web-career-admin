@@ -15,6 +15,23 @@
  *  Bentuk field & daftar operator syarat: lihat form-1/skema.js.
  * ══════════════════════════════════════════════════════════════════════
  */
+/**
+ * Pilihan tahun lulus: 2018 sampai 4 tahun ke depan.
+ *
+ * Dihitung dari tanggal berjalan, bukan daftar tetap — kalau ditulis manual,
+ * daftarnya diam-diam basi setiap pergantian tahun. Batas atas +4 memberi ruang
+ * bagi mahasiswa tingkat awal yang mengisi "perkiraan lulus".
+ */
+const TAHUN_LULUS = (() => {
+    const kini = new Date().getFullYear();
+    const out = [];
+    for (let t = kini + 4; t >= 2018; t--) out.push(String(t));
+    return out;
+})();
+
+/** Syarat yang membuka kunci ketiga data akun di langkah Validasi. */
+const BUKA_EDIT = { field: 'data_sesuai', operator: '=', nilai: 'Perlu diperbarui' };
+
 export const SKEMA = {
     template: 'TEMPLATE_1',
     layout: 'BERTAHAP',
@@ -30,9 +47,39 @@ export const SKEMA = {
                     judul: 'A. Validasi Data Peserta',
                     deskripsi: 'Data di bawah terisi otomatis dari akun Anda — tidak perlu diketik ulang.',
                     field: [
-                        { key: 'v_nama', label: 'Nama Lengkap', tipe: 'prefill', prefill: 'nama' },
-                        { key: 'v_email', label: 'Email Terdaftar', tipe: 'prefill', prefill: 'email' },
-                        { key: 'v_wa', label: 'No. WhatsApp Terdaftar', tipe: 'prefill', prefill: 'hp' },
+                        // Data akun ditampilkan terkunci. Bila kandidat memilih
+                        // "Perlu diperbarui", ketiganya TERBUKA untuk disunting
+                        // langsung — bukan diketik ulang di kolom bebas. Kolom
+                        // bebas memaksa tim menyalin manual dan mudah salah baca;
+                        // memperbaiki di tempatnya membuat datanya langsung
+                        // terstruktur dan bisa divalidasi.
+                        {
+                            key: 'v_nama',
+                            label: 'Nama Lengkap',
+                            tipe: 'prefill',
+                            prefill: 'nama',
+                            buka_jika: BUKA_EDIT,
+                            tipe_buka: 'text',
+                            wajib: true,
+                        },
+                        {
+                            key: 'v_email',
+                            label: 'Email Terdaftar',
+                            tipe: 'prefill',
+                            prefill: 'email',
+                            buka_jika: BUKA_EDIT,
+                            tipe_buka: 'email',
+                            wajib: true,
+                        },
+                        {
+                            key: 'v_wa',
+                            label: 'No. WhatsApp Terdaftar',
+                            tipe: 'prefill',
+                            prefill: 'hp',
+                            buka_jika: BUKA_EDIT,
+                            tipe_buka: 'phone',
+                            wajib: true,
+                        },
                         {
                             key: 'data_sesuai',
                             label: 'Apakah data di atas sudah sesuai?',
@@ -40,16 +87,7 @@ export const SKEMA = {
                             wajib: true,
                             opsi: ['Sesuai', 'Perlu diperbarui'],
                             penuh: true,
-                        },
-                        // Kolom koreksi baru muncul bila memang ada yang salah —
-                        // inilah "Buka Opsi Edit" di berkas referensi.
-                        {
-                            key: 'data_koreksi',
-                            label: 'Tuliskan data yang benar',
-                            tipe: 'textarea',
-                            wajib: true,
-                            ph: 'mis. No. WhatsApp yang benar: 62812xxxxxxx',
-                            tampil_jika: { field: 'data_sesuai', operator: '=', nilai: 'Perlu diperbarui' },
+                            bantuan: 'Pilih "Perlu diperbarui" untuk menyunting data di atas.',
                         },
                     ],
                 },
@@ -67,8 +105,25 @@ export const SKEMA = {
                     field: [
                         { key: 'alamat_ktp', label: 'Alamat Lengkap (Sesuai KTP)', tipe: 'textarea', wajib: true, ph: 'Jalan, RT/RW, kelurahan, kecamatan, kota, provinsi' },
                         { key: 'alamat_domisili', label: 'Alamat Domisili Saat Ini', tipe: 'textarea', wajib: false, ph: 'Kosongkan jika sama dengan alamat KTP', bantuan: 'Tidak perlu diisi bila sama dengan alamat KTP.' },
-                        { key: 'perguruan_tinggi', label: 'Nama Perguruan Tinggi', tipe: 'text', wajib: true, dapat_disaring: true },
-                        { key: 'tahun_lulus', label: 'Tahun Lulus / Perkiraan Lulus', tipe: 'text', wajib: true, ph: 'mis. 2026' },
+                        {
+                            // TERKUNCI. Kampus sudah dipilih kandidat dari Master
+                            // Kampus saat melamar, jadi menanyakannya lagi hanya
+                            // membuka peluang dua jawaban berbeda untuk orang yang
+                            // sama. Tanpa `buka_jika`, field ini permanen baca-saja.
+                            key: 'perguruan_tinggi',
+                            label: 'Nama Perguruan Tinggi',
+                            tipe: 'prefill',
+                            prefill: 'kampus',
+                            penuh: true,
+                        },
+                        {
+                            key: 'tahun_lulus',
+                            label: 'Tahun Lulus / Perkiraan Lulus',
+                            tipe: 'select',
+                            wajib: true,
+                            ph: 'Pilih tahun',
+                            opsi: TAHUN_LULUS,
+                        },
                         {
                             key: 'ketersediaan_proses',
                             label: 'Status Ketersediaan Mengikuti Proses Rekrutmen',
@@ -93,7 +148,15 @@ export const SKEMA = {
                     field: [
                         { key: 'darurat_nama', label: 'Nama Kontak Darurat', tipe: 'text', wajib: true },
                         { key: 'darurat_hubungan', label: 'Hubungan dengan Peserta', tipe: 'text', wajib: true, ph: 'mis. Orang tua / Saudara' },
-                        { key: 'darurat_hp', label: 'No. Handphone Kontak Darurat', tipe: 'phone', wajib: true, ph: '628xxxxxxxxx', bantuan: 'Wajib berawalan 62. Ketik 08… otomatis jadi 628…' },
+                        {
+                            key: 'darurat_hp',
+                            label: 'No. Handphone Kontak Darurat',
+                            tipe: 'phone',
+                            wajib: true,
+                            ph: '81234567890',
+                            bantuan: 'Pilih kode negara di sebelah kiri. Harus berbeda dari nomor WhatsApp Anda.',
+                            beda_dengan: 'v_wa',
+                        },
                     ],
                 },
             ],
@@ -128,10 +191,10 @@ export const SKEMA = {
                     judul: 'E. Kelengkapan Dokumen',
                     deskripsi: 'Format PDF. Ukuran dibatasi agar penyimpanan tidak cepat penuh.',
                     field: [
-                        { key: 'dok_cv', label: 'Upload CV Terbaru', tipe: 'file', wajib: true, accept: '.pdf', maks_mb: 2 },
-                        { key: 'dok_transkrip', label: 'Upload Transkrip Nilai', tipe: 'file', wajib: true, accept: '.pdf', maks_mb: 2 },
-                        { key: 'dok_ijazah', label: 'Upload Ijazah / Surat Keterangan Lulus', tipe: 'file', wajib: false, accept: '.pdf', maks_mb: 2 },
-                        { key: 'dok_sertifikat', label: 'Upload Sertifikat Pendukung (jika ada)', tipe: 'file', wajib: false, accept: '.pdf', maks_mb: 5 },
+                        { key: 'dok_cv', label: 'Upload CV Terbaru', tipe: 'file', wajib: true, accept: '.pdf', maks_mb: 2, penuh: true },
+                        { key: 'dok_transkrip', label: 'Upload Transkrip Nilai', tipe: 'file', wajib: true, accept: '.pdf', maks_mb: 2, penuh: true },
+                        { key: 'dok_ijazah', label: 'Upload Ijazah / Surat Keterangan Lulus', tipe: 'file', wajib: false, accept: '.pdf', maks_mb: 2, penuh: true },
+                        { key: 'dok_sertifikat', label: 'Upload Sertifikat Pendukung (jika ada)', tipe: 'file', wajib: false, accept: '.pdf', maks_mb: 5, penuh: true },
                     ],
                 },
             ],

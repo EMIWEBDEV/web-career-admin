@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Career\Penjadwalan;
 
 use App\Helpers\ResponseHelper;
 use App\Http\Controllers\Controller;
+use App\Jobs\Career\WcPenjadwalanJob;
 use App\Services\WebCareers\HclClient;
 use App\Support\CareerShell;
 use Illuminate\Http\Request;
@@ -82,6 +83,29 @@ class PenjadwalanController extends Controller
      * ujian online, tes manual, dan wawancara sekaligus, dan yang dijadwalkan
      * lewat HCLearn hanya yang ujian online.
      */
+    /**
+     * Kode penjadwalan berikutnya yang DIPASTIKAN belum dipakai.
+     *
+     * Bukan sekadar `max(id)+1`: id bisa terulang setelah penghapusan, dan dua
+     * permintaan bersamaan bisa membaca angka yang sama. Dicari dari nomor
+     * tertinggi yang ada lalu dinaikkan sampai benar-benar bebas.
+     */
+    private function kodeBaru(): string
+    {
+        $terakhir = DB::table('N_WEB_CAREERS_Penjadwalan')
+            ->where('Kode', 'like', 'JDW-%')
+            ->orderByDesc('Id_Penjadwalan')
+            ->value('Kode');
+        $n = (int) preg_replace('/\\D/', '', (string) $terakhir);
+
+        do {
+            $n++;
+            $kode = 'JDW-' . str_pad((string) $n, 4, '0', STR_PAD_LEFT);
+        } while (DB::table('N_WEB_CAREERS_Penjadwalan')->where('Kode', $kode)->exists());
+
+        return $kode;
+    }
+
     private function tipeCat(): array
     {
         return DB::table('N_WEB_CAREERS_Master_Tipe_Tahap')
@@ -362,19 +386,59 @@ class PenjadwalanController extends Controller
         return "Belum ada pelamar yang sampai di tahap ini. Saat ini mereka di: {$ringkas}.";
     }
 
-    public function list()
+    /**
+     * GET /api/v1/penjadwalan — DAFTAR PENJADWALAN, disaring & dipaginasi.
+     *
+     * Dulu endpoint ini memuat SELURUH penjadwalan beserta seluruh tahap dan
+     * seluruh pesertanya sekaligus. Satu program bisa berisi puluhan sesi dan
+     * ratusan peserta, jadi ongkosnya tumbuh tanpa batas padahal admin hanya
+     * melihat beberapa baris teratas. Sekarang: header saja, 10 per halaman,
+     * bisa disaring. Daftar pesertanya diambil terpisah saat baris dibuka
+     * (lihat `peserta()`), sehingga yang tidak dibuka tidak pernah dikueri.
+     */
+    public function list(Request $request)
     {
         try {
-            $rows = DB::table('N_WEB_CAREERS_Penjadwalan as j')
+            $q = trim((string) $request->query('q', ''));
+            $programId = (int) $request->query('programId', 0);
+            $status = trim((string) $request->query('status', ''));
+            $perPage = min(max((int) $request->query('perPage', 10), 1), 50);
+            $page = max((int) $request->query('page', 1), 1);
+
+            $dasar = DB::table('N_WEB_CAREERS_Penjadwalan as j')
                 ->leftJoin('N_WEB_CAREERS_Program as p', 'p.Id_Program', '=', 'j.Program_Id')
                 ->leftJoin('N_WEB_CAREERS_Master_Alur as a', 'a.Id_Master_Alur', '=', 'j.Master_Alur_Id')
                 ->leftJoin('N_WEB_CAREERS_Users as u', 'u.Id_Users', '=', 'j.Created_By_Id')
+                ->when($programId, fn ($x) => $x->where('j.Program_Id', $programId))
+                ->when($status !== '', fn ($x) => $x->where('j.Status', $status))
+                ->when($q !== '', fn ($x) => $x->where(function ($w) use ($q) {
+                    $w->where('j.Kode', 'like', "%{$q}%")
+                        ->orWhere('j.Nama', 'like', "%{$q}%")
+                        ->orWhere('p.Nama', 'like', "%{$q}%");
+                }));
+
+            $total = (clone $dasar)->count();
+
+            $rows = $dasar
                 ->orderByDesc('j.Id_Penjadwalan')
+                ->forPage($page, $perPage)
                 ->select('j.*', 'p.Nama as ProgramNama', 'p.Kategori as ProgramKategori', 'a.Nama as AlurNama', 'u.Nama as Pembuat')
                 ->get();
 
-            $tahap = DB::table('N_WEB_CAREERS_Penjadwalan_Tahap')->orderBy('Urutan')->get()->groupBy('Penjadwalan_Id');
-            $peserta = DB::table('N_WEB_CAREERS_Penjadwalan_Peserta')->orderBy('Id_Penjadwalan_Peserta')->get()->groupBy('Penjadwalan_Id');
+            // Tahap hanya untuk baris yang benar-benar tampil.
+            $tahap = $rows->isEmpty() ? collect() : DB::table('N_WEB_CAREERS_Penjadwalan_Tahap')
+                ->whereIn('Penjadwalan_Id', $rows->pluck('Id_Penjadwalan')->all())
+                ->orderBy('Urutan')->get()->groupBy('Penjadwalan_Id');
+
+            // Berapa peserta yang jendelanya SUDAH digeser sendiri. Dipakai kepala
+            // akordion untuk berterus terang: jendela di sana cuma nilai BAWAAN,
+            // dan begitu ada yang digeser ia tak lagi berlaku untuk semua orang.
+            $digeser = $rows->isEmpty() ? collect() : DB::table('N_WEB_CAREERS_Penjadwalan_Peserta')
+                ->whereIn('Penjadwalan_Id', $rows->pluck('Id_Penjadwalan')->all())
+                ->whereNotNull('Waktu_Mulai')
+                ->groupBy('Penjadwalan_Id')
+                ->select('Penjadwalan_Id', DB::raw('COUNT(*) as jml'))
+                ->pluck('jml', 'Penjadwalan_Id');
 
             $data = $rows->map(fn ($j) => [
                 'id' => Hashids::encode($j->Id_Penjadwalan),
@@ -398,27 +462,95 @@ class PenjadwalanController extends Controller
                     'waktuAkhir' => $t->Waktu_Akhir,
                     'status' => $t->Status,
                 ])->values(),
-                'peserta' => collect($peserta->get($j->Id_Penjadwalan, []))->map(fn ($p) => [
-                    'kode' => $p->Kode_Peserta,
-                    'nama' => $p->Nama,
-                    'posisi' => $p->Posisi_Dilamar,
-                    'statusKirim' => $p->Status_Kirim,
-                    'statusPengerjaan' => $p->Status_Pengerjaan,
-                    'linkUjian' => $p->Link_Ujian,
-                    'shortToken' => $p->Short_Token,
-                    'nilai' => $p->Total_Nilai,
-                    'kelulusan' => $p->Status_Kelulusan,
-                    'pesanError' => $p->Pesan_Error,
-                ])->values(),
+                // APA yang dijadwalkan & KAPAN — dibaca dari tahap ber-Nama_Ujian,
+                // satu-satunya tahap yang benar-benar dikirim ke HCLearn. Ini yang
+                // dicari admin di kepala akordion: paket ujian mana, untuk
+                // aktivitas apa, jendelanya kapan — tanpa perlu membukanya.
+                'paketUjian' => optional(collect($tahap->get($j->Id_Penjadwalan, []))->firstWhere('Nama_Ujian', '!=', null))->Nama_Ujian,
+                'tahapUjian' => optional(collect($tahap->get($j->Id_Penjadwalan, []))->firstWhere('Nama_Ujian', '!=', null))->Label,
+                'tipeUjian' => optional(collect($tahap->get($j->Id_Penjadwalan, []))->firstWhere('Nama_Ujian', '!=', null))->Tipe_Tahap_Kode,
+                'waktuMulai' => optional(collect($tahap->get($j->Id_Penjadwalan, []))->firstWhere('Nama_Ujian', '!=', null))->Waktu_Mulai,
+                'waktuAkhir' => optional(collect($tahap->get($j->Id_Penjadwalan, []))->firstWhere('Nama_Ujian', '!=', null))->Waktu_Akhir,
+                // Berapa orang yang jendelanya tak lagi mengikuti bawaan di atas.
+                'jumlahDigeser' => (int) ($digeser[$j->Id_Penjadwalan] ?? 0),
+                // Kabar dari job antrean: sedang diterbitkan, atau alasan gagal.
+                'catatan' => $j->Catatan,
                 'createdBy' => $j->Pembuat ?: $j->Created_By,
                 'createdAt' => $j->Created_At,
             ])->values();
 
-            return ResponseHelper::success($data, 'Data penjadwalan dimuat');
+            return ResponseHelper::success([
+                'data' => $data,
+                'total' => $total,
+                'page' => $page,
+                'perPage' => $perPage,
+                'totalPage' => (int) ceil($total / $perPage),
+            ], 'Data penjadwalan dimuat');
         } catch (\Throwable $e) {
             Log::channel('web_career')->error('Gagal memuat penjadwalan: ' . $e->getMessage());
 
             return ResponseHelper::error('Gagal memuat data penjadwalan', 500);
+        }
+    }
+
+    /**
+     * GET /api/v1/penjadwalan/{id}/peserta — isi satu baris akordion.
+     *
+     * Dipisah dari `list()` supaya daftar tetap ringan: peserta baru dikueri
+     * ketika barisnya benar-benar dibuka admin. TOKEN & OTP ikut di sini —
+     * keduanya yang dipakai kandidat untuk masuk ke ujian, jadi admin harus
+     * bisa menyalinnya saat kandidat mengaku tidak menerima email.
+     */
+    public function peserta(string $id)
+    {
+        try {
+            $realId = Hashids::decode($id)[0] ?? null;
+            if (! $realId) {
+                return ResponseHelper::error('Penjadwalan tidak valid.', 422);
+            }
+
+            $rows = DB::table('N_WEB_CAREERS_Penjadwalan_Peserta as ps')
+                ->leftJoin('N_WEB_CAREERS_Penjadwalan_Tahap as pt', 'pt.Id_Penjadwalan_Tahap', '=', 'ps.Penjadwalan_Tahap_Id')
+                ->where('ps.Penjadwalan_Id', $realId)
+                ->orderBy('ps.Nama')
+                ->select('ps.*', 'pt.Waktu_Mulai as Jendela_Tahap_Mulai', 'pt.Waktu_Akhir as Jendela_Tahap_Akhir')
+                ->get()
+                ->map(fn ($p) => [
+                    'id' => Hashids::encode($p->Id_Penjadwalan_Peserta),
+                    'kode' => $p->Kode_Peserta,
+                    'nama' => $p->Nama,
+                    'posisi' => $p->Posisi_Dilamar,
+                    'email' => $p->Email,
+                    'linkUjian' => $p->Link_Ujian,
+                    'shortToken' => $p->Short_Token,
+                    'otp' => $p->Akses_OTP,
+                    'pesanError' => $p->Pesan_Error,
+                    // Jendela yang BERLAKU untuk orang ini: miliknya sendiri bila
+                    // pernah digeser, selain itu ikut jendela tahap.
+                    'waktuMulai' => $p->Waktu_Mulai ?: $p->Jendela_Tahap_Mulai,
+                    'waktuAkhir' => $p->Waktu_Akhir ?: $p->Jendela_Tahap_Akhir,
+                    'jadwalSendiri' => (bool) $p->Waktu_Mulai,
+                    // Tanpa pengenal sesi HCLearn, jadwalnya tak bisa diubah.
+                    'dapatDiubah' => (bool) $p->Ref_Ujian_Token,
+                    // SIAPA yang menjadwalkan ORANG INI. Melekat di peserta, bukan
+                    // di penjadwalannya: satu angkatan bisa disusun banyak perekrut,
+                    // dan jadwal tiap orang bisa digeser belakangan oleh orang lain.
+                    // Saat ada jadwal keliru, yang dicari adalah penanggung jawab
+                    // baris itu — bukan siapa pun yang kebetulan menekan Generate.
+                    'olehNama' => $p->Created_By,
+                    'olehPada' => $p->Created_At,
+                    // Digeser belakangan → tampilkan siapa yang menggesernya.
+                    'ubahNama' => $p->Waktu_Mulai ? $p->Updated_By : null,
+                    'ubahPada' => $p->Waktu_Mulai ? $p->Updated_At : null,
+                    // Jadwal terkunci begitu ujiannya mulai dikerjakan.
+                    'terkunci' => in_array($p->Status_Pengerjaan, ['mengerjakan', 'selesai', 'timeout'], true) || $p->Flag_Selesai === 'Y',
+                ])->values();
+
+            return ResponseHelper::success($rows, 'Peserta dimuat');
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->error("Gagal memuat peserta penjadwalan #{$id}: " . $e->getMessage());
+
+            return ResponseHelper::error('Gagal memuat peserta', 500);
         }
     }
 
@@ -431,7 +563,10 @@ class PenjadwalanController extends Controller
                 // jenis tes. tesUrutan hanya perlu bila tahapnya multi-aktivitas.
                 'tahapUrutan' => 'required|integer|min:1',
                 'tesUrutan' => 'nullable|integer|min:1',
-                'idMasterUjian' => 'required|string',
+                // HCLearn memberi pengenal paket berupa STRING TERENKRIPSI 64
+                // karakter, bukan angka — jadi jangan divalidasi numeric, dan
+                // jangan dijejalkan ke kolom int (lihat Ref_Master_Ujian).
+                'idMasterUjian' => 'required|string|max:200',
                 'namaUjian' => 'required|string|max:255',
                 'waktuMulai' => 'required|date',
                 'waktuAkhir' => 'required|date|after:waktuMulai',
@@ -504,10 +639,34 @@ class PenjadwalanController extends Controller
                 return ResponseHelper::error('Peserta belum punya Kode Calon HCLearn (akun lama): ' . implode(', ', array_slice($tanpaKode, 0, 5)) . '. Minta kandidat memperbarui pendaftaran.', 422);
             }
 
+            // ── PERIKSA ULANG KELAYAKAN, JANGAN PERCAYA LAYAR ───────────────────
+            //
+            // Daftar kandidat memang sudah menyaring yang belum terjadwal, tapi
+            // layar bisa basi: admin lain menjadwalkan orang yang sama semenit lalu,
+            // atau tab dibiarkan terbuka setengah jam. Tanpa pemeriksaan ini, orang
+            // yang sudah punya token diterbitkan tokennya lagi — dua sesi ujian
+            // untuk satu aktivitas, dan nilainya saling menimpa.
+            $layakKode = $this->kueriKandidat($program->Id_Program, (int) $data['tahapUrutan'], $tesUrutan)
+                ->pluck('l.Kode')->all();
+            $tidakLayak = array_values(array_diff($data['peserta'], $layakKode));
+            if ($tidakLayak) {
+                return ResponseHelper::error(
+                    'Sebagian kandidat sudah tidak bisa dijadwalkan untuk aktivitas ini (mungkin baru dijadwalkan admin lain, atau tahapnya sudah berpindah): '
+                    . implode(', ', array_slice($tidakLayak, 0, 5))
+                    . '. Muat ulang daftar kandidatnya.',
+                    409
+                );
+            }
+
             $userId = session('career_auth.id');
             $userName = session('career_auth.nama', 'ADMIN');
             $now = now();
-            $kode = 'JDW-' . str_pad((string) (DB::table('N_WEB_CAREERS_Penjadwalan')->max('Id_Penjadwalan') + 1), 4, '0', STR_PAD_LEFT);
+            $antrean = WcPenjadwalanJob::QUEUE;
+            // KODE UNIK. Dulu diturunkan dari `max(Id_Penjadwalan) + 1` — dua admin
+            // yang menekan Generate bersamaan mendapat kode yang sama, dan setelah
+            // ada penghapusan, max+1 bisa menabrak kode yang sudah dipakai. Sekarang
+            // dicari nomor bebas berikutnya dan diverifikasi belum ada.
+            $kode = $this->kodeBaru();
 
             $ids = DB::transaction(function () use ($data, $program, $alur, $semuaTahap, $tahapTes, $tesUrutan, $kandidat, $kode, $userId, $userName, $now) {
                 $penjadwalanId = DB::table('N_WEB_CAREERS_Penjadwalan')->insertGetId([
@@ -520,7 +679,8 @@ class PenjadwalanController extends Controller
                     'Jumlah_Tahap' => $semuaTahap->count(),
                     'Jumlah_Tahap_Hclearn' => $semuaTahap->where('Provider', 'THIRD_PARTY')->count(),
                     'Jumlah_Peserta' => count($data['peserta']),
-                    'Status' => 'BERJALAN',
+                    // Token belum terbit — job antrean yang menaikkannya ke BERJALAN.
+                    'Status' => 'DIANTRIKAN',
                     'Created_At' => $now, 'Created_By' => $userName, 'Created_By_Id' => $userId,
                     'Updated_At' => $now, 'Updated_By' => $userName, 'Updated_By_Id' => $userId,
                 ], 'Id_Penjadwalan');
@@ -542,7 +702,10 @@ class PenjadwalanController extends Controller
                         // adalah Nama_Ujian + Id_Master_Ujian dari paket HCLearn.
                         'Jenis_Tes_Kode' => null,
                         'Formulir_Kode' => $t->Formulir_Kode,
+                        // Kolom int lama hanya terisi bila pengenalnya memang angka;
+                        // bentuk aslinya dari HCLearn disimpan di Ref_Master_Ujian.
                         'Id_Master_Ujian' => $dipilih && is_numeric($data['idMasterUjian']) ? (int) $data['idMasterUjian'] : null,
+                        'Ref_Master_Ujian' => $dipilih ? $data['idMasterUjian'] : null,
                         'Flag_Kirim_Hclearn' => $t->Provider === 'THIRD_PARTY' ? 'Y' : 'T',
                         'Nama_Ujian' => $dipilih ? $data['namaUjian'] : null,
                         'Waktu_Mulai' => $dipilih ? $data['waktuMulai'] : null,
@@ -605,23 +768,29 @@ class PenjadwalanController extends Controller
                 return ['penjadwalan' => $penjadwalanId, 'tahap' => $tahapTerpilihId];
             });
 
-            $hasil = $this->kirimKeHclearn($ids['penjadwalan'], $ids['tahap'], $data, $tahapTes, $semuaTahap->count(), $program);
+            // ── PENERBITAN TOKEN DIANTREKAN ─────────────────────────────────────
+            //
+            // Menerbitkan token untuk ratusan kandidat bisa memakan menit. Bila
+            // dikerjakan di dalam permintaan ini, permintaannya habis waktu, admin
+            // menekan Generate lagi, dan lahirlah penjadwalan ganda. Barisnya sudah
+            // tersimpan (status DIANTRIKAN) dan kandidat sudah tertaut, jadi tak
+            // ada yang hilang bila worker baru sempat menjalankannya nanti.
+            WcPenjadwalanJob::dispatch(
+                $ids['penjadwalan'],
+                $ids['tahap'],
+                (string) $data['idMasterUjian'],
+                $data['waktuMulai'],
+                $data['waktuAkhir'],
+            );
 
-            // HCLearn GAGAL TOTAL (request ditolak, atau semua peserta gagal dibuatkan
-            // token) → penjadwalan DIBATALKAN & dihapus. Jangan tampil seolah berhasil.
-            $gagalTotal = $hasil['mode'] === 'GAGAL'
-                || ($hasil['mode'] === 'LANGSUNG' && $hasil['sukses'] === 0 && $hasil['gagal'] > 0);
-            if ($gagalTotal) {
-                $this->batalkanPenjadwalan($ids['penjadwalan']);
-                $pesan = $hasil['pesan'] ?? 'HCLearn menolak permintaan.';
-                Log::channel('web_career')->warning("Penjadwalan {$kode} DIBATALKAN — HCLearn gagal: {$pesan}");
+            $jml = count($data['peserta']);
+            Log::channel('web_career')->info("Penjadwalan {$kode} dibuat oleh {$userName} — {$jml} peserta diantrekan ke {$antrean}.");
 
-                return ResponseHelper::error("Penjadwalan dibatalkan — HCLearn: {$pesan}", 422);
-            }
-
-            Log::channel('web_career')->info("Penjadwalan {$kode} dibuat oleh {$userName}");
-
-            return ResponseHelper::success($hasil, "Penjadwalan {$kode} dibuat — {$hasil['sukses']} sesi berhasil, {$hasil['gagal']} gagal", 201);
+            return ResponseHelper::success(
+                ['kode' => $kode, 'jumlahPeserta' => $jml, 'status' => 'DIANTRIKAN'],
+                "Penjadwalan {$kode} dibuat — token untuk {$jml} kandidat sedang diterbitkan di latar belakang. Segarkan daftar sebentar lagi untuk melihat hasilnya.",
+                201
+            );
         } catch (\Illuminate\Validation\ValidationException $e) {
             return ResponseHelper::error(collect($e->errors())->flatten()->first() ?? 'Data tidak valid', 422);
         } catch (\Throwable $e) {
@@ -631,73 +800,102 @@ class PenjadwalanController extends Controller
         }
     }
 
-    private function kirimKeHclearn(int $penjadwalanId, int $tahapId, array $data, object $tahapTes, int $totalTahap, object $program): array
+    /**
+     * SERAP BALASAN HCLEARN → simpan kredensial tiap peserta.
+     *
+     * Dipisah dari pengirimannya supaya bisa dipakai job antrean
+     * (`WcPenjadwalanJob`) tanpa menduplikasi aturan pemeriksaannya — dan
+     * aturan itulah bagian yang paling tidak boleh berbeda antar pemanggil.
+     *
+     * @param  array  $res  isi `result` dari HclClient
+     * @param  \Illuminate\Support\Collection  $pesertaRows  baris peserta yang dikirim
+     * @return array{0:int,1:int,2:?string} [sukses, gagal, pesanGagalPertama]
+     */
+    public function serapBalasanHclearn(array $res, $pesertaRows): array
     {
-        $penjadwalan = DB::table('N_WEB_CAREERS_Penjadwalan')->where('Id_Penjadwalan', $penjadwalanId)->first();
-        $pesertaRows = DB::table('N_WEB_CAREERS_Penjadwalan_Peserta')->where('Penjadwalan_Tahap_Id', $tahapId)->get();
+        $detail = $res['detail'] ?? [];
 
-        $hasil = $this->hcl->post('penjadwalan', [
-            'Kode_WC_Penjadwalan' => $penjadwalan->Kode,
-            'Nama_Penjadwalan' => $penjadwalan->Nama,
-            'Id_WC_Penjadwalan' => $penjadwalanId,
-            'Id_WC_Penjadwalan_Tahap' => $tahapId,
-            'Id_WC_Program' => $program->Id_Program,
-            'Nama_Program' => $program->Nama,
-            'Kode_WC_Tahap' => $tahapTes->Kode,
-            'Label_Tahap' => $tahapTes->Label,
-            'Urutan_WC_Tahap' => (int) $tahapTes->Urutan,
-            'Total_WC_Tahap' => $totalTahap,
-            'Id_Master_Ujian' => $data['idMasterUjian'],
-            'Waktu_Mulai' => $data['waktuMulai'],
-            'Waktu_Akhir' => $data['waktuAkhir'],
-            // KAMERA WAJIB: dipaksa dari sisi Web Careers agar CAT tak pernah
-            // menjalankan sesi tanpa kamera. CAT mengharap 'Flag_Camera' BOOLEAN
-            // (lalu diubah jadi 'Y' pada token). Nama field & nilai dari config.
-            config('hclearn.kamera_field', 'Flag_Camera') => (bool) config('hclearn.wajib_kamera', true),
-            // URL callback hasil tes: CAT memanggilnya saat tes difinalisasi →
-            // WC auto gerakkan tahap (lulus/gugur) tanpa admin.
-            'Url_Callback' => config('hclearn.public_url') . '/' . ltrim(config('hclearn.callback_path'), '/'),
-            // Identitas peserta DIBAWA LENGKAP — kandidat Web Careers tidak terdaftar
-            // di HRIS_Rekrutmen_Karyawan, HCLearn membuat token dari data ini.
-            'peserta' => $pesertaRows->map(fn ($p) => [
-                'Id_WC_Penjadwalan_Peserta' => (int) $p->Id_Penjadwalan_Peserta,
-                'Kode_Peserta' => $p->Kode_Peserta,
-                'Jenis_User' => 'eksternal',
-                'Id_WC_Users' => $p->Users_Id,
-                'Id_WC_Lamaran' => $p->Lamaran_Id,
-                'Nama' => $p->Nama,
-                'Email' => $p->Email,
-                'No_Hp' => $p->No_Hp,
-                'Posisi_Dilamar' => $p->Posisi_Dilamar,
-            ])->values()->all(),
-        ], [
-            'Jenis_Event' => 'PENJADWALAN_UJIAN',
-            'Penjadwalan_Id' => $penjadwalanId,
-            'Penjadwalan_Tahap_Id' => $tahapId,
-        ]);
+        // BALASAN TANPA RINCIAN = GAGAL, bukan sukses hampa.
+        //
+        // Dulu `detail` kosong membuat sukses & gagal sama-sama 0, sehingga
+        // penjadwalan dianggap berhasil padahal tak satu pun token terbit dan
+        // pesertanya tergeletak berstatus MENUNGGU tanpa keterangan apa pun.
+        if (! $detail) {
+            $jml = $pesertaRows->count();
+            DB::table('N_WEB_CAREERS_Penjadwalan_Peserta')
+                ->whereIn('Id_Penjadwalan_Peserta', $pesertaRows->pluck('Id_Penjadwalan_Peserta')->all() ?: [0])
+                ->update([
+                    'Status_Kirim' => 'GAGAL',
+                    'Pesan_Error' => 'HCLearn membalas tanpa rincian peserta — tidak ada token yang terbit.',
+                    'Updated_At' => now(),
+                ]);
 
-        if (! $hasil['sukses']) {
-            DB::table('N_WEB_CAREERS_Penjadwalan_Tahap')->where('Id_Penjadwalan_Tahap', $tahapId)
-                ->update(['Status' => 'GAGAL', 'Pesan_Error' => substr($hasil['message'], 0, 480), 'Updated_At' => now()]);
-
-            return ['sukses' => 0, 'gagal' => $pesertaRows->count(), 'mode' => 'GAGAL', 'pesan' => $hasil['message']];
+            return [0, $jml, 'HCLearn membalas tanpa rincian peserta — tidak ada token yang terbit.'];
         }
 
-        $res = $hasil['result'] ?? [];
+        // ── PEMERIKSAAN KEPEMILIKAN — BEST EFFORT ────────────────────────────
+        //
+        // Tabel token CAT hanya sedatabase saat CAT berjalan lokal (mode
+        // development). Di staging/production CAT punya databasenya sendiri,
+        // jadi pencarian ini WAJAR kosong — dan tidak boleh menggagalkan
+        // penjadwalan. Yang menggagalkan hanya bila barisnya KETEMU tapi
+        // pemiliknya orang lain (kasus id peserta terulang setelah reset).
+        $shortSemua = collect($detail)->pluck('Short_Token')->filter()->unique()->values()->all();
+        $tokenCat = $shortSemua
+            ? DB::table('HRIS_KANDIDAT_Ujian_Token')
+                ->whereIn('Short_Token', $shortSemua)
+                ->where('Sumber_Aplikasi', 'WEB_CAREERS')
+                ->get(['Id_Ujian_Token', 'Short_Token', 'Id_Calon_Karyawan'])
+                ->keyBy('Short_Token')
+            : collect();
 
-        if (($res['mode'] ?? null) === 'ANTRIAN') {
-            DB::table('N_WEB_CAREERS_Penjadwalan_Tahap')->where('Id_Penjadwalan_Tahap', $tahapId)
-                ->update(['Status' => 'DIANTRIKAN', 'Waktu_Kirim' => now(), 'Updated_At' => now()]);
-
-            return ['sukses' => 0, 'gagal' => 0, 'mode' => 'ANTRIAN', 'processId' => $res['Process_Id'] ?? null, 'pesan' => $hasil['message']];
-        }
-
+        // Satu sesi ujian hanya boleh dipegang SATU peserta. Kalau CAT membalas
+        // token yang sama untuk dua orang, keduanya akan mengerjakan sesi yang
+        // sama dan nilainya saling menimpa — ditangkap di sini, bukan nanti.
+        $sudahDipakai = [];
         $sukses = 0;
         $gagal = 0;
         $pesanGagal = null;
 
-        foreach ($res['detail'] ?? [] as $d) {
+        foreach ($detail as $d) {
             $ok = in_array($d['status'] ?? '', ['DIBUAT', 'SUDAH_ADA'], true);
+            $idPeserta = (int) ($d['Id_WC_Penjadwalan_Peserta'] ?? 0);
+            $shortToken = $d['Short_Token'] ?? null;
+            $seharusnya = $pesertaRows->firstWhere('Id_Penjadwalan_Peserta', $idPeserta)->Kode_Peserta ?? null;
+            $baris = $shortToken ? $tokenCat->get($shortToken) : null;
+            $idUjianToken = $baris->Id_Ujian_Token ?? null;
+            // Pengenal token versi CAT (Hashids). INILAH kunci untuk mengubah /
+            // membatalkan jadwal lewat API nanti — tanpa ini, satu-satunya cara
+            // adalah menulis tabel CAT langsung, yang mustahil saat CAT remote.
+            $refUjian = $d['Id_Ujian_Token'] ?? null;
+            $tolak = null;
+
+            if ($ok && ! $shortToken) {
+                $tolak = 'HCLearn tidak mengembalikan token untuk peserta ini.';
+            } elseif ($ok && ! $refUjian) {
+                // Tanpa pengenal token, jadwalnya tak akan bisa diubah nanti.
+                $tolak = "HCLearn tidak mengembalikan Id_Ujian_Token untuk {$shortToken}.";
+            } elseif ($ok && $baris && $seharusnya && $baris->Id_Calon_Karyawan !== $seharusnya) {
+                // TOKEN MILIK ORANG LAIN.
+                //
+                // CAT mendeduplikasi lewat indeks unik pada Id_WC_Penjadwalan_Peserta
+                // lalu membalas `SUDAH_ADA` bila id itu sudah terpakai. Id peserta di
+                // sisi kita adalah IDENTITY yang bisa TERULANG setelah tabelnya
+                // di-reset — dan pernah terjadi: peserta baru ber-id 4 menerima token
+                // milik angkatan lama yang statusnya sudah 'selesai'.
+                $tolak = "Token {$shortToken} terdaftar atas {$baris->Id_Calon_Karyawan}, bukan {$seharusnya}.";
+            } elseif ($ok && isset($sudahDipakai[$refUjian])) {
+                // TOKEN KEMBAR DALAM SATU ANGKATAN.
+                $tolak = "Token {$shortToken} dibalas untuk dua peserta sekaligus (bentrok dengan peserta #{$sudahDipakai[$refUjian]}).";
+            }
+
+            if ($tolak) {
+                $ok = false;
+                $d['pesan'] = $tolak . ' Penjadwalan peserta ini dibatalkan agar kredensial tidak tertukar.';
+                Log::channel('web_career')->error("[PENJADWALAN] peserta #{$idPeserta} ({$seharusnya}): {$tolak}");
+            } elseif ($ok) {
+                $sudahDipakai[$refUjian] = $idPeserta;
+            }
 
             // OTP dari CAT; fallback: ambil dari parameter otp= pada Link_Ujian.
             $otp = $d['Akses_OTP'] ?? null;
@@ -705,16 +903,23 @@ class PenjadwalanController extends Controller
                 $otp = urldecode($m[1]);
             }
 
+            // Kolom disetel EKSPLISIT (tanpa array_filter): peserta yang gagal
+            // harus benar-benar kosong kredensialnya, bukan menyisakan nilai lama.
             DB::table('N_WEB_CAREERS_Penjadwalan_Peserta')
-                ->where('Id_Penjadwalan_Peserta', $d['Id_WC_Penjadwalan_Peserta'] ?? 0)
-                ->update(array_filter([
+                ->where('Id_Penjadwalan_Peserta', $idPeserta)
+                ->update([
                     'Status_Kirim' => $ok ? 'TERKIRIM' : 'GAGAL',
-                    'Link_Ujian' => $d['Link_Ujian'] ?? null,
-                    'Short_Token' => $d['Short_Token'] ?? null,
-                    'Akses_OTP' => $otp,
+                    // Id_Ujian_Token: tautan PASTI ke sesi ujian di CAT. Sebelumnya
+                    // kolom ini tak pernah diisi, sehingga satu-satunya penghubung
+                    // adalah Short_Token berupa teks.
+                    'Id_Ujian_Token' => $ok ? $idUjianToken : null,
+                    'Ref_Ujian_Token' => $ok ? $refUjian : null,
+                    'Link_Ujian' => $ok ? ($d['Link_Ujian'] ?? null) : null,
+                    'Short_Token' => $ok ? $shortToken : null,
+                    'Akses_OTP' => $ok ? $otp : null,
                     'Pesan_Error' => $ok ? null : substr($d['pesan'] ?? 'Gagal', 0, 480),
                     'Updated_At' => now(),
-                ], fn ($v) => $v !== null));
+                ]);
 
             if ($ok) {
                 $sukses++;
@@ -724,10 +929,7 @@ class PenjadwalanController extends Controller
             }
         }
 
-        DB::table('N_WEB_CAREERS_Penjadwalan_Tahap')->where('Id_Penjadwalan_Tahap', $tahapId)
-            ->update(['Status' => $gagal === 0 ? 'TERKIRIM' : 'SEBAGIAN', 'Waktu_Kirim' => now(), 'Updated_At' => now()]);
-
-        return ['sukses' => $sukses, 'gagal' => $gagal, 'mode' => 'LANGSUNG', 'pesan' => $pesanGagal];
+        return [$sukses, $gagal, $pesanGagal];
     }
 
     /**
@@ -754,29 +956,101 @@ class PenjadwalanController extends Controller
             ->update(['Penjadwalan_Tahap_Id' => null, 'Status' => 'BELUM', 'Updated_At' => now()]);
     }
 
-    /** Rollback penjadwalan yang gagal terkirim total ke HCLearn (dipakai store). */
-    private function batalkanPenjadwalan(int $penjadwalanId): void
+    /**
+     * PUT /api/v1/penjadwalan/peserta/{id} — GESER JADWAL SATU KANDIDAT.
+     *
+     * Yang perlu digeser hampir selalu satu orang: sakit, salah zona waktu,
+     * tokennya telanjur lewat, atau minta diundur. Mengubahnya di level jadwal
+     * berarti menggeser seisi angkatan demi satu orang, jadi jendela disimpan
+     * di baris pesertanya sendiri (`Penjadwalan_Peserta.Waktu_*`) dan hanya
+     * token milik orang itu yang ikut berubah di CAT.
+     *
+     * Portal kandidat membaca jendela peserta lebih dulu, jatuh ke jendela tahap
+     * bila kosong — peserta lain di jadwal yang sama tidak terpengaruh.
+     * Ditolak bila ujiannya sudah mulai dikerjakan.
+     */
+    public function updatePeserta(Request $request, string $id)
     {
         try {
-            DB::transaction(function () use ($penjadwalanId) {
-                $tahapIds = DB::table('N_WEB_CAREERS_Penjadwalan_Tahap')
-                    ->where('Penjadwalan_Id', $penjadwalanId)->pluck('Id_Penjadwalan_Tahap')->all();
+            $realId = Hashids::decode($id)[0] ?? null;
+            $peserta = $realId ? DB::table('N_WEB_CAREERS_Penjadwalan_Peserta')->where('Id_Penjadwalan_Peserta', $realId)->first() : null;
+            if (! $peserta) {
+                return ResponseHelper::error('Peserta tidak ditemukan.', 404);
+            }
 
-                $this->lepaskanTautan($tahapIds);
+            $data = $request->validate([
+                'waktuMulai' => 'required|date',
+                'waktuAkhir' => 'required|date|after:waktuMulai',
+            ], [
+                'waktuAkhir.after' => 'Waktu berakhir harus setelah waktu mulai.',
+            ]);
 
-                DB::table('N_WEB_CAREERS_Penjadwalan_Peserta')->where('Penjadwalan_Id', $penjadwalanId)->delete();
-                DB::table('N_WEB_CAREERS_Penjadwalan_Tahap')->where('Penjadwalan_Id', $penjadwalanId)->delete();
-                DB::table('N_WEB_CAREERS_Penjadwalan')->where('Id_Penjadwalan', $penjadwalanId)->delete();
-            });
+            $terkunci = in_array($peserta->Status_Pengerjaan, ['mengerjakan', 'selesai', 'timeout'], true)
+                || $peserta->Flag_Selesai === 'Y';
+            if ($terkunci) {
+                return ResponseHelper::error("Jadwal {$peserta->Nama} tidak dapat diubah — ujiannya sudah dikerjakan.", 409);
+            }
+
+            $now = now();
+            $userName = session('career_auth.nama', 'ADMIN');
+            $userId = session('career_auth.id');
+
+            // ── UBAH DI CAT DULU, BARU CATAT DI SINI ────────────────────────
+            //
+            // Dulu baris token CAT ditulis LANGSUNG. Itu hanya bekerja saat CAT
+            // berjalan lokal dan sedatabase; di staging/production CAT punya
+            // databasenya sendiri, sehingga perubahan jadwal tidak pernah sampai
+            // — admin melihat "berhasil" padahal kandidat tetap memakai jendela
+            // lama. Sekarang lewat API resmi, dan bila CAT menolak, jadwal di
+            // sisi kita TIDAK ikut berubah supaya keduanya tak pernah berbeda.
+            if (! $peserta->Ref_Ujian_Token) {
+                return ResponseHelper::error(
+                    "Jadwal {$peserta->Nama} belum punya pengenal sesi dari HCLearn (dijadwalkan sebelum penautan ini ada). Hapus penjadwalannya lalu buat ulang agar bisa diubah.",
+                    409
+                );
+            }
+
+            $balas = $this->hcl->put("penjadwalan/{$peserta->Ref_Ujian_Token}", [
+                'Waktu_Mulai' => $data['waktuMulai'],
+                'Waktu_Akhir' => $data['waktuAkhir'],
+                config('hclearn.kamera_field', 'Flag_Camera') => (bool) config('hclearn.wajib_kamera', true),
+            ], [
+                'Jenis_Event' => 'UBAH_JADWAL_UJIAN',
+                'Penjadwalan_Id' => $peserta->Penjadwalan_Id,
+                'Penjadwalan_Tahap_Id' => $peserta->Penjadwalan_Tahap_Id,
+                'Penjadwalan_Peserta_Id' => $peserta->Id_Penjadwalan_Peserta,
+            ]);
+
+            if (! $balas['sukses']) {
+                Log::channel('web_career')->warning("Gagal ubah jadwal peserta #{$peserta->Id_Penjadwalan_Peserta}: " . $balas['message']);
+
+                return ResponseHelper::error("HCLearn menolak perubahan jadwal: {$balas['message']}", (int) ($balas['status'] ?: 422));
+            }
+
+            DB::table('N_WEB_CAREERS_Penjadwalan_Peserta')
+                ->where('Id_Penjadwalan_Peserta', $peserta->Id_Penjadwalan_Peserta)
+                ->update([
+                    'Waktu_Mulai' => $data['waktuMulai'],
+                    'Waktu_Akhir' => $data['waktuAkhir'],
+                    'Updated_At' => $now, 'Updated_By' => $userName, 'Updated_By_Id' => $userId,
+                ]);
+
+            Log::channel('web_career')->info("Jadwal peserta #{$peserta->Id_Penjadwalan_Peserta} ({$peserta->Nama}) digeser oleh {$userName} — dikonfirmasi HCLearn.");
+
+            return ResponseHelper::success(null, "Jadwal {$peserta->Nama} diperbarui di HCLearn. Token & OTP tetap sama — yang berubah hanya jendela waktunya.");
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return ResponseHelper::error(collect($e->errors())->flatten()->first() ?? 'Data tidak valid', 422);
         } catch (\Throwable $e) {
-            Log::channel('web_career')->error("Gagal rollback penjadwalan #{$penjadwalanId}: " . $e->getMessage());
+            Log::channel('web_career')->error("Gagal memperbarui jadwal peserta #{$id}: " . $e->getMessage());
+
+            return ResponseHelper::error('Gagal memperbarui jadwal peserta.', 500);
         }
     }
 
     /**
-     * PUT /api/v1/penjadwalan/{id} — EDIT jendela waktu tes yang sudah dijadwalkan.
-     * Memperbarui: tahap terjadwal (portal kandidat baca dari sini) + token ujian
-     * di CAT (via Short_Token, DB bersama) supaya jendela ujian ikut berubah.
+     * PUT /api/v1/penjadwalan/{id} — EDIT jendela waktu SELURUH jadwal.
+     * Tidak lagi dipakai layar Penjadwalan (di sana jadwal digeser per kandidat
+     * lewat `updatePeserta`), tetapi dipertahankan untuk penggeseran massal.
      * Ditolak bila peserta sudah 'mengerjakan' / 'selesai' (jadwal terkunci).
      */
     public function update(Request $request, $id)
@@ -818,32 +1092,62 @@ class PenjadwalanController extends Controller
             $userName = session('career_auth.nama', 'ADMIN');
             $userId = session('career_auth.id');
 
-            DB::transaction(function () use ($realId, $tahap, $data, $pesertaRows, $now, $userName, $userId) {
-                // 1) Tahap terjadwal — DIBACA portal kandidat (jendela + tombol tes).
+            // ── UBAH DI CAT DULU, SATU PER SATU ─────────────────────────────
+            //
+            // Tabel token CAT tidak lagi ditulis langsung: itu hanya bekerja saat
+            // CAT sedatabase (mode development). API-nya per sesi ujian, jadi
+            // dipanggil per peserta. Yang gagal dilaporkan namanya — lebih baik
+            // sebagian tertunda dan terlihat daripada tampak berhasil seluruhnya.
+            $berhasil = 0;
+            $gagal = [];
+            foreach ($pesertaRows as $ps) {
+                if (! $ps->Ref_Ujian_Token) {
+                    $gagal[] = "{$ps->Nama} (belum punya pengenal sesi HCLearn)";
+
+                    continue;
+                }
+                $balas = $this->hcl->put("penjadwalan/{$ps->Ref_Ujian_Token}", [
+                    'Waktu_Mulai' => $data['waktuMulai'],
+                    'Waktu_Akhir' => $data['waktuAkhir'],
+                    config('hclearn.kamera_field', 'Flag_Camera') => (bool) config('hclearn.wajib_kamera', true),
+                ], [
+                    'Jenis_Event' => 'UBAH_JADWAL_UJIAN',
+                    'Penjadwalan_Id' => $realId,
+                    'Penjadwalan_Tahap_Id' => $tahap->Id_Penjadwalan_Tahap,
+                    'Penjadwalan_Peserta_Id' => $ps->Id_Penjadwalan_Peserta,
+                ]);
+
+                if ($balas['sukses']) {
+                    $berhasil++;
+                    DB::table('N_WEB_CAREERS_Penjadwalan_Peserta')
+                        ->where('Id_Penjadwalan_Peserta', $ps->Id_Penjadwalan_Peserta)
+                        ->update(['Waktu_Mulai' => null, 'Waktu_Akhir' => null, 'Updated_At' => $now, 'Updated_By' => $userName, 'Updated_By_Id' => $userId]);
+                } else {
+                    $gagal[] = "{$ps->Nama} ({$balas['message']})";
+                }
+            }
+
+            if (! $berhasil) {
+                return ResponseHelper::error('Tidak ada jadwal yang berhasil diubah di HCLearn: ' . implode('; ', array_slice($gagal, 0, 3)), 422);
+            }
+
+            DB::transaction(function () use ($realId, $tahap, $data, $now, $userName, $userId) {
+                // Jendela BAWAAN tahap — dibaca portal kandidat & kepala akordion.
                 DB::table('N_WEB_CAREERS_Penjadwalan_Tahap')->where('Id_Penjadwalan_Tahap', $tahap->Id_Penjadwalan_Tahap)
                     ->update(['Waktu_Mulai' => $data['waktuMulai'], 'Waktu_Akhir' => $data['waktuAkhir'], 'Updated_At' => $now, 'Updated_By' => $userName, 'Updated_By_Id' => $userId]);
 
-                // 2) Header penjadwalan (tanggal).
                 DB::table('N_WEB_CAREERS_Penjadwalan')->where('Id_Penjadwalan', $realId)
                     ->update(['Tanggal_Mulai' => substr($data['waktuMulai'], 0, 10), 'Tanggal_Selesai' => substr($data['waktuAkhir'], 0, 10), 'Updated_At' => $now, 'Updated_By' => $userName, 'Updated_By_Id' => $userId]);
-
-                // 3) Token ujian di CAT (DB bersama) — jendela ujian ikut berubah.
-                //    Hanya token milik kanal WEB_CAREERS & yang belum dikerjakan.
-                $shortTokens = $pesertaRows->pluck('Short_Token')->filter()->all();
-                if ($shortTokens) {
-                    $mulai = \Illuminate\Support\Carbon::parse($data['waktuMulai'])->format('Y-m-d H:i:s');
-                    $akhir = \Illuminate\Support\Carbon::parse($data['waktuAkhir'])->format('Y-m-d H:i:s');
-                    DB::table('HRIS_KANDIDAT_Ujian_Token')
-                        ->whereIn('Short_Token', $shortTokens)
-                        ->where('Sumber_Aplikasi', 'WEB_CAREERS')
-                        ->whereNotIn('Status_Pengerjaan', ['mengerjakan', 'selesai', 'timeout'])
-                        ->update(['Waktu_Mulai' => $mulai, 'Waktu_Akhir' => $akhir, 'Status_Updated_At' => $now, 'Status_Updated_By' => 'WEB_CAREERS']);
-                }
             });
 
-            Log::channel('web_career')->info("Penjadwalan {$jadwal->Kode} jendela waktu diperbarui oleh {$userName}.");
+            Log::channel('web_career')->info("Penjadwalan {$jadwal->Kode} jendela waktu diperbarui oleh {$userName} — {$berhasil} sesi diubah di HCLearn.");
 
-            return ResponseHelper::success(null, 'Jadwal tes diperbarui — jendela waktu kandidat & token ujian ikut berubah.');
+            $pesan = "Jadwal tes diperbarui — {$berhasil} sesi ujian diubah di HCLearn.";
+            if ($gagal) {
+                $pesan .= ' Gagal untuk: ' . implode('; ', array_slice($gagal, 0, 3)) . '.';
+            }
+
+            return ResponseHelper::success(null, $pesan);
         } catch (\Illuminate\Validation\ValidationException $e) {
             return ResponseHelper::error(collect($e->errors())->flatten()->first() ?? 'Data tidak valid', 422);
         } catch (\Throwable $e) {
@@ -859,6 +1163,23 @@ class PenjadwalanController extends Controller
             $realId = Hashids::decode($id)[0] ?? null;
             if (! DB::table('N_WEB_CAREERS_Penjadwalan')->where('Id_Penjadwalan', $realId)->exists()) {
                 return ResponseHelper::error('Data tidak ditemukan', 404);
+            }
+
+            // JANGAN HAPUS JADWAL YANG SUDAH DIKERJAKAN.
+            //
+            // Menghapusnya melepas tautan kandidat sehingga mereka muncul lagi di
+            // antrean "menunggu jadwal" — padahal ujiannya sudah selesai. Nilainya
+            // hilang dari jejak, dan orangnya berpeluang dites dua kali.
+            $sudahJalan = DB::table('N_WEB_CAREERS_Penjadwalan_Peserta')
+                ->where('Penjadwalan_Id', $realId)
+                ->where(fn ($q) => $q->whereIn('Status_Pengerjaan', ['mengerjakan', 'selesai', 'timeout'])
+                    ->orWhere('Flag_Selesai', 'Y'))
+                ->count();
+            if ($sudahJalan) {
+                return ResponseHelper::error(
+                    "Tidak bisa dihapus — {$sudahJalan} peserta sudah mengerjakan ujiannya. Menghapus jadwal ini akan menghilangkan jejak hasil mereka.",
+                    409
+                );
             }
 
             DB::transaction(function () use ($realId) {

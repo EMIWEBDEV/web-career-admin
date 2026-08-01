@@ -159,6 +159,11 @@ return [
         // Cloud Tasks: `gcloud tasks queues create penjadwalan-queue`.
         'penjadwalan_training' => env('CLOUD_TASKS_QUEUE_PENJADWALAN', 'penjadwalans-queue'),
 
+        // CATATAN: job modul Web Careers TIDAK didaftarkan di sini. Nama antreannya
+        // melekat sebagai konstanta di job masing-masing (mis. WcApplyEmailJob,
+        // WcPenjadwalanJob) supaya tidak ada dua tempat yang bisa berselisih.
+        // Lihat App\Jobs\Career\Concerns\AntreanWebCareers.
+
         // Deprecated: disisakan untuk kompatibilitas; job export kini pakai
         // 'async_export'. Hapus setelah dipastikan tak ada task tertinggal.
         'kpi_export' => env('CLOUD_TASKS_QUEUE_KPI_EXPORT', 'kpi-export'),
