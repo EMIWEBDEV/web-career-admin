@@ -213,7 +213,7 @@
                     <header class="wcc-modal__head" :style="{ '--wcc-accent': accent }">
                         <div class="wcc-modal__title-group">
                             <span class="wcc-modal__logo"><i class="bi bi-calendar2-week-fill"></i></span>
-                            <div>
+                            <div class="wcd-modal-title-text">
                                 <h2>Kalender Operasional Command Center</h2>
                                 <p>{{ categoryLabel }} · Live Operational View</p>
                             </div>
@@ -1668,113 +1668,139 @@ onUnmounted(() => {
     position: fixed;
     inset: 0;
     z-index: 2050;
-    padding: 20px;
-    background: rgba(15, 23, 42, 0.72);
-    backdrop-filter: blur(12px);
+    padding: 24px;
+    background: rgba(15, 23, 42, 0.75);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: wccModalIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes wccModalIn {
+    from { opacity: 0; transform: scale(0.98); }
+    to { opacity: 1; transform: scale(1); }
 }
 
 .wcc-modal__panel {
+    width: 100%;
     height: 100%;
+    max-width: 1480px;
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    border-radius: 22px;
+    border-radius: 24px;
     background: #ffffff;
-    box-shadow: 0 30px 90px rgba(15, 23, 42, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 30px 90px -10px rgba(15, 23, 42, 0.45);
 }
 
 /* HEADER MODAL */
 .wcc-modal__head {
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 16px;
-    padding: 16px 24px;
+    gap: 18px;
+    padding: 20px 28px;
     color: #ffffff;
-    background: linear-gradient(135deg, color-mix(in srgb, var(--wcc-accent) 84%, #0f172a), var(--wcc-accent));
+    background: linear-gradient(135deg, #3730a3 0%, var(--wcc-accent, #6366f1) 60%, #4338ca 100%);
+    box-shadow: 0 4px 20px rgba(79, 70, 229, 0.25);
 }
 
 .wcc-modal__title-group {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 14px;
 }
+
+.wcd-modal-title-text h2 {
+    margin: 0;
+    font-size: 1.15rem;
+    font-weight: 900;
+    letter-spacing: -0.02em;
+    color: #ffffff;
+}
+
+.wcd-modal-title-text p {
+    margin: 3px 0 0;
+    font-size: 0.76rem;
+    color: rgba(255, 255, 255, 0.85);
+    font-weight: 500;
+}
+
 .wcc-modal__logo {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 42px;
-    height: 42px;
-    border-radius: 12px;
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
     background: rgba(255, 255, 255, 0.2);
     backdrop-filter: blur(8px);
-    font-size: 1.25rem;
-}
-.wcc-modal__title-group h2 {
-    margin: 0;
-    font-size: 1.08rem;
-    font-weight: 900;
-    letter-spacing: -0.01em;
-}
-.wcc-modal__title-group p {
-    margin: 2px 0 0;
-    font-size: 0.72rem;
-    opacity: 0.88;
+    font-size: 1.3rem;
+    color: #ffffff;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
 .wcc-modal__head-actions {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
 }
+
 .wcc-modal__tag {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 4px 10px;
-    border-radius: 99px;
-    background: rgba(255, 255, 255, 0.22);
-    font-size: 0.68rem;
+    gap: 7px;
+    padding: 6px 14px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.18);
+    backdrop-filter: blur(6px);
+    font-size: 0.72rem;
     font-weight: 800;
+    color: #ffffff;
+    border: 1px solid rgba(255, 255, 255, 0.25);
 }
 
 .wcc-icon-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 36px;
-    height: 36px;
+    display: grid;
+    place-items: center;
+    width: 38px;
+    height: 38px;
     border: 0;
-    border-radius: 10px;
-    color: inherit;
+    border-radius: 12px;
+    color: #ffffff;
     background: rgba(255, 255, 255, 0.2);
     cursor: pointer;
-    transition: background 0.15s;
+    transition: all 0.2s ease;
 }
-.wcc-icon-btn:hover { background: rgba(255, 255, 255, 0.32); }
+.wcc-icon-btn:hover { background: rgba(255, 255, 255, 0.35); transform: scale(1.05); }
 
 /* STATS STRIP BELOW MODAL HEADER */
 .wcc-modal__stats-bar {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 12px;
-    padding: 12px 24px;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 14px;
+    padding: 14px 28px;
     background: #f8fafc;
-    border-bottom: 1.5px solid var(--line-subtle);
+    border-bottom: 1px solid #e2e8f0;
 }
 
 .wcc-modal__kpi-item {
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 10px 14px;
-    border: 1.5px solid #cbd5e1;
+    padding: 12px 16px;
+    border: 1px solid #e2e8f0;
     border-radius: 14px;
     background: #ffffff;
-    box-shadow: 0 1px 4px rgba(15, 23, 42, 0.04);
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.03);
+    transition: transform 0.2s ease;
 }
+.wcc-modal__kpi-item:hover { transform: translateY(-1px); }
 .wcc-modal__kpi-item.danger {
-    background: #fff8f6;
+    background: #fef2f2;
     border-color: #fca5a5;
 }
 

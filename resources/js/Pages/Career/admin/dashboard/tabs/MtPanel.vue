@@ -1,5 +1,5 @@
 <!--
-  ZONA D — KHAS MT: PERSAINGAN ANTAR-POSISI (Redesigned)
+  ZONA D — KHAS MT: PERSAINGAN ANTAR-POSISI (Redesigned & Tidied Table UI/UX)
 -->
 <template>
     <div v-if="!khas.matriks.length">
@@ -47,7 +47,7 @@
 
         <!-- Legenda skala warna sel -->
         <div class="mt-legend">
-            <span class="mt-legend__lbl"><i class="bi bi-palette"></i> Intensitas Kandidat per Sel:</span>
+            <span class="mt-legend__lbl"><i class="bi bi-palette-fill"></i> Intensitas Kandidat per Sel:</span>
             <span class="mt-legend__sel is-nol">0</span>
             <span v-for="(w, i) in RAMP" :key="w" class="mt-legend__sel"
                 :style="{ background: w, color: selTinta(w) }">{{ rentang(i) }}</span>
@@ -63,7 +63,10 @@
                         <th class="wcd-num">Pelamar</th>
                         <th class="wcd-num">Rasio</th>
                         <th v-for="t in khas.tahap" :key="t.urutan" class="mt-th-tahap" :title="t.label">
-                            <span>{{ t.urutan }}. {{ t.label }}</span>
+                            <div class="mt-th-badge">
+                                <span class="mt-th-num">{{ t.urutan }}</span>
+                                <span class="mt-th-txt">{{ t.label }}</span>
+                            </div>
                         </th>
                         <th class="wcd-num">Skor Rata</th>
                     </tr>
@@ -71,15 +74,15 @@
                 <tbody>
                     <tr v-for="(m, i) in matriksUrut" :key="i">
                         <td class="mt-lekat wcd-tbl__utama">
-                            <strong>{{ m.posisi }}</strong>
+                            <strong class="mt-posisi-title">{{ m.posisi }}</strong>
                             <span class="wcd-tbl__sub">
                                 {{ m.program }}<template v-if="m.departemen"> · {{ m.departemen }}</template>
                             </span>
                         </td>
-                        <td class="wcd-num"><b>{{ angka(m.kuota) }}</b></td>
-                        <td class="wcd-num"><b>{{ angka(m.pelamar) }}</b></td>
+                        <td class="wcd-num"><b class="mt-val-bold">{{ angka(m.kuota) }}</b></td>
+                        <td class="wcd-num"><b class="mt-val-bold">{{ angka(m.pelamar) }}</b></td>
                         <td class="wcd-num">
-                            <span v-if="m.rasio === null">—</span>
+                            <span v-if="m.rasio === null" class="mt-null-val">—</span>
                             <span v-else class="wcd-lb" :style="nadaRasio(m)">
                                 <i class="bi" :class="m.rasio < 1 ? STATUS.critical.ikon : 'bi-people-fill'"></i>
                                 {{ desimal(m.rasio, 1) }}×
@@ -90,14 +93,14 @@
                                 {{ s.total || '' }}
                             </span>
                         </td>
-                        <td class="wcd-num"><b>{{ m.skor ? desimal(m.skor.rata, 2) : '—' }}</b></td>
+                        <td class="wcd-num"><b class="mt-val-bold">{{ m.skor ? desimal(m.skor.rata, 2) : '—' }}</b></td>
                     </tr>
                 </tbody>
             </table>
         </div>
 
         <p class="mt-nota">
-            Sel dihitung sesuai posisi aktif/terakhir pelamar di alur seleksi MT.
+            <i class="bi bi-info-circle-fill"></i> Sel dihitung sesuai posisi aktif/terakhir pelamar di alur seleksi MT.
         </p>
     </div>
 </template>
@@ -150,75 +153,236 @@ function tooltipSel(tahap, s) {
 
 function nadaRasio(m) {
     if (m.rasio < 1) return { background: '#fef2f2', color: '#dc2626' };
-    if (m.rasio >= 5) return { background: '#f0fdf4', color: '#059669' };
-    return { background: '#f1f5f9', color: '#475569' };
+    if (m.rasio >= 5) return { background: '#ecfdf5', color: '#047857' };
+    return { background: '#f1f5f9', color: '#334155' };
 }
 </script>
 
 <style scoped>
 .mt-container { padding-top: 4px; }
+
 .mt-ingat {
     display: flex;
     gap: 12px;
     align-items: center;
-    margin: 0 0 18px;
+    margin: 0 0 16px;
     padding: 14px 18px;
     border-radius: 14px;
     background: #fef2f2;
     border: 1px solid #fecaca;
-    font-size: 0.8rem;
+    font-size: 0.82rem;
     line-height: 1.5;
     color: #991b1b;
 }
 .mt-ingat > .bi { font-size: 18px; color: #dc2626; flex: none; }
 .mt-ingat b { color: #7f1d1d; }
 
-.mt-legend { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; background: #f8fafc; padding: 8px 14px; border-radius: 12px; border: 1px solid #f1f5f9; }
-.mt-legend__lbl { font-size: 0.76rem; font-weight: 800; color: #475569; margin-right: 6px; display: inline-flex; align-items: center; gap: 4px; }
+.mt-legend {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+    background: #f8fafc;
+    padding: 10px 16px;
+    border-radius: 14px;
+    border: 1px solid #e2e8f0;
+}
+.mt-legend__lbl {
+    font-size: 0.78rem;
+    font-weight: 800;
+    color: #334155;
+    margin-right: 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
 .mt-legend__lbl .bi { color: #6366f1; }
 .mt-legend__sel {
     display: inline-grid;
     place-items: center;
-    min-width: 38px;
-    height: 22px;
+    min-width: 40px;
+    height: 24px;
     padding: 0 8px;
-    border-radius: 6px;
-    font-size: 0.72rem;
+    border-radius: 8px;
+    font-size: 0.74rem;
     font-weight: 800;
     font-variant-numeric: tabular-nums;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
 }
-.mt-legend__sel.is-nol { background: #ffffff; color: #94a3b8; border: 1px solid #e2e8f0; }
+.mt-legend__sel.is-nol { background: #ffffff; color: #94a3b8; border: 1px solid #cbd5e1; }
 
-.mt-tw { max-height: 480px; overflow: auto; border-radius: 16px; border: 1px solid #e2e8f0; }
-.mt-tbl { font-size: 0.78rem; }
+/* ══════════ METRICS TABLE CONTAINER (wcd-tw mt-tw) ══════════ */
+.wcd-tw.mt-tw {
+    position: relative;
+    max-height: 500px;
+    overflow: auto;
+    border-radius: 16px;
+    border: 1px solid #e2e8f0;
+    background: #ffffff;
+    box-shadow: 0 4px 16px -4px rgba(15, 23, 42, 0.06);
+}
 
+/* Custom Scrollbar for mt-tw */
+.wcd-tw.mt-tw::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+.wcd-tw.mt-tw::-webkit-scrollbar-track {
+    background: #f1f5f9;
+    border-radius: 999px;
+}
+.wcd-tw.mt-tw::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 999px;
+}
+.wcd-tw.mt-tw::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+}
+
+.mt-tbl {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 0.8rem;
+}
+
+.mt-tbl th {
+    padding: 12px 14px;
+    background: #f8fafc;
+    color: #475569;
+    font-size: 0.74rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border-bottom: 2px solid #e2e8f0;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.mt-tbl td {
+    padding: 10px 14px;
+    border-bottom: 1px solid #f1f5f9;
+    vertical-align: middle;
+    white-space: nowrap;
+}
+
+.mt-tbl tbody tr:hover td {
+    background: rgba(248, 250, 252, 0.8);
+}
+
+.mt-tbl tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+/* Kolom sticky Posisi MT */
 .mt-lekat {
     position: sticky;
     left: 0;
-    z-index: 2;
+    z-index: 15;
     background: #ffffff;
-    box-shadow: 2px 0 6px rgba(15, 23, 42, 0.05);
-    min-width: 200px;
+    border-right: 2px solid #e2e8f0;
+    min-width: 220px;
+    box-shadow: 4px 0 12px -2px rgba(15, 23, 42, 0.05);
 }
-thead .mt-lekat { z-index: 3; background: #f8fafc; }
-tbody tr:hover .mt-lekat { background: #f8fafc; }
 
-.mt-th-tahap { max-width: 100px; white-space: normal; }
-.mt-th-tahap span { display: block; font-size: 0.7rem; line-height: 1.35; }
+thead .mt-lekat {
+    z-index: 20;
+    background: #f8fafc;
+}
 
-.mt-sel { padding: 4px; text-align: center; }
+tbody tr:hover .mt-lekat {
+    background: #ffffff;
+}
+
+.mt-posisi-title {
+    display: block;
+    font-size: 0.84rem;
+    font-weight: 800;
+    color: #0f172a;
+}
+
+.mt-val-bold {
+    font-weight: 800;
+    color: #0f172a;
+}
+
+.mt-null-val {
+    color: #cbd5e1;
+}
+
+/* Header Tahap Badge */
+.mt-th-tahap {
+    min-width: 100px;
+    max-width: 130px;
+    text-align: center;
+}
+
+.mt-th-badge {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+}
+
+.mt-th-num {
+    display: inline-grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 6px;
+    background: #e0e7ff;
+    color: #4338ca;
+    font-size: 0.68rem;
+    font-weight: 900;
+}
+
+.mt-th-txt {
+    font-size: 0.72rem;
+    font-weight: 800;
+    color: #334155;
+    text-transform: none;
+    letter-spacing: normal;
+    white-space: normal;
+    text-align: center;
+    line-height: 1.25;
+}
+
+/* Metric Cell Styling */
+.mt-sel {
+    padding: 6px 8px !important;
+    text-align: center;
+}
+
 .mt-sel span {
     display: grid;
     place-items: center;
-    min-width: 36px;
-    height: 30px;
+    min-width: 38px;
+    height: 32px;
+    margin: 0 auto;
     border-radius: 8px;
-    font-size: 0.78rem;
-    font-weight: 800;
+    font-size: 0.8rem;
+    font-weight: 900;
     font-variant-numeric: tabular-nums;
-    transition: transform 0.15s ease;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+    transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
-.mt-sel span:hover { transform: scale(1.1); z-index: 1; }
 
-.mt-nota { margin: 12px 0 0; font-size: 0.74rem; line-height: 1.5; color: #94a3b8; }
+.mt-sel span:hover {
+    transform: scale(1.14);
+    z-index: 5;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.15);
+}
+
+.mt-nota {
+    margin: 14px 0 0;
+    font-size: 0.76rem;
+    line-height: 1.5;
+    color: #64748b;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.mt-nota .bi { color: #6366f1; }
 </style>

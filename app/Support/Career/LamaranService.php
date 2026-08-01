@@ -117,15 +117,39 @@ class LamaranService
         $tahapPertama = $tahap->values()->first();
         $labelTahap1 = $tahapPertama->Label ?? 'Seleksi Administrasi';
 
-        // Bila jawaban formulir pendaftaran ikut dikirim & tahap pertama menuntut
-        // formulir → SERVER yang menilai syarat (bukan flag gugur dari klien). Tahap
-        // pertama dibuat BERJALAN dulu supaya bisa diproses syarat engine setelahnya.
-        $pakaiSyaratServer = $jawaban !== null && $tahapPertama && ! empty($tahapPertama->Formulir_Kode);
+        // Jangan pernah membuat lamaran tanpa tempat menyimpan formulirnya.
+        // Kegagalan konfigurasi harus terlihat oleh admin/kandidat, bukan berubah
+        // menjadi lamaran kosong yang tampak sukses.
+        if ($jawaban !== null && ! $tahapPertama) {
+            return [
+                'ok' => false,
+                'pesan' => 'Alur seleksi program belum memiliki tahap. Hubungi administrator.',
+                'kode' => 'ALUR_TANPA_TAHAP',
+            ];
+        }
+
+        // Form apply publik selalu mengirim jawaban pendaftaran. Master Alur lama
+        // kadang belum menempelkan Formulir_Kode pada tahap pertama; sebelumnya
+        // kondisi itu membuat lamaran tercipta tetapi seluruh jawaban dibuang.
+        // Isi kekosongan tersebut dari katalog formulir sesuai kategori. Jika
+        // katalog juga belum tersedia, simpanPengisian() tetap menyimpan snapshot
+        // pendaftaran tanpa master agar data kandidat tidak hilang.
+        $formulirPendaftaran = $jawaban !== null
+            ? $this->formulirPendaftaranUntukKategori((string) $program->Kategori)
+            : null;
+        $formulirPendaftaranKode = $tahapPertama->Formulir_Kode
+            ?? $formulirPendaftaran->Kode
+            ?? null;
+
+        // Setiap jawaban pendaftaran wajib dinilai dan disimpan SERVER. Keberadaan
+        // Formulir_Kode bukan lagi gerbang penyimpanan karena itu konfigurasi admin,
+        // bukan alasan yang sah untuk kehilangan data kandidat.
+        $pakaiSyaratServer = $jawaban !== null && $tahapPertama;
         if ($pakaiSyaratServer) {
             $gugurAlasan = null;
         }
 
-        $lamaranId = DB::transaction(function () use ($pembukaan, $program, $posisi, $alur, $tahap, $userId, $userAdminId, $kode, $now, $nama, $gugurAlasan, $labelTahap1) {
+        $lamaranId = DB::transaction(function () use ($pembukaan, $program, $posisi, $alur, $tahap, $userId, $userAdminId, $kode, $now, $nama, $gugurAlasan, $labelTahap1, $formulirPendaftaranKode) {
             $gugur = $gugurAlasan !== null && $gugurAlasan !== '';
             $id = DB::table('N_WEB_CAREERS_Lamaran')->insertGetId([
                 'Kode' => $kode,
@@ -165,7 +189,11 @@ class LamaranService
                     'Flag_Tuntas' => $t->Flag_Tuntas ?? 'T',
                     'Provider' => $t->Provider,
                     'Keputusan_Mode' => $t->Keputusan ?? null,
-                    'Formulir_Kode' => $t->Formulir_Kode,
+                    // Tahap pertama mewarisi formulir pendaftaran bawaan bila
+                    // Master Alur lama belum menautkannya.
+                    'Formulir_Kode' => $i === 0
+                        ? ($t->Formulir_Kode ?? $formulirPendaftaranKode)
+                        : $t->Formulir_Kode,
                     'Jenis_Tes_Kode' => $t->Jenis_Tes_Kode,
                     // Tahap pertama: GUGUR bila knock-out, kalau tidak BERJALAN.
                     'Status' => $i === 0 ? ($gugur ? 'GUGUR' : 'BERJALAN') : 'MENUNGGU',
@@ -249,14 +277,18 @@ class LamaranService
         if (! $lamaran || (int) $lamaran->Id_Users !== $userId) {
             return ['ok' => false, 'pesan' => 'Lamaran bukan milik Anda.'];
         }
-        if (! $tahap->Formulir_Kode) {
+        // Tahap pertama adalah formulir pendaftaran publik. Data ini tetap wajib
+        // disimpan walaupun Master Alur lama belum memiliki Formulir_Kode.
+        if (! $tahap->Formulir_Kode && (int) $tahap->Urutan !== 1) {
             return ['ok' => false, 'pesan' => 'Tahap ini tidak menuntut pengisian formulir.'];
         }
         if ($tahap->Status !== 'BERJALAN') {
             return ['ok' => false, 'pesan' => 'Tahap ini tidak sedang berjalan.'];
         }
 
-        $formulir = DB::table('N_WEB_CAREERS_Master_Formulir')->where('Kode', $tahap->Formulir_Kode)->first();
+        $formulir = $tahap->Formulir_Kode
+            ? DB::table('N_WEB_CAREERS_Master_Formulir')->where('Kode', $tahap->Formulir_Kode)->first()
+            : $this->formulirPendaftaranUntukKategori((string) ($lamaran->Kategori ?? ''));
         $now = now();
         $nama = session('career_auth.nama', 'KANDIDAT');
 
@@ -284,8 +316,8 @@ class LamaranService
                 'Id_Users' => $userId,
                 'Lamaran_Id' => $lamaran->Id_Lamaran,
                 'Lamaran_Tahap_Id' => $tahap->Id_Lamaran_Tahap,
-                'Master_Formulir_Id' => $formulir->Id_Master_Formulir ?? null,
-                'Komponen_Kode' => $formulir->Komponen_Kode ?? null,
+                'Master_Formulir_Id' => $formulir?->Id_Master_Formulir,
+                'Komponen_Kode' => $formulir?->Komponen_Kode,
                 'Sumber' => $tahap->Urutan == 1 ? 'PENDAFTARAN' : 'TAHAP',
                 'Master_Alur_Tahap_Id' => $tahap->Master_Alur_Tahap_Id,
                 'Program_Id' => $lamaran->Program_Id,
@@ -334,6 +366,27 @@ class LamaranService
             'rekomendasi' => $evaluasi['rekomendasi'],
             'pengisianId' => $pengisianId,
         ];
+    }
+
+    /**
+     * Formulir gerbang bawaan per jalur rekrutmen.
+     *
+     * Pencarian memakai Komponen_Kode karena Kode master dibuat admin dan dapat
+     * berbeda antar instalasi. Baris aktif yang paling awal menjadi acuan.
+     */
+    private function formulirPendaftaranUntukKategori(string $kategori): ?object
+    {
+        $komponen = match (strtoupper($kategori)) {
+            'MT' => 'FORMULIR_1',
+            'INTERNSHIP', 'MAGANG' => 'FORMULIR_4',
+            default => 'FORMULIR_3',
+        };
+
+        return DB::table('N_WEB_CAREERS_Master_Formulir')
+            ->where('Komponen_Kode', $komponen)
+            ->where('Flag_Aktif', 'Y')
+            ->orderBy('Id_Master_Formulir')
+            ->first();
     }
 
     /**

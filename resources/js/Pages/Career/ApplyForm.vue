@@ -609,14 +609,23 @@ async function finalize() {
     for (let i = 0; i < steps.length; i++) { step.value = i; if (!validateStep()) { mengirim.value = false; return; } }
     stopCamera();
     const isForm2 = props.flow.form === 2;
+    // Form 2 wajib dikerjakan dari Detail Lamaran agar memiliki tahapId dan
+    // tersimpan lewat endpoint formulir tahap. Guard ini mencegah sukses palsu
+    // bila halaman legacy masih terbuka dari cache/tab lama.
+    if (isForm2) {
+        mengirim.value = false;
+        notice('Formulir tahap lanjut harus dibuka dari Detail Lamaran.');
+        router.visit('/kandidat/portal');
+        return;
+    }
     // Syarat dari Master Program (DB), bukan daftar tetap di careerSession.
-    const ko = !isForm2 ? checkKnockout(jenis, form, props.flow.syarat) : [];
+    const ko = checkKnockout(jenis, form, props.flow.syarat);
     let procId = null; // id proses queue (untuk poll hasil nyata)
 
     // FINALISASI = benar-benar MENGAJUKAN lamaran ke sistem (DB), bukan sekadar
     // draf sessionStorage. Kalau knock-out (tidak lolos syarat wajib) lamaran
-    // TETAP tercatat, tapi statusnya Tidak Lolos. Hanya Form 1 & kartu ber-id DB.
-    if (!isForm2 && lowongan.pembukaanId && lowongan.posisiId) {
+    // TETAP tercatat, tapi statusnya Tidak Lolos.
+    if (lowongan.pembukaanId && lowongan.posisiId) {
         try {
             // MULTIPART: jawaban (JSON) + berkas (pdf/jpg ≤2MB) + foto verifikasi.
             // Diproses asinkron oleh server (queue wc-applyform) + unggah GCS.
@@ -648,7 +657,9 @@ async function finalize() {
         memproses.value = true;
         pollStatus(procId);
     } else {
-        done.value = true; // Form 2 / tanpa target DB — tetap seperti semula
+        mengirim.value = false;
+        notice('Target lamaran tidak valid. Muat ulang halaman lalu coba kembali.');
+        return;
     }
     // Snapshot sessionStorage (legacy card) — tetap dibuat, tapi TAMPILAN akhir ikut server.
     const existing = getApp(lowongan.id);
