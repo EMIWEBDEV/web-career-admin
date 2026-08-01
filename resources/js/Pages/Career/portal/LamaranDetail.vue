@@ -389,6 +389,22 @@
                                 </div>
                             </div>
 
+                            <!-- BELUM ADA PENAWARANNYA. Tidak ada yang bisa dijawab,
+                                 jadi yang diberikan keterangan — bukan tombol
+                                 "Terima / Mundur" untuk surat yang belum ia pegang. -->
+                            <div v-else-if="!tahapAktif.penawaranDiajukan" class="ld-offer__wait">
+                                <i class="bi bi-hourglass-split"></i>
+                                <div style="min-width: 0">
+                                    <b>Menunggu tim rekrutmen menghubungimu.</b>
+                                    <p>
+                                        Kami akan mengontakmu lebih lanjut untuk membahas penawaran —
+                                        jadwal pertemuan dan surat penawarannya dikirim lewat email dan
+                                        muncul di halaman ini. Setelah itu kamu bisa memilih
+                                        <b>Terima</b> atau <b>Mengundurkan Diri</b> di sini.
+                                    </p>
+                                </div>
+                            </div>
+
                             <template v-else>
                                 <p class="ld-offer__txt">
                                     Beri tahu kami keputusanmu. Jawabanmu tidak langsung menutup apa pun kecuali
@@ -2004,6 +2020,11 @@ export default {
 .ld-offer__done.is-ya { color: #047857; background: rgba(16, 185, 129, .08); border-color: rgba(16, 185, 129, .3); }
 .ld-offer__done.is-no { color: #6d28d9; background: rgba(124, 58, 237, .06); border-color: rgba(124, 58, 237, .25); }
 .ld-offer__cat { font-style: italic; }
+/* Penawaran belum terbit — keadaan menunggu, bukan galat. */
+.ld-offer__wait { display: flex; align-items: flex-start; gap: 11px; margin-top: 13px; padding: 13px 15px; border-radius: 13px; color: #92400e; background: rgba(245, 158, 11, .09); border: 1px solid rgba(245, 158, 11, .28); }
+.ld-offer__wait .bi { flex: none; font-size: 17px; margin-top: 1px; }
+.ld-offer__wait b { display: block; font-size: 13.5px; font-weight: 800; }
+.ld-offer__wait p { margin: 4px 0 0; font-size: 12.5px; line-height: 1.6; color: #475569; }
 
 .ld-ask { position: fixed; inset: 0; z-index: 1400; display: grid; place-items: center; padding: 20px; background: rgba(15, 23, 42, .55); backdrop-filter: blur(3px); opacity: 0; pointer-events: none; transition: opacity .2s; }
 .ld-ask.is-on { opacity: 1; pointer-events: auto; }

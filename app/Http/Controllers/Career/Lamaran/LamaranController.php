@@ -730,6 +730,14 @@ class LamaranController extends Controller
                 // menghubungimu" — dan kandidat yang sudah memegang penawaran
                 // tidak punya cara menyatakan menerima atau mundur.
                 'penawaran' => ($info->Flag_Penawaran ?? 'T') === 'Y',
+                // Penawarannya sudah benar-benar diajukan tim? Selama belum,
+                // kandidat diberi tahu bahwa suratnya masih disiapkan — bukan
+                // disodori tombol "Terima / Mundur" untuk sesuatu yang belum
+                // pernah ia terima.
+                'penawaranDiajukan' => self::penawaranDiajukan(
+                    $subTesRows->get($t->Id_Lamaran_Tahap, []),
+                    count($berkasTahap->get($t->Id_Lamaran_Tahap, [])),
+                ),
                 'tanggapan' => ($t->Tanggapan_Kandidat ?? null) ? [
                     'jawab' => $t->Tanggapan_Kandidat,
                     'catatan' => $t->Tanggapan_Catatan,
@@ -1044,6 +1052,15 @@ class LamaranController extends Controller
 
         if ($tahap->Tanggapan_Kandidat) {
             return ResponseHelper::error('Kamu sudah memberi jawaban untuk tahap ini.', 409);
+        }
+
+        // Belum ada penawaran yang diajukan = belum ada yang bisa dijawab.
+        // Dijaga di server juga: tombolnya memang disembunyikan di layar, tapi
+        // permintaan bisa dikirim langsung tanpa lewat layar.
+        $subTes = DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')->where('Lamaran_Tahap_Id', $realId)->get();
+        $jmlBerkas = DB::table('N_WEB_CAREERS_Lamaran_Tahap_Berkas')->where('Lamaran_Tahap_Id', $realId)->count();
+        if (! self::penawaranDiajukan($subTes, $jmlBerkas)) {
+            return ResponseHelper::error('Penawaran untuk tahap ini belum diajukan tim rekrutmen.', 409);
         }
 
         $now = now();
@@ -1605,6 +1622,10 @@ class LamaranController extends Controller
                     // terima atau mundur. Penandanya dari Master Tipe Tahap,
                     // jadi tahap penawaran bernama lain cukup disetel di master.
                     'penawaran' => ($tipe[$t->Tipe_Tahap_Kode]->Flag_Penawaran ?? 'T') === 'Y',
+                    // TITIK TUNTAS: meloloskan di sini berarti kandidat DITERIMA,
+                    // bukan sekadar maju ke tahap berikutnya. Tombolnya ikut
+                    // berganti kata supaya tidak terbaca sebagai langkah antara.
+                    'tuntas' => ($t->Flag_Tuntas ?? 'T') === 'Y',
                 ])->all()
             : [];
 
@@ -1717,6 +1738,17 @@ class LamaranController extends Controller
                 'hasilData' => $st['hasilData'],
                 'ringkasHasil' => $st['ringkasHasil'],
                 'skor' => $skor,
+                // PENAWARAN SUDAH BENAR-BENAR DIAJUKAN?
+                //
+                // Bukan sekadar "tahapnya bernama Offering". Selama aktivitas
+                // penawarannya belum dicatat, belum ada apa pun yang bisa ditolak
+                // atau diundurkan — menawarkan tombol "Kandidat Menolak" di situ
+                // sama saja mempersilakan mencatat jawaban atas surat yang belum
+                // pernah dikirim.
+                'penawaranDiajukan' => self::penawaranDiajukan(
+                    $subPer->get($tk->Id_Lamaran_Tahap ?? 0, []),
+                    (int) ($tAktif ? ($berkasCount[$tAktif->Id_Lamaran_Tahap] ?? 0) : 0),
+                ),
                 // JAWABAN KANDIDAT atas penawaran. Admin tidak boleh menebak
                 // dari diamnya kandidat: "belum menjawab" dan "sudah menerima"
                 // menuntut tindakan yang sama sekali berbeda.
@@ -1779,6 +1811,43 @@ class LamaranController extends Controller
     }
 
     /**
+     * Penawaran pada tahap ini SUDAH sampai ke kandidat?
+     *
+     * Inilah gerbang yang menentukan kapan kandidat boleh menjawab (terima /
+     * mundur) — di portalnya maupun sebagai catatan admin. Sebelum gerbang ini
+     * terbuka, kandidat belum memegang apa pun: memintanya menjawab sama saja
+     * menanyakan pendapat atas surat yang belum pernah dikirim.
+     *
+     * TIGA tanda yang dihitung, semuanya berarti "kandidat sudah tahu":
+     *
+     *   1. Aktivitas penawaran berjadwal SUDAH DIJADWALKAN. Menjadwalkan
+     *      negosiasi otomatis mengirim undangan ke kandidat — sejak email itu
+     *      terkirim ia memang sudah ditawari pembicaraan.
+     *   2. Aktivitas penawaran sudah final (hadir/tidak hadir tercatat).
+     *   3. Berkas hasil tahap sudah ada — surat penawarannya sendiri terunggah.
+     *      Ini yang berlaku pada tahap yang LANGSUNG surat penawaran, tanpa
+     *      negosiasi: tak ada jadwal yang bisa jadi penanda.
+     */
+    private static function penawaranDiajukan(iterable $subTes, int $jmlBerkasTahap = 0): bool
+    {
+        $tipe = self::masterTipeTahap();
+        $adaPenawaran = false;
+
+        foreach ($subTes as $s) {
+            if (($tipe[$s->Tipe_Tahap_Kode ?? '']->Flag_Penawaran ?? 'T') !== 'Y') {
+                continue;
+            }
+
+            $adaPenawaran = true;
+            if (! empty($s->Jadwal_Mulai) || ($s->Flag_Selesai ?? 'N') === 'Y') {
+                return true;
+            }
+        }
+
+        return $adaPenawaran && $jmlBerkasTahap > 0;
+    }
+
+    /**
      * Satu baris RAPOR aktivitas tahap.
      *
      * `dapatDicatat` menentukan munculnya tombol "Catat Hasil" / "Tidak hadir".
@@ -1803,6 +1872,20 @@ class LamaranController extends Controller
         $tipe = self::masterTipeTahap()[$x->Tipe_Tahap_Kode ?? ''] ?? null;
         $online = ($tipe->Perilaku_Kode ?? null) === 'CAT' || ($x->Provider ?? '') === 'THIRD_PARTY';
         $isMcu = ($x->Tipe_Tahap_Kode ?? '') === 'MCU';
+        // ── AKTIVITAS PENAWARAN ────────────────────────────────────────────
+        // Dua bentuk, dibedakan oleh flag tipenya sendiri — bukan oleh kodenya:
+        //
+        //   BERJADWAL (Flag_Jadwal='Y', mis. Negosiasi, Tanda Tangan Kontrak)
+        //       Yang dikerjakan tim adalah MENGATUR PERTEMUANNYA lalu menandai
+        //       kandidat datang atau tidak. Tak ada "hasil" terpisah untuk
+        //       dicatat: nilai negosiasi bukan angka, dan kesimpulannya ada
+        //       pada keputusan tahap.
+        //
+        //   BERDOKUMEN (Flag_Upload_Hasil='Y', mis. Surat Penawaran)
+        //       Tak menuntut tindakan apa pun di rapor. Suratnya diunggah di
+        //       jendela keputusan, bersama keputusannya sendiri.
+        $isPenawaran = ($tipe->Flag_Penawaran ?? 'T') === 'Y';
+        $tipeBerjadwal = ($tipe->Flag_Jadwal ?? 'T') === 'Y';
         // Punya hasil sendiri yang harus dicatat tim: aktivitas manual pada tahap
         // multi-aktivitas (di tahap tunggal, keputusan tahap sudah mewakilinya).
         //
@@ -1812,7 +1895,7 @@ class LamaranController extends Controller
         // kesehatan, penyedia, dan tanggalnya dicatat di JENDELA KEPUTUSAN
         // (lihat putus()) bersama berkas dari kliniknya — satu peristiwa, satu
         // jendela, bukan dua yang salah satunya kerap terlewat.
-        $dicatatTim = ! $online && $jumlahAktivitasTahap > 1 && ! $isMcu;
+        $dicatatTim = ! $online && $jumlahAktivitasTahap > 1 && ! $isMcu && ! $isPenawaran;
 
         return [
             'id' => Hashids::encode($x->Id_Lamaran_Tahap_Tes),
@@ -1838,6 +1921,14 @@ class LamaranController extends Controller
             'wajibLuring' => ($tipe->Flag_Wajib_Luring ?? 'T') === 'Y',
             // Penanda agar modal "Catat Hasil" menampilkan bidang khusus MCU.
             'isMcu' => $isMcu,
+            // Aktivitas ini MEMBAWA PENAWARAN (negosiasi, surat penawaran, kontrak).
+            'penawaran' => $isPenawaran,
+            // Penawaran BERDOKUMEN: tak ada yang perlu dikerjakan di rapor.
+            // Barisnya keterangan belaka — memberinya lencana "Menunggu" membuat
+            // admin mencari tombol yang memang tidak ada, dan surat penawaran
+            // memang tidak menunggu apa-apa: ia diunggah saat keputusan diambil.
+            'infoSaja' => $isPenawaran && ! $tipeBerjadwal,
+            'selesai' => $final,
             // Kehadiran: NULL belum dicek, Y hadir, T tidak hadir.
             'hadir' => $x->Jadwal_Hadir ?? null,
             // Sudah dijadwalkan tapi kehadirannya belum dicatat -> tim harus
@@ -1867,7 +1958,9 @@ class LamaranController extends Controller
             'dapatSinkron' => $online && ! $final && ! empty($x->Penjadwalan_Tahap_Id),
             // "Tidak hadir" berlaku untuk keduanya — hanya tim yang tahu, dan
             // untuk ujian online inilah jalan keluar bila kandidat tak mengerjakan.
-            'dapatTidakHadir' => ($online || $dicatatTim) && ! $final,
+            // Penawaran BERJADWAL ikut: ia tak punya "Catat Hasil", jadi tanpa ini
+            // kandidat yang tidak datang negosiasi tak bisa ditandai sama sekali.
+            'dapatTidakHadir' => ($online || $dicatatTim || ($isPenawaran && $tipeBerjadwal)) && ! $final,
             // Penanda UI: aktivitas ini menunggu hasil dari sistem lain.
             'online' => $online,
         ];
