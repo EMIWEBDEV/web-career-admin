@@ -623,7 +623,7 @@
             :show="konfirmShow"
             :title="putusJudul"
             :subtitle="putusTarget ? `${putusTarget.pelamar} — tahap ${putusTarget.tahap}` : ''"
-            :danger="putusHasil === 'GUGUR'"
+            :danger="!!putusDef && !putusDef.lolos"
             :confirm-label="putusLabelKonfirm"
             :busy="sibuk"
             :confirm-disabled="!bolehKonfirmPutus"
