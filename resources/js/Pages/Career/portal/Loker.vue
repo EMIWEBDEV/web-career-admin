@@ -37,22 +37,17 @@
                     <span v-if="l.level"><i class="bi bi-bar-chart-steps"></i> {{ l.level }}</span>
                     <span><i class="bi bi-people"></i> {{ l.kuota }} kuota</span>
                 </div>
-                <button class="wca-btn wca-btn--primary lok-card__btn" :disabled="melamar === l.posisiId" @click="lamar(l)">
-                    <i class="bi" :class="melamar === l.posisiId ? 'bi-arrow-repeat spin' : 'bi-send'"></i>
-                    {{ melamar === l.posisiId ? 'Memproses…' : 'Lamar Posisi Ini' }}
+                <button class="wca-btn wca-btn--primary lok-card__btn" @click="lamar(l)">
+                    <i class="bi bi-send"></i>
+                    {{ l.kategori === 'MT' ? 'Lihat Program & Pilih Posisi' : 'Isi Formulir Lamaran' }}
                 </button>
             </div>
         </div>
-
-        <transition name="wca-toast"><div v-if="toast" class="wca-toast" :class="{ 'is-err': toastErr }"><i class="bi" :class="toastErr ? 'bi-exclamation-circle-fill' : 'bi-check-circle-fill'"></i> {{ toast }}</div></transition>
     </div>
 </template>
 
 <script>
-import axios from 'axios';
 import { Head, router } from '@inertiajs/vue3';
-
-const CFG = { headers: { Accept: 'application/json' } };
 
 export default {
     components: { Head },
@@ -60,7 +55,7 @@ export default {
         loker: { type: Array, default: () => [] },
     },
     data() {
-        return { tab: '', melamar: null, toast: '', toastErr: false, tm: null };
+        return { tab: '' };
     },
     computed: {
         filtered() {
@@ -70,22 +65,14 @@ export default {
     methods: {
         katLabel(k) { return { REKRUTMEN: 'Rekrutmen', MT: 'Management Trainee', INTERNSHIP: 'Internship' }[k] || k; },
         katBadge(k) { return { MT: 'wca-b--gold', INTERNSHIP: 'wca-b--green', REKRUTMEN: 'wca-b--sky' }[k] || 'wca-b--slate'; },
-        async lamar(l) {
-            if (this.melamar) return;
-            this.melamar = l.posisiId;
-            try {
-                const res = await axios.post('/api/v1/lamaran', { pembukaanId: l.pembukaanId, posisiId: l.posisiId }, CFG);
-                const id = res.data?.result?.lamaran;
-                this.notice(res.data?.message || 'Lamaran dibuat.');
-                // Langsung ke detail lamaran supaya kandidat bisa mengisi formulir tahap pertama.
-                if (id) setTimeout(() => router.visit(`/kandidat/lamaran/${id}`), 500);
-            } catch (e) {
-                this.notice(e.response?.data?.message || 'Gagal melamar.', true);
-            } finally {
-                this.melamar = null;
+        lamar(l) {
+            if (l.kategori === 'MT' && l.programDetailId) {
+                router.visit(`/karir/landing-page/mt/${encodeURIComponent(l.programDetailId)}`);
+                return;
             }
+            if (!l.applyId) return;
+            router.visit(`/karir/apply/${encodeURIComponent(l.applyId)}`);
         },
-        notice(x, err = false) { this.toast = x; this.toastErr = err; if (this.tm) clearTimeout(this.tm); this.tm = setTimeout(() => (this.toast = ''), 3500); },
     },
 };
 </script>
@@ -101,7 +88,4 @@ export default {
 .lok-card__meta { display: flex; flex-direction: column; gap: .3rem; margin: .4rem 0; font-size: 12.5px; color: #475569; }
 .lok-card__meta .bi { color: #7c3aed; margin-right: .25rem; }
 .lok-card__btn { margin-top: auto; width: 100%; justify-content: center; }
-.spin { animation: lokspin 1s linear infinite; }
-@keyframes lokspin { to { transform: rotate(360deg); } }
-.wca-toast.is-err { background: #b91c1c; }
 </style>
