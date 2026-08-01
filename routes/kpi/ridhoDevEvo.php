@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Career\CareerAdminController;
 use App\Http\Controllers\Career\Dashboard\DashboardController;
+use App\Http\Controllers\Career\Lamaran\FormulirDrafController;
 use App\Http\Controllers\Career\Lamaran\LamaranController;
 use App\Http\Controllers\Career\Monitoring\MonitoringController;
 use App\Http\Controllers\Career\TalentPool\TalentPoolController;
@@ -76,6 +77,10 @@ Route::prefix('api/v1/karir')
         Route::patch('/lamaran/sub-tes/{id}/tidak-hadir', [LamaranController::class, 'subTesTidakHadir'])->name('lamaran.subtes.tidakhadir')->middleware('career.permission:pelamarPage,EDIT');
         // Catat hasil sub-tes MANUAL (wawancara/FGD di tahap campuran) → mesin yang sama.
         Route::patch('/lamaran/sub-tes/{id}/catat-hasil', [LamaranController::class, 'subTesCatatHasil'])->name('lamaran.subtes.catathasil')->middleware('career.permission:pelamarPage,EDIT');
+        // Jadwal wawancara / tes tatap muka + undangan email ke kandidat.
+        Route::patch('/lamaran/sub-tes/{id}/jadwal', [LamaranController::class, 'subTesJadwal'])->name('lamaran.subtes.jadwal')->middleware('career.permission:pelamarPage,EDIT');
+        // Kehadiran MCU/wawancara — gerbang sebelum hasil boleh dicatat.
+        Route::patch('/lamaran/sub-tes/{id}/kehadiran', [LamaranController::class, 'subTesKehadiran'])->name('lamaran.subtes.kehadiran')->middleware('career.permission:pelamarPage,EDIT');
         // Tarik hasil ujian online dari HCLearn bila webhook-nya tak sampai.
         Route::post('/lamaran/sub-tes/{id}/sinkron', [LamaranController::class, 'subTesSinkron'])->name('lamaran.subtes.sinkron')->middleware('career.permission:pelamarPage,EDIT');
 
@@ -124,6 +129,19 @@ Route::prefix('kandidat')
         Route::get('/lamaran/{id}', [LamaranController::class, 'portalDetail'])->name('detail')->middleware('career.permission:portalPage,VIEW');
         // Pratinjau berkas milik kandidat sendiri (signed URL GCS).
         Route::get('/lamaran/berkas/file/{id}', [LamaranController::class, 'portalBerkasFile'])->name('berkas.file');
+        // Berkas HASIL TAHAP (MCU, hasil wawancara) — boleh dilihat kandidat.
+        // Nilai tetap ditahan di payload; yang dibuka hanya dokumennya.
+        Route::get('/lamaran/tahap/berkas/{id}', [LamaranController::class, 'portalBerkasTahap'])->name('tahap.berkas');
+
+        // ── SIMPAN SEMENTARA (DRAF) FORMULIR TAHAP ──
+        // Semua endpoint memeriksa kepemilikan tahap lewat Lamaran.Id_Users, jadi
+        // id tahap milik orang lain tidak bisa dipakai membaca atau menimpa draf.
+        // Berkas draf HANYA dibuka lewat endpoint berkas di bawah (signed URL
+        // 15 menit) — front-end tidak pernah menyentuh API storage langsung.
+        Route::get('/lamaran/tahap/{id}/draf', [FormulirDrafController::class, 'ambil'])->name('draf.ambil');
+        Route::post('/lamaran/tahap/{id}/draf', [FormulirDrafController::class, 'simpan'])->name('draf.simpan');
+        Route::post('/lamaran/tahap/{id}/draf/berkas', [FormulirDrafController::class, 'unggahBerkas'])->name('draf.berkas.unggah');
+        Route::get('/lamaran/tahap/{id}/draf/berkas/{field}', [FormulirDrafController::class, 'berkas'])->name('draf.berkas');
     });
 
 // ── Referensi pendidikan untuk formulir (login saja) ──

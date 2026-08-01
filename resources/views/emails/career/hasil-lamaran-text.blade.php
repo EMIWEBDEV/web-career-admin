@@ -42,6 +42,20 @@ Buka Portal Kandidat: {{ $portalUrl }}
 @endif
 
 ------------------------------------------------------------
+DATA KANDIDAT
+Nama Lengkap  : {{ $nama }}
+@if ($tglLahir)Tanggal Lahir : {{ $tglLahir }}
+@endif
+@if ($jkel)Jenis Kelamin : {{ $jkel }}
+@endif
+@if ($kampus)Asal Kampus   : {{ $kampus }}
+@endif
+@if ($hp)No. Telepon   : {{ $hp }}
+@endif
+@if ($email)Email         : {{ $email }}
+@endif
+
+------------------------------------------------------------
 WASPADA PENIPUAN: EVO Group tidak pernah memungut biaya apa pun dalam proses rekrutmen. Email resmi hanya dari domain @evonusabersaudara.co.id.
 
 © {{ date('Y') }} EVO Group · EVO Career — Portal Kandidat

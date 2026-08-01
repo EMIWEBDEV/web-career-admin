@@ -185,20 +185,10 @@ class WcApplyFormJob implements ShouldQueue, ShouldBeUnique
 
             $extra = ['kode' => $lam->Kode, 'posisi' => $lam->posisi, 'program' => $lam->program];
 
-            // Data kartu kandidat untuk email: tanggal lahir (dari jawaban pendaftaran)
-            // + PATH foto verifikasi (bukan bytes — payload queue harus kecil).
-            $peng = DB::table('N_WEB_CAREERS_Formulir_Pengisian')
-                ->where('Lamaran_Id', $lamaranId)->where('Sumber', 'PENDAFTARAN')
-                ->orderBy('Id_Formulir_Pengisian')->value('Jawaban_Json');
-            $jaw = json_decode($peng ?: '{}', true) ?: [];
-            $extra['tglLahir'] = $jaw['lahir'] ?? null;
-
-            $extra['fotoPath'] = DB::table('N_WEB_CAREERS_Formulir_Berkas as fb')
-                ->join('N_WEB_CAREERS_Formulir_Pengisian as fp', 'fp.Id_Formulir_Pengisian', '=', 'fb.Formulir_Pengisian_Id')
-                ->where('fp.Lamaran_Id', $lamaranId)
-                ->where('fb.Field_Key', 'foto_verifikasi')
-                ->orderByDesc('fb.Id_Formulir_Berkas')
-                ->value('fb.Path_File');
+            // Data kartu kandidat untuk email (tanggal lahir, kampus, PATH foto).
+            // Pengambilannya dipakai bersama dengan email keputusan tahap —
+            // lihat LamaranService::dataKandidatEmail().
+            $extra += \App\Support\Career\LamaranService::dataKandidatEmail($lamaranId);
 
             if ($lam->Status === 'GUGUR') {
                 $status = 'GUGUR';

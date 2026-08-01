@@ -32,6 +32,46 @@ class GcsBerkas
     }
 
     /**
+     * KONSEP PENYIMPANAN BERKAS — satu pola untuk semua sumber.
+     *
+     *   {akar}/{tahun}/{bulan}/{tanggal}/{slug-nama-kandidat}/[{ruang}/]{slug-berkas}/{slug-berkas}.{ext}
+     *
+     * Akar membedakan ASAL berkasnya, bukan formatnya:
+     *   apply-form/     berkas saat kandidat MELAMAR (CV, foto verifikasi)
+     *   formulir-tahap/ berkas yang KANDIDAT unggah di formulir sebuah tahap
+     *   hasil-tahap/    berkas yang TIM unggah sebagai hasil tahap
+     *                   (wawancara, MCU, psikotes offline, dst.)
+     *
+     * `ruang` hanya dipakai hasil-tahap, diisi kode tipe tahap (INTERVIEW, MCU,
+     * …) supaya berkas satu kandidat tidak menumpuk jadi satu tumpukan tanpa
+     * penanda. Tanggal ada di path agar penelusuran dan kebijakan lifecycle
+     * bucket bisa bekerja per periode tanpa membaca database.
+     *
+     * SEBELUMNYA hasil tahap menumpang folderKandidat() dengan menempelkan
+     * "-hasil-tahap" pada NAMA kandidat, sehingga berkas tim ikut masuk ke
+     * apply-form/ dan nama foldernya tidak lagi cocok dengan kandidat mana pun.
+     */
+    public function folderHasilTahap(string $tahun, string $bulan, string $tanggal, string $namaKandidat, ?string $kodeTahap = null): string
+    {
+        $ruang = $kodeTahap ? '/' . $this->slug($kodeTahap) : '';
+
+        return 'hasil-tahap/' . $tahun . '/' . $bulan . '/' . $tanggal . '/' . $this->slug($namaKandidat) . $ruang;
+    }
+
+    /**
+     * Path folder berkas FORMULIR TAHAP (mis. Kelengkapan Data Diri).
+     *
+     * Susunannya sengaja SAMA PERSIS dengan folderKandidat() — tahun/bulan/
+     * tanggal/nama-kandidat — supaya menelusuri berkas seorang kandidat di
+     * bucket tidak menuntut hafal dua pola berbeda. Yang berbeda hanya akarnya,
+     * agar berkas lamaran awal dan berkas tahap seleksi tidak tercampur.
+     */
+    public function folderTahap(string $tahun, string $bulan, string $tanggal, string $namaKandidat): string
+    {
+        return 'formulir-tahap/' . $tahun . '/' . $bulan . '/' . $tanggal . '/' . $this->slug($namaKandidat);
+    }
+
+    /**
      * Unggah satu berkas. Nama file = slug-berkas.ext (deterministik → tanggal/nama
      * yang sama masuk folder yang sama, tidak bentrok).
      *

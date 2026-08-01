@@ -93,6 +93,8 @@ class MasterAlurController extends Controller
                         // Upload berkas hasil tahap (MCU/Interview) — aktif & wajib/tidak.
                         'uploadHasil' => ($t->Flag_Upload_Hasil ?? 'T') === 'Y',
                         'wajibUpload' => ($t->Flag_Wajib_Upload ?? 'T') === 'Y',
+                        // TITIK TUNTAS: tahap yang menutup proses seleksi.
+                        'tuntas' => ($t->Flag_Tuntas ?? 'T') === 'Y',
                     ])->values(),
                 ];
             })->values();
@@ -293,6 +295,7 @@ class MasterAlurController extends Controller
                 // Tahap; dulu kode 'MCU' ditulis langsung di beberapa file).
                 'Flag_Upload_Hasil' => (($s['uploadHasil'] ?? false) || ($tipe[$s['tipe']]->Flag_Upload_Hasil ?? 'T') === 'Y') ? 'Y' : 'T',
                 'Flag_Wajib_Upload' => ($s['wajibUpload'] ?? false) ? 'Y' : 'T',
+                'Flag_Tuntas' => ($s['tuntas'] ?? false) ? 'Y' : 'T',
                 'Created_At' => $now, 'Created_By' => $userName, 'Created_By_Id' => $userId,
                 'Updated_At' => $now, 'Updated_By' => $userName, 'Updated_By_Id' => $userId,
             ], 'Id_Master_Alur_Tahap');

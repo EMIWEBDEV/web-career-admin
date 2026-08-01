@@ -20,6 +20,7 @@ require base_path('routes/career/MasterSumber/MasterSumberApi.php');
 require base_path('routes/career/MasterTipe/MasterTipeWeb.php');
 require base_path('routes/career/MasterTipe/MasterTipeApi.php');
 require base_path('routes/career/MasterKampus/MasterKampusWeb.php');
+require base_path('routes/career/MasterLokasi/MasterLokasiWeb.php');
 require base_path('routes/career/MasterKampus/MasterKampusApi.php');
 require base_path('routes/career/MasterJenjang/MasterJenjangWeb.php');
 require base_path('routes/career/MasterJenisInstitusi/MasterJenisInstitusiWeb.php');
