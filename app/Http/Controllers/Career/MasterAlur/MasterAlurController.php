@@ -76,8 +76,14 @@ class MasterAlurController extends Controller
                         'mode' => $t->Mode_Keputusan_Kode ?? 'MANUAL_REVIEW',
                         'tests' => collect($subTes->get($t->Id_Master_Alur_Tahap, []))->map(fn ($x) => [
                             'label' => $x->Label,
-                            // Tipe milik aktivitas ini — boleh beda dari tahapnya.
-                            'tipe' => $x->Tipe_Tahap_Kode ?: $t->Tipe_Tahap_Kode,
+                            // Tipe milik aktivitas ini APA ADANYA — tidak diisi
+                            // diam-diam dengan tipe tahapnya. Builder memakai
+                            // nilai ini sebagai isi kotak "Tipe Aktivitas";
+                            // menggantinya di sini membuat layar tidak lagi
+                            // menampilkan apa yang benar-benar tersimpan.
+                            // Semua pemakai lain sudah punya cadangannya sendiri
+                            // (`?: tipe tahap`), jadi baris ini aman apa adanya.
+                            'tipe' => $x->Tipe_Tahap_Kode,
                             'provider' => $x->Provider,
                             'peran' => $x->Peran,
                             'wajib' => $x->Wajib === 'Y',
