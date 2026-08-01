@@ -9,6 +9,7 @@ use App\Jobs\Career\WcJadwalEmailJob;
 use App\Jobs\Career\WcApplyFormJob;
 use App\Support\Career\GcsBerkas;
 use App\Support\Career\LamaranService;
+use App\Support\Career\LamaranTargetValidator;
 use App\Support\Career\PipelineProgress;
 use App\Support\CareerShell;
 use Illuminate\Http\Request;
@@ -31,7 +32,10 @@ use Vinkla\Hashids\Facades\Hashids;
  */
 class LamaranController extends Controller
 {
-    public function __construct(private LamaranService $svc)
+    public function __construct(
+        private LamaranService $svc,
+        private LamaranTargetValidator $targetValidator,
+    )
     {
     }
 
@@ -133,6 +137,8 @@ class LamaranController extends Controller
         foreach ($pembukaan as $pb) {
             foreach ($posisi->get($pb->Program_Id, []) as $x) {
                 $out[] = [
+                    'applyId' => 'PB-' . $pb->Kode . '-' . $x->Id_Program_Posisi,
+                    'programDetailId' => 'PB-' . $pb->Kode,
                     'pembukaanId' => Hashids::encode($pb->Id_Pembukaan),
                     'posisiId' => Hashids::encode($x->Id_Program_Posisi),
                     'program' => $pb->ProgramNama,
@@ -194,8 +200,19 @@ class LamaranController extends Controller
             return ResponseHelper::error('Data lamaran tidak valid.', 422);
         }
 
+        // Tolak pasangan pembukaan-posisi yang tidak berhubungan sebelum berkas
+        // diunggah. Job memvalidasi ulang jika status berubah selama mengantre.
+        $target = $this->targetValidator->validasi((int) $pembukaanId, (int) $posisiId);
+        if (! $target['ok']) {
+            return ResponseHelper::error($target['pesan'], 422);
+        }
+
         // Cek duplikat lebih awal (umpan balik cepat) — job juga idempoten.
-        $sudah = DB::table('N_WEB_CAREERS_Lamaran')->where('Id_Users', $userId)->where('Program_Posisi_Id', (int) $posisiId)->exists();
+        $sudah = DB::table('N_WEB_CAREERS_Lamaran')
+            ->where('Id_Users', $userId)
+            ->where('Program_Id', $target['program']->Id_Program)
+            ->where('Program_Posisi_Id', (int) $posisiId)
+            ->exists();
         if ($sudah) {
             return ResponseHelper::error('Anda sudah melamar posisi ini.', 422);
         }
@@ -203,10 +220,7 @@ class LamaranController extends Controller
         // ── KELAYAKAN JALUR (aturan MT/REKRUTMEN + cooldown, master DB) ──
         // Feedback INSTAN sebelum unggah berkas (hindari berkas GCS yatim). Job &
         // service tetap cek ulang (defense-in-depth).
-        $kategoriProgram = DB::table('N_WEB_CAREERS_Pembukaan as pb')
-            ->join('N_WEB_CAREERS_Program as p', 'p.Id_Program', '=', 'pb.Program_Id')
-            ->where('pb.Id_Pembukaan', (int) $pembukaanId)
-            ->value('p.Kategori');
+        $kategoriProgram = $target['program']->Kategori;
         $kelayakan = (new \App\Support\Career\KelayakanLamaran())->cek($userId, $kategoriProgram);
         if (! $kelayakan['boleh']) {
             return ResponseHelper::error($kelayakan['alasan'], 422);
