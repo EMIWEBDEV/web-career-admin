@@ -40,6 +40,31 @@ class MasterLokasiController extends Controller
     }
 
     /**
+     * Alamat satu baris: alamat + kota/provinsi yang BELUM tertulis di dalamnya.
+     *
+     * Kolom Alamat umumnya sudah memuat kota dan provinsinya. Menyambung
+     * ketiganya apa adanya menghasilkan "Banyuasin, Sumatera Selatan,
+     * Banyuasin, Sumatera Selatan" — pada undangan resmi itu terbaca seperti
+     * data rusak, dan kandidat jadi ragu alamatnya benar atau tidak.
+     */
+    public static function alamatLengkap(?object $r): ?string
+    {
+        if (! $r) {
+            return null;
+        }
+
+        $alamat = trim((string) ($r->Alamat ?? ''));
+        $bawah = mb_strtolower($alamat);
+
+        $tambahan = array_filter(
+            [$r->Kota ?? null, $r->Provinsi ?? null, $r->Kode_Pos ?? null],
+            fn ($v) => $v && ! str_contains($bawah, mb_strtolower((string) $v)),
+        );
+
+        return implode(', ', array_filter(array_merge([$alamat], $tambahan))) ?: null;
+    }
+
+    /**
      * Bentuk satu baris untuk dikirim ke layar.
      *
      * URL peta disusun DI SINI, bukan di Vue: aturannya sama untuk admin dan
@@ -67,6 +92,9 @@ class MasterLokasiController extends Controller
             'jenis' => $r->Jenis,
             'kategori' => $r->Kategori,
             'alamat' => $r->Alamat,
+            // Alamat SATU BARIS siap tulis (surel undangan, kartu lokasi):
+            // kota/provinsi hanya ditambahkan bila belum tertulis di alamatnya.
+            'alamatLengkap' => self::alamatLengkap($r),
             'kota' => $r->Kota,
             'provinsi' => $r->Provinsi,
             'kodePos' => $r->Kode_Pos,

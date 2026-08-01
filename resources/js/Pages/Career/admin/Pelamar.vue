@@ -480,6 +480,29 @@
                      kuota ikut pindah supaya alasan tombol Loloskan hilang/mati tetap
                      terbaca di sebelah tombolnya. -->
                 <div v-if="detailKandidat.butuhKeputusan" class="plw-foot">
+                    <!-- JAWABAN KANDIDAT atas penawaran. Ditaruh di atas tombol
+                         karena inilah yang menentukan tombol mana yang benar:
+                         diamnya kandidat dan persetujuannya menuntut tindakan
+                         yang sama sekali berbeda, dan admin tak boleh menebaknya. -->
+                    <div v-if="detailKandidat.tanggapan" class="plw-jawab" :class="detailKandidat.tanggapan.jawab === 'TERIMA' ? 'is-ya' : 'is-no'">
+                        <i class="bi" :class="detailKandidat.tanggapan.jawab === 'TERIMA' ? 'bi-hand-thumbs-up-fill' : 'bi-box-arrow-left'"></i>
+                        <div style="min-width: 0">
+                            <b>Kandidat {{ detailKandidat.tanggapan.jawab === 'TERIMA' ? 'MENERIMA' : 'MUNDUR' }}</b>
+                            <span v-if="detailKandidat.tanggapan.waktu"> · {{ tglId(detailKandidat.tanggapan.waktu) }}</span>
+                            <p v-if="detailKandidat.tanggapan.catatan">“{{ detailKandidat.tanggapan.catatan }}”</p>
+                        </div>
+                    </div>
+                    <!-- Tahap berpenawaran yang BELUM dijawab. Menunggu itu wajar,
+                         tapi menunggu tanpa batas tidak — jadi keadaannya disebut,
+                         bukan dibiarkan terbaca sebagai "tidak ada apa-apa". -->
+                    <div v-else-if="tahapPenawaran" class="plw-jawab is-wait">
+                        <i class="bi bi-hourglass-split"></i>
+                        <div style="min-width: 0">
+                            <b>Kandidat belum menjawab penawaran.</b>
+                            <p>Ia bisa menekan Terima / Mundur di portalnya. Bila menggantung, tim tetap bisa memutus sendiri lewat tombol di bawah.</p>
+                        </div>
+                    </div>
+
                     <!-- KEHADIRAN DULU, baru keputusan. Selama masih ada aktivitas
                          berjadwal yang kehadirannya belum ditetapkan, meloloskan
                          berarti memutuskan tanpa tahu kandidatnya datang atau tidak.
@@ -497,59 +520,51 @@
                         <span v-else>Sisa <b>{{ detailKandidat.sisaKuota }}</b> kursi dari {{ detailKandidat.kuota }} (terisi {{ detailKandidat.terisiKuota }}).</span>
                     </div>
 
-                    <!-- Aksi keputusan — 2 atau 3 tombol tergantung tahap. Tombol
-                         "Masuk Talent Pool" hanya muncul bila tahap ini di-cut-off
-                         ke Talent Pool (diatur di Master Tahapan Seleksi). Loloskan
-                         disembunyikan bila kuota penuh di tahap terakhir. -->
-                    <div class="plw-actions" :class="{ 'is-three': bolehTalentPool(detailKandidat) && !kuotaBlokir(detailKandidat) }">
-                        <!-- Tombol ini HANYA MEMBUKA modal konfirmasi; berkas wajib
-                             ditahan di tombol "Ya, Loloskan" di dalamnya. Dulu tombol
-                             ini sendiri yang dimatikan saat berkas wajib belum ada —
-                             padahal satu-satunya tempat mengunggah berkas justru ada
-                             di dalam modal yang tombol ini buka. Pada tahap MCU
-                             (tipenya menuntut dokumen) itu berarti Loloskan tidak
-                             pernah bisa diklik sama sekali. -->
+                    <!-- KEPUTUSAN PERUSAHAAN — tombolnya DARI MASTER Hasil
+                         Keputusan, bukan tiga tombol yang ditulis mati di sini.
+                         Semua menunggu kehadiran ditetapkan lebih dulu: menggugurkan
+                         atau menyimpan ke Talent Pool orang yang ternyata datang
+                         sama kelirunya dengan meloloskan orang yang tidak datang.
+
+                         Tombol ini HANYA MEMBUKA modal konfirmasi; syarat berkas
+                         ditahan di tombol konfirmasi di dalamnya — satu-satunya
+                         tempat mengunggah berkas justru ada di modal itu. -->
+                    <div class="plw-actions" :class="{ 'is-three': putusanPerusahaan.length > 2 }">
                         <button
-                            v-if="!kuotaBlokir(detailKandidat)"
-                            type="button" class="plw-btn-lolos"
+                            v-for="h in putusanPerusahaan" :key="h.kode"
+                            type="button" class="plw-btn-putus" :class="kelasPutus(h)"
                             :disabled="kehadiranKurang(detailKandidat)"
-                            :title="kehadiranKurang(detailKandidat)
-                                ? 'Tetapkan kehadiran aktivitas berjadwal dulu'
-                                : (uploadKurang(detailKandidat) ? 'Berkas hasil wajib — unggah di jendela konfirmasi' : '')"
-                            @click="askPutus(detailKandidat, 'LULUS')"
+                            :title="kehadiranKurang(detailKandidat) ? 'Tetapkan kehadiran aktivitas berjadwal dulu' : h.deskripsi"
+                            @click="askPutus(detailKandidat, h.kode)"
                         >
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M20 6L9 17l-5-5" /></svg>
-                            Loloskan
+                            <i class="bi" :class="h.ikon"></i>
+                            {{ h.labelTombol }}
                         </button>
-                        <!-- Label dipendekkan jadi "Talent Pool": tiga tombol berbagi
-                             satu baris, dan "Masuk Talent Pool" selalu pecah dua baris
-                             di drawer sempit. Arti lengkapnya sudah dijelaskan di
-                             tooltip dan di modal konfirmasi. -->
-                        <!-- KETIGA tombol menunggu kehadiran, bukan hanya Loloskan.
-                             Menggugurkan atau menyimpan ke Talent Pool orang yang
-                             ternyata datang — dan hasil tesnya belum dicatat — sama
-                             kelirunya dengan meloloskan orang yang tidak datang. -->
-                        <button
-                            v-if="bolehTalentPool(detailKandidat)"
-                            type="button" class="plw-btn-talent"
-                            :disabled="kehadiranKurang(detailKandidat)"
-                            :title="kehadiranKurang(detailKandidat)
-                                ? 'Tetapkan kehadiran aktivitas berjadwal dulu'
-                                : 'Tidak melanjutkan di lowongan ini, tetapi disimpan di Talent Pool untuk kesempatan berikutnya'"
-                            @click="askPutus(detailKandidat, 'TALENT_POOL')"
-                        >
-                            <i class="bi bi-stars"></i>
-                            Talent Pool
-                        </button>
-                        <button
-                            type="button" class="plw-btn-gugur"
-                            :disabled="kehadiranKurang(detailKandidat)"
-                            :title="kehadiranKurang(detailKandidat) ? 'Tetapkan kehadiran aktivitas berjadwal dulu' : ''"
-                            @click="askPutus(detailKandidat, 'GUGUR')"
-                        >
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
-                            Tidak Lolos
-                        </button>
+                    </div>
+
+                    <!-- KEPUTUSAN DARI KANDIDAT — dipisah, bukan disamakan dengan
+                         penilaian tim. Kandidat yang menolak penawaran atau mundur
+                         BUKAN kandidat yang gagal seleksi; mencatatnya sebagai
+                         "Tidak Lolos" membuat laporan berbunyi "gagal di tahap
+                         penawaran" untuk orang yang justru lolos lalu memilih pergi,
+                         dan itu menuntun ke perbaikan yang salah sasaran. -->
+                    <div v-if="putusanKandidat.length" class="plw-actions2">
+                        <div class="plw-actions2__lbl">
+                            <i class="bi bi-person-lines-fill"></i> KEPUTUSAN DARI KANDIDAT
+                            <small v-if="detailKandidat.tanggapan">— sudah menjawab lewat portal</small>
+                        </div>
+                        <div class="plw-actions2__row">
+                            <button
+                                v-for="h in putusanKandidat" :key="h.kode"
+                                type="button" class="plw-btn-kandidat"
+                                :disabled="kehadiranKurang(detailKandidat)"
+                                :title="h.deskripsi"
+                                @click="askPutus(detailKandidat, h.kode)"
+                            >
+                                <i class="bi" :class="h.ikon"></i>
+                                {{ h.labelTombol }}
+                            </button>
+                        </div>
                     </div>
                 </div>
             </template>
@@ -608,7 +623,7 @@
             :show="konfirmShow"
             :title="putusJudul"
             :subtitle="putusTarget ? `${putusTarget.pelamar} — tahap ${putusTarget.tahap}` : ''"
-            :danger="putusHasil === 'GUGUR'"
+            :danger="!!putusDef && !putusDef.lolos"
             :confirm-label="putusLabelKonfirm"
             :busy="sibuk"
             :confirm-disabled="!bolehKonfirmPutus"
@@ -619,27 +634,38 @@
             <!-- Ringkas apa yang akan terjadi. Keputusan ini mengirim email ke
                  kandidat dan tidak bisa ditarik kembali, jadi disebutkan di muka
                  alih-alih membiarkan admin menebak. -->
-            <div class="plw-putus__ring" :class="`is-${(putusHasil || '').toLowerCase()}`">
+            <div class="plw-putus__ring" :class="nadaPutus">
                 <div v-if="putusTarget" class="plw-putus__row">
                     <i class="bi bi-person-badge"></i>
                     <span><b>{{ putusTarget.pelamar }}</b> · {{ putusTarget.posisi || '—' }}<template v-if="putusTarget.departemen"> · {{ putusTarget.departemen }}</template></span>
                 </div>
-                <div v-if="putusHasil === 'LULUS'" class="plw-putus__row">
-                    <i class="bi bi-arrow-right-circle"></i>
-                    <span>Maju ke tahap berikutnya dan <b>email pemberitahuan dikirim</b> ke kandidat.</span>
+                <!-- Akibat keputusan DIBACA DARI MASTER, bukan tiga kalimat yang
+                     ditulis mati. Menambah hasil baru di master berarti tombolnya
+                     langsung muncul BESERTA keterangan akibatnya. -->
+                <div v-if="putusDef" class="plw-putus__row">
+                    <i class="bi" :class="putusDef.ikon"></i>
+                    <span>{{ putusDef.deskripsi }}</span>
                 </div>
-                <div v-else-if="putusHasil === 'GUGUR'" class="plw-putus__row">
-                    <i class="bi bi-x-octagon"></i>
-                    <span>Proses seleksi <b>dihentikan</b> dan <b>email pemberitahuan dikirim</b> ke kandidat.</span>
-                </div>
-                <div v-else class="plw-putus__row">
+                <div v-if="putusDef && putusDef.talentPool" class="plw-putus__row">
                     <i class="bi bi-stars"></i>
-                    <span>Tidak melanjutkan di lowongan ini, tetapi disimpan di <b>Talent Pool</b>. Kuota tidak terpotong, dan <b>tidak ada email</b> yang dikirim.</span>
+                    <span>Datanya <b>disimpan di Talent Pool</b> untuk kesempatan berikutnya.</span>
                 </div>
                 <div v-if="putusTarget && putusTarget.email" class="plw-putus__row is-mail">
                     <i class="bi bi-envelope"></i>
-                    <span>{{ putusHasil === 'TALENT_POOL' ? 'Tidak dikirimi email' : putusTarget.email }}</span>
+                    <span>{{ putusDef && putusDef.kirimEmail ? putusTarget.email : 'Tidak dikirimi email' }}</span>
                 </div>
+            </div>
+
+            <!-- Jawaban yang SUDAH diberikan kandidat lewat portal. Admin yang
+                 mencatatkan keputusan dari kandidat perlu melihatnya di sini —
+                 kalau tidak, ia mencatat ulang sesuatu yang sudah tercatat. -->
+            <div v-if="putusTarget && putusTarget.tanggapan" class="plw-note is-info">
+                <i class="bi bi-chat-left-quote-fill"></i>
+                <span>
+                    Kandidat sudah menjawab lewat portal:
+                    <b>{{ putusTarget.tanggapan.jawab === 'TERIMA' ? 'menerima' : 'mundur' }}</b>
+                    <template v-if="putusTarget.tanggapan.catatan"> — “{{ putusTarget.tanggapan.catatan }}”</template>
+                </span>
             </div>
 
             <!-- HASIL MCU — dicatat DI SINI, di jendela keputusan.
@@ -681,7 +707,11 @@
                 <div class="plw-fld__row">
                     <div class="plw-fld">
                         <label class="plw-fld__lbl" for="mcu-penyedia">Penyedia (klinik / RS) <b v-if="mcuWajibSekarang">*</b></label>
-                        <input id="mcu-penyedia" v-model="mcuPenyedia" type="text" class="plw-inp" placeholder="mis. RS Siloam Palembang" maxlength="200" />
+                        <!-- Contoh sengaja TIDAK memakai nama rumah sakit yang nyata:
+                             teks samar begitu mudah terbaca sebagai isian yang sudah
+                             terisi, dan nama yang salah pada hasil kesehatan bukan
+                             kekeliruan yang murah. -->
+                        <input id="mcu-penyedia" v-model="mcuPenyedia" type="text" class="plw-inp" placeholder="Nama klinik / rumah sakit pelaksana" maxlength="200" />
                     </div>
                     <div class="plw-fld">
                         <label class="plw-fld__lbl" for="mcu-tanggal">Tanggal Pemeriksaan</label>
@@ -735,41 +765,39 @@
                 <p v-else class="plw-putus__unggah-kosong" :class="{ 'is-wajib': berkasWajibSekarang }">
                     <template v-if="berkasWajibSekarang">
                         <i class="bi bi-exclamation-circle-fill"></i>
-                        <b>Wajib</b> diunggah sebelum meloloskan — mis. hasil MCU dari klinik. Tombol "Ya, Loloskan" terkunci sampai ada berkas.
+                        <b>Wajib</b> diunggah sebelum meloloskan — mis. hasil MCU dari klinik. Tombol konfirmasi terkunci sampai ada berkas.
                     </template>
                     <template v-else>Belum ada berkas — keputusan tetap bisa dilanjutkan.</template>
                 </p>
             </div>
 
+            <!-- Wajib atau tidaknya alasan DARI MASTER (Butuh_Alasan): keputusan
+                 yang menutup proses menuntut jejak kenapa, dan keputusan dari
+                 kandidat menuntutnya juga — sebab mundurnya adalah satu-satunya
+                 umpan balik kenapa penawaran kita kalah. -->
             <div class="plw-fld">
                 <label class="plw-fld__lbl" for="putus-catatan">
-                    {{ putusHasil === 'GUGUR' ? 'Alasan Tidak Lolos' : 'Catatan Keputusan' }}
-                    <b v-if="putusHasil === 'GUGUR'">*</b>
+                    {{ labelCatatanPutus }}
+                    <b v-if="alasanWajib">*</b>
                     <small v-else>opsional</small>
                 </label>
                 <textarea
                     id="putus-catatan"
                     v-model="putusCatatan"
                     class="plw-inp plw-inp--ta"
-                    :class="{ 'is-err': putusHasil === 'GUGUR' && !putusCatatan.trim() }"
+                    :class="{ 'is-err': alasanWajib && !putusCatatan.trim() }"
                     rows="2"
                     maxlength="500"
-                    :placeholder="putusHasil === 'TALENT_POOL'
-                        ? 'mis. kuat wawancara, cocok untuk Finance'
-                        : (putusHasil === 'GUGUR'
-                            ? 'Dikirim sebagai dasar keputusan — tulis alasannya'
-                            : 'mis. sesuai rekomendasi sistem / alasan khusus')"
+                    :placeholder="placeholderCatatanPutus"
                 ></textarea>
             </div>
-            <!-- Alasan WAJIB saat menggugurkan: keputusan ini permanen dan
-                 dikabarkan ke kandidat, jadi harus ada jejak kenapa. -->
-            <p v-if="putusHasil === 'GUGUR' && !putusCatatan.trim()" class="plw-note is-err">
-                <i class="bi bi-exclamation-circle-fill"></i> <span>Alasan tidak lolos wajib diisi.</span>
+            <p v-if="alasanWajib && !putusCatatan.trim()" class="plw-note is-err">
+                <i class="bi bi-exclamation-circle-fill"></i> <span>{{ labelCatatanPutus }} wajib diisi.</span>
             </p>
 
-            <!-- Menggugurkan itu tak bisa dibatalkan dan kandidat langsung
-                 dikabari. Centang ini memaksa jeda sadar sebelum mengirim. -->
-            <label v-if="putusHasil === 'GUGUR'" class="plw-putus__cek">
+            <!-- Keputusan yang menutup proses DAN mengabari kandidat tak bisa
+                 dibatalkan. Centang ini memaksa jeda sadar sebelum mengirim. -->
+            <label v-if="butuhCentang" class="plw-putus__cek">
                 <input v-model="putusSetuju" type="checkbox" />
                 <span>Saya paham keputusan ini <b>final</b> dan email pemberitahuan akan <b>langsung dikirim</b> ke kandidat.</span>
             </label>
@@ -1063,6 +1091,8 @@ export default {
     props: {
         talent: { type: Array, default: () => [] },
         programAwal: { type: Object, default: () => ({ data: [], page: 1, totalPage: 1, total: 0 }) },
+        // Master hasil keputusan — sumber tombol di footer drawer.
+        hasilKeputusan: { type: Array, default: () => [] },
     },
     data() {
         return {
@@ -1150,9 +1180,49 @@ export default {
         },
         jmlAktif() { return (this.detail.pelamar || []).filter((r) => r.statusLamaran !== 'GUGUR' && r.statusLamaran !== 'TALENT_POOL').length; },
         jmlGugur() { return (this.detail.pelamar || []).filter((r) => r.statusLamaran === 'GUGUR' || r.statusLamaran === 'TALENT_POOL').length; },
-        // Judul & label tombol konfirmasi untuk 3 keputusan.
-        putusJudul() { return { LULUS: 'Loloskan Kandidat', GUGUR: 'Gugurkan Kandidat', TALENT_POOL: 'Simpan ke Talent Pool' }[this.putusHasil] || 'Keputusan'; },
-        putusLabelKonfirm() { return { LULUS: 'Ya, Loloskan', GUGUR: 'Ya, Gugurkan & Kirim Email', TALENT_POOL: 'Ya, Simpan' }[this.putusHasil] || 'Ya'; },
+        /** Definisi hasil yang sedang dipilih — semua labelnya dari master. */
+        putusDef() { return this.hasilKeputusan.find((h) => h.kode === this.putusHasil) || null; },
+        putusJudul() { return this.putusDef ? `${this.putusDef.labelTombol} — ${this.putusDef.nama}` : 'Keputusan'; },
+        putusLabelKonfirm() { return this.putusDef?.labelKonfirmasi || 'Ya, Lanjutkan'; },
+        /** Tahap aktif kandidat membawa penawaran yang harus dijawab? */
+        tahapPenawaran() {
+            if (!this.detailKandidat) return false;
+            const col = (this.detail.kolom || []).find((k) => k.urutan === this.detailKandidat.urutan);
+
+            return !!(col && col.penawaran);
+        },
+        /**
+         * Keputusan PERUSAHAAN yang boleh muncul untuk kandidat ini.
+         *
+         * Talent Pool hanya pada tahap yang memang di-cut-off ke sana, dan
+         * Loloskan hilang saat kuota tahap akhir sudah penuh — dua aturan yang
+         * sudah ada sebelumnya, kini diterapkan pada daftar dari master.
+         */
+        putusanPerusahaan() {
+            if (!this.detailKandidat) return [];
+
+            return this.hasilKeputusan.filter((h) => {
+                if (h.olehKandidat) return false;
+                if (h.lolos) return !this.kuotaBlokir(this.detailKandidat);
+                if (h.talentPool && !h.kirimEmail) return this.bolehTalentPool(this.detailKandidat);
+
+                return true;
+            });
+        },
+        /**
+         * Keputusan yang datangnya DARI KANDIDAT.
+         *
+         * "Menolak penawaran" hanya masuk akal bila memang ada penawaran, jadi
+         * ia mengikuti penanda tahap dari Master Tipe Tahap. "Mengundurkan diri"
+         * berlaku di tahap mana pun — kandidat bisa mundur kapan saja.
+         */
+        putusanKandidat() {
+            if (!this.detailKandidat) return [];
+
+            return this.hasilKeputusan.filter(
+                (h) => h.olehKandidat && (this.tahapPenawaran || h.kode !== 'DITOLAK_KANDIDAT'),
+            );
+        },
         /** Menggugurkan menuntut centang persetujuan dulu; yang lain langsung boleh. */
         /** DARING wajib tautan, LURING wajib lokasi; keduanya wajib waktu mulai. */
         /**
@@ -1169,7 +1239,13 @@ export default {
          * dinilai di lowongan ini, hanya disimpan untuk kesempatan lain.
          */
         mcuWajibSekarang() {
-            return !!this.mcuTes && (this.putusHasil === 'LULUS' || this.putusHasil === 'GUGUR');
+            // Keputusan yang datang dari KANDIDAT tidak menuntutnya: ia mundur
+            // sebelum pemeriksaannya selesai, dan menahan pencatatan itu hanya
+            // membuat lamarannya menggantung.
+            return !!this.mcuTes
+                && !!this.putusDef
+                && !this.putusDef.olehKandidat
+                && !this.putusDef.talentPool;
         },
         mcuKurangPutus() {
             return this.mcuWajibSekarang && (!this.mcuStatus || !this.mcuPenyedia.trim());
@@ -1191,24 +1267,56 @@ export default {
          * label "wajib" tidak pernah muncul di modal yang sebenarnya lolos.
          */
         berkasWajibSekarang() {
-            return this.putusHasil === 'LULUS'
+            return !!this.putusDef?.lolos
                 && !!this.putusTarget
                 && this.bolehUpload(this.putusTarget)
                 && this.wajibUpload(this.putusTarget);
         },
+        /** Alasan wajib? Dari master (Butuh_Alasan), bukan daftar kode di sini. */
+        alasanWajib() { return !!this.putusDef?.butuhAlasan; },
+        labelCatatanPutus() {
+            if (!this.putusDef) return 'Catatan';
+            if (this.putusDef.olehKandidat) return 'Alasan yang disampaikan kandidat';
+
+            return this.putusDef.butuhAlasan ? `Alasan ${this.putusDef.nama}` : 'Catatan Keputusan';
+        },
+        placeholderCatatanPutus() {
+            if (!this.putusDef) return '';
+            if (this.putusDef.olehKandidat) return 'mis. sudah menerima tawaran di tempat lain';
+            if (this.putusDef.talentPool && !this.putusDef.kirimEmail) return 'mis. kuat wawancara, cocok untuk Finance';
+
+            return this.putusDef.butuhAlasan
+                ? 'Dikirim sebagai dasar keputusan — tulis alasannya'
+                : 'mis. sesuai rekomendasi sistem / alasan khusus';
+        },
+        /** Nada kartu ringkasan: hijau lolos, kuning talent pool, merah sisanya. */
+        nadaPutus() {
+            if (!this.putusDef) return '';
+            if (this.putusDef.lolos) return 'is-lulus';
+
+            return this.putusDef.talentPool && !this.putusDef.kirimEmail ? 'is-talent_pool' : 'is-gugur';
+        },
+        /**
+         * Centang sadar hanya untuk keputusan yang MENUTUP proses DAN mengabari
+         * kandidat — di situlah satu klik keliru tak bisa ditarik kembali.
+         * Keputusan dari kandidat tidak diminta centang: yang dicatat adalah
+         * kabar yang sudah terjadi, bukan tindakan yang baru akan dilakukan.
+         */
+        butuhCentang() { return !!this.putusDef && !this.putusDef.lolos && this.putusDef.kirimEmail && !this.putusDef.olehKandidat; },
         bolehKonfirmPutus() {
+            if (!this.putusDef) return false;
+
             // Hasil kesehatan wajib lengkap sebelum tahap MCU diputus.
             if (this.mcuKurangPutus) return false;
 
             // Tahap yang memang mewajibkan berkas tetap ditahan — aturannya milik
             // Master Tahapan, bukan preferensi modal ini.
-            if (this.putusHasil === 'LULUS' && this.putusTarget && this.uploadKurang(this.putusTarget)) {
+            if (this.putusDef.lolos && this.putusTarget && this.uploadKurang(this.putusTarget)) {
                 return false;
             }
-            if (this.putusHasil !== 'GUGUR') return true;
+            if (this.alasanWajib && !this.putusCatatan.trim()) return false;
 
-            // Dua syarat: centang sadar + alasan tertulis.
-            return this.putusSetuju && this.putusCatatan.trim().length > 0;
+            return !this.butuhCentang || this.putusSetuju;
         },
         /** Aktivitas yang dikerjakan tim: catatan bebas, tak ada syarat tambahan. */
         bolehSimpanCatat() { return !!this.catatTarget; },
@@ -1268,6 +1376,16 @@ export default {
         },
         /** Loloskan diblokir bila kuota penuh DAN kandidat di tahap terakhir. */
         kuotaBlokir(r) { return !!(r && r.kuotaPenuh && r.diTahapAkhir); },
+        /**
+         * Nada tombol keputusan — DARI FLAG master, bukan dari kodenya.
+         * Hasil baru yang ditambahkan lewat master ikut dapat warna yang masuk
+         * akal tanpa satu baris pun disentuh di sini.
+         */
+        kelasPutus(h) {
+            if (h.lolos) return 'is-lolos';
+
+            return h.talentPool && !h.kirimEmail ? 'is-talent' : 'is-gugur';
+        },
         ukuran(b) {
             if (!b) return '';
             return b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB';
@@ -1605,9 +1723,13 @@ export default {
             this.jadwalSelesai = j.selesai || '';
             this.jadwalLink = j.link || '';
             this.jadwalLokasi = j.lokasi || '';
-            // Bawaan: lokasi bertanda UTAMA, supaya kasus paling sering (kantor
-            // sendiri) tidak menuntut pemilihan berulang.
-            this.jadwalLokasiId = j.lokasiId || (this.daftarLokasi.find((l) => l.utama)?.id ?? null);
+            // TIDAK ADA lokasi bawaan. Sebelumnya kotak ini terisi sendiri
+            // dengan lokasi bertanda UTAMA — hemat satu klik, tetapi menyimpan
+            // jadwal SEKALIGUS mengirim undangannya. Rekruter yang tidak
+            // menyadari isian itu mengundang kandidat ke tempat yang tidak
+            // pernah ia pilih, dan surelnya sudah telanjur terkirim. Memilih
+            // tempat harus tindakan sadar.
+            this.jadwalLokasiId = j.lokasiId || null;
             this.jadwalCatatan = j.catatan || '';
             this.jadwalShow = true;
         },
@@ -2156,10 +2278,11 @@ export default {
 .plw-foot { flex: 0 0 auto; padding: 14px 22px calc(14px + env(safe-area-inset-bottom, 0px)); background: rgba(255, 255, 255, .94); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-top: 1px solid #eef0f7; box-shadow: 0 -12px 30px rgba(15, 23, 42, .07); }
 .plw-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
 
-/* Sifat bersama ketiga tombol — dulu disalin tiga kali, mudah tidak sinkron. */
-.plw-btn-lolos, .plw-btn-talent, .plw-btn-gugur {
-    appearance: none; cursor: pointer; font-family: inherit;
-    padding: 13px 14px; border-radius: 13px;
+/* SATU bentuk tombol keputusan; warnanya dipilih lewat kelas nada, karena
+   daftar tombolnya kini datang dari master dan bisa bertambah. */
+.plw-btn-putus {
+    appearance: none; cursor: pointer; font-family: inherit; border: none;
+    padding: 13px 14px; border-radius: 13px; min-height: 46px;
     font-size: 13.5px; font-weight: 800; line-height: 1.2;
     display: inline-flex; align-items: center; justify-content: center; gap: 8px;
     /* Label tidak boleh pecah di tengah frasa; kalau benar-benar sempit,
@@ -2167,24 +2290,45 @@ export default {
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     min-width: 0; transition: transform .16s, background .16s;
 }
-.plw-btn-lolos, .plw-btn-talent, .plw-btn-gugur { min-height: 46px; }
-.plw-btn-lolos .bi, .plw-btn-talent .bi, .plw-btn-gugur .bi,
-.plw-btn-lolos svg, .plw-btn-gugur svg { flex: none; }
-
-.plw-btn-lolos { border: none; background: linear-gradient(135deg, #34d399, #10b981); color: #fff; box-shadow: 0 10px 24px rgba(16, 185, 129, 0.3); }
-.plw-btn-lolos:hover { transform: translateY(-2px); }
-.plw-btn-gugur { background: #fff; border: 1px solid #f4c9c9; color: #dc2626; }
-.plw-btn-gugur:hover { background: #fef2f2; }
-/* Tombol ke-3: Masuk Talent Pool — nada emas, di antara Loloskan & Tidak Lolos. */
-.plw-btn-talent { background: linear-gradient(135deg, #fbbf24, #d97706); border: none; color: #fff; box-shadow: 0 10px 24px rgba(217, 119, 6, 0.28); }
-.plw-btn-talent:hover { transform: translateY(-2px); }
-.plw-btn-talent .bi { font-size: 15px; }
-/* Saat 3 tombol, izinkan membungkus rapi di layar sempit. */
+.plw-btn-putus .bi { flex: none; font-size: 15px; }
+.plw-btn-putus.is-lolos { background: linear-gradient(135deg, #34d399, #10b981); color: #fff; box-shadow: 0 10px 24px rgba(16, 185, 129, 0.3); }
+.plw-btn-putus.is-lolos:hover { transform: translateY(-2px); }
+/* Nada emas: tidak lanjut di lowongan ini, tapi datanya disimpan. */
+.plw-btn-putus.is-talent { background: linear-gradient(135deg, #fbbf24, #d97706); color: #fff; box-shadow: 0 10px 24px rgba(217, 119, 6, 0.28); }
+.plw-btn-putus.is-talent:hover { transform: translateY(-2px); }
+.plw-btn-putus.is-gugur { background: #fff; border: 1px solid #f4c9c9; color: #dc2626; }
+.plw-btn-putus.is-gugur:hover { background: #fef2f2; }
 /* Tiga tombol berbagi lebar yang sama: label agak dirapatkan supaya
    "Talent Pool" tetap satu baris tanpa perlu memperkecil tombolnya. */
-.plw-actions.is-three .plw-btn-lolos,
-.plw-actions.is-three .plw-btn-talent,
-.plw-actions.is-three .plw-btn-gugur { padding-left: 10px; padding-right: 10px; font-size: 13px; gap: 6px; }
+.plw-actions.is-three .plw-btn-putus { padding-left: 10px; padding-right: 10px; font-size: 13px; gap: 6px; }
+
+/* KEPUTUSAN DARI KANDIDAT — baris kedua, sengaja lebih tenang. Ini bukan
+   penilaian tim, jadi bobot visualnya tidak boleh menyaingi tombol di atas. */
+.plw-actions2 { margin-top: 12px; padding-top: 11px; border-top: 1px dashed #e3e6f0; }
+.plw-actions2__lbl { display: flex; align-items: center; gap: 6px; font-size: 9.5px; font-weight: 800; letter-spacing: .09em; color: #a2a9ba; margin-bottom: 8px; }
+.plw-actions2__lbl small { letter-spacing: 0; font-weight: 700; text-transform: none; color: #7c3aed; }
+.plw-actions2__row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.plw-btn-kandidat {
+    appearance: none; cursor: pointer; font-family: inherit;
+    display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+    padding: 9px 12px; min-height: 38px; border-radius: 11px;
+    border: 1px solid #ddd6fe; background: #faf9ff; color: #6d28d9;
+    font-size: 12.5px; font-weight: 800; line-height: 1.2;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+    transition: background .16s, border-color .16s;
+}
+.plw-btn-kandidat:hover:not(:disabled) { background: #f3f0ff; border-color: #c4b5fd; }
+.plw-btn-kandidat:disabled { opacity: .45; cursor: not-allowed; }
+.plw-btn-kandidat .bi { flex: none; }
+
+/* Jawaban kandidat atas penawaran — kartu keadaan, bukan tombol. */
+.plw-jawab { display: flex; align-items: flex-start; gap: 9px; margin-bottom: 10px; padding: 10px 12px; border-radius: 11px; font-size: 12px; line-height: 1.5; border: 1px solid; }
+.plw-jawab .bi { flex: none; margin-top: 1px; font-size: 14px; }
+.plw-jawab b { font-weight: 800; }
+.plw-jawab p { margin: 3px 0 0; font-style: italic; opacity: .9; }
+.plw-jawab.is-ya { color: #047857; background: rgba(16, 185, 129, .08); border-color: rgba(16, 185, 129, .28); }
+.plw-jawab.is-no { color: #6d28d9; background: rgba(124, 58, 237, .07); border-color: rgba(124, 58, 237, .25); }
+.plw-jawab.is-wait { color: #92400e; background: rgba(245, 158, 11, .09); border-color: rgba(245, 158, 11, .28); }
 .plw-tp-hint { display: flex; align-items: flex-start; gap: 8px; margin: 0 0 12px; padding: 10px 12px; border-radius: 10px; font-size: 12px; line-height: 1.55; color: #92400e; background: rgba(234, 179, 8, 0.1); border: 1px solid rgba(234, 179, 8, 0.28); }
 .plw-tp-hint .bi { color: #d97706; margin-top: 1px; flex: none; }
 
@@ -2223,9 +2367,7 @@ export default {
 .plw-file__del { border: none; background: none; color: #94a3b8; cursor: pointer; padding: 2px; }
 .plw-file__del:hover { color: #dc2626; }
 .plw-files__empty { margin-top: 8px; font-size: 11.5px; color: #94a3b8; }
-.plw-btn-lolos:disabled,
-.plw-btn-talent:disabled,
-.plw-btn-gugur:disabled { opacity: 0.45; cursor: not-allowed; transform: none; box-shadow: none; }
+.plw-btn-putus:disabled { opacity: 0.45; cursor: not-allowed; transform: none; box-shadow: none; }
 
 /* ═══ LIGHTBOX ═══ */
 /* Lightbox HARUS di atas modal keputusan (.wca-modal-mask = 1200).
@@ -2283,8 +2425,6 @@ export default {
    satu, dan sekalian lebih aman disentuh. */
 @media (max-width: 575.98px) {
     .plw-actions, .plw-actions.is-three { grid-template-columns: 1fr; }
-    .plw-actions.is-three .plw-btn-lolos,
-    .plw-actions.is-three .plw-btn-talent,
-    .plw-actions.is-three .plw-btn-gugur { font-size: 13.5px; padding-left: 14px; padding-right: 14px; gap: 8px; }
+    .plw-actions.is-three .plw-btn-putus { font-size: 13.5px; padding-left: 14px; padding-right: 14px; gap: 8px; }
 }
 </style>

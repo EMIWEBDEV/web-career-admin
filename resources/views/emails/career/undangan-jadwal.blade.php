@@ -46,11 +46,26 @@
                         </tr>
                     @endif
 
+                    {{-- TEMPAT: nama resmi + alamat + patokan. Kandidat harus bisa
+                         berangkat hanya dengan surat ini di tangan — nama gedung
+                         tanpa alamat menuntut dia menebak, dan patokan tanpa
+                         gedungnya menuntut dia bertanya. --}}
                     @if (!$daring && !empty($d['lokasi']))
                         <tr><td colspan="2" style="border-top:1px solid #e6e2fb;font-size:0;line-height:0">&nbsp;</td></tr>
                         <tr>
-                            <td style="padding:6px 0;font-size:12px;color:#8b93a7;font-family:'Inter',Arial,sans-serif;white-space:nowrap;vertical-align:top">Lokasi</td>
-                            <td style="padding:6px 0 6px 12px;font-size:13.5px;font-weight:700;color:#334155;font-family:'Inter',Arial,sans-serif">{{ $d['lokasi'] }}</td>
+                            <td style="padding:6px 0;font-size:12px;color:#8b93a7;font-family:'Inter',Arial,sans-serif;white-space:nowrap;vertical-align:top">Tempat</td>
+                            <td style="padding:6px 0 6px 12px;font-family:'Inter',Arial,sans-serif">
+                                <div style="font-size:13.5px;font-weight:800;color:#334155">{{ $d['lokasi'] }}</div>
+                                @if (!empty($d['alamat']))
+                                    <div style="font-size:12.5px;line-height:1.55;color:#64748b;margin-top:2px">{{ $d['alamat'] }}</div>
+                                @endif
+                                @if (!empty($d['patokan']))
+                                    <div style="font-size:12.5px;line-height:1.55;color:#64748b;margin-top:2px">Patokan: {{ $d['patokan'] }}</div>
+                                @endif
+                                @if (!empty($d['kontak']))
+                                    <div style="font-size:12.5px;line-height:1.55;color:#64748b;margin-top:2px">Kontak: {{ $d['kontak'] }}</div>
+                                @endif
+                            </td>
                         </tr>
                     @endif
 
@@ -69,6 +84,12 @@
     @if ($daring && !empty($d['link']))
         <tr><td style="padding:18px 40px 0" align="center">
             <a href="{{ $d['link'] }}" style="display:inline-block;padding:13px 26px;border-radius:12px;background:linear-gradient(135deg,#818cf8,#6366f1);color:#fff;font-size:14px;font-weight:800;text-decoration:none;font-family:'Inter',Arial,sans-serif">Gabung Pertemuan</a>
+        </td></tr>
+    {{-- Peta tidak bisa disematkan di surel (klien memblokir iframe), jadi yang
+         diberikan tautan yang langsung membuka aplikasi peta di ponsel. --}}
+    @elseif (!$daring && !empty($d['mapsUrl']))
+        <tr><td style="padding:18px 40px 0" align="center">
+            <a href="{{ $d['mapsUrl'] }}" style="display:inline-block;padding:13px 26px;border-radius:12px;background:linear-gradient(135deg,#fbbf24,#f59e0b);color:#fff;font-size:14px;font-weight:800;text-decoration:none;font-family:'Inter',Arial,sans-serif">Lihat Lokasi di Peta</a>
         </td></tr>
     @endif
 

@@ -567,8 +567,16 @@ export default {
 
             return bawaan ? [] : t.map((x) => ({
                 label: x.label,
-                // Kosongkan bila sama dengan tahap → tampil sebagai "ikut tahap".
-                tipe: x.tipe && x.tipe !== s.tipe ? x.tipe : null,
+                // Tipe DITAMPILKAN APA ADANYA.
+                //
+                // Sebelumnya dikosongkan bila kebetulan sama dengan tipe tahap,
+                // supaya kotaknya terbaca "ikut tahap". Akibatnya: aktivitas
+                // "Offering Leter" yang tipenya sengaja dipilih Penawaran — sama
+                // dengan tahapnya — kembali kosong setiap kali alur dibuka lagi,
+                // dan admin melihatnya sebagai pilihan yang tidak tersimpan.
+                // Lebih buruk lagi, mengubah tipe TAHAP diam-diam ikut mengubah
+                // tipe seluruh aktivitas yang pernah dipilih sama dengannya.
+                tipe: x.tipe || null,
                 peran: x.peran || 'PENENTU',
                 ambang: x.ambang ?? null,
             }));
@@ -735,7 +743,7 @@ export default {
                     talentPool: this.tahapTalentPool(i),
                     uploadHasil: s.uploadHasil === true,
                     wajibUpload: s.wajibUpload === true,
-                tuntas: s.tuntas === true,
+                    tuntas: s.tuntas === true,
                 })),
             };
             try {

@@ -142,6 +142,12 @@ Route::prefix('kandidat')
         Route::post('/lamaran/tahap/{id}/draf', [FormulirDrafController::class, 'simpan'])->name('draf.simpan');
         Route::post('/lamaran/tahap/{id}/draf/berkas', [FormulirDrafController::class, 'unggahBerkas'])->name('draf.berkas.unggah');
         Route::get('/lamaran/tahap/{id}/draf/berkas/{field}', [FormulirDrafController::class, 'berkas'])->name('draf.berkas');
+
+        // ── JAWABAN KANDIDAT ATAS PENAWARAN ──
+        // Menerima atau mundur. Kepemilikan tahap diperiksa lewat
+        // Lamaran.Id_Users di controller, jadi id tahap orang lain tidak bisa
+        // dipakai menjawabkan penawaran atas nama mereka.
+        Route::post('/lamaran/tahap/{id}/tanggapan', [LamaranController::class, 'portalTanggapanPenawaran'])->name('tanggapan');
     });
 
 // ── Referensi pendidikan untuk formulir (login saja) ──
