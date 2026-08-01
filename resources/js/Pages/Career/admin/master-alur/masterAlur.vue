@@ -120,6 +120,9 @@
                                         <span v-if="s.notifikasi === false" class="alr-pill is-mute" title="Kandidat tidak dikirimi notifikasi saat hasil terbit">
                                             <i class="bi bi-bell-slash"></i> Tanpa notifikasi
                                         </span>
+                                        <span v-if="s.tuntas" class="alr-pill is-tuntas" title="Tahap ini menutup proses — kandidat dinyatakan diterima di sini">
+                                            <i class="bi bi-flag-fill"></i> Titik Tuntas
+                                        </span>
                                         <span v-if="s.talentPool" class="alr-pill is-talent" title="Kandidat tak lolos di tahap ini bisa dialihkan ke Talent Pool">
                                             <i class="bi bi-stars"></i> Cut-off Talent Pool
                                         </span>
@@ -308,6 +311,28 @@
                                 <label v-if="s.uploadHasil" class="alr-up__wajib"><el-checkbox v-model="s.wajibUpload" /> wajib</label>
                                 <el-switch v-model="s.uploadHasil" />
                             </div>
+                        </div>
+
+                        <!-- TITIK TUNTAS. Alur kerap memuat tahap administratif
+                             SESUDAH kandidat sebenarnya sudah diterima (tanda
+                             tangan kontrak, onboarding). Tanpa penanda ini
+                             kandidat yang sudah memegang surat penawaran tetap
+                             "Berjalan" dan kuota belum terpotong padahal
+                             kursinya sudah terisi. -->
+                        <div class="alr-tp" :class="{ 'is-on': s.tuntas }">
+                            <div class="alr-tp__main">
+                                <span class="alr-tp__ico"><i class="bi bi-flag-fill"></i></span>
+                                <div class="alr-tp__txt">
+                                    <b>Tahap ini menutup proses seleksi</b>
+                                    <small>
+                                        Begitu tahap ini diloloskan, kandidat langsung dinyatakan
+                                        <b>DITERIMA</b> dan kuota terpotong. Tahap sesudahnya tetap
+                                        dikerjakan (mis. tanda tangan kontrak, onboarding) tapi tidak
+                                        lagi menentukan diterima atau tidaknya.
+                                    </small>
+                                </div>
+                            </div>
+                            <el-switch v-model="s.tuntas" @change="hanyaSatuTuntas(i)" />
                         </div>
 
                     </div>
@@ -624,6 +649,7 @@ export default {
                 talentPool: s.talentPool === true,
                 uploadHasil: s.uploadHasil === true,
                 wajibUpload: s.wajibUpload === true,
+                tuntas: s.tuntas === true,
             }));
             // Turunkan titik cut-off dari data: tahap PERTAMA yang talentPool aktif.
             const idx = stages.findIndex((s) => s.talentPool);
@@ -638,7 +664,21 @@ export default {
         },
         /** Tahap ke-i (0-based) termasuk cut-off Talent Pool? (dari titik mulai sampai akhir). */
         tahapTalentPool(i) { return this.form.talentPoolMulai > 0 && (i + 1) >= this.form.talentPoolMulai; },
-        addStage() { this.form.stages.push({ label: '', tipe: '', mode: 'MANUAL_REVIEW', formulirId: null, tests: [], pengumuman: 'OTOMATIS', jedaHari: null, notifikasi: true, uploadHasil: false, wajibUpload: false }); },
+        /**
+         * Titik tuntas hanya boleh SATU per alur.
+         *
+         * Dua titik tuntas berarti dua momen "kandidat diterima" yang saling
+         * bertentangan, dan kuota akan terpotong pada yang mana pun lebih dulu
+         * dilewati — tidak bisa ditebak. Menyalakan yang baru mematikan yang lama.
+         */
+        hanyaSatuTuntas(idx) {
+            if (!this.form.stages[idx]?.tuntas) return;
+
+            this.form.stages.forEach((s, i) => {
+                if (i !== idx) s.tuntas = false;
+            });
+        },
+        addStage() { this.form.stages.push({ label: '', tipe: '', mode: 'MANUAL_REVIEW', formulirId: null, tests: [], pengumuman: 'OTOMATIS', jedaHari: null, notifikasi: true, uploadHasil: false, wajibUpload: false, tuntas: false }); },
         removeStage(i) { this.form.stages.splice(i, 1); },
 
         // Label & ikon pil diambil dari master (fallback ke kode bila belum termuat).
@@ -695,6 +735,7 @@ export default {
                     talentPool: this.tahapTalentPool(i),
                     uploadHasil: s.uploadHasil === true,
                     wajibUpload: s.wajibUpload === true,
+                tuntas: s.tuntas === true,
                 })),
             };
             try {
@@ -825,6 +866,7 @@ export default {
 .alr-pill.is-terjadwal { color: #4338ca; background: rgba(79, 70, 229, .12); }
 .alr-pill.is-manual { color: #b45309; background: rgba(245, 158, 11, .14); }
 .alr-pill.is-mute { color: #64748b; background: #f1f5f9; }
+.alr-pill.is-tuntas { color: #059669; background: rgba(16, 185, 129, .12); }
 .alr-pill.is-talent { color: #a16207; background: rgba(234, 179, 8, .16); }
 
 /* Kartu switch Cut-off Talent Pool di dalam editor tahap. Netral saat mati,

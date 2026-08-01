@@ -97,6 +97,11 @@ class WcApplyEmailJob implements ShouldQueue
                 [
                     'email' => $user->Email,
                     'tglLahir' => $this->data['tglLahir'] ?? null,
+                    'jkel' => $this->data['jkel'] ?? null,
+                    'kampus' => $this->data['kampus'] ?? null,
+                    // Nomor dari formulir yang dipakai; bila kosong, jatuh ke
+                    // nomor akun supaya kartu datanya tidak berlubang.
+                    'hp' => $this->data['hp'] ?? $user->No_Hp ?? null,
                     'foto' => $fotoData,
                 ],
                 $this->data['feedbackUrl'] ?? null, // [feat/feedback]

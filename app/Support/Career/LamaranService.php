@@ -23,6 +23,44 @@ use Illuminate\Support\Str;
 class LamaranService
 {
     /**
+     * Data kartu kandidat untuk email (tanggal lahir, kampus, PATH foto).
+     *
+     * Diambil dari jawaban formulir PENDAFTARAN yang sudah kandidat kirim —
+     * bukan disalin ke tabel lain. Ditaruh di sini karena DIPAKAI DUA JALUR
+     * (email hasil apply & email keputusan tahap); kalau masing-masing menebak
+     * sendiri key mana yang menyimpan tanggal lahir, keduanya pasti melenceng
+     * begitu formulirnya berubah.
+     *
+     * Yang dikembalikan PATH foto, bukan isinya: payload antrean harus kecil,
+     * bytes-nya diambil dari GCS saat email benar-benar dikirim.
+     *
+     * @return array{tglLahir: ?string, jkel: ?string, kampus: ?string, hp: ?string, fotoPath: ?string}
+     */
+    public static function dataKandidatEmail(int $lamaranId): array
+    {
+        $json = DB::table('N_WEB_CAREERS_Formulir_Pengisian')
+            ->where('Lamaran_Id', $lamaranId)
+            ->where('Sumber', 'PENDAFTARAN')
+            ->orderBy('Id_Formulir_Pengisian')
+            ->value('Jawaban_Json');
+
+        $jawaban = json_decode($json ?: '{}', true) ?: [];
+
+        return [
+            'tglLahir' => $jawaban['lahir'] ?? null,
+            'jkel' => $jawaban['jkel'] ?? $jawaban['jenis_kelamin'] ?? null,
+            'kampus' => $jawaban['kampus'] ?? $jawaban['institusi'] ?? null,
+            'hp' => $jawaban['hp'] ?? $jawaban['no_hp'] ?? null,
+            'fotoPath' => DB::table('N_WEB_CAREERS_Formulir_Berkas as fb')
+                ->join('N_WEB_CAREERS_Formulir_Pengisian as fp', 'fp.Id_Formulir_Pengisian', '=', 'fb.Formulir_Pengisian_Id')
+                ->where('fp.Lamaran_Id', $lamaranId)
+                ->where('fb.Field_Key', 'foto_verifikasi')
+                ->orderByDesc('fb.Id_Formulir_Berkas')
+                ->value('fb.Path_File'),
+        ];
+    }
+
+    /**
      * Kandidat melamar sebuah posisi.
      *
      * @param  string|null  $gugurAlasan  bila diisi: lamaran langsung ditandai
@@ -147,6 +185,10 @@ class LamaranService
                     'Kode' => $t->Kode,
                     'Label' => $t->Label,
                     'Tipe_Tahap_Kode' => $t->Tipe_Tahap_Kode,
+                    // Penanda titik tuntas DIBEKUKAN saat lamaran dibuat: alur
+                    // boleh disunting kemudian, tapi perjalanan yang sudah
+                    // berlangsung tidak boleh berubah maknanya di tengah jalan.
+                    'Flag_Tuntas' => $t->Flag_Tuntas ?? 'T',
                     'Provider' => $t->Provider,
                     'Keputusan_Mode' => $t->Keputusan ?? null,
                     'Formulir_Kode' => $t->Formulir_Kode,
@@ -326,13 +368,46 @@ class LamaranService
      *
      * @return array{ok:bool, pesan:string}
      */
+    private static ?\Illuminate\Support\Collection $hasilCache = null;
+
+    /**
+     * Master hasil keputusan tahap, di-cache per permintaan.
+     *
+     * Flagnya yang menentukan konsekuensi: maju/tidak, kirim email/tidak,
+     * potong kuota/tidak, masuk Talent Pool/tidak. Menambah hasil baru cukup
+     * satu baris di master — tanpa menyentuh kode ini.
+     */
+    public static function masterHasilKeputusan(): \Illuminate\Support\Collection
+    {
+        return self::$hasilCache ??= DB::table('N_WEB_CAREERS_Master_Hasil_Keputusan')
+            ->where('Flag_Aktif', 'Y')
+            ->orderBy('Urutan')
+            ->get()
+            ->keyBy('Kode');
+    }
+
     public function ketukPalu(int $lamaranTahapId, string $hasil, ?string $catatan, ?int $adminId): array
     {
         $hasil = strtoupper($hasil);
-        // Tiga keputusan worklist: LULUS (maju), GUGUR (tutup), TALENT_POOL
-        // (tidak lolos di lowongan ini tapi disimpan untuk kesempatan berikutnya).
-        if (! in_array($hasil, ['LULUS', 'GUGUR', 'TALENT_POOL'], true)) {
-            return ['ok' => false, 'pesan' => 'Hasil harus LULUS, GUGUR, atau TALENT_POOL.'];
+
+        // Hasil keputusan dibaca dari MASTER, bukan daftar mati di sini.
+        //
+        // Dulu hanya tiga: LULUS / GUGUR / TALENT_POOL. Akibatnya kandidat yang
+        // MENOLAK penawaran terpaksa dicatat GUGUR — di data terbaca perusahaan
+        // yang menolak dia, dan funnel melaporkan "gagal di penawaran" untuk
+        // sesuatu yang sebenarnya berarti penawaran kita kalah bersaing. Dua
+        // kesimpulan itu menuntut tindakan yang sama sekali berbeda.
+        $master = self::masterHasilKeputusan();
+        $def = $master->get($hasil);
+
+        if (! $def) {
+            $sah = $master->keys()->implode(', ');
+
+            return ['ok' => false, 'pesan' => "Hasil '{$hasil}' tidak dikenali. Yang sah: {$sah}."];
+        }
+
+        if (($def->Butuh_Alasan ?? 'T') === 'Y' && trim((string) $catatan) === '') {
+            return ['ok' => false, 'pesan' => "Alasan wajib diisi untuk keputusan \"{$def->Nama}\"."];
         }
 
         $tahap = DB::table('N_WEB_CAREERS_Lamaran_Tahap')->where('Id_Lamaran_Tahap', $lamaranTahapId)->first();
@@ -534,6 +609,41 @@ class LamaranService
             'Updated_At' => $now, 'Updated_By' => $nama, 'Updated_By_Id' => $adminId,
         ]);
 
+        // KEPUTUSAN DARI KANDIDAT (menolak penawaran / mengundurkan diri).
+        //
+        // Dipisah dari GUGUR bukan demi kerapian: keduanya menutup lamaran, tapi
+        // sebabnya berlawanan. Menyamakannya membuat laporan berbunyi "kandidat
+        // gagal di tahap penawaran" untuk orang yang justru lolos dan memilih
+        // pergi — dan itu menuntun ke perbaikan yang salah sasaran.
+        //
+        // Flag Talent Pool-nya 'Y' karena kualitasnya sudah terbukti sampai
+        // tahap ini; menyimpannya jauh lebih masuk akal daripada membuangnya.
+        // Definisi hasil diambil ulang di sini: tetapkanTahap() dipanggil dari
+        // beberapa jalur (ketuk palu admin, mesin otomatis, reuse nilai tes),
+        // jadi ia tidak boleh bergantung pada variabel milik pemanggilnya.
+        $def = self::masterHasilKeputusan()->get($hasil);
+
+        if (($def->Flag_Oleh_Kandidat ?? 'T') === 'Y') {
+            DB::table('N_WEB_CAREERS_Lamaran')->where('Id_Lamaran', $tahap->Lamaran_Id)->update([
+                'Status' => $hasil,
+                'Hasil_Akhir' => $hasil,
+                'Gugur_Di_Tahap' => $tahap->Label,
+                'Alasan_Gugur' => $catatan,
+                'Waktu_Selesai' => $now,
+                'Updated_At' => $now, 'Updated_By' => $nama, 'Updated_By_Id' => $adminId,
+            ]);
+
+            if (($def->Flag_Talent_Pool ?? 'T') === 'Y') {
+                $this->simpanKeTalentPool($tahap, $catatan, $adminId, $nama, $now);
+            }
+
+            Log::channel('web_career')->info(
+                "Lamaran #{$tahap->Lamaran_Id} ditutup oleh KANDIDAT ({$def->Nama}) di tahap '{$tahap->Label}'."
+            );
+
+            return;
+        }
+
         if ($hasil === 'GUGUR') {
             DB::table('N_WEB_CAREERS_Lamaran')->where('Id_Lamaran', $tahap->Lamaran_Id)->update([
                 'Status' => 'GUGUR',
@@ -572,6 +682,30 @@ class LamaranService
             ->orderBy('Urutan')
             ->first();
 
+        // TITIK TUNTAS.
+        //
+        // Alur kerap memuat tahap administratif SESUDAH kandidat sebenarnya
+        // sudah diterima — Tanda Tangan Kontrak, Onboarding. Tanpa penanda ini
+        // kandidat yang sudah memegang surat penawaran tetap berstatus
+        // "Berjalan" dan kuota belum terpotong, padahal kursinya sudah terisi.
+        //
+        // Tahap sesudahnya TETAP dibuka dan tetap dikerjakan — yang berubah
+        // hanya: ia tidak lagi menentukan diterima atau tidaknya kandidat.
+        $tuntasDiSini = ($tahap->Flag_Tuntas ?? 'T') === 'Y';
+
+        if ($tuntasDiSini) {
+            DB::table('N_WEB_CAREERS_Lamaran')->where('Id_Lamaran', $tahap->Lamaran_Id)->update([
+                'Status' => 'LULUS',
+                'Hasil_Akhir' => 'DITERIMA',
+                'Waktu_Selesai' => $now,
+                'Updated_At' => $now, 'Updated_By' => $nama, 'Updated_By_Id' => $adminId,
+            ]);
+
+            Log::channel('web_career')->info(
+                "Lamaran #{$tahap->Lamaran_Id} DITERIMA di tahap tuntas '{$tahap->Label}' (urutan {$tahap->Urutan})."
+            );
+        }
+
         if ($berikut) {
             DB::table('N_WEB_CAREERS_Lamaran_Tahap')->where('Id_Lamaran_Tahap', $berikut->Id_Lamaran_Tahap)->update([
                 'Status' => 'BERJALAN',
@@ -600,7 +734,8 @@ class LamaranService
                         "Nilai {$berikut->Jenis_Tes_Kode} sebelumnya ({$lama->Total_Nilai}, {$tgl}) masih berlaku — dipakai ulang, kandidat tak tes lagi.", $adminId, $now);
                 }
             }
-        } else {
+        } elseif (! $tuntasDiSini) {
+            // Tahap terakhir dan belum ditutup di titik tuntas mana pun.
             DB::table('N_WEB_CAREERS_Lamaran')->where('Id_Lamaran', $tahap->Lamaran_Id)->update([
                 'Status' => 'LULUS',
                 'Hasil_Akhir' => 'DITERIMA',
@@ -816,6 +951,10 @@ class LamaranService
                     'Kode' => $t->Kode,
                     'Label' => $t->Label,
                     'Tipe_Tahap_Kode' => $t->Tipe_Tahap_Kode,
+                    // Penanda titik tuntas DIBEKUKAN saat lamaran dibuat: alur
+                    // boleh disunting kemudian, tapi perjalanan yang sudah
+                    // berlangsung tidak boleh berubah maknanya di tengah jalan.
+                    'Flag_Tuntas' => $t->Flag_Tuntas ?? 'T',
                     'Provider' => $t->Provider,
                     'Keputusan_Mode' => $t->Keputusan ?? null,
                     'Formulir_Kode' => $t->Formulir_Kode,

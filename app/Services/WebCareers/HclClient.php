@@ -2,6 +2,7 @@
 
 namespace App\Services\WebCareers;
 
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -43,13 +44,25 @@ class HclClient
         return $this->kirim('DELETE', $path, [], [], $konteksLog);
     }
 
+    /**
+     * Domain CAT untuk mode yang sedang dipakai (HCLEARN_ENV).
+     *
+     * Pesan galatnya menyebut mode yang salah DAN daftar mode yang tersedia.
+     * Salah ketik satu huruf pada HCLEARN_ENV dulu hanya berujung "domain belum
+     * diatur", yang membuat orang mencari-cari di config alih-alih di .env.
+     */
     public function baseUrl(): string
     {
-        $env = config('hclearn.env', 'development');
-        $domain = config("hclearn.domains.{$env}");
+        $env = trim((string) config('hclearn.env', 'development'));
+        $semua = array_filter((array) config('hclearn.domains', []));
+        $domain = $semua[$env] ?? null;
 
         if (! $domain) {
-            throw new \RuntimeException("Domain HCLearn untuk environment '{$env}' belum diatur.");
+            $tersedia = implode(' | ', array_keys($semua)) ?: '(tidak ada satu pun domain terisi)';
+
+            throw new \RuntimeException(
+                "HCLEARN_ENV='{$env}' tidak dikenali atau domainnya belum diisi. Mode yang tersedia: {$tersedia}."
+            );
         }
 
         return rtrim($domain, '/');
@@ -125,10 +138,12 @@ class HclClient
 
                 $this->catat($metode, $jalur, $queryString, $rawBody, $respons->body(), $respons->status(), $nonce, $durasi, $sukses, $konteksLog);
 
+                $pesan = $json['message'] ?? ($sukses ? 'Berhasil' : 'Permintaan ke HCLearn gagal');
+
                 $terakhir = [
                     'sukses' => $sukses,
                     'status' => $respons->status(),
-                    'message' => $json['message'] ?? ($sukses ? 'Berhasil' : 'Permintaan ke HCLearn gagal'),
+                    'message' => $sukses ? $pesan : $this->jelaskan($pesan, $timestamp, $respons),
                     'result' => $json['result'] ?? $json ?? null,
                 ];
 
@@ -158,6 +173,69 @@ class HclClient
         }
 
         return $terakhir;
+    }
+
+    /**
+     * Terjemahkan galat HCLearn yang singkat menjadi sebab + tindakan.
+     *
+     * Pesan seperti "Request Expired" benar secara teknis tapi tidak memberi
+     * tahu apa pun kepada orang yang membacanya di layar admin. Yang ditambahkan
+     * di sini bukan tebakan: selisih jamnya dihitung dari jam server HCLearn
+     * yang ikut dikirim pada balasan.
+     */
+    private function jelaskan(string $pesan, string $timestampKirim, Response $respons): string
+    {
+        $ringkas = strtolower(trim($pesan));
+
+        if (str_contains($ringkas, 'request expired')) {
+            $jamServer = $this->jamServer($respons);
+            $selisih = $jamServer ? (strtotime($timestampKirim) - $jamServer) : null;
+            $rinci = $selisih === null
+                ? 'Jam mesin ini berbeda lebih dari 60 detik dari server HCLearn.'
+                : sprintf('Jam mesin ini %s %d detik dari server HCLearn (batas toleransi 60 detik).',
+                    $selisih > 0 ? 'LEBIH CEPAT' : 'LEBIH LAMBAT', abs($selisih));
+
+            return "Request Expired — {$rinci} Permintaan ditandatangani dengan waktu, "
+                . 'jadi selisih sebesar itu dianggap permintaan basi. Perbaiki jam server: '
+                . 'Windows `w32tm /resync /force`, Linux `sudo chronyc makestep` atau `sudo ntpdate -u pool.ntp.org`.';
+        }
+
+        if (str_contains($ringkas, 'duplicate request')) {
+            return "{$pesan} — permintaan dengan nonce yang sama pernah dikirim. Ulangi dari awal, jangan kirim ulang permintaan yang sama.";
+        }
+
+        // "Non Official" = tidak ada baris N_HRIS_KANDIDAT_Api_Aplikasi dengan
+        // Api_Public ini DAN Flag_Aktif='Y'. Tiap lingkungan CAT punya database
+        // sendiri, jadi kredensial yang jalan di lokal belum tentu ada di staging.
+        if (str_contains($ringkas, 'non official')) {
+            return "{$pesan} — HCLEARN_WC_API_PUBLIC tidak terdaftar/aktif di CAT lingkungan '"
+                . config('hclearn.env') . "'. Minta tim CAT memastikan ada baris N_HRIS_KANDIDAT_Api_Aplikasi "
+                . "dengan Api_Public & Api_Secret yang sama dan Flag_Aktif='Y' di database lingkungan itu.";
+        }
+
+        if (str_contains($ringkas, 'signature') && ! str_contains($ringkas, 'body hash')) {
+            return "{$pesan} — tanda tangan HMAC tidak cocok. Api_Secret di sini berbeda dengan yang tersimpan di CAT lingkungan '"
+                . config('hclearn.env') . "'.";
+        }
+
+        if (str_contains($ringkas, 'body hash')) {
+            return "{$pesan} — isi permintaan berubah di tengah jalan (proxy/gateway mengubah body). "
+                . 'Bukan salah kredensial.';
+        }
+
+        if (str_contains($ringkas, 'security incomplete')) {
+            return "{$pesan} — ada header X-HC-* yang tidak sampai ke CAT. Biasanya proxy/CDN membuang header kustom.";
+        }
+
+        return $pesan;
+    }
+
+    /** Jam server HCLearn (epoch) dari header Date balasan; null bila tak ada. */
+    private function jamServer(Response $respons): ?int
+    {
+        $date = $respons->header('Date');
+
+        return $date ? (strtotime($date) ?: null) : null;
     }
 
     /**

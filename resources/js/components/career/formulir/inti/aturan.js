@@ -175,7 +175,10 @@ export function periksaLangkah(langkah, jawaban) {
         }
 
         fieldTampil(B.field, jawaban).forEach((f) => {
-            if (f.tipe === 'prefill') return;
+            // Prefill yang masih terkunci tidak divalidasi (isinya milik
+            // sistem). Begitu dibuka untuk disunting, ia jadi isian biasa —
+            // termasuk boleh dinyatakan wajib dan dicek format teleponnya.
+            if (f.tipe === 'prefill' && !syaratTerpenuhi(f.buka_jika, jawaban)) return;
             if (f.wajib && kosong(jawaban[f.key])) {
                 galat.push(
                     f.tipe === 'consent' ? `Anda harus menyetujui: "${f.label}".` : `"${f.label}" wajib diisi.`,
@@ -184,16 +187,39 @@ export function periksaLangkah(langkah, jawaban) {
             }
             const gTelepon = galatTelepon(f, jawaban[f.key]);
             if (gTelepon) galat.push(gTelepon);
+
+            const gBeda = galatBedaDengan(f, jawaban);
+            if (gBeda) galat.push(gBeda);
         });
     });
 
     return galat;
 }
 
+/**
+ * Field yang nilainya TIDAK BOLEH sama dengan field lain (`beda_dengan`).
+ *
+ * Dipakai kontak darurat: nomor yang sama dengan nomor kandidat sendiri membuat
+ * kontak darurat kehilangan gunanya — justru saat kandidat tak bisa dihubungi.
+ * Dibandingkan sebagai digit saja, supaya "+62 812-3456" dan "628123456"
+ * tidak lolos hanya karena beda tanda baca.
+ */
+function galatBedaDengan(f, jawaban) {
+    if (!f.beda_dengan || kosong(jawaban[f.key])) return '';
+
+    const digit = (v) => String(v ?? '').replace(/\D/g, '');
+    const ini = digit(jawaban[f.key]);
+    const lain = digit(jawaban[f.beda_dengan]);
+    if (!ini || !lain || ini !== lain) return '';
+
+    return `"${f.label}" tidak boleh sama dengan nomor Anda sendiri.`;
+}
+
 // Telepon internasional: kode negara + nomor. Panjang beda tiap negara, jadi
 // cukup periksa minimal 8 digit (tak lagi wajib berawalan 62).
 function galatTelepon(f, v) {
-    if (f.tipe !== 'phone' || kosong(v)) return '';
+    const tipeEfektif = f.tipe === 'prefill' ? f.tipe_buka : f.tipe;
+    if (tipeEfektif !== 'phone' || kosong(v)) return '';
     const s = String(v).replace(/\D/g, '');
     if (s.length < 8) return `"${f.label}" belum lengkap.`;
     return '';

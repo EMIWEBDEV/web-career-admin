@@ -594,7 +594,8 @@ export default {
 .lms-modal__danger { appearance: none; cursor: pointer; font-family: inherit; font-size: 13px; font-weight: 800; padding: 11px 18px; border-radius: 12px; border: none; background: linear-gradient(135deg, #f87171, #ef4444); color: #fff; display: inline-flex; align-items: center; gap: 7px; box-shadow: 0 8px 20px rgba(239, 68, 68, 0.28); }
 .lms-modal__danger:disabled { opacity: 0.6; cursor: default; }
 
-.lms-toast { position: fixed; bottom: 24px; right: 24px; z-index: 1100; display: flex; align-items: center; gap: 9px; padding: 12px 18px; border-radius: 13px; background: #0f172a; color: #fff; font-size: 13.5px; font-weight: 700; box-shadow: 0 18px 40px rgba(0, 0, 0, 0.3); }
+/* z-index 1300 = DI ATAS modal EVO (.wca-modal-mask 1200), supaya toast tetap terbaca saat modal terbuka. */
+.lms-toast { position: fixed; bottom: 24px; right: 24px; z-index: 1300; display: flex; align-items: center; gap: 9px; padding: 12px 18px; border-radius: 13px; background: #0f172a; color: #fff; font-size: 13.5px; font-weight: 700; box-shadow: 0 18px 40px rgba(0, 0, 0, 0.3); }
 .lms-toast.is-err { background: #dc2626; }
 .lms-toast .bi { color: #34d399; }
 .lms-toast.is-err .bi { color: #fff; }
