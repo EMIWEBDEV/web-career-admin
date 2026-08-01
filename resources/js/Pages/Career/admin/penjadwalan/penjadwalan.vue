@@ -347,7 +347,13 @@
                         <p>{{ adaFilter ? 'Ubah kata kunci atau bersihkan filternya.' : 'Pilih paket tes, kandidat, dan jendela waktu, lalu tekan Generate Sesi Tes.' }}</p>
                     </div>
 
-                    <div v-for="j in daftar" :key="j.id" class="pjd-sched" :class="{ 'is-open': terbuka === j.id }">
+                    <div
+                        v-for="j in daftar"
+                        :id="`penjadwalan-${j.id}`"
+                        :key="j.id"
+                        class="pjd-sched"
+                        :class="{ 'is-open': terbuka === j.id, 'is-focus': String(fokusId) === String(j.id) }"
+                    >
                         <!-- Kepala akordion: seluruh barisnya bisa diklik supaya
                              sasaran kliknya besar, tapi tombol aksi di kanan
                              dihentikan penyebarannya agar tak ikut membuka. -->
@@ -710,6 +716,7 @@ export default {
             editSibuk: false,
             notice: '',
             noticeType: 'success',
+            fokusId: new URLSearchParams(window.location.search).get('fokus'),
             // Hanya bagian JAM yang dipakai Element Plus; tanggalnya diabaikan.
             jamMulaiBawaan: new Date(2000, 0, 1, 8, 0, 0),
             jamAkhirBawaan: new Date(2000, 0, 1, 23, 59, 0),
@@ -926,6 +933,9 @@ export default {
                 this.daftarTotalPage = r.totalPage || 1;
                 // Halaman bisa jadi kosong setelah menyaring atau menghapus.
                 if (this.daftarPage > this.daftarTotalPage) { this.daftarPage = this.daftarTotalPage; return this.muat(); }
+                if (this.fokusId && this.daftar.some((j) => String(j.id) === String(this.fokusId))) {
+                    this.$nextTick(() => document.getElementById(`penjadwalan-${this.fokusId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+                }
             } catch (e) {
                 this.beritahu('Gagal memuat daftar penjadwalan', 'error');
             } finally {
@@ -1308,6 +1318,7 @@ export default {
 .pjd-sched + .pjd-sched { margin-top: 14px; }
 .pjd-sched:hover { border-color: #dfe3f3; }
 .pjd-sched.is-open { border-color: #c7cdf0; box-shadow: 0 10px 28px rgba(99, 102, 241, .12); }
+.pjd-sched.is-focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99, 102, 241, .14), 0 12px 28px rgba(15, 23, 42, .08); }
 .pjd-sched__head { padding: 16px 18px; background: linear-gradient(180deg, #fbfbfe, #f8f9fc); border-bottom: 1px solid #eef0f7; cursor: pointer; outline: none; }
 .pjd-sched__head:focus-visible { box-shadow: inset 0 0 0 2px #a5b4fc; }
 .pjd-sched__top { display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap; }

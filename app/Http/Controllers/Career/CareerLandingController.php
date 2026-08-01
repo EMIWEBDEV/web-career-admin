@@ -115,6 +115,38 @@ class CareerLandingController extends Controller
             $id = $posisiProgram[0]['id'];
         }
 
+        // Form 2 adalah formulir TAHAP milik lamaran yang sudah ada. Jalur lama
+        // merender ApplyForm lalu hanya menyimpannya di sessionStorage, sehingga
+        // admin tidak pernah menerima jawaban. Arahkan ke detail lamaran: halaman
+        // itu membawa tahapId asli dan mengirim ke /lamaran/tahap/{id}/kirim.
+        if ($form === 2) {
+            $kartu = $this->cariKartuPosisi($id);
+            abort_unless($kartu, 404);
+
+            $userId = (int) session('career_auth.id');
+            if (! $userId) {
+                return redirect()->route('career.login');
+            }
+
+            $posisiId = Hashids::decode($kartu['posisiId'] ?? '')[0] ?? null;
+            $lamaranId = $posisiId
+                ? DB::table('N_WEB_CAREERS_Lamaran')
+                    ->where('Id_Users', $userId)
+                    ->where('Program_Posisi_Id', $posisiId)
+                    ->orderByDesc('Id_Lamaran')
+                    ->value('Id_Lamaran')
+                : null;
+
+            if (! $lamaranId) {
+                return redirect()->route('career.portal.index')
+                    ->with('error', 'Lamaran belum ditemukan. Kirim Form 1 terlebih dahulu.');
+            }
+
+            return redirect()->route('career.portal.detail', [
+                'id' => Hashids::encode($lamaranId),
+            ]);
+        }
+
         // ID asing/kedaluwarsa tidak boleh membuka formulir generik yang seolah
         // berhasil tetapi tidak pernah mempunyai target lamaran di database.
         abort_unless($this->cariKartuPosisi($id), 404);

@@ -5,11 +5,23 @@ import axios from 'axios';
 import { Link, router } from '@inertiajs/vue3';
 import AuthShell from './components/AuthShell.vue';
 import { logout as clearSession, syncFromServer } from './careerSession';
+import { csrfHeaders, refreshCsrfToken } from '../../utils/csrf';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function readRedirect() {
     try { return new URLSearchParams(window.location.search).get('redirect') || '/kandidat/portal'; } catch (e) { return '/kandidat/portal'; }
+}
+
+// Halaman auth adalah pintu masuk sesi baru. Pastikan cookie XSRF dibuat
+// sebelum mutation pertama; mengandalkan retry setelah 419 membuat cek KTP
+// terlihat gagal dan pada sebagian browser header request lama ikut terbawa.
+async function authRequestConfig() {
+    await refreshCsrfToken();
+    return {
+        withCredentials: true,
+        headers: csrfHeaders({ Accept: 'application/json' }),
+    };
 }
 
 export default {
@@ -170,7 +182,7 @@ export default {
             }
             this.checkingKtp = true;
             try {
-                await axios.post('/api/v1/cek-ktp', { nik: this.form.nik }, { headers: { Accept: 'application/json' } });
+                await axios.post('/api/v1/cek-ktp', { nik: this.form.nik }, await authRequestConfig());
                 this.regStep = 2; // KTP tersedia → tampilkan form identitas.
             } catch (e) {
                 const r = e.response;
@@ -198,7 +210,11 @@ export default {
             if (this.resendingVerif || !this.pendingVerifEmail) return;
             this.resendingVerif = true;
             try {
-                const res = await axios.post('/api/v1/kirim-verifikasi', { email: this.pendingVerifEmail }, { headers: { Accept: 'application/json' } });
+                const res = await axios.post(
+                    '/api/v1/kirim-verifikasi',
+                    { email: this.pendingVerifEmail },
+                    await authRequestConfig(),
+                );
                 this.flashNotice('info', (res.data && res.data.message) || 'Email verifikasi dikirim ulang.');
             } catch (e) {
                 const r = e.response;
@@ -230,7 +246,7 @@ export default {
                 const payload = this.isLogin
                     ? { email: this.form.email, password: this.form.password, turnstile_token: this.tsToken }
                     : { nama: this.form.nama, email: this.form.email, phone: this.form.phone, nik: this.form.nik, password: this.form.password };
-                const res = await axios.post(url, payload, { headers: { Accept: 'application/json' } });
+                const res = await axios.post(url, payload, await authRequestConfig());
 
                 if (!this.isLogin) {
                     const hasil = res.data && res.data.result;

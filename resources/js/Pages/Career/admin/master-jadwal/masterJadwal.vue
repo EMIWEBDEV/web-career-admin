@@ -14,7 +14,7 @@
         </div>
 
         <div v-loading="loading" class="pkg-list">
-            <div v-for="j in list" :key="j.id" class="pkg-card" :class="{ open: open === j.id }">
+            <div v-for="j in list" :id="`jadwal-${j.id}`" :key="j.id" class="pkg-card" :class="{ open: open === j.id, 'is-focus': fokusId === j.id }">
                 <!-- header row (pola standar "Program Kegiatan") -->
                 <div class="pkg-row">
                     <button type="button" class="pkg-chev" :class="{ open: open === j.id }" title="Buka detail" @click="open = (open === j.id ? null : j.id)"><i class="bi bi-chevron-right"></i></button>
@@ -211,6 +211,7 @@ export default {
             saving: false,
             toast: '',
             tm: null,
+            fokusId: new URLSearchParams(window.location.search).get('fokus'),
         };
     },
     mounted() {
@@ -246,6 +247,10 @@ export default {
             try {
                 const res = await axios.get(API, CFG);
                 this.list = res.data.result || [];
+                if (this.fokusId && this.list.some((j) => j.id === this.fokusId)) {
+                    this.open = this.fokusId;
+                    this.$nextTick(() => document.getElementById(`jadwal-${this.fokusId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+                }
             } catch (e) {
                 this.notice('Gagal memuat data jadwal.');
             } finally {
@@ -378,6 +383,7 @@ export default {
 .jdw-opt__ic { flex: none; font-size: 1rem; }
 .jdw-opt__txt { display: flex; flex-direction: column; line-height: 1.3; }
 .jdw-opt__txt small { color: #94a3b8; font-size: 11px; }
+.pkg-card.is-focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99, 102, 241, .14), 0 14px 32px rgba(15, 23, 42, .08); }
 @media (max-width: 560px) {
     .jdw-arow__grid { grid-template-columns: 1fr; }
     .jdw-arow__num { display: none; }

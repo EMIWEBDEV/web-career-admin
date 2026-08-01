@@ -361,7 +361,7 @@ const matriksHari = computed(() => {
         curr.setDate(hariIni.getDate() + i);
 
         const kunci = `${curr.getFullYear()}-${String(curr.getMonth() + 1).padStart(2, '0')}-${String(curr.getDate()).padStart(2, '0')}`;
-        
+
         // Cari item agenda untuk tanggal ini
         const itemHari = props.agenda.filter(a => {
             const d = keDate(a.mulai);

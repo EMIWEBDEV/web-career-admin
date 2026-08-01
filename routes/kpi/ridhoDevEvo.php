@@ -64,6 +64,8 @@ Route::prefix('api/v1/karir')
         // controller terhadap Role_Konten_Access, bukan lewat middleware.
         Route::get('/dashboard/ringkas', [DashboardController::class, 'ringkas'])->name('dashboard.ringkas');
         Route::get('/dashboard/analitik', [DashboardController::class, 'analitik'])->name('dashboard.analitik');
+        Route::get('/dashboard/kalender', [DashboardController::class, 'kalender'])->name('dashboard.kalender');
+        Route::get('/dashboard/kalender/tes/{id}/peserta', [DashboardController::class, 'pesertaKalender'])->name('dashboard.kalender.peserta');
         Route::get('/dashboard/khas', [DashboardController::class, 'khas'])->name('dashboard.khas');
 
         // Worklist admin: daftar program (panel kiri) + kanban seleksi (panel kanan) & ketuk palu.
@@ -182,4 +184,3 @@ Route::prefix('api/v1/lamaran')
         Route::post('/tahap/{id}/kirim', [LamaranController::class, 'kirimFormulir'])->name('kirim')->middleware('career.permission:portalPage,EDIT');
         Route::delete('/{id}', [LamaranController::class, 'batalkan'])->name('batal');
     });
-
