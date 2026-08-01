@@ -169,6 +169,13 @@ class MasterAlurController extends Controller
             // Upload berkas hasil tahap (MCU/Interview) + wajib/opsional.
             'stages.*.uploadHasil' => 'nullable|boolean',
             'stages.*.wajibUpload' => 'nullable|boolean',
+            // TITIK TUNTAS — "tahap ini menutup proses seleksi".
+            //
+            // Sempat hilang dari daftar ini. validate() hanya mengembalikan key
+            // yang PUNYA aturan, jadi `tuntas` yang dikirim layar ikut terbuang
+            // sebelum sampai ke simpanTahap(): saklarnya bisa dinyalakan,
+            // disimpan, dan Flag_Tuntas tetap 'T' tanpa satu pun pesan galat.
+            'stages.*.tuntas' => 'nullable|boolean',
         ];
     }
 
@@ -198,6 +205,12 @@ class MasterAlurController extends Controller
         $modeSemua = DB::table('N_WEB_CAREERS_Master_Mode_Keputusan')->where('Flag_Aktif', 'Y')->orderBy('Urutan')->get();
         $autoLanjut = $modeSemua->pluck('Auto_Lanjut', 'Kode');
         $autoGugur = $modeSemua->pluck('Auto_Gugur', 'Kode');
+
+        // TITIK TUNTAS HANYA SATU per alur. Layar sudah menjaganya, tapi dua
+        // titik tuntas berarti dua momen "kandidat diterima" — kuota terpotong
+        // dua kali dan laporan penerimaan tak bisa dipercaya. Dijaga di sini
+        // juga karena permintaan bisa datang tanpa lewat layar.
+        $tuntasTerpakai = false;
 
         foreach (array_values($stages) as $i => $s) {
             $kode = trim(preg_replace('/[^A-Z0-9]+/', '_', strtoupper($s['label'])), '_') ?: ('TAHAP_' . ($i + 1));
@@ -269,6 +282,9 @@ class MasterAlurController extends Controller
             $pengumuman = $s['pengumuman'] ?? 'OTOMATIS';
             $jeda = ($modeButuhJeda[$pengumuman] ?? false) ? ($s['jedaHari'] ?? null) : null;
 
+            $tuntas = ! $tuntasTerpakai && ($s['tuntas'] ?? false);
+            $tuntasTerpakai = $tuntasTerpakai || $tuntas;
+
             $tahapId = DB::table('N_WEB_CAREERS_Master_Alur_Tahap')->insertGetId([
                 'Master_Alur_Id' => $alurId,
                 'Urutan' => $i + 1,
@@ -295,7 +311,7 @@ class MasterAlurController extends Controller
                 // Tahap; dulu kode 'MCU' ditulis langsung di beberapa file).
                 'Flag_Upload_Hasil' => (($s['uploadHasil'] ?? false) || ($tipe[$s['tipe']]->Flag_Upload_Hasil ?? 'T') === 'Y') ? 'Y' : 'T',
                 'Flag_Wajib_Upload' => ($s['wajibUpload'] ?? false) ? 'Y' : 'T',
-                'Flag_Tuntas' => ($s['tuntas'] ?? false) ? 'Y' : 'T',
+                'Flag_Tuntas' => $tuntas ? 'Y' : 'T',
                 'Created_At' => $now, 'Created_By' => $userName, 'Created_By_Id' => $userId,
                 'Updated_At' => $now, 'Updated_By' => $userName, 'Updated_By_Id' => $userId,
             ], 'Id_Master_Alur_Tahap');

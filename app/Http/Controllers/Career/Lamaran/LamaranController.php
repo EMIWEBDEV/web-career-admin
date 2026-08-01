@@ -51,7 +51,7 @@ class LamaranController extends Controller
     public static function masterTipeTahap(): \Illuminate\Support\Collection
     {
         return self::$tipeCache ??= DB::table('N_WEB_CAREERS_Master_Tipe_Tahap')
-            ->get(['Kode', 'Nama', 'Ikon', 'Perilaku_Kode', 'Flag_Formulir', 'Flag_Upload_Hasil', 'Flag_Jadwal', 'Flag_Wajib_Luring', 'Pesan_Kandidat'])
+            ->get(['Kode', 'Nama', 'Ikon', 'Perilaku_Kode', 'Flag_Formulir', 'Flag_Upload_Hasil', 'Flag_Jadwal', 'Flag_Wajib_Luring', 'Flag_Penawaran', 'Pesan_Kandidat'])
             ->keyBy('Kode');
     }
 
@@ -725,6 +725,16 @@ class LamaranController extends Controller
                 // (atau harus) mengulang tesnya.
                 'otomatis' => strtoupper((string) ($t->Keputusan_Mode ?? 'MANUAL')) === 'SYSTEM',
                 'siapDiputus' => ($t->Siap_Diputus ?? 'N') === 'Y',
+                // PENAWARAN: tahap ini menuntut JAWABAN kandidat, bukan sekadar
+                // menunggu tim. Tanpa penanda ini portal hanya berkata "tim akan
+                // menghubungimu" — dan kandidat yang sudah memegang penawaran
+                // tidak punya cara menyatakan menerima atau mundur.
+                'penawaran' => ($info->Flag_Penawaran ?? 'T') === 'Y',
+                'tanggapan' => ($t->Tanggapan_Kandidat ?? null) ? [
+                    'jawab' => $t->Tanggapan_Kandidat,
+                    'catatan' => $t->Tanggapan_Catatan,
+                    'waktu' => (string) ($t->Tanggapan_At ?: ''),
+                ] : null,
                 // Keputusan tahap — hanya diberikan bila memang sudah boleh
                 // diumumkan. Bila belum, `hasil` di atas TIDAK dipakai portal.
                 'hasilTampil' => $hasilTampil,
@@ -974,6 +984,133 @@ class LamaranController extends Controller
         }
 
         abort(404);
+    }
+
+    /**
+     * POST /kandidat/lamaran/tahap/{id}/tanggapan — kandidat menjawab penawaran.
+     *
+     * DUA JAWABAN, DUA AKIBAT YANG BERBEDA:
+     *
+     *  TERIMA  Direkam saja. Tahapnya TIDAK ikut diputus — menerima penawaran
+     *          bukan akhir proses: kontrak masih disiapkan, tanggal mulai masih
+     *          disepakati, dan berkasnya masih diperiksa. Yang berubah cuma satu
+     *          hal penting: admin kini tahu kandidat ini menunggu ditindaklanjuti,
+     *          bukan sedang menggantung tanpa kabar.
+     *
+     *  MUNDUR  FINAL dari sisi kandidat, jadi lamarannya langsung ditutup lewat
+     *          mesin keputusan yang sama dengan admin (ketukPalu). Kodenya diambil
+     *          dari MASTER berdasarkan Flag_Oleh_Kandidat — "menolak penawaran"
+     *          dan "mengundurkan diri" adalah dua sebab berbeda, dan tahap
+     *          berpenawaran menentukan mana yang berlaku.
+     *
+     * Kandidat TIDAK bisa meloloskan dirinya sendiri: satu-satunya jawaban yang
+     * menutup lamaran di sini adalah yang merugikan dirinya, dan itu memang
+     * haknya. Menerima tetap menunggu palu admin.
+     */
+    public function portalTanggapanPenawaran(Request $request, string $id)
+    {
+        $userId = (int) session('career_auth.id');
+        $realId = Hashids::decode($id)[0] ?? null;
+
+        $data = $request->validate([
+            'jawab' => 'required|in:TERIMA,MUNDUR',
+            // Alasan mundur diminta — bukan demi formalitas: itulah satu-satunya
+            // umpan balik kenapa penawaran kalah, dan tanpanya angka "kandidat
+            // mundur" tidak menuntun ke perbaikan apa pun.
+            'catatan' => 'nullable|string|max:500',
+        ]);
+
+        $tahap = $realId
+            ? DB::table('N_WEB_CAREERS_Lamaran_Tahap as h')
+                ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'h.Lamaran_Id')
+                ->where('h.Id_Lamaran_Tahap', $realId)
+                ->where('l.Id_Users', $userId)
+                ->select('h.*', 'l.Status as StatusLamaran')
+                ->first()
+            : null;
+
+        if (! $tahap) {
+            return ResponseHelper::error('Tahap tidak ditemukan.', 404);
+        }
+
+        if ($tahap->Status !== 'BERJALAN' || $tahap->StatusLamaran !== 'BERJALAN') {
+            return ResponseHelper::error('Tahap ini sudah tidak berjalan.', 409);
+        }
+
+        $tipe = self::masterTipeTahap()[$tahap->Tipe_Tahap_Kode ?? ''] ?? null;
+        if (($tipe->Flag_Penawaran ?? 'T') !== 'Y') {
+            return ResponseHelper::error('Tahap ini tidak menuntut jawaban penawaran.', 422);
+        }
+
+        if ($tahap->Tanggapan_Kandidat) {
+            return ResponseHelper::error('Kamu sudah memberi jawaban untuk tahap ini.', 409);
+        }
+
+        $now = now();
+        $nama = session('career_auth.nama');
+
+        DB::table('N_WEB_CAREERS_Lamaran_Tahap')->where('Id_Lamaran_Tahap', $realId)->update([
+            'Tanggapan_Kandidat' => $data['jawab'],
+            'Tanggapan_Catatan' => $data['catatan'] ?? null,
+            'Tanggapan_At' => $now,
+            'Updated_At' => $now,
+            'Updated_By' => $nama,
+        ]);
+
+        if ($data['jawab'] === 'TERIMA') {
+            Log::channel('web_career')->info("[PENAWARAN] lamaran #{$tahap->Lamaran_Id} — kandidat MENERIMA di tahap '{$tahap->Label}'.");
+
+            return ResponseHelper::success(null, 'Terima kasih. Jawabanmu sudah kami terima dan tim rekrutmen akan menindaklanjuti.');
+        }
+
+        // MUNDUR: kode hasilnya dari master, bukan ditulis di sini. Yang dipakai
+        // hasil ber-Flag_Oleh_Kandidat — pada tahap penawaran resmi berarti
+        // "menolak penawaran", selebihnya "mengundurkan diri".
+        $kode = self::kodeMundurKandidat($tahap->Tipe_Tahap_Kode);
+        if (! $kode) {
+            return ResponseHelper::error('Jenis keputusan pengunduran diri belum tersedia di master.', 422);
+        }
+
+        $hasil = $this->svc->ketukPalu(
+            (int) $realId,
+            $kode,
+            $data['catatan'] ?: 'Kandidat menyatakan mundur lewat portal.',
+            null,
+        );
+
+        if (! $hasil['ok']) {
+            return ResponseHelper::error($hasil['pesan'], 422);
+        }
+
+        Log::channel('web_career')->info("[PENAWARAN] lamaran #{$tahap->Lamaran_Id} — kandidat MUNDUR ({$kode}) di tahap '{$tahap->Label}'.");
+
+        return ResponseHelper::success(null, 'Jawabanmu tersimpan. Terima kasih sudah mengabari kami.');
+    }
+
+    /**
+     * Kode hasil untuk kandidat yang mundur, dipilih dari MASTER.
+     *
+     * Menolak penawaran resmi dan mengundurkan diri sebelum ada penawaran
+     * adalah dua sebab berbeda; menyamakannya membuat laporan tidak bisa
+     * menjawab "penawaran kita kalah" versus "kandidat pergi lebih dulu".
+     */
+    private static function kodeMundurKandidat(?string $tipeKode): ?string
+    {
+        $kandidat = \App\Support\Career\LamaranService::masterHasilKeputusan()
+            ->filter(fn ($h) => ($h->Flag_Oleh_Kandidat ?? 'T') === 'Y');
+
+        if ($kandidat->isEmpty()) {
+            return null;
+        }
+
+        // Tahap penawaran resmi → "menolak penawaran" bila ada di master.
+        if ($tipeKode === 'OFFERING' && $kandidat->has('DITOLAK_KANDIDAT')) {
+            return 'DITOLAK_KANDIDAT';
+        }
+
+        return $kandidat->has('MENGUNDURKAN_DIRI')
+            ? 'MENGUNDURKAN_DIRI'
+            : $kandidat->keys()->first();
     }
 
     /** GET pratinjau berkas MILIK kandidat login (cek kepemilikan lamaran). */
@@ -1287,6 +1424,30 @@ class LamaranController extends Controller
         return Inertia::render('Career/admin/Pelamar', CareerShell::props('/karir/pelamar', 'Worklist Pelamar', [
             'talent' => $this->talentTabs(),
             'programAwal' => $this->daftarProgram(1, self::PROGRAM_PER_HALAMAN, '', ''),
+            // TOMBOL KEPUTUSAN DIBACA DARI MASTER, bukan tiga tombol yang
+            // ditulis mati di layar. Master sudah lama memuat lima hasil —
+            // termasuk "Kandidat Menolak" dan "Mengundurkan Diri" — tetapi
+            // worklist hanya pernah menampilkan tiga, sehingga dua sebab
+            // berhentinya proses yang datang DARI KANDIDAT tak punya jalan
+            // dicatat sama sekali dan terpaksa dicatat sebagai "Tidak Lolos".
+            'hasilKeputusan' => \App\Support\Career\LamaranService::masterHasilKeputusan()
+                ->values()
+                ->map(fn ($h) => [
+                    'kode' => $h->Kode,
+                    'nama' => $h->Nama,
+                    'labelTombol' => $h->Label_Tombol,
+                    'labelKonfirmasi' => $h->Label_Konfirmasi,
+                    'ikon' => $h->Ikon,
+                    'warna' => $h->Warna,
+                    'deskripsi' => $h->Deskripsi,
+                    'lolos' => ($h->Flag_Lolos ?? 'T') === 'Y',
+                    'kirimEmail' => ($h->Flag_Kirim_Email ?? 'T') === 'Y',
+                    'talentPool' => ($h->Flag_Talent_Pool ?? 'T') === 'Y',
+                    // Keputusan yang datang dari KANDIDAT, bukan dari perusahaan.
+                    // Dipisah di layar supaya tidak terbaca sebagai penilaian tim.
+                    'olehKandidat' => ($h->Flag_Oleh_Kandidat ?? 'T') === 'Y',
+                    'butuhAlasan' => ($h->Butuh_Alasan ?? 'T') === 'Y',
+                ])->all(),
         ]));
     }
 
@@ -1440,6 +1601,10 @@ class LamaranController extends Controller
                     // seluruh gunanya adalah dokumen tetap bisa diloloskan kosong.
                     'wajibUpload' => ($t->Flag_Wajib_Upload ?? 'T') === 'Y'
                         || ($tipe[$t->Tipe_Tahap_Kode]->Flag_Upload_Hasil ?? 'T') === 'Y',
+                    // Tahap yang membawa PENAWARAN — kandidat harus menjawab
+                    // terima atau mundur. Penandanya dari Master Tipe Tahap,
+                    // jadi tahap penawaran bernama lain cukup disetel di master.
+                    'penawaran' => ($tipe[$t->Tipe_Tahap_Kode]->Flag_Penawaran ?? 'T') === 'Y',
                 ])->all()
             : [];
 
@@ -1552,6 +1717,14 @@ class LamaranController extends Controller
                 'hasilData' => $st['hasilData'],
                 'ringkasHasil' => $st['ringkasHasil'],
                 'skor' => $skor,
+                // JAWABAN KANDIDAT atas penawaran. Admin tidak boleh menebak
+                // dari diamnya kandidat: "belum menjawab" dan "sudah menerima"
+                // menuntut tindakan yang sama sekali berbeda.
+                'tanggapan' => ($tAktif->Tanggapan_Kandidat ?? null) ? [
+                    'jawab' => $tAktif->Tanggapan_Kandidat,
+                    'catatan' => $tAktif->Tanggapan_Catatan,
+                    'waktu' => (string) ($tAktif->Tanggapan_At ?: ''),
+                ] : null,
                 'rekomendasi' => $tAktif->Rekomendasi ?? null,
                 'alasan' => $tAktif->Rekomendasi_Alasan ?? $l->Alasan_Gugur,
                 'pengisianId' => ($tAktif && $tAktif->Formulir_Pengisian_Id) ? Hashids::encode($tAktif->Formulir_Pengisian_Id) : null,
@@ -2241,6 +2414,21 @@ class LamaranController extends Controller
                 return false;
             }
 
+            // TEMPATNYA ikut, bukan hanya patokan yang diketik rekruter.
+            //
+            // Undangan sebelumnya cuma membawa Jadwal_Lokasi — teks bebas
+            // semacam "Pabrik di Banyuasin". Nama tempat, alamat, dan petanya —
+            // justru yang dipilih rekruter di layar penjadwalan — tidak pernah
+            // sampai ke kandidat; bila patokannya dikosongkan, undangannya
+            // bahkan tidak menyebut lokasi sama sekali. Sekarang keduanya
+            // dikirim: TEMPAT sebagai alamat resmi, PATOKAN sebagai penunjuk
+            // rinci di dalamnya.
+            $tempat = $sub->Jadwal_Lokasi_Id
+                ? \App\Http\Controllers\Career\MasterLokasi\MasterLokasiController::bentukLokasi(
+                    DB::table('N_WEB_CAREERS_Master_Lokasi')->where('Id_Master_Lokasi', $sub->Jadwal_Lokasi_Id)->first()
+                )
+                : null;
+
             WcJadwalEmailJob::dispatch((int) $sub->Id_Users, [
                 'nama' => $sub->Nama,
                 'email' => $sub->Email,
@@ -2253,7 +2441,12 @@ class LamaranController extends Controller
                 'mulai' => (string) $sub->Jadwal_Mulai,
                 'selesai' => (string) ($sub->Jadwal_Selesai ?: ''),
                 'link' => $sub->Jadwal_Link,
-                'lokasi' => $sub->Jadwal_Lokasi,
+                // Nama tempat yang dipilih; patokan tetap dikirim terpisah.
+                'lokasi' => $tempat['nama'] ?? $sub->Jadwal_Lokasi,
+                'alamat' => $tempat['alamatLengkap'] ?? null,
+                'patokan' => $tempat ? $sub->Jadwal_Lokasi : null,
+                'kontak' => $tempat['kontakTelp'] ?? null,
+                'mapsUrl' => $tempat['mapsUrl'] ?? null,
                 'catatan' => $sub->Jadwal_Catatan,
             ]);
 

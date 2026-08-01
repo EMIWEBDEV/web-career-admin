@@ -735,7 +735,7 @@ export default {
                     talentPool: this.tahapTalentPool(i),
                     uploadHasil: s.uploadHasil === true,
                     wajibUpload: s.wajibUpload === true,
-                tuntas: s.tuntas === true,
+                    tuntas: s.tuntas === true,
                 })),
             };
             try {

@@ -11,7 +11,16 @@ Waktu   : {{ $waktuTeks }}
 Metode  : {{ $daring ? 'Daring (online)' : 'Luring (tatap muka)' }}
 @if ($daring && !empty($d['link']))Tautan  : {{ $d['link'] }}
 @endif
-@if (!$daring && !empty($d['lokasi']))Lokasi  : {{ $d['lokasi'] }}
+@if (!$daring && !empty($d['lokasi']))Tempat  : {{ $d['lokasi'] }}
+@endif
+@if (!$daring && !empty($d['alamat']))Alamat  : {{ $d['alamat'] }}
+@endif
+@if (!$daring && !empty($d['patokan']))Patokan : {{ $d['patokan'] }}
+@endif
+@if (!$daring && !empty($d['kontak']))Kontak  : {{ $d['kontak'] }}
+@endif
+{{-- {!! !!}: surat teks biasa, "&amp;" di URL membuat tautannya gagal dibuka. --}}
+@if (!$daring && !empty($d['mapsUrl']))Peta    : {!! $d['mapsUrl'] !!}
 @endif
 @if (!empty($d['catatan']))Catatan : {{ $d['catatan'] }}
 @endif
