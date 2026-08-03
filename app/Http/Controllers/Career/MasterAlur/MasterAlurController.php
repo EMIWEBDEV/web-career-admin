@@ -88,6 +88,15 @@ class MasterAlurController extends Controller
                             'peran' => $x->Peran,
                             'wajib' => $x->Wajib === 'Y',
                             'ambang' => $x->Ambang_Batas,
+                            // Unggahan oleh KANDIDAT (beda dari berkas hasil yang
+                            // diunggah tim). Diatur per aktivitas: satu tahap bisa
+                            // memuat tes offline yang menuntut unggahan dan
+                            // wawancara yang tidak.
+                            'unggahKandidat' => ($x->Unggah_Kandidat ?? 'T') === 'Y',
+                            'unggahWajib' => ($x->Unggah_Wajib ?? 'T') === 'Y',
+                            'unggahFormat' => $x->Unggah_Format,
+                            'unggahMaksMb' => $x->Unggah_Maks_Mb !== null ? (int) $x->Unggah_Maks_Mb : null,
+                            'unggahPetunjuk' => $x->Unggah_Petunjuk,
                         ])->values(),
                         // Aturan pengumuman hasil tahap ini (lihat Batch 6).
                         'pengumuman' => $t->Mode_Pengumuman ?? 'OTOMATIS',
@@ -166,6 +175,14 @@ class MasterAlurController extends Controller
             'stages.*.tests.*.tipe' => $kodeTipe ? ['nullable', Rule::in($kodeTipe)] : ['nullable', 'string', 'max:30'],
             'stages.*.tests.*.peran' => 'nullable|in:PENENTU,INFORMATIF',
             'stages.*.tests.*.ambang' => 'nullable|integer|min:0|max:1000',
+            'stages.*.tests.*.unggahKandidat' => 'nullable|boolean',
+            'stages.*.tests.*.unggahWajib' => 'nullable|boolean',
+            // Daftar ekstensi dipisah koma. Dibatasi panjangnya, bukan isinya —
+            // format yang sah berubah seiring kebutuhan, dan mengunci daftarnya
+            // di sini berarti tiap format baru menuntut deploy.
+            'stages.*.tests.*.unggahFormat' => 'nullable|string|max:120',
+            'stages.*.tests.*.unggahMaksMb' => 'nullable|integer|min:1|max:50',
+            'stages.*.tests.*.unggahPetunjuk' => 'nullable|string|max:500',
             // Pengumuman hasil tahap — hanya mode AKTIF dari master (bukan hardcode).
             'stages.*.pengumuman' => ['nullable', Rule::in($kodeModeAktif ?: ['OTOMATIS'])],
             'stages.*.jedaHari' => 'nullable|integer|min:0|max:3650',
@@ -392,6 +409,15 @@ class MasterAlurController extends Controller
                     'Wajib' => 'Y',
                     'Ambang_Batas' => $t['ambang'] ?? null,
                     'Label' => $t['label'],
+                    // Aturan unggahan kandidat. Format & ukuran ikut disimpan
+                    // karena tes menggambar butuh gambar, tes tertulis butuh PDF,
+                    // dan batas ukurannya berbeda — menyeragamkannya di kode
+                    // berarti tiap kebutuhan baru menuntut deploy.
+                    'Unggah_Kandidat' => ! empty($t['unggahKandidat']) ? 'Y' : 'T',
+                    'Unggah_Wajib' => ! empty($t['unggahKandidat']) && ! empty($t['unggahWajib']) ? 'Y' : 'T',
+                    'Unggah_Format' => ! empty($t['unggahKandidat']) ? ($t['unggahFormat'] ?: 'pdf,jpg,jpeg,png') : null,
+                    'Unggah_Maks_Mb' => ! empty($t['unggahKandidat']) ? ($t['unggahMaksMb'] ?: 5) : null,
+                    'Unggah_Petunjuk' => ! empty($t['unggahKandidat']) ? ($t['unggahPetunjuk'] ?: null) : null,
                     'Updated_At' => $now, 'Updated_By' => $userName, 'Updated_By_Id' => $userId,
                 ];
 

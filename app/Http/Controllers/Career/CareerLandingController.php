@@ -576,10 +576,10 @@ class CareerLandingController extends Controller
                 'fields' => [
                     [
                         'key' => 'nama',
-                        'label' => 'Nama Lengkap Sesuai ID',
+                        'label' => 'Nama Lengkap Sesuai KTP',
                         'tipe' => 'text',
                         'required' => true,
-                        'ph' => 'Sesuai KTP',
+                        'ph' => 'Tulis persis seperti tertera di KTP',
                     ],
                     ['key' => 'lahir', 'label' => 'Tanggal Lahir', 'tipe' => 'date', 'required' => true],
                     [

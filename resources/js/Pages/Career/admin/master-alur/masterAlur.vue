@@ -245,6 +245,52 @@
                                             </span>
                                         </div>
                                     </div>
+                                    <!-- UNGGAH OLEH KANDIDAT. Beda dari "berkas hasil"
+                                         yang diunggah TIM: ini berkas yang HARUS
+                                         DISERAHKAN kandidat (lembar jawaban terpindai,
+                                         sertifikat, foto hasil kerja). Diatur per
+                                         aktivitas karena satu tahap bisa memuat tes
+                                         offline yang menuntutnya dan wawancara yang
+                                         tidak. Tidak ditawarkan untuk ujian online —
+                                         berkasnya datang dari penyedia, bukan kandidat. -->
+                                    <div v-if="!tesOnline(t.tipe || s.tipe)" class="alr-unggah" :class="{ 'is-on': t.unggahKandidat }">
+                                        <div class="alr-unggah__head">
+                                            <div>
+                                                <b><i class="bi bi-cloud-arrow-up"></i> Kandidat harus mengunggah berkas</b>
+                                                <small>Berkas diminta di portal kandidat pada aktivitas ini.</small>
+                                            </div>
+                                            <el-switch v-model="t.unggahKandidat" />
+                                        </div>
+
+                                        <div v-if="t.unggahKandidat" class="alr-unggah__body">
+                                            <div class="wca-frow">
+                                                <div>
+                                                    <label class="wca-field-lbl">Format yang diterima</label>
+                                                    <el-select v-model="t.unggahFormat" style="width:100%">
+                                                        <el-option label="PDF saja" value="pdf" />
+                                                        <el-option label="Gambar saja (JPG/PNG)" value="jpg,jpeg,png" />
+                                                        <el-option label="PDF & gambar" value="pdf,jpg,jpeg,png" />
+                                                    </el-select>
+                                                </div>
+                                                <div>
+                                                    <label class="wca-field-lbl">Ukuran maksimum</label>
+                                                    <el-select v-model="t.unggahMaksMb" style="width:100%">
+                                                        <el-option v-for="mb in [2, 3, 5, 10, 20]" :key="mb" :label="mb + ' MB'" :value="mb" />
+                                                    </el-select>
+                                                </div>
+                                            </div>
+                                            <div class="wca-frow wca-frow--full">
+                                                <div>
+                                                    <label class="wca-field-lbl">Petunjuk untuk kandidat</label>
+                                                    <el-input v-model="t.unggahPetunjuk" placeholder="mis. Unggah lembar jawaban yang sudah dipindai." />
+                                                </div>
+                                            </div>
+                                            <label class="alr-unggah__wajib">
+                                                <el-checkbox v-model="t.unggahWajib" />
+                                                <span><b>Wajib</b> — aktivitas tidak bisa dianggap selesai tanpa berkas.</span>
+                                            </label>
+                                        </div>
+                                    </div>
                                 </div>
                                 <button class="wca-iconbtn wca-iconbtn--danger" type="button" title="Hapus tes" @click="removeTest(s, k)"><i class="bi bi-trash"></i></button>
                             </div>
@@ -583,7 +629,9 @@ export default {
         },
         addTest(s) {
             if (!Array.isArray(s.tests)) s.tests = [];
-            s.tests.push({ label: '', tipe: null, peran: 'PENENTU', ambang: null });
+            s.tests.push({ label: '', tipe: null, peran: 'PENENTU', ambang: null,
+                unggahKandidat: false, unggahWajib: false,
+                unggahFormat: 'pdf,jpg,jpeg,png', unggahMaksMb: 5, unggahPetunjuk: '' });
             this.samakanMode(s);
         },
         removeTest(s, k) {
@@ -658,6 +706,17 @@ export default {
                 uploadHasil: s.uploadHasil === true,
                 wajibUpload: s.wajibUpload === true,
                 tuntas: s.tuntas === true,
+                // Aturan unggah dinormalkan di sini supaya sakelar & pilihan tidak
+                // pernah menerima undefined — el-switch yang menerima undefined
+                // tampak mati padahal nilainya belum tentu false.
+                tests: (s.tests || []).map((t) => ({
+                    ...t,
+                    unggahKandidat: t.unggahKandidat === true,
+                    unggahWajib: t.unggahWajib === true,
+                    unggahFormat: t.unggahFormat || 'pdf,jpg,jpeg,png',
+                    unggahMaksMb: t.unggahMaksMb || 5,
+                    unggahPetunjuk: t.unggahPetunjuk || '',
+                })),
             }));
             // Turunkan titik cut-off dari data: tahap PERTAMA yang talentPool aktif.
             const idx = stages.findIndex((s) => s.talentPool);
@@ -732,6 +791,11 @@ export default {
                         label: t.label,
                         tipe: t.tipe || null,
                         peran: t.peran || 'PENENTU',
+                        unggahKandidat: t.unggahKandidat === true,
+                        unggahWajib: t.unggahWajib === true,
+                        unggahFormat: t.unggahFormat || null,
+                        unggahMaksMb: t.unggahMaksMb || null,
+                        unggahPetunjuk: t.unggahPetunjuk || null,
                         ambang: t.ambang ?? null,
                     })),
                     pengumuman: s.pengumuman || 'OTOMATIS',
@@ -845,6 +909,14 @@ export default {
 .alr-test { display: flex; gap: .55rem; align-items: flex-start; padding: .6rem; border: 1px solid rgba(15, 23, 42, .08); border-radius: 10px; background: #fff; margin-bottom: .5rem; }
 .alr-test__no { flex: none; width: 1.4rem; height: 1.4rem; border-radius: 50%; background: #e0e7ff; color: #4338ca; font-size: 11px; font-weight: 800; display: grid; place-items: center; }
 .alr-test__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .45rem; }
+.alr-unggah { margin-top: 10px; border: 1px solid #eef0f7; border-radius: 12px; background: #fbfbfe; transition: border-color .18s, background .18s; }
+.alr-unggah.is-on { border-color: rgba(99, 102, 241, .32); background: rgba(99, 102, 241, .05); }
+.alr-unggah__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 13px; }
+.alr-unggah__head b { display: block; font-size: 12.5px; font-weight: 800; color: #334155; }
+.alr-unggah__head small { display: block; font-size: 11px; color: #94a3b8; margin-top: 2px; }
+.alr-unggah__body { padding: 0 13px 13px; border-top: 1px dashed rgba(99, 102, 241, .22); padding-top: 12px; }
+.alr-unggah__wajib { display: flex; align-items: center; gap: 9px; margin-top: 10px; font-size: 12px; color: #475569; }
+.alr-unggah__wajib b { color: #dc2626; }
 .alr-test__flags { display: flex; align-items: center; gap: .7rem; flex-wrap: wrap; padding-top: 1.35rem; }
 .alr-test__prov { display: inline-flex; align-items: center; gap: .3rem; font-size: 11px; font-weight: 700; }
 .alr-test__prov.is-sys { color: #b45309; }
