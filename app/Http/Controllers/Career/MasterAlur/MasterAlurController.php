@@ -215,6 +215,13 @@ class MasterAlurController extends Controller
 
     private function simpanTahap(int $alurId, array $stages, ?int $userId, string $userName): void
     {
+        // Tipe mana yang menuntut formulir — dari Master Tipe Tahap, supaya
+        // menambah tipe baru tidak menuntut menyunting kode ini.
+        $perilakuFormulir = DB::table('N_WEB_CAREERS_Master_Tipe_Tahap')
+            ->pluck('Flag_Formulir', 'Kode')
+            ->map(fn ($v) => $v === 'Y')
+            ->all();
+
         $now = now();
 
         // Seluruh perilaku tipe dibaca dari master — tak ada kode tipe yang
@@ -305,6 +312,17 @@ class MasterAlurController extends Controller
 
             $pengumuman = $s['pengumuman'] ?? 'OTOMATIS';
             $jeda = ($modeButuhJeda[$pengumuman] ?? false) ? ($s['jedaHari'] ?? null) : null;
+
+            // GERBANG: tipe yang menuntut formulir tidak boleh tersimpan TANPA
+            // formulir. Tanpa ini, tahap bertipe FORM bisa disimpan kosong dan
+            // kandidat berhenti selamanya di layar "menunggu formulir" — tidak
+            // ada yang bisa diisi, dan tidak ada galat yang muncul di mana pun.
+            // Persis yang terjadi pada alur "EVO MANAGEMENT 2026 Batch 1".
+            if (($perilakuFormulir[$s['tipe'] ?? ''] ?? false) && empty($s['formulirId'])) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'stages' => "Tahap \"{$s['label']}\" bertipe formulir, jadi WAJIB memilih formulir yang harus diisi kandidat.",
+                ]);
+            }
 
             $tuntas = ! $tuntasTerpakai && ($s['tuntas'] ?? false);
             $tuntasTerpakai = $tuntasTerpakai || $tuntas;

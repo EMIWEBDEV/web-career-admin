@@ -187,7 +187,22 @@ class CareerAdminController extends Controller
                 ->where('Flag_Aktif', 'Y')
                 ->orderBy('Nama')
                 ->get()
-                ->map(fn($r) => ['value' => $r->Kode, 'label' => $r->Nama, 'perilaku' => $r->Perilaku_Kode])
+                ->map(fn ($r) => [
+                    'value' => $r->Kode,
+                    'label' => $r->Nama,
+                    'perilaku' => $r->Perilaku_Kode,
+                    // FLAG PERILAKU ikut dikirim. Tanpa ini butuhFormulir() di
+                    // builder selalu bernilai false, dan penyimpanan MEMAKSA
+                    // Formulir_Kode jadi NULL — sehingga alur yang sudah benar
+                    // kehilangan formulirnya begitu disunting ulang, tanpa galat
+                    // apa pun. Itulah yang terjadi pada "EVO MANAGEMENT 2026".
+                    'formulir' => ($r->Flag_Formulir ?? 'T') === 'Y',
+                    'uploadHasil' => ($r->Flag_Upload_Hasil ?? 'T') === 'Y',
+                    'jadwal' => ($r->Flag_Jadwal ?? 'T') === 'Y',
+                    'wajibLuring' => ($r->Flag_Wajib_Luring ?? 'T') === 'Y',
+                    'tuntas' => ($r->Flag_Tuntas ?? 'T') === 'Y',
+                    'ikon' => $r->Ikon,
+                ])
                 ->values();
 
             return ResponseHelper::success($rows, 'Opsi tipe');
