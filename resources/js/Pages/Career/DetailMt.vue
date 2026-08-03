@@ -136,15 +136,8 @@
                     </article>
                 </div>
 
-                <!-- JADWAL KEGIATAN — seksi sendiri selebar halaman. Yang paling
-                     relevan (sedang berlangsung / berikutnya) disorot di atas
-                     sebagai jawaban sekali lihat — bahasa yang sama dengan kartu
-                     Jendela Pendaftaran. Kegiatan yang sudah lewat disembunyikan
-                     di balik satu tombol supaya yang tampil bukan tembok abu-abu,
-                     melainkan yang masih relevan bagi pelamar. Kartu-kartunya
-                     mengalir dalam grid, bukan daftar sempit satu kolom — dengan
-                     lebar penuh, belasan agenda sekalipun tetap enak dipindai. -->
-                <article v-if="agenda.length" class="mtd-card mtd-jadwal">
+                <!-- JADWAL KEGIATAN — Di-hide / dikomentar dulu sesuai permintaan -->
+                <!-- <article v-if="agenda.length" class="mtd-card mtd-jadwal">
                     <div class="mtd-card__head">
                         <h3><i class="bi bi-calendar-range-fill"></i> Jadwal Kegiatan</h3>
                         <span class="mtd-card__tag">{{ agendaLewat }}/{{ agenda.length }} selesai</span>
@@ -159,9 +152,6 @@
                         <span class="mtd-jw__next-chip">{{ agendaBerikutnyaRelatif }}</span>
                     </div>
 
-                    <!-- Sebagian sudah lewat, TAPI masih ada yang mendatang di atas —
-                         riwayatnya cukup tombol kecil, karena sorotan di atas sudah
-                         menjawab pertanyaan utama. -->
                     <button
                         v-if="agendaBerikutnya && agendaLewat"
                         type="button"
@@ -173,8 +163,6 @@
                         {{ riwayatBuka ? 'Sembunyikan' : 'Lihat' }} {{ agendaLewat }} kegiatan yang telah selesai
                     </button>
 
-                    <!-- SEMUA sudah lewat — satu tombol saja yang sekaligus
-                         menjelaskan keadaan dan membuka riwayatnya. -->
                     <button
                         v-else-if="!agendaBerikutnya"
                         type="button"
@@ -187,15 +175,6 @@
                         <i class="bi mtd-jw__kosong-chev" :class="riwayatBuka ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
                     </button>
 
-                    <!-- Dikelompokkan per bulan, kartu bergaya "tiket acara"
-                         (blok tanggal besar + nama kegiatan) — sengaja BEDA dari
-                         Tahapan Seleksi di bawah yang bernomor urut besar di
-                         tengah kartu. Di sini yang utama tetap KAPAN, tapi
-                         urutannya tak dihilangkan — hanya diperkecil jadi nomor
-                         tiket di sudut ("No. 04"), seperti nomor seri pada
-                         tiket sungguhan, supaya pelamar tetap tahu ini kegiatan
-                         keberapa dari total keseluruhan tanpa menyamai gaya
-                         badge Tahapan Seleksi. -->
                     <div v-if="agendaTampil.length" class="mtd-jcal">
                         <div v-for="grp in agendaKelompok" :key="grp.kunci" class="mtd-jcal__grp">
                             <div class="mtd-jcal__bulan">{{ grp.label }}</div>
@@ -216,7 +195,7 @@
                             </ol>
                         </div>
                     </div>
-                </article>
+                </article> -->
 
                 <!-- TAHAPAN SELEKSI -->
                 <article v-if="mt.pipeline && mt.pipeline.length" class="mtd-card mtd-card--tahapan">
