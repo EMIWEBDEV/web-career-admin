@@ -631,6 +631,8 @@ class LamaranController extends Controller
                 $online = ($ti->Perilaku_Kode ?? 'MANUAL') === 'CAT';
 
                 return [
+                    // Dipakai portal untuk menunggah berkas aktivitas ini.
+                    'id' => Hashids::encode($s->Id_Lamaran_Tahap_Tes),
                     'urutan' => (int) $s->Urutan,
                     'label' => $s->Label,
                     'tipe' => $s->Tipe_Tahap_Kode ?: $t->Tipe_Tahap_Kode,
@@ -649,6 +651,15 @@ class LamaranController extends Controller
                     // selesai/tidaknya. Menaruhnya di payload sama saja
                     // membocorkannya — cukup buka DevTools untuk membacanya.
                     'catatan' => $s->Catatan,
+                    // Aturan unggahan untuk KANDIDAT pada aktivitas ini.
+                    // Formatnya ikut dikirim supaya portal menampilkan aturan
+                    // yang benar-benar berlaku, bukan aturan umum yang ditebak.
+                    'unggah' => ($s->Unggah_Kandidat ?? 'T') === 'Y' ? [
+                        'wajib' => ($s->Unggah_Wajib ?? 'T') === 'Y',
+                        'format' => array_values(array_filter(array_map('trim', explode(',', (string) ($s->Unggah_Format ?: 'pdf'))))),
+                        'maksMb' => (int) ($s->Unggah_Maks_Mb ?: 5),
+                        'petunjuk' => $s->Unggah_Petunjuk,
+                    ] : null,
                     // Jadwal tatap muka: kapan, di mana / lewat tautan apa.
                     // Inilah yang dicari kandidat begitu diundang wawancara.
                     // Status MCU boleh dilihat kandidat — itu menyangkut dirinya
@@ -970,6 +981,195 @@ class LamaranController extends Controller
                 'berkas' => $berkas,
             ];
         })->all();
+    }
+
+    /**
+     * Aktivitas milik kandidat yang sedang login, atau null.
+     *
+     * Kepemilikan diperiksa lewat join ke Lamaran.Id_Users — mengetahui id
+     * aktivitas orang lain tidak cukup untuk mengunggah atau membaca berkasnya.
+     */
+    private function tesMilikSaya(string $id): ?object
+    {
+        $userId = (int) session('career_auth.id');
+        $realId = Hashids::decode($id)[0] ?? null;
+        if (! $realId || ! $userId) {
+            return null;
+        }
+
+        return DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes as t')
+            ->join('N_WEB_CAREERS_Lamaran_Tahap as h', 'h.Id_Lamaran_Tahap', '=', 't.Lamaran_Tahap_Id')
+            ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'h.Lamaran_Id')
+            ->where('t.Id_Lamaran_Tahap_Tes', $realId)
+            ->where('l.Id_Users', $userId)
+            ->select('t.*', 'h.Lamaran_Id', 'h.Status as StatusTahap')
+            ->first();
+    }
+
+    /** Bentuk satu berkas kandidat untuk dikirim ke layar. */
+    private static function bentukTesBerkas(object $b): array
+    {
+        $ext = strtolower($b->Ext ?: pathinfo($b->Nama_File, PATHINFO_EXTENSION));
+
+        return [
+            'id' => Hashids::encode($b->Id_Lamaran_Tes_Berkas),
+            'nama' => $b->Nama_File,
+            'ext' => $ext,
+            'ukuran' => (int) $b->Ukuran,
+            'isPdf' => $ext === 'pdf' || $b->Mime === 'application/pdf',
+            'isImage' => in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'gif'], true),
+            'url' => route('career.portal.tes.berkas.file', ['id' => Hashids::encode($b->Id_Lamaran_Tes_Berkas)]),
+        ];
+    }
+
+    /** GET daftar berkas yang SUDAH diunggah kandidat untuk satu aktivitas. */
+    public function tesBerkas(string $id)
+    {
+        $tes = $this->tesMilikSaya($id);
+        if (! $tes) {
+            return ResponseHelper::error('Aktivitas tidak ditemukan.', 404);
+        }
+
+        $rows = DB::table('N_WEB_CAREERS_Lamaran_Tes_Berkas')
+            ->where('Lamaran_Tahap_Tes_Id', $tes->Id_Lamaran_Tahap_Tes)
+            ->orderBy('Id_Lamaran_Tes_Berkas')
+            ->get();
+
+        return ResponseHelper::success($rows->map(fn ($b) => self::bentukTesBerkas($b))->all(), 'Berkas aktivitas');
+    }
+
+    /**
+     * POST unggah berkas kandidat untuk sebuah aktivitas.
+     *
+     * Format & ukuran diambil dari aturan yang DIBEKUKAN pada aktivitas ini,
+     * bukan aturan umum: tes menggambar menerima gambar, tes tertulis menerima
+     * PDF, dan batasnya berbeda-beda. Divalidasi di server juga — layar bisa
+     * dilewati, dan berkas raksasa yang lolos membebani bucket diam-diam.
+     */
+    public function tesBerkasUnggah(Request $request, string $id)
+    {
+        $tes = $this->tesMilikSaya($id);
+        if (! $tes) {
+            return ResponseHelper::error('Aktivitas tidak ditemukan.', 404);
+        }
+
+        if (($tes->Unggah_Kandidat ?? 'T') !== 'Y') {
+            return ResponseHelper::error('Aktivitas ini tidak meminta unggahan berkas.', 409);
+        }
+
+        if ($tes->Flag_Selesai === 'Y' || $tes->StatusTahap !== 'BERJALAN') {
+            return ResponseHelper::error('Aktivitas ini sudah selesai - berkas tidak bisa diubah lagi.', 409);
+        }
+
+        $format = array_values(array_filter(array_map('trim', explode(',', (string) ($tes->Unggah_Format ?: 'pdf')))));
+        $maksMb = (int) ($tes->Unggah_Maks_Mb ?: 5);
+
+        $data = $request->validate([
+            'berkas' => 'required|file|mimes:' . implode(',', $format) . '|max:' . ($maksMb * 1024),
+        ], [
+            'berkas.mimes' => 'Hanya menerima berkas ' . implode(', ', $format) . '.',
+            'berkas.max' => "Ukuran berkas melebihi {$maksMb} MB.",
+        ]);
+
+        $file = $data['berkas'];
+        $gcs = app(GcsBerkas::class);
+        $now = now();
+        $nama = session('career_auth.nama');
+
+        try {
+            // getContent(), BUKAN getRealPath(): di bawah Apache getRealPath()
+            // bisa mengembalikan string kosong dan isinya gagal terbaca.
+            $konten = $file->getContent();
+            $ext = strtolower($file->getClientOriginalExtension() ?: $file->extension());
+
+            $folder = $gcs->folderTahap(
+                $now->format('Y'), $now->format('m'), $now->format('d'),
+                (string) ($nama ?: 'kandidat'),
+            );
+
+            $path = $gcs->unggah($folder, $tes->Label . '-' . Str::lower(Str::random(6)), $ext, $konten);
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->error('[TES-BERKAS] unggah gagal: ' . $e->getMessage());
+
+            return ResponseHelper::error('Berkas gagal diunggah: ' . Str::limit($e->getMessage(), 140), 500);
+        }
+
+        $baruId = DB::table('N_WEB_CAREERS_Lamaran_Tes_Berkas')->insertGetId([
+            'Lamaran_Tahap_Tes_Id' => $tes->Id_Lamaran_Tahap_Tes,
+            'Lamaran_Id' => $tes->Lamaran_Id,
+            'Id_Users' => (int) session('career_auth.id'),
+            'Nama_File' => $file->getClientOriginalName(),
+            'Path_File' => $path,
+            'Mime' => $file->getMimeType(),
+            'Ext' => $ext,
+            'Ukuran' => strlen($konten),
+            'Created_At' => $now,
+            'Created_By' => $nama,
+            'Created_By_Id' => session('career_auth.id'),
+        ], 'Id_Lamaran_Tes_Berkas');
+
+        $baris = DB::table('N_WEB_CAREERS_Lamaran_Tes_Berkas')->where('Id_Lamaran_Tes_Berkas', $baruId)->first();
+
+        return ResponseHelper::success(self::bentukTesBerkas($baris), 'Berkas terunggah.');
+    }
+
+    /** DELETE berkas kandidat - selama aktivitasnya belum selesai. */
+    public function tesBerkasHapus(string $id)
+    {
+        $userId = (int) session('career_auth.id');
+        $realId = Hashids::decode($id)[0] ?? null;
+
+        $b = $realId ? DB::table('N_WEB_CAREERS_Lamaran_Tes_Berkas as b')
+            ->join('N_WEB_CAREERS_Lamaran_Tahap_Tes as t', 't.Id_Lamaran_Tahap_Tes', '=', 'b.Lamaran_Tahap_Tes_Id')
+            ->where('b.Id_Lamaran_Tes_Berkas', $realId)
+            ->where('b.Id_Users', $userId)
+            ->select('b.*', 't.Flag_Selesai')
+            ->first() : null;
+
+        if (! $b) {
+            return ResponseHelper::error('Berkas tidak ditemukan.', 404);
+        }
+
+        if ($b->Flag_Selesai === 'Y') {
+            return ResponseHelper::error('Aktivitas sudah selesai - berkas tidak bisa dihapus.', 409);
+        }
+
+        try {
+            Storage::disk(GcsBerkas::DISK)->delete($b->Path_File);
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->warning('[TES-BERKAS] sisa GCS gagal dihapus: ' . $e->getMessage());
+        }
+
+        DB::table('N_WEB_CAREERS_Lamaran_Tes_Berkas')->where('Id_Lamaran_Tes_Berkas', $realId)->delete();
+
+        return ResponseHelper::success(null, 'Berkas dihapus.');
+    }
+
+    /** GET pratinjau berkas aktivitas milik kandidat (signed URL 15 menit). */
+    public function tesBerkasFile(string $id)
+    {
+        $userId = (int) session('career_auth.id');
+        $realId = Hashids::decode($id)[0] ?? null;
+
+        $b = $realId ? DB::table('N_WEB_CAREERS_Lamaran_Tes_Berkas')
+            ->where('Id_Lamaran_Tes_Berkas', $realId)
+            ->where('Id_Users', $userId)
+            ->first() : null;
+
+        if (! $b || ! $b->Path_File) {
+            abort(404);
+        }
+
+        try {
+            $gcs = Storage::disk(GcsBerkas::DISK);
+            if ($gcs->exists($b->Path_File)) {
+                return redirect()->away($gcs->temporaryUrl($b->Path_File, now()->addMinutes(15)));
+            }
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->warning('[TES-BERKAS] signed URL gagal: ' . $e->getMessage());
+        }
+
+        abort(404);
     }
 
     /**

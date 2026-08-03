@@ -176,7 +176,7 @@ export function blokDataDiri(opsi = {}) {
     const { tanyaDomisili = false } = opsi;
 
     const field = [
-        { key: 'nama_lengkap', label: 'Nama Lengkap Sesuai ID', tipe: 'text', wajib: true, ph: 'Sesuai KTP / kartu identitas' },
+        { key: 'nama_lengkap', label: 'Nama Lengkap Sesuai KTP', tipe: 'text', wajib: true, ph: 'Tulis persis seperti tertera di KTP' },
         { key: 'tanggal_lahir', label: 'Tanggal Lahir', tipe: 'date', wajib: true },
         {
             key: 'jenis_kelamin',

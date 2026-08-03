@@ -1046,6 +1046,15 @@ class LamaranService
                 'Peran' => $x->Peran,
                 'Wajib' => $x->Wajib,
                 'Ambang_Dipakai' => $x->Ambang_Batas,
+                // Aturan unggahan DIBEKUKAN saat lamaran dibuat: alur boleh
+                // disunting kemudian, tapi kandidat yang sudah berjalan tidak
+                // boleh tiba-tiba dituntut mengunggah sesuatu yang tak pernah
+                // diminta saat ia melamar.
+                'Unggah_Kandidat' => $x->Unggah_Kandidat ?? 'T',
+                'Unggah_Wajib' => $x->Unggah_Wajib ?? 'T',
+                'Unggah_Format' => $x->Unggah_Format ?? null,
+                'Unggah_Maks_Mb' => $x->Unggah_Maks_Mb ?? null,
+                'Unggah_Petunjuk' => $x->Unggah_Petunjuk ?? null,
                 'Label' => $x->Label,
                 'Status' => 'BELUM',
                 'Created_At' => $now, 'Created_By' => $nama, 'Created_By_Id' => $adminId,

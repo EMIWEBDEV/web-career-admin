@@ -135,6 +135,14 @@ Route::prefix('kandidat')
         // Nilai tetap ditahan di payload; yang dibuka hanya dokumennya.
         Route::get('/lamaran/tahap/berkas/{id}', [LamaranController::class, 'portalBerkasTahap'])->name('tahap.berkas');
 
+        // ── BERKAS AKTIVITAS yang diunggah KANDIDAT (tes offline dsb.) ──
+        // Aturan format & ukuran dibaca dari aktivitasnya sendiri, jadi tiap
+        // aktivitas boleh menuntut hal yang berbeda.
+        Route::get('/lamaran/tes/{id}/berkas', [LamaranController::class, 'tesBerkas'])->name('tes.berkas');
+        Route::post('/lamaran/tes/{id}/berkas', [LamaranController::class, 'tesBerkasUnggah'])->name('tes.berkas.unggah');
+        Route::delete('/lamaran/tes/berkas/{id}', [LamaranController::class, 'tesBerkasHapus'])->name('tes.berkas.hapus');
+        Route::get('/lamaran/tes/berkas/{id}/file', [LamaranController::class, 'tesBerkasFile'])->name('tes.berkas.file');
+
         // ── SIMPAN SEMENTARA (DRAF) FORMULIR TAHAP ──
         // Semua endpoint memeriksa kepemilikan tahap lewat Lamaran.Id_Users, jadi
         // id tahap milik orang lain tidak bisa dipakai membaca atau menimpa draf.

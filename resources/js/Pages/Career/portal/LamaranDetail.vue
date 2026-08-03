@@ -227,6 +227,59 @@
                                 </div>
                             </div>
 
+                            <!-- BERKAS YANG HARUS KANDIDAT UNGGAH.
+                                 Aturannya (format, ukuran, wajib/tidak) datang dari
+                                 aktivitasnya sendiri — bukan aturan umum — sehingga
+                                 yang tertulis di layar persis yang ditegakkan server. -->
+                            <div v-for="u in unggahAktivitas" :key="'u' + u.key" class="ld-upl">
+                                <div class="ld-upl__head">
+                                    <span class="ld-upl__ico"><i class="bi bi-cloud-arrow-up-fill"></i></span>
+                                    <div style="min-width: 0; flex: 1">
+                                        <div class="ld-eyebrow">
+                                            BERKAS YANG PERLU KAMU UNGGAH
+                                            <b v-if="u.wajib" class="ld-upl__wajib">WAJIB</b>
+                                        </div>
+                                        <div class="ld-upl__judul">{{ u.label }}</div>
+                                        <p v-if="u.petunjuk" class="ld-upl__petunjuk">{{ u.petunjuk }}</p>
+                                        <p class="ld-upl__aturan">
+                                            Format {{ u.format.join(', ').toUpperCase() }} &middot; maksimal {{ u.maksMb }} MB per berkas
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <!-- Seret-lepas ATAU klik. Keduanya, karena di ponsel
+                                     seret-lepas praktis tidak terpakai. -->
+                                <label
+                                    class="ld-upl__drop"
+                                    :class="{ 'is-over': seretDi === u.key, 'is-busy': unggahDi === u.key }"
+                                    @dragover.prevent="seretDi = u.key"
+                                    @dragleave.prevent="seretDi = null"
+                                    @drop.prevent="lepasBerkas($event, u)"
+                                >
+                                    <input type="file" hidden :accept="u.format.map((x) => '.' + x).join(',')" :disabled="unggahDi === u.key" @change="pilihBerkasTes($event, u)">
+                                    <i class="bi" :class="unggahDi === u.key ? 'bi-arrow-repeat ld-upl__spin' : 'bi-upload'"></i>
+                                    <span>
+                                        <b>{{ unggahDi === u.key ? 'Mengunggah…' : 'Seret berkas ke sini' }}</b>
+                                        <small v-if="unggahDi !== u.key">atau klik untuk memilih dari perangkat</small>
+                                    </span>
+                                </label>
+
+                                <div v-if="(berkasTes[u.key] || []).length" class="ld-upl__list">
+                                    <div v-for="b in berkasTes[u.key]" :key="b.id" class="ld-upl__item">
+                                        <i class="bi" :class="b.isImage ? 'bi-file-earmark-image-fill' : 'bi-file-earmark-pdf-fill'"></i>
+                                        <button type="button" class="ld-upl__nama" @click="bukaDok(b)">{{ b.nama }}</button>
+                                        <span class="ld-upl__size">{{ ukuran(b.ukuran) }}</span>
+                                        <button type="button" class="ld-upl__del" title="Hapus berkas" @click="hapusBerkasTes(b, u)">
+                                            <i class="bi bi-x-lg"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                <p v-else-if="u.wajib" class="ld-upl__kosong">
+                                    <i class="bi bi-exclamation-circle-fill"></i>
+                                    Belum ada berkas — aktivitas ini belum bisa dianggap selesai.
+                                </p>
+                            </div>
+
                             <!-- RINGKASAN AKTIVITAS TAHAP.
                                  Satu tahap bisa berisi beberapa aktivitas dengan
                                  tipe berbeda. Tanpa daftar ini kandidat hanya
@@ -344,6 +397,59 @@
                              sudah terkirim. -->
                         <div v-for="j in jadwalAktivitas" :key="'j' + j.key" class="ld-jdwwrap">
                             <JadwalKartu :jadwal="j" />
+                        </div>
+
+                        <!-- BERKAS YANG HARUS KANDIDAT UNGGAH.
+                             Aturannya (format, ukuran, wajib/tidak) datang dari
+                             aktivitasnya sendiri — bukan aturan umum — sehingga
+                             yang tertulis di layar persis yang ditegakkan server. -->
+                        <div v-for="u in unggahAktivitas" :key="'u' + u.key" class="ld-upl">
+                            <div class="ld-upl__head">
+                                <span class="ld-upl__ico"><i class="bi bi-cloud-arrow-up-fill"></i></span>
+                                <div style="min-width: 0; flex: 1">
+                                    <div class="ld-eyebrow">
+                                        BERKAS YANG PERLU KAMU UNGGAH
+                                        <b v-if="u.wajib" class="ld-upl__wajib">WAJIB</b>
+                                    </div>
+                                    <div class="ld-upl__judul">{{ u.label }}</div>
+                                    <p v-if="u.petunjuk" class="ld-upl__petunjuk">{{ u.petunjuk }}</p>
+                                    <p class="ld-upl__aturan">
+                                        Format {{ u.format.join(', ').toUpperCase() }} &middot; maksimal {{ u.maksMb }} MB per berkas
+                                    </p>
+                                </div>
+                            </div>
+
+                            <!-- Seret-lepas ATAU klik. Keduanya, karena di ponsel
+                                 seret-lepas praktis tidak terpakai. -->
+                            <label
+                                class="ld-upl__drop"
+                                :class="{ 'is-over': seretDi === u.key, 'is-busy': unggahDi === u.key }"
+                                @dragover.prevent="seretDi = u.key"
+                                @dragleave.prevent="seretDi = null"
+                                @drop.prevent="lepasBerkas($event, u)"
+                            >
+                                <input type="file" hidden :accept="u.format.map((x) => '.' + x).join(',')" :disabled="unggahDi === u.key" @change="pilihBerkasTes($event, u)">
+                                <i class="bi" :class="unggahDi === u.key ? 'bi-arrow-repeat ld-upl__spin' : 'bi-upload'"></i>
+                                <span>
+                                    <b>{{ unggahDi === u.key ? 'Mengunggah…' : 'Seret berkas ke sini' }}</b>
+                                    <small v-if="unggahDi !== u.key">atau klik untuk memilih dari perangkat</small>
+                                </span>
+                            </label>
+
+                            <div v-if="(berkasTes[u.key] || []).length" class="ld-upl__list">
+                                <div v-for="b in berkasTes[u.key]" :key="b.id" class="ld-upl__item">
+                                    <i class="bi" :class="b.isImage ? 'bi-file-earmark-image-fill' : 'bi-file-earmark-pdf-fill'"></i>
+                                    <button type="button" class="ld-upl__nama" @click="bukaDok(b)">{{ b.nama }}</button>
+                                    <span class="ld-upl__size">{{ ukuran(b.ukuran) }}</span>
+                                    <button type="button" class="ld-upl__del" title="Hapus berkas" @click="hapusBerkasTes(b, u)">
+                                        <i class="bi bi-x-lg"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <p v-else-if="u.wajib" class="ld-upl__kosong">
+                                <i class="bi bi-exclamation-circle-fill"></i>
+                                Belum ada berkas — aktivitas ini belum bisa dianggap selesai.
+                            </p>
                         </div>
 
                         <div v-for="m in hasilMcu" :key="'m' + m.key" class="ld-mcu" :class="'is-' + m.status.toLowerCase()">
@@ -861,6 +967,9 @@ export default {
             openForm: 0,
             lightbox: null,
             lbTimer: null,
+            berkasTes: {},
+            unggahDi: null,
+            seretDi: null,
             tab: 'alur',
             lbLoading: false,
             lbError: false,
@@ -1115,6 +1224,12 @@ export default {
         hasilMcu() {
             return this.aktivitas.filter((x) => x.mcu).map((x) => ({ key: x.urutan, ...x.mcu }));
         },
+        /** Aktivitas tahap aktif yang meminta kandidat mengunggah berkas. */
+        unggahAktivitas() {
+            return this.aktivitas
+                .filter((x) => x.unggah && !x.selesai)
+                .map((x) => ({ key: x.urutan, id: x.id, label: x.label, ...x.unggah }));
+        },
         aktivitasSelesai() { return this.aktivitas.filter((x) => x.selesai).length; },
         k() { return this.kartu || {}; },
         ringkasan() { return this.k.ringkasan || this.k.deskripsi || ''; },
@@ -1209,6 +1324,7 @@ export default {
         },
     },
     mounted() {
+        this.muatBerkasTes();
         if (this.tugas) {
             this.jawaban = jawabanAwal(skemaFormulir(this.tugas.komponen), this.profil);
             this.muatDraf();
@@ -1341,6 +1457,71 @@ export default {
         previewBerkas(b) {
             if (!b?.url) return;
             this.bukaDok({ ...b, isImage: b.isImage ?? true });
+        },
+        /** Muat berkas yang sudah diunggah untuk tiap aktivitas yang memintanya. */
+        async muatBerkasTes() {
+            for (const u of this.unggahAktivitas) {
+                try {
+                    const res = await axios.get(`/kandidat/lamaran/tes/${u.id}/berkas`);
+                    this.berkasTes = { ...this.berkasTes, [u.key]: res.data.result || [] };
+                } catch (e) {
+                    // Diam: daftar kosong lebih baik daripada halaman gagal muat.
+                }
+            }
+        },
+        lepasBerkas(ev, u) {
+            this.seretDi = null;
+            const file = ev.dataTransfer?.files?.[0];
+            if (file) this.kirimBerkasTes(file, u);
+        },
+        pilihBerkasTes(ev, u) {
+            const file = ev.target.files?.[0];
+            ev.target.value = '';
+            if (file) this.kirimBerkasTes(file, u);
+        },
+        /**
+         * Kirim berkas ke server.
+         *
+         * Format & ukuran diperiksa DI SINI juga supaya kandidat dapat kabar
+         * seketika — tapi server tetap memeriksanya sendiri, karena pemeriksaan
+         * di layar bisa dilewati.
+         */
+        async kirimBerkasTes(file, u) {
+            const ext = (file.name.split('.').pop() || '').toLowerCase();
+            if (!u.format.includes(ext)) {
+                this.notice(`"${file.name}" ditolak — hanya menerima ${u.format.join(', ').toUpperCase()}.`, true);
+
+                return;
+            }
+            if (file.size > u.maksMb * 1024 * 1024) {
+                this.notice(`"${file.name}" melebihi ${u.maksMb} MB.`, true);
+
+                return;
+            }
+
+            this.unggahDi = u.key;
+            const fd = new FormData();
+            fd.append('berkas', file);
+            try {
+                const res = await axios.post(`/kandidat/lamaran/tes/${u.id}/berkas`, fd);
+                const baru = res.data.result;
+                this.berkasTes = { ...this.berkasTes, [u.key]: [...(this.berkasTes[u.key] || []), baru] };
+                this.notice('Berkas terunggah.');
+            } catch (e) {
+                const err = e.response?.data?.errors;
+                this.notice(err ? Object.values(err).flat()[0] : (e.response?.data?.message || 'Berkas gagal diunggah.'), true);
+            } finally {
+                this.unggahDi = null;
+            }
+        },
+        async hapusBerkasTes(b, u) {
+            try {
+                await axios.delete(`/kandidat/lamaran/tes/berkas/${b.id}`);
+                this.berkasTes = { ...this.berkasTes, [u.key]: (this.berkasTes[u.key] || []).filter((x) => x.id !== b.id) };
+                this.notice('Berkas dihapus.');
+            } catch (e) {
+                this.notice(e.response?.data?.message || 'Gagal menghapus berkas.', true);
+            }
         },
         bukaDok(b) {
             this.lightbox = { ...b, pdf: !b.isImage };
@@ -1793,6 +1974,30 @@ export default {
 .ld-mcu__judul { font-size: 15px; font-weight: 800; color: #1e293b; margin-top: 2px; }
 .ld-mcu__meta { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 4px; font-size: 12px; color: #64748b; }
 .ld-mcu__cat { margin: 9px 0 0; font-size: 12.5px; line-height: 1.6; color: #475569; }
+
+.ld-upl { margin: 16px 20px 0; padding: 15px 17px; border-radius: 16px; border: 1px solid rgba(99, 102, 241, .26); background: linear-gradient(135deg, rgba(99, 102, 241, .06), rgba(139, 92, 246, .03)); }
+.ld-upl__head { display: flex; align-items: flex-start; gap: 12px; }
+.ld-upl__ico { flex: none; width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; color: #fff; font-size: 17px; background: linear-gradient(140deg, #818cf8, #6366f1); }
+.ld-upl__wajib { margin-left: 6px; padding: 1px 7px; border-radius: 999px; font-size: 9.5px; color: #fff; background: #dc2626; letter-spacing: .06em; }
+.ld-upl__judul { font-size: 15px; font-weight: 800; color: #1e293b; margin-top: 2px; }
+.ld-upl__petunjuk { margin: 6px 0 0; font-size: 12.5px; line-height: 1.55; color: #475569; }
+.ld-upl__aturan { margin: 4px 0 0; font-size: 11.5px; color: #94a3b8; }
+.ld-upl__drop { display: flex; align-items: center; gap: 11px; margin-top: 13px; padding: 15px 16px; border: 1.5px dashed rgba(99, 102, 241, .38); border-radius: 14px; background: #fff; cursor: pointer; transition: border-color .18s, background .18s, transform .18s; }
+.ld-upl__drop:hover, .ld-upl__drop.is-over { border-color: #6366f1; background: rgba(99, 102, 241, .07); transform: translateY(-1px); }
+.ld-upl__drop.is-busy { pointer-events: none; opacity: .7; }
+.ld-upl__drop > .bi { flex: none; font-size: 19px; color: #6366f1; }
+.ld-upl__spin { display: inline-block; animation: ldPutar .9s linear infinite; }
+.ld-upl__drop b { display: block; font-size: 13.5px; font-weight: 800; color: #1e293b; }
+.ld-upl__drop small { display: block; font-size: 11.5px; color: #94a3b8; margin-top: 1px; }
+.ld-upl__list { display: flex; flex-direction: column; gap: 7px; margin-top: 11px; }
+.ld-upl__item { display: flex; align-items: center; gap: 9px; padding: 9px 12px; border: 1px solid #e6e8f2; border-radius: 11px; background: #fff; }
+.ld-upl__item > .bi { flex: none; color: #dc2626; }
+.ld-upl__item .bi-file-earmark-image-fill { color: #6366f1; }
+.ld-upl__nama { flex: 1; min-width: 0; border: 0; background: none; padding: 0; font: inherit; font-size: 13px; font-weight: 700; color: #4f46e5; text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ld-upl__size { flex: none; font-size: 11px; color: #94a3b8; }
+.ld-upl__del { flex: none; border: 0; background: none; padding: 2px 4px; color: #94a3b8; font-size: 11px; cursor: pointer; }
+.ld-upl__del:hover { color: #dc2626; }
+.ld-upl__kosong { display: flex; align-items: center; gap: 7px; margin: 11px 0 0; font-size: 12px; font-weight: 700; color: #b45309; }
 
 .ld-akt { margin: 16px 20px 0; border: 1px solid #eef0f7; border-radius: 14px; overflow: hidden; }
 .ld-akt__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 13px; background: #f8fafc; border-bottom: 1px solid #eef0f7; font-size: 10.5px; font-weight: 800; letter-spacing: .08em; color: #a2a9ba; }
