@@ -56,6 +56,30 @@ class PipelineReadModel
             return ['bucket' => 'SIAP_DIPUTUS', 'outcomeOlehKandidat' => false, 'outcomeKode' => null];
         }
 
+        // ── AKTIVITAS: siapa yang ditunggu ──────────────────────────────────
+        // Aturan sama dengan MetrikRekrutmen::sqlGiliranAdmin(), versi per-baris:
+        //  - Aktivitas online (Provider='THIRD_PARTY') belum terjadwal → giliran
+        //    admin membuatkan jadwal, TAPI dianggap MENUNGGU_JADWAL (bukan
+        //    TINDAKAN_ADMIN) karena yang ditunggu adalah sesi terbentuk, bukan
+        //    keputusan admin atas kandidat ini.
+        //  - Aktivitas online sudah terjadwal, belum selesai → MENUNGGU_HASIL.
+        //  - Aktivitas manual belum selesai → TINDAKAN_ADMIN (tim yang mengerjakan).
+        $belumSelesai = collect($subAktif)->filter(
+            fn ($s) => ($s->Peran ?? 'PENENTU') === 'PENENTU' && ($s->Flag_Selesai ?? 'N') !== 'Y'
+        );
+
+        if ($belumSelesai->isNotEmpty()) {
+            $online = $belumSelesai->first(fn ($s) => ($s->Provider ?? '') === 'THIRD_PARTY');
+            if ($online) {
+                return [
+                    'bucket' => $online->Penjadwalan_Tahap_Id ? 'MENUNGGU_HASIL' : 'MENUNGGU_JADWAL',
+                    'outcomeOlehKandidat' => false, 'outcomeKode' => null,
+                ];
+            }
+
+            return ['bucket' => 'TINDAKAN_ADMIN', 'outcomeOlehKandidat' => false, 'outcomeKode' => null];
+        }
+
         return ['bucket' => 'BERPROSES', 'outcomeOlehKandidat' => false, 'outcomeKode' => null];
     }
 }
