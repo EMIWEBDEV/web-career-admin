@@ -34,6 +34,14 @@ class PipelineProgressTahapAktifTest extends TestCase
         $this->assertNull(PipelineProgress::tahapAktif($l, $tahapList));
     }
 
+    public function test_status_talent_pool_tetap_mengembalikan_null(): void
+    {
+        $l = (object) ['Status' => 'TALENT_POOL'];
+        $tahapList = new Collection([$this->tahap(1, 'SELESAI')]);
+
+        $this->assertNull(PipelineProgress::tahapAktif($l, $tahapList));
+    }
+
     public function test_status_lulus_dengan_tahap_pascatuntas_berjalan_mengembalikan_tahap_itu(): void
     {
         $l = (object) ['Status' => 'LULUS'];
