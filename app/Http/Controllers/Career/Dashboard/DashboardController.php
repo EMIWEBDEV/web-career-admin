@@ -1950,13 +1950,20 @@ class DashboardController extends Controller
             return collect();
         }
 
+        // Kandidat DITAHAN tetap masuk `total`, tapi TIDAK masuk `berjalan` —
+        // sama seperti aturan bucket HOLD di Monitoring: bucket terpisah,
+        // tidak dihitung sebagai proses aktif yang menunggu tindakan.
+        $ditahan = DB::table('N_WEB_CAREERS_Lamaran_Tahap')
+            ->where('Status', 'BERJALAN')->where('Hold_Flag', 'Y')
+            ->pluck('Lamaran_Id');
+
         return DB::table('N_WEB_CAREERS_Lamaran')
             ->whereIn('Program_Id', $ids)
             ->whereNotNull('Program_Posisi_Id')
             ->groupBy('Program_Posisi_Id')
             ->selectRaw("Program_Posisi_Id,
                          SUM(CASE WHEN Status = 'LULUS' THEN 1 ELSE 0 END) as lulus,
-                         SUM(CASE WHEN Status = 'BERJALAN' THEN 1 ELSE 0 END) as berjalan,
+                         SUM(CASE WHEN Status = 'BERJALAN' AND Id_Lamaran NOT IN (" . ($ditahan->isEmpty() ? '0' : $ditahan->implode(',')) . ") THEN 1 ELSE 0 END) as berjalan,
                          COUNT(*) as total")
             ->get()
             ->keyBy('Program_Posisi_Id');
