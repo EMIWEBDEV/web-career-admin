@@ -164,8 +164,14 @@ async function fetchDetail() {
     loading.value = true
     error.value = false
     try {
+        // KODE tahap ikut dikirim. Nomor di URL adalah nomor KOLOM papan,
+        // sedangkan server mencarinya di Lamaran_Tahap dengan penomoran
+        // KANDIDAT. Sejak kolom disusun dari gabungan alur yang benar-benar
+        // dipakai, dua penomoran itu tidak lagi selalu sama — tanpa kode,
+        // panel ini menghitung statistik tahap yang bukan yang diklik.
         const { data } = await axios.get(
-            `/api/v1/karir/monitoring/program/${props.programId}/tahap/${props.kolom.urutan}/detail`, CFG,
+            `/api/v1/karir/monitoring/program/${props.programId}/tahap/${props.kolom.urutan}/detail`,
+            { ...CFG, params: props.kolom.kode ? { kode: props.kolom.kode } : {} },
         )
         const r = data.result || {}
         stats.value = r.stats || {}
@@ -190,7 +196,10 @@ function pctPeserta(j) {
 
 useLapisEsc(() => emit('close'))
 
-watch(() => props.kolom.urutan, fetchDetail)
+// Ikut mengamati kode: dua kolom berbeda bisa bernomor sama setelah kolom
+// digabung dari beberapa alur, dan tanpa ini berpindah antar keduanya tidak
+// memicu muat ulang — panelnya diam menampilkan angka kolom sebelumnya.
+watch(() => [props.kolom.urutan, props.kolom.kode], fetchDetail)
 onMounted(fetchDetail)
 defineExpose({ refresh: fetchDetail })
 </script>

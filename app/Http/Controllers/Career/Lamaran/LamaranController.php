@@ -8,6 +8,7 @@ use App\Jobs\Career\WcApplyEmailJob;
 use App\Jobs\Career\WcJadwalEmailJob;
 use App\Jobs\Career\WcApplyFormJob;
 use App\Jobs\Career\WcLaporanKandidatJob;
+use App\Support\Career\AlurKolom;
 use App\Support\Career\GcsBerkas;
 use App\Support\Career\HtmlBersih;
 use App\Support\Career\LamaranService;
@@ -864,7 +865,8 @@ class LamaranController extends Controller
             ->whereNotNull('t.Formulir_Kode')
             ->whereNull('t.Formulir_Pengisian_Id')
             ->orderBy('t.Urutan')
-            ->select('t.Id_Lamaran_Tahap', 't.Label', 't.Formulir_Kode', 'f.Nama as FormulirNama', 'f.Komponen_Kode')
+            ->select('t.Id_Lamaran_Tahap', 't.Label', 't.Formulir_Kode', 't.Formulir_Komponen',
+                'f.Nama as FormulirNama', 'f.Komponen_Kode')
             ->first();
 
         $tugas = $aktif ? [
@@ -872,7 +874,14 @@ class LamaranController extends Controller
             'label' => $aktif->Label,
             'formulir' => $aktif->Formulir_Kode,
             'formulirNama' => $aktif->FormulirNama,
-            'komponen' => $aktif->Komponen_Kode,
+            // KOMPONEN YANG DIBEKUKAN, master hanya cadangan untuk lamaran lama.
+            //
+            // Ini yang menentukan pertanyaan mana yang muncul di layar kandidat.
+            // Dulu selalu dibaca hidup-hidup dari master, sehingga admin yang
+            // mengarahkan Master Formulir ke komponen versi baru langsung
+            // mengubah formulir orang yang sudah berjalan berminggu-minggu —
+            // termasuk yang tinggal menekan kirim.
+            'komponen' => $aktif->Formulir_Komponen ?: $aktif->Komponen_Kode,
         ] : null;
 
         // KONTEKS FORMULIR — opsi yang memang PENDEK dan khusus lamaran ini.
@@ -2096,46 +2105,22 @@ class LamaranController extends Controller
         }
 
         $alur = DB::table('N_WEB_CAREERS_Master_Alur')->where('Kode', $program->Alur_Kode)->first();
+        $alurProgramId = $alur ? (int) $alur->Id_Master_Alur : null;
 
-        // Perilaku tipe dari master — tak ada kode tipe yang ditulis di sini.
-        $tipe = self::masterTipeTahap();
-
-        // Kolom = tahap alur program ini, urut Urutan.
-        $kolom = $alur
-            ? DB::table('N_WEB_CAREERS_Master_Alur_Tahap')
-                ->where('Master_Alur_Id', $alur->Id_Master_Alur)
-                ->orderBy('Urutan')
-                ->get()
-                ->map(fn ($t) => [
-                    'urutan' => (int) $t->Urutan,
-                    'kode' => $t->Kode,
-                    'label' => $t->Label,
-                    'provider' => $t->Provider,
-                    'tipe' => $t->Tipe_Tahap_Kode,
-                    'tipeNama' => $tipe[$t->Tipe_Tahap_Kode]->Nama ?? null,
-                    // Cut-off Talent Pool aktif untuk tahap ini? Dipakai worklist
-                    // memunculkan tombol "Masuk Talent Pool" sesuai urutan tahap.
-                    'talentPool' => ($t->Flag_Talent_Pool ?? 'T') === 'Y',
-                    // Upload berkas hasil — dari flag tahap, atau dari tipe yang
-                    // memang berbasis berkas (Master Tipe Tahap → Flag_Upload_Hasil).
-                    'uploadHasil' => ($t->Flag_Upload_Hasil ?? 'T') === 'Y'
-                        || ($tipe[$t->Tipe_Tahap_Kode]->Flag_Upload_Hasil ?? 'T') === 'Y',
-                    // Wajib berkas bila tahapnya disetel begitu ATAU tipenya memang
-                    // menuntut dokumen (Background Check, Reference Check, Tugas).
-                    // Sebelumnya hanya flag per-tahap yang dibaca, sehingga tipe yang
-                    // seluruh gunanya adalah dokumen tetap bisa diloloskan kosong.
-                    'wajibUpload' => ($t->Flag_Wajib_Upload ?? 'T') === 'Y'
-                        || ($tipe[$t->Tipe_Tahap_Kode]->Flag_Upload_Hasil ?? 'T') === 'Y',
-                    // Tahap yang membawa PENAWARAN — kandidat harus menjawab
-                    // terima atau mundur. Penandanya dari Master Tipe Tahap,
-                    // jadi tahap penawaran bernama lain cukup disetel di master.
-                    'penawaran' => ($tipe[$t->Tipe_Tahap_Kode]->Flag_Penawaran ?? 'T') === 'Y',
-                    // TITIK TUNTAS: meloloskan di sini berarti kandidat DITERIMA,
-                    // bukan sekadar maju ke tahap berikutnya. Tombolnya ikut
-                    // berganti kata supaya tidak terbaca sebagai langkah antara.
-                    'tuntas' => ($t->Flag_Tuntas ?? 'T') === 'Y',
-                ])->all()
-            : [];
+        // ── KOLOM = ALUR YANG BENAR-BENAR DIPAKAI, bukan penunjuk di program ──
+        //
+        // Dulu kolom disusun dari alur yang SEKARANG menempel di program, lalu
+        // kartu ditempatkan memakai nomor urut tahapnya. Dua-duanya rapuh:
+        // mengarahkan program ke alur baru membuat kandidat lama tergambar di
+        // kolom yang bukan miliknya, dan menyunting alur di tempat (Id sama,
+        // arti berbeda) melakukan hal yang sama tanpa satu galat pun.
+        //
+        // Papannya yang berbohong, bukan datanya — dan itu lebih berbahaya,
+        // karena keputusan diambil dari papan. Lihat App\Support\Career\AlurKolom.
+        $kolom = AlurKolom::susun(
+            AlurKolom::alurDipakai($programId, $alurProgramId),
+            $alurProgramId,
+        );
 
         // Pelamar program ini + tahap-tahapnya.
         $lamaran = DB::table('N_WEB_CAREERS_Lamaran as l')
@@ -2208,7 +2193,7 @@ class LamaranController extends Controller
         // kandidat. PipelineProgress sengaja tidak menyentuh database sendiri.
         $alasanHold = self::masterAlasanHold()->map(fn ($a) => $a->Nama)->all();
 
-        $pelamar = $lamaran->map(function ($l) use ($tahapPer, $subPer, $kuotaPosisi, $terisiKuota, $berkasCount, $berkasSub, $berkasKandidat, $alasanHold) { // NOSONAR
+        $pelamar = $lamaran->map(function ($l) use ($tahapPer, $subPer, $kuotaPosisi, $terisiKuota, $berkasCount, $berkasSub, $berkasKandidat, $alasanHold, $kolom) { // NOSONAR
             $tahapList = collect($tahapPer->get($l->Id_Lamaran, []));
 
             // Aturan penempatan + badge + kuota dipusatkan di PipelineProgress
@@ -2249,6 +2234,15 @@ class LamaranController extends Controller
                 'waktuLamar' => $l->Waktu_Lamar,
                 'kategori' => $l->Kategori,
                 'statusLamaran' => $l->Status,
+                // PENEMPATAN KARTU — memakai KODE tahap, bukan nomor urutnya.
+                //
+                // Nomor urut hanya benar selama alur tak pernah berubah. Begitu
+                // alur disunting (baris dipakai ulang per urutan) atau program
+                // diarahkan ke alur lain, "tahap ke-3" milik kandidat dan
+                // "kolom ke-3" di papan bisa dua hal yang sama sekali berbeda.
+                'kolomKode' => AlurKolom::cocok($kolom, $tk),
+                // Nomor tetap dikirim untuk urutan & indikator progres — tapi
+                // bukan lagi dasar penempatan.
                 'kolomUrutan' => (int) ($tk->Urutan ?? $l->Urutan_Tahap),
                 'tahap' => $tk->Label ?? '—',
                 'urutan' => (int) ($tk->Urutan ?? $l->Urutan_Tahap),
@@ -2279,6 +2273,26 @@ class LamaranController extends Controller
                 // orang yang belum pernah dinilai siapa pun, dan daftar seperti
                 // itu berhenti dipercaya lalu berhenti dipakai.
                 'bolehTalentPool' => ($tAktif->Flag_Talent_Pool ?? 'T') === 'Y',
+                // ── PERILAKU TAHAP MILIK KANDIDAT INI SENDIRI ──
+                //
+                // Dulu layar menyimpulkannya dengan mencari kolom master yang
+                // nomor urutnya sama, lalu membaca flag di sana. Artinya
+                // menyunting alur langsung mengubah syarat kelulusan orang yang
+                // sedang menjalaninya — yang paling merugikan: menyalakan
+                // "wajib unggah berkas" mengunci kandidat yang tahapnya sudah
+                // selesai dinilai, menuntut dokumen yang dulu tidak diminta.
+                //
+                // Sekarang jawabannya dibawa kandidat, dari salinan tahapnya.
+                //
+                // Dari $tk (tahap yang DITAMPILKAN), bukan $tAktif: kandidat
+                // yang sudah LULUS/GUGUR tidak punya tahap aktif — $tAktif null
+                // — dan perilakunya akan diam-diam jatuh kembali ke master,
+                // persis kebocoran yang sedang ditutup. $tk selalu ada, dan ia
+                // memang tahap yang kartunya sedang berdiri di situ.
+                'perilaku' => AlurKolom::perilaku(
+                    $tk ?? $tAktif,
+                    collect($kolom)->firstWhere('kode', AlurKolom::cocok($kolom, $tk)),
+                ),
                 // DITAHAN (hold) — berikut alasannya, siapa yang menahan, dan
                 // sejak kapan. Kandidat tetap di bucket tahapnya; yang berubah
                 // hanya bahwa keputusannya sengaja ditunda.
@@ -2331,6 +2345,23 @@ class LamaranController extends Controller
                 'urutanAktivitas' => $tk->Urutan_Aktivitas ?? 'PARALEL',
             ];
         })->all();
+
+        // ── JARING PENGAMAN: tidak ada kartu yang boleh hilang dari papan ──
+        //
+        // Kandidat yang tahapnya tak cocok kolom mana pun — alur lama yang
+        // tahapnya sudah dihapus, atau data pra-mesin tanpa Kode — akan lenyap
+        // dari layar kalau dibiarkan. Dan kandidat yang tak terlihat tidak akan
+        // pernah dikerjakan siapa pun; itu kegagalan yang jauh lebih mahal
+        // daripada satu kolom tambahan yang terlihat asing.
+        if (collect($pelamar)->contains('kolomKode', AlurKolom::KODE_LAINNYA)) {
+            $tersesat = $tahapPer->flatten(1)->filter(
+                fn ($t) => AlurKolom::cocok($kolom, $t) === AlurKolom::KODE_LAINNYA,
+            );
+
+            if ($cadangan = AlurKolom::kolomCadangan($tersesat)) {
+                $kolom[] = $cadangan;
+            }
+        }
 
         // Lowongan/posisi program ini + jumlah pelamarnya — dipakai penyaring
         // worklist dan kartu ringkas, sepola dengan tampilan di landing page.
