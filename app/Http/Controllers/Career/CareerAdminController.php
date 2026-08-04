@@ -404,11 +404,24 @@ class CareerAdminController extends Controller
             $q->where('Alur_Kode', $alur);
         }
 
-        // Formulir hanya boleh dipilih di tahap alur bila komponennya sudah
-        // ditetapkan. Tanpa komponen, formulir tidak bisa dirender kandidat —
-        // menawarkannya di sini cuma jadi jebakan. (Kolom dari Batch 9.)
+        // Formulir hanya boleh dipilih di tahap alur bila sudah bisa dirender
+        // kandidat — form lama lewat Komponen_Kode, form dinamis lewat versi
+        // PUBLISHED di Master_Formulir_Versi. Tanpa salah satunya, menawarkan
+        // formulir di sini cuma jadi jebakan. (Kolom dari Batch 9; versi dinamis
+        // ditambahkan saat Master Formulir berhenti mengisi Komponen_Kode.)
         if ($type === 'formulir') {
-            $q->whereNotNull('Komponen_Kode');
+            $punyaVersi = \App\Support\Career\FormulirSchema::punyaTabelVersi();
+            $q->where(function ($sub) use ($punyaVersi) {
+                $sub->whereNotNull('Komponen_Kode');
+                if ($punyaVersi) {
+                    $sub->orWhereExists(function ($versi) {
+                        $versi->select(DB::raw(1))
+                            ->from('N_WEB_CAREERS_Master_Formulir_Versi as v')
+                            ->whereColumn('v.Master_Formulir_Id', 'N_WEB_CAREERS_Master_Formulir.Id_Master_Formulir')
+                            ->where('v.Status', 'PUBLISHED');
+                    });
+                }
+            });
         }
 
         $rows = $q
@@ -607,6 +620,13 @@ class CareerAdminController extends Controller
                     'formulir' => $t->Formulir_Kode,
                     'formulirNama' => $t->FormulirNama,
                     'komponen' => $t->Komponen_Kode,
+                    // Form dinamis tidak punya peta JS statis seperti FORMULIR_1..4
+                    // (skemaFormulir() di frontend cuma tahu 4 komponen lama) —
+                    // kirim schema-nya langsung supaya builder Syarat tetap bisa
+                    // menurunkan daftar field dari sini.
+                    'schema' => $t->Komponen_Kode
+                        ? null
+                        : (\App\Support\Career\FormulirSchema::publishedByKode($t->Formulir_Kode)['schema'] ?? null),
                 ],
             )
             ->values();

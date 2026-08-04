@@ -45,8 +45,14 @@
         </div>
 
         <!-- Seret-lepas ATAU klik. Keduanya, karena di ponsel seret-lepas
-             praktis tidak terpakai. -->
+             praktis tidak terpakai.
+
+             HILANG SEPENUHNYA SETELAH DIKIRIM — bukan sekadar dimatikan.
+             Kotak seret-lepas yang masih terpampang mengundang kandidat
+             menjatuhkan berkas ke sesuatu yang akan menolaknya; yang ia dapat
+             cuma pesan galat atas perbuatan yang layarnya sendiri tawarkan. -->
         <label
+            v-if="!u.terkirim"
             class="ld-upl__drop"
             :class="{ 'is-over': seretDi === u.key, 'is-busy': unggahDi === u.key }"
             @dragover.prevent="seretDi = u.key"
@@ -71,7 +77,20 @@
                 <i class="bi" :class="b.isImage ? 'bi-file-earmark-image-fill' : 'bi-file-earmark-pdf-fill'"></i>
                 <button type="button" class="ld-upl__nama" @click="$emit('buka', b)">{{ b.nama }}</button>
                 <span class="ld-upl__size">{{ ukuran(b.ukuran) }}</span>
-                <button type="button" class="ld-upl__del" title="Hapus berkas" @click="$emit('hapus', b, u)">
+                <!-- BERKAS YANG SUDAH DIKIRIM TIDAK PUNYA TOMBOL HAPUS.
+                     Menghapusnya permanen sampai ke penyimpanan, sementara
+                     berkasnya bisa sedang dibaca penilai. Yang tersisa gembok
+                     berketerangan — bukan tombol mati yang membuat kandidat
+                     menekan berkali-kali sambil menebak kenapa tak terjadi apa
+                     pun. Melihat isinya tetap bisa: namanya masih bisa diklik.
+                     Server menolaknya juga, bukan cuma tombol ini yang hilang. -->
+                <span
+                    v-if="b.terkunci" class="ld-upl__kunci"
+                    :title="'Sudah kamu kirim ' + fmtWaktu(b.terkirim) + ' dan sedang dinilai tim — tidak bisa dihapus lagi. Klik namanya untuk melihat isinya.'"
+                >
+                    <i class="bi bi-lock-fill"></i>
+                </span>
+                <button v-else type="button" class="ld-upl__del" title="Hapus berkas" @click="$emit('hapus', b, u)">
                     <i class="bi bi-x-lg"></i>
                 </button>
             </div>
@@ -90,24 +109,54 @@
                 <span class="ld-upl__ok">
                     <i class="bi bi-patch-check-fill"></i>
                     <span>
-                        <b>Berkas sudah kamu kirim</b>
-                        <small>{{ fmtWaktu(u.terkirim) }} — menunggu penilaian tim. Masih bisa menambah berkas bila ada yang kurang.</small>
+                        <b>Berkas sudah kamu kirim — langkah ini ditutup</b>
+                        <small>
+                            {{ fmtWaktu(u.terkirim) }} — menunggu penilaian tim. Berkas tidak bisa
+                            ditambah, diubah, atau dihapus lagi. Isinya tetap bisa kamu lihat
+                            dengan mengklik nama berkas. Hubungi tim rekrutmen bila ada yang
+                            perlu diperbaiki.
+                        </small>
                     </span>
                 </span>
+            </template>
+            <!-- KONFIRMASI, karena mengirim sekarang PINTU SATU ARAH.
+                 Sesudah ditekan berkas tidak bisa ditambah, diubah, maupun
+                 dihapus — dan tidak ada tombol untuk membatalkannya. Perbuatan
+                 sebesar itu tidak boleh cuma berjarak satu klik tak sengaja
+                 dari kandidat yang sedang menggulir halaman. -->
+            <template v-else-if="konfirmasiDi === u.key">
+                <p class="ld-upl__tanya">
+                    <i class="bi bi-exclamation-triangle-fill"></i>
+                    <span>
+                        <b>Kirim sekarang?</b>
+                        Setelah dikirim, {{ (berkas[u.key] || []).length }} berkas ini
+                        <b>tidak bisa ditambah, diubah, atau dihapus lagi</b>. Pastikan semuanya
+                        sudah benar.
+                    </span>
+                </p>
+                <div class="ld-upl__aksi">
+                    <button type="button" class="ld-upl__btn" :disabled="kirimDi === u.key" @click="$emit('kirim', u)">
+                        <i class="bi" :class="kirimDi === u.key ? 'bi-arrow-repeat ld-upl__spin' : 'bi-send-fill'"></i>
+                        {{ kirimDi === u.key ? 'Mengirim…' : 'Ya, kirim sekarang' }}
+                    </button>
+                    <button type="button" class="ld-upl__batal" :disabled="kirimDi === u.key" @click="konfirmasiDi = null">
+                        Periksa lagi
+                    </button>
+                </div>
             </template>
             <template v-else>
                 <button
                     type="button"
                     class="ld-upl__btn"
-                    :disabled="!(berkas[u.key] || []).length || kirimDi === u.key"
-                    @click="$emit('kirim', u)"
+                    :disabled="!(berkas[u.key] || []).length"
+                    @click="konfirmasiDi = u.key"
                 >
-                    <i class="bi" :class="kirimDi === u.key ? 'bi-arrow-repeat ld-upl__spin' : 'bi-send-fill'"></i>
-                    {{ kirimDi === u.key ? 'Mengirim…' : 'Kirim Berkas' }}
+                    <i class="bi bi-send-fill"></i>
+                    Kirim Berkas
                 </button>
                 <small class="ld-upl__hint">
                     {{ (berkas[u.key] || []).length
-                        ? 'Tekan bila seluruh berkas sudah lengkap — tim akan mulai menilainya.'
+                        ? 'Tekan bila seluruh berkas sudah lengkap — sesudah dikirim tidak bisa diubah lagi.'
                         : 'Unggah berkas dulu, tombol kirim akan aktif.' }}
                 </small>
             </template>
@@ -129,8 +178,20 @@ export default {
     },
     emits: ['pilih', 'hapus', 'buka', 'kirim'],
     data() {
-        // Sorotan seret-lepas murni urusan tampilan; induk tidak perlu tahu.
-        return { seretDi: null };
+        // Sorotan seret-lepas & langkah konfirmasi murni urusan tampilan;
+        // induk tidak perlu tahu keduanya.
+        return { seretDi: null, konfirmasiDi: null };
+    },
+    watch: {
+        // Berkas berubah selagi pertanyaan konfirmasi terbuka → pertanyaannya
+        // sudah menyebut jumlah yang tidak lagi benar. Ditutup, bukan dibiarkan
+        // berbohong tentang apa yang akan dikirim.
+        berkas: {
+            deep: true,
+            handler() {
+                this.konfirmasiDi = null;
+            },
+        },
     },
     methods: {
         lepas(ev, u) {
@@ -194,6 +255,9 @@ export default {
 .ld-upl__size { flex: none; font-size: 11px; color: #94a3b8; }
 .ld-upl__del { flex: none; border: 0; background: none; padding: 2px 4px; color: #94a3b8; font-size: 11px; cursor: pointer; }
 .ld-upl__del:hover { color: #dc2626; }
+/* Gembok berkas terkirim — sengaja tenang, bukan merah: ini keterangan
+   keadaan, bukan peringatan bahwa ada yang salah. */
+.ld-upl__kunci { flex: none; padding: 2px 4px; color: #94a3b8; font-size: 11px; cursor: help; }
 .ld-upl__kosong { display: flex; align-items: center; gap: 7px; margin: 11px 0 0; font-size: 12px; font-weight: 700; color: #b45309; }
 
 /* ── Kirim berkas: menutup langkah unggah ────────────────────────────────── */
@@ -209,6 +273,15 @@ export default {
    kenapa ia belum bisa menekan. */
 .ld-upl__btn:disabled { background: #e2e8f0; color: #94a3b8; box-shadow: none; cursor: not-allowed; transform: none; }
 .ld-upl__hint { font-size: 11.5px; line-height: 1.5; color: #64748b; }
+/* Pertanyaan konfirmasi — kuning, bukan merah: ini bukan galat, melainkan
+   jeda supaya kandidat memutuskan sadar. */
+.ld-upl__tanya { display: flex; align-items: flex-start; gap: 9px; margin: 0; padding: 11px 13px; border-radius: 12px; width: 100%; font-size: 12.5px; line-height: 1.6; color: #78350f; background: rgba(245, 158, 11, .1); border: 1px solid rgba(245, 158, 11, .34); }
+.ld-upl__tanya > .bi { flex: 0 0 auto; margin-top: 2px; font-size: 15px; color: #d97706; }
+.ld-upl__tanya b { font-weight: 800; }
+.ld-upl__aksi { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; }
+.ld-upl__batal { border: 1px solid #dbe2ea; background: #fff; border-radius: 12px; padding: 10px 16px; font: inherit; font-size: 13px; font-weight: 700; color: #475569; cursor: pointer; transition: background .16s, border-color .16s; }
+.ld-upl__batal:hover:not(:disabled) { background: #f8fafc; border-color: #cbd5e1; }
+.ld-upl__batal:disabled { opacity: .5; cursor: not-allowed; }
 .ld-upl__ok { display: flex; align-items: flex-start; gap: 9px; padding: 11px 14px; border-radius: 13px; background: rgba(16, 185, 129, .09); border: 1px solid rgba(16, 185, 129, .28); width: 100%; }
 .ld-upl__ok i { flex: 0 0 auto; margin-top: 1px; font-size: 16px; color: #059669; }
 .ld-upl__ok b { display: block; font-size: 13px; font-weight: 800; color: #065f46; }

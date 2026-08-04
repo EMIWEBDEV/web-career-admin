@@ -3,32 +3,40 @@
      menampilkan tombol pemicu ramah pengguna dan modal pop-up interaktif
      dengan fitur pencarian instan, filter, serta grid visual yang mudah dipilih. -->
 <template>
-    <div class="iconpicker">
+    <div class="iconpicker" :class="{ 'iconpicker--compact': compact }">
         <!-- Control Box / Trigger Button -->
-        <div class="iconpicker__trigger" @click="openModal">
-            <div class="iconpicker__preview" :class="{ 'is-empty': !modelValue }">
+        <div class="iconpicker__trigger" :class="{ 'iconpicker__trigger--compact': compact }" @click="openModal">
+            <div
+                class="iconpicker__preview"
+                :class="{ 'is-empty': !modelValue }"
+                :title="
+                    compact ? (modelValue ? pretty(modelValue) + ' (Klik untuk ganti)' : 'Pilih ikon step') : undefined
+                "
+            >
                 <i class="bi" :class="modelValue || 'bi-app-indicator'"></i>
             </div>
-            <div class="iconpicker__label">
-                <span v-if="modelValue" class="iconpicker__name">{{ pretty(modelValue) }}</span>
-                <span v-if="modelValue" class="iconpicker__code">{{ modelValue }}</span>
-                <span v-else class="iconpicker__placeholder">{{ placeholder }}</span>
-            </div>
-            <div class="iconpicker__actions">
-                <button
-                    v-if="modelValue"
-                    type="button"
-                    class="iconpicker__clearbtn"
-                    title="Hapus Ikon"
-                    @click.stop="clearIcon"
-                >
-                    <i class="bi bi-x-lg"></i>
-                </button>
-                <button type="button" class="iconpicker__btn">
-                    <i class="bi bi-grid-3x3-gap-fill"></i>
-                    <span>{{ modelValue ? 'Ganti' : 'Pilih Ikon' }}</span>
-                </button>
-            </div>
+            <template v-if="!compact">
+                <div class="iconpicker__label">
+                    <span v-if="modelValue" class="iconpicker__name">{{ pretty(modelValue) }}</span>
+                    <span v-if="modelValue" class="iconpicker__code">{{ modelValue }}</span>
+                    <span v-else class="iconpicker__placeholder">{{ placeholder }}</span>
+                </div>
+                <div class="iconpicker__actions">
+                    <button
+                        v-if="modelValue"
+                        type="button"
+                        class="iconpicker__clearbtn"
+                        title="Hapus Ikon"
+                        @click.stop="clearIcon"
+                    >
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                    <button type="button" class="iconpicker__btn">
+                        <i class="bi bi-grid-3x3-gap-fill"></i>
+                        <span>{{ modelValue ? 'Ganti' : 'Pilih Ikon' }}</span>
+                    </button>
+                </div>
+            </template>
         </div>
 
         <!-- Popup Modal -->
@@ -60,7 +68,12 @@
                                     type="text"
                                     placeholder="Cari ikon (mis. question, user, check, info, star)..."
                                 />
-                                <button v-if="searchQuery" type="button" class="ip-search__clear" @click="searchQuery = ''">
+                                <button
+                                    v-if="searchQuery"
+                                    type="button"
+                                    class="ip-search__clear"
+                                    @click="searchQuery = ''"
+                                >
                                     <i class="bi bi-x-circle-fill"></i>
                                 </button>
                             </div>
@@ -123,9 +136,7 @@
                             </div>
 
                             <div class="ip-foot__btns">
-                                <button type="button" class="wca-btn wca-btn--ghost" @click="closeModal">
-                                    Batal
-                                </button>
+                                <button type="button" class="wca-btn wca-btn--ghost" @click="closeModal">Batal</button>
                                 <button type="button" class="wca-btn wca-btn--dark" @click="confirmSelection">
                                     <i class="bi bi-check-lg"></i> Gunakan Ikon Ini
                                 </button>
@@ -146,6 +157,7 @@ export default {
     props: {
         modelValue: { type: String, default: '' },
         placeholder: { type: String, default: 'Cari & pilih ikon…' },
+        compact: { type: Boolean, default: false },
     },
     emits: ['update:modelValue'],
     data() {
@@ -234,6 +246,10 @@ export default {
 .iconpicker {
     width: 100%;
 }
+.iconpicker--compact {
+    width: auto;
+    display: inline-block;
+}
 .iconpicker__trigger {
     display: flex;
     align-items: center;
@@ -246,13 +262,31 @@ export default {
     user-select: none;
     transition: all 0.18s ease;
 }
-.iconpicker__trigger:hover {
+.iconpicker__trigger--compact {
+    padding: 0;
+    border: none;
+    background: transparent;
+    border-radius: 0.5rem;
+}
+.iconpicker__trigger--compact:hover {
+    box-shadow: none;
+}
+.iconpicker__trigger--compact .iconpicker__preview {
+    width: 2.2rem;
+    height: 2.2rem;
+    border: 1.5px solid #cbd5e1;
+    transition: all 0.18s ease;
+}
+.iconpicker__trigger--compact:hover .iconpicker__preview {
     border-color: #6366f1;
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+    background: #eef2ff;
+    color: #4f46e5;
+    transform: scale(1.05);
 }
 .iconpicker__preview {
-    display: grid;
-    place-items: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     width: 2.3rem;
     height: 2.3rem;
     flex: none;

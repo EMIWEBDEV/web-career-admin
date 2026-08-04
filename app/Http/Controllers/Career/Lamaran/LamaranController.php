@@ -727,6 +727,9 @@ class LamaranController extends Controller
                         'mulai' => (string) $s->Jadwal_Mulai,
                         'selesai' => (string) ($s->Jadwal_Selesai ?: ''),
                         'link' => $s->Jadwal_Link,
+                        // Nomor yang dijanjikan akan dihubungi — kandidat harus
+                        // bisa memastikan nomornya benar sebelum harinya tiba.
+                        'kontak' => $s->Jadwal_Kontak ?? null,
                         // Detail yang diketik rekruter ("Gedung B lantai 3").
                         'lokasi' => $s->Jadwal_Lokasi,
                         // Tempatnya sendiri, LENGKAP dengan peta. Kandidat butuh
@@ -870,10 +873,19 @@ class LamaranController extends Controller
             ->whereNotNull('t.Formulir_Kode')
             ->whereNull('t.Formulir_Pengisian_Id')
             ->orderBy('t.Urutan')
-            ->select('t.Id_Lamaran_Tahap', 't.Label', 't.Formulir_Kode', 't.Formulir_Komponen',
+            ->select('t.Id_Lamaran_Tahap', 't.Label', 't.Formulir_Kode', 't.Formulir_Komponen', 't.Formulir_Versi',
                 'f.Nama as FormulirNama', 'f.Komponen_Kode')
             ->first();
 
+        // Schema dikunci ke versi yang dibekukan saat tahap dibuat (bila ada),
+        // supaya kandidat yang sedang mengisi tidak tiba-tiba mendapat schema
+        // dinamis versi baru gara-gara Master Formulir disunting di tengah jalan.
+        $schemaAktif = $aktif
+            ? \App\Support\Career\FormulirSchema::byKodeDanVersi(
+                $aktif->Formulir_Kode,
+                $aktif->Formulir_Versi !== null ? (int) $aktif->Formulir_Versi : null
+            )
+            : null;
         $tugas = $aktif ? [
             'tahapId' => Hashids::encode($aktif->Id_Lamaran_Tahap),
             'label' => $aktif->Label,
@@ -886,7 +898,10 @@ class LamaranController extends Controller
             // mengarahkan Master Formulir ke komponen versi baru langsung
             // mengubah formulir orang yang sudah berjalan berminggu-minggu —
             // termasuk yang tinggal menekan kirim.
-            'komponen' => $aktif->Formulir_Komponen ?: $aktif->Komponen_Kode,
+            'komponen' => $aktif->Formulir_Komponen ?: ($schemaAktif['komponen'] ?? $aktif->Komponen_Kode),
+            'schema' => $schemaAktif['schema'] ?? null,
+            'versiId' => $schemaAktif['versiId'] ?? null,
+            'versi' => $schemaAktif['versi'] ?? null,
         ] : null;
 
         // KONTEKS FORMULIR — opsi yang memang PENDEK dan khusus lamaran ini.
@@ -1297,6 +1312,12 @@ class LamaranController extends Controller
             'isPdf' => $ext === 'pdf' || $b->Mime === 'application/pdf',
             'isImage' => in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'gif'], true),
             'url' => route('career.portal.tes.berkas.file', ['id' => Hashids::encode($b->Id_Lamaran_Tes_Berkas)]),
+            // SUDAH IKUT DIKIRIM = tidak bisa dihapus kandidat lagi. Dikirim
+            // per berkas supaya layar menyembunyikan tombol hapus tepat pada
+            // yang memang terkunci — bukan mengunci seluruh daftar hanya karena
+            // salah satunya sudah diserahkan.
+            'terkunci' => ! empty($b->Terkirim_At),
+            'terkirim' => ($b->Terkirim_At ?? null) ? (string) $b->Terkirim_At : null,
         ];
     }
 
@@ -1337,6 +1358,25 @@ class LamaranController extends Controller
 
         if ($tes->Flag_Selesai === 'Y' || $tes->StatusTahap !== 'BERJALAN') {
             return ResponseHelper::error('Aktivitas ini sudah selesai - berkas tidak bisa diubah lagi.', 409);
+        }
+
+        // SUDAH DIKIRIM → LANGKAH UNGGAH DITUTUP SEPENUHNYA.
+        //
+        // "Kirim Berkas" adalah pernyataan bahwa berkasnya LENGKAP. Setelah itu
+        // aktivitas ini pindah ke meja penilai, dan apa yang dinilai harus sama
+        // persis dengan apa yang dinyatakan kandidat — tidak bertambah, tidak
+        // berkurang. Membiarkan berkas menyusup masuk setelah pernyataan berarti
+        // penilai bisa membaca lampiran yang belum pernah dinyatakan lengkap,
+        // atau selesai menilai lalu isinya berubah di belakangnya.
+        //
+        // DITAHAN DI SERVER, bukan sekadar kotak seret-lepasnya disembunyikan:
+        // pintu ini tetap bisa diketuk langsung tanpa lewat layar.
+        if ($tes->Unggah_Kirim_At) {
+            return ResponseHelper::error(
+                'Berkas untuk aktivitas ini sudah kamu kirim dan sedang dinilai tim — '
+                . 'tidak bisa ditambah atau diubah lagi. Hubungi tim rekrutmen bila ada yang perlu diperbaiki.',
+                409,
+            );
         }
 
         $format = array_values(array_filter(array_map('trim', explode(',', (string) ($tes->Unggah_Format ?: 'pdf')))));
@@ -1388,17 +1428,14 @@ class LamaranController extends Controller
 
         $baris = DB::table('N_WEB_CAREERS_Lamaran_Tes_Berkas')->where('Id_Lamaran_Tes_Berkas', $baruId)->first();
 
-        // MENAMBAH BERKAS MEMBATALKAN PERNYATAAN "SUDAH LENGKAP".
+        // Dulu di sini ada blok yang MEMBATALKAN pernyataan "sudah lengkap"
+        // setiap kali berkas susulan masuk, supaya penanda di worklist tidak
+        // berbunyi "lengkap sejak 09:12" atas data yang sudah berubah.
         //
-        // Tanpa ini, kandidat yang menekan Kirim lalu menyadari ada yang
-        // kurang bisa menambah berkas diam-diam, dan penanda di worklist tetap
-        // berbunyi "lengkap sejak jam 09:12" — admin menilai berdasarkan
-        // pernyataan yang sudah tidak berlaku. Ia tinggal menekan Kirim lagi.
-        DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')
-            ->where('Id_Lamaran_Tahap_Tes', $tes->Id_Lamaran_Tahap_Tes)
-            ->whereNotNull('Unggah_Kirim_At')
-            ->update(['Unggah_Kirim_At' => null, 'Unggah_Kirim_By' => null, 'Unggah_Kirim_Ip' => null,
-                'Updated_At' => $now, 'Updated_By' => $nama]);
+        // Blok itu tidak diperlukan lagi — dan tidak akan pernah tercapai:
+        // gerbang di atas menolak unggahan begitu aktivitasnya dikirim, jadi
+        // keadaan "ada susulan setelah pernyataan" mustahil terbentuk. Yang
+        // dinilai tim selalu persis yang dinyatakan kandidat.
 
         return ResponseHelper::success(self::bentukTesBerkas($baris), 'Berkas terunggah.');
     }
@@ -1443,15 +1480,34 @@ class LamaranController extends Controller
         $now = now();
         $nama = session('career_auth.nama');
 
-        DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')
-            ->where('Id_Lamaran_Tahap_Tes', $tes->Id_Lamaran_Tahap_Tes)
-            ->update([
-                'Unggah_Kirim_At' => $now,
-                'Unggah_Kirim_By' => $nama,
-                'Unggah_Kirim_Ip' => Str::limit((string) $request->ip(), 60, ''),
-                'Updated_At' => $now,
-                'Updated_By' => $nama,
-            ]);
+        DB::transaction(function () use ($tes, $now, $nama, $request) {
+            DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')
+                ->where('Id_Lamaran_Tahap_Tes', $tes->Id_Lamaran_Tahap_Tes)
+                ->update([
+                    'Unggah_Kirim_At' => $now,
+                    'Unggah_Kirim_By' => $nama,
+                    'Unggah_Kirim_Ip' => Str::limit((string) $request->ip(), 60, ''),
+                    'Updated_At' => $now,
+                    'Updated_By' => $nama,
+                ]);
+
+            // GEMBOK MELEKAT PADA BERKASNYA, bukan hanya pada aktivitasnya.
+            //
+            // Aktivitasnya sendiri sudah tertutup — tesBerkasUnggah() menolak
+            // unggahan apa pun sesudah ini. Stempel per berkas tetap ditulis
+            // karena ia menjawab hal yang tidak bisa dijawab kolom aktivitas:
+            // KAPAN berkas INI diserahkan, dan bahwa ia memang termasuk yang
+            // dinyatakan lengkap. Dari situlah gerbang hapus membaca izinnya,
+            // jadi keputusan "boleh dihapus atau tidak" tidak pernah bergantung
+            // pada satu kolom yang letaknya jauh dari berkasnya.
+            //
+            // `whereNull` menjaga stempel PERTAMA tetap utuh — itulah saat
+            // berkas ini benar-benar diserahkan.
+            DB::table('N_WEB_CAREERS_Lamaran_Tes_Berkas')
+                ->where('Lamaran_Tahap_Tes_Id', $tes->Id_Lamaran_Tahap_Tes)
+                ->whereNull('Terkirim_At')
+                ->update(['Terkirim_At' => $now]);
+        });
 
         return ResponseHelper::success(
             ['waktu' => $now->toDateTimeString(), 'jumlah' => $jumlah],
@@ -1478,6 +1534,29 @@ class LamaranController extends Controller
 
         if ($b->Flag_Selesai === 'Y') {
             return ResponseHelper::error('Aktivitas sudah selesai - berkas tidak bisa dihapus.', 409);
+        }
+
+        // SUDAH IKUT DIKIRIM → TIDAK BISA DITARIK LAGI.
+        //
+        // Menekan "Kirim Berkas" memindahkan berkas ini ke meja penilai. Sejak
+        // detik itu ia bukan lagi draf pribadi kandidat melainkan BAHAN
+        // PENILAIAN yang bisa sedang dibaca — sementara penghapusan di bawah
+        // permanen sampai ke GCS: tidak ada tong sampah, tidak ada pemulihan.
+        // Kandidat yang berubah pikiran (atau salah pencet) bisa mengosongkan
+        // lampiran yang sudah dinilai, dan rapornya memuat penilaian atas
+        // dokumen yang tak lagi ada.
+        //
+        // Penanda dibaca dari BERKASNYA, bukan dari Unggah_Kirim_At aktivitas —
+        // lihat alasan lengkapnya di tesBerkasKirim().
+        //
+        // DITAHAN DI SERVER, bukan sekadar tombolnya disembunyikan: pintu ini
+        // tetap bisa diketuk langsung tanpa lewat layar.
+        if ($b->Terkirim_At) {
+            return ResponseHelper::error(
+                'Berkas ini sudah kamu kirim dan sedang dinilai tim — tidak bisa dihapus lagi. '
+                . 'Hubungi tim rekrutmen bila ada yang perlu diperbaiki.',
+                409,
+            );
         }
 
         try {
@@ -2054,7 +2133,37 @@ class LamaranController extends Controller
                     // Dipisah di layar supaya tidak terbaca sebagai penilaian tim.
                     'olehKandidat' => ($h->Flag_Oleh_Kandidat ?? 'T') === 'Y',
                     'butuhAlasan' => ($h->Butuh_Alasan ?? 'T') === 'Y',
+                    // HASIL INI MENUNTUT AKTIVITAS TAHAPNYA TUNTAS DULU?
+                    //
+                    // Asimetri yang disengaja: "Lolos" dan "Talent Pool"
+                    // menyatakan orang ini cukup baik — pernyataan yang tak boleh
+                    // dibuat di atas bukti yang belum ada. "Tidak Lolos",
+                    // "Mengundurkan Diri", dan "Tahan" justru paling sering
+                    // dibutuhkan JUSTRU saat segalanya belum lengkap; menguncinya
+                    // menutup jalan keluar yang sah.
+                    //
+                    // Dari master, bukan daftar kode di sini: hasil keputusan
+                    // baru yang ditambahkan admin harus menyatakan sikapnya
+                    // sendiri, bukan diam-diam lolos dari gerbang.
+                    'butuhTuntas' => ($h->Flag_Butuh_Tuntas ?? 'T') === 'Y',
                 ])->all(),
+            // BENTUK PELAKSANAAN JADWAL — dari master, bukan dua tombol yang
+            // ditulis mati di layar. Tiap bentuk membawa sendiri field apa yang
+            // wajib diisi untuknya, jadi modal tidak perlu tahu nama-namanya.
+            'modeJadwal' => self::masterModeJadwal()->values()->map(fn ($m) => [
+                'kode' => $m->Kode,
+                'nama' => $m->Nama,
+                'ikon' => $m->Ikon,
+                'warna' => $m->Warna,
+                'deskripsi' => $m->Deskripsi,
+                'butuhTautan' => ($m->Flag_Butuh_Tautan ?? 'T') === 'Y',
+                'butuhLokasi' => ($m->Flag_Butuh_Lokasi ?? 'T') === 'Y',
+                'butuhKontak' => ($m->Flag_Butuh_Kontak ?? 'T') === 'Y',
+                'labelKontak' => $m->Label_Kontak ?: 'Nomor yang dihubungi',
+                'petunjukKontak' => $m->Petunjuk_Kontak,
+                'kalimatUndangan' => $m->Kalimat_Undangan,
+                'luring' => ($m->Flag_Luring ?? 'T') === 'Y',
+            ])->all(),
         ]));
     }
 
@@ -2416,6 +2525,15 @@ class LamaranController extends Controller
                 // Aturan urutan tahap yang ditampilkan — dipakai layar untuk
                 // menjelaskan KENAPA sebagian tombol tidak ada.
                 'urutanAktivitas' => $tk->Urutan_Aktivitas ?? 'PARALEL',
+                // ── APA YANG MASIH DITUNGGU DARI TAHAP AKTIF ────────────────
+                // Daftar "aktivitas — sebabnya", dipakai layar untuk mengunci
+                // tombol yang memajukan kandidat DAN menyebutkan apa yang
+                // kurang. Dihitung dari tahap AKTIF, bukan tahap yang sedang
+                // dilihat: keputusan selalu menyangkut tahap yang berjalan.
+                'belumTuntas' => self::belumTuntasTahap(
+                    $subPer->get($tAktif->Id_Lamaran_Tahap ?? 0, []),
+                    $tAktif->Urutan_Aktivitas ?? 'PARALEL',
+                ),
             ];
         })->all();
 
@@ -2542,6 +2660,41 @@ class LamaranController extends Controller
      * aktivitas berarti satu kueri per baris rapor hanya untuk menjawab
      * pertanyaan yang jawabannya sudah ada di tangan.
      */
+    /**
+     * Aktivitas PENENTU tahap ini yang belum tuntas — [{label, sebab}, ...].
+     *
+     * Dihitung ULANG lewat rapotTahap() supaya aturannya tak pernah bercabang:
+     * apa yang membuat tombol mati di layar dan apa yang membuat server menolak
+     * harus satu hal yang sama. Menghitungnya terpisah berarti cepat atau lambat
+     * tombolnya mati padahal server mengizinkan — atau sebaliknya, dan yang
+     * kedua itu celah, bukan sekadar layar yang aneh.
+     *
+     * INFORMATIF IKUT MENGUNCI — dan ini SENGAJA BERBEDA dari
+     * PipelineProgress::state, yang hanya menghitung aktivitas PENENTU.
+     *
+     * Keduanya menjawab pertanyaan yang berlainan:
+     *
+     *   state()   "sudah cukup bahan untuk MENYIMPULKAN?" — hanya hasil
+     *             aktivitas penentu yang bisa menyimpulkan lulus/gagal.
+     *   di sini   "pekerjaan tahap ini sudah SELESAI DIKERJAKAN?"
+     *
+     * `Peran` menyatakan apakah HASILNYA menentukan kelulusan. Ia tidak pernah
+     * berarti aktivitasnya boleh dilewati. Wawancara Manajemen yang berperan
+     * informatif tetap wawancara yang harus benar-benar terjadi — dan kalau
+     * INFORMATIF dikecualikan di sini, tahap yang seluruh aktivitasnya
+     * informatif tidak akan pernah terkunci sama sekali. Justru bentuk tahap
+     * itulah yang muncul di laporan: satu wawancara, belum dijadwalkan, tombol
+     * "Loloskan" tetap hidup.
+     */
+    private static function belumTuntasTahap(iterable $subs, ?string $urutanAktivitas): array
+    {
+        return collect(self::rapotTahap($subs, $urutanAktivitas, collect(), collect()))
+            ->filter(fn ($t) => ! ($t['tuntas'] ?? true))
+            ->map(fn ($t) => ['label' => $t['label'], 'sebab' => $t['alasanBelumTuntas']])
+            ->values()
+            ->all();
+    }
+
     private static function rapotTahap(
         iterable $subs,
         ?string $urutanAktivitas,
@@ -2655,6 +2808,10 @@ class LamaranController extends Controller
         // jendela, bukan dua yang salah satunya kerap terlewat.
         $dicatatTim = ! $online && $jumlahAktivitasTahap > 1 && ! $isMcu && ! $isPenawaran;
 
+        // Apa yang masih ditunggu dari aktivitas ini — null = tuntas. Dihitung
+        // SEKALI, dipakai dua kali di bawah.
+        $belumTuntas = self::aktivitasTuntas($x, $final, $terkunci, $tipe, $online, $dicatatTim, $isPenawaran, $tipeBerjadwal);
+
         return [
             'id' => Hashids::encode($x->Id_Lamaran_Tahap_Tes),
             'label' => $x->Label,
@@ -2716,6 +2873,12 @@ class LamaranController extends Controller
             // Tipe yang MUSTAHIL daring (MCU, tes offline, tanda tangan kontrak).
             // Aturannya melekat di master, bukan ditebak dari nama tipe di layar.
             'wajibLuring' => ($tipe->Flag_Wajib_Luring ?? 'T') === 'Y',
+            // Bentuk jadwal yang PALING MASUK AKAL untuk tipe ini — dari master.
+            // Negosiasi gaji hampir selalu lewat telepon; tanpa bawaan, modal
+            // membuka pada "Daring" dan admin harus ingat memindahkannya tiap
+            // kali. Yang lupa akan mengirim undangan bertautan Meet untuk
+            // percakapan yang sebenarnya cuma panggilan telepon.
+            'modeJadwalBawaan' => $tipe->Mode_Jadwal_Bawaan ?? null,
             // Penanda agar modal "Catat Hasil" menampilkan bidang khusus MCU.
             'isMcu' => $isMcu,
             // Aktivitas ini MEMBAWA PENAWARAN (negosiasi, surat penawaran, kontrak).
@@ -2747,6 +2910,7 @@ class LamaranController extends Controller
                 'lokasiId' => $x->Jadwal_Lokasi_Id ? Hashids::encode($x->Jadwal_Lokasi_Id) : null,
                 'catatan' => $x->Jadwal_Catatan,
                 'olehSiapa' => $x->Jadwal_By,
+                'kontak' => $x->Jadwal_Kontak ?? null,
             ] : null,
             // ── "CATAT HASIL" HANYA UNTUK YANG TIDAK BISA DIJADWALKAN ────────
             //
@@ -2803,7 +2967,79 @@ class LamaranController extends Controller
                 && ! $final && ! $terkunci && empty($x->Jadwal_Hadir),
             // Penanda UI: aktivitas ini menunggu hasil dari sistem lain.
             'online' => $online,
+            // ── MASIH ADA YANG DITUNGGU DARI AKTIVITAS INI? ──────────────────
+            //
+            // Dipakai gerbang keputusan: "Lolos" dan "Talent Pool" tidak boleh
+            // ditekan selama masih ada aktivitas penentu yang belum tuntas.
+            //
+            // Dulu gerbangnya cuma `butuhKehadiran`, dan itu MENSYARATKAN
+            // jadwalnya sudah ada. Aktivitas yang belum dijadwalkan sama sekali
+            // menghasilkan butuhKehadiran=false — bukan karena tidak ada yang
+            // kurang, melainkan karena kehadiran memang belum mungkin
+            // ditetapkan. Gerbangnya diam, dan kandidat yang wawancaranya belum
+            // pernah dijadwalkan bisa diloloskan.
+            'tuntas' => $belumTuntas === null,
+            'alasanBelumTuntas' => $belumTuntas,
         ];
+    }
+
+    /**
+     * Apa yang MASIH DITUNGGU dari satu aktivitas — null bila sudah tuntas.
+     *
+     * Satu tempat, satu aturan. Layar memakainya untuk menyebut apa yang kurang,
+     * dan putus() memakainya untuk menolak keputusan yang tak berdasar; kalau
+     * keduanya menghitung sendiri-sendiri, cepat atau lambat tombolnya mati
+     * padahal server mengizinkan — atau sebaliknya, dan yang kedua itu celah.
+     *
+     * "TIDAK HADIR" DIHITUNG TUNTAS. Kandidat yang tidak datang sudah
+     * menyelesaikan pertanyaannya: tak ada lagi yang perlu ditunggu darinya.
+     */
+    private static function aktivitasTuntas(
+        object $x,
+        bool $final,
+        bool $terkunci,
+        ?object $tipe,
+        bool $online,
+        bool $dicatatTim,
+        bool $isPenawaran,
+        bool $tipeBerjadwal
+    ): ?string {
+        // Sudah final, atau sudah dinyatakan tidak hadir → tak ada yang ditunggu.
+        if ($final || ($x->Jadwal_Hadir ?? null) === 'T') {
+            return null;
+        }
+
+        // Penawaran BERDOKUMEN tidak menuntut apa pun di rapor — suratnya
+        // diunggah bersama keputusannya. Menghitungnya "belum tuntas" berarti
+        // mengunci keputusan pada berkas yang justru baru bisa diunggah DI
+        // DALAM jendela keputusan itu: kunci yang anak kuncinya ada di dalam.
+        if ($isPenawaran && ! $tipeBerjadwal) {
+            return null;
+        }
+
+        if ($terkunci) {
+            return 'menunggu giliran aktivitas sebelumnya';
+        }
+
+        // Belum dijadwalkan padahal tipenya menuntut waktu & tempat — inilah
+        // lubang yang dulu tak terlihat.
+        if (($tipe->Flag_Jadwal ?? 'T') === 'Y' && empty($x->Jadwal_Mulai)) {
+            return 'belum dijadwalkan';
+        }
+
+        if (! empty($x->Jadwal_Mulai) && empty($x->Jadwal_Hadir)) {
+            return 'kehadiran belum ditetapkan';
+        }
+
+        if ($online) {
+            return 'hasil ujian belum masuk';
+        }
+
+        if ($dicatatTim) {
+            return 'hasil belum dicatat';
+        }
+
+        return null;
     }
 
     /**
@@ -2859,6 +3095,38 @@ class LamaranController extends Controller
             if (($defHasil->Flag_Oleh_Kandidat ?? 'T') === 'Y'
                 && mb_strlen(trim((string) $catatanPutus)) < 10) {
                 return ResponseHelper::error('Alasan wajib diisi, minimal 10 karakter.', 422);
+            }
+
+            // ── GERBANG KETUNTASAN ──────────────────────────────────────────
+            //
+            // Hasil yang MEMAJUKAN kandidat (Lolos, Talent Pool) menyatakan
+            // "orang ini cukup baik". Pernyataan itu tidak boleh dibuat selama
+            // masih ada aktivitas penentu yang belum dijadwalkan, belum
+            // ditetapkan kehadirannya, atau belum dicatat hasilnya.
+            //
+            // DITEGAKKAN DI SINI, bukan cukup dengan mematikan tombolnya. Layar
+            // bisa basi (jadwal baru saja dihapus di tab lain), dan pintu ini
+            // tetap bisa diketuk langsung tanpa lewat layar sama sekali.
+            //
+            // Sebabnya DISEBUTKAN satu per satu. "Tidak bisa diloloskan" tanpa
+            // keterangan cuma memindahkan tebakan ke orang berikutnya.
+            if (($defHasil->Flag_Butuh_Tuntas ?? 'T') === 'Y') {
+                $sisa = self::belumTuntasTahap(
+                    DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')
+                        ->where('Lamaran_Tahap_Id', $realId)->orderBy('Urutan')->get(),
+                    DB::table('N_WEB_CAREERS_Lamaran_Tahap')
+                        ->where('Id_Lamaran_Tahap', $realId)->value('Urutan_Aktivitas'),
+                );
+
+                if ($sisa) {
+                    $rinci = collect($sisa)->map(fn ($s) => "{$s['label']} ({$s['sebab']})")->implode(', ');
+
+                    return ResponseHelper::error(
+                        "\"{$defHasil->Nama}\" belum bisa diambil — masih ada aktivitas yang belum tuntas: {$rinci}. "
+                        . 'Selesaikan dulu, atau gunakan Tidak Lolos / Tahan Dulu bila memang harus ditutup sekarang.',
+                        422,
+                    );
+                }
             }
 
             // Pilihan Talent Pool hanya berlaku bila masternya memang menyerahkan
@@ -3517,6 +3785,11 @@ class LamaranController extends Controller
                     'isImage' => in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'gif'], true),
                     'url' => route('career.api.lamaran.berkas.kandidat', ['id' => Hashids::encode($b->Id_Lamaran_Tes_Berkas)]),
                     'createdAt' => $b->Created_At,
+                    // Kapan berkas INI ikut diserahkan — kosong berarti SUSULAN
+                    // yang datang setelah pernyataan lengkap terakhir. Penilai
+                    // perlu bisa membedakannya: berkas susulan belum tentu sudah
+                    // dimaksudkan kandidat sebagai bagian dari yang dinilai.
+                    'terkirim' => ($b->Terkirim_At ?? null) ? (string) $b->Terkirim_At : null,
                 ];
             })
             ->values()
@@ -3994,15 +4267,20 @@ class LamaranController extends Controller
         }
 
         $data = $request->validate([
-            'mode' => 'required|in:DARING,LURING',
+            // Daftar mode dari MASTER — bentuk jadwal baru cukup satu baris data.
+            'mode' => ['required', Rule::in(self::masterModeJadwal()->keys()->all())],
             'mulai' => 'required|date',
             'selesai' => 'nullable|date|after:mulai',
-            'link' => 'required_if:mode,DARING|nullable|url|max:500',
+            // `required_if` sengaja TIDAK dipakai lagi: ia menuntut nama mode
+            // ditulis di sini, dan itu persis yang membuat mode baru harus
+            // menyunting validator. Syaratnya ditegakkan setelah ini, dari flag.
+            'link' => 'nullable|url|max:500',
+            'kontak' => 'nullable|string|max:40',
             // LURING: pilih dari Master Lokasi (berikut petanya). `lokasi` tetap
             // ada sebagai DETAIL — "Gedung B lantai 3, temui resepsionis" — persis
             // seperti catatan alamat pada aplikasi pesan-antar: titik petanya dari
             // master, patokan rincinya diketik.
-            'lokasiId' => 'required_if:mode,LURING|nullable|string|max:64',
+            'lokasiId' => 'nullable|string|max:64',
             'lokasi' => 'nullable|string|max:300',
             'catatan' => 'nullable|string|max:1000',
         ], [
@@ -4035,7 +4313,12 @@ class LamaranController extends Controller
         // kandidat datang ke tautan yang tidak akan pernah ada orangnya.
         $tipeSub = self::masterTipeTahap()[$sub->Tipe_Tahap_Kode ?? ''] ?? null;
 
-        if (($tipeSub->Flag_Wajib_Luring ?? 'T') === 'Y' && $data['mode'] !== 'LURING') {
+        if ($galat = self::periksaBidangJadwal($data)) {
+            return ResponseHelper::error($galat, 422);
+        }
+
+        if (($tipeSub->Flag_Wajib_Luring ?? 'T') === 'Y'
+            && (self::masterModeJadwal()->get($data['mode'])->Flag_Luring ?? 'T') !== 'Y') {
             return ResponseHelper::error(
                 ($tipeSub->Nama ?? 'Aktivitas ini') . ' hanya bisa dijadwalkan LURING (tatap muka).',
                 422,
@@ -4064,8 +4347,52 @@ class LamaranController extends Controller
      * `$mulai`/`$selesai` dikirim terpisah dari `$data` karena penjadwalan
      * massal menghitung waktunya sendiri per kandidat (sesi bergiliran).
      */
+    /**
+     * Master bentuk pelaksanaan jadwal (daring / tatap muka / telepon), by Kode.
+     *
+     * Tiap baris menyatakan sendiri field apa yang WAJIB diisi untuknya. Dulu
+     * 'DARING' dan 'LURING' tertulis mati di sekitar sepuluh tempat; bentuk
+     * ketiga — telepon, yang justru paling lazim untuk penawaran gaji — menuntut
+     * kesepuluhnya diubah serempak. Sekarang cukup satu baris data.
+     */
+    private static function masterModeJadwal()
+    {
+        static $cache = null;
+
+        return $cache ??= DB::table('N_WEB_CAREERS_Master_Mode_Jadwal')
+            ->where('Flag_Aktif', 'Y')->orderBy('Urutan')->get()->keyBy('Kode');
+    }
+
+    /**
+     * Field wajib menurut FLAG mode terpilih — pengganti `required_if` yang
+     * dulu menuntut nama mode ditulis di dalam validator.
+     *
+     * @return string|null pesan galat, null bila lengkap
+     */
+    private static function periksaBidangJadwal(array $data): ?string
+    {
+        $m = self::masterModeJadwal()->get($data['mode'] ?? '');
+        if (! $m) {
+            return 'Bentuk pelaksanaan tidak dikenali.';
+        }
+        if (($m->Flag_Butuh_Tautan ?? 'T') === 'Y' && empty($data['link'])) {
+            return "Bentuk \"{$m->Nama}\" wajib menyertakan tautan pertemuan.";
+        }
+        if (($m->Flag_Butuh_Lokasi ?? 'T') === 'Y' && empty($data['lokasiId'])) {
+            return "Bentuk \"{$m->Nama}\" wajib memilih lokasi.";
+        }
+        // Nomor tidak boleh diambil diam-diam dari profil: yang dijanjikan ke
+        // kandidat harus yang benar-benar tercatat, bukan yang kebetulan ada.
+        if (($m->Flag_Butuh_Kontak ?? 'T') === 'Y' && empty($data['kontak'])) {
+            return "Bentuk \"{$m->Nama}\" wajib mencantumkan nomor yang akan dihubungi.";
+        }
+
+        return null;
+    }
+
     private function terapkanJadwal(int $subTesId, array $data, string $mulai, ?string $selesai): void
     {
+        $mode = self::masterModeJadwal()->get($data['mode']);
         $now = now();
         $nama = session('career_auth.nama');
 
@@ -4078,11 +4405,18 @@ class LamaranController extends Controller
                 // Kolom yang tidak dipakai mode terpilih DIKOSONGKAN, bukan
                 // dibiarkan berisi nilai lama — sisa tautan pada jadwal luring
                 // membuat kandidat mengira wawancaranya tetap daring.
-                'Jadwal_Link' => $data['mode'] === 'DARING' ? ($data['link'] ?? null) : null,
-                'Jadwal_Lokasi' => $data['mode'] === 'LURING' ? ($data['lokasi'] ?? null) : null,
-                'Jadwal_Lokasi_Id' => $data['mode'] === 'LURING' && ! empty($data['lokasiId'])
+                // Kolom mana yang terisi ditentukan FLAG MODE-nya, bukan
+                // perbandingan dengan nama mode. Bentuk jadwal baru yang
+                // ditambahkan lewat master langsung ikut aturan ini tanpa satu
+                // baris pun disentuh di sini.
+                'Jadwal_Link' => ($mode->Flag_Butuh_Tautan ?? 'T') === 'Y' ? ($data['link'] ?? null) : null,
+                'Jadwal_Lokasi' => ($mode->Flag_Butuh_Lokasi ?? 'T') === 'Y' ? ($data['lokasi'] ?? null) : null,
+                'Jadwal_Lokasi_Id' => ($mode->Flag_Butuh_Lokasi ?? 'T') === 'Y' && ! empty($data['lokasiId'])
                     ? (Hashids::decode($data['lokasiId'])[0] ?? null)
                     : null,
+                // Nomor yang akan dihubungi — bagian dari JANJINYA, bukan
+                // salinan profil. Lihat penjelasan panjang di .sql-nya.
+                'Jadwal_Kontak' => ($mode->Flag_Butuh_Kontak ?? 'T') === 'Y' ? ($data['kontak'] ?? null) : null,
                 'Jadwal_Catatan' => $data['catatan'] ?? null,
                 'Jadwal_At' => $now,
                 'Jadwal_By' => $nama,
@@ -4119,15 +4453,20 @@ class LamaranController extends Controller
         $data = $request->validate([
             'subTesIds' => 'required|array|min:1|max:300',
             'subTesIds.*' => 'required|string|max:64',
-            'mode' => 'required|in:DARING,LURING',
+            // Daftar mode dari MASTER — bentuk jadwal baru cukup satu baris data.
+            'mode' => ['required', Rule::in(self::masterModeJadwal()->keys()->all())],
             'pola' => 'required|in:SERENTAK,BERGILIR',
             'mulai' => 'required|date',
             // Hanya dipakai pola BERGILIR. Batas atas menjaga dari salah ketik
             // yang melempar sesi terakhir ke tahun depan.
             'durasiMenit' => 'nullable|integer|min:5|max:480',
             'jedaMenit' => 'nullable|integer|min:0|max:240',
-            'link' => 'required_if:mode,DARING|nullable|url|max:500',
-            'lokasiId' => 'required_if:mode,LURING|nullable|string|max:64',
+            // `required_if` sengaja TIDAK dipakai lagi: ia menuntut nama mode
+            // ditulis di sini, dan itu persis yang membuat mode baru harus
+            // menyunting validator. Syaratnya ditegakkan setelah ini, dari flag.
+            'link' => 'nullable|url|max:500',
+            'kontak' => 'nullable|string|max:40',
+            'lokasiId' => 'nullable|string|max:64',
             'lokasi' => 'nullable|string|max:300',
             'catatan' => 'nullable|string|max:1000',
         ], [
@@ -4177,7 +4516,12 @@ class LamaranController extends Controller
             // MCU & tanda tangan kontrak mustahil daring — dijaga sama seperti
             // pada penjadwalan satuan.
             $tipeSub = $tipeSemua[$sub->Tipe_Tahap_Kode ?? ''] ?? null;
-            if (($tipeSub->Flag_Wajib_Luring ?? 'T') === 'Y' && $data['mode'] !== 'LURING') {
+            if ($galat = self::periksaBidangJadwal($data)) {
+                return ResponseHelper::error($galat, 422);
+            }
+
+            if (($tipeSub->Flag_Wajib_Luring ?? 'T') === 'Y'
+                && (self::masterModeJadwal()->get($data['mode'])->Flag_Luring ?? 'T') !== 'Y') {
                 $gagal[] = ['nama' => $nama, 'alasan' => ($tipeSub->Nama ?? 'Aktivitas ini') . ' hanya bisa LURING.'];
                 continue;
             }

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Career\Lamaran;
 
 use App\Http\Controllers\Controller;
 use App\Support\Career\GcsBerkas;
+use App\Support\Career\FormulirSchema;
 use App\Helpers\ResponseHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -134,6 +135,7 @@ class FormulirDrafController extends Controller
             'jawaban' => 'present|array',
             'langkah' => 'nullable|integer|min:0|max:50',
             'komponen' => 'nullable|string|max:60',
+            'schema' => 'nullable|array',
         ]);
 
         $userId = (int) session('career_auth.id');
@@ -152,6 +154,10 @@ class FormulirDrafController extends Controller
             'Updated_By' => $nama,
             'Updated_By_Id' => $userId,
         ];
+
+        if (! empty($data['schema']) && FormulirSchema::punyaKolomDrafSnapshot()) {
+            $isi['Schema_Snapshot_Json'] = json_encode($data['schema'], JSON_UNESCAPED_UNICODE);
+        }
 
         // updateOrInsert dijaga indeks unik (Lamaran_Tahap_Id, Id_Users), jadi
         // dua tab yang menyimpan bersamaan tidak bisa melahirkan draf kembar.

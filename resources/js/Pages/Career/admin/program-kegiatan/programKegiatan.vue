@@ -741,7 +741,7 @@ import AdminModal from '@career/AdminModal.vue';
 import ConfirmModal from '@career/ConfirmModal.vue';
 import AuditStamp from '@career/AuditStamp.vue';
 import RefSelect from '@career/RefSelect.vue';
-import { skemaFormulir, semuaField } from '@career/formulir';
+import { skemaDariFormulir, semuaField } from '@career/formulir';
 import { titleCase } from '../monitoring-mpp/mppHelpers';
 
 const API = '/api/v1/program-kegiatan';
@@ -918,13 +918,15 @@ export default {
                 this.fieldTurunan = [];
             }
         },
-        /** Field milik formulir yang dipasang di tahap tsb — dibaca dari skema di kode,
-         *  LENGKAP dengan tipe & sumber opsi. Skema formulir = satu-satunya "master syarat":
-         *  dari sinilah binding operator + bentuk input Nilai diturunkan otomatis. */
+        /** Field milik formulir yang dipasang di tahap tsb — dibaca dari skema di kode
+         *  untuk formulir lama (FORMULIR_1..4), atau dari schema yang dikirim server
+         *  untuk formulir dinamis (tidak punya peta JS statis). LENGKAP dengan tipe &
+         *  sumber opsi. Skema formulir = satu-satunya "master syarat": dari sinilah
+         *  binding operator + bentuk input Nilai diturunkan otomatis. */
         fieldTahap(tahapId) {
             const t = this.tahapFormulir.find((x) => x.tahapId === tahapId);
-            if (!t || !t.komponen) return [];
-            return semuaField(skemaFormulir(t.komponen))
+            if (!t) return [];
+            return semuaField(skemaDariFormulir(t))
                 .filter((f) => f.tipe !== 'file' && f.tipe !== 'consent')
                 .map((f) => ({ key: f.key, label: f.label, tipe: f.tipe || 'text', opsi: f.opsi || [], sumber_opsi: f.sumber_opsi || null }));
         },
