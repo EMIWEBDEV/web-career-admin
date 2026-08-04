@@ -136,6 +136,25 @@ class FieldTurunan
         return $lahir->age;
     }
 
+    /**
+     * Apakah sebuah formulir (lewat daftar key field-nya) punya sumber yang
+     * dibutuhkan field turunan tertentu? Dipakai mencegah admin menyusun
+     * syarat berbasis field turunan (mis. "usia") untuk formulir yang field
+     * pertanyaannya tidak memakai salah satu nama key yang dikenali —
+     * turunannya tidak akan pernah terhitung, dan syarat itu diam-diam
+     * menggugurkan semua orang.
+     */
+    public static function sumberTersedia(string $turunanKey, array $keyTersedia): bool
+    {
+        $sumber = self::DEFINISI[$turunanKey]['sumber'] ?? null;
+        if ($sumber === null) {
+            // Bukan field turunan yang dikenal — tidak ada yang bisa diperiksa.
+            return true;
+        }
+
+        return (bool) array_intersect($sumber, $keyTersedia);
+    }
+
     /** Daftar untuk dropdown penyusun syarat. */
     public static function daftar(): array
     {

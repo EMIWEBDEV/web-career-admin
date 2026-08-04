@@ -337,8 +337,12 @@ class LamaranService
         $formulir = $tahap->Formulir_Kode
             ? DB::table('N_WEB_CAREERS_Master_Formulir')->where('Kode', $tahap->Formulir_Kode)->first()
             : $this->formulirPendaftaranUntukKategori((string) ($lamaran->Kategori ?? ''));
+        // Versi yang DIBEKUKAN saat tahap dibuat, bukan versi PUBLISHED terkini —
+        // kalau tidak, Formulir_Versi yang tersimpan di baris Pengisian bisa beda
+        // dengan Schema_Snapshot_Json-nya sendiri jika admin sempat menerbitkan
+        // versi baru di antara tahap dibuat dan kandidat mengirim jawaban.
         $schemaPayload = $tahap->Formulir_Kode
-            ? FormulirSchema::publishedByKode($tahap->Formulir_Kode)
+            ? FormulirSchema::byKodeDanVersi($tahap->Formulir_Kode, $tahap->Formulir_Versi ?? null)
             : FormulirSchema::pendaftaranUntukKategori((string) ($lamaran->Kategori ?? ''));
         $now = now();
         $nama = session('career_auth.nama', 'KANDIDAT');

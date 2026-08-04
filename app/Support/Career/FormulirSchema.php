@@ -98,6 +98,23 @@ class FormulirSchema
         return $form ? self::payload($form, self::versiPublished((int) $form->Id_Master_Formulir)) : null;
     }
 
+    /** Semua `key` field di sebuah schema (langkah->bagian->field), rata. */
+    public static function keyField(?array $schema): array
+    {
+        $keys = [];
+        foreach (($schema['langkah'] ?? []) as $langkah) {
+            foreach (($langkah['bagian'] ?? []) as $bagian) {
+                foreach (($bagian['field'] ?? []) as $field) {
+                    if (! empty($field['key'])) {
+                        $keys[] = $field['key'];
+                    }
+                }
+            }
+        }
+
+        return array_values(array_unique($keys));
+    }
+
     public static function payload(?object $form, ?object $versi): array
     {
         $schema = $versi ? (json_decode($versi->Schema_Json ?: '{}', true) ?: null) : null;

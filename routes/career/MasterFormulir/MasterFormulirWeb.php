@@ -6,9 +6,11 @@ use Illuminate\Support\Facades\Route;
 /*
 | MASTER FORMULIR (katalog). Halaman Inertia /master-formulir + JSON group api/v1.
 |
-| Skema pertanyaan TIDAK disimpan di database — ditulis di komponen Vue
-| (Formulir1.vue, Formulir2.vue). Tabel hanya mencatat komponen mana yang
-| dipakai, jadi tidak ada endpoint penyusun skema di sini.
+| Skema pertanyaan formulir dinamis DISIMPAN di database, versi per versi, di
+| N_WEB_CAREERS_Master_Formulir_Versi (kolom Schema_Json) — store/update
+| menerima payload schema, publish menaikkan status versi jadi PUBLISHED.
+| Komponen_Kode lama (Formulir1.vue, Formulir2.vue, dst.) hanya dibaca untuk
+| kompatibilitas data legacy, tidak lagi ditulis oleh master baru.
 */
 Route::get('/master-formulir', [MasterFormulirController::class, 'index'])->name('career.master-formulir')->middleware('career.permission:masterFormulirPage,VIEW');
 
