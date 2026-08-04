@@ -180,6 +180,10 @@ Route::prefix('kandidat')
         Route::get('/lamaran/tes/{id}/berkas', [LamaranController::class, 'tesBerkas'])->name('tes.berkas');
         Route::post('/lamaran/tes/{id}/berkas', [LamaranController::class, 'tesBerkasUnggah'])->name('tes.berkas.unggah');
         Route::delete('/lamaran/tes/berkas/{id}', [LamaranController::class, 'tesBerkasHapus'])->name('tes.berkas.hapus');
+        // Kandidat menyatakan berkasnya SUDAH LENGKAP. Terpisah dari unggah:
+        // "mengunggah" dan "selesai mengunggah" bukan hal yang sama, dan tanpa
+        // pernyataan ini admin menilai tanpa tahu apakah masih ada susulan.
+        Route::patch('/lamaran/tes/{id}/berkas/kirim', [LamaranController::class, 'tesBerkasKirim'])->name('tes.berkas.kirim');
         Route::get('/lamaran/tes/berkas/{id}/file', [LamaranController::class, 'tesBerkasFile'])->name('tes.berkas.file');
 
         // ── SIMPAN SEMENTARA (DRAF) FORMULIR TAHAP ──

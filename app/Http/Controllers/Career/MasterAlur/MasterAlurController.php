@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Career\MasterAlur;
 use App\Helpers\ResponseHelper;
 use App\Http\Controllers\Controller;
 use App\Support\Career\KodeUnik;
+use App\Support\Career\LamaranService;
 use App\Support\CareerShell;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -166,6 +167,40 @@ class MasterAlurController extends Controller
         return DB::table('N_WEB_CAREERS_Master_Mode_Lanjut')->where('Flag_Aktif', 'Y')->orderBy('Urutan')->pluck('Kode')->all();
     }
 
+    /**
+     * Batas ukuran unggahan yang BOLEH DIPILIH admin — dari master.
+     *
+     * Termasuk nilai yang sudah dipakai alur mana pun walau kini nonaktif:
+     * menyunting alur lama tidak boleh ditolak hanya karena pilihannya sudah
+     * disempitkan sesudah alur itu dibuat. Yang berubah cukup pilihan BARU.
+     *
+     * @return int[]
+     */
+    private function batasUnggahSah(): array
+    {
+        $aktif = DB::table('N_WEB_CAREERS_Master_Batas_Unggah')
+            ->where('Flag_Aktif', 'Y')->pluck('Maks_Mb');
+
+        $terpakai = DB::table('N_WEB_CAREERS_Master_Alur_Tahap_Tes')
+            ->whereNotNull('Unggah_Maks_Mb')->distinct()->pluck('Unggah_Maks_Mb');
+
+        return $aktif->merge($terpakai)->map(fn ($v) => (int) $v)->unique()->values()->all();
+    }
+
+    /**
+     * Batas bawaan bila permintaan tidak menyebutkannya: pilihan aktif TERKECIL.
+     *
+     * Angka terkecil, bukan terbesar — batas yang kelewat longgar baru
+     * ketahuan saat berkas raksasa sudah masuk penyimpanan.
+     */
+    private static function batasUnggahBawaan(): int
+    {
+        $mb = DB::table('N_WEB_CAREERS_Master_Batas_Unggah')
+            ->where('Flag_Aktif', 'Y')->min('Maks_Mb');
+
+        return $mb !== null ? (int) $mb : 2;
+    }
+
     /** Kode mode PENILAIAN yang aktif + perilakunya (Tipe_Nilai, Butuh_Opsi). */
     private function modePenilaian(): \Illuminate\Support\Collection
     {
@@ -239,7 +274,10 @@ class MasterAlurController extends Controller
             // format yang sah berubah seiring kebutuhan, dan mengunci daftarnya
             // di sini berarti tiap format baru menuntut deploy.
             'stages.*.tests.*.unggahFormat' => 'nullable|string|max:120',
-            'stages.*.tests.*.unggahMaksMb' => 'nullable|integer|min:1|max:50',
+            // Dari MASTER, bukan rentang bebas 1–50. Rentang longgar membuat
+            // admin bisa menyimpan batas yang tidak pernah ditawarkan layar,
+            // dan kandidat menerima aturan yang tak seorang pun pernah pilih.
+            'stages.*.tests.*.unggahMaksMb' => ['nullable', 'integer', Rule::in($this->batasUnggahSah() ?: [2])],
             'stages.*.tests.*.unggahPetunjuk' => 'nullable|string|max:500',
             // Aktivitas internal yang tidak ditampilkan di portal kandidat.
             'stages.*.tests.*.tampilKandidat' => 'nullable|boolean',
@@ -296,7 +334,10 @@ class MasterAlurController extends Controller
         DB::table('N_WEB_CAREERS_Master_Alur_Tahap')->whereIn('Id_Master_Alur_Tahap', $sisa)->delete();
     }
 
-    private function simpanTahap(int $alurId, array $stages, ?int $userId, string $userName): void
+    /**
+     * @return int jumlah aktivitas kandidat berjalan yang ikut menyesuaikan
+     */
+    private function simpanTahap(int $alurId, array $stages, ?int $userId, string $userName): int
     {
         // Tipe mana yang menuntut formulir — dari Master Tipe Tahap, supaya
         // menambah tipe baru tidak menuntut menyunting kode ini.
@@ -512,9 +553,9 @@ class MasterAlurController extends Controller
                     // berarti tiap kebutuhan baru menuntut deploy.
                     'Unggah_Kandidat' => ! empty($t['unggahKandidat']) ? 'Y' : 'T',
                     'Unggah_Wajib' => ! empty($t['unggahKandidat']) && ! empty($t['unggahWajib']) ? 'Y' : 'T',
-                    'Unggah_Format' => ! empty($t['unggahKandidat']) ? ($t['unggahFormat'] ?: 'pdf,jpg,jpeg,png') : null,
-                    'Unggah_Maks_Mb' => ! empty($t['unggahKandidat']) ? ($t['unggahMaksMb'] ?: 5) : null,
-                    'Unggah_Petunjuk' => ! empty($t['unggahKandidat']) ? ($t['unggahPetunjuk'] ?: null) : null,
+                    'Unggah_Format' => ! empty($t['unggahKandidat']) ? (($t['unggahFormat'] ?? null) ?: 'pdf,jpg,jpeg,png') : null,
+                    'Unggah_Maks_Mb' => ! empty($t['unggahKandidat']) ? (($t['unggahMaksMb'] ?? null) ?: self::batasUnggahBawaan()) : null,
+                    'Unggah_Petunjuk' => ! empty($t['unggahKandidat']) ? (($t['unggahPetunjuk'] ?? null) ?: null) : null,
                     // AKTIVITAS INTERNAL — dicatat tim, tidak pernah tampil di
                     // portal kandidat (background check, cek referensi).
                     //
@@ -542,16 +583,19 @@ class MasterAlurController extends Controller
                     // Mode lanjut hanya berarti pada tahap BERURUTAN; disimpan
                     // apa adanya supaya setelannya tidak hilang bila tahapnya
                     // sempat dipindah ke paralel lalu dikembalikan lagi.
-                    'Lanjut_Mode' => $t['lanjutMode'] ?: null,
-                    'Penilaian_Mode' => $adalahCat($t['tipe'] ?? null) ? null : ($t['penilaianMode'] ?: null),
+                    // `??` sebelum `?:` — permintaan yang tidak menyertakan
+                    // kunci ini sama sekali (mis. dari klien lama atau muatan
+                    // yang dirakit ulang) dulu melempar "Undefined array key".
+                    'Lanjut_Mode' => ($t['lanjutMode'] ?? null) ?: null,
+                    'Penilaian_Mode' => $adalahCat($t['tipe'] ?? null) ? null : (($t['penilaianMode'] ?? null) ?: null),
                     // Daftar pilihan hanya disimpan bila modenya memang menuntut
                     // (Butuh_Opsi='Y') — sisa daftar pada mode angka membuat
                     // layar menampilkan pilihan yang tidak berlaku.
                     'Penilaian_Opsi' => ($modePenilaian[$t['penilaianMode'] ?? '']->Butuh_Opsi ?? 'T') === 'Y'
-                        ? ($t['penilaianOpsi'] ?: null)
+                        ? (($t['penilaianOpsi'] ?? null) ?: null)
                         : null,
                     'Nilai_Maks' => ($modePenilaian[$t['penilaianMode'] ?? '']->Tipe_Nilai ?? 'NONE') === 'ANGKA'
-                        ? ($t['nilaiMaks'] ?: null)
+                        ? (($t['nilaiMaks'] ?? null) ?: null)
                         : null,
                     'Updated_At' => $now, 'Updated_By' => $userName, 'Updated_By_Id' => $userId,
                 ];
@@ -573,6 +617,17 @@ class MasterAlurController extends Controller
         }
 
         $this->hapusTahapSisa($alurId, count($stages));
+
+        // ATURAN PENGUMPULAN ikut berlaku bagi yang SEDANG BERJALAN.
+        //
+        // Tanpa ini, menyalakan "kandidat harus mengunggah" hanya berdampak pada
+        // orang yang melamar SESUDAH alur disimpan. Yang sedang diproses tidak
+        // pernah melihat kotak unggahnya, tim menunggu berkas yang portalnya tak
+        // pernah minta, dan tak seorang pun tahu sampai kandidat menelepon.
+        //
+        // Yang ikut hanya aturan pengumpulan; syarat penilaian tetap beku pada
+        // snapshot masing-masing. Lihat LamaranService::selaraskanPengumpulan().
+        return LamaranService::selaraskanPengumpulan($alurId, $userName, $userId);
     }
 
     public function store(Request $request)
@@ -623,7 +678,7 @@ class MasterAlurController extends Controller
             $userId = session('career_auth.id');
             $userName = session('career_auth.nama', 'ADMIN');
 
-            DB::transaction(function () use ($data, $realId, $userId, $userName) {
+            $ikut = DB::transaction(function () use ($data, $realId, $userId, $userName) {
                 DB::table('N_WEB_CAREERS_Master_Alur')->where('Id_Master_Alur', $realId)->update([
                     'Nama' => $data['nama'],
                     'Kategori' => $data['kategori'],
@@ -633,12 +688,18 @@ class MasterAlurController extends Controller
                 // TIDAK dihapus lebih dulu: simpanTahap() memakai ulang baris per
                 // urutan dan membuang sisanya sendiri, supaya id tahap tetap sama
                 // bagi lamaran yang sedang berjalan di alur ini.
-                $this->simpanTahap($realId, $data['stages'] ?? [], $userId, $userName);
+                return $this->simpanTahap($realId, $data['stages'] ?? [], $userId, $userName);
             });
 
-            Log::channel('web_career')->info("Master alur #{$realId} diperbarui");
+            Log::channel('web_career')->info("Master alur #{$realId} diperbarui"
+                . ($ikut ? " — {$ikut} aktivitas kandidat berjalan ikut menyesuaikan aturan pengumpulannya" : ''));
 
-            return ResponseHelper::success(null, 'Alur diperbarui');
+            // Jumlah yang ikut DIKATAKAN, tidak diam-diam: menyunting alur yang
+            // sedang dipakai orang bukan perbuatan sepele, dan admin berhak tahu
+            // seberapa jauh akibatnya sebelum menutup halaman.
+            return ResponseHelper::success(null, $ikut
+                ? "Alur diperbarui — {$ikut} aktivitas kandidat yang sedang berjalan ikut menyesuaikan aturan unggahannya."
+                : 'Alur diperbarui');
         } catch (\Illuminate\Validation\ValidationException $e) {
             return ResponseHelper::error(collect($e->errors())->flatten()->first() ?? 'Data tidak valid', 422);
         } catch (\Throwable $e) {

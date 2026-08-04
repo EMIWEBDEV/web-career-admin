@@ -327,6 +327,25 @@ class CareerAdminController extends Controller
             return ResponseHelper::success($rows, 'Opsi mode penilaian');
         }
 
+        // Batas ukuran unggahan kandidat — DARI MASTER, bukan daftar angka di
+        // layar. Menyempitkan atau melebarkan pilihan cukup lewat data, dan
+        // batas yang ditawarkan admin dijamin sama dengan yang diberlakukan
+        // saat kandidat benar-benar mengunggah.
+        if ($type === 'batas-unggah') {
+            $rows = DB::table('N_WEB_CAREERS_Master_Batas_Unggah')
+                ->where('Flag_Aktif', 'Y')
+                ->orderBy('Urutan')
+                ->get()
+                ->map(fn ($r) => [
+                    'value' => (int) $r->Maks_Mb,
+                    'label' => $r->Label,
+                    'deskripsi' => $r->Keterangan,
+                ])
+                ->values();
+
+            return ResponseHelper::success($rows, 'Opsi batas unggah');
+        }
+
         // Perpindahan antar sub-aktivitas: otomatis atau menunggu admin.
         if ($type === 'mode-lanjut') {
             $rows = DB::table('N_WEB_CAREERS_Master_Mode_Lanjut')
