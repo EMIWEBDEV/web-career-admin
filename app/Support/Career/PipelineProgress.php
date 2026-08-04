@@ -38,10 +38,24 @@ class PipelineProgress
         return $tahapList->firstWhere('Status', 'BERJALAN') ?? $tahapList->first();
     }
 
-    /** Tahap aktif — hanya ada selama lamaran masih BERJALAN. */
+    /**
+     * Tahap aktif — ada selama masih BERJALAN, ATAU selama lamaran sudah
+     * LULUS tapi masih ada tahap administratif pasca-tuntas yang berjalan
+     * (kontrak, onboarding). Tanpa pengecualian LULUS ini, kandidat yang
+     * sudah diterima tapi belum tanda tangan kontrak terbaca "tidak punya
+     * tahap aktif" — Worklist dan Monitoring kehilangan jejaknya persis di
+     * titik paling penting (kandidat sudah DITERIMA, tapi belum ONBOARD).
+     */
     public static function tahapAktif(object $l, Collection $tahapList): ?object
     {
-        return $l->Status === 'BERJALAN' ? $tahapList->firstWhere('Status', 'BERJALAN') : null;
+        if ($l->Status === 'BERJALAN') {
+            return $tahapList->firstWhere('Status', 'BERJALAN');
+        }
+        if ($l->Status === 'LULUS') {
+            return $tahapList->firstWhere('Status', 'BERJALAN');
+        }
+
+        return null;
     }
 
     /**
