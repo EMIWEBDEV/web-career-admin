@@ -185,6 +185,13 @@ class PipelineProgress
         if ($l->Status === 'TALENT_POOL') {
             return ['tone' => 'talent', 'teks' => 'Talent Pool'];
         }
+        // DITAHAN mendahului LULUS/pasca-penerimaan — keputusan produk: HOLD
+        // selalu menang. Kandidat yang sudah diterima tapi tahap administratifnya
+        // (kontrak, onboarding) sedang ditahan tetap tampil "Ditahan", bukan
+        // "Proses Administrasi" — sampai penahanannya dilepas.
+        if (! empty($state['ditahan'])) {
+            return ['tone' => 'hold', 'teks' => $state['holdNama'] ? 'Ditahan — ' . $state['holdNama'] : 'Ditahan'];
+        }
         if ($l->Status === 'LULUS') {
             // DITERIMA tidak selalu berarti TUNTAS SELURUH TAHAP. Bila masih
             // ada tahap administratif (kontrak, onboarding) yang berjalan,
@@ -192,13 +199,6 @@ class PipelineProgress
             return $tAktif
                 ? ['tone' => 'pascaPenerimaan', 'teks' => 'Diterima — Proses Administrasi']
                 : ['tone' => 'lolos', 'teks' => 'Diterima'];
-        }
-        // DITAHAN mendahului semuanya. Kandidat yang sedang ditahan boleh saja
-        // sudah "siap diputus" menurut data — tapi yang perlu dibaca admin
-        // pertama kali adalah bahwa ia sengaja disisihkan, bukan ajakan
-        // mengetuk palu yang justru tidak boleh dilakukan.
-        if (! empty($state['ditahan'])) {
-            return ['tone' => 'hold', 'teks' => $state['holdNama'] ? 'Ditahan — ' . $state['holdNama'] : 'Ditahan'];
         }
         // Siap diputus + data sudah bicara → sebutkan kesimpulannya di badge,
         // supaya admin tahu mana yang tinggal diketuk dan mana yang perlu ditimbang.

@@ -77,4 +77,22 @@ class PipelineProgressTahapAktifTest extends TestCase
 
         $this->assertSame('pascaPenerimaan', $badge['tone']);
     }
+
+    /**
+     * Keputusan produk: HOLD selalu menang atas LULUS/pasca-penerimaan.
+     * Kandidat yang sudah LULUS tapi tahap administratifnya (kontrak,
+     * onboarding) sedang DITAHAN harus tampil sebagai "Ditahan", BUKAN
+     * "Diterima — Proses Administrasi" — sampai penahanannya dilepas.
+     */
+    public function test_badge_hold_menang_atas_lulus_pascapenerimaan(): void
+    {
+        $l = (object) ['Status' => 'LULUS'];
+        $tAktif = $this->tahap(2, 'BERJALAN', 'T');
+        $tAktif->Hold_Flag = 'Y';
+        $state = ['ditahan' => true, 'holdNama' => null, 'siap' => false, 'isTes' => false, 'skor' => null, 'nungguSistem' => false, 'butuhKeputusan' => false];
+
+        $badge = \App\Support\Career\PipelineProgress::badge($l, $state, $tAktif);
+
+        $this->assertSame('hold', $badge['tone']);
+    }
 }

@@ -49,6 +49,7 @@ class MonitoringLiveKpiTest extends TestCase
             ['Id_Lamaran' => 1, 'Program_Id' => 1, 'Status' => 'BERJALAN'],
             ['Id_Lamaran' => 2, 'Program_Id' => 1, 'Status' => 'LULUS'],
             ['Id_Lamaran' => 3, 'Program_Id' => 1, 'Status' => 'BERJALAN'],
+            ['Id_Lamaran' => 4, 'Program_Id' => 1, 'Status' => 'LULUS'],
         ]);
 
         DB::table('N_WEB_CAREERS_Lamaran_Tahap')->insert([
@@ -59,6 +60,8 @@ class MonitoringLiveKpiTest extends TestCase
             ['Lamaran_Id' => 2, 'Status' => 'BERJALAN', 'Hold_Flag' => 'T', 'Flag_Tuntas' => 'T', 'Urutan' => 2],
             // #3: berproses biasa
             ['Lamaran_Id' => 3, 'Status' => 'BERJALAN', 'Hold_Flag' => 'T', 'Flag_Tuntas' => 'T', 'Urutan' => 1],
+            // #4: sudah LULUS, tetapi tahap administratif sedang HOLD. HOLD menang.
+            ['Lamaran_Id' => 4, 'Status' => 'BERJALAN', 'Hold_Flag' => 'Y', 'Flag_Tuntas' => 'T', 'Urutan' => 2],
         ]);
     }
 
@@ -71,21 +74,22 @@ class MonitoringLiveKpiTest extends TestCase
 
     public function test_hitung_ditahan_dan_pascapenerimaan(): void
     {
-        // Hold_Flag di sini dibandingkan langsung ke 'Y' (bukan <> 'Y'), jadi
-        // query ini aman apa adanya: NULL = 'Y' sudah otomatis false, yang
-        // memang berarti "bukan ditahan" — tidak butuh COALESCE.
+        // HOLD selalu menang: kandidat LULUS dengan tahap administratif HOLD
+        // masuk bucket Ditahan, bukan Proses Administrasi.
         $ditahan = DB::table('N_WEB_CAREERS_Lamaran_Tahap as lt')
             ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'lt.Lamaran_Id')
-            ->where('l.Status', 'BERJALAN')->where('lt.Status', 'BERJALAN')
+            ->whereIn('l.Status', ['BERJALAN', 'LULUS'])->where('lt.Status', 'BERJALAN')
             ->where('lt.Hold_Flag', 'Y')
             ->count();
 
         $pascaPenerimaan = DB::table('N_WEB_CAREERS_Lamaran_Tahap as lt')
             ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'lt.Lamaran_Id')
             ->where('l.Status', 'LULUS')->where('lt.Status', 'BERJALAN')
-            ->count();
+            ->whereRaw(\App\Support\Career\MetrikRekrutmen::sqlBukanDitahan('lt'))
+            ->distinct('l.Id_Lamaran')
+            ->count('l.Id_Lamaran');
 
-        $this->assertSame(1, $ditahan);
+        $this->assertSame(2, $ditahan);
         $this->assertSame(1, $pascaPenerimaan);
     }
 

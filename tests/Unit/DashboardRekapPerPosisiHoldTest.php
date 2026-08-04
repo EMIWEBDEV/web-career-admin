@@ -37,11 +37,14 @@ class DashboardRekapPerPosisiHoldTest extends TestCase
         DB::table('N_WEB_CAREERS_Lamaran')->insert([
             ['Id_Lamaran' => 1, 'Program_Id' => 1, 'Program_Posisi_Id' => 10, 'Status' => 'BERJALAN'],
             ['Id_Lamaran' => 2, 'Program_Id' => 1, 'Program_Posisi_Id' => 10, 'Status' => 'BERJALAN'],
+            // Program lain: membuktikan query kandidat HOLD tetap terscope ke $ids.
+            ['Id_Lamaran' => 3, 'Program_Id' => 2, 'Program_Posisi_Id' => 20, 'Status' => 'BERJALAN'],
         ]);
 
         DB::table('N_WEB_CAREERS_Lamaran_Tahap')->insert([
             ['Lamaran_Id' => 1, 'Status' => 'BERJALAN', 'Hold_Flag' => 'Y'],  // ditahan
             ['Lamaran_Id' => 2, 'Status' => 'BERJALAN', 'Hold_Flag' => 'T'],  // tidak ditahan
+            ['Lamaran_Id' => 3, 'Status' => 'BERJALAN', 'Hold_Flag' => 'Y'],  // program lain
         ]);
     }
 

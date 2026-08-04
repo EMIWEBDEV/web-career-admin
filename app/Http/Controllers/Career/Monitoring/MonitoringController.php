@@ -133,7 +133,7 @@ class MonitoringController extends Controller
                     ? DB::table('N_WEB_CAREERS_Lamaran_Tahap as lt')
                         ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'lt.Lamaran_Id')
                         ->where('lt.Status', 'BERJALAN')->where('l.Status', 'BERJALAN')
-                        ->whereRaw("COALESCE(lt.Hold_Flag, 'T') <> 'Y'")
+                        ->whereRaw(MetrikRekrutmen::sqlBukanDitahan('lt'))
                         ->whereIn('l.Program_Id', $programIds)
                         ->selectRaw("SUM(CASE WHEN lt.Siap_Diputus = 'Y' THEN 1 ELSE 0 END) as siap,
                                      SUM(CASE WHEN lt.Provider = 'THIRD_PARTY' AND lt.Siap_Diputus = 'N' THEN 1 ELSE 0 END) as nunggu")
@@ -144,14 +144,15 @@ class MonitoringController extends Controller
                 // di atas. Query terpisah karena keduanya melintasi kondisi
                 // Lamaran.Status + Lamaran_Tahap.Status yang berbeda arah.
                 //
-                // Hold_Flag di sini dibandingkan langsung ke 'Y' (bukan <> 'Y'),
-                // jadi TIDAK butuh COALESCE: NULL = 'Y' sudah otomatis false,
-                // yang memang berarti "bukan ditahan" — sama seperti yang
-                // diinginkan.
+                // KEPUTUSAN PRODUK: HOLD selalu menang atas LULUS/pasca-penerimaan.
+                // Kandidat yang sudah LULUS tapi tahap administratifnya sedang
+                // DITAHAN harus tetap terhitung "Ditahan" (l.Status boleh BERJALAN
+                // ATAU LULUS), dan harus DIKECUALIKAN dari "Proses Administrasi"
+                // supaya tidak double-counted di dua bucket sekaligus.
                 $kpiHold = $programIds
                     ? DB::table('N_WEB_CAREERS_Lamaran_Tahap as lt')
                         ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'lt.Lamaran_Id')
-                        ->where('l.Status', 'BERJALAN')->where('lt.Status', 'BERJALAN')
+                        ->whereIn('l.Status', ['BERJALAN', 'LULUS'])->where('lt.Status', 'BERJALAN')
                         ->where('lt.Hold_Flag', 'Y')
                         ->whereIn('l.Program_Id', $programIds)
                         ->count()
@@ -161,6 +162,7 @@ class MonitoringController extends Controller
                     ? DB::table('N_WEB_CAREERS_Lamaran_Tahap as lt')
                         ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'lt.Lamaran_Id')
                         ->where('l.Status', 'LULUS')->where('lt.Status', 'BERJALAN')
+                        ->whereRaw(MetrikRekrutmen::sqlBukanDitahan('lt'))
                         ->whereIn('l.Program_Id', $programIds)
                         ->distinct('l.Id_Lamaran')
                         ->count('l.Id_Lamaran')
@@ -194,6 +196,7 @@ class MonitoringController extends Controller
                         ->leftJoin('N_WEB_CAREERS_Program as p', 'p.Id_Program', '=', 'l.Program_Id')
                         ->where('lt.Status', 'BERJALAN')->where('l.Status', 'BERJALAN')
                         ->whereIn('l.Program_Id', $programIds)
+                        ->whereRaw(MetrikRekrutmen::sqlBukanDitahan('lt'))
                         ->whereRaw("(lt.Siap_Diputus = 'Y' OR DATEDIFF(day, COALESCE(lt.Waktu_Mulai, lt.Created_At), GETDATE()) > ?)", [$macetHari])
                         ->selectRaw("l.Id_Lamaran, lt.Id_Lamaran_Tahap, u.Nama as Pelamar, l.Created_By as FallbackNama,
                                      l.Program_Id, p.Nama as ProgramNama, lt.Urutan as TahapUrutan, lt.Label as TahapLabel,
@@ -295,12 +298,13 @@ class MonitoringController extends Controller
                     'ditahan' => (int) DB::table('N_WEB_CAREERS_Lamaran_Tahap as lt')
                         ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'lt.Lamaran_Id')
                         ->where('l.Program_Id', $p->Id_Program)
-                        ->where('l.Status', 'BERJALAN')->where('lt.Status', 'BERJALAN')
+                        ->whereIn('l.Status', ['BERJALAN', 'LULUS'])->where('lt.Status', 'BERJALAN')
                         ->where('lt.Hold_Flag', 'Y')->count(),
                     'pascaPenerimaan' => (int) DB::table('N_WEB_CAREERS_Lamaran_Tahap as lt')
                         ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'lt.Lamaran_Id')
                         ->where('l.Program_Id', $p->Id_Program)
                         ->where('l.Status', 'LULUS')->where('lt.Status', 'BERJALAN')
+                        ->whereRaw(MetrikRekrutmen::sqlBukanDitahan('lt'))
                         ->distinct('l.Id_Lamaran')->count('l.Id_Lamaran'),
                 ];
             })->values();
@@ -608,6 +612,8 @@ class MonitoringController extends Controller
                 : $q->where('lt.Urutan', $urutan);
 
             $data = DB::transaction(function () use ($programId, $urutan, $agingSql, $macetHari, $kode, $sempit) {
+                $bukanDitahan = MetrikRekrutmen::sqlBukanDitahan('lt');
+
                 // 1) Statistik tahap (semua lamaran yang PERNAH menyentuh tahap ini).
                 //    `aktif` dan `macet` mengecualikan Hold_Flag NULL-safe
                 //    (COALESCE(...,'T') <> 'Y') supaya baris tanpa Hold_Flag (NULL)
@@ -620,14 +626,14 @@ class MonitoringController extends Controller
                     ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'lt.Lamaran_Id')
                     ->where('l.Program_Id', $programId)->where($sempit)
                     ->selectRaw("COUNT(*) as total,
-                                 SUM(CASE WHEN lt.Status = 'BERJALAN' AND COALESCE(lt.Hold_Flag, 'T') <> 'Y' THEN 1 ELSE 0 END) as aktif,
+                                 SUM(CASE WHEN lt.Status = 'BERJALAN' AND {$bukanDitahan} THEN 1 ELSE 0 END) as aktif,
                                  SUM(CASE WHEN lt.Status = 'BERJALAN' AND lt.Hold_Flag = 'Y' THEN 1 ELSE 0 END) as ditahan,
                                  SUM(CASE WHEN lt.Status = 'MENUNGGU' THEN 1 ELSE 0 END) as menunggu,
                                  SUM(CASE WHEN lt.Hasil = 'LULUS' THEN 1 ELSE 0 END) as lulus,
                                  SUM(CASE WHEN lt.Hasil = 'GUGUR' THEN 1 ELSE 0 END) as gugur,
                                  SUM(CASE WHEN lt.Hasil = 'TALENT_POOL' THEN 1 ELSE 0 END) as talent,
-                                 SUM(CASE WHEN lt.Status = 'BERJALAN' AND lt.Siap_Diputus = 'Y' THEN 1 ELSE 0 END) as siapDiputus,
-                                 SUM(CASE WHEN lt.Status = 'BERJALAN' AND COALESCE(lt.Hold_Flag, 'T') <> 'Y' AND {$agingSql} > {$macetHari} THEN 1 ELSE 0 END) as macet,
+                                 SUM(CASE WHEN lt.Status = 'BERJALAN' AND {$bukanDitahan} AND lt.Siap_Diputus = 'Y' THEN 1 ELSE 0 END) as siapDiputus,
+                                 SUM(CASE WHEN lt.Status = 'BERJALAN' AND {$bukanDitahan} AND {$agingSql} > {$macetHari} THEN 1 ELSE 0 END) as macet,
                                  AVG(CASE WHEN lt.Status = 'BERJALAN' THEN {$agingSql} * 1.0 END) as avgAging,
                                  MAX(CASE WHEN lt.Status = 'BERJALAN' THEN {$agingSql} END) as maxAging,
                                  AVG(CASE WHEN lt.Skor IS NOT NULL THEN lt.Skor END) as avgSkor")

@@ -178,7 +178,7 @@ class DashboardController extends Controller
             ->whereIn('l.Program_Id', $ids)
             // NULL-safe: `lt.Hold_Flag <> 'Y'` telanjang membuat baris ber-
             // Hold_Flag NULL ikut terkecualikan (NULL <> 'Y' = NULL, bukan TRUE).
-            ->whereRaw("COALESCE(lt.Hold_Flag, 'T') <> 'Y'")
+            ->whereRaw(MetrikRekrutmen::sqlBukanDitahan('lt'))
             ->selectRaw("SUM(CASE WHEN lt.Siap_Diputus = 'Y' THEN 1 ELSE 0 END) as siap,
                          SUM(CASE WHEN lt.Provider = 'THIRD_PARTY' AND lt.Siap_Diputus = 'N' THEN 1 ELSE 0 END) as nungguTes,
                          SUM(CASE WHEN lt.Siap_Diputus <> 'Y' AND {$umur} > {$macetHari} THEN 1 ELSE 0 END) as macet")
@@ -190,18 +190,18 @@ class DashboardController extends Controller
         // terhitung ke sini.
         $ditahan = (int) DB::table('N_WEB_CAREERS_Lamaran_Tahap as lt')
             ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'lt.Lamaran_Id')
-            ->where('lt.Status', 'BERJALAN')->where('l.Status', 'BERJALAN')
+            ->where('lt.Status', 'BERJALAN')->whereIn('l.Status', ['BERJALAN', 'LULUS'])
             ->where('lt.Hold_Flag', 'Y')
             ->whereIn('l.Program_Id', $ids)
             ->count();
 
         // PROSES ADMINISTRASI — kandidat sudah LULUS tapi masih ada tahap
-        // administratif BERJALAN (kontrak, onboarding). Tidak menyentuh
-        // Hold_Flag sama sekali: kandidat pasca-penerimaan bukan bagian dari
-        // seleksi yang bisa "ditahan" di alur ini.
+        // administratif BERJALAN (kontrak, onboarding). HOLD selalu menang,
+        // jadi kandidat yang tahap administratifnya ditahan tidak ikut bucket ini.
         $pascaPenerimaan = (int) DB::table('N_WEB_CAREERS_Lamaran_Tahap as lt')
             ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'lt.Lamaran_Id')
             ->where('l.Status', 'LULUS')->where('lt.Status', 'BERJALAN')
+            ->whereRaw(MetrikRekrutmen::sqlBukanDitahan('lt'))
             ->whereIn('l.Program_Id', $ids)
             ->distinct('l.Id_Lamaran')->count('l.Id_Lamaran');
 
@@ -284,7 +284,7 @@ class DashboardController extends Controller
                 ->whereIn('l.Program_Id', $ids)
                 // NULL-safe: `lt.Hold_Flag <> 'Y'` telanjang membuat baris
                 // ber-Hold_Flag NULL ikut terkecualikan (NULL <> 'Y' = NULL).
-                ->whereRaw("COALESCE(lt.Hold_Flag, 'T') <> 'Y'")
+                ->whereRaw(MetrikRekrutmen::sqlBukanDitahan('lt'))
                 // Sudah diklaim keranjang tindakanAdmin (yang tidak memakai
                 // ambang umur, jadi selalu superset dari irisan ini).
                 ->whereRaw("(lt.Siap_Diputus = 'Y' OR NOT {$giliran})")
@@ -365,7 +365,7 @@ class DashboardController extends Controller
             ->whereIn('l.Program_Id', $ids)
             // NULL-safe: `lt.Hold_Flag <> 'Y'` telanjang membuat baris
             // ber-Hold_Flag NULL ikut terkecualikan (NULL <> 'Y' = NULL).
-            ->whereRaw("COALESCE(lt.Hold_Flag, 'T') <> 'Y'")
+            ->whereRaw(MetrikRekrutmen::sqlBukanDitahan('lt'))
             // Siap diputus punya keranjangnya sendiri — di sana palunya yang
             // ditunggu, bukan pekerjaan yang belum dikerjakan.
             ->where('lt.Siap_Diputus', '<>', 'Y')
@@ -431,9 +431,10 @@ class DashboardController extends Controller
         $dasar = fn () => DB::table('N_WEB_CAREERS_Lamaran_Tahap as lt')
             ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'lt.Lamaran_Id')
             ->where('l.Status', 'LULUS')->where('lt.Status', 'BERJALAN')
+            ->whereRaw(MetrikRekrutmen::sqlBukanDitahan('lt'))
             ->whereIn('l.Program_Id', $ids);
 
-        $total = (int) $dasar()->count();
+        $total = (int) $dasar()->distinct()->count('l.Id_Lamaran');
         if ($total === 0) {
             return ['baris' => [], 'total' => 0];
         }
@@ -442,10 +443,11 @@ class DashboardController extends Controller
         $rows = $dasar()
             ->leftJoin('N_WEB_CAREERS_Users as u', 'u.Id_Users', '=', 'l.Id_Users')
             ->leftJoin('N_WEB_CAREERS_Program as p', 'p.Id_Program', '=', 'l.Program_Id')
-            ->orderByDesc(DB::raw($umur))
+            ->groupBy('l.Id_Lamaran', 'u.Nama', 'l.Created_By', 'p.Nama')
+            ->orderByDesc(DB::raw("MAX({$umur})"))
             ->limit(self::AKSI_MAKS)
             ->selectRaw("l.Id_Lamaran, u.Nama as Pelamar, l.Created_By as FallbackNama,
-                         p.Nama as ProgramNama, lt.Label as TahapLabel, {$umur} as UmurHari")
+                         p.Nama as ProgramNama, MAX(lt.Label) as TahapLabel, MAX({$umur}) as UmurHari")
             ->get();
 
         return [
@@ -1953,9 +1955,15 @@ class DashboardController extends Controller
         // Kandidat DITAHAN tetap masuk `total`, tapi TIDAK masuk `berjalan` —
         // sama seperti aturan bucket HOLD di Monitoring: bucket terpisah,
         // tidak dihitung sebagai proses aktif yang menunggu tindakan.
-        $ditahan = DB::table('N_WEB_CAREERS_Lamaran_Tahap')
-            ->where('Status', 'BERJALAN')->where('Hold_Flag', 'Y')
-            ->pluck('Lamaran_Id');
+        $ditahan = DB::table('N_WEB_CAREERS_Lamaran_Tahap as lt')
+            ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'lt.Lamaran_Id')
+            ->whereIn('l.Program_Id', $ids)
+            ->where('lt.Status', 'BERJALAN')->where('lt.Hold_Flag', 'Y')
+            ->pluck('lt.Lamaran_Id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values();
 
         return DB::table('N_WEB_CAREERS_Lamaran')
             ->whereIn('Program_Id', $ids)
