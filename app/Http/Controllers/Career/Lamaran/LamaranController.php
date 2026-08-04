@@ -802,12 +802,16 @@ class LamaranController extends Controller
             ->select('t.Id_Lamaran_Tahap', 't.Label', 't.Formulir_Kode', 'f.Nama as FormulirNama', 'f.Komponen_Kode')
             ->first();
 
+        $schemaAktif = $aktif ? \App\Support\Career\FormulirSchema::publishedByKode($aktif->Formulir_Kode) : null;
         $tugas = $aktif ? [
             'tahapId' => Hashids::encode($aktif->Id_Lamaran_Tahap),
             'label' => $aktif->Label,
             'formulir' => $aktif->Formulir_Kode,
             'formulirNama' => $aktif->FormulirNama,
-            'komponen' => $aktif->Komponen_Kode,
+            'komponen' => $schemaAktif['komponen'] ?? $aktif->Komponen_Kode,
+            'schema' => $schemaAktif['schema'] ?? null,
+            'versiId' => $schemaAktif['versiId'] ?? null,
+            'versi' => $schemaAktif['versi'] ?? null,
         ] : null;
 
         // KONTEKS FORMULIR — opsi yang memang PENDEK dan khusus lamaran ini.

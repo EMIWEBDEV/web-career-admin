@@ -289,6 +289,9 @@ class LamaranService
         $formulir = $tahap->Formulir_Kode
             ? DB::table('N_WEB_CAREERS_Master_Formulir')->where('Kode', $tahap->Formulir_Kode)->first()
             : $this->formulirPendaftaranUntukKategori((string) ($lamaran->Kategori ?? ''));
+        $schemaPayload = $tahap->Formulir_Kode
+            ? FormulirSchema::publishedByKode($tahap->Formulir_Kode)
+            : FormulirSchema::pendaftaranUntukKategori((string) ($lamaran->Kategori ?? ''));
         $now = now();
         $nama = session('career_auth.nama', 'KANDIDAT');
 
@@ -308,7 +311,7 @@ class LamaranService
 
         $evaluasi = $this->evaluasiSyarat($syaratRows, $nilai);
 
-        $pengisianId = DB::transaction(function () use ($tahap, $lamaran, $formulir, $jawaban, $nilai, $turunan, $evaluasi, $userId, $ip, $now, $nama, $syaratRows) {
+        $pengisianId = DB::transaction(function () use ($tahap, $lamaran, $formulir, $schemaPayload, $jawaban, $nilai, $turunan, $evaluasi, $userId, $ip, $now, $nama, $syaratRows) {
             $kode = 'FLL-' . strtoupper(Str::random(8));
 
             $pengisianId = DB::table('N_WEB_CAREERS_Formulir_Pengisian')->insertGetId([
@@ -329,7 +332,7 @@ class LamaranService
                 'Ip_Pengirim' => $ip,
                 'Created_At' => $now, 'Created_By' => $nama, 'Created_By_Id' => $userId,
                 'Updated_At' => $now, 'Updated_By' => $nama, 'Updated_By_Id' => $userId,
-            ], 'Id_Formulir_Pengisian');
+            ] + FormulirSchema::kolomSnapshotInsert($schemaPayload), 'Id_Formulir_Pengisian');
 
             // Proyeksi field yang dipakai syarat + field turunan ke index —
             // supaya bisa dipakai penyaringan massal & audit belakangan.

@@ -16,6 +16,8 @@ Route::prefix('api/v1')->name('career.api.master-formulir.')->group(function () 
     Route::get('/master-formulir', [MasterFormulirController::class, 'list'])->name('list')->middleware('career.permission:masterFormulirPage,VIEW');
     Route::post('/master-formulir', [MasterFormulirController::class, 'store'])->name('store')->middleware('career.permission:masterFormulirPage,CREATE');
     Route::put('/master-formulir/{id}', [MasterFormulirController::class, 'update'])->name('update')->middleware('career.permission:masterFormulirPage,EDIT');
+    Route::post('/master-formulir/{id}/publish', [MasterFormulirController::class, 'publish'])->name('publish')->middleware('career.permission:masterFormulirPage,EDIT');
+    Route::post('/master-formulir/{id}/duplicate', [MasterFormulirController::class, 'duplicate'])->name('duplicate')->middleware('career.permission:masterFormulirPage,CREATE');
     Route::patch('/master-formulir/{id}/toggle', [MasterFormulirController::class, 'toggle'])->name('toggle')->middleware('career.permission:masterFormulirPage,EDIT');
     Route::delete('/master-formulir/{id}', [MasterFormulirController::class, 'destroy'])->name('destroy')->middleware('career.permission:masterFormulirPage,DELETE');
 });
