@@ -230,12 +230,12 @@ class MetrikRekrutmen
             ->groupBy('l.Program_Id')
             ->selectRaw("l.Program_Id,
                          COUNT(*) as aktif,
-                         SUM(CASE WHEN lt.Siap_Diputus <> 'Y' AND {$umur} > {$macet} THEN 1 ELSE 0 END) as macet,
-                         SUM(CASE WHEN lt.Siap_Diputus = 'Y'
+                         SUM(CASE WHEN lt.Hold_Flag <> 'Y' AND lt.Siap_Diputus <> 'Y' AND {$umur} > {$macet} THEN 1 ELSE 0 END) as macet,
+                         SUM(CASE WHEN lt.Hold_Flag <> 'Y' AND lt.Siap_Diputus = 'Y'
                                    AND DATEDIFF(day, COALESCE(lt.Rekomendasi_At, lt.Updated_At, lt.Created_At), GETDATE()) > {$sorot}
                                   THEN 1 ELSE 0 END) as siapTua,
-                         SUM(CASE WHEN lt.Siap_Diputus = 'Y' THEN 1 ELSE 0 END) as siap,
-                         SUM(CASE WHEN lt.Provider = 'THIRD_PARTY' AND lt.Siap_Diputus = 'N' THEN 1 ELSE 0 END) as nungguTes,
+                         SUM(CASE WHEN lt.Hold_Flag <> 'Y' AND lt.Siap_Diputus = 'Y' THEN 1 ELSE 0 END) as siap,
+                         SUM(CASE WHEN lt.Hold_Flag <> 'Y' AND lt.Provider = 'THIRD_PARTY' AND lt.Siap_Diputus = 'N' THEN 1 ELSE 0 END) as nungguTes,
                          MAX({$aging}) as maxAging")
             ->get()
             ->keyBy('Program_Id');
