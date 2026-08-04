@@ -1,6 +1,6 @@
 <!-- WEB CAREER — Render SATU field sesuai tipe di skema. Dipakai semua template. -->
 <template>
-    <div class="fr" :class="{ 'fr--full': field.penuh || lebarPenuh }">
+    <div class="fr" :class="{ 'fr--full': field.penuh || lebarPenuh }" :style="gayaLebar">
         <label class="fr__lbl">
             {{ field.label }}
             <span v-if="field.wajib && !prefillTerkunci" class="fr__wajib">*</span>
@@ -290,7 +290,13 @@ const opsiEfektif = computed(() => {
 
 // Consent & textarea selalu memakan lebar penuh — dipaksa di sini supaya
 // admin tidak perlu ingat mencentang "lebar penuh" untuk keduanya.
-const lebarPenuh = computed(() => ['textarea', 'consent', 'checkbox'].includes(props.field.tipe));
+const lebarPenuh = computed(() => false);
+const lebarGrid = computed(() => {
+    if (props.field.penuh || lebarPenuh.value) return 12;
+    const persen = Number(props.field.lebar_persen || 33);
+    return Math.min(12, Math.max(4, Math.round((Math.min(100, Math.max(33, persen)) / 100) * 12)));
+});
+const gayaLebar = computed(() => ({ '--fr-span': String(lebarGrid.value) }));
 
 /* ── Field bertipe `referensi` ──────────────────────────────────────────
    Dua macam penyaring, dan bedanya penting:
@@ -465,7 +471,7 @@ function pilihBerkas(uf) {
 </script>
 
 <style scoped>
-.fr { display: flex; flex-direction: column; gap: .35rem; min-width: 0; }
+.fr { display: flex; flex-direction: column; gap: .35rem; min-width: 0; grid-column: span var(--fr-span, 4); }
 .fr--full { grid-column: 1 / -1; }
 
 .fr__lbl { font-size: 12px; font-weight: 700; color: #334155; display: flex; align-items: center; gap: .3rem; }

@@ -237,6 +237,29 @@ class MasterAlurController extends Controller
             ->keyBy('Kode');
     }
 
+    /**
+     * Formulir sudah bisa dirender ke kandidat? Form lama lewat Komponen_Kode,
+     * form dinamis lewat versi PUBLISHED di Master_Formulir_Versi. Dipakai
+     * gerbang simpanTahap supaya tahap tidak bisa menempel formulir yang masih
+     * DRAFT — kandidat akan mentok di layar kosong kalau lolos.
+     */
+    private function formulirBisaDirender(string $kode): bool
+    {
+        $form = DB::table('N_WEB_CAREERS_Master_Formulir')->where('Kode', $kode)->first();
+        if (! $form) {
+            return false;
+        }
+        if (! empty($form->Komponen_Kode)) {
+            return true;
+        }
+
+        return \App\Support\Career\FormulirSchema::punyaTabelVersi()
+            && DB::table('N_WEB_CAREERS_Master_Formulir_Versi')
+                ->where('Master_Formulir_Id', $form->Id_Master_Formulir)
+                ->where('Status', 'PUBLISHED')
+                ->exists();
+    }
+
     private function rules(): array
     {
         $kodeModeAktif = array_keys($this->modeAktif());
@@ -468,6 +491,15 @@ class MasterAlurController extends Controller
             if (($perilakuFormulir[$s['tipe'] ?? ''] ?? false) && empty($s['formulirId'])) {
                 throw \Illuminate\Validation\ValidationException::withMessages([
                     'stages' => "Tahap \"{$s['label']}\" bertipe formulir, jadi WAJIB memilih formulir yang harus diisi kandidat.",
+                ]);
+            }
+
+            // GERBANG FORM BELUM PUBLISH: form dinamis yang masih DRAFT tidak
+            // boleh menempel ke tahap — kandidat akan mentok di layar kosong
+            // karena schema-nya belum ada yang berstatus PUBLISHED.
+            if (! empty($s['formulirId']) && ! $this->formulirBisaDirender($s['formulirId'])) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'stages' => "Formulir pada tahap \"{$s['label']}\" belum punya versi yang dipublikasikan, jadi belum bisa diisi kandidat.",
                 ]);
             }
 

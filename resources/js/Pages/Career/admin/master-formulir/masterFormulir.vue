@@ -1,785 +1,4070 @@
-<!--
-  WEB CAREER — Master Formulir (katalog). DATA dari DB via /api/v1/master-formulir.
-
-  Halaman ini SENGAJA TIDAK punya penyusun skema. Pertanyaan formulir ditulis
-  developer di berkas skema.js masing-masing formulir karena bentuk
-  formulir rekrutmen tidak bisa ditebak dan menyusunnya lewat UI berisiko
-  menghasilkan formulir rusak.
-
-  Tugas admin di sini cuma dua: mendaftarkan formulir dan memilih komponen
-  mana yang dipakai. Isinya bisa diperiksa lewat Pratinjau.
--->
+<!-- WEB CAREER - Master Formulir dinamis: builder schema + preview kandidat + management. -->
 <template>
     <Head><title>Master Formulir - Web Career</title></Head>
-    <div class="wca">
-        <div class="pkg-head">
-            <div class="pkg-head__l">
-                <div class="pkg-head__title">
-                    <span class="pkg-head__ico"><i class="bi bi-input-cursor-text"></i></span>
-                    <h1>Master Formulir</h1>
+
+    <div class="wca mfb-page">
+        <!-- Header Utama (Native Web Career Modern Header) -->
+        <div class="wca-phead wca-phead--modern mfb-phead">
+            <div class="wca-phead__title-group">
+                <div class="wca-phead__icon-badge mfb-icon-badge">
+                    <i class="bi bi-input-cursor-text"></i>
                 </div>
-                <p>
-                    Daftarkan formulir dan pilih komponennya. Formulir dipilih di <b>tahap alur seleksi</b>, lalu
-                    terpakai otomatis oleh program yang memakai alur itu.
-                </p>
-            </div>
-            <button class="pkg-newbtn" @click="openCreate"><i class="bi bi-plus-lg"></i> Formulir Baru</button>
-        </div>
-
-        <div class="wca-note" style="margin-bottom: 1rem">
-            <i class="bi bi-code-slash"></i>
-            <span>
-                Pertanyaan formulir ditulis di kode ({{ daftarKomponen.length }} komponen tersedia). Perlu formulir
-                baru atau perubahan pertanyaan? Hubungi developer — bukan lewat halaman ini.
-            </span>
-        </div>
-
-        <div v-loading="loading" class="pkg-list">
-            <div v-for="f in list" :key="f.id" class="pkg-card" :class="{ open: open === f.id }">
-                <!-- header row (pola standar "Program Kegiatan") -->
-                <div class="pkg-row">
-                    <button type="button" class="pkg-chev" :class="{ open: open === f.id }" title="Buka detail" @click="open = open === f.id ? null : f.id"><i class="bi bi-chevron-right"></i></button>
-                    <div class="pkg-row__main">
-                        <button type="button" class="pkg-row__titlebtn" @click="open = open === f.id ? null : f.id">
-                            <span class="pkg-row__title">{{ f.nama }}</span>
-                        </button>
-                        <div class="pkg-row__meta">
-                            <span class="pkg-code">{{ f.kode }}</span>
-                            <template v-if="f.deskripsi"><span class="pkg-sep"></span><span class="pkg-mi">{{ f.deskripsi }}</span></template>
-                        </div>
-                        <div class="pkg-pills">
-                            <span v-if="f.kategori" class="pkg-pill pkg-pill--violet"><i class="bi bi-tags"></i> {{ katLabel(f.kategori) }}</span>
-                            <span v-if="info(f)" class="pkg-pill pkg-pill--green"><i class="bi bi-code-square"></i> {{ info(f).nama }}</span>
-                            <span v-else class="pkg-pill pkg-pill--amber"><i class="bi bi-exclamation-triangle"></i> Komponen belum dipilih</span>
-                            <span class="pkg-pill" :class="f.status === 'AKTIF' ? 'pkg-pill--green' : 'pkg-pill--slate'"><span class="pkg-pill__dot"></span> {{ f.status }}</span>
-                        </div>
-                    </div>
-                    <div class="pkg-row__act" @click.stop>
-                        <el-switch :model-value="f.status === 'AKTIF'" @change="(v) => setStatus(f, v)" />
-                        <button class="pkg-ibtn" title="Ubah" @click="openEdit(f)"><i class="bi bi-pencil"></i></button>
-                        <button class="pkg-ibtn pkg-ibtn--danger" title="Hapus" @click="askRemove(f)"><i class="bi bi-trash"></i></button>
-                    </div>
-                </div>
-
-                <!-- creator strip -->
-                <div class="pkg-creator">
-                    <span class="pkg-creator__av" style="background:#6366f1">{{ initials(f.createdBy) }}</span>
-                    <span class="pkg-creator__name">{{ f.createdBy || 'Sistem' }}</span>
-                    <span class="pkg-creator__at"><i class="bi bi-clock"></i> {{ f.createdAt || '—' }}</span>
-                </div>
-
-                <!-- expanded detail -->
-                <div v-if="open === f.id" class="pkg-detail">
-
-                        <!-- Formulir tanpa komponen tidak bisa dirender kandidat,
-                             jadi sengaja tidak ditawarkan di pilihan tahap alur. -->
-                        <div v-if="!info(f)" class="wca-note wca-note--warn" style="margin-bottom: 0.8rem">
-                            <i class="bi bi-info-circle-fill"></i>
-                            <span>
-                                Formulir ini <b>belum bisa dipakai</b>. Pilih komponennya lewat tombol
-                                <b>Ubah</b> agar muncul di pilihan tahap Master Alur Seleksi.
-                            </span>
-                        </div>
-
-                        <template v-else>
-                            <div v-if="f.petunjuk" class="mfr-petunjuk">
-                                <i class="bi bi-lightbulb"></i> {{ f.petunjuk }}
-                            </div>
-
-                            <div class="mfr-ring">
-                                <div class="mfr-ring__main">
-                                    <div class="mfr-ring__top">
-                                        <span class="mfr-ring__kode">{{ f.komponen }}</span>
-                                        <strong>{{ info(f).nama }}</strong>
-                                        <span class="wca-badge wca-b--slate">{{ info(f).keterangan }}</span>
-                                    </div>
-                                    <div class="mfr-ring__meta">
-                                        <span><i class="bi bi-list-ol"></i> {{ info(f).jumlahLangkah }} langkah</span>
-                                        <span><i class="bi bi-ui-checks"></i> {{ info(f).jumlahField }} pertanyaan</span>
-                                        <span v-if="hitungBerkas(f)"
-                                            ><i class="bi bi-paperclip"></i> {{ hitungBerkas(f) }} berkas</span
-                                        >
-                                        <span v-if="hitungSaring(f)"
-                                            ><i class="bi bi-funnel"></i> {{ hitungSaring(f) }} dapat disaring</span
-                                        >
-                                        <span v-if="hitungSyarat(f)"
-                                            ><i class="bi bi-shuffle"></i> {{ hitungSyarat(f) }} bersyarat</span
-                                        >
-                                    </div>
-                                </div>
-                                <div class="mfr-ring__act">
-                                    <button class="wca-btn wca-btn--soft wca-btn--sm" type="button" @click="openIsi(f)">
-                                        <i class="bi bi-list-check"></i> Lihat Pertanyaan
-                                    </button>
-                                    <button
-                                        class="wca-btn wca-btn--primary wca-btn--sm"
-                                        type="button"
-                                        @click="openPratinjau(f)"
-                                    >
-                                        <i class="bi bi-eyeglasses"></i> Pratinjau
-                                    </button>
-                                </div>
-                            </div>
-                        </template>
-                </div>
-            </div>
-            <div v-if="!loading && !list.length" class="pkg-empty">
-                <i class="bi bi-input-cursor-text"></i> Belum ada formulir — daftarkan formulir pertama, lalu pilih komponennya.
-            </div>
-        </div>
-
-        <!-- ══════════ MODAL: identitas + pilih komponen ══════════ -->
-        <AdminModal :busy="saving"
-            :show="show"
-            :title="editingId ? 'Ubah Formulir' : 'Daftarkan Formulir'"
-            subtitle="Pertanyaannya ditulis di kode — di sini Anda memilih komponen mana yang dipakai."
-            icon="bi-input-cursor-text"
-            :save-label="editingId ? 'Perbarui' : 'Simpan'"
-            @close="show = false"
-            @save="save"
-        >
-            <div class="wca-fsection">
-                <div class="wca-fsection__label"><i class="bi bi-tags"></i> Identitas</div>
-                <div class="wca-form">
-                    <div class="wca-frow">
-                        <div>
-                            <label class="wca-field-lbl">Nama Formulir</label>
-                            <el-input v-model="form.nama" placeholder="mis. Formulir Pendaftaran MT" />
-                        </div>
-                        <div>
-                            <label class="wca-field-lbl">Kategori</label>
-                            <RefSelect type="talent" v-model="form.kategori" placeholder="Semua kategori" clearable />
-                            <div class="mfr-hint">Kosongkan bila dipakai lintas kategori.</div>
-                        </div>
-                    </div>
-                    <div>
-                        <label class="wca-field-lbl">Deskripsi</label>
-                        <el-input v-model="form.deskripsi" placeholder="Ringkasan singkat kegunaan formulir" />
-                    </div>
+                <div>
+                    <h1 class="wca-phead__title">Master Formulir</h1>
+                    <p class="wca-phead__sub">
+                        Kelola template formulir reusable. Pengikatan ke program dan tahapan seleksi dilakukan di modul
+                        Master Tahapan Seleksi.
+                    </p>
                 </div>
             </div>
 
-            <div class="wca-fsection">
-                <div class="wca-fsection__label"><i class="bi bi-code-square"></i> Komponen Formulir</div>
-                <div class="wca-form">
-                    <div>
-                        <label class="wca-field-lbl">Pilih Komponen <span class="mfr-req">wajib</span></label>
-                        <el-select v-model="form.komponen" style="width: 100%" placeholder="Pilih komponen">
-                            <el-option v-for="k in daftarKomponen" :key="k.kode" :value="k.kode" :label="k.nama">
-                                <div class="mfr-opt">
-                                    <strong>{{ k.nama }}</strong>
-                                    <small>{{ k.jumlahLangkah }} langkah · {{ k.jumlahField }} pertanyaan</small>
-                                </div>
-                            </el-option>
-                        </el-select>
-                    </div>
-
-                    <div v-if="komponenTerpilih" class="mfr-pilih">
-                        <i class="bi bi-info-circle-fill"></i>
-                        <span>{{ komponenTerpilih.keterangan }}</span>
-                    </div>
-
-                    <div>
-                        <label class="wca-field-lbl">Petunjuk untuk Admin</label>
-                        <el-input
-                            v-model="form.petunjuk"
-                            type="textarea"
-                            :rows="2"
-                            placeholder="Kapan formulir ini dipakai, apa bedanya dengan formulir lain"
-                        />
-                        <div class="mfr-hint">Tidak dipakai sistem — murni penjelasan untuk sesama admin.</div>
-                    </div>
+            <!-- Metrics Summary Pills -->
+            <div class="mfb-metrics">
+                <div class="mfb-metric-pill" title="Total Formulir">
+                    <i class="bi bi-journal-text"></i>
+                    <span
+                        ><b>{{ list.length }}</b> Formulir</span
+                    >
+                </div>
+                <div class="mfb-metric-pill mfb-metric-pill--published" title="Formulir Published">
+                    <i class="bi bi-check-circle-fill"></i>
+                    <span
+                        ><b>{{ countPublished }}</b> Published</span
+                    >
+                </div>
+                <div class="mfb-metric-pill mfb-metric-pill--draft" title="Draft / Belum Publish">
+                    <i class="bi bi-pencil-fill"></i>
+                    <span
+                        ><b>{{ countDraft }}</b> Draft</span
+                    >
                 </div>
             </div>
-        </AdminModal>
 
-        <!-- ══════════ MODAL: daftar pertanyaan (ringkas, bisa dibaca cepat) ══════════ -->
-        <AdminModal :busy="saving"
-            :show="isiShow"
-            :title="`Pertanyaan — ${isiFormulir?.nama || ''}`"
-            :subtitle="`${isiInfo?.nama}. Ditulis di kode; ubah lewat developer.`"
-            icon="bi-list-check"
-            lg
-            save-label="Tutup"
-            @close="isiShow = false"
-            @save="isiShow = false"
-        >
-            <div v-for="(L, iL) in isiSkema.langkah || []" :key="iL" class="mfr-lang">
-                <div class="mfr-lang__head">
-                    <span class="mfr-lang__no">{{ iL + 1 }}</span>
-                    <strong>{{ L.judul }}</strong>
-                    <small v-if="L.deskripsi">{{ L.deskripsi }}</small>
-                </div>
-                <div v-for="(B, iB) in L.bagian || []" :key="iB" class="mfr-bag">
-                    <div class="mfr-bag__judul">
-                        {{ B.judul }}
-                        <span v-if="B.berulang" class="wca-badge wca-b--amber">berulang</span>
-                    </div>
-                    <table class="wca-table mfr-tbl">
-                        <thead>
-                            <tr>
-                                <th style="width: 2.5rem">#</th>
-                                <th>Pertanyaan</th>
-                                <th style="width: 8rem">Bentuk</th>
-                                <th style="width: 4.5rem">Wajib</th>
-                                <th style="width: 13rem">Catatan</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="(F, iF) in B.field || []" :key="iF">
-                                <td>{{ iF + 1 }}</td>
-                                <td>
-                                    <strong>{{ F.label }}</strong>
-                                    <code class="mfr-key">{{ F.key }}</code>
-                                </td>
-                                <td>{{ tipeLabel(F.tipe) }}</td>
-                                <td>
-                                    <span
-                                        class="wca-badge"
-                                        :class="F.wajib ? 'wca-b--green' : 'wca-b--slate'"
-                                        >{{ F.wajib ? 'Ya' : 'Tidak' }}</span
-                                    >
-                                </td>
-                                <td class="mfr-catatan">
-                                    <span v-if="F.tampil_jika" class="mfr-cond">
-                                        <i class="bi bi-shuffle"></i>
-                                        muncul jika <b>{{ F.tampil_jika.field }}</b> {{ F.tampil_jika.operator }}
-                                        <b>{{ F.tampil_jika.nilai }}</b>
-                                    </span>
-                                    <span v-if="F.dapat_disaring" class="mfr-saring">
-                                        <i class="bi bi-funnel"></i> dapat disaring
-                                    </span>
-                                    <span v-if="F.opsi?.length" class="mfr-opsi">{{ F.opsi.join(' / ') }}</span>
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </AdminModal>
+            <!-- Action Bar -->
+            <div class="wca-phead__actions mfb-phead__actions">
+                <button class="mfb-btn mfb-btn--glow" type="button" @click="buatBaru">
+                    <i class="bi bi-plus-lg"></i> Formulir Baru
+                </button>
 
-        <!-- ══════════ MODAL: pratinjau tampilan kandidat ══════════ -->
-        <AdminModal :busy="saving"
-            :show="praShow"
-            :title="`Pratinjau — ${praFormulir?.nama || ''}`"
-            :subtitle="`${praInfo?.nama}. Ini persis yang dilihat kandidat; isian di sini tidak disimpan.`"
-            icon="bi-eyeglasses"
-            lg
-            save-label="Tutup"
-            @close="praShow = false"
-            @save="praShow = false"
-        >
-            <div class="mfr-pratool">
-                <span class="mfr-pratool__lbl">
-                    <i class="bi bi-person-badge"></i> Profil contoh (untuk field otomatis)
-                </span>
-                <el-input v-model="praProfil.nama" size="small" placeholder="Nama" style="max-width: 12rem" />
-                <el-input v-model="praProfil.email" size="small" placeholder="Email" style="max-width: 13rem" />
-                <el-input v-model="praProfil.hp" size="small" placeholder="No. WA" style="max-width: 10rem" />
-                <span class="mfr-pratool__spacer"></span>
-                <button class="wca-btn wca-btn--soft wca-btn--sm" type="button" @click="resetPratinjau">
-                    <i class="bi bi-arrow-counterclockwise"></i> Reset Isian
+                <button class="mfb-btn mfb-btn--indigo" type="button" :disabled="!aktif || saving" @click="simpanDraft">
+                    <i class="bi" :class="saving ? 'bi-arrow-repeat mfb-spin' : 'bi-save'"></i>
+                    {{ saving ? 'Menyimpan...' : 'Simpan Draft' }}
+                </button>
+
+                <button class="mfb-btn mfb-btn--soft" type="button" :disabled="!aktif || saving" @click="reviewPublish">
+                    <i class="bi bi-git"></i> Review &amp; Compare
+                    <span v-if="perubahanVersi.length" class="mfb-btn-badge">{{ perubahanVersi.length }}</span>
+                </button>
+
+                <button
+                    class="mfb-btn mfb-btn--emerald"
+                    type="button"
+                    :disabled="!aktif || saving"
+                    @click="publish(false)"
+                >
+                    <i class="bi bi-send-check-fill"></i> Publish Versi
                 </button>
             </div>
+        </div>
 
-            <div class="mfr-prabody">
-                <!-- Komponen dipilih dari Komponen_Kode di DATABASE lewat registry. -->
-                <component
-                    :is="praKomponen"
-                    v-if="praShow && praKomponen"
-                    :key="praFormulir?.id + '-' + praReset"
-                    v-model="praJawaban"
-                    label-kirim="Kirim (pratinjau)"
-                    @kirim="onPratinjauKirim"
-                />
-            </div>
+        <!-- Main Layout Grid -->
+        <div class="mfb-layout">
+            <!-- Sidebar: Catalog / Form List -->
+            <aside class="mfb-sidebar">
+                <div class="mfb-sidebar__title">
+                    <span><i class="bi bi-journal-album"></i> Katalog Formulir</span>
+                    <span class="mfb-sidebar__count">{{ tersaring.length }}</span>
+                </div>
 
-            <details class="mfr-praJson">
-                <summary>
-                    <i class="bi bi-braces"></i> Lihat jawaban sebagai JSON
-                    <small>(bentuk yang tersimpan di Jawaban_Json)</small>
-                </summary>
-                <pre>{{ JSON.stringify(praJawaban, null, 2) }}</pre>
-            </details>
-        </AdminModal>
+                <div class="mfb-sidebar__head">
+                    <div class="mfb-search">
+                        <i class="bi bi-search mfb-search__ico"></i>
+                        <input
+                            v-model="cari"
+                            type="text"
+                            placeholder="Cari nama, kode, kategori..."
+                            class="mfb-search__input"
+                        />
+                        <button v-if="cari" type="button" class="mfb-search__clear" @click="cari = ''">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </div>
 
-        <ConfirmModal
-            :show="delShow"
-            title="Hapus Formulir"
-            :busy="deleting"
-            confirm-label="Ya, Hapus"
-            note="Formulir akan dihapus permanen."
-            @cancel="delShow = false"
-            @confirm="confirmDelete"
-        >
-            Yakin ingin menghapus formulir <strong>{{ delTarget?.nama }}</strong
-            >?
-        </ConfirmModal>
+                    <!-- Filter Status Chips -->
+                    <div class="mfb-filter-chips">
+                        <button
+                            v-for="chip in filterChips"
+                            :key="chip.value"
+                            type="button"
+                            class="mfb-chip"
+                            :class="{ active: statusFilter === chip.value }"
+                            @click="statusFilter = chip.value"
+                        >
+                            {{ chip.label }}
+                        </button>
+                    </div>
+                </div>
 
-        <transition name="wca-toast">
-            <div v-if="toast" class="wca-toast"><i class="bi bi-check-circle-fill"></i> {{ toast }}</div>
+                <!-- Catalog Cards -->
+                <div class="mfb-sidebar__list">
+                    <div
+                        v-for="f in tersaring"
+                        :key="f.id"
+                        class="mfb-card"
+                        :class="{ active: aktif?.id === f.id, off: f.status !== 'AKTIF' }"
+                        @click="pilih(f)"
+                    >
+                        <div class="mfb-card__head">
+                            <div class="mfb-card__titlegroup">
+                                <strong class="mfb-card__title">{{ f.nama }}</strong>
+                                <span class="mfb-card__code">{{ f.kode }}</span>
+                            </div>
+                            <span v-if="f.kategori" class="mfb-card__cat">{{ f.kategori }}</span>
+                        </div>
+
+                        <p class="mfb-card__description">
+                            {{ f.deskripsi || 'Template formulir reusable tanpa pengikatan program.' }}
+                        </p>
+                        <div class="mfb-card__meta">
+                            <div class="mfb-card__badges">
+                                <span class="mfb-card__pub" :class="f.published ? 'is-pub' : 'is-draft'">
+                                    <i class="bi" :class="f.published ? 'bi-check-circle-fill' : 'bi-dash-circle'"></i>
+                                    {{ f.published ? `v${f.published.versi} Published` : 'Belum Publish' }}
+                                </span>
+                                <span v-if="f.draft && !f.published" class="mfb-card__version">
+                                    Draft v{{ f.draft.versi }}
+                                </span>
+
+                                <span
+                                    class="mfb-card__status"
+                                    :class="f.status === 'AKTIF' ? 'is-active' : 'is-inactive'"
+                                >
+                                    {{ f.status }}
+                                </span>
+                            </div>
+
+                            <!-- Quick Action Buttons -->
+                            <div class="mfb-card__actions" @click.stop>
+                                <button
+                                    type="button"
+                                    class="mfb-iconbtn"
+                                    title="Duplikat formulir ini"
+                                    @click="mintaDuplikat(f)"
+                                >
+                                    <i class="bi bi-copy"></i>
+                                </button>
+                                <button
+                                    type="button"
+                                    class="mfb-iconbtn"
+                                    :class="f.status === 'AKTIF' ? 'mfb-iconbtn--warn' : 'mfb-iconbtn--ok'"
+                                    :title="f.status === 'AKTIF' ? 'Nonaktifkan' : 'Aktifkan'"
+                                    @click="toggleStatus(f)"
+                                >
+                                    <i class="bi" :class="f.status === 'AKTIF' ? 'bi-toggle-on' : 'bi-toggle-off'"></i>
+                                </button>
+                                <button
+                                    type="button"
+                                    class="mfb-iconbtn mfb-iconbtn--danger"
+                                    title="Hapus formulir"
+                                    @click="mintaHapus(f)"
+                                >
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Empty Search State -->
+                    <div v-if="!tersaring.length" class="mfb-empty-search">
+                        <i class="bi bi-folder-x"></i>
+                        <p>Tidak ada formulir yang sesuai.</p>
+                        <button
+                            type="button"
+                            class="mfb-mini"
+                            @click="
+                                cari = '';
+                                statusFilter = 'SEMUA';
+                            "
+                        >
+                            Reset Filter
+                        </button>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Main Work Canvas -->
+            <main class="mfb-work">
+                <section v-if="aktif" class="mfb-panel">
+                    <!-- Form Metadata Top Bar -->
+                    <div class="mfb-meta-bar">
+                        <div class="mfb-meta-bar__item mfb-meta-bar__title">
+                            <label>Nama Formulir</label>
+                            <el-input
+                                v-model="meta.nama"
+                                placeholder="Contoh: Formulir Pendaftaran Management Trainee"
+                            />
+                        </div>
+                        <div class="mfb-meta-bar__item">
+                            <label>Jenis / Kategori Formulir</label>
+                            <RefSelect type="talent" v-model="meta.kategori" placeholder="Lintas kategori" clearable />
+                        </div>
+                        <div class="mfb-meta-bar__item">
+                            <label>Mode Layout</label>
+                            <div class="mfb-segmented">
+                                <button
+                                    v-for="opt in layoutOptions"
+                                    :key="opt.value"
+                                    type="button"
+                                    class="mfb-segmented__item"
+                                    :class="{ active: schema.layout === opt.value }"
+                                    @click="schema.layout = opt.value"
+                                >
+                                    {{ opt.label }}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mfb-master-notice">
+                        <i class="bi bi-link-45deg"></i>
+                        <div>
+                            <strong>Master reusable, belum terikat ke program</strong>
+                            <span
+                                >Formulir ini dapat dipakai ulang. Pilih formulir dan versinya nanti dari Master Tahapan
+                                Seleksi.</span
+                            >
+                        </div>
+                    </div>
+
+                    <!-- Description & Guidance Toggle -->
+                    <details class="mfb-meta-extra">
+                        <summary>
+                            <i class="bi bi-info-circle"></i> Deskripsi &amp; Petunjuk Pengisian (Opsional)
+                        </summary>
+                        <div class="mfb-meta-extra__grid">
+                            <div>
+                                <label>Deskripsi Ringkas</label>
+                                <el-input
+                                    v-model="meta.deskripsi"
+                                    type="textarea"
+                                    :rows="2"
+                                    placeholder="Penjelasan singkat tujuan formulir ini..."
+                                />
+                            </div>
+                            <div>
+                                <label>Petunjuk Khusus Kandidat</label>
+                                <el-input
+                                    v-model="meta.petunjuk"
+                                    type="textarea"
+                                    :rows="2"
+                                    placeholder="Instruksi tambahan untuk kandidat saat mengisi..."
+                                />
+                            </div>
+                        </div>
+                    </details>
+
+                    <!-- Workspace Navigation Tabs -->
+                    <div class="mfb-tabs">
+                        <button type="button" :class="{ active: tab === 'builder' }" @click="tab = 'builder'">
+                            <i class="bi bi-tools"></i> Visual Builder
+                        </button>
+                        <button type="button" :class="{ active: tab === 'preview' }" @click="tab = 'preview'">
+                            <i class="bi bi-phone-vibrate"></i> Responsive Preview
+                        </button>
+                        <button type="button" :class="{ active: tab === 'stats' }" @click="tab = 'stats'">
+                            <i class="bi bi-bar-chart-steps"></i> Ringkasan &amp; Audit
+                        </button>
+                        <button type="button" :class="{ active: tab === 'json' }" @click="tab = 'json'">
+                            <i class="bi bi-code-slash"></i> JSON Schema
+                        </button>
+                    </div>
+
+                    <!-- TAB 1: VISUAL BUILDER -->
+                    <div v-if="tab === 'builder'" class="mfb-builder">
+                        <!-- Canvas Area -->
+                        <section class="mfb-canvas">
+                            <!-- Palette & Toolbar -->
+                            <div class="mfb-toolbar">
+                                <div class="mfb-toolbar__group">
+                                    <button type="button" class="mfb-btn-tool mfb-btn-tool--step" @click="tambahStep">
+                                        <i class="bi bi-plus-circle-fill"></i> Tambah Step
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="mfb-btn-tool mfb-btn-tool--section"
+                                        :disabled="stepAktif < 0"
+                                        @click="tambahSection"
+                                    >
+                                        <i class="bi bi-layout-text-window-reverse"></i> Tambah Section
+                                    </button>
+                                </div>
+
+                                <div class="mfb-toolbar__palette">
+                                    <button
+                                        v-for="p in fieldPalette"
+                                        :key="p.value"
+                                        type="button"
+                                        class="mfb-palette-btn"
+                                        :title="'Sisipkan ' + p.label"
+                                        @click="tambahFieldPreset(p)"
+                                    >
+                                        <i class="bi" :class="p.icon"></i> {{ p.label }}
+                                    </button>
+                                </div>
+
+                                <div class="mfb-toolbar__right">
+                                    <button
+                                        type="button"
+                                        class="mfb-val-badge"
+                                        :class="jumlahIssue ? 'has-issue' : 'is-valid'"
+                                        @click="showValidation = !showValidation"
+                                    >
+                                        <i
+                                            class="bi"
+                                            :class="jumlahIssue ? 'bi-exclamation-triangle-fill' : 'bi-check2-circle'"
+                                        ></i>
+                                        <span>{{ jumlahIssue ? jumlahIssue + ' Isu Schema' : 'Schema Valid' }}</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Stepper Container (Draggable Steps) -->
+                            <draggable
+                                v-model="schema.langkah"
+                                item-key="kode"
+                                handle=".mfb-drag-step"
+                                class="mfb-steps-list"
+                            >
+                                <template #item="{ element: L, index: li }">
+                                    <article
+                                        class="mfb-step-card"
+                                        :class="{ selected: pilihTarget?.tipe === 'step' && pilihTarget.index === li }"
+                                    >
+                                        <!-- Step Header -->
+                                        <header class="mfb-step-card__head" @click="selectStep(li)">
+                                            <span class="mfb-drag-step" title="Geser posisi step">
+                                                <i class="bi bi-grip-vertical"></i>
+                                            </span>
+                                            <span class="mfb-step-num">Step {{ li + 1 }}</span>
+                                            <!-- Step Icon Picker -->
+                                            <div class="mfb-step-card__ico" @click.stop>
+                                                <IconPicker
+                                                    v-model="L.ikon"
+                                                    :compact="true"
+                                                    placeholder="Pilih Ikon Step"
+                                                />
+                                            </div>
+
+                                            <input
+                                                v-model="L.judul"
+                                                class="mfb-step-card__input"
+                                                placeholder="Judul Step (misal: Data Pribadi)"
+                                                @focus="selectStep(li)"
+                                            />
+
+                                            <div class="mfb-step-card__act" @click.stop>
+                                                <button type="button" title="Hapus step ini" @click="hapusStep(li)">
+                                                    <i class="bi bi-trash3"></i>
+                                                </button>
+                                            </div>
+                                        </header>
+
+                                        <!-- Sections Container (Draggable Sections) -->
+                                        <draggable
+                                            v-model="L.bagian"
+                                            item-key="judul"
+                                            handle=".mfb-drag-sec"
+                                            class="mfb-sections-list"
+                                        >
+                                            <template #item="{ element: B, index: bi }">
+                                                <section
+                                                    class="mfb-sec-card"
+                                                    :class="{
+                                                        selected:
+                                                            pilihTarget?.tipe === 'section' &&
+                                                            pilihTarget.li === li &&
+                                                            pilihTarget.bi === bi,
+                                                    }"
+                                                >
+                                                    <header class="mfb-sec-card__head" @click="selectSection(li, bi)">
+                                                        <span class="mfb-drag-sec" title="Geser posisi section">
+                                                            <i class="bi bi-grip-vertical"></i>
+                                                        </span>
+                                                        <input
+                                                            v-model="B.judul"
+                                                            class="mfb-sec-card__input"
+                                                            placeholder="Judul Section (misal: Informasi Kontak)"
+                                                            @focus="selectSection(li, bi)"
+                                                        />
+                                                        <span v-if="B.tampil_jika?.field" class="mfb-cond-badge">
+                                                            <i class="bi bi-lightning-charge-fill"></i> Bersyarat
+                                                        </span>
+
+                                                        <div class="mfb-sec-card__act" @click.stop>
+                                                            <button
+                                                                type="button"
+                                                                title="Duplikat section ini"
+                                                                @click="duplikatSection(li, bi)"
+                                                            >
+                                                                <i class="bi bi-copy"></i>
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                title="Tambah field baru ke section"
+                                                                @click="tambahField(li, bi)"
+                                                            >
+                                                                <i class="bi bi-plus-lg"></i> Field
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                title="Hapus section ini"
+                                                                @click="hapusSection(li, bi)"
+                                                            >
+                                                                <i class="bi bi-trash"></i>
+                                                            </button>
+                                                        </div>
+                                                    </header>
+
+                                                    <!-- Fields Grid (Draggable Fields) -->
+                                                    <draggable
+                                                        v-model="B.field"
+                                                        item-key="field_id"
+                                                        handle=".mfb-drag-field"
+                                                        class="mfb-fields-grid"
+                                                    >
+                                                        <template #item="{ element: F, index: fi }">
+                                                            <div
+                                                                class="mfb-field-card"
+                                                                :class="{
+                                                                    selected:
+                                                                        pilihTarget?.tipe === 'field' &&
+                                                                        pilihTarget.li === li &&
+                                                                        pilihTarget.bi === bi &&
+                                                                        pilihTarget.fi === fi,
+                                                                    full:
+                                                                        F.penuh || Number(F.lebar_persen || 33) >= 100,
+                                                                    'has-error':
+                                                                        showValidation && fieldIssues(F).length > 0,
+                                                                }"
+                                                                :style="gayaFieldAdmin(F)"
+                                                                role="button"
+                                                                tabindex="0"
+                                                                @click="selectField(li, bi, fi)"
+                                                                @keydown.enter="selectField(li, bi, fi)"
+                                                            >
+                                                                <div class="mfb-field-card__top">
+                                                                    <span
+                                                                        class="mfb-drag-field"
+                                                                        title="Geser urutan field"
+                                                                    >
+                                                                        <i class="bi bi-grip-vertical"></i>
+                                                                    </span>
+                                                                    <i
+                                                                        class="bi mfb-field-card__ico"
+                                                                        :class="ikonField(F.tipe)"
+                                                                    ></i>
+                                                                    <strong class="mfb-field-card__label">{{
+                                                                        F.label || F.key || 'Field Tanpa Judul'
+                                                                    }}</strong>
+                                                                </div>
+
+                                                                <div class="mfb-field-card__meta">
+                                                                    <span class="mfb-field-card__type">{{
+                                                                        F.tipe
+                                                                    }}</span>
+                                                                    <span v-if="F.wajib" class="mfb-badge-req"
+                                                                        >Wajib</span
+                                                                    >
+                                                                    <span class="mfb-field-card__width"
+                                                                        >{{ Number(F.lebar_persen || 33) }}%</span
+                                                                    >
+
+                                                                    <span
+                                                                        v-if="F.tampil_jika?.field"
+                                                                        class="mfb-cond-pill"
+                                                                        :title="
+                                                                            'Tampil jika ' +
+                                                                            F.tampil_jika.field +
+                                                                            ' ' +
+                                                                            F.tampil_jika.operator +
+                                                                            ' ' +
+                                                                            (F.tampil_jika.nilai || '')
+                                                                        "
+                                                                    >
+                                                                        <i class="bi bi-lightning-charge-fill"></i>
+                                                                    </span>
+
+                                                                    <span
+                                                                        v-if="showValidation && fieldIssues(F).length"
+                                                                        class="mfb-issue-icon"
+                                                                        :title="fieldIssues(F).join('\n')"
+                                                                    >
+                                                                        <i class="bi bi-exclamation-triangle-fill"></i>
+                                                                    </span>
+                                                                </div>
+
+                                                                <!-- Card Actions & Resize Handle -->
+                                                                <div class="mfb-field-card__actions" @click.stop>
+                                                                    <button
+                                                                        type="button"
+                                                                        class="mfb-field-btn"
+                                                                        title="Duplikat field"
+                                                                        @click="duplikatField(li, bi, fi)"
+                                                                    >
+                                                                        <i class="bi bi-copy"></i>
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        class="mfb-field-btn mfb-field-btn--danger"
+                                                                        title="Hapus field"
+                                                                        @click="hapusField(li, bi, fi)"
+                                                                    >
+                                                                        <i class="bi bi-trash3"></i>
+                                                                    </button>
+                                                                </div>
+
+                                                                <span
+                                                                    class="mfb-resize-handle"
+                                                                    title="Geser ke kanan/kiri untuk mengubah lebar"
+                                                                    @pointerdown.stop.prevent="
+                                                                        mulaiResizeField($event, li, bi, fi)
+                                                                    "
+                                                                >
+                                                                    <i class="bi bi-arrows-angle-expand"></i>
+                                                                </span>
+                                                            </div>
+                                                        </template>
+                                                    </draggable>
+                                                </section>
+                                            </template>
+                                        </draggable>
+                                    </article>
+                                </template>
+                            </draggable>
+                        </section>
+
+                        <!-- Right Panel Inspector -->
+                        <aside class="mfb-inspector">
+                            <template v-if="fieldAktif">
+                                <div class="mfb-inspector__head">
+                                    <h3><i class="bi bi-sliders"></i> Properti Field</h3>
+                                    <span class="mfb-inspector__tag">{{ fieldAktif.tipe }}</span>
+                                </div>
+
+                                <div class="mfb-inspector__group">
+                                    <label>Label Pertanyaan</label>
+                                    <el-input
+                                        v-model="fieldAktif.label"
+                                        placeholder="Label pertanyaan"
+                                        @input="ubahLabelField"
+                                    />
+                                </div>
+
+                                <div class="mfb-inspector__group">
+                                    <label>Unique Key Identifier</label>
+                                    <div class="mfb-key-input">
+                                        <el-input
+                                            v-model="fieldAktif.key"
+                                            :disabled="keyFieldTerkunci"
+                                            @blur="rapikanKeyField"
+                                        />
+                                        <span
+                                            v-if="keyFieldTerkunci"
+                                            class="mfb-lock-tag"
+                                            title="Key terkunci karena formulir sudah dipublish"
+                                        >
+                                            <i class="bi bi-lock-fill"></i> Terkunci
+                                        </span>
+                                    </div>
+                                    <small class="mfb-help">Kode unik pengenal kolom di database.</small>
+                                </div>
+
+                                <div class="mfb-inspector__group">
+                                    <label>Tipe Input Field</label>
+                                    <el-select v-model="fieldAktif.tipe" style="width: 100%" @change="ubahTipeField">
+                                        <el-option
+                                            v-for="t in tipeField"
+                                            :key="t.value"
+                                            :value="t.value"
+                                            :label="t.label"
+                                        />
+                                    </el-select>
+                                </div>
+
+                                <div class="mfb-inspector__checks">
+                                    <el-checkbox v-model="fieldAktif.wajib">Wajib Diisi (Required)</el-checkbox>
+                                    <el-checkbox v-model="fieldAktif.dapat_disaring"
+                                        >Dapat Disaring di Rekap</el-checkbox
+                                    >
+                                </div>
+
+                                <div class="mfb-inspector__group">
+                                    <label>Lebar Presets Layout</label>
+                                    <div class="mfb-segmented">
+                                        <button
+                                            v-for="opt in lebarCepatOptions"
+                                            :key="opt.value"
+                                            type="button"
+                                            class="mfb-segmented__item"
+                                            :class="{ active: lebarCepatAktif === opt.value }"
+                                            @click="aturLebarCepat(opt.value)"
+                                        >
+                                            {{ opt.label }}
+                                        </button>
+                                    </div>
+                                    <div class="mfb-slider">
+                                        <span>33%</span>
+                                        <el-slider
+                                            v-model="fieldAktif.lebar_persen"
+                                            :min="33"
+                                            :max="100"
+                                            :step="1"
+                                            :format-tooltip="(v) => `${v}%`"
+                                            @change="rapikanLebarField"
+                                        />
+                                        <span>100%</span>
+                                    </div>
+                                </div>
+
+                                <div class="mfb-inspector__group">
+                                    <label>Text Placeholder</label>
+                                    <el-input v-model="fieldAktif.ph" placeholder="Contoh: Masukkan nama lengkap..." />
+                                </div>
+
+                                <div class="mfb-inspector__group">
+                                    <label>Teks Bantuan / Keterangan</label>
+                                    <el-input
+                                        v-model="fieldAktif.bantuan"
+                                        type="textarea"
+                                        :rows="2"
+                                        placeholder="Keterangan kecil di bawah field..."
+                                    />
+                                </div>
+
+                                <!-- Conditional Logic Rule -->
+                                <div class="mfb-inspector__group">
+                                    <label><i class="bi bi-diagram-3"></i> Logika Tampil Jika (Kondisional)</label>
+                                    <el-select
+                                        :model-value="fieldAktif.tampil_jika?.field || ''"
+                                        style="width: 100%"
+                                        clearable
+                                        placeholder="Selalu Tampil (Tanpa Syarat)"
+                                        @change="aturFieldSyarat"
+                                    >
+                                        <el-option
+                                            v-for="f in fieldAcuanOptions"
+                                            :key="f.field_id || f.key"
+                                            :value="f.key"
+                                            :label="f.label || f.key"
+                                        />
+                                    </el-select>
+                                    <div v-if="fieldAktif.tampil_jika?.field" class="mfb-condition-row">
+                                        <el-select v-model="fieldAktif.tampil_jika.operator" style="width: 48%">
+                                            <el-option
+                                                v-for="o in conditionOperators"
+                                                :key="o.value"
+                                                :value="o.value"
+                                                :label="o.label"
+                                            />
+                                        </el-select>
+                                        <el-input
+                                            v-model="fieldAktif.tampil_jika.nilai"
+                                            placeholder="Nilai pemicu"
+                                            style="width: 52%"
+                                        />
+                                    </div>
+                                </div>
+
+                                <!-- Specific Options for Select / Radio / Checkbox -->
+                                <template v-if="butuhOpsi(fieldAktif)">
+                                    <div class="mfb-inspector__group">
+                                        <label>Daftar Pilihan Opsi</label>
+                                        <div v-for="(_, i) in fieldAktif.opsi" :key="i" class="mfb-optrow">
+                                            <el-input v-model="fieldAktif.opsi[i]" placeholder="Nama opsi" />
+                                            <button
+                                                type="button"
+                                                title="Hapus opsi"
+                                                @click="fieldAktif.opsi.splice(i, 1)"
+                                            >
+                                                <i class="bi bi-x-lg"></i>
+                                            </button>
+                                        </div>
+                                        <button
+                                            class="mfb-mini"
+                                            type="button"
+                                            @click="fieldAktif.opsi.push('Opsi Baru')"
+                                        >
+                                            <i class="bi bi-plus"></i> Tambah Opsi Baru
+                                        </button>
+                                    </div>
+                                </template>
+
+                                <!-- File Upload Settings -->
+                                <template v-if="fieldAktif.tipe === 'file'">
+                                    <div class="mfb-inspector__group">
+                                        <label>Format Berkas Diterima (Accept)</label>
+                                        <el-input v-model="fieldAktif.accept" placeholder=".pdf,.jpg,.jpeg,.png" />
+                                    </div>
+                                    <div class="mfb-inspector__group">
+                                        <label>Batas Maksimal Ukuran (MB)</label>
+                                        <el-input-number
+                                            v-model="fieldAktif.maks_mb"
+                                            :min="1"
+                                            :max="20"
+                                            style="width: 100%"
+                                        />
+                                    </div>
+                                </template>
+
+                                <!-- Reference Field Settings -->
+                                <template v-if="fieldAktif.tipe === 'referensi'">
+                                    <div class="mfb-inspector__group">
+                                        <label>Sumber Master Data Referensi</label>
+                                        <el-select v-model="fieldAktif.sumber" style="width: 100%">
+                                            <el-option value="jenjang" label="Jenjang Pendidikan" />
+                                            <el-option value="jenis_institusi" label="Jenis Institusi" />
+                                            <el-option value="kampus" label="Nama Kampus / Perguruan Tinggi" />
+                                            <el-option value="prodi" label="Program Studi / Jurusan" />
+                                        </el-select>
+                                    </div>
+                                </template>
+
+                                <button
+                                    class="mfb-btn mfb-btn--danger mfb-btn--full"
+                                    type="button"
+                                    @click="hapusFieldAktif"
+                                >
+                                    <i class="bi bi-trash"></i> Hapus Field Ini
+                                </button>
+                            </template>
+
+                            <template v-else-if="sectionAktif">
+                                <div class="mfb-inspector__head">
+                                    <h3><i class="bi bi-layout-text-window-reverse"></i> Properti Section</h3>
+                                </div>
+                                <p class="mfb-help">
+                                    Atur pola layout kolom atau sisipkan blok template pertanyaan standar.
+                                </p>
+
+                                <div class="mfb-inspector__group">
+                                    <label>Preset Format Kolom</label>
+                                    <div class="mfb-preset-grid">
+                                        <button
+                                            v-for="p in layoutPresetOptions"
+                                            :key="p.value"
+                                            type="button"
+                                            @click="terapkanLayoutPreset(p.value)"
+                                        >
+                                            <i class="bi" :class="p.icon"></i>
+                                            <div>
+                                                <strong>{{ p.label }}</strong>
+                                                <small>{{ p.help }}</small>
+                                            </div>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div class="mfb-inspector__group">
+                                    <label>Section Tampil Jika (Kondisional)</label>
+                                    <el-select
+                                        :model-value="sectionAktif.tampil_jika?.field || ''"
+                                        style="width: 100%"
+                                        clearable
+                                        placeholder="Selalu Tampil"
+                                        @change="aturSectionSyarat"
+                                    >
+                                        <el-option
+                                            v-for="f in fieldAcuanOptions"
+                                            :key="f.field_id || f.key"
+                                            :value="f.key"
+                                            :label="f.label || f.key"
+                                        />
+                                    </el-select>
+                                    <div v-if="sectionAktif.tampil_jika?.field" class="mfb-condition-row">
+                                        <el-select v-model="sectionAktif.tampil_jika.operator" style="width: 48%">
+                                            <el-option
+                                                v-for="o in conditionOperators"
+                                                :key="o.value"
+                                                :value="o.value"
+                                                :label="o.label"
+                                            />
+                                        </el-select>
+                                        <el-input
+                                            v-model="sectionAktif.tampil_jika.nilai"
+                                            placeholder="Nilai pemicu"
+                                            style="width: 52%"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div class="mfb-inspector__group">
+                                    <label>Blok Template Siap Pakai</label>
+                                    <div class="mfb-block-list">
+                                        <button
+                                            v-for="b in sectionTemplates"
+                                            :key="b.value"
+                                            type="button"
+                                            @click="tambahBlock(b)"
+                                        >
+                                            <i class="bi" :class="b.icon"></i>
+                                            <div>
+                                                <strong>{{ b.label }}</strong>
+                                                <small>{{ b.help }}</small>
+                                            </div>
+                                            <i class="bi bi-plus-circle-fill"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </template>
+
+                            <template v-else>
+                                <div class="mfb-inspector__empty">
+                                    <i class="bi bi-cursor"></i>
+                                    <h4>Klik Field / Section</h4>
+                                    <p>
+                                        Pilih salah satu elemen di canvas untuk mengatur detail label, tipe, validasi,
+                                        opsi, dan kondisi tampil.
+                                    </p>
+                                </div>
+                            </template>
+                        </aside>
+                    </div>
+
+                    <!-- TAB 2: RESPONSIVE PREVIEW -->
+                    <div v-else-if="tab === 'preview'" class="mfb-preview">
+                        <div class="mfb-preview__bar">
+                            <div class="mfb-preview__info">
+                                <i class="bi bi-display"></i>
+                                <span>Simulasi Tampilan Kandidat Real-time</span>
+                            </div>
+                            <div class="mfb-segmented" style="width: auto; min-width: 260px">
+                                <button
+                                    v-for="opt in previewModeOptions"
+                                    :key="opt.value"
+                                    type="button"
+                                    class="mfb-segmented__item"
+                                    :class="{ active: previewMode === opt.value }"
+                                    @click="previewMode = opt.value"
+                                >
+                                    <i
+                                        class="bi"
+                                        :class="
+                                            opt.value === 'desktop'
+                                                ? 'bi-display'
+                                                : opt.value === 'tablet'
+                                                  ? 'bi-tablet-landscape'
+                                                  : 'bi-phone'
+                                        "
+                                    ></i>
+                                    {{ opt.label }}
+                                </button>
+                            </div>
+                        </div>
+                        <div class="mfb-preview__frame-wrapper">
+                            <div class="mfb-mock-browser">
+                                <div class="mfb-mock-browser__bar">
+                                    <div class="mfb-mock-browser__dots"><span></span><span></span><span></span></div>
+                                    <div class="mfb-mock-browser__url">
+                                        <i class="bi bi-lock-fill"></i> webcareer.evo.id/apply/preview
+                                    </div>
+                                </div>
+                                <div
+                                    class="mfb-preview__frame"
+                                    :class="'mfb-preview-frame--' + previewMode"
+                                    :style="previewFrameStyle"
+                                >
+                                    <!-- Candidate Portal Shell Wrapper (100% Identical to Candidate Portal Page) -->
+                                    <div
+                                        class="mfb-portal-shell"
+                                        :class="{ 'mfb-portal-shell--mobile': previewMode === 'mobile' }"
+                                    >
+                                        <!-- Mobile Status Bar (Visible in mobile mode) -->
+                                        <div v-if="previewMode === 'mobile'" class="mfb-mobile-status-bar">
+                                            <span class="mfb-mobile-status-bar__time">9:41</span>
+                                            <div class="mfb-mobile-status-bar__notch"></div>
+                                            <div class="mfb-mobile-status-bar__icons">
+                                                <i class="bi bi-reception-4"></i>
+                                                <i class="bi bi-wifi"></i>
+                                                <i class="bi bi-battery-full"></i>
+                                            </div>
+                                        </div>
+
+                                        <header class="mfb-portal-shell__header">
+                                            <div class="mfb-portal-shell__brand">
+                                                <span class="mfb-portal-shell__logo"
+                                                    ><i class="bi bi-briefcase-fill"></i
+                                                ></span>
+                                                <div>
+                                                    <span class="mfb-portal-shell__portal-name">WEB CAREER PORTAL</span>
+                                                    <h2 class="mfb-portal-shell__title">
+                                                        {{ meta.nama || 'Formulir Pendaftaran Rekrutmen' }}
+                                                    </h2>
+                                                </div>
+                                            </div>
+                                            <div class="mfb-portal-shell__badges">
+                                                <span v-if="meta.kategori" class="mfb-portal-shell__tag"
+                                                    ><i class="bi bi-tag-fill"></i> {{ meta.kategori }}</span
+                                                >
+                                                <span class="mfb-portal-shell__status"
+                                                    ><i class="bi bi-circle-fill"></i> Dibuka</span
+                                                >
+                                            </div>
+                                        </header>
+
+                                        <div v-if="meta.petunjuk || meta.deskripsi" class="mfb-portal-shell__notice">
+                                            <i class="bi bi-info-circle-fill"></i>
+                                            <div>
+                                                <strong>Petunjuk Pengisian Bagi Kandidat:</strong>
+                                                <p>{{ meta.petunjuk || meta.deskripsi }}</p>
+                                            </div>
+                                        </div>
+
+                                        <!-- Live Candidate Form Renderer (100% Identical to Candidate Apply Page) -->
+                                        <div class="mfb-portal-shell__body">
+                                            <DynamicForm
+                                                v-model="previewJawaban"
+                                                :skema="schema"
+                                                :judul="meta.nama || 'Formulir Pendaftaran'"
+                                                :keterangan="
+                                                    meta.deskripsi ||
+                                                    'Lengkapi data berikut dengan benar. Tanda * wajib diisi.'
+                                                "
+                                                label-kirim="Kirim Formulir (Preview Test)"
+                                                @kirim="notice('Pratinjau kandidat lolos validasi formulir.')"
+                                            />
+                                        </div>
+
+                                        <!-- Mobile Home Indicator Pill -->
+                                        <div v-if="previewMode === 'mobile'" class="mfb-mobile-home-indicator">
+                                            <span></span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- TAB 3: STATS & AUDIT SUMMARY -->
+                    <div v-else-if="tab === 'stats'" class="mfb-stats-view">
+                        <div class="mfb-stats-grid">
+                            <div class="mfb-stat-card">
+                                <div class="mfb-stat-card__icon mfb-stat-card__icon--indigo">
+                                    <i class="bi bi-layers-half"></i>
+                                </div>
+                                <div>
+                                    <strong>{{ schema.langkah?.length || 0 }}</strong>
+                                    <span>Langkah / Step Stepper</span>
+                                </div>
+                            </div>
+                            <div class="mfb-stat-card">
+                                <div class="mfb-stat-card__icon mfb-stat-card__icon--sky">
+                                    <i class="bi bi-layout-text-window-reverse"></i>
+                                </div>
+                                <div>
+                                    <strong>{{ totalSectionCount }}</strong>
+                                    <span>Section Bagian</span>
+                                </div>
+                            </div>
+                            <div class="mfb-stat-card">
+                                <div class="mfb-stat-card__icon mfb-stat-card__icon--emerald">
+                                    <i class="bi bi-input-cursor-text"></i>
+                                </div>
+                                <div>
+                                    <strong>{{ semuaField.length }}</strong>
+                                    <span>Total Field Pertanyaan</span>
+                                </div>
+                            </div>
+                            <div class="mfb-stat-card">
+                                <div class="mfb-stat-card__icon mfb-stat-card__icon--amber">
+                                    <i class="bi bi-asterisk"></i>
+                                </div>
+                                <div>
+                                    <strong>{{ wajibFieldCount }}</strong>
+                                    <span>Field Wajib Diisi</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mfb-audit-box">
+                            <h4><i class="bi bi-shield-check"></i> Info Registrasi &amp; Audit Trail</h4>
+                            <div class="mfb-audit-grid">
+                                <div>
+                                    <label>Kode Unik Formulir</label>
+                                    <span class="mfb-code-text">{{ aktif.kode }}</span>
+                                </div>
+                                <div>
+                                    <label>Status Aktif System</label>
+                                    <span class="mfb-badge-text" :class="aktif.status === 'AKTIF' ? 'ok' : 'off'">
+                                        {{ aktif.status }}
+                                    </span>
+                                </div>
+                                <div>
+                                    <label>Pembuat (Audit Stamp)</label>
+                                    <AuditStamp :by="aktif.createdBy" :at="aktif.createdAt" />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- TAB 4: JSON SCHEMA -->
+                    <div v-else class="mfb-json">
+                        <div class="mfb-json__bar">
+                            <span><i class="bi bi-file-earmark-code"></i> JSON Schema Payload</span>
+                            <button type="button" class="mfb-btn mfb-btn--soft mfb-btn--sm" @click="salinJSON">
+                                <i class="bi bi-clipboard"></i> Salin JSON
+                            </button>
+                        </div>
+                        <pre class="mfb-codeblock"><code>{{ JSON.stringify(schema, null, 2) }}</code></pre>
+                    </div>
+                </section>
+
+                <!-- Empty Selection Workspace -->
+                <section v-else class="mfb-empty-work">
+                    <div class="mfb-empty-work__content">
+                        <i class="bi bi-input-cursor-text"></i>
+                        <h3>Pilih atau Buat Formulir Baru</h3>
+                        <p>
+                            Silakan pilih formulir dari daftar di sebelah kiri untuk mulai mengedit skema visual builder
+                            atau klik tombol di bawah.
+                        </p>
+                        <button class="mfb-btn mfb-btn--glow" type="button" @click="buatBaru">
+                            <i class="bi bi-plus-lg"></i> Buat Formulir Baru
+                        </button>
+                    </div>
+                </section>
+            </main>
+        </div>
+
+        <!-- Toast Floating Notification -->
+        <transition name="mfb-toast">
+            <div v-if="toast" class="mfb-toast"><i class="bi bi-check-circle-fill"></i> {{ toast }}</div>
         </transition>
+
+        <!-- Review & Compare Modal (Diff Viewer) -->
+        <div v-if="showCompare" class="mfb-modal" @click.self="showCompare = false">
+            <section class="mfb-modal__box">
+                <header class="mfb-modal__head">
+                    <div>
+                        <h3><i class="bi bi-git"></i> Review Perubahan Sebelum Publish</h3>
+                        <p>Perubahan ini akan disimpan sebagai versi baru dan langsung digunakan kandidat.</p>
+                    </div>
+                    <button type="button" class="mfb-modal__close" @click="showCompare = false">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </header>
+
+                <div v-if="perubahanVersi.length" class="mfb-diff-list">
+                    <div v-for="x in perubahanVersi" :key="x.id" class="mfb-diff" :class="'is-' + x.type">
+                        <i
+                            class="bi"
+                            :class="
+                                x.type === 'added'
+                                    ? 'bi-plus-circle-fill'
+                                    : x.type === 'removed'
+                                      ? 'bi-dash-circle-fill'
+                                      : 'bi-pencil-fill'
+                            "
+                        ></i>
+                        <div>
+                            <strong>{{ x.label }}</strong>
+                            <small>{{ x.detail }}</small>
+                        </div>
+                    </div>
+                </div>
+                <div v-else class="mfb-empty mfb-empty--small">
+                    <i class="bi bi-check2-circle"></i>
+                    <span>Tidak ada perubahan field dari versi published saat ini.</span>
+                </div>
+
+                <footer class="mfb-modal__foot">
+                    <button class="mfb-btn mfb-btn--soft" type="button" @click="showCompare = false">Batal</button>
+                    <button
+                        class="mfb-btn mfb-btn--emerald"
+                        type="button"
+                        :disabled="saving"
+                        @click="
+                            showCompare = false;
+                            publish(true);
+                        "
+                    >
+                        <i class="bi bi-send-check-fill"></i> Publish Versi Ini
+                    </button>
+                </footer>
+            </section>
+        </div>
+
+        <!-- Confirm Modal Delete -->
+        <ConfirmModal
+            :show="showDeleteModal"
+            title="Hapus Master Formulir"
+            subtitle="Tindakan ini akan menghapus formulir dari daftar."
+            :note="formToDelete ? `Formulir: ${formToDelete.nama} (${formToDelete.kode})` : ''"
+            :busy="saving"
+            danger
+            @cancel="showDeleteModal = false"
+            @confirm="eksekusiHapus"
+        />
+
+        <!-- Duplicate Modal Form -->
+        <div v-if="showDuplicateModal" class="mfb-modal" @click.self="showDuplicateModal = false">
+            <section class="mfb-modal__box">
+                <header class="mfb-modal__head">
+                    <div>
+                        <h3><i class="bi bi-copy"></i> Duplikat Formulir</h3>
+                        <p>Salin skema formulir ini menjadi formulir baru.</p>
+                    </div>
+                    <button type="button" class="mfb-modal__close" @click="showDuplicateModal = false">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </header>
+
+                <div style="padding: 1rem 0">
+                    <label style="font-weight: 700; font-size: 13px; margin-bottom: 6px; display: block"
+                        >Nama Formulir Baru</label
+                    >
+                    <el-input v-model="duplicateName" placeholder="Nama formulir hasil duplikat" />
+                </div>
+
+                <footer class="mfb-modal__foot">
+                    <button class="mfb-btn mfb-btn--soft" type="button" @click="showDuplicateModal = false">
+                        Batal
+                    </button>
+                    <button
+                        class="mfb-btn mfb-btn--indigo"
+                        type="button"
+                        :disabled="saving || !duplicateName.trim()"
+                        @click="eksekusiDuplikat"
+                    >
+                        <i class="bi bi-copy"></i> Duplikat Sekarang
+                    </button>
+                </footer>
+            </section>
+        </div>
     </div>
 </template>
 
 <script>
 import axios from 'axios';
+import draggable from 'vuedraggable';
 import { Head } from '@inertiajs/vue3';
-import AdminModal from '@career/AdminModal.vue';
-import ConfirmModal from '@career/ConfirmModal.vue';
-import AuditStamp from '@career/AuditStamp.vue';
 import RefSelect from '@career/RefSelect.vue';
+import AuditStamp from '@career/AuditStamp.vue';
+import ConfirmModal from '@career/ConfirmModal.vue';
+import IconPicker from '@career/IconPicker.vue';
+import DynamicForm from '@career/formulir/DynamicForm.vue';
 import {
-    daftarFormulir,
-    komponenFormulir,
-    skemaFormulir,
-    infoFormulir,
-    semuaField,
+    buatFieldId,
     jawabanAwal,
+    normalisasiSkema,
+    skemaFormulir,
+    skemaKosong,
+    slugKey,
+    validasiSkema,
 } from '@career/formulir';
 
 const API = '/api/v1/master-formulir';
 const CFG = { headers: { Accept: 'application/json' } };
 
-const TIPE_LABEL = {
-    text: 'Teks singkat',
-    textarea: 'Paragraf',
-    number: 'Angka',
-    date: 'Tanggal',
-    select: 'Dropdown',
-    radio: 'Pilihan satu',
-    checkbox: 'Pilihan banyak',
-    file: 'Unggah berkas',
-    consent: 'Persetujuan',
-    prefill: 'Terisi otomatis',
-};
-
 export default {
-    components: { Head, AdminModal, ConfirmModal, AuditStamp, RefSelect },
+    components: { Head, RefSelect, AuditStamp, ConfirmModal, IconPicker, DynamicForm, draggable },
     data() {
         return {
             list: [],
-            loading: false,
-            open: null,
-
-            show: false,
-            editingId: null,
-            form: { nama: '', kategori: '', deskripsi: '', komponen: '', petunjuk: '' },
-
-            isiShow: false,
-            isiFormulir: null,
-
-            praShow: false,
-            praFormulir: null,
-            praJawaban: {},
-            praProfil: { nama: 'Budi Santoso', email: 'budi.santoso@gmail.com', hp: '0812-3456-7890' },
-            praReset: 0,
-
-            delShow: false,
-            delTarget: null,
-            deleting: false,
-
+            aktif: null,
+            meta: { nama: '', kategori: '', deskripsi: '', petunjuk: '' },
+            schema: skemaKosong(),
+            pilihTarget: null,
+            tab: 'builder',
+            cari: '',
+            statusFilter: 'SEMUA',
+            filterChips: [
+                { label: 'Semua', value: 'SEMUA' },
+                { label: 'Aktif', value: 'AKTIF' },
+                { label: 'Published', value: 'PUBLISHED' },
+                { label: 'Draft', value: 'DRAFT' },
+                { label: 'Nonaktif', value: 'NONAKTIF' },
+            ],
             saving: false,
             toast: '',
-            tm: null,
+            previewJawaban: {},
+            resizeState: null,
+            showCompare: false,
+            showDeleteModal: false,
+            formToDelete: null,
+            showDuplicateModal: false,
+            formToDuplicate: null,
+            duplicateName: '',
+            showValidation: true,
+            previewMode: 'desktop',
+            previewModeOptions: [
+                { label: 'Desktop', value: 'desktop' },
+                { label: 'Tablet', value: 'tablet' },
+                { label: 'Mobile', value: 'mobile' },
+            ],
+            layoutOptions: [
+                { label: 'Satu Halaman', value: 'SATU_HALAMAN' },
+                { label: 'Bertahap (Stepper)', value: 'BERTAHAP' },
+            ],
+            tipeField: [
+                { value: 'text', label: 'Teks Ringkas' },
+                { value: 'textarea', label: 'Paragraf / Deskripsi' },
+                { value: 'number', label: 'Angka' },
+                { value: 'date', label: 'Tanggal' },
+                { value: 'select', label: 'Dropdown Pilihan' },
+                { value: 'radio', label: 'Radio Button' },
+                { value: 'checkbox', label: 'Checkbox' },
+                { value: 'file', label: 'Upload Berkas' },
+                { value: 'phone', label: 'Nomor Telepon' },
+                { value: 'email', label: 'Email' },
+                { value: 'consent', label: 'Persetujuan / Declaration' },
+                { value: 'referensi', label: 'Referensi Master Data' },
+            ],
+            lebarCepatOptions: [
+                { label: '1/3', value: 33 },
+                { label: '1/2', value: 50 },
+                { label: '2/3', value: 67 },
+                { label: 'Full', value: 100 },
+            ],
+            conditionOperators: [
+                { label: 'Sama dengan (=)', value: '=' },
+                { label: 'Tidak sama dengan (!=)', value: '!=' },
+                { label: 'Lebih besar (>)', value: '>' },
+                { label: 'Lebih kecil (<)', value: '<' },
+                { label: 'Termasuk dalam (ADA_DI)', value: 'ADA_DI' },
+                { label: 'Tidak termasuk (TIDAK_ADA_DI)', value: 'TIDAK_ADA_DI' },
+            ],
+            fieldPalette: [
+                {
+                    value: 'text',
+                    label: 'Teks',
+                    icon: 'bi-input-cursor-text',
+                    field: { label: 'Pertanyaan Teks', tipe: 'text' },
+                },
+                {
+                    value: 'email',
+                    label: 'Email',
+                    icon: 'bi-envelope',
+                    field: { label: 'Alamat Email', tipe: 'email', ph: 'nama@contoh.com' },
+                },
+                {
+                    value: 'phone',
+                    label: 'Telepon',
+                    icon: 'bi-telephone',
+                    field: { label: 'Nomor Telepon', tipe: 'phone', ph: '08xxxxxxxxxx' },
+                },
+                {
+                    value: 'select',
+                    label: 'Pilihan',
+                    icon: 'bi-menu-button-wide',
+                    field: { label: 'Pilih Salah Satu', tipe: 'select', opsi: ['Opsi 1', 'Opsi 2'] },
+                },
+                {
+                    value: 'radio',
+                    label: 'Radio',
+                    icon: 'bi-record-circle',
+                    field: { label: 'Pilihan Radio', tipe: 'radio', opsi: ['Ya', 'Tidak'] },
+                },
+                {
+                    value: 'file',
+                    label: 'Upload',
+                    icon: 'bi-paperclip',
+                    field: {
+                        label: 'Upload Dokumen',
+                        tipe: 'file',
+                        accept: '.pdf,.jpg,.jpeg,.png',
+                        maks_mb: 5,
+                        lebar_persen: 100,
+                        penuh: true,
+                    },
+                },
+                {
+                    value: 'textarea',
+                    label: 'Paragraf',
+                    icon: 'bi-textarea-t',
+                    field: { label: 'Ceritakan Lebih Lanjut', tipe: 'textarea', lebar_persen: 67 },
+                },
+                {
+                    value: 'consent',
+                    label: 'Persetujuan',
+                    icon: 'bi-shield-check',
+                    field: {
+                        label: 'Saya menyatakan seluruh data yang diisi adalah benar',
+                        tipe: 'consent',
+                        wajib: true,
+                        lebar_persen: 100,
+                        penuh: true,
+                    },
+                },
+            ],
+            layoutPresetOptions: [
+                { value: 'THREE', label: '3 Kolom', help: 'Ringkas & padat', icon: 'bi-layout-three-columns' },
+                { value: 'TWO', label: '2 Kolom', help: 'Seimbang & mudah dibaca', icon: 'bi-layout-split' },
+                { value: 'LONG', label: 'Form Panjang', help: 'Lebar 2/3', icon: 'bi-layout-text-window' },
+                {
+                    value: 'FULL',
+                    label: 'Full Width',
+                    help: '100% lebar untuk upload/paragraf',
+                    icon: 'bi-arrows-angle-expand',
+                },
+            ],
+            sectionTemplates: [
+                {
+                    value: 'identity',
+                    label: 'Data Diri Utama',
+                    help: 'Nama lengkap, email, telepon',
+                    icon: 'bi-person-vcard',
+                    fields: [
+                        { label: 'Nama Lengkap', tipe: 'text', wajib: true, lebar_persen: 67 },
+                        { label: 'Email', tipe: 'email', wajib: true, lebar_persen: 33 },
+                        { label: 'Nomor Telepon', tipe: 'phone', wajib: true, lebar_persen: 33 },
+                    ],
+                },
+                {
+                    value: 'education',
+                    label: 'Riwayat Pendidikan',
+                    help: 'Jenjang, nama kampus, prodi',
+                    icon: 'bi-mortarboard',
+                    fields: [
+                        {
+                            label: 'Jenjang Pendidikan',
+                            tipe: 'select',
+                            wajib: true,
+                            opsi: ['SMA/K', 'Diploma', 'Sarjana (S1)', 'Magister (S2)', 'Doktor (S3)'],
+                        },
+                        { label: 'Nama Perguruan Tinggi / Sekolah', tipe: 'text', wajib: true, lebar_persen: 67 },
+                        { label: 'Program Studi / Jurusan', tipe: 'text', wajib: true, lebar_persen: 67 },
+                    ],
+                },
+                {
+                    value: 'documents',
+                    label: 'Berkas Dokumen Pendukung',
+                    help: 'CV resume & berkas pendukung',
+                    icon: 'bi-file-earmark-arrow-up',
+                    fields: [
+                        {
+                            label: 'CV / Resume Terkini',
+                            tipe: 'file',
+                            wajib: true,
+                            accept: '.pdf,.doc,.docx',
+                            maks_mb: 5,
+                            lebar_persen: 100,
+                            penuh: true,
+                        },
+                        {
+                            label: 'Dokumen / Sertifikat Pendukung',
+                            tipe: 'file',
+                            accept: '.pdf,.jpg,.jpeg,.png',
+                            maks_mb: 5,
+                            lebar_persen: 100,
+                            penuh: true,
+                        },
+                    ],
+                },
+                {
+                    value: 'consent',
+                    label: 'Pernyataan Keabsahan Data',
+                    help: 'Persetujuan kandidat',
+                    icon: 'bi-shield-check',
+                    fields: [
+                        {
+                            label: 'Saya menyatakan bahwa seluruh data yang disampaikan adalah benar dan sah.',
+                            tipe: 'consent',
+                            wajib: true,
+                            lebar_persen: 100,
+                            penuh: true,
+                        },
+                    ],
+                },
+            ],
         };
     },
     computed: {
-        daftarKomponen() {
-            return daftarFormulir();
+        countPublished() {
+            return this.list.filter((x) => Boolean(x.published)).length;
         },
-        komponenTerpilih() {
-            return this.daftarKomponen.find((k) => k.kode === this.form.komponen) || null;
+        countDraft() {
+            return this.list.filter((x) => !x.published).length;
         },
-        isiInfo() {
-            return this.isiFormulir ? infoFormulir(this.isiFormulir.komponen) : null;
+        tersaring() {
+            let res = this.list;
+            const q = this.cari.trim().toLowerCase();
+            if (q) {
+                res = res.filter((x) => `${x.nama} ${x.kode} ${x.kategori || ''}`.toLowerCase().includes(q));
+            }
+            if (this.statusFilter === 'AKTIF') res = res.filter((x) => x.status === 'AKTIF');
+            else if (this.statusFilter === 'NONAKTIF') res = res.filter((x) => x.status !== 'AKTIF');
+            else if (this.statusFilter === 'PUBLISHED') res = res.filter((x) => Boolean(x.published));
+            else if (this.statusFilter === 'DRAFT') res = res.filter((x) => !x.published);
+            return res;
         },
-        isiSkema() {
-            return this.isiFormulir ? skemaFormulir(this.isiFormulir.komponen) : { langkah: [] };
+        stepAktif() {
+            if (!this.pilihTarget) return this.schema.langkah?.length ? 0 : -1;
+            return this.pilihTarget.li ?? this.pilihTarget.index ?? 0;
         },
-        praInfo() {
-            return this.praFormulir ? infoFormulir(this.praFormulir.komponen) : null;
+        fieldAktif() {
+            const t = this.pilihTarget;
+            if (!t || t.tipe !== 'field') return null;
+            return this.schema.langkah?.[t.li]?.bagian?.[t.bi]?.field?.[t.fi] || null;
         },
-        praKomponen() {
-            return this.praFormulir ? komponenFormulir(this.praFormulir.komponen) : null;
+        keyFieldTerkunci() {
+            if (!this.fieldAktif || !this.aktif?.published?.schema) return false;
+            return this.fieldDipublish(this.fieldAktif);
+        },
+        lebarCepatAktif() {
+            const v = Number(this.fieldAktif?.lebar_persen || 33);
+            if (v >= 95) return 100;
+            if (v >= 60) return 67;
+            if (v >= 45) return 50;
+            return 33;
+        },
+        sectionAktif() {
+            const t = this.pilihTarget;
+            if (!t || t.tipe !== 'section') return null;
+            return this.schema.langkah?.[t.li]?.bagian?.[t.bi] || null;
+        },
+        semuaField() {
+            const fields = [];
+            (this.schema.langkah || []).forEach((L) =>
+                (L.bagian || []).forEach((B) => (B.field || []).forEach((F) => fields.push(F))),
+            );
+            return fields;
+        },
+        wajibFieldCount() {
+            return this.semuaField.filter((f) => f.wajib).length;
+        },
+        totalSectionCount() {
+            return (this.schema.langkah || []).reduce((acc, L) => acc + (L.bagian?.length || 0), 0);
+        },
+        fieldAcuanOptions() {
+            const id = this.fieldAktif?.field_id;
+            return this.semuaField.filter((f) => f.field_id !== id && f.key);
+        },
+        jumlahIssue() {
+            return this.semuaField.reduce((jumlah, f) => jumlah + this.fieldIssues(f).length, 0);
+        },
+        previewFrameStyle() {
+            return {
+                width: this.previewMode === 'mobile' ? '390px' : this.previewMode === 'tablet' ? '768px' : '100%',
+                maxWidth: '100%',
+                margin: '0 auto',
+            };
+        },
+        perubahanVersi() {
+            const oldFields = {};
+            const newFields = {};
+            const flatten = (schema, target) =>
+                (schema?.langkah || []).forEach((L) =>
+                    (L.bagian || []).forEach((B) =>
+                        (B.field || []).forEach((F) => {
+                            target[F.field_id || F.key] = F;
+                        }),
+                    ),
+                );
+            flatten(this.aktif?.published?.schema, oldFields);
+            flatten(this.schema, newFields);
+            const out = [];
+            Object.keys(newFields).forEach((id) => {
+                const f = newFields[id];
+                if (!oldFields[id]) {
+                    out.push({
+                        id,
+                        type: 'added',
+                        label: f.label || f.key,
+                        detail: 'Field baru tipe ' + f.tipe + ' ditambahkan',
+                    });
+                } else if (
+                    JSON.stringify({
+                        label: f.label,
+                        tipe: f.tipe,
+                        wajib: f.wajib,
+                        opsi: f.opsi,
+                        tampil_jika: f.tampil_jika,
+                        lebar_persen: f.lebar_persen,
+                    }) !==
+                    JSON.stringify({
+                        label: oldFields[id].label,
+                        tipe: oldFields[id].tipe,
+                        wajib: oldFields[id].wajib,
+                        opsi: oldFields[id].opsi,
+                        tampil_jika: oldFields[id].tampil_jika,
+                        lebar_persen: oldFields[id].lebar_persen,
+                    })
+                ) {
+                    out.push({
+                        id,
+                        type: 'changed',
+                        label: f.label || f.key,
+                        detail: 'Konfigurasi field telah diperbarui',
+                    });
+                }
+            });
+            Object.keys(oldFields).forEach((id) => {
+                if (!newFields[id]) {
+                    out.push({
+                        id,
+                        type: 'removed',
+                        label: oldFields[id].label || oldFields[id].key,
+                        detail: 'Field dihapus dari draft',
+                    });
+                }
+            });
+            return out;
+        },
+    },
+    watch: {
+        schema: {
+            deep: true,
+            handler() {
+                this.previewJawaban = jawabanAwal(this.schema, this.previewJawaban);
+            },
         },
     },
     mounted() {
         this.load();
     },
     methods: {
-        initials(name) {
-            if (!name) return 'SY';
-            const p = String(name).trim().split(/\s+/);
-            return ((p[0]?.[0] || '') + (p[1]?.[0] || p[0]?.[1] || '')).toUpperCase() || 'SY';
-        },
-        katLabel(k) {
-            return { REKRUTMEN: 'Rekrutmen', MT: 'Management Trainee', INTERNSHIP: 'Internship' }[k] || k;
-        },
-        tipeLabel(t) {
-            return TIPE_LABEL[t] || t;
-        },
-
-        /** Info komponen; null bila kodenya kosong atau tidak dikenal registry. */
-        info(f) {
-            const i = infoFormulir(f.komponen);
-            if (!i) return null;
-            return {
-                nama: i.nama,
-                keterangan: i.keterangan,
-                jumlahLangkah: (i.skema.langkah || []).length,
-                jumlahField: semuaField(i.skema).length,
-            };
-        },
-        fieldnya(f) {
-            return semuaField(skemaFormulir(f.komponen));
-        },
-        hitungBerkas(f) {
-            return this.fieldnya(f).filter((x) => x.tipe === 'file').length;
-        },
-        hitungSaring(f) {
-            return this.fieldnya(f).filter((x) => x.dapat_disaring).length;
-        },
-        hitungSyarat(f) {
-            return this.fieldnya(f).filter((x) => x.tampil_jika).length;
-        },
-
         async load() {
-            this.loading = true;
             try {
-                const res = await axios.get(API, CFG);
-                this.list = res.data.result || [];
+                const { data } = await axios.get(API, CFG);
+                this.list = data.result || [];
+                if (!this.aktif && this.list.length) {
+                    this.pilih(this.list[0]);
+                } else if (this.aktif) {
+                    const match = this.list.find((x) => x.id === this.aktif.id);
+                    if (match) this.pilih(match);
+                }
             } catch (e) {
-                this.notice('Gagal memuat data formulir.');
-            } finally {
-                this.loading = false;
+                this.notice('Gagal memuat katalog formulir.');
             }
         },
-
-        openCreate() {
-            this.editingId = null;
-            this.form = { nama: '', kategori: '', deskripsi: '', komponen: '', petunjuk: '' };
-            this.show = true;
-        },
-        openEdit(f) {
-            this.editingId = f.id;
-            this.form = {
-                nama: f.nama,
+        pilih(f) {
+            this.aktif = f;
+            this.meta = {
+                nama: f.nama || '',
                 kategori: f.kategori || '',
                 deskripsi: f.deskripsi || '',
-                komponen: f.komponen || '',
                 petunjuk: f.petunjuk || '',
             };
-            this.show = true;
+            this.schema = normalisasiSkema(
+                this.clone(f.draft?.schema || f.published?.schema || skemaFormulir(f.komponen) || skemaKosong()),
+            );
+            if (!this.schema.langkah?.length) this.schema = skemaKosong();
+            this.pilihTarget = null;
+            this.previewJawaban = jawabanAwal(this.schema, {});
         },
-        async save() {
-            if (this.saving) return;
-            if (!this.form.nama.trim()) return this.notice('Nama formulir wajib diisi.');
-            if (!this.form.komponen) return this.notice('Komponen formulir wajib dipilih.');
+        buatBaru() {
+            this.aktif = { id: null, nama: 'Formulir Baru', kode: 'BARU', status: 'AKTIF' };
+            this.meta = { nama: 'Formulir Baru', kategori: '', deskripsi: '', petunjuk: '' };
+            this.schema = normalisasiSkema(skemaKosong());
+            this.pilihTarget = null;
+            this.tab = 'builder';
+            this.previewJawaban = jawabanAwal(this.schema, {});
+        },
+        async simpanDraft() {
+            const valid = validasiSkema(this.schema);
+            if (!valid.ok) return this.notice(valid.errors[0]);
             this.saving = true;
             try {
-                if (this.editingId) {
-                    await axios.put(`${API}/${this.editingId}`, this.form, CFG);
-                    this.notice('Formulir diperbarui.');
+                const payload = { ...this.meta, schema: valid.skema };
+                if (this.aktif?.id) {
+                    await axios.put(`${API}/${this.aktif.id}`, payload, CFG);
                 } else {
-                    await axios.post(API, this.form, CFG);
-                    this.notice('Formulir didaftarkan.');
+                    const { data } = await axios.post(API, payload, CFG);
+                    this.aktif.id = data.result?.id;
                 }
-                this.show = false;
                 await this.load();
+                this.notice('Draft formulir berhasil tersimpan.');
             } catch (e) {
-                this.notice(e.response?.data?.message || 'Gagal menyimpan.');
+                this.notice(e.response?.data?.message || 'Gagal menyimpan draft.');
             } finally {
                 this.saving = false;
             }
         },
-        async setStatus(f, v) {
-            const prev = f.status;
-            f.status = v ? 'AKTIF' : 'NONAKTIF';
-            try {
-                await axios.patch(`${API}/${f.id}/toggle`, { aktif: v }, CFG);
-            } catch (e) {
-                f.status = prev;
-                this.notice('Gagal mengubah status.');
-            }
+        reviewPublish() {
+            if (!this.aktif?.id) return this.publish(true);
+            this.showCompare = true;
         },
-        askRemove(f) {
-            this.delTarget = f;
-            this.delShow = true;
-        },
-        async confirmDelete() {
-            if (this.deleting || !this.delTarget) return;
-            this.deleting = true;
+        async publish(force = false) {
+            if (!force && this.aktif?.published?.schema) return (this.showCompare = true);
+            if (!this.aktif?.id) await this.simpanDraft();
+            if (!this.aktif?.id) return;
+            const valid = validasiSkema(this.schema);
+            if (!valid.ok) return this.notice(valid.errors[0]);
+            this.saving = true;
             try {
-                await axios.delete(`${API}/${this.delTarget.id}`, CFG);
-                this.notice('Formulir dihapus.');
-                this.delShow = false;
-                this.delTarget = null;
+                await axios.post(`${API}/${this.aktif.id}/publish`, { schema: valid.skema }, CFG);
                 await this.load();
+                this.notice('Formulir berhasil dipublish!');
             } catch (e) {
-                this.notice(e.response?.data?.message || 'Gagal menghapus.');
+                this.notice(e.response?.data?.message || 'Gagal mempublish formulir.');
             } finally {
-                this.deleting = false;
+                this.saving = false;
             }
         },
+        mintaDuplikat(f) {
+            this.formToDuplicate = f;
+            this.duplicateName = `${f.nama} - Salinan`;
+            this.showDuplicateModal = true;
+        },
+        async eksekusiDuplikat() {
+            if (!this.formToDuplicate) return;
+            this.saving = true;
+            try {
+                const { data } = await axios.post(
+                    `${API}/${this.formToDuplicate.id}/duplicate`,
+                    { nama: this.duplicateName },
+                    CFG,
+                );
+                this.showDuplicateModal = false;
+                await this.load();
+                if (data.result?.id) {
+                    const found = this.list.find((x) => x.id === data.result.id);
+                    if (found) this.pilih(found);
+                }
+                this.notice('Formulir berhasil diduplikat.');
+            } catch (e) {
+                this.notice(e.response?.data?.message || 'Gagal duplikasi formulir.');
+            } finally {
+                this.saving = false;
+            }
+        },
+        async toggleStatus(f) {
+            const nextAktif = f.status !== 'AKTIF';
+            try {
+                await axios.patch(`${API}/${f.id}/toggle`, { aktif: nextAktif }, CFG);
+                await this.load();
+                this.notice(`Status formulir diubah menjadi ${nextAktif ? 'AKTIF' : 'NONAKTIF'}.`);
+            } catch (e) {
+                this.notice(e.response?.data?.message || 'Gagal mengubah status.');
+            }
+        },
+        mintaHapus(f) {
+            this.formToDelete = f;
+            this.showDeleteModal = true;
+        },
+        async eksekusiHapus() {
+            if (!this.formToDelete) return;
+            this.saving = true;
+            try {
+                await axios.delete(`${API}/${this.formToDelete.id}`, CFG);
+                this.showDeleteModal = false;
+                this.formToDelete = null;
+                this.aktif = null;
+                await this.load();
+                this.notice('Formulir telah dihapus.');
+            } catch (e) {
+                this.notice(e.response?.data?.message || 'Gagal menghapus formulir.');
+            } finally {
+                this.saving = false;
+            }
+        },
+        tambahStep() {
+            let n = this.schema.langkah.length + 1;
+            const used = new Set((this.schema.langkah || []).map((L) => L.kode));
+            while (used.has('LANGKAH_' + n)) n += 1;
+            this.schema.langkah.push({
+                kode: `LANGKAH_${n}`,
+                judul: `Langkah ${n}`,
+                ikon: 'bi-card-list',
+                bagian: [{ judul: 'Section Baru', field: [] }],
+            });
+            this.selectStep(this.schema.langkah.length - 1);
+        },
+        tambahSection() {
+            const li = Math.max(this.stepAktif, 0);
+            if (!this.schema.langkah[li]) this.tambahStep();
+            this.schema.langkah[li].bagian.push({ judul: 'Section Baru', field: [] });
+            this.selectSection(li, this.schema.langkah[li].bagian.length - 1);
+        },
+        tambahField(li, bi) {
+            const key = this.keyUnik('field_baru');
+            this.schema.langkah[li].bagian[bi].field.push({
+                field_id: buatFieldId(),
+                key,
+                label: 'Field Baru',
+                tipe: 'text',
+                wajib: false,
+                penuh: false,
+                lebar_persen: 33,
+            });
+            this.selectField(li, bi, this.schema.langkah[li].bagian[bi].field.length - 1);
+        },
+        duplikatSection(li, bi) {
+            const sec = this.schema.langkah[li]?.bagian?.[bi];
+            if (!sec) return;
+            const copy = this.clone(sec);
+            copy.judul = `${sec.judul} (Salinan)`;
+            (copy.field || []).forEach((f) => {
+                f.field_id = buatFieldId();
+                f.key = this.keyUnik(f.key || f.label);
+            });
+            this.schema.langkah[li].bagian.splice(bi + 1, 0, copy);
+            this.selectSection(li, bi + 1);
+            this.notice('Section diduplikat.');
+        },
+        duplikatField(li, bi, fi) {
+            const field = this.schema.langkah[li]?.bagian?.[bi]?.field?.[fi];
+            if (!field) return;
+            const copy = this.clone(field);
+            copy.field_id = buatFieldId();
+            copy.label = `${field.label} (Salinan)`;
+            copy.key = this.keyUnik(slugKey(copy.label));
+            this.schema.langkah[li].bagian[bi].field.splice(fi + 1, 0, copy);
+            this.selectField(li, bi, fi + 1);
+            this.notice('Field diduplikat.');
+        },
+        hapusStep(li) {
+            if (this.schema.langkah.length <= 1) return this.notice('Minimal harus ada satu langkah/step.');
+            this.schema.langkah.splice(li, 1);
+            this.pilihTarget = null;
+        },
+        hapusSection(li, bi) {
+            if (this.schema.langkah[li].bagian.length <= 1) return this.notice('Minimal harus ada satu section.');
+            this.schema.langkah[li].bagian.splice(bi, 1);
+            this.pilihTarget = null;
+        },
+        hapusFieldAktif() {
+            const t = this.pilihTarget;
+            if (!t) return;
+            this.hapusField(t.li, t.bi, t.fi);
+        },
+        hapusField(li, bi, fi) {
+            const fields = this.schema.langkah?.[li]?.bagian?.[bi]?.field;
+            if (!fields?.[fi]) return;
+            fields.splice(fi, 1);
+            if (fields[fi]) this.selectField(li, bi, fi);
+            else this.selectSection(li, bi);
+        },
+        selectStep(index) {
+            this.pilihTarget = { tipe: 'step', index, li: index };
+        },
+        selectSection(li, bi) {
+            this.pilihTarget = { tipe: 'section', li, bi };
+        },
+        selectField(li, bi, fi) {
+            this.pilihTarget = { tipe: 'field', li, bi, fi };
+        },
+        targetSection() {
+            const t = this.pilihTarget;
+            if (t?.tipe === 'section') return { li: t.li, bi: t.bi };
+            if (t?.tipe === 'field') return { li: t.li, bi: t.bi };
+            const li = Math.max(this.stepAktif, 0);
+            if (!this.schema.langkah[li]) this.tambahStep();
+            if (!this.schema.langkah[li].bagian?.length) this.tambahSection();
+            return { li, bi: 0 };
+        },
+        sectionJudulUnik(base) {
+            const used = new Set();
+            (this.schema.langkah || []).forEach((L) =>
+                (L.bagian || []).forEach((B) =>
+                    used.add(
+                        String(B.judul || '')
+                            .trim()
+                            .toLowerCase(),
+                    ),
+                ),
+            );
+            const root = String(base || 'Section Baru').trim() || 'Section Baru';
+            let value = root;
+            let n = 2;
+            while (used.has(value.toLowerCase())) value = root + ' ' + n++;
+            return value;
+        },
+        fieldBaru(draft) {
+            const field = this.clone(draft || {});
+            field.field_id = buatFieldId();
+            field.key = this.keyUnik(field.label || 'field_baru');
+            field.label = field.label || 'Field Baru';
+            field.tipe = field.tipe || 'text';
+            field.wajib = Boolean(field.wajib);
+            field.penuh = Boolean(field.penuh || Number(field.lebar_persen) >= 100);
+            field.lebar_persen = Number(field.lebar_persen || (field.penuh ? 100 : 33));
+            this.rapikanField(field);
+            return field;
+        },
+        tambahFieldPreset(preset) {
+            const { li, bi } = this.targetSection();
+            const section = this.schema.langkah[li].bagian[bi];
+            section.field.push(this.fieldBaru(preset.field));
+            this.selectField(li, bi, section.field.length - 1);
+        },
+        tambahBlock(block) {
+            const li = Math.max(this.stepAktif, 0);
+            if (!this.schema.langkah[li]) this.tambahStep();
+            const section = {
+                judul: this.sectionJudulUnik(block.label || 'Section Baru'),
+                field: [],
+            };
+            this.schema.langkah[li].bagian.push(section);
+            (block.fields || []).forEach((f) => section.field.push(this.fieldBaru(f)));
+            this.selectSection(li, this.schema.langkah[li].bagian.length - 1);
+        },
+        terapkanLayoutPreset(preset) {
+            if (!this.sectionAktif) return;
+            const width = { THREE: 33, TWO: 50, LONG: 67, FULL: 100 }[preset] || 33;
+            this.sectionAktif.field.forEach((f) => {
+                const forced = preset === 'FULL' || ['file', 'consent'].includes(f.tipe);
+                f.lebar_persen = forced ? 100 : width;
+                f.penuh = f.lebar_persen >= 100;
+            });
+            this.notice('Preset layout kolom diterapkan.');
+        },
+        sinkronKey() {
+            if (!this.fieldAktif || this.keyFieldTerkunci) return;
+            this.fieldAktif.key = this.keyUnik(slugKey(this.fieldAktif.label), this.fieldAktif.field_id);
+        },
+        ubahLabelField() {
+            this.sinkronKey();
+            const f = this.fieldAktif;
+            if (!f) return;
+            const label = String(f.label || '').toLowerCase();
+            if (f.tipe !== 'text' || f.opsi?.length || f.accept) return;
+            if (label.includes('email')) f.tipe = 'email';
+            else if (/telepon|nomor hp|whatsapp|wa\b/.test(label)) f.tipe = 'phone';
+            else if (/cv|resume|ijazah|sertifikat|transkrip|ktp|upload|unggah|dokumen|berkas/.test(label)) {
+                f.tipe = 'file';
+                f.lebar_persen = 100;
+                f.penuh = true;
+            } else if (/setuju|persetujuan|pernyataan/.test(label)) {
+                f.tipe = 'consent';
+                f.lebar_persen = 100;
+                f.penuh = true;
+            } else if (/alamat|cerita|deskripsi|ringkasan|pengalaman|catatan/.test(label)) {
+                f.tipe = 'textarea';
+                f.lebar_persen = 67;
+            }
+            this.rapikanField(f);
+        },
+        ubahTipeField() {
+            if (!this.fieldAktif) return;
+            this.rapikanField(this.fieldAktif);
+        },
+        aturFieldSyarat(key) {
+            if (!this.fieldAktif) return;
+            this.fieldAktif.tampil_jika = key ? { field: key, operator: '=', nilai: '' } : null;
+        },
+        aturSectionSyarat(key) {
+            if (!this.sectionAktif) return;
+            this.sectionAktif.tampil_jika = key ? { field: key, operator: '=', nilai: '' } : null;
+        },
+        rapikanKeyField() {
+            if (!this.fieldAktif || this.keyFieldTerkunci) return;
+            const lama = this.fieldAktif.key;
+            const rapi = slugKey(lama || this.fieldAktif.label);
+            this.fieldAktif.key = this.keyUnik(rapi, this.fieldAktif.field_id);
+        },
+        rapikanField(f) {
+            if (this.butuhOpsi(f) && !Array.isArray(f.opsi)) f.opsi = ['Ya', 'Tidak'];
+            if (f.tipe === 'file') {
+                f.accept = f.accept || '.pdf';
+                f.maks_mb = f.maks_mb || 5;
+                f.penuh = true;
+                f.lebar_persen = 100;
+            }
+        },
+        aturLebarCepat(v) {
+            if (!this.fieldAktif) return;
+            this.fieldAktif.lebar_persen = Number(v || 33);
+            this.rapikanLebarField();
+        },
+        rapikanLebarField() {
+            if (!this.fieldAktif) return;
+            const v = this.snapLebar(Number(this.fieldAktif.lebar_persen || 33));
+            this.fieldAktif.lebar_persen = v;
+            this.fieldAktif.penuh = v >= 100;
+        },
+        snapLebar(value) {
+            const v = Math.min(100, Math.max(33, Math.round(Number(value || 33))));
+            const snap = [33, 50, 67, 100].find((x) => Math.abs(x - v) <= 2);
+            return snap || v;
+        },
+        mulaiResizeField(e, li, bi, fi) {
+            const grid = e.currentTarget.closest('.mfb-fields-grid');
+            const field = this.schema.langkah?.[li]?.bagian?.[bi]?.field?.[fi];
+            if (!grid || !field) return;
 
-        openIsi(f) {
-            this.isiFormulir = f;
-            this.isiShow = true;
+            this.selectField(li, bi, fi);
+            this.resizeState = {
+                li,
+                bi,
+                fi,
+                startX: e.clientX,
+                startWidth: grid.getBoundingClientRect().width,
+                startPersen: Number(field.lebar_persen || (field.penuh ? 100 : 33)),
+            };
+            window.addEventListener('pointermove', this.resizeFieldBerjalan);
+            window.addEventListener('pointerup', this.selesaiResizeField, { once: true });
         },
+        resizeFieldBerjalan(e) {
+            const s = this.resizeState;
+            if (!s) return;
+            const field = this.schema.langkah?.[s.li]?.bagian?.[s.bi]?.field?.[s.fi];
+            if (!field) return this.selesaiResizeField();
 
-        openPratinjau(f) {
-            this.praFormulir = f;
-            this.praJawaban = jawabanAwal(skemaFormulir(f.komponen), this.praProfil);
-            this.praShow = true;
+            const deltaPersen = ((e.clientX - s.startX) / Math.max(1, s.startWidth)) * 100;
+            const persen = this.snapLebar(s.startPersen + deltaPersen);
+            field.lebar_persen = persen;
+            field.penuh = persen >= 100;
         },
-        resetPratinjau() {
-            this.praJawaban = jawabanAwal(skemaFormulir(this.praFormulir.komponen), this.praProfil);
-            // Ganti key komponen -> stepper Formulir 2 kembali ke langkah 1.
-            this.praReset++;
+        selesaiResizeField() {
+            window.removeEventListener('pointermove', this.resizeFieldBerjalan);
+            this.resizeState = null;
+            this.rapikanLebarField();
         },
-        onPratinjauKirim() {
-            this.notice('Pratinjau: formulir lolos validasi. (Tidak ada data yang disimpan.)');
+        butuhOpsi(f) {
+            return ['select', 'radio', 'checkbox'].includes(f?.tipe);
         },
-
+        fieldIssues(field) {
+            const issues = [];
+            if (!field?.label?.trim()) issues.push('Label belum diisi');
+            if (!field?.key?.trim()) issues.push('Key belum dibuat');
+            if (this.butuhOpsi(field) && (!Array.isArray(field.opsi) || field.opsi.filter(Boolean).length < 2))
+                issues.push('Minimal harus ada 2 opsi pilihan');
+            if (field.tipe === 'file' && !field.accept) issues.push('Format file upload belum diatur');
+            if (field.tampil_jika?.field === field.key) issues.push('Kondisi tidak boleh mengacu ke dirinya sendiri');
+            const duplicate = this.semuaField.filter((f) => f !== field && f.key && f.key === field.key).length;
+            if (duplicate) issues.push('Key identifier duplikat');
+            return issues;
+        },
+        keyUnik(base, abaikanFieldId = null) {
+            const used = new Set();
+            (this.schema.langkah || []).forEach((L) =>
+                (L.bagian || []).forEach((B) =>
+                    (B.field || []).forEach((F) => {
+                        if (F.field_id !== abaikanFieldId) used.add(F.key);
+                    }),
+                ),
+            );
+            let key = slugKey(base);
+            let i = 2;
+            while (used.has(key)) key = `${slugKey(base)}_${i++}`;
+            return key;
+        },
+        fieldDipublish(field) {
+            let ketemu = false;
+            (this.aktif?.published?.schema?.langkah || []).forEach((L) =>
+                (L.bagian || []).forEach((B) =>
+                    (B.field || []).forEach((F) => {
+                        if (
+                            (field.field_id && F.field_id && F.field_id === field.field_id) ||
+                            (!F.field_id && F.key === field.key)
+                        )
+                            ketemu = true;
+                    }),
+                ),
+            );
+            return ketemu;
+        },
+        gayaFieldAdmin(f) {
+            const persen = Number(f.lebar_persen || (f.penuh ? 100 : 33));
+            const span = Math.min(12, Math.max(4, Math.round((Math.min(100, Math.max(33, persen)) / 100) * 12)));
+            return { '--mfb-span': String(span) };
+        },
+        ikonField(t) {
+            return (
+                {
+                    textarea: 'bi-textarea-t',
+                    number: 'bi-123',
+                    date: 'bi-calendar3',
+                    select: 'bi-menu-button-wide',
+                    radio: 'bi-record-circle',
+                    checkbox: 'bi-check2-square',
+                    file: 'bi-paperclip',
+                    phone: 'bi-telephone',
+                    email: 'bi-envelope',
+                    consent: 'bi-shield-check',
+                    referensi: 'bi-database',
+                }[t] || 'bi-input-cursor-text'
+            );
+        },
+        clone(x) {
+            return JSON.parse(JSON.stringify(x || {}));
+        },
+        salinJSON() {
+            const jsonText = JSON.stringify(this.schema, null, 2);
+            navigator.clipboard.writeText(jsonText).then(() => {
+                this.notice('JSON Schema tersalin ke clipboard!');
+            });
+        },
         notice(x) {
             this.toast = x;
-            if (this.tm) clearTimeout(this.tm);
-            this.tm = setTimeout(() => (this.toast = ''), 3500);
+            clearTimeout(this._tm);
+            this._tm = setTimeout(() => (this.toast = ''), 3500);
         },
     },
 };
 </script>
 
 <style scoped>
-.mfr-head-act {
+/* ── MAIN LAYOUT & MODERN THEME ── */
+.mfb-page {
+    padding: 1.5rem;
+    color: #0f172a;
+    background: var(--wca-bg, #f8fafc);
+    min-height: 100vh;
+}
+
+/* Global Icon Alignment & Centering */
+.mfb-page i.bi,
+.mfb-page .bi {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    vertical-align: middle !important;
+    line-height: 1 !important;
+    height: 1em;
+    width: 1em;
+}
+
+/* ── NATIVE SEGMENTED BUTTON GROUP ── */
+.mfb-segmented {
+    display: flex;
+    background: #f1f5f9;
+    border: 1px solid #cbd5e1;
+    border-radius: 12px;
+    padding: 3px;
+    gap: 3px;
+    width: 100%;
+}
+
+.mfb-segmented__item {
+    flex: 1;
+    border: 0;
+    background: transparent;
+    color: #64748b;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 0.5rem 0.75rem;
+    border-radius: 9px;
+    cursor: pointer;
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 0.4rem;
-    margin-left: auto;
+    transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+    white-space: nowrap;
 }
-.mfr-meta {
-    margin-bottom: 0.8rem;
+
+.mfb-segmented__item:hover:not(.active) {
+    color: #0f172a;
+    background: rgba(255, 255, 255, 0.6);
 }
-.mfr-hint {
-    font-size: 11.5px;
-    line-height: 1.55;
-    color: #64748b;
-    margin-top: 0.3rem;
+
+.mfb-segmented__item.active {
+    background: #ffffff;
+    color: #4f46e5;
+    box-shadow: 0 2px 8px rgba(79, 70, 229, 0.2);
 }
-.mfr-req {
-    font-weight: 600;
-    font-size: 11px;
-    color: #b45309;
-    background: #fef3c7;
-    border-radius: 999px;
-    padding: 0.1rem 0.45rem;
-    margin-left: 0.35rem;
+
+:deep(.el-input__wrapper),
+:deep(.el-select__wrapper) {
+    border-radius: 10px !important;
+    background-color: #ffffff !important;
+    border: 1px solid #cbd5e1 !important;
+    box-shadow: none !important;
+    padding: 4px 11px !important;
+    transition: all 0.15s ease !important;
 }
-.mfr-petunjuk {
+
+:deep(.el-input__wrapper:hover),
+:deep(.el-select__wrapper:hover) {
+    border-color: #94a3b8 !important;
+}
+
+:deep(.el-input__wrapper.is-focus),
+:deep(.el-select__wrapper.is-focused) {
+    border-color: #6366f1 !important;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15) !important;
+}
+
+:deep(.el-input__inner),
+:deep(.el-select__selected-item) {
+    color: #0f172a !important;
+    font-weight: 600 !important;
+    font-size: 12.5px !important;
+}
+
+:deep(.el-slider__bar) {
+    background: linear-gradient(90deg, #6366f1, #4f46e5) !important;
+    border-radius: 4px !important;
+}
+
+:deep(.el-slider__button) {
+    border-color: #4f46e5 !important;
+    width: 16px !important;
+    height: 16px !important;
+    box-shadow: 0 2px 6px rgba(79, 70, 229, 0.3) !important;
+}
+
+:deep(.el-checkbox) {
+    margin-right: 0;
+}
+
+:deep(.el-checkbox__input.is-checked .el-checkbox__inner) {
+    background-color: #4f46e5 !important;
+    border-color: #4f46e5 !important;
+    border-radius: 6px !important;
+}
+
+:deep(.el-checkbox__inner) {
+    border-radius: 6px !important;
+    border-color: #cbd5e1 !important;
+    width: 16px !important;
+    height: 16px !important;
+}
+
+:deep(.el-checkbox__label) {
+    color: #334155 !important;
+    font-weight: 700 !important;
+    font-size: 12px !important;
+}
+
+/* Header & Title Section */
+.mfb-phead {
     display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1.5rem;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 16px;
+    padding: 1.15rem 1.5rem;
+    margin-bottom: 1.25rem;
+    box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.05);
+}
+
+.mfb-icon-badge {
+    width: 48px;
+    height: 48px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    box-shadow: 0 8px 20px -4px rgba(79, 70, 229, 0.4);
+}
+
+.mfb-metrics {
+    display: flex;
+    gap: 0.65rem;
+    align-items: center;
+}
+
+.mfb-metric-pill {
+    display: inline-flex;
+    align-items: center;
     gap: 0.45rem;
+    background: #f1f5f9;
+    color: #475569;
+    padding: 0.45rem 0.85rem;
+    border-radius: 20px;
     font-size: 12px;
-    color: #64748b;
-    background: rgba(245, 158, 11, 0.08);
-    border-radius: 10px;
-    padding: 0.5rem 0.65rem;
-    margin-bottom: 0.7rem;
+    font-weight: 600;
+    border: 1px solid #e2e8f0;
 }
 
-/* ── Kartu komponen terpasang ─────────────────────────────── */
-.mfr-ring {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.8rem;
-    padding: 0.8rem;
-    border: 1px solid rgba(11, 16, 51, 0.08);
-    border-left: 3px solid #10b981;
-    border-radius: 12px;
-    background: linear-gradient(90deg, rgba(16, 185, 129, 0.05), transparent 45%);
-}
-.mfr-ring__main {
-    flex: 1;
-    min-width: 0;
-}
-.mfr-ring__top {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 0.4rem;
-}
-.mfr-ring__kode {
+.mfb-metric-pill b {
+    color: #0f172a;
     font-weight: 800;
-    font-size: 11px;
-    color: #4338ca;
-    background: rgba(79, 70, 229, 0.1);
-    border-radius: 6px;
-    padding: 0.1rem 0.4rem;
-}
-.mfr-ring__meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.3rem 0.9rem;
-    margin-top: 0.35rem;
-    font-size: 11.5px;
-    color: #64748b;
-}
-.mfr-ring__act {
-    display: flex;
-    align-items: center;
-    gap: 0.35rem;
-    flex-shrink: 0;
-    flex-wrap: wrap;
-    justify-content: flex-end;
 }
 
-.mfr-opt {
+.mfb-metric-pill--published {
+    background: #ecfdf5;
+    color: #047857;
+    border-color: #a7f3d0;
+}
+
+.mfb-metric-pill--published b {
+    color: #065f46;
+}
+
+.mfb-metric-pill--draft {
+    background: #fffbeb;
+    color: #b45309;
+    border-color: #fde68a;
+}
+
+.mfb-metric-pill--draft b {
+    color: #92400e;
+}
+
+.mfb-phead__actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+/* Button Variants */
+.mfb-btn {
+    border: 0;
+    border-radius: 10px;
+    padding: 0.6rem 1.1rem;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.mfb-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    box-shadow: none !important;
+}
+
+.mfb-btn--glow {
+    background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
+    color: #ffffff;
+    box-shadow: 0 6px 14px -3px rgba(79, 70, 229, 0.4);
+}
+
+.mfb-btn--glow:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 8px 18px -2px rgba(79, 70, 229, 0.5);
+}
+
+.mfb-btn--indigo {
+    background: #4f46e5;
+    color: #ffffff;
+}
+
+.mfb-btn--indigo:hover:not(:disabled) {
+    background: #4338ca;
+}
+
+.mfb-btn--emerald {
+    background: #059669;
+    color: #ffffff;
+    box-shadow: 0 4px 12px -2px rgba(5, 150, 105, 0.35);
+}
+
+.mfb-btn--emerald:hover:not(:disabled) {
+    background: #047857;
+}
+
+.mfb-btn--soft {
+    background: #eef2ff;
+    color: #4338ca;
+    border: 1px solid #c7d2fe;
+}
+
+.mfb-btn--soft:hover:not(:disabled) {
+    background: #e0e7ff;
+}
+
+.mfb-btn--danger {
+    background: #fee2e2;
+    color: #b91c1c;
+    border: 1px solid #fca5a5;
+}
+
+.mfb-btn--danger:hover:not(:disabled) {
+    background: #fca5a5;
+}
+
+.mfb-btn--full {
+    width: 100%;
+}
+
+.mfb-btn--sm {
+    padding: 0.4rem 0.75rem;
+    font-size: 12px;
+}
+
+.mfb-btn-badge {
+    background: #ef4444;
+    color: #ffffff;
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 10px;
+}
+
+.mfb-spin {
+    animation: mfbSpin 1s linear infinite;
+}
+
+@keyframes mfbSpin {
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+/* ── LAYOUT GRID ── */
+.mfb-layout {
+    display: grid;
+    grid-template-columns: 20rem minmax(0, 1fr);
+    gap: 1.25rem;
+    align-items: start;
+}
+
+/* Sidebar Catalog */
+.mfb-sidebar {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 16px;
+    padding: 1.1rem;
+    position: sticky;
+    top: 1.25rem;
+    max-height: calc(100vh - 2.5rem);
     display: flex;
     flex-direction: column;
-    line-height: 1.35;
-}
-.mfr-opt small {
-    color: #94a3b8;
-    font-size: 11px;
-}
-.mfr-pilih {
-    display: flex;
-    gap: 0.45rem;
-    font-size: 12px;
-    color: #4338ca;
-    background: rgba(79, 70, 229, 0.07);
-    border-radius: 10px;
-    padding: 0.55rem 0.7rem;
+    box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.04);
 }
 
-/* ── Daftar pertanyaan ────────────────────────────────────── */
-.mfr-lang {
-    margin-bottom: 1.1rem;
+.mfb-sidebar__title {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+    font-weight: 800;
+    color: #0f172a;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid #f1f5f9;
 }
-.mfr-lang__head {
+
+.mfb-sidebar__count {
+    background: #eef2ff;
+    color: #4338ca;
+    font-size: 11px;
+    font-weight: 800;
+    padding: 2px 8px;
+    border-radius: 10px;
+}
+
+.mfb-sidebar__head {
+    margin-bottom: 0.85rem;
+}
+
+.mfb-search {
+    position: relative;
+    margin-bottom: 0.65rem;
+}
+
+.mfb-search__ico {
+    position: absolute;
+    left: 0.75rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #94a3b8;
+    font-size: 14px;
+}
+
+.mfb-search__input {
+    width: 100%;
+    padding: 0.55rem 2rem 0.55rem 2.2rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    font-size: 12.5px;
+    outline: 0;
+    transition: border-color 0.15s;
+}
+
+.mfb-search__input:focus {
+    border-color: #6366f1;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+}
+
+.mfb-search__clear {
+    position: absolute;
+    right: 0.5rem;
+    top: 50%;
+    transform: translateY(-50%);
+    border: 0;
+    background: transparent;
+    color: #94a3b8;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.mfb-filter-chips {
+    display: flex;
+    gap: 0.35rem;
+    overflow-x: auto;
+    padding-bottom: 0.2rem;
+}
+
+.mfb-chip {
+    border: 1px solid #e2e8f0;
+    background: #f8fafc;
+    color: #64748b;
+    border-radius: 14px;
+    padding: 0.25rem 0.65rem;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.mfb-chip.active {
+    background: #eef2ff;
+    color: #4338ca;
+    border-color: #818cf8;
+}
+
+.mfb-sidebar__list {
+    overflow-y: auto;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+    padding-right: 0.2rem;
+}
+
+.mfb-card {
+    border: 1px solid #e2e8f0;
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 0.85rem;
+    text-align: left;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    position: relative;
+}
+
+.mfb-card:hover {
+    border-color: #cbd5e1;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px -2px rgba(15, 23, 42, 0.06);
+}
+
+.mfb-card.active {
+    border-color: #6366f1;
+    background: #faf5ff;
+    box-shadow: 0 4px 16px -2px rgba(99, 102, 241, 0.18);
+}
+
+.mfb-card.active::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 10px;
+    bottom: 10px;
+    width: 4px;
+    background: #6366f1;
+    border-radius: 0 4px 4px 0;
+}
+
+.mfb-card.off {
+    opacity: 0.65;
+}
+
+.mfb-card__head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 0.5rem;
+    margin-bottom: 0.45rem;
+}
+
+.mfb-card__titlegroup {
+    display: flex;
+    flex-direction: column;
+}
+
+.mfb-card__title {
+    font-size: 13px;
+    font-weight: 800;
+    color: #0f172a;
+    line-height: 1.3;
+}
+
+.mfb-card__code {
+    font-size: 10.5px;
+    color: #64748b;
+    font-family: monospace;
+}
+
+.mfb-card__cat {
+    background: #e2e8f0;
+    color: #334155;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 6px;
+}
+
+.mfb-card__description {
+    margin: 0.45rem 0 0;
+    color: #64748b;
+    font-size: 11px;
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.mfb-card__meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 1px dashed #f1f5f9;
+}
+
+.mfb-card__badges {
+    display: flex;
+    gap: 0.35rem;
+    align-items: center;
+}
+
+.mfb-card__pub {
+    font-size: 10.5px;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.mfb-card__pub.is-pub {
+    color: #059669;
+}
+
+.mfb-card__pub.is-draft {
+    color: #d97706;
+}
+
+.mfb-card__version {
+    color: #64748b;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.mfb-card__status {
+    font-size: 9.5px;
+    font-weight: 800;
+    padding: 1px 5px;
+    border-radius: 4px;
+    text-transform: uppercase;
+}
+
+.mfb-card__status.is-active {
+    background: #dcfce7;
+    color: #15803d;
+}
+
+.mfb-card__status.is-inactive {
+    background: #f1f5f9;
+    color: #64748b;
+}
+
+.mfb-card__actions {
+    display: flex;
+    gap: 0.25rem;
+}
+
+.mfb-iconbtn {
+    border: 0;
+    background: transparent;
+    color: #94a3b8;
+    border-radius: 6px;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    cursor: pointer;
+    font-size: 12px;
+    transition:
+        background 0.15s,
+        color 0.15s;
+}
+
+.mfb-iconbtn:hover {
+    background: #f1f5f9;
+    color: #334155;
+}
+
+.mfb-iconbtn--warn:hover {
+    background: #fef3c7;
+    color: #b45309;
+}
+
+.mfb-iconbtn--ok:hover {
+    background: #dcfce7;
+    color: #15803d;
+}
+
+.mfb-iconbtn--danger:hover {
+    background: #fee2e2;
+    color: #b91c1c;
+}
+
+.mfb-empty-search {
+    padding: 2rem 1rem;
+    text-align: center;
+    color: #94a3b8;
+}
+
+.mfb-empty-search i {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+}
+
+.mfb-empty-search p {
+    font-size: 12px;
+    margin-bottom: 0.75rem;
+}
+
+/* ── WORKSPACE PANEL ── */
+.mfb-work {
+    min-width: 0;
+}
+
+.mfb-panel {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 16px;
+    padding: 1.35rem;
+    box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.04);
+}
+
+.mfb-meta-bar {
+    display: grid;
+    grid-template-columns: 1.5fr 1fr 1.2fr;
+    gap: 1rem;
+    margin-bottom: 1rem;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 1.1rem;
+}
+
+.mfb-meta-bar__item label {
+    display: block;
+    font-size: 11.5px;
+    font-weight: 800;
+    color: #475569;
+    margin-bottom: 0.35rem;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+
+.mfb-master-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.65rem;
+    margin: 0.85rem 0;
+    padding: 0.7rem 0.8rem;
+    border: 1px solid #c7d2fe;
+    border-radius: 9px;
+    background: #eef2ff;
+    color: #3730a3;
+}
+
+.mfb-master-notice > i {
+    margin-top: 0.1rem;
+    font-size: 1rem;
+}
+
+.mfb-master-notice div {
+    display: grid;
+    gap: 0.15rem;
+}
+
+.mfb-master-notice strong {
+    font-size: 12px;
+}
+
+.mfb-master-notice span {
+    color: #4f46e5;
+    font-size: 11px;
+    line-height: 1.45;
+}
+
+.mfb-meta-extra {
+    margin-bottom: 1.25rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 0.65rem 0.85rem;
+    background: #ffffff;
+}
+
+.mfb-meta-extra summary {
+    font-size: 12px;
+    font-weight: 700;
+    color: #475569;
+    cursor: pointer;
+}
+
+.mfb-meta-extra__grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.85rem;
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px dashed #e2e8f0;
+}
+
+.mfb-meta-extra__grid label {
+    display: block;
+    font-size: 11px;
+    font-weight: 700;
+    color: #64748b;
+    margin-bottom: 0.3rem;
+}
+
+/* Tabs Header */
+.mfb-tabs {
+    display: flex;
+    gap: 0.4rem;
+    border-bottom: 2px solid #f1f5f9;
+    margin-bottom: 1.25rem;
+}
+
+.mfb-tabs button {
+    border: 0;
+    background: transparent;
+    padding: 0.75rem 1.25rem;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    color: #64748b;
+    cursor: pointer;
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    margin-bottom: 0.55rem;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    transition: all 0.15s;
 }
-.mfr-lang__no {
-    width: 1.6rem;
-    height: 1.6rem;
+
+.mfb-tabs button:hover {
+    color: #4338ca;
+}
+
+.mfb-tabs button.active {
+    color: #4f46e5;
+    border-bottom-color: #4f46e5;
+}
+
+/* Builder Layout Grid */
+.mfb-builder {
     display: grid;
-    place-items: center;
-    border-radius: 50%;
-    background: linear-gradient(140deg, #4f46e5, #7c3aed);
-    color: #fff;
-    font-size: 11px;
-    font-weight: 700;
+    grid-template-columns: minmax(0, 1fr) 21rem;
+    gap: 1.25rem;
+    align-items: start;
 }
-.mfr-lang__head small {
-    color: #94a3b8;
-    font-size: 11.5px;
+
+/* Toolbar & Palette */
+.mfb-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 0.75rem 0.9rem;
 }
-.mfr-bag {
-    margin-bottom: 0.7rem;
+
+.mfb-toolbar__group {
+    display: flex;
+    gap: 0.4rem;
 }
-.mfr-bag__judul {
+
+.mfb-btn-tool {
+    border: 1px solid #cbd5e1;
+    background: #ffffff;
+    color: #334155;
+    border-radius: 8px;
+    padding: 0.45rem 0.75rem;
     font-size: 12px;
     font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.mfb-btn-tool--step {
+    background: #eef2ff;
+    color: #4338ca;
+    border-color: #c7d2fe;
+}
+
+.mfb-btn-tool--section {
+    background: #f0fdf4;
+    color: #15803d;
+    border-color: #bbf7d0;
+}
+
+.mfb-toolbar__palette {
+    display: flex;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+}
+
+.mfb-palette-btn {
+    border: 1px solid #e2e8f0;
+    background: #ffffff;
+    color: #475569;
+    border-radius: 8px;
+    padding: 0.4rem 0.65rem;
+    font-size: 11.5px;
+    font-weight: 600;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    transition: all 0.15s;
+}
+
+.mfb-palette-btn:hover {
+    border-color: #818cf8;
+    color: #4338ca;
+    background: #eef2ff;
+}
+
+.mfb-val-badge {
+    border: 0;
+    border-radius: 20px;
+    padding: 0.4rem 0.8rem;
+    font-size: 11.5px;
+    font-weight: 800;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.mfb-val-badge.is-valid {
+    background: #ecfdf5;
+    color: #047857;
+}
+
+.mfb-val-badge.has-issue {
+    background: #fef2f2;
+    color: #b91c1c;
+}
+
+/* ── STEPPER & SECTION CARDS ── */
+.mfb-step-card {
+    border: 1px solid #cbd5e1;
+    background: #f8fafc;
+    border-radius: 14px;
+    padding: 1rem;
+    margin-bottom: 1.25rem;
+    transition: border-color 0.15s;
+}
+
+.mfb-step-card.selected {
+    border-color: #6366f1;
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+}
+
+.mfb-step-card__head {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 0.85rem;
+}
+
+.mfb-step-num {
+    background: #6366f1;
+    color: #ffffff;
+    font-size: 11px;
+    font-weight: 800;
+    padding: 3px 9px;
+    border-radius: 10px;
+    white-space: nowrap;
+}
+
+.mfb-step-card__ico {
+    display: inline-flex;
+    align-items: center;
+}
+
+.mfb-step-card__input {
+    flex: 1;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 0.35rem 0.65rem;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 800;
+    color: #0f172a;
+    background: transparent;
+    transition: all 0.15s ease;
+    min-width: 0;
+}
+
+.mfb-step-card__input:hover,
+.mfb-step-card__input:focus {
+    background: #ffffff;
+    border-color: #cbd5e1;
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.05);
+}
+
+.mfb-step-card__act button,
+.mfb-sec-card__act button {
+    border: 0;
+    background: transparent;
+    color: #94a3b8;
+    cursor: pointer;
+    padding: 0.3rem 0.45rem;
+    border-radius: 6px;
+    font-size: 12.5px;
+}
+
+.mfb-step-card__act button:hover,
+.mfb-sec-card__act button:hover {
+    background: #fee2e2;
+    color: #b91c1c;
+}
+
+.mfb-sec-card {
+    border: 1px solid #e2e8f0;
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 0.85rem;
+    margin-bottom: 0.85rem;
+    transition: border-color 0.15s;
+}
+
+.mfb-sec-card.selected {
+    border-color: #6366f1;
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.18);
+}
+
+.mfb-sec-card__head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.mfb-sec-card__input {
+    flex: 1;
+    border: 0;
+    background: transparent;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    color: #1e293b;
+}
+
+.mfb-cond-badge {
+    background: #fffbeb;
+    color: #b45309;
+    border: 1px solid #fde68a;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 6px;
+}
+
+.mfb-sec-card__act {
+    display: flex;
+    gap: 0.25rem;
+}
+
+/* ── FIELDS GRID ── */
+.mfb-fields-grid {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: 0.75rem;
+}
+
+.mfb-field-card {
+    grid-column: span var(--mfb-span, 4);
+    position: relative;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    background: #ffffff;
+    padding: 0.75rem 2rem 0.75rem 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.mfb-field-card.full {
+    grid-column: 1 / -1;
+}
+
+.mfb-field-card:hover {
+    border-color: #818cf8;
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.08);
+}
+
+.mfb-field-card.selected {
+    border-color: #6366f1;
+    background: #faf5ff;
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.25);
+}
+
+.mfb-field-card.has-error {
+    border-color: #fca5a5;
+    background: #fff5f5;
+}
+
+.mfb-field-card__top {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 0;
+}
+
+.mfb-field-card__ico {
+    color: #6366f1;
+    font-size: 14px;
+}
+
+.mfb-field-card__label {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: #0f172a;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.mfb-field-card__meta {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 10.5px;
+    color: #64748b;
+}
+
+.mfb-field-card__type {
+    background: #f1f5f9;
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-family: monospace;
+}
+
+.mfb-badge-req {
+    background: #fee2e2;
+    color: #b91c1c;
+    font-size: 9.5px;
+    font-weight: 800;
+    padding: 1px 4px;
+    border-radius: 4px;
+}
+
+.mfb-field-card__width {
+    color: #94a3b8;
+    font-size: 10px;
+}
+
+.mfb-cond-pill {
+    color: #d97706;
+    font-size: 11px;
+}
+
+.mfb-issue-icon {
+    color: #dc2626;
+    font-size: 11px;
+}
+
+.mfb-field-card__actions {
+    position: absolute;
+    top: 0.4rem;
+    right: 0.4rem;
+    display: flex;
+    gap: 0.15rem;
+}
+
+.mfb-field-btn {
+    border: 0;
+    background: transparent;
+    color: #94a3b8;
+    width: 22px;
+    height: 22px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    cursor: pointer;
+    font-size: 11px;
+}
+
+.mfb-field-btn:hover {
+    background: #e2e8f0;
+    color: #334155;
+}
+
+.mfb-field-btn--danger:hover {
+    background: #fee2e2;
+    color: #b91c1c;
+}
+
+.mfb-resize-handle {
+    position: absolute;
+    right: 0.3rem;
+    bottom: 0.3rem;
+    width: 18px;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    border-radius: 4px;
+    color: #cbd5e1;
+    cursor: ew-resize;
+    touch-action: none;
+    font-size: 11px;
+}
+
+.mfb-resize-handle:hover {
+    color: #6366f1;
+    background: #eef2ff;
+}
+
+.mfb-drag-step,
+.mfb-drag-sec,
+.mfb-drag-field {
+    color: #cbd5e1;
+    cursor: grab;
+}
+
+/* ── RIGHT INSPECTOR PANEL ── */
+.mfb-inspector {
+    border: 1px solid #e2e8f0;
+    background: #ffffff;
+    border-radius: 16px;
+    padding: 1.1rem;
+    position: sticky;
+    top: 1.25rem;
+    max-height: calc(100vh - 2.5rem);
+    overflow-y: auto;
+    box-shadow: 0 4px 16px -2px rgba(15, 23, 42, 0.03);
+}
+
+.mfb-inspector__head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    padding-bottom: 0.6rem;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.mfb-inspector__head h3 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 800;
+    display: flex;
+    gap: 0.4rem;
+    align-items: center;
+    color: #0f172a;
+}
+
+.mfb-inspector__tag {
+    background: #eef2ff;
+    color: #4338ca;
+    font-size: 11px;
+    font-weight: 800;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-family: monospace;
+}
+
+.mfb-inspector__group {
+    margin-bottom: 0.95rem;
+}
+
+.mfb-inspector__group label {
+    display: block;
+    font-size: 11.5px;
+    font-weight: 800;
     color: #475569;
     margin-bottom: 0.35rem;
 }
-.mfr-tbl {
-    font-size: 12px;
+
+.mfb-key-input {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
 }
-.mfr-key {
-    display: block;
-    font-size: 10.5px;
-    color: #4338ca;
-    background: rgba(79, 70, 229, 0.07);
-    border-radius: 5px;
-    padding: 0 0.3rem;
-    width: fit-content;
-    margin-top: 0.15rem;
+
+.mfb-lock-tag {
+    background: #fee2e2;
+    color: #b91c1c;
+    font-size: 10px;
+    font-weight: 800;
+    padding: 2px 6px;
+    border-radius: 4px;
+    white-space: nowrap;
 }
-.mfr-catatan {
+
+.mfb-help {
+    font-size: 11px;
+    color: #64748b;
+    margin-top: 0.25rem;
+}
+
+.mfb-inspector__checks {
     display: flex;
     flex-direction: column;
-    gap: 0.2rem;
+    gap: 0.35rem;
+    margin-bottom: 0.95rem;
+    background: #f8fafc;
+    padding: 0.65rem;
+    border-radius: 8px;
+    border: 1px solid #f1f5f9;
+}
+
+.mfb-slider {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 0.55rem;
+    align-items: center;
+    color: #64748b;
+    font-size: 11.5px;
+    margin-top: 0.4rem;
+}
+
+.mfb-condition-row {
+    display: flex;
+    gap: 0.4rem;
+    margin-top: 0.4rem;
+}
+
+.mfb-optrow {
+    display: flex;
+    gap: 0.4rem;
+    margin-bottom: 0.35rem;
+}
+
+.mfb-optrow button {
+    border: 0;
+    background: transparent;
+    color: #94a3b8;
+    cursor: pointer;
+    padding: 0 0.4rem;
+}
+
+.mfb-optrow button:hover {
+    color: #ef4444;
+}
+
+.mfb-preset-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.4rem;
+}
+
+.mfb-preset-grid button {
+    border: 1px solid #e2e8f0;
+    background: #f8fafc;
+    border-radius: 10px;
+    padding: 0.65rem;
+    text-align: left;
+    cursor: pointer;
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    transition: all 0.15s ease;
+}
+
+.mfb-preset-grid button:hover {
+    border-color: #818cf8;
+    background: #eef2ff;
+}
+
+.mfb-preset-grid i {
+    color: #4f46e5;
+    font-size: 1.15rem;
+    flex-shrink: 0;
+}
+
+.mfb-preset-grid button div {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    flex: 1;
+    min-width: 0;
+}
+
+.mfb-preset-grid strong {
+    display: block;
+    font-size: 11.5px;
+    font-weight: 800;
+    color: #0f172a;
+    line-height: 1.3;
+}
+
+.mfb-preset-grid small {
+    display: block;
+    color: #64748b;
+    font-size: 10px;
+    line-height: 1.3;
+}
+
+.mfb-block-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.mfb-block-list button {
+    width: 100%;
+    border: 1px solid #e2e8f0;
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 0.75rem 0.85rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    text-align: left;
+    cursor: pointer;
+    transition: all 0.18s ease;
+}
+
+.mfb-block-list button:hover {
+    border-color: #6366f1;
+    background: #faf5ff;
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.08);
+}
+
+.mfb-block-list button > i:first-child {
+    color: #4f46e5;
+    font-size: 1.35rem;
+    flex-shrink: 0;
+}
+
+.mfb-block-list button div {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    flex: 1;
+    min-width: 0;
+}
+
+.mfb-block-list button strong {
+    display: block;
+    font-size: 12.5px;
+    font-weight: 800;
+    color: #0f172a;
+    line-height: 1.3;
+}
+
+.mfb-block-list button small {
+    display: block;
     font-size: 11px;
+    color: #64748b;
+    line-height: 1.3;
 }
-.mfr-cond {
-    color: #b45309;
+
+.mfb-block-list button > i:last-child {
+    color: #94a3b8;
+    font-size: 1.1rem;
+    flex-shrink: 0;
+    transition: color 0.15s;
 }
-.mfr-saring {
-    color: #4338ca;
+
+.mfb-block-list button:hover > i:last-child {
+    color: #4f46e5;
 }
-.mfr-opsi {
+
+.mfb-block-list button:hover {
+    border-color: #818cf8;
+    background: #f5f3ff;
+}
+
+.mfb-block-list button > i:first-child {
+    color: #4f46e5;
+    font-size: 1.2rem;
+}
+
+.mfb-inspector__empty {
+    padding: 3rem 1rem;
+    text-align: center;
     color: #94a3b8;
 }
 
-/* ── Pratinjau ────────────────────────────────────────────── */
-.mfr-pratool {
+.mfb-inspector__empty i {
+    font-size: 2.5rem;
+    color: #cbd5e1;
+    margin-bottom: 0.5rem;
+}
+
+.mfb-inspector__empty h4 {
+    margin: 0 0 0.3rem;
+    color: #334155;
+    font-weight: 700;
+}
+
+.mfb-inspector__empty p {
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+/* ── PREVIEW TAB & MOCK BROWSER ── */
+.mfb-preview {
+    border: 1px dashed #cbd5e1;
+    border-radius: 16px;
+    padding: 1.25rem;
+    background: #f8fafc;
+}
+
+.mfb-preview__bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.25rem;
+}
+
+.mfb-preview__info {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    font-size: 13px;
+    font-weight: 800;
+    color: #334155;
+}
+
+.mfb-preview__frame-wrapper {
+    overflow-x: auto;
+    padding: 0.5rem 0;
+}
+
+.mfb-mock-browser {
+    border: 1px solid #cbd5e1;
+    border-radius: 16px;
+    background: #ffffff;
+    box-shadow: 0 12px 35px -5px rgba(15, 23, 42, 0.1);
+    overflow: hidden;
+}
+
+.mfb-mock-browser__bar {
+    background: #f1f5f9;
+    border-bottom: 1px solid #e2e8f0;
+    padding: 0.6rem 1rem;
     display: flex;
     align-items: center;
-    flex-wrap: wrap;
-    gap: 0.4rem;
-    padding: 0.6rem 0.75rem;
-    margin-bottom: 0.9rem;
-    border: 1px dashed rgba(11, 16, 51, 0.16);
-    border-radius: 12px;
-    background: rgba(248, 250, 252, 0.7);
+    gap: 1rem;
 }
-.mfr-pratool__lbl {
-    font-size: 11.5px;
+
+.mfb-mock-browser__dots {
+    display: flex;
+    gap: 0.35rem;
+}
+
+.mfb-mock-browser__dots span {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+}
+
+.mfb-mock-browser__dots span:nth-child(1) {
+    background: #ef4444;
+}
+.mfb-mock-browser__dots span:nth-child(2) {
+    background: #f59e0b;
+}
+.mfb-mock-browser__dots span:nth-child(3) {
+    background: #10b981;
+}
+
+.mfb-mock-browser__url {
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 20px;
+    padding: 0.2rem 1rem;
+    font-size: 11px;
+    color: #64748b;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-family: monospace;
+}
+
+.mfb-preview__frame {
+    padding: 1.5rem;
+    transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.mfb-portal-shell {
+    background: #f8fafc;
+    border-radius: 16px;
+    padding: 1.5rem;
+    border: 1px solid #e2e8f0;
+}
+
+.mfb-portal-shell__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+    padding-bottom: 1.25rem;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.mfb-portal-shell__brand {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+}
+
+.mfb-portal-shell__logo {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%);
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.35rem;
+    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+}
+
+.mfb-portal-shell__portal-name {
+    display: block;
+    font-size: 10.5px;
+    font-weight: 800;
+    color: #6366f1;
+    letter-spacing: 0.05em;
+    margin-bottom: 2px;
+}
+
+.mfb-portal-shell__title {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 800;
+    color: #0f172a;
+    line-height: 1.3;
+}
+
+.mfb-portal-shell__badges {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.mfb-portal-shell__tag {
+    background: #eef2ff;
+    color: #4338ca;
+    font-size: 11px;
     font-weight: 700;
-    color: #475569;
+    padding: 4px 10px;
+    border-radius: 20px;
     display: inline-flex;
     align-items: center;
     gap: 0.3rem;
-    margin-right: 0.3rem;
-}
-.mfr-pratool__spacer {
-    flex: 1;
-}
-/* Latar bertitik supaya jelas ini "layar kandidat", bukan panel admin. */
-.mfr-prabody {
-    border: 1px solid rgba(11, 16, 51, 0.09);
-    border-radius: 14px;
-    padding: 1.2rem;
-    background: #fff;
-    background-image: radial-gradient(circle at 1px 1px, rgba(11, 16, 51, 0.05) 1px, transparent 0);
-    background-size: 22px 22px;
-}
-.mfr-praJson {
-    margin-top: 0.8rem;
-    font-size: 11.5px;
-}
-.mfr-praJson summary {
-    cursor: pointer;
-    color: #4338ca;
-    font-weight: 600;
-    user-select: none;
-}
-.mfr-praJson summary small {
-    color: #94a3b8;
-    font-weight: 500;
-}
-.mfr-praJson pre {
-    margin: 0.5rem 0 0;
-    padding: 0.7rem;
-    border-radius: 10px;
-    background: #0f172a;
-    color: #cbd5e1;
-    font-size: 11px;
-    line-height: 1.6;
-    max-height: 16rem;
-    overflow: auto;
 }
 
-@media (max-width: 900px) {
-    .mfr-ring {
-        flex-direction: column;
+.mfb-portal-shell__status {
+    background: #dcfce7;
+    color: #15803d;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 20px;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.mfb-portal-shell__status i {
+    font-size: 6px;
+}
+
+.mfb-portal-shell__notice {
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-start;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 12px;
+    padding: 0.85rem 1.1rem;
+    margin-bottom: 1.5rem;
+    color: #1e40af;
+}
+
+.mfb-portal-shell__notice i {
+    font-size: 1.2rem;
+    color: #3b82f6;
+    margin-top: 2px;
+}
+
+.mfb-portal-shell__notice strong {
+    display: block;
+    font-size: 12px;
+    font-weight: 800;
+    margin-bottom: 2px;
+}
+
+.mfb-portal-shell__notice p {
+    margin: 0;
+    font-size: 12px;
+    color: #1e3a8a;
+    line-height: 1.4;
+}
+
+.mfb-portal-shell__body {
+    background: #ffffff;
+    border-radius: 16px;
+    box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.06);
+    padding: 1.5rem;
+}
+
+/* Smartphone Device Mockup Styling */
+.mfb-portal-shell--mobile {
+    border-radius: 36px !important;
+    border: 10px solid #1e293b !important;
+    padding: 0.75rem 1rem 1.25rem !important;
+    background: #f8fafc;
+    box-shadow: 0 25px 60px -15px rgba(15, 23, 42, 0.35) !important;
+    position: relative;
+    overflow: hidden;
+}
+
+.mfb-mobile-status-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.2rem 0.5rem 0.6rem;
+    font-size: 11px;
+    font-weight: 700;
+    color: #334155;
+}
+
+.mfb-mobile-status-bar__notch {
+    width: 90px;
+    height: 18px;
+    background: #1e293b;
+    border-radius: 0 0 12px 12px;
+    margin-top: -0.75rem;
+}
+
+.mfb-mobile-status-bar__icons {
+    display: flex;
+    gap: 0.3rem;
+    align-items: center;
+    font-size: 11px;
+}
+
+.mfb-mobile-home-indicator {
+    display: flex;
+    justify-content: center;
+    padding-top: 0.85rem;
+}
+
+.mfb-mobile-home-indicator span {
+    width: 120px;
+    height: 4px;
+    background: #cbd5e1;
+    border-radius: 4px;
+}
+
+/* Mobile Portal Header & Notice Responsive Styling */
+.mfb-portal-shell--mobile .mfb-portal-shell__header {
+    flex-direction: column;
+    gap: 0.75rem;
+    padding-bottom: 0.85rem;
+    margin-bottom: 0.85rem;
+}
+
+.mfb-portal-shell--mobile .mfb-portal-shell__title {
+    font-size: 1.05rem;
+}
+
+.mfb-portal-shell--mobile .mfb-portal-shell__badges {
+    flex-wrap: wrap;
+}
+
+.mfb-portal-shell--mobile .mfb-portal-shell__notice {
+    padding: 0.65rem 0.85rem;
+    font-size: 11.5px;
+    margin-bottom: 1rem;
+}
+
+.mfb-portal-shell--mobile .mfb-portal-shell__body {
+    padding: 1rem 0.85rem;
+    border-radius: 14px;
+}
+
+/* Mobile Stepper & Buttons Optimization */
+.mfb-preview-frame--mobile :deep(.t2__steps) {
+    gap: 0.2rem;
+    padding-bottom: 0.5rem;
+}
+
+.mfb-preview-frame--mobile :deep(.t2__step) {
+    min-width: 2.2rem;
+}
+
+.mfb-preview-frame--mobile :deep(.t2__lbl) {
+    font-size: 9.5px;
+}
+
+.mfb-preview-frame--mobile :deep(.t2__foot) {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.mfb-preview-frame--mobile :deep(.t2__btn) {
+    width: 100%;
+    justify-content: center;
+}
+
+/* ── STATS & AUDIT TAB ── */
+.mfb-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.mfb-stat-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 16px;
+    padding: 1.2rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    box-shadow: 0 2px 12px rgba(15, 23, 42, 0.03);
+}
+
+.mfb-stat-card__icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    font-size: 1.4rem;
+}
+
+.mfb-stat-card__icon--indigo {
+    background: #eef2ff;
+    color: #4f46e5;
+}
+.mfb-stat-card__icon--sky {
+    background: #e0f2fe;
+    color: #0284c7;
+}
+.mfb-stat-card__icon--emerald {
+    background: #ecfdf5;
+    color: #059669;
+}
+.mfb-stat-card__icon--amber {
+    background: #fffbeb;
+    color: #d97706;
+}
+
+.mfb-stat-card strong {
+    display: block;
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: #0f172a;
+}
+
+.mfb-stat-card span {
+    font-size: 12px;
+    color: #64748b;
+}
+
+.mfb-audit-box {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 16px;
+    padding: 1.35rem;
+}
+
+.mfb-audit-box h4 {
+    margin: 0 0 1rem;
+    font-size: 14px;
+    color: #0f172a;
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+}
+
+.mfb-audit-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1.5fr;
+    gap: 1.25rem;
+}
+
+.mfb-audit-grid label {
+    display: block;
+    font-size: 11.5px;
+    font-weight: 800;
+    color: #64748b;
+    margin-bottom: 0.35rem;
+}
+
+.mfb-code-text {
+    font-family: monospace;
+    font-size: 13px;
+    font-weight: 700;
+    background: #f1f5f9;
+    padding: 4px 8px;
+    border-radius: 6px;
+}
+
+.mfb-badge-text {
+    font-size: 12px;
+    font-weight: 800;
+    padding: 3px 8px;
+    border-radius: 6px;
+}
+
+.mfb-badge-text.ok {
+    background: #dcfce7;
+    color: #15803d;
+}
+
+.mfb-badge-text.off {
+    background: #f1f5f9;
+    color: #64748b;
+}
+
+/* ── JSON TAB ── */
+.mfb-json__bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+    font-size: 12.5px;
+    font-weight: 700;
+    color: #475569;
+}
+
+.mfb-codeblock {
+    margin: 0;
+    max-height: 65vh;
+    overflow: auto;
+    background: #0f172a;
+    color: #38bdf8;
+    border-radius: 12px;
+    padding: 1.25rem;
+    font-family: monospace;
+    font-size: 12.5px;
+    line-height: 1.5;
+}
+
+/* ── EMPTY WORKSPACE ── */
+.mfb-empty-work {
+    min-height: 24rem;
+    display: grid;
+    place-items: center;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 16px;
+    padding: 2rem;
+}
+
+.mfb-empty-work__content {
+    text-align: center;
+    max-width: 400px;
+}
+
+.mfb-empty-work__content i {
+    font-size: 3.5rem;
+    color: #6366f1;
+    margin-bottom: 0.85rem;
+}
+
+.mfb-empty-work__content h3 {
+    margin: 0 0 0.4rem;
+    font-size: 1.2rem;
+    font-weight: 800;
+    color: #0f172a;
+}
+
+.mfb-empty-work__content p {
+    color: #64748b;
+    font-size: 13px;
+    line-height: 1.5;
+    margin-bottom: 1.25rem;
+}
+
+/* ── MODAL & TOAST ── */
+.mfb-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    background: rgba(15, 23, 42, 0.45);
+    backdrop-filter: blur(4px);
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+}
+
+.mfb-modal__box {
+    width: min(580px, 100%);
+    max-height: min(720px, 90vh);
+    overflow-y: auto;
+    background: #ffffff;
+    border-radius: 16px;
+    padding: 1.25rem;
+    box-shadow: 0 24px 60px -12px rgba(15, 23, 42, 0.25);
+}
+
+.mfb-modal__head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    border-bottom: 1px solid #e2e8f0;
+    padding-bottom: 0.85rem;
+}
+
+.mfb-modal__head h3 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 800;
+    display: flex;
+    gap: 0.45rem;
+    align-items: center;
+}
+
+.mfb-modal__head p {
+    margin: 0.25rem 0 0;
+    color: #64748b;
+    font-size: 12px;
+}
+
+.mfb-modal__close {
+    border: 0;
+    background: transparent;
+    color: #94a3b8;
+    cursor: pointer;
+    font-size: 1rem;
+}
+
+.mfb-diff-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 1rem 0;
+}
+
+.mfb-diff {
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-start;
+    padding: 0.65rem 0.85rem;
+    border-radius: 10px;
+    background: #f8fafc;
+}
+
+.mfb-diff strong {
+    display: block;
+    font-size: 12.5px;
+}
+
+.mfb-diff small {
+    color: #64748b;
+    font-size: 11.5px;
+}
+
+.mfb-diff.is-added i {
+    color: #059669;
+}
+.mfb-diff.is-removed i {
+    color: #dc2626;
+}
+.mfb-diff.is-changed i {
+    color: #d97706;
+}
+
+.mfb-modal__foot {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    border-top: 1px solid #e2e8f0;
+    padding-top: 0.85rem;
+}
+
+.mfb-toast {
+    position: fixed;
+    right: 1.5rem;
+    bottom: 1.5rem;
+    z-index: 120;
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    background: #0f172a;
+    color: #ffffff;
+    border-radius: 12px;
+    padding: 0.85rem 1.1rem;
+    font-size: 13px;
+    font-weight: 700;
+    box-shadow: 0 20px 40px -10px rgba(15, 23, 42, 0.35);
+}
+
+.mfb-toast-enter-active,
+.mfb-toast-leave-active {
+    transition: all 0.2s ease;
+}
+
+.mfb-toast-enter-from,
+.mfb-toast-leave-to {
+    opacity: 0;
+    transform: translateY(10px);
+}
+
+/* ── RESPONSIVE MEDIA QUERIES ── */
+@media (max-width: 1024px) {
+    .mfb-layout {
+        grid-template-columns: 1fr;
     }
-    .mfr-ring__act {
-        justify-content: flex-start;
+    .mfb-sidebar {
+        position: static;
+        max-height: 400px;
     }
+    .mfb-builder {
+        grid-template-columns: 1fr;
+    }
+    .mfb-inspector {
+        position: static;
+        max-height: none;
+    }
+    .mfb-meta-bar {
+        grid-template-columns: 1fr;
+    }
+    .mfb-stats-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+@media (max-width: 640px) {
+    .mfb-fields-grid {
+        grid-template-columns: 1fr !important;
+    }
+    .mfb-field-card {
+        grid-column: 1 / -1 !important;
+    }
+}
+
+/* Force 1-Column Stacking in Mobile Preview Frame Mode */
+.mfb-preview-frame--mobile :deep(.bg__grid),
+.mfb-preview-frame--mobile :deep(.t1__grid),
+.mfb-preview-frame--mobile :deep(.wca-fields-grid),
+.mfb-preview-frame--mobile :deep(.fr-grid) {
+    grid-template-columns: 1fr !important;
+}
+
+.mfb-preview-frame--mobile :deep(.bg__grid > *),
+.mfb-preview-frame--mobile :deep(.t1__grid > *),
+.mfb-preview-frame--mobile :deep(.wca-fields-grid > *),
+.mfb-preview-frame--mobile :deep(.fr-grid > *) {
+    grid-column: 1 / -1 !important;
 }
 </style>
