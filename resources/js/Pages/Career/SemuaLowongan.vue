@@ -232,6 +232,27 @@
 
                     <!-- ── DAFTAR POSISI PER TIM (Maksimal 6 posisi awal per tim saat tab Semua) ── -->
                     <div class="sl-main">
+                        <!-- 📍 ACTIVE LOCATION FILTER BANNER -->
+                        <div v-if="selLokasi.length" class="sl-loc-banner">
+                            <div class="sl-loc-banner__in">
+                                <div class="sl-loc-banner__icon">
+                                    <i class="bi bi-geo-alt-fill"></i>
+                                </div>
+                                <div class="sl-loc-banner__info">
+                                    <span class="sl-loc-banner__tag">Filter Penempatan Aktif</span>
+                                    <h4 class="sl-loc-banner__title">
+                                        Lowongan Penempatan: <strong>{{ selLokasi.join(', ') }}</strong>
+                                    </h4>
+                                    <span class="sl-loc-banner__sub">
+                                        Menampilkan <strong>{{ filteredJobs.length }} posisi</strong> yang membuka penempatan di kota ini.
+                                    </span>
+                                </div>
+                                <button type="button" class="sl-loc-banner__clear" @click="selLokasi = []">
+                                    <i class="bi bi-x-lg"></i> Hapus Filter Lokasi
+                                </button>
+                            </div>
+                        </div>
+
                         <div class="sl-sec__head">
                             <h2>
                                 <i class="bi" :class="tab === 'saved' ? 'bi-bookmark-fill' : 'bi-briefcase-fill'"></i>
@@ -503,12 +524,14 @@
 
 <script setup>
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
-import { Head, Link } from '@inertiajs/vue3';
+import { Head, Link, usePage } from '@inertiajs/vue3';
 import CareerLayout from './Layouts/CareerLayout.vue';
 import LowonganCard from './components/LowonganCard.vue';
 import { daysLeft, formatDate, mtUrl, statusClass, statusLabel } from './careerData';
 
 defineOptions({ layout: null });
+
+const page = usePage();
 
 const props = defineProps({
     lowongan: { type: Array, default: () => [] },
@@ -600,33 +623,56 @@ onMounted(() => {
 
 const suggestions = ['IT & Digital', 'QC', 'Staff Admin', 'Palembang', 'Banyuasin', 'Full-time'];
 
-function toggleSearchTag(sug) {
-    if (search.value.toLowerCase() === sug.toLowerCase()) {
-        search.value = '';
-    } else {
-        search.value = sug;
+function getSearchParam(key) {
+    try {
+        const rawUrl = page.url || (typeof window !== 'undefined' ? window.location.search : '');
+        const queryStr = rawUrl.includes('?') ? rawUrl.substring(rawUrl.indexOf('?')) : rawUrl;
+        return new URLSearchParams(queryStr).get(key) || '';
+    } catch {
+        return '';
     }
 }
 
 const initTab = (() => {
-    try { const t = new URLSearchParams(window.location.search).get('tab'); return ['semua', 'rek', 'mt', 'saved'].includes(t) ? t : 'semua'; } catch { return 'semua'; }
+    const t = getSearchParam('tab');
+    return ['semua', 'rek', 'mt', 'saved'].includes(t) ? t : 'semua';
 })();
 const tab = ref(initTab);
 
-const initQuery = (() => {
-    try { return new URLSearchParams(window.location.search).get('q') || ''; } catch { return ''; }
-})();
+const initQuery = getSearchParam('q');
 if (initQuery) {
     search.value = initQuery;
 }
 
-const initDivisi = (() => {
-    try { return (new URLSearchParams(window.location.search).get('tim') || '').split(',').filter(Boolean); } catch { return []; }
-})();
+const initDivisi = getSearchParam('tim').split(',').filter(Boolean);
+const initLokasi = getSearchParam('lokasi').split(',').filter(Boolean);
 const selDivisi = ref(initDivisi);
-const selLokasi = ref([]);
+const selLokasi = ref(initLokasi);
 const selTipe = ref([]);
 const filterOpen = ref(false);
+
+watch(
+    () => page.url,
+    () => {
+        const queryLok = getSearchParam('lokasi');
+        const listLok = queryLok ? queryLok.split(',').filter(Boolean) : [];
+        if (JSON.stringify(listLok) !== JSON.stringify(selLokasi.value)) {
+            selLokasi.value = listLok;
+        }
+
+        const queryTim = getSearchParam('tim');
+        const listTim = queryTim ? queryTim.split(',').filter(Boolean) : [];
+        if (JSON.stringify(listTim) !== JSON.stringify(selDivisi.value)) {
+            selDivisi.value = listTim;
+        }
+
+        const queryQ = getSearchParam('q');
+        if (queryQ !== search.value) {
+            search.value = queryQ;
+        }
+    },
+    { immediate: true }
+);
 
 const jumlahFilterAktif = computed(() => selDivisi.value.length + selLokasi.value.length + selTipe.value.length);
 function resetFilter() { selDivisi.value = []; selLokasi.value = []; selTipe.value = []; }
@@ -637,6 +683,15 @@ watch(selDivisi, (v) => {
         const url = new URL(window.location.href);
         if (v.length) url.searchParams.set('tim', v.join(','));
         else url.searchParams.delete('tim');
+        window.history.replaceState({}, '', url);
+    } catch { /* noop */ }
+});
+
+watch(selLokasi, (v) => {
+    try {
+        const url = new URL(window.location.href);
+        if (v.length) url.searchParams.set('lokasi', v.join(','));
+        else url.searchParams.delete('lokasi');
         window.history.replaceState({}, '', url);
     } catch { /* noop */ }
 });
@@ -657,7 +712,21 @@ const hitungOpsi = (ambil) => {
     }
     return [...peta.entries()].map(([nama, count]) => ({ nama, count })).sort((a, b) => b.count - a.count);
 };
-const lokasiOptions = computed(() => hitungOpsi((j) => j.lokasi));
+const lokasiKota = (job) => {
+    const teks = String(job?.lokasi || '').toLowerCase();
+    return props.offices.find((office) => teks.includes(String(office.kota || '').toLowerCase()))?.kota || job?.lokasi;
+};
+const lokasiOptions = computed(() => {
+    if (!props.offices.length) return [];
+    return props.offices
+        .map((office) => ({
+            nama: office.kota,
+            // props.lowongan hanya berisi posisi dari pembukaan aktif, sehingga
+            // angka ini tidak pernah menghitung MPP bebas yang belum dibuka.
+            count: props.lowongan.filter((job) => lokasiKota(job) === office.kota).length,
+        }))
+        .filter((office) => office.nama);
+});
 const tipeOptions = computed(() => hitungOpsi((j) => j.tipeKerja));
 
 const PER_PAGE = 10;
@@ -671,7 +740,7 @@ const filteredJobs = computed(() => {
     let jobs = props.lowongan.filter((job) => {
         if (tab.value === 'saved' && !savedJobIds.value.includes(job.id)) return false;
         if (selDivisi.value.length && !selDivisi.value.includes(job.timSlug || '')) return false;
-        if (selLokasi.value.length && !selLokasi.value.includes(job.lokasi)) return false;
+        if (selLokasi.value.length && !selLokasi.value.includes(lokasiKota(job))) return false;
         if (selTipe.value.length && !selTipe.value.includes(job.tipeKerja)) return false;
         if (!q) return true;
         return [job.posisi, job.lokasi, job.ringkasan, job.departemen, ...(job.skill || []), ...(job.benefit || [])].join(' ').toLowerCase().includes(q);
@@ -755,8 +824,8 @@ function goMtPage(p) { if (p >= 1 && p <= mtTotalPages.value) { mtPage.value = p
 /* ═══ HERO ═══ */
 .sl-hero { position: relative; overflow: hidden; padding: 6.5rem 1.5rem 2.4rem; }
 .sl-hero__glow { position: absolute; border-radius: 50%; filter: blur(10px); pointer-events: none; }
-.sl-hero__glow--a { top: -140px; right: 10%; width: 420px; height: 420px; background: radial-gradient(circle at 30% 30%, rgba(139, 92, 246, 0.16), rgba(139, 92, 246, 0) 70%); }
-.sl-hero__glow--b { bottom: -180px; left: 5%; width: 440px; height: 440px; background: radial-gradient(circle at 60% 40%, rgba(99, 102, 241, 0.12), rgba(99, 102, 241, 0) 70%); }
+.sl-hero__glow--a { top: 10px; right: 10%; width: 360px; height: 360px; background: radial-gradient(circle at 30% 30%, rgba(139, 92, 246, 0.16), rgba(139, 92, 246, 0) 70%); }
+.sl-hero__glow--b { bottom: 10px; left: 5%; width: 360px; height: 360px; background: radial-gradient(circle at 60% 40%, rgba(99, 102, 241, 0.12), rgba(99, 102, 241, 0) 70%); }
 .sl-hero__in { position: relative; max-width: 1200px; margin: 0 auto; text-align: center; }
 .sl-hero__in h1 { margin: 14px 0 0; font-size: clamp(1.9rem, 4vw, 2.9rem); font-weight: 800; color: #0f172a; letter-spacing: -0.03em; }
 .sl-hero__in p { margin: 12px auto 0; font-size: 15px; color: #64748b; max-width: 620px; line-height: 1.65; }
@@ -1381,6 +1450,92 @@ function goMtPage(p) { if (p >= 1 && p <= mtTotalPages.value) { mtPage.value = p
 .sl-back { display: flex; justify-content: center; padding: 2.6rem 1rem 3.2rem; }
 .sl-back__btn { display: inline-flex; align-items: center; gap: 9px; font-size: 13.5px; font-weight: 800; color: #4f46e5; padding: 12px 24px; border-radius: 14px; text-decoration: none; background: #fff; border: 1px solid #dfe3f3; box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06); transition: all 0.18s; }
 .sl-back__btn:hover { transform: translateY(-2px); border-color: #a5b4fc; color: #4338ca; }
+
+/* ═══ ACTIVE LOCATION FILTER BANNER ═══ */
+.sl-loc-banner {
+    background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%);
+    border: 1px solid rgba(129, 140, 248, 0.3);
+    box-shadow: 0 12px 30px rgba(49, 46, 129, 0.25);
+    border-radius: 20px;
+    padding: 18px 22px;
+    margin-bottom: 24px;
+    color: #ffffff;
+    animation: slLocSlideDown 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slLocSlideDown {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.sl-loc-banner__in {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.sl-loc-banner__icon {
+    width: 46px;
+    height: 46px;
+    border-radius: 14px;
+    background: rgba(99, 102, 241, 0.25);
+    border: 1px solid rgba(165, 180, 252, 0.3);
+    color: #818cf8;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.4rem;
+    flex-shrink: 0;
+}
+
+.sl-loc-banner__info {
+    flex: 1;
+}
+
+.sl-loc-banner__tag {
+    display: inline-block;
+    font-size: 0.7rem;
+    font-weight: 800;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    color: #a5b4fc;
+    margin-bottom: 2px;
+}
+
+.sl-loc-banner__title {
+    font-size: 1.1rem;
+    font-weight: 800;
+    margin: 0 0 2px 0;
+    color: #ffffff;
+}
+
+.sl-loc-banner__sub {
+    font-size: 0.82rem;
+    color: #cbd5e1;
+}
+
+.sl-loc-banner__clear {
+    appearance: none;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+    padding: 8px 16px;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.18s ease;
+    flex-shrink: 0;
+}
+
+.sl-loc-banner__clear:hover {
+    background: rgba(225, 29, 72, 0.25);
+    border-color: rgba(244, 63, 94, 0.4);
+    color: #fca5a5;
+}
 
 @media (max-width: 767.98px) {
     .sl-hero { padding: 6.2rem 1rem 1rem; }

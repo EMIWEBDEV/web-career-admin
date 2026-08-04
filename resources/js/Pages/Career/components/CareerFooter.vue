@@ -44,10 +44,10 @@
                     <a href="/karir/faq">FAQ Kandidat</a>
                 </div>
                 <div class="wc-footer__col wc-footer__col--office">
-                    <strong>Kantor Kami</strong>
-                    <div v-for="o in offices" :key="o.kota" class="wc-footer__office">
+                    <strong>Kantor Pusat</strong>
+                    <div v-for="o in hoOffices" :key="o.kota" class="wc-footer__office">
                         <i class="bi bi-geo-alt-fill"></i>
-                        <span><b>{{ o.kota }}</b><small>{{ o.tipe }}</small></span>
+                        <span><b>{{ o.kota }}</b><small>{{ o.tipe || 'Head Office' }}</small></span>
                     </div>
                 </div>
             </div>
@@ -63,11 +63,17 @@
 </template>
 
 <script setup>
+import { computed } from 'vue';
 import { goToSection } from '../careerData';
 
-defineProps({
+const props = defineProps({
     hasMt: { type: Boolean, default: false },
     offices: { type: Array, default: () => [] },
+});
+
+const hoOffices = computed(() => {
+    const list = props.offices.filter((o) => o.statusHo === 'Y' || o.tipe === 'Kantor Pusat' || String(o.kota || '').toLowerCase().includes('palembang'));
+    return (list.length ? list : props.offices).slice(0, 1);
 });
 
 const tahun = new Date().getFullYear();

@@ -46,6 +46,9 @@ class CareerLandingController extends Controller
      */
     private $mppCache = null;
 
+    /** Memoisasi offices() per-request — dipakai props halaman & achievements(). */
+    private $officesCache = null;
+
     public function index(Request $request)
     {
         $lowongan = $this->visibleLowongan();
@@ -2178,6 +2181,10 @@ class CareerLandingController extends Controller
     /** Pencapaian perusahaan — angka untuk section achievement (animated counter). */
     private function achievements(): array
     {
+        // Total titik lokasi dari Master Lokasi (bukan angka statis Palembang &
+        // Banyuasin lagi) — ikut naik/turun mengikuti data master yang sebenarnya.
+        $totalLokasi = count($this->offices());
+
         return [
             [
                 'icon' => 'bi-people-fill',
@@ -2195,10 +2202,10 @@ class CareerLandingController extends Controller
             ],
             [
                 'icon' => 'bi-geo-alt-fill',
-                'value' => 2,
+                'value' => $totalLokasi,
                 'suffix' => ' Lokasi',
-                'label' => 'Pusat Operasional',
-                'desc' => 'Palembang & Banyuasin',
+                'label' => 'Sebaran Lokasi',
+                'desc' => 'Kantor pusat & cabang operasional',
             ],
             [
                 'icon' => 'bi-box-seam-fill',
@@ -2207,39 +2214,60 @@ class CareerLandingController extends Controller
                 'label' => 'Brand Produk',
                 'desc' => 'Life Cat, Ori Dog, dll.',
             ],
-            [
-                'icon' => 'bi-buildings-fill',
-                'value' => 3,
-                'suffix' => ' Entitas',
-                'label' => 'Perusahaan Grup',
-                'desc' => 'ENB, EMI, GMN',
-            ],
         ];
     }
 
-    /** Kantor & lokasi operasional — section "Lokasi Kami". Hanya 2. */
+    /** Lokasi operasional + jumlah posisi aktif dari MPP. */
     private function offices(): array
     {
-        return [
-            [
-                'kota' => 'Palembang',
-                'nama' => 'EVO Group Head Office',
-                'tipe' => 'Kantor Pusat',
-                'alamat' => 'Jl. Kolonel H. Barlian, Palembang, Sumatera Selatan',
-                'karyawan' => 460,
-                'unggulan' => true,
-                'tag' => ['HR', 'Finance', 'Marketing', 'Technology', 'Sales'],
-            ],
-            [
-                'kota' => 'Banyuasin',
-                'nama' => 'EVO Group Manufacturing Plant',
-                'tipe' => 'Pabrik',
-                'alamat' => 'Kawasan Industri, Banyuasin, Sumatera Selatan',
-                'karyawan' => 740,
-                'unggulan' => false,
-                'tag' => ['Production', 'Quality Control', 'Maintenance'],
-            ],
-        ];
+        if ($this->officesCache !== null) {
+            return $this->officesCache;
+        }
+
+        try {
+            // Hanya MPP yang benar-benar tertaut ke posisi berstatus BUKA pada
+            // pembukaan yang TERBIT/BERJALAN (dbOpenings), bukan seluruh MPP HRIS.
+            $mppRefs = $this->dbOpenings()['posisi']->flatten(1)->pluck('Mpp_Ref')->filter()->unique()->values();
+
+            return $this->officesCache = DB::table('N_HRIS_Master_Lokasi as m')
+                ->leftJoin('HRIS_Transaksi_GForm as g', function ($join) use ($mppRefs) {
+                    $join->on('g.Kode_Lokasi', '=', 'm.Kode_Lokasi')
+                        ->whereIn('g.No_Transaksi', $mppRefs);
+                })
+                ->where('m.Status_Aktif', 'Y')
+                ->groupBy('m.Kode_Lokasi', 'm.Nama_Lokasi', 'm.Provinsi', 'm.Pulau', 'm.Status_HO', 'm.Keterangan')
+                ->orderByRaw("CASE WHEN m.Status_HO = 'Y' THEN 0 ELSE 1 END")
+                ->orderBy('m.Nama_Lokasi')
+                ->get([
+                    'm.Kode_Lokasi as kode',
+                    'm.Nama_Lokasi as kota',
+                    'm.Provinsi as provinsi',
+                    'm.Pulau as pulau',
+                    'm.Status_HO as statusHo',
+                    'm.Keterangan as keterangan',
+                    // Satu MPP yang tertaut pada satu Program_Posisi = satu
+                    // lowongan. Jangan jumlahkan Jumlah_Rekruitmen di sini:
+                    // itu kuota/kebutuhan kandidat, bukan jumlah posisi.
+                    DB::raw('COUNT(DISTINCT g.No_Transaksi) as posisi'),
+                ])
+                ->map(fn ($r) => [
+                    'kode' => $r->kode,
+                    'kota' => $r->kota,
+                    'nama' => $r->statusHo === 'Y' ? 'EVO Group Head Office' : 'EVO Group Branch Office',
+                    'tipe' => $r->statusHo === 'Y' ? 'Kantor Pusat' : 'Kantor Cabang',
+                    'alamat' => $r->provinsi,
+                    'provinsi' => $r->provinsi,
+                    'pulau' => $r->pulau,
+                    'statusHo' => $r->statusHo,
+                    'keterangan' => $r->keterangan,
+                    'posisi' => (int) $r->posisi,
+                    'unggulan' => $r->statusHo === 'Y',
+                ])->values()->all();
+        } catch (\Throwable $e) {
+            // Master lokasi adalah sumber kebenaran; jangan tampilkan data kantor
+            // hardcoded jika tabel/query tidak tersedia.
+            return [];
+        }
     }
 
     /** Alasan bergabung — highlight chip di hero. */
