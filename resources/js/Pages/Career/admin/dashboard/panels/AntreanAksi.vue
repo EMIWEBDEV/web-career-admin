@@ -162,6 +162,41 @@
                 </table>
             </div>
 
+            <!-- ── Proses administrasi (pasca-penerimaan) ── -->
+            <div v-else-if="pilih === 'pascaPenerimaan'" class="wcd-tw">
+                <table class="wcd-tbl">
+                    <thead>
+                        <tr>
+                            <th>Pelamar</th><th>Program</th><th>Tahap</th>
+                            <th class="wcd-num">Umur</th><th class="text-right">Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="b in aksi.pascaPenerimaan.baris" :key="b.id">
+                            <td class="wcd-tbl__utama">
+                                <div class="ak-pelamar-cell">
+                                    <div class="ak-avatar">{{ inisial(b.nama) }}</div>
+                                    <div class="ak-pelamar-nama">{{ b.nama }}</div>
+                                </div>
+                            </td>
+                            <td>{{ b.program || '—' }}</td>
+                            <td><span class="ak-tahap-badge">{{ b.tahap }}</span></td>
+                            <td class="wcd-num">
+                                <span class="wcd-lb" :style="nadaMenunggu(b.umurHari)">
+                                    <i class="bi" :class="nadaUmur(b.umurHari, ambang.macetHari).ikon"></i>
+                                    {{ b.umurHari }} hari
+                                </span>
+                            </td>
+                            <td class="text-right">
+                                <a :href="b.tautan" class="ak-aksi" title="Buka di Worklist, program sudah tersaring">
+                                    Tindak <i class="bi bi-arrow-right-short"></i>
+                                </a>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
             <!-- ── Lamaran gagal masuk ── -->
             <div v-else-if="pilih === 'gagalLamar'" class="wcd-tw">
                 <table class="wcd-tbl">
@@ -262,6 +297,10 @@ const DEF = [
     {
         id: 'gagalLamar', label: 'Gagal masuk', ikon: 'bi-exclamation-octagon-fill', warna: '#ef4444',
         jelas: 'Lamaran yang tidak berhasil dibentuk sistem. Pelamarnya tidak ada di worklist mana pun.',
+    },
+    {
+        id: 'pascaPenerimaan', label: 'Proses Administrasi', ikon: 'bi-file-earmark-check', warna: '#10b981',
+        jelas: 'Kandidat sudah DITERIMA, tapi masih ada tahap administratif (kontrak, onboarding) yang berjalan.',
     },
 ];
 
