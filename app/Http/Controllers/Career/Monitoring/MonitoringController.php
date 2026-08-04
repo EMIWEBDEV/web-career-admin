@@ -125,15 +125,46 @@ class MonitoringController extends Controller
                     ? DB::table('N_WEB_CAREERS_Lamaran')->whereIn('Program_Id', $programIds)
                         ->groupBy('Status')->select('Status', DB::raw('COUNT(*) as J'))->pluck('J', 'Status')
                     : collect();
+                //    Hold_Flag dikecualikan NULL-safe (COALESCE(...,'T') <> 'Y')
+                //    supaya baris tanpa Hold_Flag (NULL) tetap terhitung TIDAK
+                //    ditahan — bug yang sama seperti agregatSehat(), lihat
+                //    MetrikRekrutmen::agregatSehat().
                 $kpiTahap = $programIds
                     ? DB::table('N_WEB_CAREERS_Lamaran_Tahap as lt')
                         ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'lt.Lamaran_Id')
                         ->where('lt.Status', 'BERJALAN')->where('l.Status', 'BERJALAN')
+                        ->whereRaw("COALESCE(lt.Hold_Flag, 'T') <> 'Y'")
                         ->whereIn('l.Program_Id', $programIds)
                         ->selectRaw("SUM(CASE WHEN lt.Siap_Diputus = 'Y' THEN 1 ELSE 0 END) as siap,
                                      SUM(CASE WHEN lt.Provider = 'THIRD_PARTY' AND lt.Siap_Diputus = 'N' THEN 1 ELSE 0 END) as nunggu")
                         ->first()
                     : null;
+
+                // KPI DITAHAN & PASCAPENERIMAAN — bucket terpisah dari kpiStatus/kpiTahap
+                // di atas. Query terpisah karena keduanya melintasi kondisi
+                // Lamaran.Status + Lamaran_Tahap.Status yang berbeda arah.
+                //
+                // Hold_Flag di sini dibandingkan langsung ke 'Y' (bukan <> 'Y'),
+                // jadi TIDAK butuh COALESCE: NULL = 'Y' sudah otomatis false,
+                // yang memang berarti "bukan ditahan" — sama seperti yang
+                // diinginkan.
+                $kpiHold = $programIds
+                    ? DB::table('N_WEB_CAREERS_Lamaran_Tahap as lt')
+                        ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'lt.Lamaran_Id')
+                        ->where('l.Status', 'BERJALAN')->where('lt.Status', 'BERJALAN')
+                        ->where('lt.Hold_Flag', 'Y')
+                        ->whereIn('l.Program_Id', $programIds)
+                        ->count()
+                    : 0;
+
+                $kpiPascaPenerimaan = $programIds
+                    ? DB::table('N_WEB_CAREERS_Lamaran_Tahap as lt')
+                        ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'lt.Lamaran_Id')
+                        ->where('l.Status', 'LULUS')->where('lt.Status', 'BERJALAN')
+                        ->whereIn('l.Program_Id', $programIds)
+                        ->distinct('l.Id_Lamaran')
+                        ->count('l.Id_Lamaran')
+                    : 0;
 
                 // 5) Kuota per program (MPP posisi) + kursi terisi (LULUS).
                 $kuotaPer = $programIds
@@ -176,6 +207,7 @@ class MonitoringController extends Controller
                     : collect();
 
                 return compact('programs', 'kolomProgram', 'penempatan', 'kpiStatus', 'kpiTahap',
+                    'kpiHold', 'kpiPascaPenerimaan',
                     'kuotaPer', 'terisiPer', 'perhatian', 'sehatPer', 'macetHari', 'sorotHari');
             });
 
@@ -258,6 +290,18 @@ class MonitoringController extends Controller
                     'tahap' => $tahap,
                     'totalPelamar' => $total,
                     'sehat' => MetrikRekrutmen::skorSehat($data['sehatPer']->get($p->Id_Program), $total),
+                    // Hold_Flag = 'Y' langsung (bukan <> 'Y'), jadi NULL-safe
+                    // secara alami — lihat catatan di $kpiHold.
+                    'ditahan' => (int) DB::table('N_WEB_CAREERS_Lamaran_Tahap as lt')
+                        ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'lt.Lamaran_Id')
+                        ->where('l.Program_Id', $p->Id_Program)
+                        ->where('l.Status', 'BERJALAN')->where('lt.Status', 'BERJALAN')
+                        ->where('lt.Hold_Flag', 'Y')->count(),
+                    'pascaPenerimaan' => (int) DB::table('N_WEB_CAREERS_Lamaran_Tahap as lt')
+                        ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'lt.Lamaran_Id')
+                        ->where('l.Program_Id', $p->Id_Program)
+                        ->where('l.Status', 'LULUS')->where('lt.Status', 'BERJALAN')
+                        ->distinct('l.Id_Lamaran')->count('l.Id_Lamaran'),
                 ];
             })->values();
 
@@ -268,6 +312,8 @@ class MonitoringController extends Controller
                 'talentPool' => (int) ($data['kpiStatus']['TALENT_POOL'] ?? 0),
                 'siapDiputus' => (int) ($data['kpiTahap']->siap ?? 0),
                 'menungguTes' => (int) ($data['kpiTahap']->nunggu ?? 0),
+                'ditahan' => (int) $data['kpiHold'],
+                'pascaPenerimaan' => (int) $data['kpiPascaPenerimaan'],
             ];
 
             // programId ikut dikirim supaya klik item langsung membuka Spotlight

@@ -74,6 +74,24 @@
                     <div class="wca-kpi-card__value text-sky">{{ kpi.talentPool }}</div>
                     <div class="wca-kpi-card__sub">Masuk talent pool</div>
                 </div>
+
+                <div class="wca-kpi-card wca-kpi-card--slate">
+                    <div class="wca-kpi-card__top">
+                        <span class="wca-kpi-card__icon"><i class="bi bi-pause-circle-fill"></i></span>
+                        <span class="wca-kpi-card__label">Ditahan</span>
+                    </div>
+                    <div class="wca-kpi-card__value">{{ kpi.ditahan }}</div>
+                    <div class="wca-kpi-card__sub">Sedang di-hold, tidak masuk antrean</div>
+                </div>
+
+                <div class="wca-kpi-card wca-kpi-card--emerald">
+                    <div class="wca-kpi-card__top">
+                        <span class="wca-kpi-card__icon"><i class="bi bi-file-earmark-check-fill"></i></span>
+                        <span class="wca-kpi-card__label">Proses Administrasi</span>
+                    </div>
+                    <div class="wca-kpi-card__value">{{ kpi.pascaPenerimaan }}</div>
+                    <div class="wca-kpi-card__sub">Diterima, tahap kontrak/onboarding</div>
+                </div>
             </div>
 
             <PerluPerhatian :items="perhatianTampil" :meta="meta" :class="{ 'wcm-dim': loading }" @open="bukaDariPerhatian" />
@@ -160,6 +178,8 @@ function cocokKondisi(p, kondisi) {
         AKTIF: h.aktif > 0,
         KUOTA_PENUH: p.kuota > 0 && p.terisi >= p.kuota,
         KOSONG: (p.totalPelamar ?? 0) === 0,
+        DITAHAN: (p.ditahan ?? 0) > 0,
+        PASCAPENERIMAAN: (p.pascaPenerimaan ?? 0) > 0,
     }[kondisi] ?? true
 }
 
@@ -212,8 +232,10 @@ const kpi = computed(() =>
             talentPool: a.talentPool + h.talent,
             siapDiputus: a.siapDiputus + (s.siapDiputus ?? 0),
             menungguTes: a.menungguTes + (s.menungguTes ?? 0),
+            ditahan: a.ditahan + (p.ditahan ?? 0),
+            pascaPenerimaan: a.pascaPenerimaan + (p.pascaPenerimaan ?? 0),
         }
-    }, { aktif: 0, lulus: 0, gugur: 0, talentPool: 0, siapDiputus: 0, menungguTes: 0 }),
+    }, { aktif: 0, lulus: 0, gugur: 0, talentPool: 0, siapDiputus: 0, menungguTes: 0, ditahan: 0, pascaPenerimaan: 0 }),
 )
 
 /** Panel atensi ikut menyempit mengikuti program yang sedang ditampilkan. */
@@ -311,6 +333,8 @@ defineExpose({ refresh: fetchLive })
 .wca-kpi-card--success .wca-kpi-card__icon { background: rgba(16, 185, 129, 0.14); color: #10b981; }
 .wca-kpi-card--danger .wca-kpi-card__icon { background: rgba(244, 63, 94, 0.14); color: #f43f5e; }
 .wca-kpi-card--sky .wca-kpi-card__icon { background: rgba(14, 165, 233, 0.14); color: #0ea5e9; }
+.wca-kpi-card--slate .wca-kpi-card__icon { background: rgba(100, 116, 139, 0.14); color: #64748b; }
+.wca-kpi-card--emerald .wca-kpi-card__icon { background: rgba(16, 185, 129, 0.14); color: #10b981; }
 
 .wca-kpi-card__label {
     font-size: 0.76rem;
