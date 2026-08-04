@@ -516,6 +516,23 @@
                                                 <i class="bi" :class="b.isImage ? 'bi-file-earmark-image-fill' : 'bi-file-earmark-pdf-fill'"></i>
                                                 {{ b.nama }}
                                             </button>
+
+                                            <!-- SUDAH DINYATAKAN LENGKAP ATAU BELUM.
+                                                 Berkas yang masuk belum tentu berkas yang
+                                                 utuh; menilai sebelum kandidat menyatakan
+                                                 selesai berarti menilai pekerjaan setengah
+                                                 jadi — dan keputusannya tidak bisa ditarik. -->
+                                            <span
+                                                v-if="t.unggahKandidat"
+                                                class="plw-test__kirimstat"
+                                                :class="t.unggahKandidat.terkirim ? 'is-ok' : 'is-nunggu'"
+                                                :title="t.unggahKandidat.terkirim
+                                                    ? `Dinyatakan lengkap oleh kandidat pada ${fmtWaktu(t.unggahKandidat.terkirim)}`
+                                                    : 'Kandidat belum menekan Kirim — mungkin masih ada berkas susulan.'"
+                                            >
+                                                <i class="bi" :class="t.unggahKandidat.terkirim ? 'bi-patch-check-fill' : 'bi-hourglass-split'"></i>
+                                                {{ t.unggahKandidat.terkirim ? 'dinyatakan lengkap' : 'belum dikirim kandidat' }}
+                                            </span>
                                         </template>
                                         <span v-else class="plw-test__kirimkosong" :class="{ 'is-wajib': t.unggahKandidat.wajib }">
                                             <i class="bi" :class="t.unggahKandidat.wajib ? 'bi-exclamation-triangle-fill' : 'bi-hourglass'"></i>
@@ -2610,6 +2627,21 @@ export default {
         labelPutus(h) {
             return h.lolos && this.tahapTuntas ? 'Terima' : h.labelTombol;
         },
+        /**
+         * Waktu terbaca manusia. Dipakai keterangan "dinyatakan lengkap pada …".
+         *
+         * String kosong bila tak bisa dibaca — BUKAN "Invalid Date", yang di
+         * dalam tooltip terbaca sebagai kerusakan sistem padahal hanya berarti
+         * kolomnya memang belum terisi.
+         */
+        fmtWaktu(v) {
+            if (!v) return '';
+            const d = new Date(String(v).replace(' ', 'T'));
+
+            return Number.isNaN(d.getTime())
+                ? ''
+                : d.toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+        },
         ukuran(b) {
             if (!b) return '';
             return b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB';
@@ -3860,6 +3892,10 @@ export default {
 .plw-test__kirim.is-tim .plw-test__kirimfile:hover { background: rgba(124, 58, 237, .16); }
 .plw-test__kirimkosong { display: inline-flex; align-items: center; gap: 5px; color: #94a3b8; font-weight: 700; }
 .plw-test__kirimkosong.is-wajib { color: #b45309; }
+/* Penanda "sudah dinyatakan lengkap" — dibaca sebelum menilai. */
+.plw-test__kirimstat { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 800; letter-spacing: .01em; cursor: help; white-space: nowrap; }
+.plw-test__kirimstat.is-ok { background: rgba(16, 185, 129, .12); color: #047857; border: 1px solid rgba(16, 185, 129, .3); }
+.plw-test__kirimstat.is-nunggu { background: rgba(245, 158, 11, .12); color: #b45309; border: 1px solid rgba(245, 158, 11, .32); }
 /* Berkas kandidat di dalam modal penilaian — dipisahkan sebagai kotak sendiri
    supaya tidak terbaca sebagai bagian dari borang yang sedang diisi. */
 .plw-kirimbox { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; padding: 9px 11px; border-radius: 10px; font-size: 11px; background: rgba(2, 132, 199, .05); border: 1px solid rgba(2, 132, 199, .18); }

@@ -1189,6 +1189,85 @@ class LamaranService
     }
 
     /**
+     * Selaraskan ATURAN PENGUMPULAN master → lamaran yang SEDANG BERJALAN.
+     *
+     * DUA JENIS ATURAN, DUA PERLAKUAN BERBEDA.
+     *
+     * 1. ATURAN PENILAIAN — ambang batas, peran, mode & skala nilai, mode
+     *    lanjut, jenis/tipe aktivitas. Inilah SYARAT KANDIDAT DINILAI. Menggeser
+     *    ambang di tengah jalan berarti mengubah aturan main orang yang sudah
+     *    mengerjakannya, dan mengubah Nilai_Maks membuat angka 75 yang tercatat
+     *    kemarin berarti lain hari ini. Tetap BEKU pada snapshot — jangan
+     *    disentuh di sini.
+     *
+     * 2. ATURAN PENGUMPULAN — apakah kandidat diminta mengunggah, formatnya,
+     *    batas ukurannya, petunjuknya, dan apakah aktivitasnya tampil di portal.
+     *    Ini bukan syarat penilaian, melainkan PERMINTAAN DOKUMEN. Membekukannya
+     *    berarti admin tidak pernah bisa meminta berkas kepada kandidat yang
+     *    sudah berjalan — setelan "kandidat harus mengunggah" cuma berlaku bagi
+     *    orang yang melamar SESUDAHNYA, sementara 50 orang yang sedang diproses
+     *    tidak pernah melihat kotak unggahnya. Itu bukan perlindungan, itu
+     *    jalan buntu: tim menunggu berkas yang portalnya tidak pernah minta.
+     *
+     * PEMERIKSAAN IDENTITAS (bukan sekadar ikut Id).
+     *
+     * MasterAlurController sengaja MEMAKAI ULANG baris aktivitas per Urutan saat
+     * alur disunting, supaya lamaran berjalan tidak kehilangan rujukannya. Efek
+     * sampingnya: Master_Alur_Tahap_Tes_Id yang tersimpan di lamaran bisa hari
+     * ini menggambarkan aktivitas yang sama sekali lain — "DISC" milik kandidat
+     * berubah jadi "Wawancara User" milik alur yang sudah dirombak. Karena itu
+     * penyelarasan hanya dilakukan bila LABELNYA masih sama. Kalau sudah tidak,
+     * masternya diabaikan dan snapshot kandidat dibiarkan apa adanya.
+     *
+     * Yang tidak ikut disentuh sama sekali:
+     *   - aktivitas yang SUDAH SELESAI — pekerjaan yang sudah ditutup tidak
+     *     dibuka lagi cuma karena alurnya disunting;
+     *   - tahap yang sudah SELESAI — sama alasannya;
+     *   - berkas yang terlanjur diunggah — tidak pernah dihapus, apa pun
+     *     setelan barunya.
+     *
+     * @return int jumlah aktivitas kandidat yang ikut berubah
+     */
+    public static function selaraskanPengumpulan(int $alurId, ?string $nama = null, ?int $adminId = null): int
+    {
+        // Hanya baris yang benar-benar BERBEDA yang ditulis: supaya jumlah yang
+        // dilaporkan ke admin berarti "sekian kandidat ikut berubah", bukan
+        // "sekian baris tersentuh", dan supaya menyimpan alur tanpa mengubah
+        // apa pun tidak meninggalkan jejak Updated_At palsu di data kandidat.
+        $berbeda = collect([
+            ['Unggah_Kandidat', "''"],
+            ['Unggah_Wajib', "''"],
+            ['Unggah_Format', "''"],
+            ['Unggah_Maks_Mb', '-1'],
+            ['Unggah_Petunjuk', "''"],
+            ['Tampil_Kandidat', "''"],
+        ])->map(fn ($k) => "ISNULL(st.{$k[0]}, {$k[1]}) <> ISNULL(mt.{$k[0]}, {$k[1]})")
+            ->implode(' OR ');
+
+        return DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes as st')
+            ->join('N_WEB_CAREERS_Lamaran_Tahap as lt', 'lt.Id_Lamaran_Tahap', '=', 'st.Lamaran_Tahap_Id')
+            ->join('N_WEB_CAREERS_Master_Alur_Tahap_Tes as mt', 'mt.Id_Master_Alur_Tahap_Tes', '=', 'st.Master_Alur_Tahap_Tes_Id')
+            ->join('N_WEB_CAREERS_Master_Alur_Tahap as m', 'm.Id_Master_Alur_Tahap', '=', 'mt.Master_Alur_Tahap_Id')
+            ->where('m.Master_Alur_Id', $alurId)
+            ->where('st.Flag_Selesai', '<>', 'Y')
+            ->where('lt.Status', '<>', 'SELESAI')
+            // Identitas, bukan sekadar Id — lihat penjelasan di atas.
+            ->whereRaw('LTRIM(RTRIM(st.Label)) = LTRIM(RTRIM(mt.Label))')
+            ->whereRaw("({$berbeda})")
+            ->update([
+                'st.Unggah_Kandidat' => DB::raw('mt.Unggah_Kandidat'),
+                'st.Unggah_Wajib' => DB::raw('mt.Unggah_Wajib'),
+                'st.Unggah_Format' => DB::raw('mt.Unggah_Format'),
+                'st.Unggah_Maks_Mb' => DB::raw('mt.Unggah_Maks_Mb'),
+                'st.Unggah_Petunjuk' => DB::raw('mt.Unggah_Petunjuk'),
+                'st.Tampil_Kandidat' => DB::raw('mt.Tampil_Kandidat'),
+                'st.Updated_At' => now(),
+                'st.Updated_By' => $nama ?: 'SISTEM',
+                'st.Updated_By_Id' => $adminId,
+            ]);
+    }
+
+    /**
      * Pastikan tahap punya sub-tes (self-heal lamaran lama pra-mesin).
      *
      * SATU-SATUNYA JALUR YANG MASIH MEMUNGUT DARI MASTER, dan karena itu ia

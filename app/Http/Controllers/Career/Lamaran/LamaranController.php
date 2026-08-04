@@ -698,6 +698,11 @@ class LamaranController extends Controller
                         'format' => array_values(array_filter(array_map('trim', explode(',', (string) ($s->Unggah_Format ?: 'pdf'))))),
                         'maksMb' => (int) ($s->Unggah_Maks_Mb ?: 5),
                         'petunjuk' => $s->Unggah_Petunjuk,
+                        // SUDAH DINYATAKAN LENGKAP oleh kandidat sendiri?
+                        // Yang membedakan "masih mengunggah" dari "menunggu
+                        // dinilai" — dua keadaan yang menuntut hal berbeda dari
+                        // kandidat maupun dari tim.
+                        'terkirim' => $s->Unggah_Kirim_At ? (string) $s->Unggah_Kirim_At : null,
                     ] : null,
                     // Jadwal tatap muka: kapan, di mana / lewat tautan apa.
                     // Inilah yang dicari kandidat begitu diundang wawancara.
@@ -1383,7 +1388,75 @@ class LamaranController extends Controller
 
         $baris = DB::table('N_WEB_CAREERS_Lamaran_Tes_Berkas')->where('Id_Lamaran_Tes_Berkas', $baruId)->first();
 
+        // MENAMBAH BERKAS MEMBATALKAN PERNYATAAN "SUDAH LENGKAP".
+        //
+        // Tanpa ini, kandidat yang menekan Kirim lalu menyadari ada yang
+        // kurang bisa menambah berkas diam-diam, dan penanda di worklist tetap
+        // berbunyi "lengkap sejak jam 09:12" — admin menilai berdasarkan
+        // pernyataan yang sudah tidak berlaku. Ia tinggal menekan Kirim lagi.
+        DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')
+            ->where('Id_Lamaran_Tahap_Tes', $tes->Id_Lamaran_Tahap_Tes)
+            ->whereNotNull('Unggah_Kirim_At')
+            ->update(['Unggah_Kirim_At' => null, 'Unggah_Kirim_By' => null, 'Unggah_Kirim_Ip' => null,
+                'Updated_At' => $now, 'Updated_By' => $nama]);
+
         return ResponseHelper::success(self::bentukTesBerkas($baris), 'Berkas terunggah.');
+    }
+
+    /**
+     * PATCH kandidat menyatakan berkasnya SUDAH LENGKAP untuk aktivitas ini.
+     *
+     * KENAPA PERLU TOMBOL TERSENDIRI
+     * Mengunggah dan "selesai mengunggah" bukan hal yang sama. Tanpa pernyataan
+     * ini dua pihak sama-sama menebak: kandidat tidak tahu apakah masih ada
+     * yang harus dilakukan, dan admin tidak tahu apakah berkas yang masuk sudah
+     * lengkap atau baru satu dari tiga. Menilai pekerjaan yang belum lengkap
+     * adalah keputusan yang tidak bisa ditarik kembali.
+     */
+    public function tesBerkasKirim(Request $request, string $id)
+    {
+        $tes = $this->tesMilikSaya($id);
+        if (! $tes) {
+            return ResponseHelper::error('Aktivitas tidak ditemukan.', 404);
+        }
+
+        if (($tes->Unggah_Kandidat ?? 'T') !== 'Y') {
+            return ResponseHelper::error('Aktivitas ini tidak meminta unggahan berkas.', 409);
+        }
+
+        if ($tes->Flag_Selesai === 'Y' || $tes->StatusTahap !== 'BERJALAN') {
+            return ResponseHelper::error('Aktivitas ini sudah selesai — berkas tidak bisa diubah lagi.', 409);
+        }
+
+        $jumlah = DB::table('N_WEB_CAREERS_Lamaran_Tes_Berkas')
+            ->where('Lamaran_Tahap_Tes_Id', $tes->Id_Lamaran_Tahap_Tes)
+            ->count();
+
+        // Gerbang ini berlaku untuk SEMUA aktivitas berunggahan, bukan hanya
+        // yang wajib: menyatakan "berkas saya lengkap" tanpa satu pun berkas
+        // adalah pernyataan yang tidak berarti apa-apa, dan admin yang
+        // membacanya akan mencari sesuatu yang tidak pernah ada.
+        if ($jumlah < 1) {
+            return ResponseHelper::error('Belum ada berkas yang diunggah. Unggah dulu, baru tekan kirim.', 422);
+        }
+
+        $now = now();
+        $nama = session('career_auth.nama');
+
+        DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')
+            ->where('Id_Lamaran_Tahap_Tes', $tes->Id_Lamaran_Tahap_Tes)
+            ->update([
+                'Unggah_Kirim_At' => $now,
+                'Unggah_Kirim_By' => $nama,
+                'Unggah_Kirim_Ip' => Str::limit((string) $request->ip(), 60, ''),
+                'Updated_At' => $now,
+                'Updated_By' => $nama,
+            ]);
+
+        return ResponseHelper::success(
+            ['waktu' => $now->toDateTimeString(), 'jumlah' => $jumlah],
+            "Berkas kamu sudah dikirim ({$jumlah} berkas). Tim rekrutmen akan menilainya."
+        );
     }
 
     /** DELETE berkas kandidat - selama aktivitasnya belum selesai. */
@@ -2611,6 +2684,14 @@ class LamaranController extends Controller
             'unggahKandidat' => ($x->Unggah_Kandidat ?? 'T') === 'Y' ? [
                 'wajib' => ($x->Unggah_Wajib ?? 'T') === 'Y',
                 'petunjuk' => $x->Unggah_Petunjuk ?? null,
+                'format' => array_values(array_filter(array_map('trim', explode(',', (string) ($x->Unggah_Format ?: 'pdf'))))),
+                'maksMb' => (int) ($x->Unggah_Maks_Mb ?: 0),
+                // KANDIDAT SUDAH MENYATAKAN LENGKAP? Pembeda antara "masih
+                // mengunggah" dan "menunggu dinilai". Menilai pekerjaan yang
+                // belum dinyatakan selesai adalah keputusan yang tak bisa
+                // ditarik — tim perlu melihat bedanya sebelum menekan apa pun.
+                'terkirim' => $x->Unggah_Kirim_At ? (string) $x->Unggah_Kirim_At : null,
+                'terkirimOleh' => $x->Unggah_Kirim_By ?? null,
             ] : null,
             'berkasKandidat' => $berkasKandidat,
             // Tipe yang menuntut waktu & tempat (wawancara, MCU, tes offline).

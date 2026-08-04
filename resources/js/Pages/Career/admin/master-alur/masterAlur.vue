@@ -421,8 +421,11 @@
                                                 </div>
                                                 <div>
                                                     <label class="wca-field-lbl">Ukuran maksimum</label>
+                                                    <!-- Pilihannya dari Master Batas Unggah, bukan angka
+                                                         di sini — batas yang dijanjikan admin dijamin sama
+                                                         dengan yang diberlakukan saat kandidat mengunggah. -->
                                                     <el-select v-model="t.unggahMaksMb" style="width:100%">
-                                                        <el-option v-for="mb in [2, 3, 5, 10, 20]" :key="mb" :label="mb + ' MB'" :value="mb" />
+                                                        <el-option v-for="o in opsiBatasUnggah(t)" :key="o.value" :label="o.label" :value="o.value" />
                                                     </el-select>
                                                 </div>
                                             </div>
@@ -637,6 +640,8 @@ export default {
             modePenilaian: [],
             // Mode lanjut AKTIF — otomatis / dipicu admin.
             modeLanjut: [],
+            // Pilihan batas ukuran unggahan — dimuat dari Master Batas Unggah.
+            batasUnggah: [],
             // Tipe tahap + perilakunya ('CAT' = ujian online berjadwal).
             tipeTahap: [],
             // talentPoolMulai: 0 = nonaktif; N = cut-off Talent Pool mulai tahap ke-N (sampai akhir).
@@ -673,6 +678,7 @@ export default {
         this.loadModeUrutan();
         this.loadModePenilaian();
         this.loadModeLanjut();
+        this.loadBatasUnggah();
         this.loadTipeTahap();
     },
     computed: {
@@ -731,6 +737,41 @@ export default {
             try {
                 this.modeLanjut = (await axios.get('/api/v1/karir/options/mode-lanjut', CFG)).data.result || [];
             } catch (e) { this.modeLanjut = []; }
+        },
+
+        /**
+         * Pilihan batas ukuran unggahan — DARI MASTER, bukan daftar angka di sini.
+         *
+         * Angka yang ditulis di layar harus dicocokkan manual dengan batas yang
+         * benar-benar diberlakukan saat kandidat mengunggah; begitu keduanya
+         * menyimpang, admin menjanjikan 5 MB dan kandidat ditolak di 2 MB tanpa
+         * ada yang tahu sebabnya. Satu sumber menutup celah itu.
+         */
+        async loadBatasUnggah() {
+            try {
+                this.batasUnggah = (await axios.get('/api/v1/karir/options/batas-unggah', CFG)).data.result || [];
+            } catch (e) { this.batasUnggah = []; }
+        },
+        /** Batas bawaan untuk aktivitas baru = pilihan aktif TERKECIL. */
+        batasUnggahBawaan() {
+            return this.batasUnggah[0]?.value ?? null;
+        },
+        /**
+         * Pilihan yang ditampilkan untuk SATU aktivitas.
+         *
+         * Nilai lama yang sudah tersimpan tapi tidak lagi aktif tetap ikut
+         * ditawarkan — kalau tidak, el-select tampil KOSONG dan admin yang
+         * sekadar membuka alur lalu menyimpannya akan menghapus batas yang
+         * sedang berlaku bagi kandidat berjalan.
+         */
+        opsiBatasUnggah(t) {
+            const opsi = [...this.batasUnggah];
+            const kini = t?.unggahMaksMb;
+            if (kini && !opsi.some((o) => o.value === kini)) {
+                opsi.push({ value: kini, label: `${kini} MB (setelan lama)`, lawas: true });
+            }
+
+            return opsi.sort((a, b) => a.value - b.value);
         },
         /** Bawaan = mode yang TIDAK menahan — perilaku sebelum fitur ini ada. */
         lanjutBawaan() {
@@ -899,14 +940,53 @@ export default {
          * dengan nama tahap — persis yang dibuat backend saat daftar dikosongkan.
          * Tahap yang memang punya beberapa tes tidak tersentuh.
          */
+        /**
+         * Aktivitas yang PUNYA SETELAN sendiri — bukan sekadar baris bawaan.
+         *
+         * Dipakai memutuskan apakah satu-satunya aktivitas sebuah tahap boleh
+         * disembunyikan dari form. Aktivitas yang meminta unggahan, punya cara
+         * penilaian, disembunyikan dari kandidat, atau menunggu pemicu admin
+         * membawa keputusan yang TIDAK bisa dibentuk ulang dari label tahap.
+         */
+        tesPunyaSetelan(x) {
+            return x.unggahKandidat === true
+                || x.tampilKandidat === false
+                || !!x.penilaianMode
+                || !!x.lanjutMode
+                || x.ambang != null
+                || (x.peran || 'PENENTU') !== 'PENENTU';
+        },
+
         buangTesBawaan(s) {
             const t = s.tests || [];
+
+            // BARIS BAWAAN = satu aktivitas yang seluruhnya bisa dibentuk ulang
+            // dari tahapnya sendiri. Hanya baris seperti itu yang boleh
+            // disembunyikan dari form.
+            //
+            // KENAPA `tesPunyaSetelan` IKUT MENENTUKAN
+            // Dulu penilaiannya hanya label + tipe + peran. Aktivitas yang
+            // labelnya kebetulan sama dengan tahapnya ikut dibuang walau ia
+            // membawa setelan unggahan, penilaian, atau visibilitas. Formnya
+            // lalu menyimpan `tests: []`, dan server membuatkan baris bawaan
+            // KOSONG sebagai gantinya — seluruh setelan itu lenyap. Setiap kali
+            // alur dibuka lalu disimpan, tanpa admin menyentuh apa pun.
             const bawaan = t.length === 1
                 && (t[0].peran || 'PENENTU') === 'PENENTU'
                 && (t[0].tipe || s.tipe) === s.tipe
-                && (t[0].label || '').trim() === (s.label || '').trim();
+                && (t[0].label || '').trim() === (s.label || '').trim()
+                && !this.tesPunyaSetelan(t[0]);
 
+            // SELURUH FIELD DIPERTAHANKAN (`...x`).
+            //
+            // Sebelumnya fungsi ini hanya meneruskan label/tipe/peran/ambang.
+            // Sepuluh field lain — unggahKandidat, unggahWajib, unggahFormat,
+            // unggahMaksMb, unggahPetunjuk, tampilKandidat, lanjutMode,
+            // penilaianMode, penilaianOpsi, nilaiMaks — hilang di sini, sebelum
+            // openEdit() sempat menormalkannya. Akibatnya membuka alur untuk
+            // diedit sudah cukup untuk menghapus semuanya.
             return bawaan ? [] : t.map((x) => ({
+                ...x,
                 label: x.label,
                 // Tipe DITAMPILKAN APA ADANYA.
                 //
@@ -926,7 +1006,7 @@ export default {
             if (!Array.isArray(s.tests)) s.tests = [];
             s.tests.push({ label: '', tipe: null, peran: 'PENENTU', ambang: null,
                 unggahKandidat: false, unggahWajib: false,
-                unggahFormat: 'pdf,jpg,jpeg,png', unggahMaksMb: 5, unggahPetunjuk: '',
+                unggahFormat: 'pdf,jpg,jpeg,png', unggahMaksMb: this.batasUnggahBawaan(), unggahPetunjuk: '',
                 // Bawaannya TERLIHAT. Menyembunyikan aktivitas adalah keputusan
                 // sadar; kalau bawaannya tersembunyi, satu aktivitas yang lupa
                 // disetel akan hilang dari portal tanpa ada yang menyadarinya.
@@ -1017,7 +1097,8 @@ export default {
                     unggahKandidat: t.unggahKandidat === true,
                     unggahWajib: t.unggahWajib === true,
                     unggahFormat: t.unggahFormat || 'pdf,jpg,jpeg,png',
-                    unggahMaksMb: t.unggahMaksMb || 5,
+                    // `||` bukan `??` disengaja: 0 bukan batas yang sah.
+                    unggahMaksMb: t.unggahMaksMb || this.batasUnggahBawaan(),
                     unggahPetunjuk: t.unggahPetunjuk || '',
                     // `!== false` — alur lama tidak punya field ini sama sekali,
                     // dan `undefined` harus berarti TERLIHAT (perilaku selama ini),
