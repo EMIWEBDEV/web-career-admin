@@ -66,4 +66,15 @@ class PipelineProgressTahapAktifTest extends TestCase
 
         $this->assertNull(PipelineProgress::tahapAktif($l, $tahapList));
     }
+
+    public function test_badge_pascapenerimaan_untuk_lulus_dengan_tahap_administratif_berjalan(): void
+    {
+        $l = (object) ['Status' => 'LULUS'];
+        $tAktif = $this->tahap(2, 'BERJALAN', 'T');
+        $state = ['ditahan' => false, 'holdNama' => null, 'siap' => false, 'isTes' => false, 'skor' => null, 'nungguSistem' => false, 'butuhKeputusan' => false];
+
+        $badge = \App\Support\Career\PipelineProgress::badge($l, $state, $tAktif);
+
+        $this->assertSame('pascaPenerimaan', $badge['tone']);
+    }
 }

@@ -609,17 +609,25 @@ class MonitoringController extends Controller
 
             $data = DB::transaction(function () use ($programId, $urutan, $agingSql, $macetHari, $kode, $sempit) {
                 // 1) Statistik tahap (semua lamaran yang PERNAH menyentuh tahap ini).
+                //    `aktif` dan `macet` mengecualikan Hold_Flag NULL-safe
+                //    (COALESCE(...,'T') <> 'Y') supaya baris tanpa Hold_Flag (NULL)
+                //    tetap terhitung TIDAK ditahan — bug yang sama seperti
+                //    MetrikRekrutmen::agregatSehat() dan $kpiTahap di live().
+                //    `ditahan` dibandingkan langsung ke 'Y' (bukan <> 'Y'), jadi
+                //    TIDAK butuh COALESCE: NULL = 'Y' sudah otomatis false, yang
+                //    memang berarti "bukan ditahan".
                 $stats = DB::table('N_WEB_CAREERS_Lamaran_Tahap as lt')
                     ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'lt.Lamaran_Id')
                     ->where('l.Program_Id', $programId)->where($sempit)
                     ->selectRaw("COUNT(*) as total,
-                                 SUM(CASE WHEN lt.Status = 'BERJALAN' THEN 1 ELSE 0 END) as aktif,
+                                 SUM(CASE WHEN lt.Status = 'BERJALAN' AND COALESCE(lt.Hold_Flag, 'T') <> 'Y' THEN 1 ELSE 0 END) as aktif,
+                                 SUM(CASE WHEN lt.Status = 'BERJALAN' AND lt.Hold_Flag = 'Y' THEN 1 ELSE 0 END) as ditahan,
                                  SUM(CASE WHEN lt.Status = 'MENUNGGU' THEN 1 ELSE 0 END) as menunggu,
                                  SUM(CASE WHEN lt.Hasil = 'LULUS' THEN 1 ELSE 0 END) as lulus,
                                  SUM(CASE WHEN lt.Hasil = 'GUGUR' THEN 1 ELSE 0 END) as gugur,
                                  SUM(CASE WHEN lt.Hasil = 'TALENT_POOL' THEN 1 ELSE 0 END) as talent,
                                  SUM(CASE WHEN lt.Status = 'BERJALAN' AND lt.Siap_Diputus = 'Y' THEN 1 ELSE 0 END) as siapDiputus,
-                                 SUM(CASE WHEN lt.Status = 'BERJALAN' AND {$agingSql} > {$macetHari} THEN 1 ELSE 0 END) as macet,
+                                 SUM(CASE WHEN lt.Status = 'BERJALAN' AND COALESCE(lt.Hold_Flag, 'T') <> 'Y' AND {$agingSql} > {$macetHari} THEN 1 ELSE 0 END) as macet,
                                  AVG(CASE WHEN lt.Status = 'BERJALAN' THEN {$agingSql} * 1.0 END) as avgAging,
                                  MAX(CASE WHEN lt.Status = 'BERJALAN' THEN {$agingSql} END) as maxAging,
                                  AVG(CASE WHEN lt.Skor IS NOT NULL THEN lt.Skor END) as avgSkor")
@@ -694,6 +702,7 @@ class MonitoringController extends Controller
                 'stats' => [
                     'total' => (int) ($s->total ?? 0),
                     'aktif' => (int) ($s->aktif ?? 0),
+                    'ditahan' => (int) ($s->ditahan ?? 0),
                     'menunggu' => (int) ($s->menunggu ?? 0),
                     'lulus' => (int) ($s->lulus ?? 0),
                     'gugur' => (int) ($s->gugur ?? 0),

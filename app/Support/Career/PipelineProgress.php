@@ -186,7 +186,12 @@ class PipelineProgress
             return ['tone' => 'talent', 'teks' => 'Talent Pool'];
         }
         if ($l->Status === 'LULUS') {
-            return ['tone' => 'lolos', 'teks' => 'Diterima'];
+            // DITERIMA tidak selalu berarti TUNTAS SELURUH TAHAP. Bila masih
+            // ada tahap administratif (kontrak, onboarding) yang berjalan,
+            // itu perlu tetap terlihat sebagai kerjaan — bukan "sudah selesai".
+            return $tAktif
+                ? ['tone' => 'pascaPenerimaan', 'teks' => 'Diterima — Proses Administrasi']
+                : ['tone' => 'lolos', 'teks' => 'Diterima'];
         }
         // DITAHAN mendahului semuanya. Kandidat yang sedang ditahan boleh saja
         // sudah "siap diputus" menurut data — tapi yang perlu dibaca admin
