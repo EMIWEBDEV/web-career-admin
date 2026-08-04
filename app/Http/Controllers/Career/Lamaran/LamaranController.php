@@ -870,10 +870,19 @@ class LamaranController extends Controller
             ->whereNotNull('t.Formulir_Kode')
             ->whereNull('t.Formulir_Pengisian_Id')
             ->orderBy('t.Urutan')
-            ->select('t.Id_Lamaran_Tahap', 't.Label', 't.Formulir_Kode', 't.Formulir_Komponen',
+            ->select('t.Id_Lamaran_Tahap', 't.Label', 't.Formulir_Kode', 't.Formulir_Komponen', 't.Formulir_Versi',
                 'f.Nama as FormulirNama', 'f.Komponen_Kode')
             ->first();
 
+        // Schema dikunci ke versi yang dibekukan saat tahap dibuat (bila ada),
+        // supaya kandidat yang sedang mengisi tidak tiba-tiba mendapat schema
+        // dinamis versi baru gara-gara Master Formulir disunting di tengah jalan.
+        $schemaAktif = $aktif
+            ? \App\Support\Career\FormulirSchema::byKodeDanVersi(
+                $aktif->Formulir_Kode,
+                $aktif->Formulir_Versi !== null ? (int) $aktif->Formulir_Versi : null
+            )
+            : null;
         $tugas = $aktif ? [
             'tahapId' => Hashids::encode($aktif->Id_Lamaran_Tahap),
             'label' => $aktif->Label,
@@ -886,7 +895,10 @@ class LamaranController extends Controller
             // mengarahkan Master Formulir ke komponen versi baru langsung
             // mengubah formulir orang yang sudah berjalan berminggu-minggu —
             // termasuk yang tinggal menekan kirim.
-            'komponen' => $aktif->Formulir_Komponen ?: $aktif->Komponen_Kode,
+            'komponen' => $aktif->Formulir_Komponen ?: ($schemaAktif['komponen'] ?? $aktif->Komponen_Kode),
+            'schema' => $schemaAktif['schema'] ?? null,
+            'versiId' => $schemaAktif['versiId'] ?? null,
+            'versi' => $schemaAktif['versi'] ?? null,
         ] : null;
 
         // KONTEKS FORMULIR — opsi yang memang PENDEK dan khusus lamaran ini.

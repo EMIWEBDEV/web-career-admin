@@ -114,7 +114,7 @@ function hapusBaris(i) {
 .bg__head h4 { margin: 0; font-size: .95rem; font-weight: 800; color: #0f172a; letter-spacing: -.01em; }
 .bg__head p { margin: .2rem 0 0; font-size: 12px; color: #64748b; line-height: 1.55; }
 
-.bg__grid { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; }
+.bg__grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: .8rem; }
 
 .bg__baris { border: 1px solid rgba(11, 16, 51, .09); border-radius: 12px; padding: .8rem; margin-bottom: .6rem; background: #f8fafc; }
 .bg__baris-head { display: flex; align-items: center; margin-bottom: .6rem; }
@@ -128,5 +128,6 @@ function hapusBaris(i) {
 
 @media (max-width: 700px) {
     .bg__grid { grid-template-columns: 1fr; }
+    .bg__grid > * { grid-column: 1 / -1 !important; }
 }
 </style>

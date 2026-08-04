@@ -35,6 +35,7 @@ import Form1 from './template-1/form-1/Form1.vue';
 import Form2 from './template-1/form-2/Form2.vue';
 import Form3 from './template-1/form-3/Form3.vue';
 import Form4 from './template-1/form-4/Form4.vue';
+import DynamicForm from './DynamicForm.vue';
 import { SKEMA as SKEMA_FORM_1 } from './template-1/form-1/skema';
 import { SKEMA as SKEMA_FORM_2 } from './template-1/form-2/skema';
 import { SKEMA as SKEMA_FORM_3 } from './template-1/form-3/skema';
@@ -92,6 +93,16 @@ export function skemaFormulir(kode) {
 
 export function infoFormulir(kode) {
     return FORMULIR[kode] || null;
+}
+
+export function komponenDinamis() {
+    return DynamicForm;
+}
+
+export function skemaDariFormulir(formulir) {
+    if (formulir?.schema) return formulir.schema;
+    if (formulir?.schemaJson) return formulir.schemaJson;
+    return skemaFormulir(formulir?.komponen);
 }
 
 /**
@@ -160,3 +171,4 @@ export {
     periksaLangkah,
 } from './inti/aturan';
 
+export { normalisasiSkema, skemaKosong, validasiSkema, slugKey, buatFieldId } from './inti/schema';

@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Career\ProgramKegiatan;
 use App\Helpers\ResponseHelper;
 use App\Http\Controllers\Controller;
 use App\Support\Career\AksesService;
+use App\Support\Career\FieldTurunan;
+use App\Support\Career\FormulirSchema;
 use App\Support\Career\KodeUnik;
 use App\Support\Career\MesinSyarat;
 use App\Support\CareerShell;
@@ -208,6 +210,7 @@ class ProgramKegiatanController extends Controller
         $now = now();
         $userName = session('career_auth.nama', 'ADMIN');
         $urut = 1;
+        $schemaTahap = []; // cache Id_Master_Alur_Tahap -> daftar key field, supaya tidak query berulang
 
         foreach ($data['syarat'] ?? [] as $s) {
             // Simpul setengah jadi dibuang di sini. Aturan yang tidak lengkap
@@ -215,6 +218,46 @@ class ProgramKegiatanController extends Controller
             $aturan = MesinSyarat::bersihkan($s['aturan'] ?? []);
             if (! $aturan) {
                 continue;
+            }
+
+            // GERBANG FIELD TURUNAN TANPA SUMBER: syarat berbasis "usia"/"jenjang"/
+            // dst. hanya berarti kalau formulir tahap itu punya field dengan salah
+            // satu key yang dikenal FieldTurunan. Untuk formulir dinamis (bukan
+            // FORMULIR_1..4 lama), key-nya bebas ditentukan admin builder — tanpa
+            // gerbang ini, syarat GUGUR bisa diam-diam menggugurkan SEMUA kandidat
+            // karena field turunannya tidak pernah terhitung.
+            //
+            // Formulir LAMA (Komponen_Kode terisi) dilewati saja — field-nya cuma
+            // ada di skema JS, tidak tercatat di DB, jadi tidak bisa diperiksa dari
+            // sini. Formulir lama ditulis dengan field yang sudah cocok dengan
+            // FieldTurunan sejak awal, jadi tidak butuh gerbang ini.
+            $tahapId = $s['tahapId'] ?? null;
+            if ($tahapId) {
+                $fieldDipakai = array_intersect(MesinSyarat::fieldDipakai($aturan), array_keys(FieldTurunan::DEFINISI));
+                if ($fieldDipakai) {
+                    if (! array_key_exists($tahapId, $schemaTahap)) {
+                        $tahap = DB::table('N_WEB_CAREERS_Master_Alur_Tahap as t')
+                            ->leftJoin('N_WEB_CAREERS_Master_Formulir as f', 'f.Kode', '=', 't.Formulir_Kode')
+                            ->where('t.Id_Master_Alur_Tahap', $tahapId)
+                            ->first(['t.Formulir_Kode', 'f.Komponen_Kode']);
+
+                        // null = form lama / tidak ada form -> tidak bisa diperiksa, lewati.
+                        // array = form dinamis -> daftar key field sungguhan, WAJIB diperiksa.
+                        $schemaTahap[$tahapId] = ($tahap && $tahap->Formulir_Kode && ! $tahap->Komponen_Kode)
+                            ? FormulirSchema::keyField(FormulirSchema::publishedByKode($tahap->Formulir_Kode)['schema'] ?? null)
+                            : null;
+                    }
+
+                    if ($schemaTahap[$tahapId] !== null) {
+                        foreach ($fieldDipakai as $turunanKey) {
+                            if (! FieldTurunan::sumberTersedia($turunanKey, $schemaTahap[$tahapId])) {
+                                throw \Illuminate\Validation\ValidationException::withMessages([
+                                    'syarat' => "Syarat \"{$s['nama']}\" memakai field turunan \"{$turunanKey}\", tapi formulir tahap ini tidak punya field sumbernya — field turunan itu tidak akan pernah terhitung dan syarat ini akan menggugurkan semua kandidat.",
+                                ]);
+                            }
+                        }
+                    }
+                }
             }
 
             DB::table('N_WEB_CAREERS_Program_Syarat')->insert([
