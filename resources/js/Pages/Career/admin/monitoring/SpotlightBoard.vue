@@ -99,14 +99,21 @@
                         @open-person="bukaOrang" @open-stage="bukaTahap" @open-cell="bukaSel" />
 
                     <div v-else class="wcm-board">
-                        <div v-for="k in kolom" :key="k.urutan" class="wcm-col">
+                        <!-- Kunci & penanda-terbuka memakai KODE: sesudah kolom
+                             digabung dari beberapa alur, dua kolom bisa bernomor
+                             sama, dan nomor sebagai kunci membuat Vue menganggap
+                             keduanya satu elemen — satu kolom hilang dari papan. -->
+                        <div v-for="k in kolom" :key="k.kode || k.urutan" class="wcm-col" :class="{ 'is-lawas': k.alurLain }">
                             <button type="button" class="wcm-col__head"
-                                :class="{ 'is-open': tahapTerbuka && tahapTerbuka.urutan === k.urutan }"
+                                :class="{ 'is-open': tahapTerbuka && (tahapTerbuka.kode || tahapTerbuka.urutan) === (k.kode || k.urutan) }"
                                 @click="bukaTahap(k)">
                                 <span class="wcm-col__no">{{ String(k.urutan).padStart(2, '0') }}</span>
                                 <span class="wcm-col__label">{{ k.label }}</span>
                                 <i v-if="k.provider === 'THIRD_PARTY'" class="bi bi-robot" title="Tahap otomatis pihak ke-3"></i>
-                                <span class="wcm-col__n">{{ perKolom(k.urutan).length }}</span>
+                                <!-- Tahap dari alur sebelumnya — kandidat di sini
+                                     melanjutkan alur yang mereka masuki saat melamar. -->
+                                <span v-if="k.alurLain" class="wcm-col__lawas" title="Tahap dari alur sebelumnya">alur lama</span>
+                                <span class="wcm-col__n">{{ perKolom(k).length }}</span>
                                 <i class="bi bi-chevron-right wcm-col__go"></i>
                             </button>
 
@@ -116,10 +123,10 @@
                                      penanda samar — bukan panel penuh yang berteriak
                                      seolah ada yang salah. Tapi tetap berkata sesuatu;
                                      tanda "—" saja tidak terbaca sebagai apa pun. -->
-                                <div v-if="!perKolom(k.urutan).length" class="wcm-col__kosong">
+                                <div v-if="!perKolom(k).length" class="wcm-col__kosong">
                                     <i class="bi bi-dash-circle"></i> Belum ada
                                 </div>
-                                <button v-for="o in perKolom(k.urutan)" :key="o.id" type="button" class="wcm-kartu"
+                                <button v-for="o in perKolom(k)" :key="o.id" type="button" class="wcm-kartu"
                                     :class="[{ 'is-alert': o.siapDiputus, 'is-open': orangTerbuka === o.id }, 'st-' + o.status.toLowerCase()]"
                                     @click="bukaOrang(o.id)">
                                     <span class="wca-avatar wca-avatar--sm">{{ initials(o.nama) }}</span>
@@ -150,7 +157,7 @@
     <PersonDrawer v-if="orangTerbuka" :lamaran-id="orangTerbuka"
         @close="tutupOrang" @open-stage="tahapOrang = $event" />
     <StageDetailPanel v-else-if="tahapTerbuka" :program-id="programId" :kolom="tahapTerbuka"
-        :orang="perKolom(tahapTerbuka.urutan)"
+        :orang="perKolom(tahapTerbuka)"
         @close="tahapTerbuka = null" @open-person="bukaOrang" />
 
     <!-- Lapis 3: detail satu tahap milik orang yang sedang dibuka. Label ikut
@@ -281,10 +288,23 @@ const ringkas = computed(() => {
     return r
 })
 
-/** Orang di satu kolom — yang masih berproses & paling lama menunggu di atas. */
-function perKolom(urutan) {
+/**
+ * Orang di satu kolom — yang masih berproses & paling lama menunggu di atas.
+ *
+ * Dicocokkan lewat KODE tahap (identitas), bukan nomor urutnya. Nomor hanya
+ * benar selama alur tak pernah berubah: begitu program diarahkan ke alur lain,
+ * atau alurnya disunting di tempat (baris dipakai ulang per urutan), "tahap
+ * ke-3" milik kandidat dan "kolom ke-3" di papan bisa dua hal berbeda —
+ * angkanya tetap keluar, hanya di tahap yang salah.
+ *
+ * Cadangan ke nomor tetap ada untuk muatan lama yang belum membawa kolomKode.
+ */
+function perKolom(k) {
+    const kode = typeof k === 'object' ? k?.kode : null
+    const urutan = typeof k === 'object' ? k?.urutan : k
+
     return pelamarTerfilter.value
-        .filter((o) => o.kolomUrutan === urutan)
+        .filter((o) => (o.kolomKode != null && kode != null ? o.kolomKode === kode : o.kolomUrutan === urutan))
         .sort((a, b) => {
             const aktifA = a.status === 'BERJALAN' ? 0 : 1
             const aktifB = b.status === 'BERJALAN' ? 0 : 1
@@ -449,6 +469,10 @@ defineExpose({ refresh: fetchPapan })
 
 .wcm-board { display: flex; gap: 14px; height: 100%; overflow-x: auto; padding-bottom: 8px; }
 .wcm-col { flex: 0 0 270px; display: flex; flex-direction: column; background: #ffffff; border: 1px solid rgba(226, 232, 240, 0.95); border-radius: 18px; overflow: hidden; box-shadow: 0 2px 10px rgba(15, 23, 42, 0.02); }
+/* Kolom rombongan alur lama — dibedakan, bukan diredupkan: isinya tetap harus
+   dikerjakan, hanya asal alurnya yang berbeda. */
+.wcm-col.is-lawas { border-style: dashed; border-color: rgba(167, 139, 250, 0.6); background: #fbfaff; }
+.wcm-col__lawas { flex: 0 0 auto; margin-left: 2px; padding: 1px 6px; border-radius: 999px; font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .02em; background: #ede9fe; color: #6d28d9; }
 .wcm-col__head { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; border: 0; border-bottom: 1px solid #f1f5f9; background: #fafafa; padding: 12px 14px; cursor: pointer; transition: all 0.2s ease; }
 .wcm-col__head:hover { background: #eef2ff; }
 .wcm-col__head.is-open { background: #eef2ff; box-shadow: inset 3px 0 0 #6366f1; }

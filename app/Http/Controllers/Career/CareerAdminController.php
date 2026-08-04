@@ -187,7 +187,26 @@ class CareerAdminController extends Controller
                 ->where('Flag_Aktif', 'Y')
                 ->orderBy('Nama')
                 ->get()
-                ->map(fn($r) => ['value' => $r->Kode, 'label' => $r->Nama, 'perilaku' => $r->Perilaku_Kode])
+                ->map(fn ($r) => [
+                    'value' => $r->Kode,
+                    'label' => $r->Nama,
+                    'perilaku' => $r->Perilaku_Kode,
+                    // FLAG PERILAKU ikut dikirim. Tanpa ini butuhFormulir() di
+                    // builder selalu bernilai false, dan penyimpanan MEMAKSA
+                    // Formulir_Kode jadi NULL — sehingga alur yang sudah benar
+                    // kehilangan formulirnya begitu disunting ulang, tanpa galat
+                    // apa pun. Itulah yang terjadi pada "EVO MANAGEMENT 2026".
+                    'formulir' => ($r->Flag_Formulir ?? 'T') === 'Y',
+                    'uploadHasil' => ($r->Flag_Upload_Hasil ?? 'T') === 'Y',
+                    'jadwal' => ($r->Flag_Jadwal ?? 'T') === 'Y',
+                    'wajibLuring' => ($r->Flag_Wajib_Luring ?? 'T') === 'Y',
+                    'tuntas' => ($r->Flag_Tuntas ?? 'T') === 'Y',
+                    // Tipe yang MENUNTUT tindakan kandidat (ujian online), jadi
+                    // tak boleh disembunyikan dari portalnya — kalau
+                    // disembunyikan, ia tak pernah melihat tombol mengerjakan.
+                    'wajibTampil' => ($r->Flag_Wajib_Tampil ?? 'T') === 'Y',
+                    'ikon' => $r->Ikon,
+                ])
                 ->values();
 
             return ResponseHelper::success($rows, 'Opsi tipe');
@@ -239,6 +258,112 @@ class CareerAdminController extends Controller
                 ->values();
 
             return ResponseHelper::success($rows, 'Opsi mode keputusan');
+        }
+
+        // Cara aktivitas dalam satu tahap dikerjakan: bersamaan atau berurutan.
+        // Perilakunya (`berurutan`) ikut dikirim supaya builder Alur tidak
+        // membandingkan Kode — menambah mode baru cukup lewat master.
+        if ($type === 'mode-urutan') {
+            $rows = DB::table('N_WEB_CAREERS_Master_Mode_Urutan')
+                ->where('Flag_Aktif', 'Y')
+                ->orderBy('Urutan')
+                ->get()
+                ->map(fn ($r) => [
+                    'value' => $r->Kode,
+                    'label' => $r->Label ?: $r->Nama,
+                    'nama' => $r->Nama,
+                    'ikon' => $r->Ikon,
+                    'warna' => $r->Warna,
+                    'deskripsi' => $r->Deskripsi,
+                    'berurutan' => $r->Flag_Berurutan === 'Y',
+                ])
+                ->values();
+
+            return ResponseHelper::success($rows, 'Opsi mode urutan aktivitas');
+        }
+        // Alasan menahan (HOLD) kandidat di tahapnya. Dipilih dari daftar, bukan
+        // diketik bebas: inilah yang dihitung saat menjelaskan kenapa satu
+        // lowongan lama terisi, dan teks bebas membuat sebab yang sama tak
+        // pernah terkelompokkan.
+        if ($type === 'alasan-hold') {
+            $rows = DB::table('N_WEB_CAREERS_Master_Alasan_Hold')
+                ->where('Flag_Aktif', 'Y')
+                ->orderBy('Urutan')
+                ->get()
+                ->map(fn ($r) => [
+                    'value' => $r->Kode,
+                    'label' => $r->Nama,
+                    'nama' => $r->Nama,
+                    'ikon' => $r->Ikon,
+                    'warna' => $r->Warna,
+                    'deskripsi' => $r->Deskripsi,
+                    'butuhCatatan' => $r->Butuh_Catatan === 'Y',
+                ])
+                ->values();
+
+            return ResponseHelper::success($rows, 'Opsi alasan hold');
+        }
+
+        // Cara sebuah aktivitas dinilai: tanpa nilai / angka / kategori.
+        // `tipe` (perilaku) ikut dikirim supaya builder tahu bidang apa yang
+        // harus diminta — daftar pilihan hanya relevan untuk mode berkategori.
+        if ($type === 'mode-penilaian') {
+            $rows = DB::table('N_WEB_CAREERS_Master_Mode_Penilaian')
+                ->where('Flag_Aktif', 'Y')
+                ->orderBy('Urutan')
+                ->get()
+                ->map(fn ($r) => [
+                    'value' => $r->Kode,
+                    'label' => $r->Nama,
+                    'nama' => $r->Nama,
+                    'ikon' => $r->Ikon,
+                    'warna' => $r->Warna,
+                    'deskripsi' => $r->Deskripsi,
+                    'tipe' => $r->Tipe_Nilai,
+                    'butuhOpsi' => $r->Butuh_Opsi === 'Y',
+                ])
+                ->values();
+
+            return ResponseHelper::success($rows, 'Opsi mode penilaian');
+        }
+
+        // Batas ukuran unggahan kandidat — DARI MASTER, bukan daftar angka di
+        // layar. Menyempitkan atau melebarkan pilihan cukup lewat data, dan
+        // batas yang ditawarkan admin dijamin sama dengan yang diberlakukan
+        // saat kandidat benar-benar mengunggah.
+        if ($type === 'batas-unggah') {
+            $rows = DB::table('N_WEB_CAREERS_Master_Batas_Unggah')
+                ->where('Flag_Aktif', 'Y')
+                ->orderBy('Urutan')
+                ->get()
+                ->map(fn ($r) => [
+                    'value' => (int) $r->Maks_Mb,
+                    'label' => $r->Label,
+                    'deskripsi' => $r->Keterangan,
+                ])
+                ->values();
+
+            return ResponseHelper::success($rows, 'Opsi batas unggah');
+        }
+
+        // Perpindahan antar sub-aktivitas: otomatis atau menunggu admin.
+        if ($type === 'mode-lanjut') {
+            $rows = DB::table('N_WEB_CAREERS_Master_Mode_Lanjut')
+                ->where('Flag_Aktif', 'Y')
+                ->orderBy('Urutan')
+                ->get()
+                ->map(fn ($r) => [
+                    'value' => $r->Kode,
+                    'label' => $r->Label ?: $r->Nama,
+                    'nama' => $r->Nama,
+                    'ikon' => $r->Ikon,
+                    'warna' => $r->Warna,
+                    'deskripsi' => $r->Deskripsi,
+                    'butuhTrigger' => $r->Flag_Butuh_Trigger === 'Y',
+                ])
+                ->values();
+
+            return ResponseHelper::success($rows, 'Opsi mode lanjut');
         }
 
         // type => [tabel, kolom value, kolom label, kolom flag aktif (atau null)]

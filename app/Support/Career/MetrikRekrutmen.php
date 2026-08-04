@@ -32,6 +32,34 @@ class MetrikRekrutmen
      * kolom lain milik lamaran yang sama tidak bisa memecah grupnya. Dipakai
      * dashboard MT untuk memecah funnel per Program_Posisi_Id.
      */
+    /**
+     * Sama seperti sqlUrutanDisplay(), TAPI juga membawa KODE tahap yang
+     * mewakili — identitasnya, bukan cuma nomor urutnya.
+     *
+     * KENAPA PERLU
+     * Funnel & papan menyusun kolomnya dari master alur, lalu memasangkan
+     * angka lewat nomor urut. Itu benar hanya selama alur tak pernah berubah.
+     * Begitu program diarahkan ke alur lain — atau alurnya disunting di tempat,
+     * yang memakai ULANG baris per urutan — "tahap ke-3" milik kandidat dan
+     * "kolom ke-3" di layar bisa dua hal yang sama sekali berbeda. Angkanya
+     * tetap muncul, hanya menempel di tahap yang salah: kegagalan yang tidak
+     * menimbulkan satu galat pun, dan justru karena itu tidak pernah ketahuan.
+     *
+     * Dibungkus, bukan diubah di tempat: agregat lain masih memakai bentuk
+     * aslinya, dan menyisipkan JOIN ke dalamnya akan memaksa mereka ikut
+     * menanggung biayanya tanpa memerlukan hasilnya.
+     */
+    public static function sqlUrutanDisplayBerkode(string $whereLamaran, array $kolomTambahan = []): string
+    {
+        $dalam = self::sqlUrutanDisplay($whereLamaran, $kolomTambahan);
+
+        return "SELECT d.*, lt2.Kode AS KodeDisplay
+                FROM ({$dalam}) d
+                LEFT JOIN N_WEB_CAREERS_Lamaran_Tahap lt2
+                       ON lt2.Lamaran_Id = d.Id_Lamaran
+                      AND lt2.Urutan     = d.UrutanDisplay";
+    }
+
     public static function sqlUrutanDisplay(string $whereLamaran, array $kolomTambahan = []): string
     {
         $extra = $kolomTambahan ? ', ' . implode(', ', $kolomTambahan) : '';

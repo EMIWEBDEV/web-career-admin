@@ -101,10 +101,10 @@
 
                                 <button
                                     v-for="t in tesAlur"
-                                    :key="t.tahapUrutan + '-' + t.tesUrutan"
+                                    :key="kunciTes(t)"
                                     type="button"
                                     class="pjd-stage"
-                                    :class="{ 'is-on': tesTerpilihKey === t.tahapUrutan + '-' + t.tesUrutan }"
+                                    :class="{ 'is-on': tesTerpilihKey === kunciTes(t), 'is-lawas': t.alurLain }"
                                     @click="pilihTes(t)"
                                 >
                                     <span class="pjd-stage__no">{{ t.tahapUrutan }}</span>
@@ -113,6 +113,10 @@
                                         <span class="pjd-stage__meta">
                                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2" /><path d="M9 9h6v6H9z" /></svg>
                                             {{ t.tipeNama || 'Tes Online' }}<template v-if="t.peran === 'INFORMATIF'"> · informatif</template>
+                                            <!-- Baris ini tidak ada di alur program sekarang: sisa
+                                                 kandidat dari alur sebelumnya. Tanpa keterangan ini
+                                                 admin mengira daftarnya salah dan tidak berani menekan. -->
+                                            <template v-if="t.alurLain"> · <b>alur lama</b></template>
                                         </span>
                                     </span>
                                     <span class="pjd-stage__badge" :class="{ 'is-wait': t.menunggu > 0 }">{{ t.menunggu }} menunggu</span>
@@ -409,6 +413,23 @@
                                     <span class="pjd-status" :class="statusKelas(j.status)">
                                         <i v-if="j.status === 'BERJALAN' || j.status === 'DIANTRIKAN'" class="pjd-dot"></i>{{ j.status }}
                                     </span>
+                                    <!-- COBA LAGI — hanya untuk yang GAGAL.
+                                         Tanpa ini, satu-satunya jalan setelah
+                                         kegagalan adalah menghapus jadwalnya
+                                         lalu menyusun ulang dari nol: program,
+                                         tahap, paket ujian, jendela waktu, dan
+                                         mencentang ulang seluruh kandidat.
+                                         Aman diulang — hanya peserta yang
+                                         tokennya belum terbit yang dikirim. -->
+                                    <button
+                                        v-if="j.status === 'GAGAL'"
+                                        type="button" class="pjd-retry" :disabled="ulangId === j.id"
+                                        title="Antrekan ulang penerbitan token untuk kandidat yang belum berhasil"
+                                        @click.stop="ulangJadwal(j)"
+                                    >
+                                        <i class="bi" :class="ulangId === j.id ? 'bi-arrow-repeat pjd-spin' : 'bi-arrow-clockwise'"></i>
+                                        {{ ulangId === j.id ? 'Mengantrekan…' : 'Coba Lagi' }}
+                                    </button>
                                 </div>
                             </div>
 
@@ -716,11 +737,13 @@ export default {
             editSibuk: false,
             notice: '',
             noticeType: 'success',
+            // Id penjadwalan yang sedang diantrekan ulang (tombol "Coba Lagi").
+            ulangId: '',
             fokusId: new URLSearchParams(window.location.search).get('fokus'),
             // Hanya bagian JAM yang dipakai Element Plus; tanggalnya diabaikan.
             jamMulaiBawaan: new Date(2000, 0, 1, 8, 0, 0),
             jamAkhirBawaan: new Date(2000, 0, 1, 23, 59, 0),
-            form: { programId: null, tahapUrutan: null, tesUrutan: null, idMasterUjian: null, namaUjian: '', waktuMulai: '', waktuAkhir: '', peserta: [] },
+            form: { programId: null, tahapUrutan: null, tahapKode: null, tesUrutan: null, idMasterUjian: null, namaUjian: '', waktuMulai: '', waktuAkhir: '', peserta: [] },
         };
     },
     computed: {
@@ -731,7 +754,12 @@ export default {
             return this.opsi.program.find((p) => p.id === this.form.programId) || null;
         },
         tesTerpilihKey() {
-            return this.form.tahapUrutan ? `${this.form.tahapUrutan}-${this.form.tesUrutan}` : '';
+            // Kunci memakai KODE tahap bila ada. Dengan hadirnya baris
+            // "rombongan alur lama", dua baris bisa bernomor urut sama —
+            // memilih satu akan menyorot keduanya kalau kuncinya cuma nomor.
+            return this.form.tahapUrutan || this.form.tahapKode
+                ? this.kunciTes({ tahapKode: this.form.tahapKode, tahapUrutan: this.form.tahapUrutan, tesUrutan: this.form.tesUrutan })
+                : '';
         },
         semuaTercentang() {
             return this.kandidat.length > 0 && this.kandidat.every((k) => this.form.peserta.includes(k.kode));
@@ -791,6 +819,28 @@ export default {
             return (nama || '?').split(' ').slice(0, 2).map((n) => n[0]).join('').toUpperCase();
         },
         /**
+         * COBA LAGI penjadwalan yang gagal.
+         *
+         * Tidak menyusun apa pun dari awal: jadwal, paket ujian, dan daftar
+         * pesertanya sudah tersimpan — yang diulang hanya penerbitan tokennya,
+         * dan hanya untuk kandidat yang tokennya belum terbit.
+         */
+        async ulangJadwal(j) {
+            if (this.ulangId) return;
+            this.ulangId = j.id;
+            try {
+                const res = await axios.post(`/api/v1/penjadwalan/${j.id}/ulang`, {}, {
+                    headers: { Accept: 'application/json' },
+                });
+                this.beritahu(res.data?.message || 'Penjadwalan diantrekan ulang.');
+                await this.muat();
+            } catch (e) {
+                this.beritahu(e.response?.data?.message || 'Gagal mengantrekan ulang.', 'error');
+            } finally {
+                this.ulangId = '';
+            }
+        },
+        /**
          * Rupa chip tahap pada kartu penjadwalan:
          *   is-active — tahap yang ujiannya dijadwalkan di sini (punya Nama_Ujian);
          *   is-hcl    — tahap ujian online lain di alur yang sama;
@@ -824,6 +874,7 @@ export default {
         // Kosongkan pilihan tes + turunannya (kandidat ikut tahap yang dipilih).
         lupakanTes() {
             this.form.tahapUrutan = null;
+            this.form.tahapKode = null;
             this.form.tesUrutan = null;
             this.form.peserta = [];
             this.kandidat = [];
@@ -855,8 +906,17 @@ export default {
                 this.memuatTes = false;
             }
         },
+        /** Identitas satu baris tes — dipakai `:key` maupun penanda terpilih. */
+        kunciTes(t) {
+            return `${t.tahapKode || 'U' + t.tahapUrutan}#${t.tesUrutan}`;
+        },
         pilihTes(t) {
             this.form.tahapUrutan = t.tahapUrutan;
+            // IDENTITAS tahap ikut dibawa. Nomor urut saja tidak cukup begitu
+            // alur program disunting atau diganti: nomor yang sama bisa
+            // menunjuk tahap yang lain, dan jadwal terkirim untuk tes yang
+            // bukan itu — ke orang yang bukan itu juga.
+            this.form.tahapKode = t.tahapKode || null;
             this.form.tesUrutan = t.tesUrutan;
             this.form.peserta = [];
             this.muatKandidat();
@@ -894,6 +954,7 @@ export default {
             this.memuatKandidat = true;
             try {
                 const params = { programId: this.form.programId, tahapUrutan: this.form.tahapUrutan };
+                if (this.form.tahapKode) params.tahapKode = this.form.tahapKode;
                 if (this.form.tesUrutan) params.tesUrutan = this.form.tesUrutan;
                 if (this.cariKandidat) params.q = this.cariKandidat;
                 const res = await axios.get('/api/v1/penjadwalan/kandidat', { params, headers: { Accept: 'application/json' } });
@@ -1234,6 +1295,10 @@ export default {
 .pjd-stage { appearance: none; cursor: pointer; font-family: inherit; width: 100%; display: flex; align-items: center; gap: 12px; padding: 13px 15px; border-radius: 15px; border: 1.5px solid #eef0f7; background: #fff; transition: all .18s; }
 .pjd-stage:hover { border-color: #c7cdf0; }
 .pjd-stage.is-on { border-color: #8b5cf6; background: linear-gradient(135deg, rgba(139, 92, 246, .06), rgba(99, 102, 241, .06)); box-shadow: 0 8px 22px rgba(99, 102, 241, .12); }
+/* Rombongan alur lama — dibedakan lembut, bukan diredupkan: barisnya tetap
+   harus dikerjakan, hanya asalnya yang berbeda. */
+.pjd-stage.is-lawas { border-style: dashed; border-color: #dcd3f0; background: #fbfaff; }
+.pjd-stage.is-lawas .pjd-stage__no { background: #ede9fe; color: #6d28d9; }
 .pjd-stage__no { width: 28px; height: 28px; border-radius: 9px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; color: #8792a6; background: #f1f2f9; }
 .pjd-stage.is-on .pjd-stage__no { color: #fff; background: linear-gradient(135deg, #8b5cf6, #6366f1); }
 .pjd-stage__in { flex: 1; min-width: 0; text-align: left; }
@@ -1339,6 +1404,11 @@ export default {
 .pjd-sched__nama { font-size: 15.5px; font-weight: 800; color: #0f172a; letter-spacing: -.01em; margin-top: 8px; }
 .pjd-sched__meta { display: flex; flex-wrap: wrap; gap: 4px; font-size: 12px; color: #8792a6; margin-top: 4px; }
 .pjd-sched__act { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; flex-wrap: wrap; justify-content: flex-end; }
+/* COBA LAGI — hanya muncul saat GAGAL, jadi nadanya boleh tegas: inilah satu
+   satunya hal yang perlu dilakukan pada baris itu. */
+.pjd-retry { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #fca5a5; background: #fff1f2; color: #b91c1c; font-size: 12px; font-weight: 800; border-radius: 9px; padding: 7px 12px; cursor: pointer; transition: all .15s; }
+.pjd-retry:hover:not(:disabled) { background: #fee2e2; border-color: #f87171; }
+.pjd-retry:disabled { opacity: .6; cursor: not-allowed; }
 
 /* Penjadwal — kartu orang, bukan chip teks. Melekat pada baris kandidat. */
 .pjd-by { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }

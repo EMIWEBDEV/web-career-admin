@@ -48,6 +48,39 @@ class FormulirSchema
         return $form ? self::payload($form, self::versiPublished((int) $form->Id_Master_Formulir)) : null;
     }
 
+    /**
+     * Ambil schema versi TERTENTU (dibekukan saat tahap dibuat), bukan yang
+     * sedang published sekarang. Bila $versi null (tahap lama, dibuat sebelum
+     * mekanisme pembekuan versi ada), jatuh ke publishedByKode seperti biasa.
+     */
+    public static function byKodeDanVersi(?string $kode, ?int $versi): ?array
+    {
+        if (! $kode) {
+            return null;
+        }
+
+        if ($versi === null) {
+            return self::publishedByKode($kode);
+        }
+
+        $form = DB::table('N_WEB_CAREERS_Master_Formulir')
+            ->where('Kode', $kode)
+            ->first();
+
+        if (! $form) {
+            return null;
+        }
+
+        $versiRow = self::punyaTabelVersi()
+            ? DB::table('N_WEB_CAREERS_Master_Formulir_Versi')
+                ->where('Master_Formulir_Id', $form->Id_Master_Formulir)
+                ->where('Versi', $versi)
+                ->first()
+            : null;
+
+        return self::payload($form, $versiRow ?? self::versiPublished((int) $form->Id_Master_Formulir));
+    }
+
     public static function pendaftaranUntukKategori(string $kategori): ?array
     {
         $komponen = match (strtoupper($kategori)) {

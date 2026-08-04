@@ -28,8 +28,12 @@ class PendidikanController extends Controller
     public function jenjang()
     {
         try {
-            $rows = Cache::remember('wc_pdk_jenjang', now()->addMinutes(10), fn () => DB::table('N_WEB_CAREERS_Master_Jenjang')
-                ->where('Flag_Aktif', 'Y')->orderBy('Urutan')->orderBy('Id_Master_Jenjang')
+            // TERTINGGI DULU (S3 -> SD). Urutan di master menanjak dari SD,
+            // jadi dibalik di sini. Alasannya bukan selera: pelamar posisi kantor
+            // hampir selalu memilih jenjang atas, dan menaruhnya di dasar daftar
+            // memaksa hampir semua orang menggulung dropdown lebih dulu.
+            $rows = Cache::remember('wc_pdk_jenjang_desc', now()->addMinutes(10), fn () => DB::table('N_WEB_CAREERS_Master_Jenjang')
+                ->where('Flag_Aktif', 'Y')->orderByDesc('Urutan')->orderByDesc('Id_Master_Jenjang')
                 ->get(['Kode', 'Nama'])->map(fn ($r) => ['kode' => $r->Kode, 'nama' => $r->Nama])->values());
             return ResponseHelper::success($rows, 'Jenjang dimuat');
         } catch (\Throwable $e) {

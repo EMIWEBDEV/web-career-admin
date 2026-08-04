@@ -50,6 +50,18 @@ class LamaranService
             'tglLahir' => $jawaban['lahir'] ?? null,
             'jkel' => $jawaban['jkel'] ?? $jawaban['jenis_kelamin'] ?? null,
             'kampus' => $jawaban['kampus'] ?? $jawaban['institusi'] ?? null,
+            // TAHUN LULUS / PERKIRAAN LULUS.
+            //
+            // Beberapa kunci ditoleransi karena formulir pendaftaran tidak
+            // seragam: yang lama memakai `lulus`/`thn_lulus`, blok pendidikan
+            // baku memakai `tahun_lulus`. Menyebut satu kunci saja membuat
+            // prefill diam-diam kosong pada sebagian angkatan — persis pola
+            // yang sudah terjadi pada `kampus` di atas.
+            'tahunLulus' => $jawaban['tahun_lulus']
+                ?? $jawaban['thn_lulus']
+                ?? $jawaban['tahunLulus']
+                ?? $jawaban['lulus']
+                ?? null,
             'hp' => $jawaban['hp'] ?? $jawaban['no_hp'] ?? null,
             'fotoPath' => DB::table('N_WEB_CAREERS_Formulir_Berkas as fb')
                 ->join('N_WEB_CAREERS_Formulir_Pengisian as fp', 'fp.Id_Formulir_Pengisian', '=', 'fb.Formulir_Pengisian_Id')
@@ -187,13 +199,49 @@ class LamaranService
                     // boleh disunting kemudian, tapi perjalanan yang sudah
                     // berlangsung tidak boleh berubah maknanya di tengah jalan.
                     'Flag_Tuntas' => $t->Flag_Tuntas ?? 'T',
+                    // Cut-off Talent Pool ikut dibekukan: alur boleh disunting
+                    // kapan saja, tapi kandidat yang sudah berjalan tidak boleh
+                    // berubah aturannya di tengah jalan.
+                    'Flag_Talent_Pool' => $t->Flag_Talent_Pool ?? 'T',
+                    // Aktivitas tahap ini dikerjakan bersamaan atau berurutan —
+                    // ikut dibekukan, sepola dengan aturan lainnya. Nilainya
+                    // disalin apa adanya dari master (Kode dari Master Mode
+                    // Urutan); tidak ada mode bawaan yang ditulis di sini.
+                    'Urutan_Aktivitas' => $t->Urutan_Aktivitas,
                     'Provider' => $t->Provider,
-                    'Keputusan_Mode' => $t->Keputusan ?? null,
+                    // DARI Mode_Keputusan_Kode, BUKAN Keputusan.
+                    //
+                    // Keduanya ada di master dan namanya mirip, tapi hanya
+                    // Mode_Keputusan_Kode yang berisi kode yang dikenali
+                    // Master_Mode_Keputusan (MANUAL_REVIEW / AUTO_SEMUA_LULUS /
+                    // AUTO_TERAKHIR / HYBRID). Kolom `Keputusan` peninggalan
+                    // lama hanya berisi 'MANUAL'/'SYSTEM' — kode yang tak
+                    // pernah cocok, sehingga snapshot-nya diam-diam jatuh ke
+                    // MANUAL_REVIEW dan tahap ber-mode otomatis berhenti
+                    // meloloskan sendiri.
+                    'Keputusan_Mode' => $t->Mode_Keputusan_Kode ?? null,
+                    // Perilaku berkas hasil ikut dibekukan. Tanpa ini,
+                    // menyalakan "wajib unggah" di master mengunci kandidat
+                    // yang tahapnya sudah selesai dinilai — menuntut berkas
+                    // yang saat mereka menjalaninya memang tidak diminta.
+                    'Flag_Upload_Hasil' => $t->Flag_Upload_Hasil ?? 'T',
+                    'Flag_Wajib_Upload' => $t->Flag_Wajib_Upload ?? 'T',
                     // Tahap pertama mewarisi formulir pendaftaran bawaan bila
                     // Master Alur lama belum menautkannya.
                     'Formulir_Kode' => $i === 0
                         ? ($t->Formulir_Kode ?? $formulirPendaftaranKode)
                         : $t->Formulir_Kode,
+                    // ISI formulirnya ikut dibekukan, bukan cuma kodenya.
+                    //
+                    // Formulir_Kode hanya penunjuk; skema sesungguhnya dicari
+                    // lewat Master_Formulir.Komponen_Kode saat halaman dibuka.
+                    // Sambungan tengah itu yang bocor: begitu admin mengarahkan
+                    // Komponen_Kode ke versi baru, seluruh kandidat yang belum
+                    // mengisi — termasuk yang sudah berjalan berminggu-minggu —
+                    // langsung mendapat formulir baru tanpa peringatan apa pun.
+                    ...self::bekukanFormulir(
+                        $i === 0 ? ($t->Formulir_Kode ?? $formulirPendaftaranKode) : $t->Formulir_Kode
+                    ),
                     'Jenis_Tes_Kode' => $t->Jenis_Tes_Kode,
                     // Tahap pertama: GUGUR bila knock-out, kalau tidak BERJALAN.
                     'Status' => $i === 0 ? ($gugur ? 'GUGUR' : 'BERJALAN') : 'MENUNGGU',
@@ -320,7 +368,16 @@ class LamaranService
                 'Lamaran_Id' => $lamaran->Id_Lamaran,
                 'Lamaran_Tahap_Id' => $tahap->Id_Lamaran_Tahap,
                 'Master_Formulir_Id' => $formulir?->Id_Master_Formulir,
-                'Komponen_Kode' => $formulir?->Komponen_Kode,
+                // KOMPONEN YANG DIBEKUKAN, bukan yang sedang menempel di master.
+                //
+                // Inilah yang menentukan label pertanyaan saat pengisian ini
+                // dibuka lagi berbulan-bulan kemudian. Kalau diambil dari master
+                // yang hidup, jawaban lama akan dibacakan memakai daftar
+                // pertanyaan versi baru: field yang berganti nama jadi kosong,
+                // dan admin menyimpulkan kandidatnya tidak mengisi — padahal
+                // mengisi lengkap.
+                'Komponen_Kode' => $tahap->Formulir_Komponen ?: $formulir?->Komponen_Kode,
+                'Formulir_Versi' => $tahap->Formulir_Versi ?? null,
                 'Sumber' => $tahap->Urutan == 1 ? 'PENDAFTARAN' : 'TAHAP',
                 'Master_Alur_Tahap_Id' => $tahap->Master_Alur_Tahap_Id,
                 'Program_Id' => $lamaran->Program_Id,
@@ -416,7 +473,15 @@ class LamaranService
             ->keyBy('Kode');
     }
 
-    public function ketukPalu(int $lamaranTahapId, string $hasil, ?string $catatan, ?int $adminId): array
+    /**
+     * @param  bool|null  $talentPool  Pilihan admin: kandidat disimpan di Talent
+     *                                 Pool atau tidak. Hanya berarti untuk hasil
+     *                                 ber-`Flag_Pilih_Talent_Pool='Y'` (mundur /
+     *                                 menolak penawaran). NULL = ikut master,
+     *                                 yang juga berlaku bagi seluruh pemanggil
+     *                                 lama dan bagi mesin auto-gugur.
+     */
+    public function ketukPalu(int $lamaranTahapId, string $hasil, ?string $catatan, ?int $adminId, ?bool $talentPool = null): array
     {
         $hasil = strtoupper($hasil);
 
@@ -448,6 +513,18 @@ class LamaranService
             return ['ok' => false, 'pesan' => 'Tahap ini sudah diputus.'];
         }
 
+        // ── GERBANG HOLD ─────────────────────────────────────────────────────
+        // Kandidat yang sedang DITAHAN tidak bisa diputus tanpa melepas tahannya
+        // lebih dulu. Kalau boleh, hold jadi sekadar hiasan: seseorang yang
+        // tidak melihat penandanya tetap bisa mengetuk palu atas kandidat yang
+        // justru sedang ditunggu — dan keputusannya tidak bisa ditarik kembali.
+        //
+        // Melepas tahan itu satu klik, dan klik itulah yang memaksa admin sadar
+        // bahwa ada alasan kenapa kandidat ini sengaja belum diputus.
+        if (($tahap->Hold_Flag ?? 'T') === 'Y') {
+            return ['ok' => false, 'pesan' => 'Kandidat ini sedang DITAHAN (' . ($tahap->Hold_Alasan_Kode ?: 'tanpa alasan') . '). Lepaskan penahanannya dulu sebelum memutuskan.'];
+        }
+
         // ── GERBANG MODE KEPUTUSAN (dari Master Alur) ────────────────────────
         // Tahap ber-mode OTOMATIS diputus mesin begitu aktivitasnya selesai.
         // Kalau admin masih bisa mengetuk palu di sini, mode otomatis yang
@@ -473,21 +550,14 @@ class LamaranService
             return ['ok' => false, 'pesan' => 'Hasil aktivitas berikut belum dicatat: ' . ($nama ?: $belum->count() . ' aktivitas') . '. Catat hasilnya dulu sebelum memutuskan.'];
         }
 
-        // GATE WAJIB UPLOAD: tahap dgn "upload hasil WAJIB" tak bisa diloloskan
-        // sebelum berkas hasil diunggah. Tipe apa saja yang berbasis berkas
-        // dibaca dari Master Tipe Tahap (Flag_Upload_Hasil) — bukan kode tipe
-        // yang ditulis di sini, supaya tipe baru tak perlu menyentuh file ini.
-        if ($hasil === 'LULUS' && ! empty($tahap->Master_Alur_Tahap_Id)) {
-            $m = DB::table('N_WEB_CAREERS_Master_Alur_Tahap')->where('Id_Master_Alur_Tahap', $tahap->Master_Alur_Tahap_Id)->first();
-            $tipeBerkas = $m ? DB::table('N_WEB_CAREERS_Master_Tipe_Tahap')->where('Kode', $m->Tipe_Tahap_Kode)->value('Flag_Upload_Hasil') : null;
-            $uploadAktif = $m && (($m->Flag_Upload_Hasil ?? 'T') === 'Y' || $tipeBerkas === 'Y');
-            if ($m && $uploadAktif && ($m->Flag_Wajib_Upload ?? 'T') === 'Y') {
-                $adaBerkas = DB::table('N_WEB_CAREERS_Lamaran_Tahap_Berkas')->where('Lamaran_Tahap_Id', $lamaranTahapId)->exists();
-                if (! $adaBerkas) {
-                    return ['ok' => false, 'pesan' => 'Tahap ini wajib mengunggah berkas hasil (PDF/JPG) sebelum diloloskan.'];
-                }
-            }
-        }
+        // Dulu di sini ada GATE WAJIB UPLOAD: tahap tak bisa diloloskan sebelum
+        // berkas hasil diunggah. Gate itu dicabut karena titik unggahnya —
+        // "Berkas Pendukung" di modal keputusan — sudah dihapus: syarat yang
+        // tak punya cara dipenuhi bukan pengaman, melainkan jalan buntu.
+        //
+        // Kewajiban berkas kini melekat pada SUB-AKTIVITAS (Unggah_Wajib di
+        // Lamaran_Tahap_Tes), tempat berkasnya benar-benar diunggah, dan
+        // ditegakkan lewat gate "hasil aktivitas belum dicatat" di atas.
 
         // GERBANG KUOTA: LULUS di tahap TERAKHIR = kandidat DITERIMA → menempati
         // kursi. Bila kuota MPP posisi sudah penuh, tolak — arahkan ke Tidak Lolos
@@ -513,13 +583,25 @@ class LamaranService
             }
         }
 
-        $this->tetapkanTahap($lamaranTahapId, $hasil, $catatan, $adminId, now());
+        $this->tetapkanTahap($lamaranTahapId, $hasil, $catatan, $adminId, now(), $talentPool);
 
+        // Pesannya DARI MASTER untuk hasil di luar tiga yang lama. Peta literal
+        // di bawah tidak pernah memuat MENGUNDURKAN_DIRI / DITOLAK_KANDIDAT,
+        // sehingga keduanya mengembalikan pesan kosong — layar menampilkan
+        // notifikasi hampa untuk keputusan yang justru menutup lamaran orang.
         $pesan = [
             'LULUS' => 'Kandidat diloloskan ke tahap berikutnya.',
             'GUGUR' => 'Kandidat digugurkan.',
             'TALENT_POOL' => 'Kandidat dialihkan ke Talent Pool.',
-        ][$hasil];
+        ][$hasil] ?? ('Keputusan dicatat: ' . ($def->Nama ?? $hasil) . '.');
+
+        // Nasib Talent Pool ikut disebut — itu satu-satunya bagian keputusan
+        // yang tidak terbaca dari nama hasilnya.
+        if ($talentPool !== null && ($def->Flag_Pilih_Talent_Pool ?? 'T') === 'Y') {
+            $pesan .= $talentPool
+                ? ' Kandidat disimpan di Talent Pool.'
+                : ' Kandidat tidak disimpan di Talent Pool.';
+        }
 
         return ['ok' => true, 'pesan' => $pesan];
     }
@@ -623,15 +705,30 @@ class LamaranService
      * Tetapkan hasil sebuah tahap dan gerakkan lamaran. Dipakai baik oleh
      * auto-gugur mesin maupun ketuk palu admin.
      */
-    private function tetapkanTahap(int $lamaranTahapId, string $hasil, ?string $catatan, ?int $adminId, $now): void
+    private function tetapkanTahap(int $lamaranTahapId, string $hasil, ?string $catatan, ?int $adminId, $now, ?bool $talentPool = null): void
     {
         $tahap = DB::table('N_WEB_CAREERS_Lamaran_Tahap')->where('Id_Lamaran_Tahap', $lamaranTahapId)->first();
         $nama = session('career_auth.nama', 'SISTEM');
+        $def = self::masterHasilKeputusan()->get($hasil);
+
+        // APAKAH KANDIDAT DISIMPAN.
+        //
+        // Master menyimpan dua hal berbeda yang mudah tertukar: Flag_Talent_Pool
+        // (jawabannya) dan Flag_Pilih_Talent_Pool (siapa yang menjawab). Bila
+        // yang kedua 'Y', jawaban admin-lah yang berlaku dan flag pertama turun
+        // pangkat jadi sekadar pilihan awal yang disodorkan di layar.
+        $simpanTalent = ($def->Flag_Pilih_Talent_Pool ?? 'T') === 'Y' && $talentPool !== null
+            ? $talentPool
+            : ($def->Flag_Talent_Pool ?? 'T') === 'Y';
 
         DB::table('N_WEB_CAREERS_Lamaran_Tahap')->where('Id_Lamaran_Tahap', $lamaranTahapId)->update([
             'Status' => 'SELESAI',
             'Hasil' => $hasil,
             'Catatan' => $catatan,
+            // Jejak pilihannya, bukan hanya akibatnya. Tanpa kolom ini, "tidak
+            // dipilih" dan "gagal tersimpan" sama-sama terbaca sebagai tidak
+            // adanya baris di Talent_Pool.
+            'Masuk_Talent_Pool' => $simpanTalent ? 'Y' : 'T',
             'Waktu_Selesai' => $now,
             'Diputus_By' => $nama,
             'Diputus_By_Id' => $adminId,
@@ -646,13 +743,11 @@ class LamaranService
         // gagal di tahap penawaran" untuk orang yang justru lolos dan memilih
         // pergi — dan itu menuntun ke perbaikan yang salah sasaran.
         //
-        // Flag Talent Pool-nya 'Y' karena kualitasnya sudah terbukti sampai
-        // tahap ini; menyimpannya jauh lebih masuk akal daripada membuangnya.
-        // Definisi hasil diambil ulang di sini: tetapkanTahap() dipanggil dari
-        // beberapa jalur (ketuk palu admin, mesin otomatis, reuse nilai tes),
-        // jadi ia tidak boleh bergantung pada variabel milik pemanggilnya.
-        $def = self::masterHasilKeputusan()->get($hasil);
-
+        // Talent Pool-nya BUKAN keharusan. Kandidat yang mundur karena dapat
+        // tempat lebih dekat rumah memang layak disimpan; yang mundur setelah
+        // tak pernah membalas undangan tidak. Dulu keduanya ikut tersimpan,
+        // dan admin yang tidak ingin menyimpan terpaksa mencatatnya GUGUR —
+        // memperbaiki isi Talent Pool dengan merusak arti datanya.
         if (($def->Flag_Oleh_Kandidat ?? 'T') === 'Y') {
             DB::table('N_WEB_CAREERS_Lamaran')->where('Id_Lamaran', $tahap->Lamaran_Id)->update([
                 'Status' => $hasil,
@@ -663,12 +758,13 @@ class LamaranService
                 'Updated_At' => $now, 'Updated_By' => $nama, 'Updated_By_Id' => $adminId,
             ]);
 
-            if (($def->Flag_Talent_Pool ?? 'T') === 'Y') {
+            if ($simpanTalent) {
                 $this->simpanKeTalentPool($tahap, $catatan, $adminId, $nama, $now);
             }
 
             Log::channel('web_career')->info(
-                "Lamaran #{$tahap->Lamaran_Id} ditutup oleh KANDIDAT ({$def->Nama}) di tahap '{$tahap->Label}'."
+                "Lamaran #{$tahap->Lamaran_Id} ditutup oleh KANDIDAT ({$def->Nama}) di tahap '{$tahap->Label}'"
+                . ($simpanTalent ? ' — disimpan di Talent Pool.' : ' — TIDAK disimpan di Talent Pool.')
             );
 
             return;
@@ -985,9 +1081,24 @@ class LamaranService
                     // boleh disunting kemudian, tapi perjalanan yang sudah
                     // berlangsung tidak boleh berubah maknanya di tengah jalan.
                     'Flag_Tuntas' => $t->Flag_Tuntas ?? 'T',
+                    // Cut-off Talent Pool ikut dibekukan: alur boleh disunting
+                    // kapan saja, tapi kandidat yang sudah berjalan tidak boleh
+                    // berubah aturannya di tengah jalan.
+                    'Flag_Talent_Pool' => $t->Flag_Talent_Pool ?? 'T',
+                    // Aktivitas tahap ini dikerjakan bersamaan atau berurutan —
+                    // ikut dibekukan, sepola dengan aturan lainnya. Nilainya
+                    // disalin apa adanya dari master (Kode dari Master Mode
+                    // Urutan); tidak ada mode bawaan yang ditulis di sini.
+                    'Urutan_Aktivitas' => $t->Urutan_Aktivitas,
                     'Provider' => $t->Provider,
-                    'Keputusan_Mode' => $t->Keputusan ?? null,
+                    // Lihat penjelasan panjang di jalur pendaftaran biasa:
+                    // Mode_Keputusan_Kode, bukan kolom `Keputusan` peninggalan.
+                    'Keputusan_Mode' => $t->Mode_Keputusan_Kode ?? null,
+                    'Flag_Upload_Hasil' => $t->Flag_Upload_Hasil ?? 'T',
+                    'Flag_Wajib_Upload' => $t->Flag_Wajib_Upload ?? 'T',
                     'Formulir_Kode' => $t->Formulir_Kode,
+                    // Lihat penjelasan di jalur pendaftaran biasa.
+                    ...self::bekukanFormulir($t->Formulir_Kode),
                     'Jenis_Tes_Kode' => $t->Jenis_Tes_Kode,
                     'Status' => $bypass ? 'SELESAI' : ($isEntry ? 'BERJALAN' : 'MENUNGGU'),
                     'Hasil' => $bypass ? 'LULUS' : null,
@@ -1049,6 +1160,29 @@ class LamaranService
                 'Peran' => $x->Peran,
                 'Wajib' => $x->Wajib,
                 'Ambang_Dipakai' => $x->Ambang_Batas,
+                // Aturan unggahan DIBEKUKAN saat lamaran dibuat: alur boleh
+                // disunting kemudian, tapi kandidat yang sudah berjalan tidak
+                // boleh tiba-tiba dituntut mengunggah sesuatu yang tak pernah
+                // diminta saat ia melamar.
+                'Unggah_Kandidat' => $x->Unggah_Kandidat ?? 'T',
+                'Unggah_Wajib' => $x->Unggah_Wajib ?? 'T',
+                'Unggah_Format' => $x->Unggah_Format ?? null,
+                'Unggah_Maks_Mb' => $x->Unggah_Maks_Mb ?? null,
+                'Unggah_Petunjuk' => $x->Unggah_Petunjuk ?? null,
+                // Visibilitas ikut dibekukan bersama aturan lainnya: alur boleh
+                // disunting kemudian, tapi aktivitas internal tidak boleh
+                // tiba-tiba muncul di portal kandidat yang sedang berjalan —
+                // apalagi kalau isinya cek referensi yang belum selesai.
+                'Tampil_Kandidat' => $x->Tampil_Kandidat ?? 'Y',
+                // Cara aktivitas ini dinilai (tanpa nilai / angka / kategori),
+                // ikut dibekukan: mengubah alur tidak boleh mengubah bentuk
+                // penilaian yang sedang dijalani kandidat.
+                // Cara perpindahan ke aktivitas berikutnya (otomatis / dipicu
+                // admin) ikut dibekukan bersama aturan penilaiannya.
+                'Lanjut_Mode' => $x->Lanjut_Mode ?? null,
+                'Penilaian_Mode' => $x->Penilaian_Mode ?? null,
+                'Penilaian_Opsi' => $x->Penilaian_Opsi ?? null,
+                'Nilai_Maks' => $x->Nilai_Maks ?? null,
                 'Label' => $x->Label,
                 'Status' => 'BELUM',
                 'Created_At' => $now, 'Created_By' => $nama, 'Created_By_Id' => $adminId,
@@ -1057,7 +1191,102 @@ class LamaranService
         }
     }
 
-    /** Pastikan tahap punya sub-tes (self-heal lamaran lama pra-mesin). */
+    /**
+     * Selaraskan ATURAN PENGUMPULAN master → lamaran yang SEDANG BERJALAN.
+     *
+     * DUA JENIS ATURAN, DUA PERLAKUAN BERBEDA.
+     *
+     * 1. ATURAN PENILAIAN — ambang batas, peran, mode & skala nilai, mode
+     *    lanjut, jenis/tipe aktivitas. Inilah SYARAT KANDIDAT DINILAI. Menggeser
+     *    ambang di tengah jalan berarti mengubah aturan main orang yang sudah
+     *    mengerjakannya, dan mengubah Nilai_Maks membuat angka 75 yang tercatat
+     *    kemarin berarti lain hari ini. Tetap BEKU pada snapshot — jangan
+     *    disentuh di sini.
+     *
+     * 2. ATURAN PENGUMPULAN — apakah kandidat diminta mengunggah, formatnya,
+     *    batas ukurannya, petunjuknya, dan apakah aktivitasnya tampil di portal.
+     *    Ini bukan syarat penilaian, melainkan PERMINTAAN DOKUMEN. Membekukannya
+     *    berarti admin tidak pernah bisa meminta berkas kepada kandidat yang
+     *    sudah berjalan — setelan "kandidat harus mengunggah" cuma berlaku bagi
+     *    orang yang melamar SESUDAHNYA, sementara 50 orang yang sedang diproses
+     *    tidak pernah melihat kotak unggahnya. Itu bukan perlindungan, itu
+     *    jalan buntu: tim menunggu berkas yang portalnya tidak pernah minta.
+     *
+     * PEMERIKSAAN IDENTITAS (bukan sekadar ikut Id).
+     *
+     * MasterAlurController sengaja MEMAKAI ULANG baris aktivitas per Urutan saat
+     * alur disunting, supaya lamaran berjalan tidak kehilangan rujukannya. Efek
+     * sampingnya: Master_Alur_Tahap_Tes_Id yang tersimpan di lamaran bisa hari
+     * ini menggambarkan aktivitas yang sama sekali lain — "DISC" milik kandidat
+     * berubah jadi "Wawancara User" milik alur yang sudah dirombak. Karena itu
+     * penyelarasan hanya dilakukan bila LABELNYA masih sama. Kalau sudah tidak,
+     * masternya diabaikan dan snapshot kandidat dibiarkan apa adanya.
+     *
+     * Yang tidak ikut disentuh sama sekali:
+     *   - aktivitas yang SUDAH SELESAI — pekerjaan yang sudah ditutup tidak
+     *     dibuka lagi cuma karena alurnya disunting;
+     *   - tahap yang sudah SELESAI — sama alasannya;
+     *   - berkas yang terlanjur diunggah — tidak pernah dihapus, apa pun
+     *     setelan barunya.
+     *
+     * @return int jumlah aktivitas kandidat yang ikut berubah
+     */
+    public static function selaraskanPengumpulan(int $alurId, ?string $nama = null, ?int $adminId = null): int
+    {
+        // Hanya baris yang benar-benar BERBEDA yang ditulis: supaya jumlah yang
+        // dilaporkan ke admin berarti "sekian kandidat ikut berubah", bukan
+        // "sekian baris tersentuh", dan supaya menyimpan alur tanpa mengubah
+        // apa pun tidak meninggalkan jejak Updated_At palsu di data kandidat.
+        $berbeda = collect([
+            ['Unggah_Kandidat', "''"],
+            ['Unggah_Wajib', "''"],
+            ['Unggah_Format', "''"],
+            ['Unggah_Maks_Mb', '-1'],
+            ['Unggah_Petunjuk', "''"],
+            ['Tampil_Kandidat', "''"],
+        ])->map(fn ($k) => "ISNULL(st.{$k[0]}, {$k[1]}) <> ISNULL(mt.{$k[0]}, {$k[1]})")
+            ->implode(' OR ');
+
+        return DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes as st')
+            ->join('N_WEB_CAREERS_Lamaran_Tahap as lt', 'lt.Id_Lamaran_Tahap', '=', 'st.Lamaran_Tahap_Id')
+            ->join('N_WEB_CAREERS_Master_Alur_Tahap_Tes as mt', 'mt.Id_Master_Alur_Tahap_Tes', '=', 'st.Master_Alur_Tahap_Tes_Id')
+            ->join('N_WEB_CAREERS_Master_Alur_Tahap as m', 'm.Id_Master_Alur_Tahap', '=', 'mt.Master_Alur_Tahap_Id')
+            ->where('m.Master_Alur_Id', $alurId)
+            ->where('st.Flag_Selesai', '<>', 'Y')
+            ->where('lt.Status', '<>', 'SELESAI')
+            // Identitas, bukan sekadar Id — lihat penjelasan di atas.
+            ->whereRaw('LTRIM(RTRIM(st.Label)) = LTRIM(RTRIM(mt.Label))')
+            ->whereRaw("({$berbeda})")
+            ->update([
+                'st.Unggah_Kandidat' => DB::raw('mt.Unggah_Kandidat'),
+                'st.Unggah_Wajib' => DB::raw('mt.Unggah_Wajib'),
+                'st.Unggah_Format' => DB::raw('mt.Unggah_Format'),
+                'st.Unggah_Maks_Mb' => DB::raw('mt.Unggah_Maks_Mb'),
+                'st.Unggah_Petunjuk' => DB::raw('mt.Unggah_Petunjuk'),
+                'st.Tampil_Kandidat' => DB::raw('mt.Tampil_Kandidat'),
+                'st.Updated_At' => now(),
+                'st.Updated_By' => $nama ?: 'SISTEM',
+                'st.Updated_By_Id' => $adminId,
+            ]);
+    }
+
+    /**
+     * Pastikan tahap punya sub-tes (self-heal lamaran lama pra-mesin).
+     *
+     * SATU-SATUNYA JALUR YANG MASIH MEMUNGUT DARI MASTER, dan karena itu ia
+     * memeriksa dulu apakah masternya masih menggambarkan tahap yang sama.
+     *
+     * MasterAlurController sengaja MEMAKAI ULANG baris tahap per Urutan saat
+     * alur disunting, supaya lamaran berjalan tidak kehilangan rujukan. Efek
+     * sampingnya: Id_Master_Alur_Tahap yang tersimpan di lamaran bisa hari ini
+     * menggambarkan tahap yang sama sekali lain. Memungut aktivitas dari sana
+     * berarti menanam "Wawancara User" ke dalam tahap yang menurut kandidat —
+     * dan menurut seluruh layar — bernama "Psikotes".
+     *
+     * Kalau kodenya sudah tidak cocok, master diabaikan dan tahapnya diberi
+     * satu aktivitas yang dibentuk dari dirinya sendiri (blok di bawah). Lebih
+     * baik sederhana dan benar daripada lengkap tapi milik tahap lain.
+     */
     private function pastikanSubTes(int $lamaranTahapId): void
     {
         if (DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')->where('Lamaran_Tahap_Id', $lamaranTahapId)->exists()) {
@@ -1067,7 +1296,7 @@ class LamaranService
         if (! $t) {
             return;
         }
-        if ($t->Master_Alur_Tahap_Id) {
+        if ($t->Master_Alur_Tahap_Id && $this->masterMasihTahapYangSama($t)) {
             $this->snapshotSubTes($lamaranTahapId, (int) $t->Master_Alur_Tahap_Id, now(), 'SISTEM', null);
         }
         // Master tak punya sub-tes (data lama) → buat 1 dari tahap itu sendiri.
@@ -1150,7 +1379,25 @@ class LamaranService
                 return ['outcome' => 'NOOP'];
             }
 
-            $mode = $this->modeKeputusan((int) $tahap->Master_Alur_Tahap_Id);
+            $mode = $this->modeKeputusan($tahap);
+
+            // ── HOLD MENGHENTIKAN MESIN, BUKAN HANYA TOMBOL ADMIN ────────────
+            // Tanpa ini, hold tak berarti apa-apa pada tahap ber-mode otomatis:
+            // hasil tes terakhir masuk, mesin meloloskan atau menggugurkan
+            // sendiri, dan kandidat yang sengaja ditahan sudah telanjur pindah
+            // tahap — lengkap dengan emailnya.
+            //
+            // Hasil aktivitasnya TETAP tersimpan (pemanggil sudah menyimpannya
+            // sebelum sampai sini); yang ditahan hanya kesimpulannya. Begitu
+            // hold dilepas, evaluasi dijalankan lagi dan hasilnya sama saja —
+            // hanya tertunda.
+            if (($tahap->Hold_Flag ?? 'T') === 'Y') {
+                $this->tandaiSiapDiputus($lamaranTahapId);
+                $this->tulisJejak($tahap, $mode->Kode, 'TUNGGU', 'Tahap sedang DITAHAN (hold) — kesimpulan ditunda sampai penahanan dilepas.');
+
+                return ['outcome' => 'HOLD'];
+            }
+
             $selesai = fn ($x) => in_array($x->Status, ['SELESAI', 'TIDAK_HADIR'], true);
             $penentu = $subs->where('Peran', 'PENENTU');
             $wajib = $subs->where('Wajib', 'Y');
@@ -1203,11 +1450,117 @@ class LamaranService
         });
     }
 
-    /** Baca mode keputusan tahap; fallback AMAN (MANUAL) bila konfigurasi hilang. */
-    private function modeKeputusan(int $masterAlurTahapId): object
+    /**
+     * Mode keputusan tahap — DARI SNAPSHOT LAMARAN, master hanya cadangan.
+     *
+     * KENAPA SNAPSHOT DULU
+     * Dulu ini membaca Master_Alur_Tahap.Mode_Keputusan_Kode hidup-hidup lewat
+     * Master_Alur_Tahap_Id, padahal Lamaran_Tahap.Keputusan_Mode sudah menyimpan
+     * salinannya sejak orang melamar. Akibatnya dua hal yang sama-sama sunyi:
+     *
+     *   1. Menyunting mode tahap mengubah aturan orang yang SEDANG menjalaninya.
+     *      Tahap yang dimulai sebagai MANUAL bisa tiba-tiba meloloskan sendiri.
+     *   2. MasterAlurController memakai ULANG baris tahap per Urutan supaya
+     *      lamaran berjalan tak kehilangan rujukan. Efek sampingnya, Id yang
+     *      sama bisa berganti arti — dan pembacaan lewat Id itu ikut berganti
+     *      arti tanpa ada yang memintanya.
+     *
+     * Master tetap dipakai sebagai cadangan untuk lamaran lama yang dibuat
+     * sebelum kolom snapshot ada; itu satu-satunya kasus yang tersisa.
+     */
+    /**
+     * Apakah baris master yang dirujuk tahap ini MASIH tahap yang sama?
+     *
+     * Dibandingkan lewat KODE — identitasnya — bukan lewat Id, karena Id-nya
+     * memang sengaja dipertahankan saat alur disunting. Tahap lamaran tanpa
+     * Kode (data pra-mesin) dianggap masih cocok: di situ tak ada apa pun yang
+     * bisa dibandingkan, dan menolak memungut hanya membuat tahapnya kosong.
+     */
+    private function masterMasihTahapYangSama(object $tahap): bool
     {
-        $kode = DB::table('N_WEB_CAREERS_Master_Alur_Tahap')->where('Id_Master_Alur_Tahap', $masterAlurTahapId)->value('Mode_Keputusan_Kode');
-        $mode = $kode ? DB::table('N_WEB_CAREERS_Master_Mode_Keputusan')->where('Kode', $kode)->first() : null;
+        $kodeLamaran = trim((string) ($tahap->Kode ?? ''));
+        if ($kodeLamaran === '') {
+            return true;
+        }
+
+        $kodeMaster = DB::table('N_WEB_CAREERS_Master_Alur_Tahap')
+            ->where('Id_Master_Alur_Tahap', $tahap->Master_Alur_Tahap_Id)
+            ->value('Kode');
+
+        return trim((string) $kodeMaster) === $kodeLamaran;
+    }
+
+    /**
+     * Bekukan formulir sebuah tahap: komponen + nomor versi terbit saat ini.
+     *
+     * KENAPA KOMPONEN, BUKAN CUMA KODE
+     * `Formulir_Kode` sudah dibekukan sejak dulu, tapi ia hanya penunjuk. Isi
+     * pertanyaannya baru dicari saat halaman dibuka lewat
+     * Master_Formulir.Komponen_Kode — dan sambungan itulah yang bocor. Admin
+     * mengarahkan komponen ke versi baru; detik itu juga kandidat yang belum
+     * mengisi mendapat formulir yang berbeda dari yang dijanjikan saat mereka
+     * melamar.
+     *
+     * BATASNYA JUJUR: ini mengunci formulir MANA yang dipakai. Bila berkas
+     * skema di frontend itu sendiri disunting di tempat, tidak ada apa pun di
+     * basis data yang bisa menolong. Versi formulir baru wajib komponen baru.
+     *
+     * @return array{Formulir_Komponen: ?string, Formulir_Versi: ?int}
+     */
+    private static function bekukanFormulir(?string $formulirKode): array
+    {
+        if (! $formulirKode) {
+            return ['Formulir_Komponen' => null, 'Formulir_Versi' => null];
+        }
+
+        $master = DB::table('N_WEB_CAREERS_Master_Formulir')
+            ->where('Kode', $formulirKode)
+            ->first(['Id_Master_Formulir', 'Komponen_Kode']);
+
+        if (! $master) {
+            return ['Formulir_Komponen' => null, 'Formulir_Versi' => null];
+        }
+
+        // MAX, bukan sembarang baris terbit: satu formulir bisa punya beberapa
+        // baris PUBLISHED dari rilis berturut-turut, dan yang berlaku adalah
+        // yang terakhir.
+        $versi = DB::table('N_WEB_CAREERS_Master_Formulir_Versi')
+            ->where('Master_Formulir_Id', $master->Id_Master_Formulir)
+            ->where('Status', 'PUBLISHED')
+            ->max('Versi');
+
+        return [
+            'Formulir_Komponen' => $master->Komponen_Kode,
+            'Formulir_Versi' => $versi !== null ? (int) $versi : null,
+        ];
+    }
+
+    private function modeKeputusan(object $tahap): object
+    {
+        // Snapshot dipakai hanya bila kodenya BENAR-BENAR DIKENALI master.
+        //
+        // Baris lama menyimpan 'MANUAL'/'SYSTEM' — warisan kolom `Keputusan`
+        // yang dulu keliru dijadikan sumber snapshot. Kode itu tidak pernah
+        // cocok dengan Master_Mode_Keputusan. Kalau snapshot diterima mentah,
+        // tahap ber-mode AUTO_SEMUA_LULUS akan diam-diam turun jadi manual dan
+        // kandidatnya menggantung menunggu keputusan yang seharusnya otomatis.
+        //
+        // Jadi: kode tak dikenal DIPERLAKUKAN SEPERTI KOSONG — jatuh ke master,
+        // bukan ke bawaan.
+        $mode = null;
+        $kodeSnapshot = $tahap->Keputusan_Mode ?? null;
+
+        if ($kodeSnapshot) {
+            $mode = DB::table('N_WEB_CAREERS_Master_Mode_Keputusan')->where('Kode', $kodeSnapshot)->first();
+        }
+
+        if (! $mode && ! empty($tahap->Master_Alur_Tahap_Id)) {
+            $kode = DB::table('N_WEB_CAREERS_Master_Alur_Tahap')
+                ->where('Id_Master_Alur_Tahap', $tahap->Master_Alur_Tahap_Id)
+                ->value('Mode_Keputusan_Kode');
+
+            $mode = $kode ? DB::table('N_WEB_CAREERS_Master_Mode_Keputusan')->where('Kode', $kode)->first() : null;
+        }
 
         return $mode ?: (object) ['Kode' => 'MANUAL_REVIEW', 'Tunggu' => 'SEMUA', 'Auto_Lanjut' => 'N', 'Syarat_Lulus' => 'MANUAL', 'Auto_Gugur' => 'N'];
     }

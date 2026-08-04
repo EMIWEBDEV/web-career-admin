@@ -615,10 +615,10 @@ class CareerLandingController extends Controller
                 'fields' => [
                     [
                         'key' => 'nama',
-                        'label' => 'Nama Lengkap Sesuai ID',
+                        'label' => 'Nama Lengkap Sesuai KTP',
                         'tipe' => 'text',
                         'required' => true,
-                        'ph' => 'Sesuai KTP',
+                        'ph' => 'Tulis persis seperti tertera di KTP',
                     ],
                     ['key' => 'lahir', 'label' => 'Tanggal Lahir', 'tipe' => 'date', 'required' => true],
                     [
@@ -678,6 +678,24 @@ class CareerLandingController extends Controller
                     ['key' => 'jurusan', 'label' => 'Jurusan / Fakultas', 'tipe' => 'select', 'required' => true, 'sumber_api' => 'fakultas', 'tergantung' => 'kampus', 'boleh_ketik' => true],
                     ['key' => 'prodi', 'label' => 'Program Studi', 'tipe' => 'select', 'required' => true, 'sumber_api' => 'prodi', 'cari_async' => true, 'tergantung' => 'kampus', 'saring_dari' => 'jurusan', 'boleh_ketik' => true],
                     ['key' => 'ipk', 'label' => 'IPK', 'tipe' => 'number', 'required' => true, 'ph' => '3.50', 'tergantung' => 'institusi'],
+                    // TAHUN LULUS — kuncinya `lulus`, SAMA dengan formulir
+                    // pendaftaran reguler di atas. Formulir MT tidak pernah
+                    // menanyakannya, sehingga "Tahun Lulus / Perkiraan Lulus"
+                    // di formulir tahap berikutnya tidak punya sumber untuk
+                    // diisi otomatis — kandidat diminta mengetik sesuatu yang
+                    // seharusnya sudah kita punya.
+                    //
+                    // Memakai kunci yang sama, bukan kunci baru: dua nama untuk
+                    // satu jawaban berarti setiap pembacanya harus hafal
+                    // keduanya, dan yang lupa akan membaca kosong.
+                    [
+                        'key' => 'lulus',
+                        'label' => 'Tahun Lulus / Perkiraan Lulus',
+                        'tipe' => 'number',
+                        'required' => true,
+                        'ph' => 'mis. 2026',
+                        'tergantung' => 'institusi',
+                    ],
                     [
                         // Tanpa 'full' → sebaris dengan IPK (kiri-kanan).
                         'key' => 'bersediaBanyuasin',

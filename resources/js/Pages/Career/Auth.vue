@@ -9,8 +9,32 @@ import { csrfHeaders, refreshCsrfToken } from '../../utils/csrf';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+const BERANDA_KANDIDAT = '/kandidat/portal';
+
+/**
+ * Tujuan sesudah masuk, dibaca dari `?redirect=`.
+ *
+ * Diisi CareerAuth saat sesi habis di tengah jalan — paling sering ketika
+ * kandidat pulang dari mengerjakan tes CAT dan sesinya sudah lewat umur.
+ *
+ * HANYA PATH SATU DOMAIN yang diterima. Nilainya berakhir di router.visit(),
+ * jadi alamat berhost seperti `https://situs-palsu` akan membuat halaman masuk
+ * kita sendiri mengantar korban ke luar — persis pola open-redirect yang
+ * dipakai untuk phishing, dan justru meyakinkan karena berangkat dari domain
+ * yang benar. `//situs-palsu` ikut ditolak: peramban membacanya sebagai URL
+ * berprotokol-relatif, tetap keluar domain walau diawali garis miring.
+ */
 function readRedirect() {
-    try { return new URLSearchParams(window.location.search).get('redirect') || '/kandidat/portal'; } catch (e) { return '/kandidat/portal'; }
+    try {
+        const nilai = new URLSearchParams(window.location.search).get('redirect');
+        if (!nilai || !nilai.startsWith('/') || nilai.startsWith('//')) {
+            return BERANDA_KANDIDAT;
+        }
+
+        return nilai;
+    } catch (e) {
+        return BERANDA_KANDIDAT;
+    }
 }
 
 // Halaman auth adalah pintu masuk sesi baru. Pastikan cookie XSRF dibuat

@@ -5,13 +5,18 @@
      sini tanpa menambah tag di sana = format itu akan dibuang saat simpan.
      ══════════════════════════════════════════════════════════ -->
 <template>
-    <div class="eq" :class="{ 'is-disabled': disabled }">
+    <div class="eq" :class="{ 'is-disabled': disabled, 'is-ringkas': ringkas }">
         <div ref="wadah"></div>
-        <small v-if="hint" class="eq-hint"><i class="bi bi-info-circle"></i> {{ hint }}</small>
+        <!-- Keadaan unggah ditampilkan DI LUAR editor: menyisipkan baris status
+             ke dalam isi editor akan ikut tersimpan sebagai teks catatan. -->
+        <small v-if="unggahSibuk" class="eq-status"><i class="bi bi-arrow-repeat eq-spin"></i> Mengunggah gambar…</small>
+        <small v-else-if="unggahGalat" class="eq-status is-err"><i class="bi bi-exclamation-circle-fill"></i> {{ unggahGalat }}</small>
+        <small v-else-if="hint" class="eq-hint"><i class="bi bi-info-circle"></i> {{ hint }}</small>
     </div>
 </template>
 
 <script>
+import axios from 'axios';
 import Quill from 'quill';
 import 'quill/dist/quill.snow.css';
 
@@ -21,10 +26,20 @@ export default {
         placeholder: { type: String, default: 'Tulis penjelasan lengkap di sini…' },
         disabled: { type: Boolean, default: false },
         hint: { type: String, default: '' },
+        // Editor di dalam modal tidak punya ruang setinggi halaman penuh.
+        ringkas: { type: Boolean, default: false },
+        /**
+         * Alamat penerima gambar. KOSONG = tombol gambar tidak dipasang sama
+         * sekali — bukan dipasang lalu gagal saat diklik. Editor yang tidak
+         * punya tempat menyimpan gambar memang tidak boleh menjanjikannya.
+         */
+        uploadUrl: { type: String, default: '' },
+        /** Field tambahan yang ikut dikirim (mis. subTesId) sebagai konteks. */
+        uploadData: { type: Object, default: () => ({}) },
     },
     emits: ['update:modelValue'],
     data() {
-        return { quill: null, dariDalam: false };
+        return { quill: null, dariDalam: false, unggahSibuk: false, unggahGalat: '', rangeTersimpan: null };
     },
     watch: {
         modelValue(nilai) {
@@ -43,17 +58,34 @@ export default {
         },
     },
     mounted() {
+        const baris = [
+            [{ header: [3, 4, false] }],
+            ['bold', 'italic', 'underline', 'strike'],
+            [{ list: 'ordered' }, { list: 'bullet' }],
+            ['blockquote', 'link'],
+            // Perataan dipakai untuk menengahkan GAMBAR — Quill meratakan blok,
+            // jadi tanpa tombol ini gambar selalu menempel di kiri.
+            [{ align: '' }, { align: 'center' }, { align: 'right' }],
+        ];
+        if (this.uploadUrl) {
+            baris.push(['image']);
+        }
+        baris.push(['clean']);
+
         this.quill = new Quill(this.$refs.wadah, {
             theme: 'snow',
             placeholder: this.placeholder,
             modules: {
-                toolbar: [
-                    [{ header: [3, 4, false] }],
-                    ['bold', 'italic', 'underline', 'strike'],
-                    [{ list: 'ordered' }, { list: 'bullet' }],
-                    ['blockquote', 'link'],
-                    ['clean'],
-                ],
+                toolbar: {
+                    container: baris,
+                    // Penangan bawaan Quill menyisipkan gambar sebagai data URI
+                    // di dalam HTML. Satu potret ponsel jadi ~2,7 MB base64 yang
+                    // ikut terbawa setiap kali catatan itu dibaca — dan penyaring
+                    // di server memang membuangnya, jadi gambarnya akan hilang
+                    // diam-diam saat disimpan. Diganti: unggah dulu, sisipkan
+                    // tautannya.
+                    handlers: this.uploadUrl ? { image: this.pilihGambar } : {},
+                },
             },
         });
 
@@ -65,16 +97,112 @@ export default {
         }
 
         this.quill.on('text-change', () => {
-            const html = this.quill.getText().trim() === '' ? '' : this.quill.root.innerHTML;
+            // Catatan yang isinya HANYA gambar tetap punya isi. Menilai kosong
+            // dari teksnya saja akan mengosongkan catatan berupa potret lembar
+            // penilaian — persis yang paling sering ditempel penilai.
+            const kosong = this.quill.getText().trim() === '' && !this.quill.root.querySelector('img');
             this.dariDalam = true;
-            this.$emit('update:modelValue', html);
+            this.$emit('update:modelValue', kosong ? '' : this.quill.root.innerHTML);
         });
+
+        // Menempel gambar dari papan klip (Ctrl+V tangkapan layar) lewat jalur
+        // yang sama. Tanpa ini, tempelan tetap masuk sebagai data URI dan
+        // hilang saat disimpan — kegagalan paling membingungkan karena
+        // gambarnya TERLIHAT sampai halaman dimuat ulang.
+        if (this.uploadUrl) {
+            this.quill.root.addEventListener('paste', this.tangkapTempel, true);
+        }
     },
     beforeUnmount() {
+        this.quill?.root?.removeEventListener('paste', this.tangkapTempel, true);
         // Quill menaruh toolbar sebagai SIBLING wadah, di luar jangkauan Vue —
         // tanpa dibuang manual, toolbar tertinggal saat modal dibuka-tutup.
         this.quill?.getModule('toolbar')?.container?.remove();
         this.quill = null;
+    },
+    methods: {
+        /** Tombol gambar → buka pemilih berkas. */
+        pilihGambar() {
+            // POSISI KURSOR DISIMPAN DULU.
+            //
+            // Membuka dialog berkas memindahkan fokus keluar dari editor, dan
+            // Quill membuang range-nya begitu fokus hilang. Sesudah berkas
+            // dipilih, `getSelection()` mengembalikan null — lalu insertEmbed
+            // meledak dengan "Cannot read properties of null (reading 'offset')".
+            // Itulah sebabnya unggah gambar SELALU gagal.
+            this.rangeTersimpan = this.quill?.getSelection() || null;
+
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = 'image/jpeg,image/png,image/webp';
+            input.onchange = () => {
+                const file = input.files?.[0];
+                if (file) {
+                    this.unggah(file);
+                }
+            };
+            input.click();
+        },
+
+        tangkapTempel(e) {
+            this.rangeTersimpan = this.quill?.getSelection() || null;
+            const file = Array.from(e.clipboardData?.items || [])
+                .find((i) => i.type?.startsWith('image/'))
+                ?.getAsFile();
+            if (!file) {
+                return;
+            }
+            e.preventDefault();
+            this.unggah(file);
+        },
+
+        /**
+         * Unggah lalu sisipkan tautannya di posisi kursor.
+         *
+         * Kegagalan ditampilkan, TIDAK ditelan: gambar yang gagal naik tanpa
+         * kabar membuat penilai mengira catatannya lengkap, dan baru sadar
+         * setelah keputusan diambil.
+         */
+        async unggah(file) {
+            this.unggahGalat = '';
+            this.unggahSibuk = true;
+            try {
+                const fd = new FormData();
+                fd.append('file', file);
+                Object.entries(this.uploadData || {}).forEach(([k, v]) => {
+                    if (v) {
+                        fd.append(k, v);
+                    }
+                });
+
+                const { data } = await axios.post(this.uploadUrl, fd, { headers: { Accept: 'application/json' } });
+                const url = data?.result?.url;
+                if (!url) {
+                    throw new Error('Tautan gambar tidak diterima dari server.');
+                }
+
+                // Pakai posisi yang DISIMPAN sebelum dialog berkas dibuka.
+                // `getSelection()` di sini sudah null — fokusnya baru saja
+                // kembali dan Quill belum memulihkan range-nya.
+                const panjang = this.quill.getLength();
+                const posisi = Math.min(
+                    this.rangeTersimpan?.index ?? this.quill.getSelection()?.index ?? panjang,
+                    panjang,
+                );
+
+                this.quill.insertEmbed(posisi, 'image', url, 'user');
+                // Gambar diberi barisnya sendiri supaya perataan (kiri/tengah)
+                // bisa dipilih: perataan Quill berlaku pada BLOK, jadi gambar
+                // yang menempel di tengah paragraf tak pernah bisa ditengahkan.
+                this.quill.setSelection(posisi + 1, 0, 'user');
+                this.rangeTersimpan = null;
+            } catch (e) {
+                this.unggahGalat =
+                    e?.response?.data?.message || e?.message || 'Gambar gagal diunggah.';
+            } finally {
+                this.unggahSibuk = false;
+            }
+        },
     },
 };
 </script>
@@ -95,6 +223,20 @@ export default {
     min-height: 170px;
     line-height: 1.7;
 }
+/* Di dalam modal, editor setinggi halaman penuh mendorong tombol simpan keluar
+   layar — yang membaca layarnya justru mengira modalnya belum selesai dimuat. */
+.eq.is-ringkas :deep(.ql-editor) {
+    min-height: 120px;
+    max-height: 260px;
+    overflow-y: auto;
+}
+/* Potret ponsel beresolusi penuh akan menjebol lebar kolom catatan. */
+.eq :deep(.ql-editor img) {
+    max-width: 100%;
+    height: auto;
+    border-radius: 0.5rem;
+    margin: 0.35rem 0;
+}
 .eq :deep(.ql-editor.ql-blank::before) {
     font-style: normal;
     color: #a8abb2;
@@ -102,7 +244,8 @@ export default {
 .eq.is-disabled {
     opacity: 0.65;
 }
-.eq-hint {
+.eq-hint,
+.eq-status {
     display: inline-flex;
     align-items: center;
     gap: 0.35rem;
@@ -110,5 +253,16 @@ export default {
     color: var(--muted, #64748b);
     font-size: 0.78rem;
     font-weight: 600;
+}
+.eq-status.is-err {
+    color: #dc2626;
+}
+.eq-spin {
+    animation: eq-putar 0.9s linear infinite;
+}
+@keyframes eq-putar {
+    to {
+        transform: rotate(360deg);
+    }
 }
 </style>

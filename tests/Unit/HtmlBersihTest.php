@@ -87,6 +87,49 @@ class HtmlBersihTest extends TestCase
         );
     }
 
+    /**
+     * GAMBAR DALAM CATATAN PENILAIAN.
+     *
+     * Sejak catatan hasil wawancara & tes offline ditulis di editor berformat,
+     * penilai bisa menempelkan foto lembar penilaian. Yang boleh bertahan hanya
+     * gambar MILIK KITA yang disajikan lewat rute berwenang — sisanya dibuang
+     * seluruhnya, bukan disisakan sebagai elemen tanpa src (ikon rusak di
+     * tengah catatan).
+     */
+    public function test_gambar_internal_dipertahankan_dan_dijinakkan(): void
+    {
+        $hasil = (string) HtmlBersih::saring(
+            '<p>Baik</p><img src="/api/v1/karir/lamaran/catatan/gambar/abc123" onerror="alert(1)" style="width:9999px">'
+        );
+
+        $this->assertStringContainsString('src="/api/v1/karir/lamaran/catatan/gambar/abc123"', $hasil);
+        $this->assertStringContainsString('alt="Lampiran catatan"', $hasil);
+        $this->assertStringContainsString('loading="lazy"', $hasil);
+        $this->assertStringNotContainsString('onerror', $hasil);
+        $this->assertStringNotContainsString('style', $hasil);
+    }
+
+    public function test_gambar_luar_dan_data_uri_dibuang(): void
+    {
+        // Host luar: setiap pembaca catatan akan mengirim jejak ke pemiliknya,
+        // dan isi gambarnya bisa diganti setelah catatan disetujui.
+        $this->assertSame('<p>x</p>', HtmlBersih::saring('<p>x</p><img src="https://jahat.example/lacak.png">'));
+
+        // data: URI — satu potret ponsel jadi ~2,7 MB base64 di dalam kolom.
+        $this->assertSame('<p>y</p>', HtmlBersih::saring('<p>y</p><img src="data:image/png;base64,AAAA">'));
+
+        // Bentuk tautan yang MIRIP tapi bukan rute kita.
+        $this->assertSame('<p>z</p>', HtmlBersih::saring('<p>z</p><img src="/api/v1/karir/lamaran/catatan/gambar/abc/../../rahasia">'));
+    }
+
+    public function test_catatan_berisi_gambar_saja_tidak_dianggap_kosong(): void
+    {
+        // Catatan wawancara yang isinya cuma foto lembar penilaian tidak punya
+        // satu huruf pun — tapi jelas bukan catatan kosong. Sebelum ini ia
+        // dibuang diam-diam karena penilaian kekosongan hanya melihat teks.
+        $this->assertNotNull(HtmlBersih::saring('<img src="/api/v1/karir/lamaran/catatan/gambar/xyz">'));
+    }
+
     public function test_ke_teks_memisahkan_blok_dengan_spasi(): void
     {
         // Dipakai untuk pencarian di halaman FAQ: kalau tag dihapus tanpa spasi,
