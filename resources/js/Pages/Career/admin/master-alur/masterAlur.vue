@@ -169,25 +169,16 @@
                 </div>
                 <div v-if="!form.stages.length" class="wca-hint" style="margin:0 0 .6rem"><i class="bi bi-info-circle"></i> Belum ada tahap. Klik <b>Tambah Tahap</b> untuk mulai menyusun urutan seleksi.</div>
 
-                <!-- CUT-OFF TALENT POOL — SATU titik saja. Tahap dari sini sampai akhir
-                     otomatis aktif; tak perlu klik per tahap. -->
-                <div v-if="form.stages.length" class="alr-tpcut" :class="{ 'is-on': form.talentPoolMulai > 0 }">
-                    <div class="alr-tpcut__l">
-                        <span class="alr-tpcut__ico"><i class="bi bi-stars"></i></span>
-                        <div class="alr-tpcut__txt">
-                            <b>Cut-off ke Talent Pool</b>
-                            <small>Kandidat yang <b>tidak lolos</b> mulai tahap terpilih <b>sampai tahap akhir</b> boleh disimpan ke Talent Pool. Pilih <b>satu</b> titik mulai — tahap sesudahnya otomatis ikut.</small>
-                        </div>
-                    </div>
-                    <el-select v-model="form.talentPoolMulai" style="width:230px" placeholder="Nonaktif">
-                        <el-option :value="0" label="Nonaktif — tanpa cut-off" />
-                        <el-option v-for="(s, i) in form.stages" :key="i" :value="i + 1" :label="`Mulai Tahap ${i + 1}${s.label ? ' — ' + s.label : ''}`" />
-                    </el-select>
-                </div>
-
                 <div v-for="(s, i) in form.stages" :key="i" class="wca-stagecard" :class="{ 'is-tp': tahapTalentPool(i) }">
                     <div class="wca-stagecard__num">{{ i + 1 }}</div>
                     <div class="wca-stagecard__body">
+                        <!-- Penanda titik tuntas ikut di kartunya, bukan hanya di
+                             pemilih di atas: pada alur panjang, pemilih itu sudah
+                             tergulung jauh ke atas saat admin membaca tahap ke-9. -->
+                        <div v-if="form.tuntasTahap === i + 1" class="alr-tpflag is-tuntas">
+                            <i class="bi bi-flag-fill"></i>
+                            Titik tuntas — kandidat dinyatakan <b>DITERIMA</b> begitu tahap ini diloloskan, dan kuota terpotong.
+                        </div>
                         <div v-if="tahapTalentPool(i)" class="alr-tpflag"><i class="bi bi-stars"></i> Talent Pool aktif — kandidat tak lolos di tahap ini bisa disimpan (dari cut-off Tahap {{ form.talentPoolMulai }}).</div>
                         <div class="wca-frow">
                             <div><label class="wca-field-lbl">Nama Tahap</label><el-input v-model="s.label" placeholder="mis. Psikotes Online" /></div>
@@ -222,6 +213,37 @@
                                     <br>Isi daftar ini <b>hanya</b> bila tahap berisi beberapa tes sekaligus — mis. FGD = Psikotes 1 + Psikotes 2 + Wawancara.
                                 </div>
                             </div>
+                            <!-- URUTAN PENGERJAAN — hanya berarti bila aktivitasnya
+                                 lebih dari satu. Untuk satu aktivitas, "berurutan"
+                                 dan "bersamaan" berarti hal yang persis sama, dan
+                                 menawarkannya cuma menambah pilihan tanpa akibat. -->
+                            <div v-if="(s.tests || []).length > 1 && modeUrutan.length" class="alr-urut">
+                                <div class="alr-urut__head">
+                                    <i class="bi bi-diagram-3"></i>
+                                    <span>Cara {{ s.tests.length }} aktivitas ini dikerjakan</span>
+                                </div>
+                                <!-- Pilihan, label, dan penjelasannya SELURUHNYA dari
+                                     Master Mode Urutan. Menambah mode ketiga cukup
+                                     satu baris di master — layar ini tidak perlu
+                                     disentuh, dan tidak ada kode mode yang ditulis
+                                     di sini untuk dibandingkan. -->
+                                <div class="alr-urut__opts">
+                                    <button
+                                        v-for="m in modeUrutan" :key="m.value"
+                                        type="button" class="alr-urut__opt"
+                                        :class="{ 'is-on': urutanTerpilih(s) === m.value }"
+                                        :style="urutanTerpilih(s) === m.value ? { borderColor: m.warna, background: m.warna + '14' } : null"
+                                        @click="s.urutanAktivitas = m.value"
+                                    >
+                                        <span class="alr-urut__ico" :style="{ color: m.warna }"><i class="bi" :class="m.ikon || 'bi-diagram-3'"></i></span>
+                                        <span>
+                                            <b>{{ m.label }}</b>
+                                            <small>{{ m.deskripsi }}</small>
+                                        </span>
+                                    </button>
+                                </div>
+                            </div>
+
                             <div v-for="(t, k) in s.tests" :key="k" class="alr-test">
                                 <span class="alr-test__no">{{ k + 1 }}</span>
                                 <div class="alr-test__body">
@@ -245,6 +267,131 @@
                                             </span>
                                         </div>
                                     </div>
+                                    <!-- PERPINDAHAN KE AKTIVITAS BERIKUTNYA.
+                                         Hanya berarti pada tahap BERURUTAN —
+                                         di tahap paralel semua sudah terbuka
+                                         bersamaan, jadi tak ada perpindahan yang
+                                         bisa dipicu. Juga tidak untuk aktivitas
+                                         TERAKHIR: tak ada yang menyusul di
+                                         belakangnya. -->
+                                    <div
+                                        v-if="infoUrutan(s)?.berurutan && k < (s.tests || []).length - 1 && modeLanjut.length"
+                                        class="alr-lanjut"
+                                    >
+                                        <div class="alr-lanjut__head">
+                                            <i class="bi bi-arrow-right-circle"></i>
+                                            <span>Setelah aktivitas ini selesai</span>
+                                        </div>
+                                        <div class="alr-lanjut__opts">
+                                            <button
+                                                v-for="m in modeLanjut" :key="m.value"
+                                                type="button" class="alr-lanjut__opt"
+                                                :class="{ 'is-on': (t.lanjutMode || lanjutBawaan()) === m.value }"
+                                                @click="t.lanjutMode = m.value"
+                                            >
+                                                <span class="alr-lanjut__ico" :style="{ color: m.warna }"><i class="bi" :class="m.ikon"></i></span>
+                                                <span>
+                                                    <b>{{ m.nama }}</b>
+                                                    <small>{{ m.deskripsi }}</small>
+                                                </span>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <!-- CARA AKTIVITAS INI DINILAI.
+                                         Hanya untuk yang hasilnya dicatat TIM —
+                                         ujian online nilainya datang dari HCLearn,
+                                         jadi menyetelnya di sana hanya menyimpan
+                                         aturan yang tak pernah dipakai.
+
+                                         Tes tertulis punya angka; DISC & FGD
+                                         punya predikat; wawancara cukup
+                                         Lulus/Gagal + catatan. Memaksakan satu
+                                         bentuk untuk ketiganya membuat penilai
+                                         mengarang angka, dan angka karangan itu
+                                         terbaca seolah hasil ukur. -->
+                                    <div v-if="!tesOnline(t.tipe || s.tipe) && modePenilaian.length" class="alr-nilai">
+                                        <div class="alr-nilai__head">
+                                            <i class="bi bi-clipboard-data"></i>
+                                            <span>Cara aktivitas ini dinilai</span>
+                                        </div>
+                                        <el-select
+                                            :model-value="t.penilaianMode || penilaianBawaan()"
+                                            style="width:100%"
+                                            @update:model-value="(v) => (t.penilaianMode = v)"
+                                        >
+                                            <el-option v-for="m in modePenilaian" :key="m.value" :value="m.value" :label="m.nama">
+                                                <div class="alr-nilai__opt">
+                                                    <b>{{ m.nama }}</b>
+                                                    <small>{{ m.deskripsi }}</small>
+                                                </div>
+                                            </el-option>
+                                        </el-select>
+
+                                        <div v-if="infoPenilaian(t)?.butuhOpsi" class="wca-frow wca-frow--full" style="margin-top:.5rem">
+                                            <div>
+                                                <label class="wca-field-lbl">Daftar pilihan <b>*</b></label>
+                                                <el-input
+                                                    v-model="t.penilaianOpsi"
+                                                    placeholder="mis. Dominance, Influence, Steadiness, Compliance"
+                                                />
+                                                <small class="alr-nilai__ket">Pisahkan dengan koma. Penilai memilih SATU dari daftar ini — bukan mengetik bebas, supaya hasilnya bisa direkap.</small>
+                                            </div>
+                                        </div>
+
+                                        <div v-else-if="infoPenilaian(t)?.tipe === 'ANGKA'" class="wca-frow" style="margin-top:.5rem">
+                                            <div>
+                                                <label class="wca-field-lbl">Nilai maksimum</label>
+                                                <el-input-number v-model="t.nilaiMaks" :min="1" :max="10000" :step="5" controls-position="right" style="width:100%" />
+                                            </div>
+                                            <div></div>
+                                        </div>
+
+                                        <p v-if="infoPenilaian(t)" class="alr-nilai__ket" style="margin-top:.45rem">
+                                            <i class="bi bi-info-circle"></i>
+                                            {{ infoPenilaian(t).deskripsi }}
+                                            <b>Catatan penilai selalu tersedia</b> di semua mode.
+                                        </p>
+                                    </div>
+
+                                    <!-- TERLIHAT KANDIDAT ATAU TIDAK.
+                                         Sebagian aktivitas murni urusan internal:
+                                         Background Check, cek referensi, verifikasi
+                                         ijazah. Tim wajib mencatatnya, kandidat tak
+                                         punya urusan dengannya — dan barisnya di
+                                         portal hanya memancing pertanyaan tentang
+                                         sesuatu yang tak bisa ia kerjakan.
+
+                                         Aktivitas yang MENUNTUT sesuatu dari kandidat
+                                         (ujian online, atau yang meminta unggahan)
+                                         tidak boleh disembunyikan — itu jalan buntu,
+                                         jadi pilihannya dikunci, bukan sekadar
+                                         diingatkan. -->
+                                    <label class="alr-lihat" :class="{ 'is-off': !tampilKandidat(t, s), 'is-locked': wajibTampil(t, s) }">
+                                        <el-switch
+                                            :model-value="tampilKandidat(t, s)"
+                                            :disabled="wajibTampil(t, s)"
+                                            @update:model-value="(v) => (t.tampilKandidat = v)"
+                                        />
+                                        <span>
+                                            <b>
+                                                <i class="bi" :class="tampilKandidat(t, s) ? 'bi-eye-fill' : 'bi-eye-slash-fill'"></i>
+                                                {{ tampilKandidat(t, s) ? 'Terlihat kandidat' : 'Internal — tidak terlihat kandidat' }}
+                                            </b>
+                                            <small v-if="wajibTampil(t, s)">
+                                                Aktivitas ini menuntut kandidat mengerjakan atau mengunggah sesuatu,
+                                                jadi harus terlihat.
+                                            </small>
+                                            <small v-else-if="tampilKandidat(t, s)">
+                                                Muncul di portal kandidat berikut status &amp; jadwalnya.
+                                            </small>
+                                            <small v-else>
+                                                Hilang sama sekali dari portal kandidat. Tetap dijadwalkan &amp; dicatat di Worklist,
+                                                dan tetap ikut menentukan kesimpulan tahap.
+                                            </small>
+                                        </span>
+                                    </label>
+
                                     <!-- UNGGAH OLEH KANDIDAT. Beda dari "berkas hasil"
                                          yang diunggah TIM: ini berkas yang HARUS
                                          DISERAHKAN kandidat (lembar jawaban terpindai,
@@ -359,27 +506,12 @@
                             </div>
                         </div>
 
-                        <!-- TITIK TUNTAS. Alur kerap memuat tahap administratif
-                             SESUDAH kandidat sebenarnya sudah diterima (tanda
-                             tangan kontrak, onboarding). Tanpa penanda ini
-                             kandidat yang sudah memegang surat penawaran tetap
-                             "Berjalan" dan kuota belum terpotong padahal
-                             kursinya sudah terisi. -->
-                        <div class="alr-tp" :class="{ 'is-on': s.tuntas }">
-                            <div class="alr-tp__main">
-                                <span class="alr-tp__ico"><i class="bi bi-flag-fill"></i></span>
-                                <div class="alr-tp__txt">
-                                    <b>Tahap ini menutup proses seleksi</b>
-                                    <small>
-                                        Begitu tahap ini diloloskan, kandidat langsung dinyatakan
-                                        <b>DITERIMA</b> dan kuota terpotong. Tahap sesudahnya tetap
-                                        dikerjakan (mis. tanda tangan kontrak, onboarding) tapi tidak
-                                        lagi menentukan diterima atau tidaknya.
-                                    </small>
-                                </div>
-                            </div>
-                            <el-switch v-model="s.tuntas" @change="hanyaSatuTuntas(i)" />
-                        </div>
+                        <!-- TITIK TUNTAS tidak lagi disetel di sini — lihat seksi
+                             "Peraturan Tambahan" di bawah daftar tahap. Sakelar
+                             per tahap yang saling mematikan membuat sesuatu yang
+                             hanya boleh ada SATU tampak seperti pilihan bebas,
+                             dan pada alur panjang penanda yang berpindah tidak
+                             terlihat sama sekali. -->
 
                     </div>
                     <div class="wca-stagecard__actions">
@@ -387,6 +519,77 @@
                         <button class="wca-iconbtn" type="button" title="Turun" :disabled="i === form.stages.length - 1" @click="moveStage(i, 1)"><i class="bi bi-chevron-down"></i></button>
                         <button class="wca-iconbtn wca-iconbtn--danger" type="button" title="Hapus" @click="removeStage(i)"><i class="bi bi-trash"></i></button>
                     </div>
+                </div>
+            </div>
+
+            <!-- ═══ PERATURAN TAMBAHAN ═══
+                 Aturan setingkat ALUR, bukan setingkat tahap: keduanya menunjuk
+                 SATU tahap dari daftar di atas. Karena itu letaknya di bawah —
+                 tahapnya harus sudah tersusun dulu sebelum ada yang bisa
+                 ditunjuk, dan memintanya lebih dulu berarti memilih dari daftar
+                 yang masih kosong. -->
+            <div v-if="form.stages.length" class="wca-fsection">
+                <div class="wca-fsection__label"><i class="bi bi-sliders"></i> Peraturan Tambahan</div>
+
+                <!-- TITIK TUNTAS. WAJIB: alur tanpa penanda ini tidak pernah bisa
+                     menyatakan kandidat DITERIMA dan kuota tidak pernah terpotong —
+                     kesalahan tanpa galat, yang baru ketahuan berbulan-bulan
+                     kemudian saat ada yang menghitung kursi. -->
+                <div class="alr-rule is-tuntascut" :class="{ 'is-on': form.tuntasTahap > 0, 'is-kurang': !form.tuntasTahap }">
+                    <div class="alr-rule__l">
+                        <span class="alr-rule__ico"><i class="bi bi-flag-fill"></i></span>
+                        <div class="alr-rule__txt">
+                            <b>Tahap yang menutup proses seleksi <span class="alr-wajib">wajib</span></b>
+                            <small>
+                                Begitu tahap terpilih <b>diloloskan</b>, kandidat dinyatakan <b>DITERIMA</b>
+                                dan kuota terpotong. Tahap sesudahnya tetap dikerjakan (tanda tangan kontrak,
+                                onboarding) tapi tidak lagi menentukan diterima atau tidaknya.
+                            </small>
+                        </div>
+                    </div>
+                    <!-- filterable: alur bisa memuat belasan tahap, dan mencari
+                         "Offering" jauh lebih cepat daripada menggulung daftar. -->
+                    <el-select
+                        v-model="form.tuntasTahap"
+                        class="alr-rule__sel"
+                        filterable
+                        placeholder="Pilih tahap"
+                    >
+                        <el-option
+                            v-for="(s, i) in form.stages" :key="i"
+                            :value="i + 1"
+                            :label="`Tahap ${i + 1}${s.label ? ' — ' + s.label : ''}`"
+                        />
+                    </el-select>
+                </div>
+
+                <!-- CUT-OFF TALENT POOL — SATU titik saja. Tahap dari sini sampai
+                     akhir otomatis aktif; tak perlu klik per tahap. -->
+                <div class="alr-rule" :class="{ 'is-on': form.talentPoolMulai > 0 }">
+                    <div class="alr-rule__l">
+                        <span class="alr-rule__ico"><i class="bi bi-stars"></i></span>
+                        <div class="alr-rule__txt">
+                            <b>Cut-off ke Talent Pool</b>
+                            <small>
+                                Kandidat yang <b>tidak lolos</b> mulai tahap terpilih sampai tahap akhir
+                                boleh disimpan ke Talent Pool. Pilih <b>satu</b> titik mulai — tahap
+                                sesudahnya otomatis ikut.
+                            </small>
+                        </div>
+                    </div>
+                    <el-select
+                        v-model="form.talentPoolMulai"
+                        class="alr-rule__sel"
+                        filterable
+                        placeholder="Nonaktif"
+                    >
+                        <el-option :value="0" label="Nonaktif — tanpa cut-off" />
+                        <el-option
+                            v-for="(s, i) in form.stages" :key="i"
+                            :value="i + 1"
+                            :label="`Mulai Tahap ${i + 1}${s.label ? ' — ' + s.label : ''}`"
+                        />
+                    </el-select>
                 </div>
             </div>
         </AdminModal>
@@ -427,10 +630,20 @@ export default {
             modePengumuman: [],
             // Mode keputusan AKTIF — bagaimana tahap menyimpulkan (multi-tes).
             modeKeputusan: [],
+            // Mode urutan AKTIF — aktivitas dikerjakan bersamaan atau berurutan.
+            // Isi, label, dan perilakunya dari Master Mode Urutan.
+            modeUrutan: [],
+            // Mode penilaian AKTIF — cara aktivitas dinilai (tanpa nilai/angka/kategori).
+            modePenilaian: [],
+            // Mode lanjut AKTIF — otomatis / dipicu admin.
+            modeLanjut: [],
             // Tipe tahap + perilakunya ('CAT' = ujian online berjadwal).
             tipeTahap: [],
             // talentPoolMulai: 0 = nonaktif; N = cut-off Talent Pool mulai tahap ke-N (sampai akhir).
-            form: { nama: '', kategori: '', deskripsi: '', stages: [], talentPoolMulai: 0 },
+            // tuntasTahap: 0 = BELUM DIPILIH (menghalangi simpan); N = tahap ke-N
+            // menutup proses seleksi. Hanya boleh satu — karena itu berupa
+            // pemilih, bukan sakelar di tiap tahap.
+            form: { nama: '', kategori: '', deskripsi: '', stages: [], talentPoolMulai: 0, tuntasTahap: 0 },
             delShow: false,
             delTarget: null,
             deleting: false,
@@ -443,12 +656,23 @@ export default {
         // RefSelect hanya emit update:modelValue — pantau nilainya langsung.
         'filters.kategori'() { this.load(); },
         // Jaga cut-off tetap valid saat jumlah tahap berubah (mis. tahap dihapus).
-        'form.stages.length'(n) { if (this.form.talentPoolMulai > n) this.form.talentPoolMulai = n; },
+        //
+        // Titik tuntas ikut dijaga: menghapus tahap terakhir pada alur yang
+        // titik tuntasnya ada DI SANA akan meninggalkan nomor yang menunjuk
+        // tahap yang tidak ada lagi — tersimpan sebagai alur tanpa titik tuntas
+        // sama sekali, tanpa satu pun peringatan.
+        'form.stages.length'(n) {
+            if (this.form.talentPoolMulai > n) this.form.talentPoolMulai = n;
+            if (this.form.tuntasTahap > n) this.form.tuntasTahap = n;
+        },
     },
     mounted() {
         this.load();
         this.loadModePengumuman();
         this.loadModeKeputusan();
+        this.loadModeUrutan();
+        this.loadModePenilaian();
+        this.loadModeLanjut();
         this.loadTipeTahap();
     },
     computed: {
@@ -502,6 +726,77 @@ export default {
         },
         /** Info mode terpilih (untuk kalimat efek di bawah dropdown). */
         modeInfo(s) { return this.modeKeputusan.find((m) => m.value === s.mode) || null; },
+
+        async loadModeLanjut() {
+            try {
+                this.modeLanjut = (await axios.get('/api/v1/karir/options/mode-lanjut', CFG)).data.result || [];
+            } catch (e) { this.modeLanjut = []; }
+        },
+        /** Bawaan = mode yang TIDAK menahan — perilaku sebelum fitur ini ada. */
+        lanjutBawaan() {
+            return (this.modeLanjut.find((m) => !m.butuhTrigger) || this.modeLanjut[0])?.value || null;
+        },
+        /** Perilaku mode urutan tahap — dipakai menyembunyikan pilihan yang tak berlaku. */
+        infoUrutan(s) {
+            return this.modeUrutan.find((m) => m.value === this.urutanTerpilih(s)) || null;
+        },
+        async loadModePenilaian() {
+            try {
+                this.modePenilaian = (await axios.get('/api/v1/karir/options/mode-penilaian', CFG)).data.result || [];
+            } catch (e) { this.modePenilaian = []; }
+        },
+        /**
+         * Mode bawaan = yang TIDAK meminta nilai apa pun.
+         * Aktivitas baru tidak boleh diam-diam menuntut angka; menambahkannya
+         * adalah keputusan sadar penyusun alur.
+         */
+        penilaianBawaan() {
+            return (this.modePenilaian.find((m) => m.tipe === 'NONE') || this.modePenilaian[0])?.value || null;
+        },
+        /** Perilaku mode yang sedang dipilih sebuah aktivitas. */
+        infoPenilaian(t) {
+            const kode = t.penilaianMode || this.penilaianBawaan();
+            return this.modePenilaian.find((m) => m.value === kode) || null;
+        },
+        async loadModeUrutan() {
+            try {
+                this.modeUrutan = (await axios.get('/api/v1/karir/options/mode-urutan', CFG)).data.result || [];
+            } catch (e) { this.modeUrutan = []; }
+        },
+        /**
+         * Mode urutan yang berlaku untuk tahap ini.
+         *
+         * Bawaannya = mode pertama yang TIDAK mengunci, dibaca dari masternya
+         * (`berurutan === false`) — bukan kode 'PARALEL' yang ditulis di sini.
+         * Alur lama tidak menyimpan field ini sama sekali, dan yang benar untuk
+         * mereka adalah "tanpa urutan", persis perilaku selama ini.
+         */
+        urutanBawaan() { return (this.modeUrutan.find((m) => !m.berurutan) || this.modeUrutan[0])?.value || null; },
+        urutanTerpilih(s) {
+            return this.modeUrutan.some((m) => m.value === s.urutanAktivitas)
+                ? s.urutanAktivitas
+                : this.urutanBawaan();
+        },
+
+        /**
+         * Aktivitas ini terlihat kandidat?
+         *
+         * Alur lama tak punya field ini; `undefined` harus berarti TERLIHAT —
+         * itulah perilaku sebelum fitur ini ada.
+         */
+        tampilKandidat(t, s) { return this.wajibTampil(t, s) || t.tampilKandidat !== false; },
+        /**
+         * Aktivitas yang MUSTAHIL disembunyikan karena menuntut tindakan
+         * kandidat: ujian online (ia harus menekan tombol mengerjakan) atau
+         * aktivitas yang meminta unggahan.
+         *
+         * Penandanya dari Master Tipe Tahap (`wajibTampil`), bukan daftar kode
+         * di layar — server memakai flag yang sama, jadi keduanya tak bisa
+         * berselisih.
+         */
+        wajibTampil(t, s) {
+            return !!this.infoTipe(t.tipe || s.tipe)?.wajibTampil || t.unggahKandidat === true;
+        },
 
         /** Jumlah aktivitas nyata: daftar kosong tetap dihitung 1 (dibuat sistem). */
         jumlahTes(s) { return Math.max(1, (s.tests || []).length); },
@@ -631,7 +926,12 @@ export default {
             if (!Array.isArray(s.tests)) s.tests = [];
             s.tests.push({ label: '', tipe: null, peran: 'PENENTU', ambang: null,
                 unggahKandidat: false, unggahWajib: false,
-                unggahFormat: 'pdf,jpg,jpeg,png', unggahMaksMb: 5, unggahPetunjuk: '' });
+                unggahFormat: 'pdf,jpg,jpeg,png', unggahMaksMb: 5, unggahPetunjuk: '',
+                // Bawaannya TERLIHAT. Menyembunyikan aktivitas adalah keputusan
+                // sadar; kalau bawaannya tersembunyi, satu aktivitas yang lupa
+                // disetel akan hilang dari portal tanpa ada yang menyadarinya.
+                tampilKandidat: true,
+                lanjutMode: null, penilaianMode: null, penilaianOpsi: '', nilaiMaks: null });
             this.samakanMode(s);
         },
         removeTest(s, k) {
@@ -693,12 +993,6 @@ export default {
                 tipe: s.tipe,
                 mode: s.mode || 'MANUAL_REVIEW',
                 formulirId: s.formulirId ?? null,
-                // Baris tes BAWAAN (dibuat otomatis sistem untuk tahap satu
-                // aktivitas) sengaja TIDAK ditampilkan lagi saat mengedit —
-                // kalau ditampilkan, ia terlihat seolah wajib diisi dan
-                // namanya cuma menggandakan nama tahap. Daftar dibiarkan
-                // kosong; backend akan membuatkannya lagi saat disimpan.
-                tests: this.buangTesBawaan(s),
                 pengumuman: s.pengumuman || 'OTOMATIS',
                 jedaHari: s.jedaHari ?? null,
                 notifikasi: s.notifikasi !== false,
@@ -706,46 +1000,66 @@ export default {
                 uploadHasil: s.uploadHasil === true,
                 wajibUpload: s.wajibUpload === true,
                 tuntas: s.tuntas === true,
-                // Aturan unggah dinormalkan di sini supaya sakelar & pilihan tidak
-                // pernah menerima undefined — el-switch yang menerima undefined
-                // tampak mati padahal nilainya belum tentu false.
-                tests: (s.tests || []).map((t) => ({
+                urutanAktivitas: s.urutanAktivitas || null,
+                // SATU kunci `tests`, bukan dua.
+                //
+                // Sebelumnya objek ini punya `tests:` dua kali — buangTesBawaan()
+                // lebih dulu, lalu daftar yang dinormalkan. Dalam JavaScript
+                // kunci terakhir yang menang, jadi buangTesBawaan() tidak pernah
+                // benar-benar berjalan: baris tes bawaan tetap muncul saat alur
+                // dibuka untuk diedit, persis yang komentarnya bilang dihindari.
+                //
+                // Keduanya digabung: buang baris bawaan DULU, baru normalkan.
+                // Normalisasi tetap perlu karena el-switch yang menerima
+                // undefined tampak mati padahal nilainya belum tentu false.
+                tests: this.buangTesBawaan(s).map((t) => ({
                     ...t,
                     unggahKandidat: t.unggahKandidat === true,
                     unggahWajib: t.unggahWajib === true,
                     unggahFormat: t.unggahFormat || 'pdf,jpg,jpeg,png',
                     unggahMaksMb: t.unggahMaksMb || 5,
                     unggahPetunjuk: t.unggahPetunjuk || '',
+                    // `!== false` — alur lama tidak punya field ini sama sekali,
+                    // dan `undefined` harus berarti TERLIHAT (perilaku selama ini),
+                    // bukan tersembunyi.
+                    tampilKandidat: t.tampilKandidat !== false,
+                    lanjutMode: t.lanjutMode || null,
+                    penilaianMode: t.penilaianMode || null,
+                    penilaianOpsi: t.penilaianOpsi || '',
+                    nilaiMaks: t.nilaiMaks || null,
                 })),
             }));
             // Turunkan titik cut-off dari data: tahap PERTAMA yang talentPool aktif.
             const idx = stages.findIndex((s) => s.talentPool);
+            // Titik tuntas juga diturunkan dari data, bukan disimpan sebagai
+            // field tersendiri — sumbernya tetap satu: tahap mana yang
+            // ber-Flag_Tuntas. Alur lama yang belum punya titik tuntas terbuka
+            // dengan pemilih KOSONG, dan tombol simpan menahan sampai diisi:
+            // alur seperti itu memang tidak pernah bisa menyatakan siapa pun
+            // DITERIMA, jadi membiarkannya lolos lagi hanya memperpanjang
+            // kesalahan yang sudah berjalan.
+            const idxTuntas = stages.findIndex((s) => s.tuntas);
             this.form = {
                 nama: a.nama,
                 kategori: a.kategori,
                 deskripsi: a.deskripsi || '',
                 stages,
                 talentPoolMulai: idx >= 0 ? idx + 1 : 0,
+                tuntasTahap: idxTuntas >= 0 ? idxTuntas + 1 : 0,
             };
             this.show = true;
         },
         /** Tahap ke-i (0-based) termasuk cut-off Talent Pool? (dari titik mulai sampai akhir). */
         tahapTalentPool(i) { return this.form.talentPoolMulai > 0 && (i + 1) >= this.form.talentPoolMulai; },
         /**
-         * Titik tuntas hanya boleh SATU per alur.
+         * hanyaSatuTuntas() DIHAPUS bersama sakelar per tahapnya.
          *
-         * Dua titik tuntas berarti dua momen "kandidat diterima" yang saling
-         * bertentangan, dan kuota akan terpotong pada yang mana pun lebih dulu
-         * dilewati — tidak bisa ditebak. Menyalakan yang baru mematikan yang lama.
+         * Aturan "hanya boleh satu" kini dijamin oleh BENTUKNYA: `tuntasTahap`
+         * menyimpan satu nomor tahap, sehingga dua titik tuntas mustahil ada —
+         * bukan lagi sesuatu yang harus dijaga dengan mematikan sakelar lain
+         * setiap kali admin menyalakan yang baru.
          */
-        hanyaSatuTuntas(idx) {
-            if (!this.form.stages[idx]?.tuntas) return;
-
-            this.form.stages.forEach((s, i) => {
-                if (i !== idx) s.tuntas = false;
-            });
-        },
-        addStage() { this.form.stages.push({ label: '', tipe: '', mode: 'MANUAL_REVIEW', formulirId: null, tests: [], pengumuman: 'OTOMATIS', jedaHari: null, notifikasi: true, uploadHasil: false, wajibUpload: false, tuntas: false }); },
+        addStage() { this.form.stages.push({ label: '', tipe: '', mode: 'MANUAL_REVIEW', formulirId: null, tests: [], pengumuman: 'OTOMATIS', jedaHari: null, notifikasi: true, uploadHasil: false, wajibUpload: false }); },
         removeStage(i) { this.form.stages.splice(i, 1); },
 
         // Label & ikon pil diambil dari master (fallback ke kode bila belum termuat).
@@ -775,6 +1089,13 @@ export default {
             if (!this.form.kategori) return this.notice('Kategori wajib dipilih.');
             if (this.form.stages.some((s) => !s.label || !s.label.trim())) return this.notice('Setiap tahap wajib punya label.');
             if (this.form.stages.some((s) => !s.tipe)) return this.notice('Setiap tahap wajib punya tipe.');
+            // TITIK TUNTAS WAJIB. Alur tanpa penanda ini tidak pernah bisa
+            // menyatakan kandidat DITERIMA dan kuotanya tidak pernah terpotong —
+            // kesalahan yang tidak menimbulkan galat apa pun dan baru ketahuan
+            // berbulan-bulan kemudian, saat ada yang menghitung kursi terisi.
+            if (this.form.stages.length && !this.form.tuntasTahap) {
+                return this.notice('Pilih dulu tahap yang menutup proses seleksi — tanpa itu kandidat tidak pernah dinyatakan DITERIMA.');
+            }
             this.saving = true;
             const payload = {
                 nama: this.form.nama,
@@ -796,8 +1117,19 @@ export default {
                         unggahFormat: t.unggahFormat || null,
                         unggahMaksMb: t.unggahMaksMb || null,
                         unggahPetunjuk: t.unggahPetunjuk || null,
+                        tampilKandidat: this.tampilKandidat(t, s),
+                        // Mode penilaian hanya untuk aktivitas yang dikerjakan tim.
+                        lanjutMode: t.lanjutMode || this.lanjutBawaan(),
+                        penilaianMode: this.tesOnline(t.tipe || s.tipe) ? null : (t.penilaianMode || this.penilaianBawaan()),
+                        penilaianOpsi: t.penilaianOpsi || null,
+                        nilaiMaks: t.nilaiMaks || null,
                         ambang: t.ambang ?? null,
                     })),
+                    // Hanya berarti bila aktivitasnya lebih dari satu — server
+                    // pun memaksanya ke mode tak-mengunci bila tidak.
+                    urutanAktivitas: (s.tests || []).filter((t) => (t.label || '').trim()).length > 1
+                        ? this.urutanTerpilih(s)
+                        : this.urutanBawaan(),
                     pengumuman: s.pengumuman || 'OTOMATIS',
                     // Jeda hanya bermakna untuk mode ber-flag butuhJeda; lainnya null.
                     jedaHari: this.modeButuhJeda(s.pengumuman) ? (s.jedaHari ?? null) : null,
@@ -807,7 +1139,9 @@ export default {
                     talentPool: this.tahapTalentPool(i),
                     uploadHasil: s.uploadHasil === true,
                     wajibUpload: s.wajibUpload === true,
-                    tuntas: s.tuntas === true,
+                    // DITURUNKAN dari satu pemilih, sepola dengan cut-off Talent
+                    // Pool — tidak lagi disetel per tahap.
+                    tuntas: this.form.tuntasTahap === i + 1,
                 })),
             };
             try {
@@ -909,6 +1243,47 @@ export default {
 .alr-test { display: flex; gap: .55rem; align-items: flex-start; padding: .6rem; border: 1px solid rgba(15, 23, 42, .08); border-radius: 10px; background: #fff; margin-bottom: .5rem; }
 .alr-test__no { flex: none; width: 1.4rem; height: 1.4rem; border-radius: 50%; background: #e0e7ff; color: #4338ca; font-size: 11px; font-weight: 800; display: grid; place-items: center; }
 .alr-test__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .45rem; }
+/* ═══ URUTAN PENGERJAAN AKTIVITAS ═══ */
+.alr-urut { margin: 4px 0 12px; padding: 11px 12px; border-radius: 12px; background: #f8fafc; border: 1px solid #e8ebf3; }
+.alr-urut__head { display: flex; align-items: center; gap: 7px; margin-bottom: 9px; font-size: 12px; font-weight: 800; color: #334155; }
+.alr-urut__head i { color: #6366f1; }
+.alr-urut__opts { display: flex; flex-direction: column; gap: 7px; }
+.alr-urut__opt { display: flex; align-items: flex-start; gap: 9px; width: 100%; padding: 9px 11px; border-radius: 10px; border: 1.5px solid #e2e8f0; background: #fff; cursor: pointer; text-align: left; transition: border-color .15s, background .15s; }
+.alr-urut__opt:hover { border-color: #cbd5e1; }
+.alr-urut__ico { flex: none; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; background: #f1f5f9; font-size: 13px; }
+.alr-urut__opt b { display: block; font-size: 12.5px; font-weight: 800; color: #1e293b; }
+.alr-urut__opt small { display: block; margin-top: 2px; font-size: 11.5px; line-height: 1.5; color: #64748b; }
+
+/* ═══ TERLIHAT KANDIDAT ATAU INTERNAL ═══ */
+.alr-lihat { display: flex; align-items: flex-start; gap: 10px; margin-top: 10px; padding: 9px 11px; border-radius: 12px; border: 1px solid #e6f0ea; background: #f6fbf8; cursor: pointer; }
+.alr-lihat b { display: flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 800; color: #15803d; }
+.alr-lihat small { display: block; margin-top: 2px; font-size: 11.5px; line-height: 1.5; color: #64748b; }
+/* Internal — nadanya "sengaja disembunyikan", bukan "ada yang salah". */
+.alr-lihat.is-off { border-color: #e6e9f0; background: #f7f8fb; }
+.alr-lihat.is-off b { color: #475569; }
+.alr-lihat.is-locked { cursor: not-allowed; opacity: .85; }
+
+/* ═══ PERPINDAHAN KE AKTIVITAS BERIKUTNYA ═══ */
+.alr-lanjut { margin-top: 10px; padding: 10px 11px; border-radius: 12px; border: 1px solid #ecebf7; background: #fbfaff; }
+.alr-lanjut__head { display: flex; align-items: center; gap: 7px; margin-bottom: 8px; font-size: 12px; font-weight: 800; color: #334155; }
+.alr-lanjut__head i { color: #7c3aed; }
+.alr-lanjut__opts { display: flex; flex-direction: column; gap: 6px; }
+.alr-lanjut__opt { display: flex; align-items: flex-start; gap: 9px; width: 100%; padding: 8px 10px; border-radius: 10px; border: 1.5px solid #e6e3f5; background: #fff; cursor: pointer; text-align: left; }
+.alr-lanjut__opt:hover { border-color: #c4b5fd; }
+.alr-lanjut__opt.is-on { border-color: #8b5cf6; background: rgba(139, 92, 246, .06); }
+.alr-lanjut__ico { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 8px; background: #f4f2fd; font-size: 12px; }
+.alr-lanjut__opt b { display: block; font-size: 12.5px; font-weight: 800; color: #1e293b; }
+.alr-lanjut__opt small { display: block; margin-top: 2px; font-size: 11px; line-height: 1.5; color: #64748b; }
+
+/* ═══ MODE PENILAIAN AKTIVITAS ═══ */
+.alr-nilai { margin-top: 10px; padding: 10px 11px; border-radius: 12px; border: 1px solid #e6ecf5; background: #f7fafd; }
+.alr-nilai__head { display: flex; align-items: center; gap: 7px; margin-bottom: 8px; font-size: 12px; font-weight: 800; color: #334155; }
+.alr-nilai__head i { color: #0891b2; }
+.alr-nilai__opt { display: flex; flex-direction: column; line-height: 1.35; padding: 2px 0; }
+.alr-nilai__opt b { font-size: 12.5px; color: #1e293b; }
+.alr-nilai__opt small { font-size: 11px; color: #94a3b8; white-space: normal; }
+.alr-nilai__ket { display: block; margin-top: .3rem; font-size: 11px; line-height: 1.5; color: #64748b; }
+
 .alr-unggah { margin-top: 10px; border: 1px solid #eef0f7; border-radius: 12px; background: #fbfbfe; transition: border-color .18s, background .18s; }
 .alr-unggah.is-on { border-color: rgba(99, 102, 241, .32); background: rgba(99, 102, 241, .05); }
 .alr-unggah__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 13px; }
@@ -962,18 +1337,51 @@ export default {
 .alr-tp__txt em { color: #b45309; font-style: normal; font-weight: 700; }
 
 /* Cut-off Talent Pool — SATU titik di atas daftar tahap. */
-.alr-tpcut { display: flex; align-items: center; justify-content: space-between; gap: .9rem; padding: .8rem .9rem; border-radius: 13px; border: 1px solid rgba(15, 23, 42, .12); background: #f8fafc; margin: 0 0 .8rem; flex-wrap: wrap; }
-.alr-tpcut.is-on { border-color: rgba(217, 119, 6, .5); background: linear-gradient(180deg, rgba(234, 179, 8, .1), rgba(245, 158, 11, .04)); }
-.alr-tpcut__l { display: flex; align-items: flex-start; gap: .55rem; min-width: 0; flex: 1; }
-.alr-tpcut__ico { flex: none; width: 2rem; height: 2rem; border-radius: 9px; display: grid; place-items: center; background: #fff7ed; color: #d97706; font-size: 15px; border: 1px solid rgba(234, 179, 8, .3); }
-.alr-tpcut.is-on .alr-tpcut__ico { background: #fde68a; color: #92400e; }
-.alr-tpcut__txt { min-width: 0; }
-.alr-tpcut__txt b { display: block; font-size: 13px; color: #1e293b; }
-.alr-tpcut__txt small { display: block; font-size: 11px; line-height: 1.5; color: #64748b; margin-top: .1rem; }
+/* ═══ PERATURAN TAMBAHAN — aturan setingkat alur (menunjuk satu tahap) ═══
+
+   Latarnya SENGAJA netral, bukan berwarna seperti sebelumnya. Kotak bernuansa
+   kuning/hijau membuat kotak isian di dalamnya terlihat berbeda dari seluruh
+   isian lain di borang yang sama — padahal ia el-select yang persis sama.
+   Warna dipindahkan ke ikon dan garis tepinya saja. */
+.alr-rule { display: flex; align-items: center; justify-content: space-between; gap: .9rem; padding: .85rem .9rem; border-radius: 13px; border: 1px solid #e6e9f0; background: #fff; margin: 0 0 .7rem; flex-wrap: wrap; }
+.alr-rule__l { display: flex; align-items: flex-start; gap: .6rem; min-width: 0; flex: 1 1 320px; }
+.alr-rule__ico { flex: none; width: 2rem; height: 2rem; border-radius: 9px; display: grid; place-items: center; background: #f1f5f9; color: #94a3b8; font-size: 15px; border: 1px solid #e2e8f0; }
+.alr-rule__txt { min-width: 0; }
+/* HANYA <b> anak langsung yang jadi judul.
+   Sebelumnya selektornya `.alr-tpcut__txt b`, sehingga <b> penegas DI DALAM
+   kalimat deskripsi ikut kena `display:block` — "diloloskan", "DITERIMA",
+   "tidak lolos", "satu" masing-masing patah jadi barisnya sendiri dan
+   kalimatnya tidak lagi terbaca sebagai kalimat. */
+.alr-rule__txt > b { display: block; font-size: 13px; font-weight: 800; color: #1e293b; }
+.alr-rule__txt small { display: block; font-size: 11px; line-height: 1.55; color: #64748b; margin-top: .15rem; }
+.alr-rule__txt small b { font-weight: 800; color: #334155; }
+/* Lebar tetap di layar lapang, memenuhi baris sendiri di layar sempit —
+   supaya tidak pernah terjepit jadi kotak selebar dua karakter. */
+.alr-rule__sel { width: 260px; flex: none; }
+@media (max-width: 640px) {
+    .alr-rule__sel { width: 100%; }
+}
+/* TERISI — warnanya di tepi & ikon, bukan di seluruh kotak. */
+.alr-rule.is-on { border-color: rgba(217, 119, 6, .45); }
+.alr-rule.is-on .alr-rule__ico { background: #fef3c7; color: #b45309; border-color: rgba(234, 179, 8, .35); }
+.alr-rule.is-tuntascut.is-on { border-color: rgba(5, 150, 105, .45); }
+.alr-rule.is-tuntascut.is-on .alr-rule__ico { background: #d1fae5; color: #047857; border-color: rgba(16, 185, 129, .35); }
+/* BELUM DIPILIH — nada peringatan, karena inilah satu-satunya isian yang
+   menahan tombol simpan. Tanpa itu ia terbaca sebagai pilihan opsional yang
+   kebetulan kosong. */
+.alr-rule.is-kurang { border-color: rgba(220, 38, 38, .45); background: rgba(254, 242, 242, .6); }
+.alr-rule.is-kurang .alr-rule__ico { background: #fee2e2; color: #b91c1c; border-color: rgba(220, 38, 38, .3); }
+
 /* Penanda tahap yang tercakup cut-off (read-only, otomatis). */
 .wca-stagecard.is-tp { border-color: rgba(234, 179, 8, .45); box-shadow: 0 0 0 1px rgba(234, 179, 8, .18); }
 .alr-tpflag { display: flex; align-items: center; gap: .4rem; font-size: 11px; font-weight: 700; color: #a16207; background: rgba(234, 179, 8, .14); border-radius: 8px; padding: .4rem .6rem; margin-bottom: .5rem; }
 .alr-tpflag > i { color: #d97706; }
+/* Penanda titik tuntas di kartu tahapnya — hijau, sepadan dengan pil
+   "Titik Tuntas" di daftar alur, supaya keduanya terbaca sebagai hal yang sama. */
+.alr-tpflag.is-tuntas { color: #047857; background: rgba(16, 185, 129, .13); }
+.alr-tpflag.is-tuntas > i { color: #059669; }
+
+.alr-wajib { display: inline-block; margin-left: .35rem; padding: .05rem .35rem; border-radius: 999px; font-size: 9.5px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: #b91c1c; background: rgba(220, 38, 38, .12); vertical-align: middle; }
 /* Kartu upload hasil — nada biru saat aktif (beda dari talent pool yang kuning). */
 .alr-up.is-on { border-color: rgba(79, 70, 229, .45); background: linear-gradient(180deg, rgba(79, 70, 229, .07), rgba(99, 102, 241, .03)); }
 .alr-up .alr-tp__ico { background: #eef2ff; color: #4f46e5; border-color: rgba(79, 70, 229, .3); }

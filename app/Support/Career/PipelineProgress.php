@@ -54,8 +54,12 @@ class PipelineProgress
     /**
      * @param  iterable  $subAktif  sub-tes (aktivitas) TAHAP AKTIF — dipakai
      *                              menilai apakah hasilnya sudah tercatat
+     * @param  array  $alasanHold  [Kode => nama] dari Master Alasan Hold.
+     *                             Dikirim pemanggil (yang sudah memuatnya sekali
+     *                             untuk seluruh daftar) — kelas ini read-only dan
+     *                             tidak menyentuh database sendiri.
      */
-    public static function state(object $l, ?object $tAktif, ?object $tk, iterable $subAktif = []): array
+    public static function state(object $l, ?object $tAktif, ?object $tk, iterable $subAktif = [], array $alasanHold = []): array
     {
         $siap = $tAktif && ($tAktif->Siap_Diputus ?? 'N') === 'Y';
 
@@ -115,19 +119,34 @@ class PipelineProgress
             }
         }
 
+        // ── DITAHAN (HOLD) ──────────────────────────────────────────────────
+        // Keadaan yang MENDAHULUI segalanya: selama kandidat ditahan, tak ada
+        // keputusan yang boleh diambil dan mesin pun tidak menyimpulkan. Tanpa
+        // ini, worklist tetap menampilkan "Perlu Keputusan" untuk orang yang
+        // justru sengaja disisihkan — dan tombolnya ditekan oleh siapa pun yang
+        // tidak tahu ada alasan di baliknya.
+        $ditahan = $tAktif && ($tAktif->Hold_Flag ?? 'T') === 'Y';
+
         $butuhKeputusan = $tAktif
             && $tAktif->Status === 'BERJALAN'
+            && ! $ditahan
             && ! $otomatis
             && ($siap || $belumTercatat === 0);
 
         $alasanKunci = null;
         if ($tAktif && $tAktif->Status === 'BERJALAN' && ! $butuhKeputusan) {
-            $alasanKunci = $otomatis
-                ? 'Tahap ini disetel OTOMATIS di Master Alur — sistem yang memutuskan begitu aktivitasnya selesai.'
-                : "Menunggu hasil {$belumTercatat} aktivitas penentu dicatat lebih dulu.";
+            $alasanKunci = match (true) {
+                $ditahan => 'Kandidat sedang DITAHAN — lepaskan penahanannya dulu sebelum memutuskan.',
+                $otomatis => 'Tahap ini disetel OTOMATIS di Master Alur — sistem yang memutuskan begitu aktivitasnya selesai.',
+                default => "Menunggu hasil {$belumTercatat} aktivitas penentu dicatat lebih dulu.",
+            };
         }
 
         return [
+            'ditahan' => $ditahan,
+            // Nama alasannya dari master — badge menyebut SEBAB penahanan
+            // ("Ditahan — Menunggu kuota"), bukan sekadar bahwa ia ditahan.
+            'holdNama' => $ditahan ? ($alasanHold[$tAktif->Hold_Alasan_Kode ?? ''] ?? null) : null,
             'skor' => $tk->Skor ?? null,
             'isTes' => ($tk->Provider ?? null) === 'THIRD_PARTY',
             'siap' => $siap,
@@ -154,6 +173,13 @@ class PipelineProgress
         }
         if ($l->Status === 'LULUS') {
             return ['tone' => 'lolos', 'teks' => 'Diterima'];
+        }
+        // DITAHAN mendahului semuanya. Kandidat yang sedang ditahan boleh saja
+        // sudah "siap diputus" menurut data — tapi yang perlu dibaca admin
+        // pertama kali adalah bahwa ia sengaja disisihkan, bukan ajakan
+        // mengetuk palu yang justru tidak boleh dilakukan.
+        if (! empty($state['ditahan'])) {
+            return ['tone' => 'hold', 'teks' => $state['holdNama'] ? 'Ditahan — ' . $state['holdNama'] : 'Ditahan'];
         }
         // Siap diputus + data sudah bicara → sebutkan kesimpulannya di badge,
         // supaya admin tahu mana yang tinggal diketuk dan mana yang perlu ditimbang.

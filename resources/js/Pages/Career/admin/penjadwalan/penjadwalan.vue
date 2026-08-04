@@ -409,6 +409,23 @@
                                     <span class="pjd-status" :class="statusKelas(j.status)">
                                         <i v-if="j.status === 'BERJALAN' || j.status === 'DIANTRIKAN'" class="pjd-dot"></i>{{ j.status }}
                                     </span>
+                                    <!-- COBA LAGI — hanya untuk yang GAGAL.
+                                         Tanpa ini, satu-satunya jalan setelah
+                                         kegagalan adalah menghapus jadwalnya
+                                         lalu menyusun ulang dari nol: program,
+                                         tahap, paket ujian, jendela waktu, dan
+                                         mencentang ulang seluruh kandidat.
+                                         Aman diulang — hanya peserta yang
+                                         tokennya belum terbit yang dikirim. -->
+                                    <button
+                                        v-if="j.status === 'GAGAL'"
+                                        type="button" class="pjd-retry" :disabled="ulangId === j.id"
+                                        title="Antrekan ulang penerbitan token untuk kandidat yang belum berhasil"
+                                        @click.stop="ulangJadwal(j)"
+                                    >
+                                        <i class="bi" :class="ulangId === j.id ? 'bi-arrow-repeat pjd-spin' : 'bi-arrow-clockwise'"></i>
+                                        {{ ulangId === j.id ? 'Mengantrekan…' : 'Coba Lagi' }}
+                                    </button>
                                 </div>
                             </div>
 
@@ -716,6 +733,8 @@ export default {
             editSibuk: false,
             notice: '',
             noticeType: 'success',
+            // Id penjadwalan yang sedang diantrekan ulang (tombol "Coba Lagi").
+            ulangId: '',
             fokusId: new URLSearchParams(window.location.search).get('fokus'),
             // Hanya bagian JAM yang dipakai Element Plus; tanggalnya diabaikan.
             jamMulaiBawaan: new Date(2000, 0, 1, 8, 0, 0),
@@ -789,6 +808,28 @@ export default {
         },
         inisial(nama) {
             return (nama || '?').split(' ').slice(0, 2).map((n) => n[0]).join('').toUpperCase();
+        },
+        /**
+         * COBA LAGI penjadwalan yang gagal.
+         *
+         * Tidak menyusun apa pun dari awal: jadwal, paket ujian, dan daftar
+         * pesertanya sudah tersimpan — yang diulang hanya penerbitan tokennya,
+         * dan hanya untuk kandidat yang tokennya belum terbit.
+         */
+        async ulangJadwal(j) {
+            if (this.ulangId) return;
+            this.ulangId = j.id;
+            try {
+                const res = await axios.post(`/api/v1/penjadwalan/${j.id}/ulang`, {}, {
+                    headers: { Accept: 'application/json' },
+                });
+                this.beritahu(res.data?.message || 'Penjadwalan diantrekan ulang.');
+                await this.muat();
+            } catch (e) {
+                this.beritahu(e.response?.data?.message || 'Gagal mengantrekan ulang.', 'error');
+            } finally {
+                this.ulangId = '';
+            }
         },
         /**
          * Rupa chip tahap pada kartu penjadwalan:
@@ -1339,6 +1380,11 @@ export default {
 .pjd-sched__nama { font-size: 15.5px; font-weight: 800; color: #0f172a; letter-spacing: -.01em; margin-top: 8px; }
 .pjd-sched__meta { display: flex; flex-wrap: wrap; gap: 4px; font-size: 12px; color: #8792a6; margin-top: 4px; }
 .pjd-sched__act { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; flex-wrap: wrap; justify-content: flex-end; }
+/* COBA LAGI — hanya muncul saat GAGAL, jadi nadanya boleh tegas: inilah satu
+   satunya hal yang perlu dilakukan pada baris itu. */
+.pjd-retry { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #fca5a5; background: #fff1f2; color: #b91c1c; font-size: 12px; font-weight: 800; border-radius: 9px; padding: 7px 12px; cursor: pointer; transition: all .15s; }
+.pjd-retry:hover:not(:disabled) { background: #fee2e2; border-color: #f87171; }
+.pjd-retry:disabled { opacity: .6; cursor: not-allowed; }
 
 /* Penjadwal — kartu orang, bukan chip teks. Melekat pada baris kandidat. */
 .pjd-by { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }

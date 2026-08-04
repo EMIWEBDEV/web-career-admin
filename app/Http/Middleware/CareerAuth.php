@@ -77,7 +77,7 @@ class CareerAuth
             return response()->json(['success' => false, 'status' => 401, 'message' => $pesan], 401);
         }
 
-        return redirect('/login')->with('pesan', $pesan);
+        return redirect($this->alamatMasuk($request))->with('pesan', $pesan);
     }
 
     /** Sesi tidak lagi sah — bersihkan lalu arahkan ke halaman masuk. */
@@ -89,6 +89,53 @@ class CareerAuth
             return response()->json(['success' => false, 'status' => 401, 'message' => $pesan], 401);
         }
 
-        return redirect('/login')->with('pesan', $pesan);
+        return redirect($this->alamatMasuk($request))->with('pesan', $pesan);
+    }
+
+    /**
+     * Halaman masuk, DENGAN MEMBAWA tujuan yang tadi hendak dibuka.
+     *
+     * KENAPA PENTING
+     * Kasus paling nyata: kandidat pergi mengerjakan tes CAT selama satu-dua
+     * jam, lalu dipulangkan ke halaman lamarannya. Sesi Web Careers berumur
+     * SESSION_LIFETIME menit (bawaan 120) — pas di ambang durasi ujian. Begitu
+     * sesinya lewat, kandidat mendarat di halaman masuk dan tujuannya HILANG:
+     * sesudah masuk mereka dilempar ke portal umum, bukan ke lamaran yang
+     * barusan mereka tinggalkan. Perjalanan pulang yang susah payah dirancang
+     * itu putus tepat di langkah terakhir.
+     *
+     * Halaman masuk sudah bisa membaca `?redirect=` (lihat Career/Auth.vue) —
+     * yang belum ada hanyalah pihak yang mengisinya.
+     *
+     * HANYA PATH + QUERY yang dibawa, tidak pernah host. Tujuan yang menerima
+     * alamat penuh dari luar adalah pintu open-redirect: penyerang tinggal
+     * mengirim /karir?redirect=https://situs-palsu dan halaman masuk kita
+     * sendiri yang mengantar korbannya ke sana.
+     */
+    private function alamatMasuk(Request $request): string
+    {
+        // Hanya permintaan halaman (GET) yang punya "tujuan" bermakna. POST
+        // /PATCH tidak bisa diulang begitu saja sesudah masuk.
+        if (! $request->isMethod('GET')) {
+            return '/login';
+        }
+
+        // Diperiksa MENTAH, sebelum dinormalkan. Merapikan dulu baru memeriksa
+        // membuat gerbangnya tak pernah berbunyi: `ltrim($uri, '/')` mengubah
+        // `//situs-palsu` jadi `situs-palsu`, sehingga pemeriksaan `//` di
+        // bawahnya tak akan pernah menemukan apa pun untuk ditolak.
+        $tujuan = $request->getRequestUri();
+
+        // `//situs-luar` dibaca peramban sebagai URL berprotokol-relatif —
+        // tetap keluar dari domain kita walau diawali garis miring.
+        if (! str_starts_with($tujuan, '/') || str_starts_with($tujuan, '//')) {
+            return '/login';
+        }
+
+        if ($tujuan === '/login' || str_starts_with($tujuan, '/login?')) {
+            return '/login';
+        }
+
+        return '/login?redirect=' . urlencode($tujuan);
     }
 }

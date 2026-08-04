@@ -14,6 +14,10 @@ Route::prefix('api/v1')->name('career.api.penjadwalan.')->group(function () {
     // Peserta satu penjadwalan — diambil saat barisnya dibuka (akordion).
     Route::get('/penjadwalan/{id}/peserta', [PenjadwalanController::class, 'peserta'])->name('peserta')->middleware('career.permission:penjadwalanPage,VIEW');
     Route::post('/penjadwalan', [PenjadwalanController::class, 'store'])->name('store')->middleware('career.permission:penjadwalanPage,CREATE');
+    // COBA LAGI penjadwalan yang gagal — mengantrekan ulang HANYA peserta yang
+    // tokennya belum terbit. Izinnya EDIT: ini memperbaiki jadwal yang sudah
+    // ada, bukan membuat yang baru.
+    Route::post('/penjadwalan/{id}/ulang', [PenjadwalanController::class, 'ulang'])->name('ulang')->middleware('career.permission:penjadwalanPage,EDIT');
     // Geser jadwal SATU kandidat (yang dipakai layar Penjadwalan).
     Route::put('/penjadwalan/peserta/{id}', [PenjadwalanController::class, 'updatePeserta'])->name('peserta.update')->middleware('career.permission:penjadwalanPage,EDIT');
     Route::put('/penjadwalan/{id}', [PenjadwalanController::class, 'update'])->name('update')->middleware('career.permission:penjadwalanPage,EDIT');

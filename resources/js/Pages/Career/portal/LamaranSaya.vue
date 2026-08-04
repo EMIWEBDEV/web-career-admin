@@ -61,11 +61,15 @@
                                     <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="2" /><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
                                     {{ katLabel(l.kategori) }}
                                 </span>
-                                <span class="lms-chip" :style="stChipStyle(l.status)">
+                                <span class="lms-chip" :style="stChipStyle(l)">
                                     <span v-if="l.status === 'BERJALAN'" class="lms-pulse"></span>
                                     <svg v-else-if="l.status === 'LULUS'" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M20 6L9 17l-5-5" /></svg>
+                                    <!-- Kandidat yang MUNDUR tidak diberi tanda silang.
+                                         Ikon itu berarti "ditolak"; yang terjadi di sini
+                                         justru sebaliknya — ia yang melangkah keluar. -->
+                                    <svg v-else-if="stKey(l) === 'netral'" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="M16 17l5-5-5-5" /><path d="M21 12H9" /></svg>
                                     <svg v-else width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9" /><path d="M15 9l-6 6M9 9l6 6" /></svg>
-                                    {{ stLabel(l.status) }}
+                                    {{ stLabel(l) }}
                                 </span>
                             </div>
                             <div style="text-align: right; color: #94a3b8; font-size: 12px">
@@ -103,9 +107,15 @@
                             </div>
                         </div>
 
-                        <div v-if="l.status === 'GUGUR' && l.gugurDi" class="lms-gugurnote">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9" /><path d="M15 9l-6 6M9 9l6 6" /></svg>
-                            Tidak lolos di tahap: {{ l.gugurDi }}
+                        <!-- Kalimatnya mengikuti SEBAB berhentinya, bukan satu
+                             kalimat untuk semua. "Tidak lolos di tahap X" pada
+                             lamaran yang justru ditutup kandidatnya sendiri
+                             adalah keterangan yang salah — dan itu keterangan
+                             yang ia baca tentang dirinya sendiri. -->
+                        <div v-if="l.status !== 'BERJALAN' && l.status !== 'LULUS' && l.gugurDi" class="lms-gugurnote" :class="{ 'is-netral': stKey(l) === 'netral' }">
+                            <svg v-if="stKey(l) === 'netral'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="M16 17l5-5-5-5" /><path d="M21 12H9" /></svg>
+                            <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9" /><path d="M15 9l-6 6M9 9l6 6" /></svg>
+                            {{ stKey(l) === 'netral' ? `${stLabel(l)} di tahap: ${l.gugurDi}` : `Tidak lolos di tahap: ${l.gugurDi}` }}
                         </div>
 
                         <div style="margin-top: 18px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap">
@@ -227,6 +237,10 @@ const ST = {
     menunggu: { c: '#1d4ed8', bg: 'rgba(59,130,246,.12)', dot: '#3b82f6' },
     lolos: { c: '#059669', bg: 'rgba(16,185,129,.12)', dot: '#10b981' },
     gugur: { c: '#dc2626', bg: 'rgba(239,68,68,.1)', dot: '#ef4444' },
+    // KEPUTUSAN DARI KANDIDAT (mundur / menolak penawaran): prosesnya berhenti,
+    // tapi bukan karena ditolak. Merah akan mengatakan hal yang salah kepada
+    // orang yang justru memilih pergi sendiri.
+    netral: { c: '#475569', bg: 'rgba(100,116,139,.12)', dot: '#64748b' },
 };
 
 export default {
@@ -277,8 +291,8 @@ export default {
                 type: this.katLabel(l.kategori),
                 title: l.posisi || l.program,
                 applied: this.tglLamar(l.waktuLamar),
-                status: this.stKey(l.status),
-                statusLabel: this.stLabel(l.status),
+                status: this.stKey(l),
+                statusLabel: this.stLabel(l),
                 lastStage: this.riwayatTahap(l),
             }));
             if (this.filter === 'semua') return rows;
@@ -308,8 +322,32 @@ export default {
         },
         k(l) { return l.kartu || {}; },
         katLabel(k) { return { REKRUTMEN: 'Rekrutmen', MT: 'Management Trainee', INTERNSHIP: 'Internship' }[k] || k || '—'; },
-        stLabel(s) { return { BERJALAN: 'Berjalan', LULUS: 'Diterima', GUGUR: 'Tidak Lolos', MUNDUR: 'Mengundurkan Diri', TALENT_POOL: 'Cadangan (Talent Pool)' }[s] || s; },
-        stKey(s) { return { BERJALAN: 'berjalan', LULUS: 'lolos', GUGUR: 'gugur', MUNDUR: 'gugur', TALENT_POOL: 'menunggu' }[s] || 'berjalan'; },
+        /**
+         * Kata & nada status — DARI SERVER bila lamarannya ikut diberikan.
+         *
+         * Peta di bawah tinggal jaring pengaman. Ia pernah jadi satu-satunya
+         * sumber, dan isinya sudah salah: kode yang benar-benar dipakai adalah
+         * MENGUNDURKAN_DIRI / DITOLAK_KANDIDAT, bukan "MUNDUR" — sehingga
+         * kandidat yang mundur membaca kode mentah di kartunya sendiri, dan
+         * kartunya diwarnai seperti lamaran yang masih berjalan.
+         *
+         * Menerima objek lamaran ATAU string status supaya pemanggil lama tetap
+         * bekerja.
+         */
+        stLabel(l) {
+            if (l && typeof l === 'object') {
+                return l.statusLabel || this.stLabel(l.status);
+            }
+
+            return { BERJALAN: 'Berjalan', LULUS: 'Diterima', GUGUR: 'Tidak Lolos', TALENT_POOL: 'Cadangan (Talent Pool)' }[l] || l;
+        },
+        stKey(l) {
+            if (l && typeof l === 'object') {
+                return ST[l.statusNada] ? l.statusNada : this.stKey(l.status);
+            }
+
+            return { BERJALAN: 'berjalan', LULUS: 'lolos', GUGUR: 'gugur', TALENT_POOL: 'menunggu' }[l] || 'berjalan';
+        },
         katChipStyle(kat) {
             return kat === 'MT'
                 ? { background: 'rgba(245,158,11,.14)', color: '#b45309' }
@@ -317,7 +355,7 @@ export default {
                     ? { background: 'rgba(16,185,129,.12)', color: '#059669' }
                     : { background: 'rgba(99,102,241,.12)', color: '#4f46e5' };
         },
-        stChipStyle(s) { const t = ST[this.stKey(s)]; return { background: t.bg, color: t.c }; },
+        stChipStyle(l) { const t = ST[this.stKey(l)] || ST.berjalan; return { background: t.bg, color: t.c }; },
         typeStyle(t) {
             return t === 'Management Trainee'
                 ? { background: 'rgba(245,158,11,.14)', color: '#b45309' }
@@ -365,7 +403,14 @@ export default {
                 }))
                 : Array.from({ length: l.totalTahap || 0 }, (_, i) => ({
                     name: `Tahap ${i + 1}`,
-                    st: i + 1 < l.urutanTahap ? 'done' : i + 1 === l.urutanTahap ? (l.status === 'GUGUR' ? 'fail' : 'current') : 'todo',
+                    // Tahap terakhir hanya bertanda silang bila kandidat memang
+                    // GAGAL di sana. Lamaran yang berhenti karena kandidat
+                    // mundur ditinggalkan sebagai belum tuntas, bukan gagal.
+                    st: i + 1 < l.urutanTahap
+                        ? 'done'
+                        : i + 1 === l.urutanTahap
+                            ? (l.status === 'BERJALAN' ? 'current' : (this.stKey(l) === 'gugur' ? 'fail' : 'todo'))
+                            : 'todo',
                 }));
             return rows.map((r) => ({
                 ...r,
@@ -476,6 +521,8 @@ export default {
 .lms-step__lbl { margin-top: 9px; font-size: 10.5px; font-weight: 700; text-align: center; line-height: 1.3; padding: 0 6px; }
 
 .lms-gugurnote { display: inline-flex; align-items: center; gap: 6px; margin-top: 14px; font-size: 12.5px; font-weight: 700; color: #dc2626; background: rgba(239, 68, 68, 0.08); border-radius: 10px; padding: 8px 12px; }
+/* Pengunduran diri bukan penolakan — nadanya netral, bukan merah. */
+.lms-gugurnote.is-netral { color: #475569; background: rgba(100, 116, 139, 0.1); }
 .lms-btn-detail { appearance: none; cursor: pointer; font-family: inherit; font-size: 13.5px; font-weight: 800; color: #fff; background: linear-gradient(135deg, #8b5cf6, #6366f1); border: none; padding: 13px 24px; border-radius: 14px; display: inline-flex; align-items: center; gap: 9px; box-shadow: 0 10px 24px rgba(99, 102, 241, 0.3); transition: transform 0.16s; text-decoration: none; }
 .lms-btn-detail:hover { transform: translateY(-2px); color: #fff; }
 .lms-btn-hapus { appearance: none; cursor: pointer; width: 44px; height: 44px; border-radius: 13px; border: 1px solid #f4c9c9; background: #fff; color: #dc2626; display: inline-flex; align-items: center; justify-content: center; transition: all 0.16s; }

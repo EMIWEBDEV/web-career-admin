@@ -92,6 +92,55 @@ class GcsBerkas
         return $path;
     }
 
+    /**
+     * Folder gambar yang DITANAM DI DALAM CATATAN penilaian.
+     *
+     * Akarnya sendiri (`catatan-gambar/`), bukan menumpang hasil-tahap/: berkas
+     * di sana adalah dokumen resmi yang dilihat sebagai lampiran, sedangkan ini
+     * potongan di tengah paragraf. Mencampurnya membuat siapa pun yang menyisir
+     * bucket per kandidat menemukan belasan potret tanpa tahu itu apa.
+     */
+    public function folderCatatan(string $tahun, string $bulan, string $tanggal, string $namaKandidat): string
+    {
+        return 'catatan-gambar/' . $tahun . '/' . $bulan . '/' . $tanggal . '/' . $this->slug($namaKandidat);
+    }
+
+    /**
+     * Unggah satu gambar catatan. Namanya ACAK, bukan turunan nama berkas asal:
+     * penilai kerap menempelkan beberapa potret berturut-turut yang semuanya
+     * bernama "image.jpg" dari kamera, dan nama deterministik akan membuat yang
+     * kedua menimpa yang pertama tanpa jejak.
+     */
+    public function unggahGambarCatatan(string $folder, string $ext, string $konten): string
+    {
+        $path = "{$folder}/ctt-" . Str::lower(Str::random(14)) . '.' . $this->normalkanExt($ext);
+
+        if (! Storage::disk(self::DISK)->put($path, $konten)) {
+            throw new \RuntimeException('Gagal mengunggah gambar catatan ke GCS.');
+        }
+
+        return $path;
+    }
+
+    /**
+     * Validasi khusus GAMBAR CATATAN — sengaja berbeda dari validasi() umum.
+     *
+     * PDF tidak masuk: yang ditanam di dalam kalimat harus bisa dirender sebagai
+     * gambar. PNG masuk (tangkapan layar hasil tes daring hampir selalu PNG),
+     * begitu pula WEBP yang jadi keluaran bawaan banyak ponsel baru — menolaknya
+     * memaksa penilai mengonversi dulu, dan yang terjadi justru berkasnya
+     * dikirim lewat WhatsApp.
+     */
+    public function validasiGambar(string $namaBerkas, string $ext, int $ukuran): void
+    {
+        if (! in_array($this->normalkanExt($ext), ['jpg', 'png', 'webp'], true)) {
+            throw new \RuntimeException("Gambar {$namaBerkas}: hanya JPG, PNG & WEBP yang bisa ditanam di catatan.");
+        }
+        if ($ukuran > self::MAKS_BYTE) {
+            throw new \RuntimeException("Gambar {$namaBerkas}: melebihi 2 MB.");
+        }
+    }
+
     /** Unggah foto verifikasi (nama acak, boleh lebih dari satu). */
     public function unggahFoto(string $folderKandidat, string $konten): string
     {
