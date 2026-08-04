@@ -4,7 +4,7 @@ namespace Tests\Unit;
 
 use App\Support\Career\PipelineReadModel;
 use Illuminate\Support\Collection;
-use Tests\TestCase;
+use PHPUnit\Framework\TestCase;
 
 class PipelineReadModelTest extends TestCase
 {
