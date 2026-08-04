@@ -486,74 +486,119 @@
                                          gambar lembar penilaiannya hilang.
                                          Ringkasan polos tetap dipakai untuk
                                          catatan lama yang belum berformat. -->
-                                    <div v-if="t.catatanHtml" class="plw-test__cat is-kaya">
-                                        <i class="bi bi-chat-left-text"></i>
-                                        <KontenAman :html="t.catatanHtml" ringkas />
-                                    </div>
-                                    <div v-else-if="t.catatan" class="plw-test__cat"><i class="bi bi-chat-left-text"></i> {{ t.catatan }}</div>
-
-                                    <!-- BERKAS DARI KANDIDAT — hasil dari setelan
-                                         "kandidat harus mengunggah" di Master Alur.
-                                         Ditampilkan di sini karena inilah satu-satunya
-                                         layar tempat tim menilai aktivitas itu; berkas
-                                         yang hanya bisa dibuka di portal kandidat sama
-                                         saja tidak pernah diserahkan.
-
-                                         Yang BELUM mengunggah padahal wajib disebut
-                                         eksplisit: diam saja membuat baris ini terbaca
-                                         "tidak ada apa-apa untuk dilihat", padahal
-                                         justru ada yang kurang. -->
-                                    <div v-if="t.unggahKandidat || (t.berkasKandidat || []).length" class="plw-test__kirim">
-                                        <template v-if="(t.berkasKandidat || []).length">
-                                            <span class="plw-test__kirimlbl"><i class="bi bi-inbox-fill"></i> Dari kandidat:</span>
-                                            <!-- Modal, bukan tab baru — sama seperti
-                                                 seluruh dokumen lain di halaman ini. -->
-                                            <button
-                                                v-for="b in t.berkasKandidat" :key="b.id"
-                                                type="button" class="plw-test__kirimfile" :title="b.nama"
-                                                @click.stop="bukaDok(b)"
-                                            >
-                                                <i class="bi" :class="b.isImage ? 'bi-file-earmark-image-fill' : 'bi-file-earmark-pdf-fill'"></i>
-                                                {{ b.nama }}
-                                            </button>
-
-                                            <!-- SUDAH DINYATAKAN LENGKAP ATAU BELUM.
-                                                 Berkas yang masuk belum tentu berkas yang
-                                                 utuh; menilai sebelum kandidat menyatakan
-                                                 selesai berarti menilai pekerjaan setengah
-                                                 jadi — dan keputusannya tidak bisa ditarik. -->
-                                            <span
-                                                v-if="t.unggahKandidat"
-                                                class="plw-test__kirimstat"
-                                                :class="t.unggahKandidat.terkirim ? 'is-ok' : 'is-nunggu'"
-                                                :title="t.unggahKandidat.terkirim
-                                                    ? `Dinyatakan lengkap oleh kandidat pada ${fmtWaktu(t.unggahKandidat.terkirim)}`
-                                                    : 'Kandidat belum menekan Kirim — mungkin masih ada berkas susulan.'"
-                                            >
-                                                <i class="bi" :class="t.unggahKandidat.terkirim ? 'bi-patch-check-fill' : 'bi-hourglass-split'"></i>
-                                                {{ t.unggahKandidat.terkirim ? 'dinyatakan lengkap' : 'belum dikirim kandidat' }}
-                                            </span>
-                                        </template>
-                                        <span v-else class="plw-test__kirimkosong" :class="{ 'is-wajib': t.unggahKandidat.wajib }">
-                                            <i class="bi" :class="t.unggahKandidat.wajib ? 'bi-exclamation-triangle-fill' : 'bi-hourglass'"></i>
-                                            Kandidat belum mengunggah berkas{{ t.unggahKandidat.wajib ? ' (wajib)' : '' }}.
-                                        </span>
+                                    <!-- APA YANG MASIH DITUNGGU dari aktivitas ini.
+                                         Alasan yang sama persis dipakai server untuk
+                                         menolak keputusan — jadi yang terbaca di sini
+                                         tidak akan pernah berselisih dengan yang
+                                         ditegakkan di balik layar. -->
+                                    <div v-if="!t.tuntas && !t.terkunci" class="plw-test__nunggu">
+                                        <i class="bi bi-hourglass-split"></i> {{ t.alasanBelumTuntas }}
                                     </div>
 
-                                    <!-- Lampiran yang diunggah TIM. Dipisah dari yang di
-                                         atas: siapa yang menyerahkan menentukan cara
-                                         membacanya — bukti dari kandidat diverifikasi,
-                                         berkas penilai adalah kesimpulan. -->
-                                    <div v-if="(t.berkas || []).length" class="plw-test__kirim is-tim">
-                                        <span class="plw-test__kirimlbl"><i class="bi bi-paperclip"></i> Berkas tim:</span>
-                                        <button
-                                            v-for="b in t.berkas" :key="b.id"
-                                            type="button" class="plw-test__kirimfile" :title="b.nama"
-                                            @click.stop="bukaDok(b)"
-                                        >
-                                            <i class="bi" :class="b.isImage ? 'bi-file-earmark-image-fill' : 'bi-file-earmark-pdf-fill'"></i>
-                                            {{ b.nama }}
-                                        </button>
+                                    <!-- CATATAN & BERKAS DIJADIKAN SATU PANEL.
+                                         Dulu ketiganya (catatan berformat, berkas
+                                         kandidat, berkas tim) berdiri sendiri-sendiri
+                                         dan selalu terbuka. Pada tahap berisi 4-6 tes
+                                         offline, satu layar jadi dinding teks setinggi
+                                         beberapa gulungan — dan tombol yang benar-benar
+                                         perlu ditekan tenggelam di dalamnya.
+
+                                         Sekarang: satu tombol dengan jumlahnya, dibuka
+                                         hanya untuk aktivitas yang sedang ditinjau. -->
+                                    <button
+                                        v-if="jumlahDetail(t)"
+                                        type="button" class="plw-test__more"
+                                        :class="{ 'is-on': detailTes === t.id }"
+                                        :aria-expanded="detailTes === t.id"
+                                        @click.stop="toggleDetail(t)"
+                                    >
+                                        <i class="bi" :class="detailTes === t.id ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
+                                        Catatan &amp; berkas
+                                        <span class="plw-test__morecount">{{ jumlahDetail(t) }}</span>
+                                    </button>
+
+                                    <!-- PERINGATAN TETAP DI LUAR PANEL.
+                                         "Kandidat belum mengunggah padahal wajib" adalah hal
+                                         yang harus terlihat SEKILAS, tanpa membuka apa pun.
+                                         Menyembunyikannya di balik tombol membuat yang kurang
+                                         hanya ketahuan oleh orang yang kebetulan mengklik. -->
+                                    <div v-if="t.unggahKandidat && !(t.berkasKandidat || []).length" class="plw-test__kirimkosong" :class="{ 'is-wajib': t.unggahKandidat.wajib }">
+                                        <i class="bi" :class="t.unggahKandidat.wajib ? 'bi-exclamation-triangle-fill' : 'bi-hourglass'"></i>
+                                        Kandidat belum mengunggah berkas{{ t.unggahKandidat.wajib ? ' (wajib)' : '' }}.
+                                    </div>
+
+                                    <!-- PANEL DETAIL — catatan penilaian, berkas kandidat, dan
+                                         berkas tim. Ketiganya hanya dirender saat dibuka: pada
+                                         tahap berisi enam tes offline, merender semuanya sekaligus
+                                         berarti puluhan blok teks berformat yang tak seorang pun
+                                         baca serentak. -->
+                                    <div v-if="detailTes === t.id" class="plw-test__detail">
+                                        <div v-if="t.catatanHtml" class="plw-test__cat is-kaya">
+                                            <i class="bi bi-chat-left-text"></i>
+                                            <KontenAman :html="t.catatanHtml" />
+                                        </div>
+                                        <div v-else-if="t.catatan" class="plw-test__cat"><i class="bi bi-chat-left-text"></i> {{ t.catatan }}</div>
+
+                                        <!-- BERKAS DARI KANDIDAT — hasil dari setelan "kandidat
+                                             harus mengunggah" di Master Alur. Inilah satu-satunya
+                                             layar tempat tim menilainya; berkas yang cuma bisa
+                                             dibuka di portal kandidat sama saja tak pernah
+                                             diserahkan. -->
+                                        <div v-if="(t.berkasKandidat || []).length" class="plw-test__kirim">
+                                            <div class="plw-test__kirimhead">
+                                                <span class="plw-test__kirimlbl"><i class="bi bi-inbox-fill"></i> Dari kandidat</span>
+                                                <!-- SUDAH DINYATAKAN LENGKAP ATAU BELUM. Berkas yang
+                                                     masuk belum tentu berkas yang utuh; menilai sebelum
+                                                     kandidat menyatakan selesai berarti menilai
+                                                     pekerjaan setengah jadi — dan itu tak bisa ditarik.
+                                                     Ditaruh di baris kepalanya sendiri supaya tidak lagi
+                                                     berdesakan dengan nama-nama berkas. -->
+                                                <span
+                                                    v-if="t.unggahKandidat"
+                                                    class="plw-test__kirimstat"
+                                                    :class="t.unggahKandidat.terkirim ? 'is-ok' : 'is-nunggu'"
+                                                    :title="t.unggahKandidat.terkirim
+                                                        ? `Dinyatakan lengkap oleh kandidat pada ${fmtWaktu(t.unggahKandidat.terkirim)}`
+                                                        : 'Kandidat belum menekan Kirim — mungkin masih ada berkas susulan.'"
+                                                >
+                                                    <i class="bi" :class="t.unggahKandidat.terkirim ? 'bi-patch-check-fill' : 'bi-hourglass-split'"></i>
+                                                    {{ t.unggahKandidat.terkirim ? 'dinyatakan lengkap' : 'belum dikirim' }}
+                                                </span>
+                                            </div>
+                                            <div class="plw-test__files">
+                                                <button
+                                                    v-for="b in t.berkasKandidat" :key="b.id"
+                                                    type="button" class="plw-test__kirimfile"
+                                                    :title="b.terkirim
+                                                        ? `${b.nama} — diserahkan ${fmtWaktu(b.terkirim)}`
+                                                        : `${b.nama} — kandidat belum menekan Kirim`"
+                                                    @click.stop="bukaDok(b)"
+                                                >
+                                                    <i class="bi" :class="b.isImage ? 'bi-file-earmark-image-fill' : 'bi-file-earmark-pdf-fill'"></i>
+                                                    <span class="plw-test__filenama">{{ b.nama }}</span>
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <!-- Lampiran yang diunggah TIM. Dipisah dari yang di atas:
+                                             siapa yang menyerahkan menentukan cara membacanya —
+                                             bukti dari kandidat diverifikasi, berkas penilai adalah
+                                             kesimpulan. -->
+                                        <div v-if="(t.berkas || []).length" class="plw-test__kirim is-tim">
+                                            <div class="plw-test__kirimhead">
+                                                <span class="plw-test__kirimlbl"><i class="bi bi-paperclip"></i> Berkas tim</span>
+                                            </div>
+                                            <div class="plw-test__files">
+                                                <button
+                                                    v-for="b in t.berkas" :key="b.id"
+                                                    type="button" class="plw-test__kirimfile" :title="b.nama"
+                                                    @click.stop="bukaDok(b)"
+                                                >
+                                                    <i class="bi" :class="b.isImage ? 'bi-file-earmark-image-fill' : 'bi-file-earmark-pdf-fill'"></i>
+                                                    <span class="plw-test__filenama">{{ b.nama }}</span>
+                                                </button>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                                 <span v-if="t.nilai != null" class="plw-test__score">{{ t.nilai }}</span>
@@ -825,9 +870,19 @@
                          berarti memutuskan tanpa tahu kandidatnya datang atau tidak.
                          Alasannya ditulis di sini — tombol mati tanpa keterangan
                          membuat admin mengira layarnya rusak. -->
-                    <div v-else-if="kehadiranKurang(detailKandidat)" class="plw-kuota is-hadir">
-                        <i class="bi bi-person-lines-fill"></i>
-                        <span>Tetapkan <b>Hadir</b> atau <b>Tidak Hadir</b> dulu pada aktivitas berjadwal di rapor tes di atas. Selama itu belum ditetapkan, <b>seluruh tombol keputusan</b> terkunci — kandidatnya datang atau tidak belum diketahui.</span>
+                    <!-- APA YANG MASIH KURANG — disebut satu per satu, bukan
+                         "tidak bisa diloloskan" yang memindahkan tebakan ke
+                         orang berikutnya. Hanya tombol yang MEMAJUKAN yang
+                         terkunci; menutup lamaran tetap selalu bisa. -->
+                    <div v-else-if="belumTuntas.length" class="plw-kuota is-hadir">
+                        <i class="bi bi-hourglass-split"></i>
+                        <div class="plw-kuota__isi">
+                            <b>Tahap ini belum tuntas</b>
+                            <ul class="plw-kuota__list">
+                                <li v-for="(x, i) in belumTuntas" :key="i"><b>{{ x.label }}</b> — {{ x.sebab }}</li>
+                            </ul>
+                            <span>Selama itu, <b>Loloskan</b> dan <b>Talent Pool</b> terkunci. <b>Tidak Lolos</b>, <b>Tahan Dulu</b>, dan keputusan dari kandidat tetap bisa dipakai.</span>
+                        </div>
                     </div>
 
                     <!-- Indikator kuota (muncul saat kandidat di tahap akhir & posisi berkuota) -->
@@ -850,8 +905,8 @@
                         <button
                             v-for="h in putusanPerusahaan" :key="h.kode"
                             type="button" class="plw-btn-putus" :class="kelasPutus(h)"
-                            :disabled="putusanTerkunci"
-                            :title="alasanTerkunci || h.deskripsi"
+                            :disabled="!!terkunciPutus(h)"
+                            :title="terkunciPutus(h) || h.deskripsi"
                             @click="askPutus(detailKandidat, h.kode)"
                         >
                             <i class="bi" :class="h.ikon"></i>
@@ -892,8 +947,8 @@
                             <button
                                 v-for="h in putusanKandidat" :key="h.kode"
                                 type="button" class="plw-btn-kandidat"
-                                :disabled="putusanTerkunci"
-                                :title="alasanTerkunci || h.deskripsi"
+                                :disabled="!!terkunciPutus(h)"
+                                :title="terkunciPutus(h) || h.deskripsi"
                                 @click="askPutus(detailKandidat, h.kode)"
                             >
                                 <i class="bi" :class="h.ikon"></i>
@@ -1238,14 +1293,22 @@
                      mengundang salah pilih. -->
                 <div v-if="!jadwalTarget?.wajibLuring" class="plw-fld">
                     <label class="plw-fld__lbl">Metode <b>*</b></label>
+                    <!-- Tombolnya DARI MASTER Mode Jadwal. Dulu dua tombol
+                         ditulis mati di sini, dan bentuk ketiga — telepon, yang
+                         justru paling lazim untuk penawaran gaji — mustahil ada
+                         tanpa menyunting layar. -->
                     <div class="plw-seg">
-                        <button type="button" class="plw-seg__b is-net" :class="{ 'is-on': jadwalMode === 'DARING' }" @click="jadwalMode = 'DARING'">
-                            <i class="bi bi-camera-video-fill"></i> Daring
-                        </button>
-                        <button type="button" class="plw-seg__b is-net" :class="{ 'is-on': jadwalMode === 'LURING' }" @click="jadwalMode = 'LURING'">
-                            <i class="bi bi-geo-alt-fill"></i> Tatap muka
+                        <button
+                            v-for="m in modeJadwalDipakai" :key="m.kode"
+                            type="button" class="plw-seg__b is-net"
+                            :class="{ 'is-on': jadwalMode === m.kode }"
+                            :title="m.deskripsi"
+                            @click="jadwalMode = m.kode"
+                        >
+                            <i class="bi" :class="m.ikon"></i> {{ m.nama }}
                         </button>
                     </div>
+                    <p v-if="modeJadwalDef?.deskripsi" class="plw-fld__hint">{{ modeJadwalDef.deskripsi }}</p>
                 </div>
                 <p v-else class="plw-note is-lock">
                     <i class="bi bi-geo-alt-fill"></i>
@@ -1255,22 +1318,43 @@
                     </span>
                 </p>
 
-                <div class="plw-fld__row">
-                    <div class="plw-fld">
-                        <label class="plw-fld__lbl">Waktu mulai <b>*</b></label>
-                        <el-date-picker v-model="jadwalMulai" type="datetime" format="DD MMM YYYY HH:mm" value-format="YYYY-MM-DD HH:mm:ss" placeholder="Pilih tanggal & jam" style="width: 100%" />
-                    </div>
-                    <div class="plw-fld">
-                        <label class="plw-fld__lbl">Waktu selesai <small>opsional</small></label>
-                        <el-date-picker v-model="jadwalSelesai" type="datetime" format="DD MMM YYYY HH:mm" value-format="YYYY-MM-DD HH:mm:ss" placeholder="Perkiraan selesai" style="width: 100%" />
-                    </div>
+                <!-- SATU KOLOM PENUH, tidak lagi berdampingan.
+                     Dua pemilih tanggal-dan-jam bersebelahan menyisakan lebar
+                     yang tak cukup untuk formatnya sendiri: "12 Agu 2026 09:00"
+                     terpotong, dan panel kalendernya melebihi kotaknya lalu
+                     tertahan tepi modal. Ditumpuk, keduanya terbaca utuh — dan
+                     urutannya jadi jelas: mulai dulu, baru selesai. -->
+                <div class="plw-fld">
+                    <label class="plw-fld__lbl">Waktu mulai <b>*</b></label>
+                    <el-date-picker v-model="jadwalMulai" type="datetime" format="DD MMM YYYY HH:mm" value-format="YYYY-MM-DD HH:mm:ss" placeholder="Pilih tanggal & jam" style="width: 100%" />
+                </div>
+                <div class="plw-fld">
+                    <label class="plw-fld__lbl">Waktu selesai <small>opsional</small></label>
+                    <el-date-picker v-model="jadwalSelesai" type="datetime" format="DD MMM YYYY HH:mm" value-format="YYYY-MM-DD HH:mm:ss" placeholder="Perkiraan selesai" style="width: 100%" />
                 </div>
 
-                <div v-if="jadwalMode === 'DARING'" class="plw-fld">
+                <div v-if="modeJadwalDef?.butuhTautan" class="plw-fld">
                     <label class="plw-fld__lbl" for="jdw-link">Tautan pertemuan <b>*</b></label>
                     <input id="jdw-link" v-model="jadwalLink" type="url" class="plw-inp" placeholder="https://meet.google.com/..." maxlength="500" />
                 </div>
-                <template v-else>
+
+                <!-- TELEPON: tanpa tautan, tanpa lokasi. Yang dibutuhkan cuma
+                     nomor yang akan dihubungi — dan nomornya BAGIAN DARI JANJI,
+                     bukan salinan profil: kandidat yang sedang bekerja kerap
+                     minta dihubungi di nomor lain, dan negosiasi gaji justru
+                     percakapan yang paling tidak ingin ia terima di mejanya. -->
+                <div v-else-if="modeJadwalDef?.butuhKontak" class="plw-fld">
+                    <label class="plw-fld__lbl" for="jdw-kontak">{{ modeJadwalDef.labelKontak }} <b>*</b></label>
+                    <input id="jdw-kontak" v-model="jadwalKontak" type="tel" class="plw-inp" placeholder="mis. 0812-3456-7890" maxlength="40" />
+                    <p v-if="modeJadwalDef.petunjukKontak" class="plw-fld__hint">{{ modeJadwalDef.petunjukKontak }}</p>
+                    <button
+                        v-if="detailKandidat?.hp && jadwalKontak !== detailKandidat.hp"
+                        type="button" class="plw-fld__isi" @click="jadwalKontak = detailKandidat.hp"
+                    >
+                        <i class="bi bi-arrow-counterclockwise"></i> Pakai nomor profil ({{ detailKandidat.hp }})
+                    </button>
+                </div>
+                <template v-else-if="modeJadwalDef?.butuhLokasi">
                     <!-- Lokasi DIPILIH dari Master Lokasi, bukan diketik bebas.
                          Titik petanya ikut, sehingga kandidat menerima peta yang
                          bisa dibuka — bukan alamat yang harus disalin sendiri. -->
@@ -1964,6 +2048,9 @@ export default {
         programAwal: { type: Object, default: () => ({ data: [], page: 1, totalPage: 1, total: 0 }) },
         // Master hasil keputusan — sumber tombol di footer drawer.
         hasilKeputusan: { type: Array, default: () => [] },
+        // Bentuk pelaksanaan jadwal (daring / tatap muka / telepon) — dari
+        // master, sumber yang sama dengan hasilKeputusan.
+        modeJadwal: { type: Array, default: () => [] },
     },
     data() {
         return {
@@ -2005,6 +2092,10 @@ export default {
             // Peta label per komponen formulir — dihitung sekali, dipakai
             // berkali-kali (drawer dibuka-tutup terus sepanjang hari).
             cacheLabel: {},
+            // Aktivitas yang panel "Catatan & berkas"-nya sedang dibuka.
+            // SATU saja: membuka semuanya sekaligus mengembalikan dinding teks
+            // yang justru ingin dihindari, dan drawer-nya hanya selebar itu.
+            detailTes: null,
             lightbox: null,
             lbSrc: '',
             lbTimer: null,
@@ -2039,6 +2130,7 @@ export default {
             jadwalMulai: '',
             jadwalSelesai: '',
             jadwalLink: '',
+            jadwalKontak: '',
             jadwalLokasi: '',
             jadwalLokasiId: null,
             daftarLokasi: [],
@@ -2374,13 +2466,24 @@ export default {
         lokasiTerpilih() {
             return this.daftarLokasi.find((l) => l.id === this.jadwalLokasiId) || null;
         },
-        /** DARING wajib tautan, LURING wajib lokasi TERPILIH; keduanya wajib waktu. */
+        /** Bentuk yang boleh dipilih: tipe wajib-luring hanya menerima yang luring. */
+        modeJadwalDipakai() {
+            const semua = this.modeJadwal || [];
+
+            return this.jadwalTarget?.wajibLuring ? semua.filter((m) => m.luring) : semua;
+        },
+        modeJadwalDef() { return (this.modeJadwal || []).find((m) => m.kode === this.jadwalMode) || null; },
+        /** Syaratnya dibaca dari FLAG mode terpilih — sama persis dengan server. */
         bolehSimpanJadwal() {
             if (!this.jadwalMulai) return false;
 
-            return this.jadwalMode === 'DARING'
-                ? !!this.jadwalLink.trim()
-                : !!this.jadwalLokasiId;
+            const m = this.modeJadwalDef;
+            if (!m) return false;
+            if (m.butuhTautan) return !!this.jadwalLink.trim();
+            if (m.butuhLokasi) return !!this.jadwalLokasiId;
+            if (m.butuhKontak) return !!this.jadwalKontak.trim();
+
+            return true;
         },
         /** Alasan wajib? Dari master (Butuh_Alasan), bukan daftar kode di sini. */
         alasanWajib() { return !!this.putusDef?.butuhAlasan; },
@@ -2421,8 +2524,29 @@ export default {
          * dengan yang dibaca admin di layar, jadi angka di peringatan mustahil
          * berbeda dari daftar di atasnya.
          */
+        /**
+         * Aktivitas yang benar-benar MASIH MENUNGGU SESUATU.
+         *
+         * Dulu ukurannya `!t.selesai` — Flag_Selesai. Itu keliru untuk tahap
+         * BERAKTIVITAS TUNGGAL, dan salahnya berbentuk jalan buntu:
+         *
+         *   Pada tahap satu aktivitas, "Catat Hasil" memang sengaja tidak ada —
+         *   keputusan tahap itu sendiri yang mewakilinya (lihat `dicatatTim`).
+         *   Akibatnya Flag_Selesai aktivitasnya TIDAK PERNAH bisa jadi 'Y'
+         *   sebelum tahapnya diputus. Admin yang sudah menetapkan Hadir dan
+         *   menulis catatan tetap disodori centang "saya sadar aktivitas ini
+         *   belum selesai" — untuk sesuatu yang mustahil diselesaikan lebih
+         *   dulu. Yang ia baca: sistem menganggapnya belum kerja, padahal
+         *   sudah.
+         *
+         * Ukurannya sekarang `tuntas` — apa yang MASIH DITUNGGU dari aktivitas
+         * itu, dihitung server dengan aturan yang sama persis dengan gerbang
+         * keputusannya. Wawancara yang kehadirannya sudah ditetapkan dan tak
+         * punya hasil terpisah untuk dicatat = tuntas, dan tak ada yang perlu
+         * diakui.
+         */
         aktivitasBelumSelesai() {
-            return (this.putusTarget?.tests || []).filter((t) => !t.selesai);
+            return (this.putusTarget?.tests || []).filter((t) => !(t.tuntas ?? t.selesai));
         },
         /**
          * Perlu pengakuan sadar sebelum memutus?
@@ -2489,15 +2613,34 @@ export default {
          * Gerbangnya ada juga di server (LamaranService::ketukPalu) — ini hanya
          * supaya admin melihat sebabnya, bukan tombol yang ditekan lalu ditolak.
          */
-        putusanTerkunci() {
-            return !!this.detailKandidat?.hold || this.kehadiranKurang(this.detailKandidat);
-        },
-        alasanTerkunci() {
-            if (this.detailKandidat?.hold) {
-                return 'Kandidat sedang ditahan — tekan "Lanjutkan" dulu untuk melepasnya.';
-            }
+        /** Aktivitas tahap aktif yang masih menunggu sesuatu — dari server. */
+        belumTuntas() { return this.detailKandidat?.belumTuntas || []; },
+        /**
+         * KUNCI PER-TOMBOL, bukan satu kunci untuk semuanya.
+         *
+         * Dulu satu syarat mematikan SELURUH tombol keputusan. Akibatnya dua
+         * arah salah sekaligus: "Tidak Lolos" dan "Mengundurkan Diri" ikut mati
+         * padahal keduanya justru paling dibutuhkan saat segalanya belum
+         * lengkap — sementara "Loloskan" tetap hidup untuk aktivitas yang BELUM
+         * PERNAH DIJADWALKAN, karena syaratnya (kehadiran) mensyaratkan
+         * jadwalnya sudah ada lebih dulu.
+         *
+         * Sekarang tiap hasil membawa sikapnya sendiri dari master
+         * (`butuhTuntas`), dan server menolak dengan aturan yang sama persis.
+         */
+        terkunciPutus() {
+            return (h) => {
+                if (this.detailKandidat?.hold) {
+                    return 'Kandidat sedang ditahan — tekan "Lanjutkan" dulu untuk melepasnya.';
+                }
+                if (h?.butuhTuntas && this.belumTuntas.length) {
+                    const rinci = this.belumTuntas.map((x) => `${x.label} (${x.sebab})`).join(', ');
 
-            return this.kehadiranKurang(this.detailKandidat) ? 'Tetapkan kehadiran aktivitas berjadwal dulu' : '';
+                    return `Belum bisa: ${rinci}. Selesaikan dulu di Rapor Tes di atas.`;
+                }
+
+                return '';
+            };
         },
         /** Definisi alasan terpilih — sumber aturan "butuh keterangan". */
         holdAlasanDef() { return this.alasanHold.find((a) => a.value === this.holdAlasan) || null; },
@@ -2850,7 +2993,16 @@ export default {
          * Inilah SATU-SATUNYA hal yang menahan tombol keputusan: selama hadir
          * atau tidak hadir sudah ditetapkan, admin boleh mengetuk palu.
          */
-        kehadiranKurang(r) { return (r?.tests || []).some((t) => t.butuhKehadiran); },
+        /** Sudah ada isinya untuk dibuka? Menghitung ini sekali menghindari
+         *  tombol "Detail" yang membuka panel kosong. */
+        jumlahDetail(t) {
+            return (t.catatanHtml || t.catatan ? 1 : 0)
+                + (t.berkasKandidat || []).length
+                + (t.berkas || []).length;
+        },
+        toggleDetail(t) {
+            this.detailTes = this.detailTes === t.id ? null : t.id;
+        },
         /** Ringkas jadwal untuk satu baris rapor: "Sen, 12 Agu 2026 · 09.00". */
         jadwalRingkas(j) {
             if (!j?.mulai) return '—';
@@ -3358,7 +3510,18 @@ export default {
             // memaksa mengetik ulang seluruh isinya.
             const j = t.jadwal || {};
             // Tipe tatap-muka selalu LURING, apa pun isi jadwal sebelumnya.
-            this.jadwalMode = t.wajibLuring ? 'LURING' : (j.mode || 'DARING');
+            // Bentuk bawaan DARI MASTER TIPE TAHAP. Negosiasi gaji membuka
+            // langsung pada Telepon; tanpa ini admin harus ingat memindahkannya
+            // tiap kali, dan yang lupa mengirim undangan bertautan Meet untuk
+            // percakapan yang sebenarnya cuma panggilan telepon.
+            const pilihan = this.jadwalTarget?.wajibLuring
+                ? (this.modeJadwal || []).filter((m) => m.luring)
+                : (this.modeJadwal || []);
+            const sah = (k) => k && pilihan.some((m) => m.kode === k);
+            this.jadwalMode = [j.mode, t.modeJadwalBawaan, pilihan[0]?.kode].find(sah) || '';
+            // Nomor profil sebagai TITIK AWAL, bukan yang tersimpan diam-diam:
+            // admin tetap harus melihat dan menyetujuinya sebelum menyimpan.
+            this.jadwalKontak = j.kontak || this.detailKandidat?.hp || '';
             this.jadwalMulai = j.mulai || '';
             this.jadwalSelesai = j.selesai || '';
             this.jadwalLink = j.link || '';
@@ -3381,9 +3544,12 @@ export default {
                     mode: this.jadwalMode,
                     mulai: this.jadwalMulai,
                     selesai: this.jadwalSelesai || null,
-                    link: this.jadwalMode === 'DARING' ? this.jadwalLink : null,
-                    lokasiId: this.jadwalMode === 'LURING' ? this.jadwalLokasiId : null,
-                    lokasi: this.jadwalMode === 'LURING' ? (this.jadwalLokasi || null) : null,
+                    // Yang dikirim mengikuti FLAG mode, bukan nama modenya —
+                    // sama persis dengan yang ditegakkan server.
+                    link: this.modeJadwalDef?.butuhTautan ? this.jadwalLink : null,
+                    lokasiId: this.modeJadwalDef?.butuhLokasi ? this.jadwalLokasiId : null,
+                    lokasi: this.modeJadwalDef?.butuhLokasi ? (this.jadwalLokasi || null) : null,
+                    kontak: this.modeJadwalDef?.butuhKontak ? this.jadwalKontak.trim() : null,
                     catatan: this.jadwalCatatan || null,
                 }, CFG);
                 this.notice(res.data?.message || 'Jadwal disimpan.');
@@ -4302,4 +4468,139 @@ export default {
     .plw-actions, .plw-actions.is-three { grid-template-columns: 1fr; }
     .plw-actions.is-three .plw-btn-putus { font-size: 13.5px; padding-left: 14px; padding-right: 14px; gap: 8px; }
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   RAPOR TES — kartu padat, rincian di balik satu tombol
+   ══════════════════════════════════════════════════════════════════════════
+   Bentuk lama menaruh SEMUANYA sekaligus di dalam kartu: nama, tag, jadwal,
+   catatan penilaian berformat, berkas kandidat, berkas tim, lalu deretan
+   tombol. Untuk satu wawancara itu masih terbaca. Untuk tahap berisi empat
+   sampai enam tes offline — bentuk yang justru paling sering dipakai — satu
+   layar berubah jadi dinding teks setinggi beberapa gulungan, dan tombol yang
+   benar-benar perlu ditekan tenggelam di tengahnya.
+
+   Sekarang kartunya menyatakan KEADAAN (nama, status, apa yang ditunggu) dan
+   menawarkan TINDAKAN. Bahan bacaan — catatan & berkas — ada di balik satu
+   tombol berjumlah, dibuka hanya untuk aktivitas yang sedang ditinjau.
+   ═════════════════════════════════════════════════════════════════════════ */
+
+/* Kartu jadi GRID, bukan flex sebaris.
+   Flex + flex-wrap membuat pil status melompat ke baris sendiri pada lebar
+   tertentu lalu kembali naik pada lebar lain — posisinya berubah-ubah dan mata
+   kehilangan tempat membacanya. Grid mengunci kolomnya: ikon | isi | status. */
+.plw-test {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 6px 11px;
+    padding: 12px 13px;
+}
+.plw-test__ico { grid-row: 1; align-self: center; }
+.plw-test__main { grid-column: 2; min-width: 0; }
+/* Skor & pil status berbagi kolom kanan, menumpuk ke bawah. */
+.plw-test__score,
+.plw-test__pill { grid-column: 3; justify-self: end; align-self: center; }
+.plw-test__aksi { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* Apa yang masih ditunggu dari aktivitas ini — kalimat yang sama dengan yang
+   dipakai server saat menolak keputusan. */
+.plw-test__nunggu {
+    margin-top: 5px; display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 9px; border-radius: 8px; font-size: 11px; font-weight: 700;
+    color: #b45309; background: rgba(245, 158, 11, .1); border: 1px solid rgba(245, 158, 11, .26);
+}
+
+/* Tombol pembuka rincian. */
+.plw-test__more {
+    margin-top: 7px; display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border: 1px solid #e2e8f0; background: #fff; border-radius: 9px;
+    font: inherit; font-size: 11px; font-weight: 700; color: #475569; cursor: pointer;
+    transition: background .15s, border-color .15s, color .15s;
+}
+.plw-test__more:hover { background: #f8fafc; border-color: #cbd5e1; color: #1e293b; }
+.plw-test__more.is-on { background: #eef2ff; border-color: #c7d2fe; color: #4338ca; }
+.plw-test__morecount {
+    display: inline-grid; place-items: center; min-width: 17px; height: 17px; padding: 0 5px;
+    border-radius: 999px; background: #eef2ff; color: #4338ca; font-size: 10px; font-weight: 800;
+}
+.plw-test__more.is-on .plw-test__morecount { background: #fff; }
+
+.plw-test__detail {
+    margin-top: 9px; padding: 11px 12px; border-radius: 11px;
+    background: #fafbfe; border: 1px solid #eef1f8;
+    display: flex; flex-direction: column; gap: 10px;
+}
+.plw-test__detail .plw-test__cat { margin-top: 0; }
+.plw-test__detail .plw-test__cat.is-kaya { background: #fff; }
+
+/* ── BERKAS: kepala dan daftarnya DIPISAH BARIS ────────────────────────────
+   Dulu label, seluruh nama berkas, dan lencana "dinyatakan lengkap" berdesakan
+   di satu baris flex-wrap. Begitu kandidat berhasil mengunggah, nama berkas
+   yang panjang mendorong lencananya ke posisi yang berubah-ubah — kadang
+   terjepit di antara dua berkas, kadang menggantung sendirian. Kepala terpisah
+   membuat lencananya selalu di tempat yang sama, apa pun isinya. */
+.plw-test__kirim { margin-top: 0; display: flex; flex-direction: column; align-items: stretch; gap: 6px; font-size: 11px; }
+.plw-test__kirimhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.plw-test__files { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+/* Nama panjang DIPOTONG, tidak mendorong tetangganya. Judul lengkapnya tetap
+   terbaca lewat tooltip, dan isinya lewat modal. */
+.plw-test__kirimfile { max-width: 100%; min-width: 0; }
+.plw-test__filenama { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plw-test__kirimstat { flex: 0 0 auto; }
+.plw-test__kirimkosong {
+    margin-top: 6px; display: flex; align-items: flex-start; gap: 6px; font-size: 11px;
+    line-height: 1.45; color: #94a3b8; font-weight: 700;
+}
+.plw-test__kirimkosong > .bi { flex: none; margin-top: 1px; }
+
+/* Daftar "apa yang belum tuntas" di atas tombol keputusan. */
+.plw-kuota__isi { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.plw-kuota__list { margin: 0; padding-left: 17px; display: flex; flex-direction: column; gap: 2px; }
+.plw-kuota__list li { line-height: 1.45; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   DRAWER — satu rumus lebar untuk ponsel sampai 4K
+   ══════════════════════════════════════════════════════════════════════════
+   Lebar tetap 560px punya dua ujung yang sama-sama buruk: di ponsel ia
+   dipangkas max-width jadi 100% (kebetulan benar), dan di layar 4K ia tetap
+   560px — pita sempit di tepi kanvas raksasa, sementara isinya justru padat
+   dan butuh ruang. clamp() menjawab keduanya sekaligus tanpa satu pun media
+   query, dan batas atas 860px menjaga baris teks tetap terbaca: kolom yang
+   terlalu lebar memaksa mata melompat balik mencari awal baris berikutnya.
+   ═════════════════════════════════════════════════════════════════════════ */
+.plw-drawer { width: min(100%, clamp(560px, 40vw, 860px)); }
+
+@media (max-width: 640px) {
+    /* Kepala drawer: avatar + nama + tombol tak muat sebaris di ponsel. */
+    .plw-drawer__head { padding: 14px 16px; }
+    .plw-drawer__headrow { flex-wrap: wrap; gap: 10px; }
+    .plw-drawer__avatar { width: 44px; height: 44px; border-radius: 13px; font-size: 15px; }
+    .plw-drawer__name { font-size: 17px; }
+    .plw-drawer__body { padding: 16px 16px 24px; gap: 14px; }
+    .plw-test { padding: 11px; gap: 5px 9px; }
+    /* Pil status turun menemani isinya — di lebar ini kolom ketiga
+       menyisakan terlalu sedikit ruang untuk nama aktivitas. */
+    .plw-test { grid-template-columns: auto minmax(0, 1fr); }
+    .plw-test__score, .plw-test__pill { grid-column: 2; justify-self: start; }
+    .plw-test__aksi > * { flex: 1 1 auto; justify-content: center; }
+}
+
+/* Layar sangat lebar: kartu boleh bernapas, tapi teksnya tidak boleh melar. */
+@media (min-width: 1920px) {
+    .plw-drawer__body { padding: 24px 28px 34px; }
+    .plw-test { padding: 14px 16px; }
+    .plw-test__name { font-size: 13.5px; }
+}
+
+/* Petunjuk & pintasan di bawah bidang isian. */
+.plw-fld__hint { margin: 5px 0 0; font-size: 11px; line-height: 1.5; color: #94a3b8; }
+.plw-fld__isi {
+    margin-top: 6px; display: inline-flex; align-items: center; gap: 5px;
+    border: 1px dashed #cbd5e1; background: #fff; border-radius: 8px; padding: 4px 9px;
+    font: inherit; font-size: 11px; font-weight: 700; color: #475569; cursor: pointer;
+}
+.plw-fld__isi:hover { background: #f8fafc; border-color: #94a3b8; color: #1e293b; }
+/* Segmented mode: tiga bentuk harus muat di modal sempit tanpa terpotong. */
+.plw-seg { display: flex; flex-wrap: wrap; gap: 6px; }
+.plw-seg .plw-seg__b { flex: 1 1 130px; min-width: 0; justify-content: center; }
 </style>
