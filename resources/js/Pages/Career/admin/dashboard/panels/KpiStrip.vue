@@ -92,6 +92,14 @@ const kartu = computed(() => {
             judul: 'Buka Talent Pool',
         },
         {
+            kunci: 'ditahan', nilai: k.ditahan, label: 'Ditahan', ket: 'tidak masuk antrean',
+            ikon: 'bi-pause-circle-fill', warna: '#64748b', lompat: 'aksi',
+        },
+        {
+            kunci: 'pascaPenerimaan', nilai: k.pascaPenerimaan, label: 'Proses administrasi', ket: 'kontrak / onboarding',
+            ikon: 'bi-file-earmark-check-fill', warna: '#10b981', lompat: 'aksi',
+        },
+        {
             kunci: 'baru', nilai: k.baru, label: 'Lamaran baru', ket: labelPeriode.value,
             ikon: 'bi-plus-circle-fill', warna: '#06b6d4', lompat: 'tren',
             delta: k.baruSebelum === null || k.baruSebelum === undefined ? null : k.baru - k.baruSebelum,

@@ -135,6 +135,66 @@
                 </div>
             </section>
 
+            <!-- ══════════════ ZONA C1 — FUNNEL & KONVERSI ══════════════ -->
+            <section :id="`wcd-funnel`" ref="refFunnel" class="wcd-sec" :class="{ 'is-tutup': tutup.has('funnel') }">
+                <button type="button" class="wcd-sec__hd" @click="lipat('funnel')">
+                    <div class="wcd-sec__ic wcd-sec__ic--indigo">
+                        <i class="bi bi-funnel-fill"></i>
+                    </div>
+                    <div class="wcd-sec__title">
+                        <h2>Funnel &amp; Konversi</h2>
+                        <span class="wcd-sec__sub">Titik penyempitan terbesar per tahap seleksi</span>
+                    </div>
+                    <i class="bi wcd-sec__chev" :class="tutup.has('funnel') ? 'bi-chevron-down' : 'bi-chevron-up'"></i>
+                </button>
+                <div v-show="!tutup.has('funnel')" class="wcd-sec__bd" :class="{ 'wcd-basi': zona.analitik.segar }">
+                    <KeadaanPanel v-if="zona.analitik.keadaan === 'memuat' && !zona.analitik.data" keadaan="memuat" />
+                    <KeadaanPanel v-else-if="zona.analitik.keadaan === 'galat'" keadaan="galat"
+                        :ket="zona.analitik.pesan" @ulang="muatAnalitik()" />
+                    <FunnelPanel v-else-if="zona.analitik.data" :funnel="zona.analitik.data.funnel" />
+                </div>
+            </section>
+
+            <!-- ══════════════ ZONA C2 — TREN LAMARAN ══════════════ -->
+            <section :id="`wcd-tren`" ref="refTren" class="wcd-sec" :class="{ 'is-tutup': tutup.has('tren') }">
+                <button type="button" class="wcd-sec__hd" @click="lipat('tren')">
+                    <div class="wcd-sec__ic wcd-sec__ic--sky">
+                        <i class="bi bi-graph-up"></i>
+                    </div>
+                    <div class="wcd-sec__title">
+                        <h2>Tren Lamaran</h2>
+                        <span class="wcd-sec__sub">Lamaran masuk vs diterima dari waktu ke waktu</span>
+                    </div>
+                    <i class="bi wcd-sec__chev" :class="tutup.has('tren') ? 'bi-chevron-down' : 'bi-chevron-up'"></i>
+                </button>
+                <div v-show="!tutup.has('tren')" class="wcd-sec__bd" :class="{ 'wcd-basi': zona.analitik.segar }">
+                    <KeadaanPanel v-if="zona.analitik.keadaan === 'memuat' && !zona.analitik.data" keadaan="memuat" />
+                    <KeadaanPanel v-else-if="zona.analitik.keadaan === 'galat'" keadaan="galat"
+                        :ket="zona.analitik.pesan" @ulang="muatAnalitik()" />
+                    <TrenPanel v-else-if="zona.analitik.data" :tren="zona.analitik.data.tren" />
+                </div>
+            </section>
+
+            <!-- ══════════════ ZONA C3 — KESEHATAN & KUOTA PROGRAM ══════════════ -->
+            <section :id="`wcd-program`" ref="refProgram" class="wcd-sec" :class="{ 'is-tutup': tutup.has('program') }">
+                <button type="button" class="wcd-sec__hd" @click="lipat('program')">
+                    <div class="wcd-sec__ic wcd-sec__ic--rose">
+                        <i class="bi bi-heart-pulse-fill"></i>
+                    </div>
+                    <div class="wcd-sec__title">
+                        <h2>Kesehatan &amp; Kuota Program</h2>
+                        <span class="wcd-sec__sub">Skor kesehatan dan pemenuhan kursi tiap program</span>
+                    </div>
+                    <i class="bi wcd-sec__chev" :class="tutup.has('program') ? 'bi-chevron-down' : 'bi-chevron-up'"></i>
+                </button>
+                <div v-show="!tutup.has('program')" class="wcd-sec__bd" :class="{ 'wcd-basi': zona.analitik.segar }">
+                    <KeadaanPanel v-if="zona.analitik.keadaan === 'memuat' && !zona.analitik.data" keadaan="memuat" />
+                    <KeadaanPanel v-else-if="zona.analitik.keadaan === 'galat'" keadaan="galat"
+                        :ket="zona.analitik.pesan" @ulang="muatAnalitik()" />
+                    <KesehatanPanel v-else-if="zona.analitik.data" :baris="zona.analitik.data.kesehatan" />
+                </div>
+            </section>
+
             <!-- ══════════════ ZONA D — SEKSI KHAS ══════════════ -->
             <section :id="`wcd-khas`" ref="refKhas" class="wcd-sec" :class="{ 'is-tutup': tutup.has('khas') }">
                 <button type="button" class="wcd-sec__hd" @click="lipat('khas')">

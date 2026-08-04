@@ -3853,6 +3853,7 @@ export default {
 .plw-card__chip.tone-perlu { background: rgba(99, 102, 241, 0.12); color: #4f46e5; }
 .plw-card__chip.tone-skor { background: rgba(139, 92, 246, 0.14); color: #7c3aed; }
 .plw-card__chip.tone-lolos { background: rgba(16, 185, 129, 0.12); color: #059669; }
+.plw-card__chip.tone-pascaPenerimaan { background: rgba(16, 185, 129, 0.16); color: #047857; }
 .plw-card__chip.tone-gugur { background: rgba(239, 68, 68, 0.12); color: #dc2626; }
 .plw-card__chip.tone-talent { background: rgba(234, 179, 8, 0.16); color: #a16207; }
 

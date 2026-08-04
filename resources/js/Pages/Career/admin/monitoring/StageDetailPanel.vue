@@ -28,6 +28,7 @@
                             <div class="wcm-sd__ttl"><i class="bi bi-bar-chart"></i> Statistik Tahap</div>
                             <div class="wcm-sd__stats">
                                 <div class="wcm-sd__stat"><b>{{ stats.aktif }}</b><span>Sedang di sini</span></div>
+                                <div class="wcm-sd__stat is-hold"><b>{{ stats.ditahan }}</b><span>Ditahan</span></div>
                                 <div class="wcm-sd__stat is-green"><b>{{ stats.lulus }}</b><span>Lolos tahap</span></div>
                                 <div class="wcm-sd__stat is-red"><b>{{ stats.gugur }}</b><span>Gugur di sini</span></div>
                                 <div class="wcm-sd__stat is-sky"><b>{{ stats.talent }}</b><span>Talent Pool</span></div>
@@ -234,6 +235,7 @@ defineExpose({ refresh: fetchDetail })
 .wcm-sd__stat:hover { border-color: rgba(99, 102, 241, 0.3); transform: translateY(-2px); }
 .wcm-sd__stat b { display: block; font-size: 1.35rem; font-weight: 900; color: #4338ca; font-variant-numeric: tabular-nums; line-height: 1.1; }
 .wcm-sd__stat span { font-size: 0.70rem; color: #64748b; font-weight: 600; margin-top: 4px; display: block; }
+.wcm-sd__stat.is-hold b { color: #64748b; }
 .wcm-sd__stat.is-green b { color: #059669; }
 .wcm-sd__stat.is-red b { color: #e11d48; }
 .wcm-sd__stat.is-sky b { color: #0284c7; }

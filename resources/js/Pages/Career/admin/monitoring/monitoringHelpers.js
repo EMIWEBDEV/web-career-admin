@@ -28,6 +28,8 @@ export function toneClass(tone) {
         nunggu: 'wca-b--slate',
         skor: 'wca-b--indigo',
         berjalan: 'wca-b--indigo',
+        hold: 'wca-b--slate',
+        pascaPenerimaan: 'wca-b--green',
     }
     return map[tone] || 'wca-b--slate'
 }

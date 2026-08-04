@@ -155,6 +155,22 @@ class MetrikRekrutmen
         )";
     }
 
+    /**
+     * Predikat SQL "kandidat TIDAK sedang ditahan" — NULL-safe.
+     *
+     * HOLD_Flag NULL diperlakukan sebagai 'T' (tidak ditahan): tanpa COALESCE,
+     * `Hold_Flag <> 'Y'` bernilai NULL (bukan TRUE) untuk baris NULL dalam logika
+     * tiga-nilai SQL, sehingga baris itu diam-diam berhenti terhitung sebagai
+     * "aktif" — kebalikan dari yang diinginkan. Bug ini sudah ditemukan berulang
+     * kali di berbagai tempat; helper ini mencegahnya terjadi lagi.
+     *
+     * @param  string  $lt  alias tabel N_WEB_CAREERS_Lamaran_Tahap
+     */
+    public static function sqlBukanDitahan(string $lt = 'lt'): string
+    {
+        return "COALESCE({$lt}.Hold_Flag, 'T') <> 'Y'";
+    }
+
     /** Ambang "macet" (hari) — tahap BERJALAN lebih lama dari ini dianggap tersendat. */
     public static function macetHari(): int
     {
@@ -222,6 +238,7 @@ class MetrikRekrutmen
         $sorot = self::sorotHari();
         $umur = self::sqlUmurTahap('lt');
         $aging = self::sqlAging('lt');
+        $bukanDitahan = self::sqlBukanDitahan('lt');
 
         return DB::table('N_WEB_CAREERS_Lamaran_Tahap as lt')
             ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'lt.Lamaran_Id')
@@ -230,12 +247,12 @@ class MetrikRekrutmen
             ->groupBy('l.Program_Id')
             ->selectRaw("l.Program_Id,
                          COUNT(*) as aktif,
-                         SUM(CASE WHEN lt.Siap_Diputus <> 'Y' AND {$umur} > {$macet} THEN 1 ELSE 0 END) as macet,
-                         SUM(CASE WHEN lt.Siap_Diputus = 'Y'
+                         SUM(CASE WHEN {$bukanDitahan} AND lt.Siap_Diputus <> 'Y' AND {$umur} > {$macet} THEN 1 ELSE 0 END) as macet,
+                         SUM(CASE WHEN {$bukanDitahan} AND lt.Siap_Diputus = 'Y'
                                    AND DATEDIFF(day, COALESCE(lt.Rekomendasi_At, lt.Updated_At, lt.Created_At), GETDATE()) > {$sorot}
                                   THEN 1 ELSE 0 END) as siapTua,
-                         SUM(CASE WHEN lt.Siap_Diputus = 'Y' THEN 1 ELSE 0 END) as siap,
-                         SUM(CASE WHEN lt.Provider = 'THIRD_PARTY' AND lt.Siap_Diputus = 'N' THEN 1 ELSE 0 END) as nungguTes,
+                         SUM(CASE WHEN {$bukanDitahan} AND lt.Siap_Diputus = 'Y' THEN 1 ELSE 0 END) as siap,
+                         SUM(CASE WHEN {$bukanDitahan} AND lt.Provider = 'THIRD_PARTY' AND lt.Siap_Diputus = 'N' THEN 1 ELSE 0 END) as nungguTes,
                          MAX({$aging}) as maxAging")
             ->get()
             ->keyBy('Program_Id');

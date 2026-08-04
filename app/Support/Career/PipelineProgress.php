@@ -38,10 +38,24 @@ class PipelineProgress
         return $tahapList->firstWhere('Status', 'BERJALAN') ?? $tahapList->first();
     }
 
-    /** Tahap aktif — hanya ada selama lamaran masih BERJALAN. */
+    /**
+     * Tahap aktif — ada selama masih BERJALAN, ATAU selama lamaran sudah
+     * LULUS tapi masih ada tahap administratif pasca-tuntas yang berjalan
+     * (kontrak, onboarding). Tanpa pengecualian LULUS ini, kandidat yang
+     * sudah diterima tapi belum tanda tangan kontrak terbaca "tidak punya
+     * tahap aktif" — Worklist dan Monitoring kehilangan jejaknya persis di
+     * titik paling penting (kandidat sudah DITERIMA, tapi belum ONBOARD).
+     */
     public static function tahapAktif(object $l, Collection $tahapList): ?object
     {
-        return $l->Status === 'BERJALAN' ? $tahapList->firstWhere('Status', 'BERJALAN') : null;
+        if ($l->Status === 'BERJALAN') {
+            return $tahapList->firstWhere('Status', 'BERJALAN');
+        }
+        if ($l->Status === 'LULUS') {
+            return $tahapList->firstWhere('Status', 'BERJALAN');
+        }
+
+        return null;
     }
 
     /**
@@ -171,15 +185,20 @@ class PipelineProgress
         if ($l->Status === 'TALENT_POOL') {
             return ['tone' => 'talent', 'teks' => 'Talent Pool'];
         }
-        if ($l->Status === 'LULUS') {
-            return ['tone' => 'lolos', 'teks' => 'Diterima'];
-        }
-        // DITAHAN mendahului semuanya. Kandidat yang sedang ditahan boleh saja
-        // sudah "siap diputus" menurut data — tapi yang perlu dibaca admin
-        // pertama kali adalah bahwa ia sengaja disisihkan, bukan ajakan
-        // mengetuk palu yang justru tidak boleh dilakukan.
+        // DITAHAN mendahului LULUS/pasca-penerimaan — keputusan produk: HOLD
+        // selalu menang. Kandidat yang sudah diterima tapi tahap administratifnya
+        // (kontrak, onboarding) sedang ditahan tetap tampil "Ditahan", bukan
+        // "Proses Administrasi" — sampai penahanannya dilepas.
         if (! empty($state['ditahan'])) {
             return ['tone' => 'hold', 'teks' => $state['holdNama'] ? 'Ditahan — ' . $state['holdNama'] : 'Ditahan'];
+        }
+        if ($l->Status === 'LULUS') {
+            // DITERIMA tidak selalu berarti TUNTAS SELURUH TAHAP. Bila masih
+            // ada tahap administratif (kontrak, onboarding) yang berjalan,
+            // itu perlu tetap terlihat sebagai kerjaan — bukan "sudah selesai".
+            return $tAktif
+                ? ['tone' => 'pascaPenerimaan', 'teks' => 'Diterima — Proses Administrasi']
+                : ['tone' => 'lolos', 'teks' => 'Diterima'];
         }
         // Siap diputus + data sudah bicara → sebutkan kesimpulannya di badge,
         // supaya admin tahu mana yang tinggal diketuk dan mana yang perlu ditimbang.

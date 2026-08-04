@@ -65,6 +65,8 @@ const KONDISI = [
     { val: 'AKTIF', label: 'Ada pelamar aktif', ikon: 'bi-people', ket: 'Program yang sedang memproses pelamar' },
     { val: 'KUOTA_PENUH', label: 'Kuota penuh', ikon: 'bi-door-closed', ket: 'Kursi diterima sudah memenuhi kuota' },
     { val: 'KOSONG', label: 'Belum ada pelamar', ikon: 'bi-inbox', ket: 'Program yang belum kedatangan pelamar' },
+    { val: 'DITAHAN', label: 'Ada yang ditahan', ikon: 'bi-pause-circle', ket: 'Program dengan kandidat sedang di-HOLD' },
+    { val: 'PASCAPENERIMAAN', label: 'Proses administrasi', ikon: 'bi-file-earmark-check', ket: 'Program dengan kandidat diterima yang masih menjalani tahap administratif' },
 ];
 
 const URUT = [
