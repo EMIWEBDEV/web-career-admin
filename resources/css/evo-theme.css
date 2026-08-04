@@ -2875,6 +2875,30 @@ h6,
     box-shadow: none !important;
 }
 
+/* ── TOMBOL BERWARNA YANG SEDANG NONAKTIF: TETAP TERBACA ──
+   `opacity: .62` di atas memudarkan SELURUH tombol — termasuk hurufnya. Pada
+   tombol bergradasi ungu/merah dengan teks putih, hasilnya teks putih di atas
+   lavender pucat: labelnya praktis hilang, dan pengguna tidak lagi tahu tombol
+   itu sebenarnya berbunyi apa. Untuk tombol yang menyimpan keputusan, tidak
+   tahu apa yang akan ditekan adalah kegagalan yang berbahaya.
+
+   Diganti: latar menjadi abu PADAT (jelas mati), huruf tetap putih penuh.
+   Nonaktifnya terbaca dari warna & hilangnya bayangan, bukan dari memudarkan
+   tulisan sampai tak terbaca. */
+.wca-btn--dark:disabled,
+.wca-btn--dark[disabled],
+.wca-btn--danger:disabled,
+.wca-btn--danger[disabled],
+.wca-btn--primary:disabled,
+.wca-btn--primary[disabled] {
+    opacity: 1;
+    filter: none;
+    background: #aab1c6;
+    background-image: none;
+    color: #fff;
+    box-shadow: none;
+}
+
 /* Spinner ringkas — mewarisi warna teks tombol, jadi cocok di semua varian. */
 .wca-spin {
     display: inline-block;
@@ -6681,6 +6705,22 @@ h6,
 }
 .wca-modal__foot .wca-btn--danger {
     border-radius: 13px;
+}
+/* Nonaktif DI DALAM footer modal.
+   Aturan umum di atas ada lebih awal di berkas ini dan spesifisitasnya lebih
+   rendah daripada `.wca-modal__foot .wca-btn--dark`, sehingga gradasi ungunya
+   tetap menang dan tombol mati kembali tampil pucat dengan huruf tak terbaca.
+   Diulang di sini supaya menang di konteks yang benar. */
+.wca-modal__foot .wca-btn--dark:disabled,
+.wca-modal__foot .wca-btn--dark[disabled],
+.wca-modal__foot .wca-btn--danger:disabled,
+.wca-modal__foot .wca-btn--danger[disabled] {
+    opacity: 1;
+    filter: none;
+    background: #aab1c6;
+    background-image: none;
+    color: #fff;
+    box-shadow: none;
 }
 @media (max-width: 560px) {
     .wca-modal__footnote {

@@ -74,6 +74,9 @@ class MasterAlurController extends Controller
                         'sla' => $t->SLA,
                         // Mode keputusan tahap + daftar sub-tes (arsitektur multi-tes).
                         'mode' => $t->Mode_Keputusan_Kode ?? 'MANUAL_REVIEW',
+                        // Aktivitas dalam tahap ini dikerjakan bersamaan atau
+                        // harus berurutan. PARALEL = perilaku lama.
+                        'urutanAktivitas' => $t->Urutan_Aktivitas ?? 'PARALEL',
                         'tests' => collect($subTes->get($t->Id_Master_Alur_Tahap, []))->map(fn ($x) => [
                             'label' => $x->Label,
                             // Tipe milik aktivitas ini APA ADANYA — tidak diisi
@@ -97,6 +100,14 @@ class MasterAlurController extends Controller
                             'unggahFormat' => $x->Unggah_Format,
                             'unggahMaksMb' => $x->Unggah_Maks_Mb !== null ? (int) $x->Unggah_Maks_Mb : null,
                             'unggahPetunjuk' => $x->Unggah_Petunjuk,
+                            // Aktivitas internal (background check, cek referensi)
+                            // yang dicatat tim tapi TIDAK ditampilkan ke kandidat.
+                            'tampilKandidat' => ($x->Tampil_Kandidat ?? 'Y') === 'Y',
+                            // Cara aktivitas ini dinilai — dari Master Mode Penilaian.
+                            'lanjutMode' => $x->Lanjut_Mode,
+                            'penilaianMode' => $x->Penilaian_Mode,
+                            'penilaianOpsi' => $x->Penilaian_Opsi,
+                            'nilaiMaks' => $x->Nilai_Maks !== null ? (float) $x->Nilai_Maks : null,
                         ])->values(),
                         // Aturan pengumuman hasil tahap ini (lihat Batch 6).
                         'pengumuman' => $t->Mode_Pengumuman ?? 'OTOMATIS',
@@ -138,6 +149,50 @@ class MasterAlurController extends Controller
         return DB::table('N_WEB_CAREERS_Master_Mode_Keputusan')->where('Flag_Aktif', 'Y')->pluck('Kode')->all();
     }
 
+    /**
+     * Mode urutan yang dipakai bila tahap hanya punya SATU aktivitas, atau
+     * bila masternya belum terisi.
+     *
+     * Dipilih dari master: mode ber-`Flag_Berurutan='T'` pertama — "tidak ada
+     * urutan yang mengunci" adalah keadaan paling aman, dan itulah perilaku
+     * yang berlaku sebelum fitur ini ada. Konstanta di bawah hanya jaring
+     * terakhir bila master benar-benar kosong.
+     */
+    private const URUTAN_BAWAAN = 'PARALEL';
+
+    /** Kode mode LANJUT yang aktif (otomatis / dipicu admin). */
+    private function modeLanjutAktif(): array
+    {
+        return DB::table('N_WEB_CAREERS_Master_Mode_Lanjut')->where('Flag_Aktif', 'Y')->orderBy('Urutan')->pluck('Kode')->all();
+    }
+
+    /** Kode mode PENILAIAN yang aktif + perilakunya (Tipe_Nilai, Butuh_Opsi). */
+    private function modePenilaian(): \Illuminate\Support\Collection
+    {
+        return DB::table('N_WEB_CAREERS_Master_Mode_Penilaian')->where('Flag_Aktif', 'Y')->get()->keyBy('Kode');
+    }
+
+    private function modePenilaianAktif(): array
+    {
+        return $this->modePenilaian()->keys()->all();
+    }
+
+    /** Kode mode URUTAN AKTIVITAS yang aktif. */
+    private function modeUrutanAktif(): array
+    {
+        return DB::table('N_WEB_CAREERS_Master_Mode_Urutan')->where('Flag_Aktif', 'Y')->orderBy('Urutan')->pluck('Kode')->all();
+    }
+
+    /** Mode urutan yang TIDAK mengunci — dipakai sebagai nilai bawaan. */
+    private function urutanBawaan(): string
+    {
+        return DB::table('N_WEB_CAREERS_Master_Mode_Urutan')
+            ->where('Flag_Aktif', 'Y')
+            ->where('Flag_Berurutan', 'T')
+            ->orderBy('Urutan')
+            ->value('Kode') ?: self::URUTAN_BAWAAN;
+    }
+
     /** Tipe tahap AKTIF beserta kolom perilakunya — satu-satunya sumber. */
     private function tipeAktif()
     {
@@ -167,6 +222,9 @@ class MasterAlurController extends Controller
             'stages.*.formulirId' => 'nullable|string|max:30',
             // Mode keputusan tahap — dari master (aktif saja).
             'stages.*.mode' => ['nullable', Rule::in($kodeKeputusan ?: ['MANUAL_REVIEW'])],
+            // Cara aktivitas tahap ini dikerjakan — dari Master Mode Urutan
+            // (aktif saja), bukan daftar kode yang ditulis di sini.
+            'stages.*.urutanAktivitas' => ['nullable', Rule::in($this->modeUrutanAktif() ?: [self::URUTAN_BAWAAN])],
             // Sub-tes tahap (1 tahap → N tes). Kosong = dibuatkan 1 default.
             'stages.*.tests' => 'nullable|array|max:20',
             'stages.*.tests.*.label' => 'required|string|max:120',
@@ -183,6 +241,14 @@ class MasterAlurController extends Controller
             'stages.*.tests.*.unggahFormat' => 'nullable|string|max:120',
             'stages.*.tests.*.unggahMaksMb' => 'nullable|integer|min:1|max:50',
             'stages.*.tests.*.unggahPetunjuk' => 'nullable|string|max:500',
+            // Aktivitas internal yang tidak ditampilkan di portal kandidat.
+            'stages.*.tests.*.tampilKandidat' => 'nullable|boolean',
+            // Cara aktivitas dinilai — dari Master Mode Penilaian (aktif saja).
+            // Perpindahan ke aktivitas berikutnya — dari Master Mode Lanjut.
+            'stages.*.tests.*.lanjutMode' => ['nullable', Rule::in($this->modeLanjutAktif() ?: ['OTOMATIS'])],
+            'stages.*.tests.*.penilaianMode' => ['nullable', Rule::in($this->modePenilaianAktif() ?: ['TANPA_NILAI'])],
+            'stages.*.tests.*.penilaianOpsi' => 'nullable|string|max:500',
+            'stages.*.tests.*.nilaiMaks' => 'nullable|numeric|min:1|max:10000',
             // Pengumuman hasil tahap — hanya mode AKTIF dari master (bukan hardcode).
             'stages.*.pengumuman' => ['nullable', Rule::in($kodeModeAktif ?: ['OTOMATIS'])],
             'stages.*.jedaHari' => 'nullable|integer|min:0|max:3650',
@@ -253,11 +319,34 @@ class MasterAlurController extends Controller
         $modeSemua = DB::table('N_WEB_CAREERS_Master_Mode_Keputusan')->where('Flag_Aktif', 'Y')->orderBy('Urutan')->get();
         $autoLanjut = $modeSemua->pluck('Auto_Lanjut', 'Kode');
         $autoGugur = $modeSemua->pluck('Auto_Gugur', 'Kode');
+        // Mode urutan aktivitas yang dipakai bila tahapnya cuma 1 aktivitas —
+        // dibaca dari master, bukan kode 'PARALEL' yang ditulis di sini.
+        $urutanBawaan = $this->urutanBawaan();
+        // Perilaku tiap mode penilaian — dipakai memutuskan kolom mana yang
+        // layak diisi (daftar pilihan vs batas angka).
+        $modePenilaian = $this->modePenilaian();
 
-        // TITIK TUNTAS HANYA SATU per alur. Layar sudah menjaganya, tapi dua
-        // titik tuntas berarti dua momen "kandidat diterima" — kuota terpotong
-        // dua kali dan laporan penerimaan tak bisa dipercaya. Dijaga di sini
-        // juga karena permintaan bisa datang tanpa lewat layar.
+        // ── TITIK TUNTAS: WAJIB ADA, DAN HANYA SATU ─────────────────────────
+        //
+        // WAJIB karena alur tanpa penanda ini tidak pernah bisa menyatakan
+        // kandidat DITERIMA: lamaran berhenti di "Berjalan" selamanya dan kuota
+        // posisi tak pernah terpotong. Kesalahannya tidak menimbulkan galat apa
+        // pun — ia baru ketahuan berbulan-bulan kemudian saat ada yang
+        // menghitung kursi terisi, dan saat itu seluruh angkatan sudah telanjur
+        // berjalan dengan data yang salah.
+        //
+        // HANYA SATU karena dua titik tuntas berarti dua momen "kandidat
+        // diterima" yang saling bertentangan — kuota terpotong pada yang mana
+        // pun lebih dulu dilewati, dan laporan penerimaan tak bisa dipercaya.
+        //
+        // Keduanya dijaga DI SINI juga, bukan cuma di layar: permintaan bisa
+        // datang tanpa lewat layar sama sekali.
+        if ($stages && ! collect($stages)->contains(fn ($s) => ! empty($s['tuntas']))) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'stages' => 'Alur wajib punya satu tahap yang menutup proses seleksi. Tanpa itu kandidat tidak pernah dinyatakan DITERIMA dan kuota tidak pernah terpotong.',
+            ]);
+        }
+
         $tuntasTerpakai = false;
 
         foreach (array_values($stages) as $i => $s) {
@@ -358,6 +447,14 @@ class MasterAlurController extends Controller
                 'Jenis_Tes_Kode' => null,
                 'SLA' => null, // field SLA dihapus dari builder
                 'Mode_Keputusan_Kode' => $mode,
+                // Urutan pengerjaan aktivitas di dalam tahap ini. Hanya berarti
+                // bila aktivitasnya lebih dari satu; tahap 1-aktivitas dipaksa
+                // ke mode yang tidak mengunci, supaya tidak menyimpan aturan
+                // yang tak punya akibat apa pun lalu membingungkan saat alurnya
+                // dibaca ulang.
+                'Urutan_Aktivitas' => count($tests) > 1
+                    ? ($s['urutanAktivitas'] ?: $urutanBawaan)
+                    : $urutanBawaan,
                 'Mode_Pengumuman' => $pengumuman,
                 'Jeda_Pengumuman_Hari' => $jeda,
                 // Konvensi proyek: 'Y' = ya, 'T' = tidak.
@@ -418,6 +515,44 @@ class MasterAlurController extends Controller
                     'Unggah_Format' => ! empty($t['unggahKandidat']) ? ($t['unggahFormat'] ?: 'pdf,jpg,jpeg,png') : null,
                     'Unggah_Maks_Mb' => ! empty($t['unggahKandidat']) ? ($t['unggahMaksMb'] ?: 5) : null,
                     'Unggah_Petunjuk' => ! empty($t['unggahKandidat']) ? ($t['unggahPetunjuk'] ?: null) : null,
+                    // AKTIVITAS INTERNAL — dicatat tim, tidak pernah tampil di
+                    // portal kandidat (background check, cek referensi).
+                    //
+                    // Aktivitas yang MENUNTUT SESUATU dari kandidat dipaksa
+                    // tetap terlihat: menyembunyikan ujian online berarti
+                    // kandidat tak pernah melihat tombol mengerjakannya, dan
+                    // menyembunyikan aktivitas yang meminta unggahan berarti ia
+                    // diminta menyerahkan berkas lewat layar yang tidak ada.
+                    // Keduanya jalan buntu yang tidak akan terlihat siapa pun
+                    // sampai kandidat menelepon.
+                    //
+                    // Penandanya dari MASTER TIPE TAHAP (Flag_Wajib_Tampil),
+                    // bukan perbandingan provider di sini — tipe baru yang
+                    // menuntut tindakan kandidat cukup dinyalakan lewat master.
+                    'Tampil_Kandidat' => (
+                        ! empty($t['tampilKandidat'])
+                        || ($tipe[$t['tipe'] ?? '']->Flag_Wajib_Tampil ?? 'T') === 'Y'
+                        || ! empty($t['unggahKandidat'])
+                    ) ? 'Y' : 'T',
+                    // ── MODE PENILAIAN ─────────────────────────────────────
+                    // Hanya berarti untuk aktivitas yang HASILNYA DICATAT TIM.
+                    // Ujian online nilainya datang dari HCLearn — menyetel mode
+                    // penilaian di sana hanya menyimpan aturan yang tak pernah
+                    // dipakai, lalu membingungkan saat alurnya dibaca ulang.
+                    // Mode lanjut hanya berarti pada tahap BERURUTAN; disimpan
+                    // apa adanya supaya setelannya tidak hilang bila tahapnya
+                    // sempat dipindah ke paralel lalu dikembalikan lagi.
+                    'Lanjut_Mode' => $t['lanjutMode'] ?: null,
+                    'Penilaian_Mode' => $adalahCat($t['tipe'] ?? null) ? null : ($t['penilaianMode'] ?: null),
+                    // Daftar pilihan hanya disimpan bila modenya memang menuntut
+                    // (Butuh_Opsi='Y') — sisa daftar pada mode angka membuat
+                    // layar menampilkan pilihan yang tidak berlaku.
+                    'Penilaian_Opsi' => ($modePenilaian[$t['penilaianMode'] ?? '']->Butuh_Opsi ?? 'T') === 'Y'
+                        ? ($t['penilaianOpsi'] ?: null)
+                        : null,
+                    'Nilai_Maks' => ($modePenilaian[$t['penilaianMode'] ?? '']->Tipe_Nilai ?? 'NONE') === 'ANGKA'
+                        ? ($t['nilaiMaks'] ?: null)
+                        : null,
                     'Updated_At' => $now, 'Updated_By' => $userName, 'Updated_By_Id' => $userId,
                 ];
 

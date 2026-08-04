@@ -708,6 +708,13 @@ class PenjadwalanController extends Controller
                         'Ref_Master_Ujian' => $dipilih ? $data['idMasterUjian'] : null,
                         'Flag_Kirim_Hclearn' => $t->Provider === 'THIRD_PARTY' ? 'Y' : 'T',
                         'Nama_Ujian' => $dipilih ? $data['namaUjian'] : null,
+                        // AKTIVITAS KE BERAPA di dalam tahap ini yang dijadwalkan.
+                        // Disimpan supaya tautan ke tahap lamaran kandidat bisa
+                        // DIPULIHKAN kapan pun — bukan hanya pada detik ini.
+                        // Tanpa ini, penjadwalan yang gagal lalu berhasil saat
+                        // dicoba ulang menerbitkan token tetapi meninggalkan
+                        // kandidatnya berbunyi "menunggu dijadwalkan" selamanya.
+                        'Tes_Urutan' => $dipilih ? $tesUrutan : null,
                         'Waktu_Mulai' => $dipilih ? $data['waktuMulai'] : null,
                         'Waktu_Akhir' => $dipilih ? $data['waktuAkhir'] : null,
                         'Status' => $dipilih ? 'MENUNGGU' : 'BELUM',
@@ -859,9 +866,20 @@ class PenjadwalanController extends Controller
 
         foreach ($detail as $d) {
             $ok = in_array($d['status'] ?? '', ['DIBUAT', 'SUDAH_ADA'], true);
-            $idPeserta = (int) ($d['Id_WC_Penjadwalan_Peserta'] ?? 0);
+            // Yang dikembalikan CAT adalah pengenal yang KITA kirim, dan itu
+            // kini nomor SEQUENCE (`Ref_Cat_Peserta`), bukan IDENTITY kita.
+            // Pencarian lewat IDENTITY dipertahankan sebagai cadangan untuk
+            // balasan atas kiriman lama yang masih dalam perjalanan.
+            $refCat = (int) ($d['Id_WC_Penjadwalan_Peserta'] ?? 0);
+            // Cadangan IDENTITY dibatasi pada baris yang belum punya pengenal
+            // baru — sama seperti di hasilUjianCallback(). Tanpa batasan itu,
+            // balasan bernomor lama bisa mendarat pada peserta lain yang
+            // kebetulan ber-IDENTITY sama.
+            $barisPeserta = $pesertaRows->firstWhere('Ref_Cat_Peserta', $refCat)
+                ?? $pesertaRows->first(fn ($p) => (int) $p->Id_Penjadwalan_Peserta === $refCat && $p->Ref_Cat_Peserta === null);
+            $idPeserta = (int) ($barisPeserta->Id_Penjadwalan_Peserta ?? 0);
             $shortToken = $d['Short_Token'] ?? null;
-            $seharusnya = $pesertaRows->firstWhere('Id_Penjadwalan_Peserta', $idPeserta)->Kode_Peserta ?? null;
+            $seharusnya = $barisPeserta->Kode_Peserta ?? null;
             $baris = $shortToken ? $tokenCat->get($shortToken) : null;
             $idUjianToken = $baris->Id_Ujian_Token ?? null;
             // Pengenal token versi CAT (Hashids). INILAH kunci untuk mengubah /
@@ -869,6 +887,17 @@ class PenjadwalanController extends Controller
             // adalah menulis tabel CAT langsung, yang mustahil saat CAT remote.
             $refUjian = $d['Id_Ujian_Token'] ?? null;
             $tolak = null;
+
+            if (! $barisPeserta) {
+                // Balasan untuk peserta yang tidak kita kenali. Dicatat, bukan
+                // didiamkan: tanpa ini `$idPeserta` bernilai 0, kolom tak ada
+                // yang terisi, dan token yang sudah terbit di CAT hilang tanpa
+                // satu pun jejak di sisi kita.
+                $gagal++;
+                $pesanGagal ??= "HCLearn membalas untuk peserta tak dikenal (ref {$refCat}).";
+                Log::channel('web_career')->error("[PENJADWALAN] balasan untuk peserta tak dikenal — ref {$refCat}, token " . ($shortToken ?: '-'));
+                continue;
+            }
 
             if ($ok && ! $shortToken) {
                 $tolak = 'HCLearn tidak mengembalikan token untuk peserta ini.';
@@ -954,6 +983,91 @@ class PenjadwalanController extends Controller
             ->whereIn('Penjadwalan_Tahap_Id', $tahapIds)
             ->where('Flag_Selesai', 'N') // yang sudah dikerjakan jangan diusik
             ->update(['Penjadwalan_Tahap_Id' => null, 'Status' => 'BELUM', 'Updated_At' => now()]);
+    }
+
+    /**
+     * POST /api/v1/penjadwalan/{id}/ulang — COBA LAGI penjadwalan yang gagal.
+     *
+     * KENAPA PERLU TOMBOL SENDIRI
+     * Sebelum ini, satu-satunya jalan setelah kegagalan adalah MENGHAPUS
+     * penjadwalannya lalu menyusunnya dari nol: pilih program, tahap, paket
+     * ujian, jendela waktu, dan mencentang ulang seluruh kandidat. Untuk
+     * kegagalan yang penyebabnya sudah diperbaiki — dan sebagian besar memang
+     * begitu — itu menghukum admin atas kesalahan sistem, dan setiap penyusunan
+     * ulang adalah kesempatan baru salah pilih.
+     *
+     * AMAN DIULANG. Job hanya memproses peserta yang tokennya BELUM terbit,
+     * jadi yang sudah berhasil tidak pernah dikirim dua kali. Peserta yang gagal
+     * mendapat pengenal CAT yang BARU (lihat WcPenjadwalanJob), sehingga
+     * tabrakan yang menyebabkan kegagalan pertama tidak terulang.
+     */
+    public function ulang(string $id)
+    {
+        $realId = Hashids::decode($id)[0] ?? null;
+        if (! $realId) {
+            return ResponseHelper::error('Penjadwalan tidak valid.', 422);
+        }
+
+        $tahap = DB::table('N_WEB_CAREERS_Penjadwalan_Tahap as pt')
+            ->join('N_WEB_CAREERS_Penjadwalan as p', 'p.Id_Penjadwalan', '=', 'pt.Penjadwalan_Id')
+            ->where('pt.Penjadwalan_Id', $realId)
+            ->whereNotNull('pt.Waktu_Mulai')
+            ->select('pt.*', 'p.Kode')
+            ->first();
+
+        if (! $tahap) {
+            return ResponseHelper::error('Penjadwalan tidak ditemukan.', 404);
+        }
+
+        // Paket ujiannya harus masih tercatat — tanpa itu tak ada yang bisa
+        // dikirim ulang, dan menebaknya berarti menjadwalkan tes yang salah.
+        $refUjian = $tahap->Ref_Master_Ujian ?: $tahap->Id_Master_Ujian;
+        if (! $refUjian) {
+            return ResponseHelper::error('Penjadwalan ini tidak menyimpan paket ujiannya — hapus lalu buat ulang.', 422);
+        }
+
+        $menunggu = DB::table('N_WEB_CAREERS_Penjadwalan_Peserta')
+            ->where('Penjadwalan_Tahap_Id', $tahap->Id_Penjadwalan_Tahap)
+            ->whereNull('Short_Token')
+            ->count();
+
+        if (! $menunggu) {
+            return ResponseHelper::error('Semua peserta sudah punya token — tidak ada yang perlu diulang.', 409);
+        }
+
+        DB::table('N_WEB_CAREERS_Penjadwalan_Tahap')
+            ->where('Id_Penjadwalan_Tahap', $tahap->Id_Penjadwalan_Tahap)
+            ->update([
+                'Status' => 'DIANTRIKAN',
+                // Pesan galat lama DIHAPUS: membiarkannya membuat percobaan yang
+                // sedang berjalan tetap terbaca gagal.
+                'Pesan_Error' => null,
+                'Updated_At' => now(),
+                'Updated_By' => session('career_auth.nama', 'ADMIN'),
+                'Updated_By_Id' => session('career_auth.id'),
+            ]);
+
+        DB::table('N_WEB_CAREERS_Penjadwalan_Peserta')
+            ->where('Penjadwalan_Tahap_Id', $tahap->Id_Penjadwalan_Tahap)
+            ->whereNull('Short_Token')
+            ->update(['Status_Kirim' => 'MENUNGGU', 'Pesan_Error' => null, 'Updated_At' => now()]);
+
+        WcPenjadwalanJob::dispatch(
+            (int) $tahap->Penjadwalan_Id,
+            (int) $tahap->Id_Penjadwalan_Tahap,
+            (string) $refUjian,
+            (string) $tahap->Waktu_Mulai,
+            (string) $tahap->Waktu_Akhir,
+        );
+
+        Log::channel('web_career')->info(
+            "[PENJADWALAN] {$tahap->Kode} dicoba ulang oleh " . session('career_auth.nama', 'ADMIN') . " — {$menunggu} peserta."
+        );
+
+        return ResponseHelper::success(
+            ['jumlah' => $menunggu],
+            "Penjadwalan diantrekan ulang untuk {$menunggu} kandidat. Segarkan daftar sebentar lagi.",
+        );
     }
 
     /**

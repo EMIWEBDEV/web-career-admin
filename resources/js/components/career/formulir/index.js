@@ -94,6 +94,44 @@ export function infoFormulir(kode) {
     return FORMULIR[kode] || null;
 }
 
+/**
+ * Peta `key → label` seluruh field sebuah formulir, termasuk field di dalam
+ * bagian berulang.
+ *
+ * KENAPA PERLU
+ * Yang tersimpan di database hanyalah pasangan kunci→jawaban; labelnya hidup di
+ * skema (berkas ini). Layar peninjau karena itu terpaksa MENEBAK label dari
+ * nama kunci — `v_nama` jadi "V Nama", `v_wa` jadi "V Wa", `dok_cv` jadi
+ * "Dok Cv". Itu bahasa mesin yang bocor ke mata orang.
+ *
+ * Dengan peta ini, yang terbaca adalah label yang benar-benar dilihat kandidat
+ * saat mengisi — jadi peninjau dan pengisi membaca pertanyaan yang sama.
+ *
+ * Kunci yang tidak ada di skema (formulir versi lama, field yang sudah dihapus)
+ * TIDAK dibuang — pemanggil tetap menampilkannya dengan tebakan dari kuncinya.
+ * Menyembunyikannya berarti jawaban yang pernah diberikan kandidat lenyap dari
+ * layar tanpa ada yang tahu.
+ */
+export function labelField(kode) {
+    const peta = {};
+    const skema = FORMULIR[kode]?.skema;
+    if (!skema) {
+        return peta;
+    }
+
+    (skema.langkah || []).forEach((L) => {
+        (L.bagian || []).forEach((B) => {
+            (B.field || []).forEach((f) => {
+                if (f.key && f.label) {
+                    peta[f.key] = f.label;
+                }
+            });
+        });
+    });
+
+    return peta;
+}
+
 /** Daftar untuk dropdown admin. */
 export function daftarFormulir() {
     return Object.entries(FORMULIR).map(([kode, f]) => ({

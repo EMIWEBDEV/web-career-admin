@@ -50,6 +50,18 @@ class LamaranService
             'tglLahir' => $jawaban['lahir'] ?? null,
             'jkel' => $jawaban['jkel'] ?? $jawaban['jenis_kelamin'] ?? null,
             'kampus' => $jawaban['kampus'] ?? $jawaban['institusi'] ?? null,
+            // TAHUN LULUS / PERKIRAAN LULUS.
+            //
+            // Beberapa kunci ditoleransi karena formulir pendaftaran tidak
+            // seragam: yang lama memakai `lulus`/`thn_lulus`, blok pendidikan
+            // baku memakai `tahun_lulus`. Menyebut satu kunci saja membuat
+            // prefill diam-diam kosong pada sebagian angkatan — persis pola
+            // yang sudah terjadi pada `kampus` di atas.
+            'tahunLulus' => $jawaban['tahun_lulus']
+                ?? $jawaban['thn_lulus']
+                ?? $jawaban['tahunLulus']
+                ?? $jawaban['lulus']
+                ?? null,
             'hp' => $jawaban['hp'] ?? $jawaban['no_hp'] ?? null,
             'fotoPath' => DB::table('N_WEB_CAREERS_Formulir_Berkas as fb')
                 ->join('N_WEB_CAREERS_Formulir_Pengisian as fp', 'fp.Id_Formulir_Pengisian', '=', 'fb.Formulir_Pengisian_Id')
@@ -187,6 +199,15 @@ class LamaranService
                     // boleh disunting kemudian, tapi perjalanan yang sudah
                     // berlangsung tidak boleh berubah maknanya di tengah jalan.
                     'Flag_Tuntas' => $t->Flag_Tuntas ?? 'T',
+                    // Cut-off Talent Pool ikut dibekukan: alur boleh disunting
+                    // kapan saja, tapi kandidat yang sudah berjalan tidak boleh
+                    // berubah aturannya di tengah jalan.
+                    'Flag_Talent_Pool' => $t->Flag_Talent_Pool ?? 'T',
+                    // Aktivitas tahap ini dikerjakan bersamaan atau berurutan —
+                    // ikut dibekukan, sepola dengan aturan lainnya. Nilainya
+                    // disalin apa adanya dari master (Kode dari Master Mode
+                    // Urutan); tidak ada mode bawaan yang ditulis di sini.
+                    'Urutan_Aktivitas' => $t->Urutan_Aktivitas,
                     'Provider' => $t->Provider,
                     'Keputusan_Mode' => $t->Keputusan ?? null,
                     // Tahap pertama mewarisi formulir pendaftaran bawaan bila
@@ -413,7 +434,15 @@ class LamaranService
             ->keyBy('Kode');
     }
 
-    public function ketukPalu(int $lamaranTahapId, string $hasil, ?string $catatan, ?int $adminId): array
+    /**
+     * @param  bool|null  $talentPool  Pilihan admin: kandidat disimpan di Talent
+     *                                 Pool atau tidak. Hanya berarti untuk hasil
+     *                                 ber-`Flag_Pilih_Talent_Pool='Y'` (mundur /
+     *                                 menolak penawaran). NULL = ikut master,
+     *                                 yang juga berlaku bagi seluruh pemanggil
+     *                                 lama dan bagi mesin auto-gugur.
+     */
+    public function ketukPalu(int $lamaranTahapId, string $hasil, ?string $catatan, ?int $adminId, ?bool $talentPool = null): array
     {
         $hasil = strtoupper($hasil);
 
@@ -445,6 +474,18 @@ class LamaranService
             return ['ok' => false, 'pesan' => 'Tahap ini sudah diputus.'];
         }
 
+        // ── GERBANG HOLD ─────────────────────────────────────────────────────
+        // Kandidat yang sedang DITAHAN tidak bisa diputus tanpa melepas tahannya
+        // lebih dulu. Kalau boleh, hold jadi sekadar hiasan: seseorang yang
+        // tidak melihat penandanya tetap bisa mengetuk palu atas kandidat yang
+        // justru sedang ditunggu — dan keputusannya tidak bisa ditarik kembali.
+        //
+        // Melepas tahan itu satu klik, dan klik itulah yang memaksa admin sadar
+        // bahwa ada alasan kenapa kandidat ini sengaja belum diputus.
+        if (($tahap->Hold_Flag ?? 'T') === 'Y') {
+            return ['ok' => false, 'pesan' => 'Kandidat ini sedang DITAHAN (' . ($tahap->Hold_Alasan_Kode ?: 'tanpa alasan') . '). Lepaskan penahanannya dulu sebelum memutuskan.'];
+        }
+
         // ── GERBANG MODE KEPUTUSAN (dari Master Alur) ────────────────────────
         // Tahap ber-mode OTOMATIS diputus mesin begitu aktivitasnya selesai.
         // Kalau admin masih bisa mengetuk palu di sini, mode otomatis yang
@@ -470,21 +511,14 @@ class LamaranService
             return ['ok' => false, 'pesan' => 'Hasil aktivitas berikut belum dicatat: ' . ($nama ?: $belum->count() . ' aktivitas') . '. Catat hasilnya dulu sebelum memutuskan.'];
         }
 
-        // GATE WAJIB UPLOAD: tahap dgn "upload hasil WAJIB" tak bisa diloloskan
-        // sebelum berkas hasil diunggah. Tipe apa saja yang berbasis berkas
-        // dibaca dari Master Tipe Tahap (Flag_Upload_Hasil) — bukan kode tipe
-        // yang ditulis di sini, supaya tipe baru tak perlu menyentuh file ini.
-        if ($hasil === 'LULUS' && ! empty($tahap->Master_Alur_Tahap_Id)) {
-            $m = DB::table('N_WEB_CAREERS_Master_Alur_Tahap')->where('Id_Master_Alur_Tahap', $tahap->Master_Alur_Tahap_Id)->first();
-            $tipeBerkas = $m ? DB::table('N_WEB_CAREERS_Master_Tipe_Tahap')->where('Kode', $m->Tipe_Tahap_Kode)->value('Flag_Upload_Hasil') : null;
-            $uploadAktif = $m && (($m->Flag_Upload_Hasil ?? 'T') === 'Y' || $tipeBerkas === 'Y');
-            if ($m && $uploadAktif && ($m->Flag_Wajib_Upload ?? 'T') === 'Y') {
-                $adaBerkas = DB::table('N_WEB_CAREERS_Lamaran_Tahap_Berkas')->where('Lamaran_Tahap_Id', $lamaranTahapId)->exists();
-                if (! $adaBerkas) {
-                    return ['ok' => false, 'pesan' => 'Tahap ini wajib mengunggah berkas hasil (PDF/JPG) sebelum diloloskan.'];
-                }
-            }
-        }
+        // Dulu di sini ada GATE WAJIB UPLOAD: tahap tak bisa diloloskan sebelum
+        // berkas hasil diunggah. Gate itu dicabut karena titik unggahnya —
+        // "Berkas Pendukung" di modal keputusan — sudah dihapus: syarat yang
+        // tak punya cara dipenuhi bukan pengaman, melainkan jalan buntu.
+        //
+        // Kewajiban berkas kini melekat pada SUB-AKTIVITAS (Unggah_Wajib di
+        // Lamaran_Tahap_Tes), tempat berkasnya benar-benar diunggah, dan
+        // ditegakkan lewat gate "hasil aktivitas belum dicatat" di atas.
 
         // GERBANG KUOTA: LULUS di tahap TERAKHIR = kandidat DITERIMA → menempati
         // kursi. Bila kuota MPP posisi sudah penuh, tolak — arahkan ke Tidak Lolos
@@ -510,13 +544,25 @@ class LamaranService
             }
         }
 
-        $this->tetapkanTahap($lamaranTahapId, $hasil, $catatan, $adminId, now());
+        $this->tetapkanTahap($lamaranTahapId, $hasil, $catatan, $adminId, now(), $talentPool);
 
+        // Pesannya DARI MASTER untuk hasil di luar tiga yang lama. Peta literal
+        // di bawah tidak pernah memuat MENGUNDURKAN_DIRI / DITOLAK_KANDIDAT,
+        // sehingga keduanya mengembalikan pesan kosong — layar menampilkan
+        // notifikasi hampa untuk keputusan yang justru menutup lamaran orang.
         $pesan = [
             'LULUS' => 'Kandidat diloloskan ke tahap berikutnya.',
             'GUGUR' => 'Kandidat digugurkan.',
             'TALENT_POOL' => 'Kandidat dialihkan ke Talent Pool.',
-        ][$hasil];
+        ][$hasil] ?? ('Keputusan dicatat: ' . ($def->Nama ?? $hasil) . '.');
+
+        // Nasib Talent Pool ikut disebut — itu satu-satunya bagian keputusan
+        // yang tidak terbaca dari nama hasilnya.
+        if ($talentPool !== null && ($def->Flag_Pilih_Talent_Pool ?? 'T') === 'Y') {
+            $pesan .= $talentPool
+                ? ' Kandidat disimpan di Talent Pool.'
+                : ' Kandidat tidak disimpan di Talent Pool.';
+        }
 
         return ['ok' => true, 'pesan' => $pesan];
     }
@@ -620,15 +666,30 @@ class LamaranService
      * Tetapkan hasil sebuah tahap dan gerakkan lamaran. Dipakai baik oleh
      * auto-gugur mesin maupun ketuk palu admin.
      */
-    private function tetapkanTahap(int $lamaranTahapId, string $hasil, ?string $catatan, ?int $adminId, $now): void
+    private function tetapkanTahap(int $lamaranTahapId, string $hasil, ?string $catatan, ?int $adminId, $now, ?bool $talentPool = null): void
     {
         $tahap = DB::table('N_WEB_CAREERS_Lamaran_Tahap')->where('Id_Lamaran_Tahap', $lamaranTahapId)->first();
         $nama = session('career_auth.nama', 'SISTEM');
+        $def = self::masterHasilKeputusan()->get($hasil);
+
+        // APAKAH KANDIDAT DISIMPAN.
+        //
+        // Master menyimpan dua hal berbeda yang mudah tertukar: Flag_Talent_Pool
+        // (jawabannya) dan Flag_Pilih_Talent_Pool (siapa yang menjawab). Bila
+        // yang kedua 'Y', jawaban admin-lah yang berlaku dan flag pertama turun
+        // pangkat jadi sekadar pilihan awal yang disodorkan di layar.
+        $simpanTalent = ($def->Flag_Pilih_Talent_Pool ?? 'T') === 'Y' && $talentPool !== null
+            ? $talentPool
+            : ($def->Flag_Talent_Pool ?? 'T') === 'Y';
 
         DB::table('N_WEB_CAREERS_Lamaran_Tahap')->where('Id_Lamaran_Tahap', $lamaranTahapId)->update([
             'Status' => 'SELESAI',
             'Hasil' => $hasil,
             'Catatan' => $catatan,
+            // Jejak pilihannya, bukan hanya akibatnya. Tanpa kolom ini, "tidak
+            // dipilih" dan "gagal tersimpan" sama-sama terbaca sebagai tidak
+            // adanya baris di Talent_Pool.
+            'Masuk_Talent_Pool' => $simpanTalent ? 'Y' : 'T',
             'Waktu_Selesai' => $now,
             'Diputus_By' => $nama,
             'Diputus_By_Id' => $adminId,
@@ -643,13 +704,11 @@ class LamaranService
         // gagal di tahap penawaran" untuk orang yang justru lolos dan memilih
         // pergi — dan itu menuntun ke perbaikan yang salah sasaran.
         //
-        // Flag Talent Pool-nya 'Y' karena kualitasnya sudah terbukti sampai
-        // tahap ini; menyimpannya jauh lebih masuk akal daripada membuangnya.
-        // Definisi hasil diambil ulang di sini: tetapkanTahap() dipanggil dari
-        // beberapa jalur (ketuk palu admin, mesin otomatis, reuse nilai tes),
-        // jadi ia tidak boleh bergantung pada variabel milik pemanggilnya.
-        $def = self::masterHasilKeputusan()->get($hasil);
-
+        // Talent Pool-nya BUKAN keharusan. Kandidat yang mundur karena dapat
+        // tempat lebih dekat rumah memang layak disimpan; yang mundur setelah
+        // tak pernah membalas undangan tidak. Dulu keduanya ikut tersimpan,
+        // dan admin yang tidak ingin menyimpan terpaksa mencatatnya GUGUR —
+        // memperbaiki isi Talent Pool dengan merusak arti datanya.
         if (($def->Flag_Oleh_Kandidat ?? 'T') === 'Y') {
             DB::table('N_WEB_CAREERS_Lamaran')->where('Id_Lamaran', $tahap->Lamaran_Id)->update([
                 'Status' => $hasil,
@@ -660,12 +719,13 @@ class LamaranService
                 'Updated_At' => $now, 'Updated_By' => $nama, 'Updated_By_Id' => $adminId,
             ]);
 
-            if (($def->Flag_Talent_Pool ?? 'T') === 'Y') {
+            if ($simpanTalent) {
                 $this->simpanKeTalentPool($tahap, $catatan, $adminId, $nama, $now);
             }
 
             Log::channel('web_career')->info(
-                "Lamaran #{$tahap->Lamaran_Id} ditutup oleh KANDIDAT ({$def->Nama}) di tahap '{$tahap->Label}'."
+                "Lamaran #{$tahap->Lamaran_Id} ditutup oleh KANDIDAT ({$def->Nama}) di tahap '{$tahap->Label}'"
+                . ($simpanTalent ? ' — disimpan di Talent Pool.' : ' — TIDAK disimpan di Talent Pool.')
             );
 
             return;
@@ -982,6 +1042,15 @@ class LamaranService
                     // boleh disunting kemudian, tapi perjalanan yang sudah
                     // berlangsung tidak boleh berubah maknanya di tengah jalan.
                     'Flag_Tuntas' => $t->Flag_Tuntas ?? 'T',
+                    // Cut-off Talent Pool ikut dibekukan: alur boleh disunting
+                    // kapan saja, tapi kandidat yang sudah berjalan tidak boleh
+                    // berubah aturannya di tengah jalan.
+                    'Flag_Talent_Pool' => $t->Flag_Talent_Pool ?? 'T',
+                    // Aktivitas tahap ini dikerjakan bersamaan atau berurutan —
+                    // ikut dibekukan, sepola dengan aturan lainnya. Nilainya
+                    // disalin apa adanya dari master (Kode dari Master Mode
+                    // Urutan); tidak ada mode bawaan yang ditulis di sini.
+                    'Urutan_Aktivitas' => $t->Urutan_Aktivitas,
                     'Provider' => $t->Provider,
                     'Keputusan_Mode' => $t->Keputusan ?? null,
                     'Formulir_Kode' => $t->Formulir_Kode,
@@ -1055,6 +1124,20 @@ class LamaranService
                 'Unggah_Format' => $x->Unggah_Format ?? null,
                 'Unggah_Maks_Mb' => $x->Unggah_Maks_Mb ?? null,
                 'Unggah_Petunjuk' => $x->Unggah_Petunjuk ?? null,
+                // Visibilitas ikut dibekukan bersama aturan lainnya: alur boleh
+                // disunting kemudian, tapi aktivitas internal tidak boleh
+                // tiba-tiba muncul di portal kandidat yang sedang berjalan —
+                // apalagi kalau isinya cek referensi yang belum selesai.
+                'Tampil_Kandidat' => $x->Tampil_Kandidat ?? 'Y',
+                // Cara aktivitas ini dinilai (tanpa nilai / angka / kategori),
+                // ikut dibekukan: mengubah alur tidak boleh mengubah bentuk
+                // penilaian yang sedang dijalani kandidat.
+                // Cara perpindahan ke aktivitas berikutnya (otomatis / dipicu
+                // admin) ikut dibekukan bersama aturan penilaiannya.
+                'Lanjut_Mode' => $x->Lanjut_Mode ?? null,
+                'Penilaian_Mode' => $x->Penilaian_Mode ?? null,
+                'Penilaian_Opsi' => $x->Penilaian_Opsi ?? null,
+                'Nilai_Maks' => $x->Nilai_Maks ?? null,
                 'Label' => $x->Label,
                 'Status' => 'BELUM',
                 'Created_At' => $now, 'Created_By' => $nama, 'Created_By_Id' => $adminId,
@@ -1157,6 +1240,24 @@ class LamaranService
             }
 
             $mode = $this->modeKeputusan((int) $tahap->Master_Alur_Tahap_Id);
+
+            // ── HOLD MENGHENTIKAN MESIN, BUKAN HANYA TOMBOL ADMIN ────────────
+            // Tanpa ini, hold tak berarti apa-apa pada tahap ber-mode otomatis:
+            // hasil tes terakhir masuk, mesin meloloskan atau menggugurkan
+            // sendiri, dan kandidat yang sengaja ditahan sudah telanjur pindah
+            // tahap — lengkap dengan emailnya.
+            //
+            // Hasil aktivitasnya TETAP tersimpan (pemanggil sudah menyimpannya
+            // sebelum sampai sini); yang ditahan hanya kesimpulannya. Begitu
+            // hold dilepas, evaluasi dijalankan lagi dan hasilnya sama saja —
+            // hanya tertunda.
+            if (($tahap->Hold_Flag ?? 'T') === 'Y') {
+                $this->tandaiSiapDiputus($lamaranTahapId);
+                $this->tulisJejak($tahap, $mode->Kode, 'TUNGGU', 'Tahap sedang DITAHAN (hold) — kesimpulan ditunda sampai penahanan dilepas.');
+
+                return ['outcome' => 'HOLD'];
+            }
+
             $selesai = fn ($x) => in_array($x->Status, ['SELESAI', 'TIDAK_HADIR'], true);
             $penentu = $subs->where('Peran', 'PENENTU');
             $wajib = $subs->where('Wajib', 'Y');

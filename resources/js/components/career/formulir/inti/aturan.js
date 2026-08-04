@@ -130,8 +130,53 @@ export function barisKosong(B) {
 /**
  * Bangun objek jawaban awal dari skema.
  * Bagian berulang jadi array berisi satu baris kosong.
- * `profil` mengisi otomatis field bertipe prefill.
+ *
+ * `profil` mengisi otomatis dua macam field:
+ *
+ *   tipe 'prefill'   — TERKUNCI. Jawabannya milik sistem; kandidat hanya
+ *                      melihatnya (kecuali dibuka lewat `buka_jika`).
+ *   field biasa      — DISEMAI. Cukup menambahkan `prefill: '<kunci profil>'`
+ *                      pada field bertipe apa pun: nilainya terisi dari profil
+ *                      bila ada, tapi tetap BISA DIUBAH kandidat.
+ *
+ * Yang kedua ditambahkan untuk jawaban yang memang sudah diberikan di formulir
+ * pendaftaran tapi WAJAR BERUBAH — "Tahun Lulus / Perkiraan Lulus" adalah
+ * perkiraan, dan mahasiswa tingkat akhir kerap merevisinya. Menguncinya seperti
+ * nama kampus akan memaksa kandidat mengirim data yang ia tahu keliru; tidak
+ * menyemainya sama sekali memaksa ia mengetik ulang sesuatu yang sudah dijawab.
+ *
+ * Seeding hanya berlaku bila profilnya benar-benar berisi — profil kosong tidak
+ * boleh menimpa nilai kosong bawaan tipe field (mis. array untuk checkbox).
  */
+/**
+ * Nilai awal satu field biasa: dari profil bila layak, kalau tidak kosong biasa.
+ *
+ * DUA PENJAGA, keduanya karena data pendaftaran tidak pernah serapi skema:
+ *
+ *  1. Tipe. Formulir lama menyimpan tahun sebagai ANGKA (2026), sedangkan opsi
+ *     select berupa TEKS ('2026'). Tanpa disamakan, kotaknya tampil kosong
+ *     padahal nilainya ada — kandidat lalu mengisi ulang dan mengira sistemnya
+ *     tidak menyimpan apa-apa.
+ *  2. Keanggotaan. Nilai di luar daftar pilihan (mis. tahun 2011 pada daftar
+ *     yang dimulai 2018) TIDAK dipakai: select yang memegang nilai asing
+ *     tampak kosong tapi ikut terkirim saat disimpan, jadi jawabannya lolos
+ *     tanpa pernah benar-benar terlihat kandidat.
+ */
+function semaiField(f, profil) {
+    const semai = f.prefill ? profil?.[f.prefill] : null;
+    if (semai === null || semai === undefined || semai === '') {
+        return nilaiKosong(f);
+    }
+
+    if (Array.isArray(f.opsi) && f.opsi.length) {
+        const cocok = f.opsi.find((o) => String(o) === String(semai));
+
+        return cocok ?? nilaiKosong(f);
+    }
+
+    return semai;
+}
+
 export function jawabanAwal(skema, profil = {}) {
     const out = {};
     (skema?.langkah || []).forEach((L) => {
@@ -141,7 +186,13 @@ export function jawabanAwal(skema, profil = {}) {
                 return;
             }
             (B.field || []).forEach((f) => {
-                out[f.key] = f.tipe === 'prefill' ? (profil[f.prefill] ?? '') : nilaiKosong(f);
+                if (f.tipe === 'prefill') {
+                    out[f.key] = profil[f.prefill] ?? '';
+
+                    return;
+                }
+
+                out[f.key] = semaiField(f, profil);
             });
         });
     });

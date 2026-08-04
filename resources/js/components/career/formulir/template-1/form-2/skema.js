@@ -117,12 +117,26 @@ export const SKEMA = {
                             penuh: true,
                         },
                         {
+                            // DISEMAI dari jawaban formulir pendaftaran, sepola
+                            // dengan Nama Perguruan Tinggi di atas — kandidat
+                            // sudah menjawabnya saat melamar, jadi menanyakannya
+                            // dari nol berarti menyuruhnya mengetik ulang
+                            // sesuatu yang sudah ada.
+                            //
+                            // Bedanya: yang ini TIDAK dikunci. "Perkiraan lulus"
+                            // memang perkiraan — mahasiswa tingkat akhir kerap
+                            // merevisinya — dan tidak semua formulir pendaftaran
+                            // menanyakannya, sehingga mengunci akan membuat
+                            // sebagian kandidat terjebak pada kolom kosong yang
+                            // wajib diisi tapi mustahil diisi.
                             key: 'tahun_lulus',
                             label: 'Tahun Lulus / Perkiraan Lulus',
                             tipe: 'select',
+                            prefill: 'tahunLulus',
                             wajib: true,
                             ph: 'Pilih tahun',
                             opsi: TAHUN_LULUS,
+                            bantuan: 'Terisi dari data pendaftaran Anda — ubah bila perkiraannya berbeda.',
                         },
                         {
                             key: 'ketersediaan_proses',

@@ -75,16 +75,55 @@ Route::prefix('api/v1/karir')
         Route::get('/lamaran/berkas/{id}', [LamaranController::class, 'worklistBerkas'])->name('lamaran.berkas')->middleware('career.permission:pelamarPage,VIEW');
         Route::get('/lamaran/berkas/file/{id}', [LamaranController::class, 'berkasFile'])->name('lamaran.berkas.file')->middleware('career.permission:pelamarPage,VIEW');
         Route::patch('/lamaran/tahap/{id}/putus', [LamaranController::class, 'putus'])->name('lamaran.putus')->middleware('career.permission:pelamarPage,APPROVE');
+        // TAHAN / LEPAS (hold) — menunda keputusan tanpa memindahkan kandidat
+        // dan tanpa mengirim pemberitahuan apa pun kepadanya. Izinnya EDIT,
+        // bukan APPROVE: menahan bukan memutuskan nasib siapa pun.
+        Route::patch('/lamaran/tahap/{id}/hold', [LamaranController::class, 'hold'])->name('lamaran.hold')->middleware('career.permission:pelamarPage,EDIT');
         // Escape hatch multi-tes: tandai sub-tes tidak hadir → mesin evaluasi ulang.
         Route::patch('/lamaran/sub-tes/{id}/tidak-hadir', [LamaranController::class, 'subTesTidakHadir'])->name('lamaran.subtes.tidakhadir')->middleware('career.permission:pelamarPage,EDIT');
         // Catat hasil sub-tes MANUAL (wawancara/FGD di tahap campuran) → mesin yang sama.
         Route::patch('/lamaran/sub-tes/{id}/catat-hasil', [LamaranController::class, 'subTesCatatHasil'])->name('lamaran.subtes.catathasil')->middleware('career.permission:pelamarPage,EDIT');
         // Jadwal wawancara / tes tatap muka + undangan email ke kandidat.
         Route::patch('/lamaran/sub-tes/{id}/jadwal', [LamaranController::class, 'subTesJadwal'])->name('lamaran.subtes.jadwal')->middleware('career.permission:pelamarPage,EDIT');
+        // JADWAL MASSAL — seratus kandidat sekaligus, serentak atau bergiliran.
+        // Didaftarkan sebelum rute ber-{id} agar "jadwal-massal" tidak tertelan
+        // sebagai id aktivitas.
+        Route::post('/lamaran/sub-tes/jadwal-massal', [LamaranController::class, 'jadwalMassal'])->name('lamaran.subtes.jadwalmassal')->middleware('career.permission:pelamarPage,EDIT');
         // Kehadiran MCU/wawancara — gerbang sebelum hasil boleh dicatat.
         Route::patch('/lamaran/sub-tes/{id}/kehadiran', [LamaranController::class, 'subTesKehadiran'])->name('lamaran.subtes.kehadiran')->middleware('career.permission:pelamarPage,EDIT');
+        // Buka aktivitas berikutnya pada tahap berurutan ber-mode MANUAL.
+        Route::patch('/lamaran/sub-tes/{id}/lanjutkan', [LamaranController::class, 'subTesLanjutkan'])->name('lamaran.subtes.lanjutkan')->middleware('career.permission:pelamarPage,EDIT');
         // Tarik hasil ujian online dari HCLearn bila webhook-nya tak sampai.
         Route::post('/lamaran/sub-tes/{id}/sinkron', [LamaranController::class, 'subTesSinkron'])->name('lamaran.subtes.sinkron')->middleware('career.permission:pelamarPage,EDIT');
+
+        // Berkas hasil SATU AKTIVITAS (form wawancara terpindai, lembar jawaban
+        // tes offline). Berbeda dari berkas tingkat tahap di bawah: pada tahap
+        // campuran, berkas yang hanya tahu "milik tahap 4" tak bisa dibedakan
+        // antara hasil DISC dan hasil wawancara. Penghapusannya memakai rute
+        // berkas tahap — tabelnya sama, dan idnya sudah cukup menunjuk barisnya.
+        // Berkas yang DIUNGGAH KANDIDAT untuk sebuah aktivitas — dibuka dari
+        // sisi admin. Rute portalnya memeriksa kepemilikan lewat Id_Users, jadi
+        // selalu 404 bagi admin; tanpa pintu ini setelan "kandidat wajib
+        // mengunggah" di Master Alur tak pernah bisa dibaca tim penilainya.
+        // Didaftarkan SEBELUM rute ber-{id} di atasnya supaya "berkas-kandidat"
+        // tidak tertelan sebagai id aktivitas.
+        Route::get('/lamaran/sub-tes/berkas-kandidat/{id}', [LamaranController::class, 'berkasKandidatFile'])->name('lamaran.berkas.kandidat')->middleware('career.permission:pelamarPage,VIEW');
+        Route::get('/lamaran/sub-tes/{id}/berkas', [LamaranController::class, 'subTesBerkas'])->name('lamaran.subtes.berkas')->middleware('career.permission:pelamarPage,VIEW');
+        Route::post('/lamaran/sub-tes/{id}/berkas', [LamaranController::class, 'subTesBerkasUnggah'])->name('lamaran.subtes.berkas.unggah')->middleware('career.permission:pelamarPage,EDIT');
+
+        // CETAK LAPORAN KANDIDAT (PDF/Excel) — dikerjakan di antrean.
+        // Rute status & unduh didaftarkan SEBELUM yang ber-{id} lamaran supaya
+        // "laporan" tidak tertelan sebagai id lamaran.
+        Route::get('/lamaran/laporan/{id}', [LamaranController::class, 'laporanStatus'])->name('lamaran.laporan.status')->middleware('career.permission:pelamarPage,VIEW');
+        Route::get('/lamaran/laporan/{id}/unduh', [LamaranController::class, 'laporanUnduh'])->name('lamaran.laporan.unduh')->middleware('career.permission:pelamarPage,VIEW');
+        Route::get('/lamaran/{id}/laporan/opsi', [LamaranController::class, 'laporanOpsi'])->name('lamaran.laporan.opsi')->middleware('career.permission:pelamarPage,VIEW');
+        Route::post('/lamaran/{id}/laporan', [LamaranController::class, 'laporanBuat'])->name('lamaran.laporan.buat')->middleware('career.permission:pelamarPage,VIEW');
+
+        // Gambar yang ditanam DI DALAM catatan berformat (Quill). Bentuk URL-nya
+        // dikunci App\Support\Career\HtmlBersih — mengubah pola rute ini akan
+        // membuat seluruh gambar lama dibuang saat catatannya disunting ulang.
+        Route::post('/lamaran/catatan/gambar', [LamaranController::class, 'catatanGambarUnggah'])->name('lamaran.catatan.gambar.unggah')->middleware('career.permission:pelamarPage,EDIT');
+        Route::get('/lamaran/catatan/gambar/{id}', [LamaranController::class, 'catatanGambar'])->name('lamaran.catatan.gambar')->middleware('career.permission:pelamarPage,VIEW');
 
         // Berkas hasil tahap (MCU/Interview) — unggah PDF/JPG, daftar, preview, hapus.
         Route::get('/lamaran/tahap/{id}/berkas', [LamaranController::class, 'berkasTahap'])->name('lamaran.tahap.berkas')->middleware('career.permission:pelamarPage,VIEW');

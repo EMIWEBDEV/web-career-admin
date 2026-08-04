@@ -27,11 +27,40 @@ class HtmlBersih
     /** Tag yang boleh bertahan. Sengaja sempit: sepadan dengan toolbar Quill. */
     private const TAG_DIIZINKAN = [
         'p', 'br', 'strong', 'b', 'em', 'i', 'u', 's',
-        'ul', 'ol', 'li', 'h3', 'h4', 'blockquote', 'a',
+        'ul', 'ol', 'li', 'h3', 'h4', 'blockquote', 'a', 'img',
     ];
 
     /** Skema tautan yang boleh. `javascript:` & `data:` sengaja tidak ada. */
     private const SKEMA_DIIZINKAN = ['http', 'https', 'mailto'];
+
+    /**
+     * Satu-satunya bentuk `src` yang boleh bertahan pada <img>.
+     *
+     * Gambar dalam catatan penilaian WAJIB berkas milik kita sendiri, disajikan
+     * lewat rute berwenang. Dua hal yang ditutup sekaligus:
+     *
+     *   1. `data:` URI — satu potret ponsel jadi ~2,7 MB base64 di dalam kolom,
+     *      ikut terbawa setiap kali baris itu dibaca, dan tak bisa dibersihkan
+     *      saat catatannya disunting.
+     *   2. Tautan ke host luar — gambar dari domain asing menjadikan setiap
+     *      pembaca catatan mengirim jejak (IP, waktu buka) ke pemilik domain
+     *      itu, dan gambarnya bisa diganti apa pun setelah catatan disetujui.
+     */
+    private const POLA_SRC_GAMBAR = '#^/api/v1/karir/lamaran/catatan/gambar/[A-Za-z0-9]+$#';
+
+    /**
+     * Satu-satunya `class` yang boleh bertahan: perataan bawaan Quill.
+     *
+     * Perataan di Quill BUKAN atribut style melainkan kelas pada bloknya
+     * (`ql-align-center`). Karena seluruh atribut dibuang di sini, gambar yang
+     * susah payah ditengahkan penilai kembali menempel ke kiri begitu
+     * catatannya disimpan — dan tak ada galat apa pun yang menjelaskannya.
+     *
+     * Daftarnya sengaja tertutup: hanya tiga nilai ini, bukan "kelas apa pun
+     * yang berawalan ql-". Kelas bebas dari isian orang adalah pintu masuk
+     * gaya yang bisa menyamarkan isi halaman.
+     */
+    private const KELAS_DIIZINKAN = ['ql-align-center', 'ql-align-right', 'ql-align-justify'];
 
     /**
      * Saring HTML jadi versi yang aman disimpan & dirender.
@@ -79,7 +108,16 @@ class HtmlBersih
         // Markup tanpa teks apa pun = kosong. Quill mengirim "<p><br></p>" untuk
         // editor yang dibiarkan kosong; menyimpannya berarti halaman FAQ
         // menampilkan blok kosong di bawah jawaban ringkas.
-        return self::keTeks($hasil) === '' ? null : $hasil;
+        //
+        // KECUALI bila isinya gambar. Catatan wawancara yang hanya berupa
+        // potret lembar penilaian tidak punya satu huruf pun teks, tapi justru
+        // itulah isinya — membuangnya berarti menghapus catatan yang barusan
+        // ditulis orang.
+        if (self::keTeks($hasil) === '' && ! str_contains($hasil, '<img')) {
+            return null;
+        }
+
+        return $hasil;
     }
 
     /**
@@ -148,13 +186,49 @@ class HtmlBersih
         $induk->removeChild($el);
     }
 
-    /** Buang semua atribut; hanya `href` pada <a> yang dipertahankan. */
+    /**
+     * Buang semua atribut; hanya `href` pada <a> dan `src`/`alt` pada <img>
+     * yang dipertahankan.
+     */
     private static function bersihkanAtribut(\DOMElement $el, string $tag): void
     {
         $href = $tag === 'a' ? trim((string) $el->getAttribute('href')) : '';
+        $src = $tag === 'img' ? trim((string) $el->getAttribute('src')) : '';
+        $alt = $tag === 'img' ? trim((string) $el->getAttribute('alt')) : '';
+
+        // Perataan Quill disaring dari daftar kelas yang ada, bukan diambil
+        // mentah: satu elemen bisa membawa banyak kelas sekaligus dan hanya
+        // yang ada di daftar-izin yang boleh bertahan.
+        $kelas = array_values(array_intersect(
+            preg_split('/\s+/', trim((string) $el->getAttribute('class'))) ?: [],
+            self::KELAS_DIIZINKAN,
+        ));
 
         foreach (iterator_to_array($el->attributes ?? []) as $atribut) {
             $el->removeAttribute($atribut->nodeName);
+        }
+
+        if ($kelas) {
+            $el->setAttribute('class', implode(' ', $kelas));
+        }
+
+        if ($tag === 'img') {
+            // Gambar yang bukan milik kita DIBUANG SELURUHNYA, tidak di-unwrap:
+            // <img> tak punya isi teks yang bisa diselamatkan, dan menyisakan
+            // elemen tanpa src hanya membuat ikon rusak di tengah catatan.
+            if (! preg_match(self::POLA_SRC_GAMBAR, $src)) {
+                $el->parentNode?->removeChild($el);
+
+                return;
+            }
+
+            $el->setAttribute('src', $src);
+            $el->setAttribute('alt', $alt !== '' ? $alt : 'Lampiran catatan');
+            // Gambar catatan kerap potret ponsel beresolusi penuh; tanpa ini ia
+            // menjebol lebar kolom tempat catatannya ditampilkan.
+            $el->setAttribute('loading', 'lazy');
+
+            return;
         }
 
         if ($tag !== 'a') {

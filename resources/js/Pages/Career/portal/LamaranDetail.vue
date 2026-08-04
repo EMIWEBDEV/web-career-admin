@@ -280,23 +280,81 @@
                                 </p>
                             </div>
 
-                            <!-- RINGKASAN AKTIVITAS TAHAP.
-                                 Satu tahap bisa berisi beberapa aktivitas dengan
-                                 tipe berbeda. Tanpa daftar ini kandidat hanya
-                                 melihat kartu ujian online dan mengira tahapnya
-                                 sudah tuntas. -->
-                            <div v-if="aktivitas.length > 1" class="ld-akt">
-                                <div class="ld-akt__head">
-                                    <span>AKTIVITAS TAHAP INI</span>
-                                    <b>{{ aktivitasSelesai }} dari {{ aktivitas.length }} selesai</b>
-                                </div>
-                                <div v-for="x in aktivitas" :key="x.urutan" class="ld-akt__i" :class="x.selesai ? 'is-ok' : 'is-wait'">
-                                    <i class="bi" :class="x.selesai ? 'bi-check-circle-fill' : 'bi-clock-fill'"></i>
-                                    <div style="min-width: 0; flex: 1">
-                                        <b>{{ x.label }}</b>
-                                        <small>{{ x.tipeNama }}</small>
-                                    </div>
-                                    <span class="ld-akt__st">{{ x.selesai ? 'Selesai' : 'Menunggu' }}</span>
+                            <!-- KEADAAN TAHAP — SATU KALIMAT, BUKAN DAFTAR.
+                                 Dulu di sini berdiri daftar seluruh aktivitas
+                                 berikut statusnya ("DISC — Menunggu", "FGD —
+                                 Menunggu"). Itu membuka susunan asesmen
+                                 perusahaan kepada orang yang sedang dinilai: ia
+                                 tahu persis alat ukur apa yang dipakai dan yang
+                                 mana belum dilalui, dan itu bisa dipersiapkan.
+                                 Untuk perusahaan tertutup, bagian itu memang
+                                 bukan miliknya.
+
+                                 Yang tersisa hanya yang benar-benar berguna
+                                 baginya: sedang menunggu apa, dan apakah ada
+                                 yang harus ia kerjakan. Rincian jadwal & tombol
+                                 tesnya tetap tampil di kartunya masing-masing
+                                 di bawah — itu memang undangan untuk dia. -->
+                            <div v-if="aktivitas.length > 1" class="ld-keadaan" :class="`is-${keadaanTahap.nada}`">
+                                <!-- IKON SVG BERANIMASI, bukan glyph font.
+                                     Tiap keadaan punya gerakannya sendiri dan
+                                     gerakan itulah yang menyampaikan artinya
+                                     sebelum kalimatnya dibaca: jam berdetak =
+                                     menunggu, tanda centang tergambar = tuntas,
+                                     denyut = ada yang menunggu dikerjakan.
+                                     Seluruhnya dimatikan otomatis bagi pengguna
+                                     yang meminta gerak dikurangi. -->
+                                <span class="ld-keadaan__ico" aria-hidden="true">
+                                    <svg viewBox="0 0 48 48" width="30" height="30" fill="none">
+                                        <circle class="ld-kico__halo" cx="24" cy="24" r="21" />
+
+                                        <!-- MENUNGGU JADWAL — jarum jam berputar pelan. -->
+                                        <template v-if="keadaanTahap.nada === 'tunggu'">
+                                            <circle class="ld-kico__ring" cx="24" cy="24" r="14" />
+                                            <line class="ld-kico__jarum ld-kico__jarum--h" x1="24" y1="24" x2="24" y2="16.5" />
+                                            <line class="ld-kico__jarum ld-kico__jarum--m" x1="24" y1="24" x2="29.5" y2="24" />
+                                            <circle class="ld-kico__pin" cx="24" cy="24" r="1.7" />
+                                        </template>
+
+                                        <!-- DITAHAN TIM — gembok dengan gagang yang berdenyut. -->
+                                        <template v-else-if="keadaanTahap.nada === 'tinjau'">
+                                            <path class="ld-kico__gagang" d="M18.5 22v-3.5a5.5 5.5 0 0 1 11 0V22" />
+                                            <rect class="ld-kico__body" x="15.5" y="22" width="17" height="12.5" rx="3" />
+                                            <circle class="ld-kico__pin" cx="24" cy="28.2" r="1.8" />
+                                        </template>
+
+                                        <!-- SUDAH DIJADWALKAN — kalender dengan centang tergambar. -->
+                                        <template v-else-if="keadaanTahap.nada === 'jadwal'">
+                                            <rect class="ld-kico__ring" x="14" y="15.5" width="20" height="18" rx="3" />
+                                            <line class="ld-kico__jarum" x1="14" y1="21" x2="34" y2="21" />
+                                            <line class="ld-kico__jarum" x1="19.5" y1="13" x2="19.5" y2="17" />
+                                            <line class="ld-kico__jarum" x1="28.5" y1="13" x2="28.5" y2="17" />
+                                            <path class="ld-kico__check" d="M19.5 27.5l3.4 3.4 6-6.4" />
+                                        </template>
+
+                                        <!-- BISA DIKERJAKAN — tombol putar yang berdenyut. -->
+                                        <template v-else-if="keadaanTahap.nada === 'aksi'">
+                                            <circle class="ld-kico__ring ld-kico__ring--denyut" cx="24" cy="24" r="14" />
+                                            <path class="ld-kico__play" d="M21 18.8l9 5.2-9 5.2z" />
+                                        </template>
+
+                                        <!-- BARU TERKIRIM — pesawat kertas melaju,
+                                             centang menyusul saat ia mendarat. -->
+                                        <template v-else-if="keadaanTahap.nada === 'kirim'">
+                                            <path class="ld-kico__pesawat" d="M33.5 15.5L14 23.2l7.6 2.6 2.6 7.6z" />
+                                            <path class="ld-kico__check" d="M21.6 25.8l11.9-10.3" />
+                                        </template>
+
+                                        <!-- SEDANG DITINJAU — pasir jam mengalir. -->
+                                        <template v-else>
+                                            <path class="ld-kico__ring" d="M17 14h14M17 34h14M18.5 14c0 6 5.5 7.4 5.5 10s-5.5 4-5.5 10M29.5 14c0 6-5.5 7.4-5.5 10s5.5 4 5.5 10" />
+                                            <circle class="ld-kico__pasir" cx="24" cy="24" r="1.5" />
+                                        </template>
+                                    </svg>
+                                </span>
+                                <div class="ld-keadaan__teks">
+                                    <b>{{ keadaanTahap.judul }}</b>
+                                    <p>{{ keadaanTahap.pesan }}</p>
                                 </div>
                             </div>
 
@@ -341,7 +399,54 @@
 
                             <!-- Tombol DISEMBUNYIKAN setelah tes dikerjakan. Menampilkannya
                                  dalam keadaan mati tetap mengesankan tes bisa diulang. -->
-                            <button v-if="!sudahSelesai(sesi)" class="ld-btn-tes" :disabled="!bisaAkses(sesi)" @click="bukaTes(sesi)">
+                            <!-- Aktivitas yang belum tiba gilirannya diberi
+                                 keterangan, bukan sekadar tombol mati: "Tes
+                                 Terkunci" tanpa sebab terbaca sebagai kesalahan
+                                 sistem, dan kandidat menghubungi tim untuk
+                                 sesuatu yang memang sudah semestinya. -->
+                            <div v-if="sesi.terkunci" class="ld-antre">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>
+                                <span>
+                                    <b>Belum gilirannya</b>
+                                    <template v-if="sesi.menunggu"> — menunggu <b>{{ sesi.menunggu }}</b> selesai lebih dulu.</template>
+                                    <template v-else> — tahap ini dikerjakan berurutan.</template>
+                                </span>
+                            </div>
+                            <!-- LAYAR ANTARA — kandidat tahu ia sedang dipindahkan,
+                                 bukan halaman yang tiba-tiba hilang. Masih bisa
+                                 dibatalkan selama hitungan berjalan. -->
+                            <div v-else-if="menujuUjian" class="ld-pindah">
+                                <span class="ld-pindah__ring" aria-hidden="true">
+                                    <svg viewBox="0 0 48 48" width="34" height="34" fill="none">
+                                        <circle class="ld-pindah__jalur" cx="24" cy="24" r="19" />
+                                        <circle class="ld-pindah__isi" cx="24" cy="24" r="19" />
+                                    </svg>
+                                    <b>{{ hitungPindah }}</b>
+                                </span>
+                                <div class="ld-pindah__teks">
+                                    <b>Menyiapkan ruang ujian…</b>
+                                    <p>Kamu akan dipindahkan ke halaman ujian dalam {{ hitungPindah }} detik. Jangan tutup halaman ini.</p>
+                                </div>
+                                <button type="button" class="ld-pindah__batal" @click="batalKeUjian">Batal</button>
+                            </div>
+                            <!-- BARU PULANG DARI RUANG UJIAN, hasilnya belum sampai.
+                                 Menggantikan tombol, tidak sekadar mematikannya:
+                                 tombol mati pun masih terbaca sebagai "tesnya
+                                 masih menungguku", padahal ia sudah menekan kirim
+                                 semenit yang lalu. Hilang begitu hasilnya masuk. -->
+                            <div v-else-if="tesDitunggu && tesDitunggu.id === sesi.id" class="ld-terkirim">
+                                <span class="ld-terkirim__ring" aria-hidden="true">
+                                    <svg viewBox="0 0 44 44" width="32" height="32" fill="none">
+                                        <circle class="ld-terkirim__halo" cx="22" cy="22" r="17" />
+                                        <path class="ld-terkirim__pesawat" d="M31 13.5L12.5 21l7.2 2.5 2.5 7.2z" />
+                                    </svg>
+                                </span>
+                                <div class="ld-terkirim__teks">
+                                    <b>Jawabanmu sudah terkirim</b>
+                                    <p>Hasilnya sedang diterima sistem. Halaman ini memperbarui dirinya sendiri — tidak perlu kamu muat ulang.</p>
+                                </div>
+                            </div>
+                            <button v-else-if="!sudahSelesai(sesi)" class="ld-btn-tes" :disabled="!bisaAkses(sesi)" @click="bukaTes(sesi)">
                                 <svg v-if="bisaAkses(sesi)" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M10 14L21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></svg>
                                 <svg v-else width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>
                                 {{ bisaAkses(sesi) ? 'Mulai Tes Sekarang' : 'Tes Terkunci' }}
@@ -695,55 +800,6 @@
                         </div>
                     </div>
 
-                    <!-- ── Catatan tim per tahap (tanpa nilai) ── -->
-                    <div v-if="catatanTahap.length" v-show="tab === 'catatan'" class="ld-card ld-cat">
-                        <div class="ld-secrow" style="padding: 16px 20px 0">
-                            <div class="ld-sectitle">
-                                <i class="bi bi-clipboard2-check-fill" style="color: #6366f1"></i>
-                                Hasil &amp; Catatan Tahapan
-                            </div>
-                        </div>
-                        <div v-for="c in catatanTahap" :key="c.urutan" class="ld-cat__i">
-                            <div class="ld-cat__head">
-                                <span class="ld-cat__no">{{ String(c.urutan).padStart(2, '0') }}</span>
-                                <div style="min-width: 0; flex: 1">
-                                    <b>{{ c.label }}</b>
-                                    <small v-if="c.at">{{ fmtWaktu(c.at) }}</small>
-                                </div>
-                                <span class="ld-cat__st" :class="c.hasil === 'LULUS' ? 'is-ok' : 'is-err'">
-                                    {{ c.hasil === 'LULUS' ? 'Lolos' : 'Tidak Lolos' }}
-                                </span>
-                            </div>
-                            <!-- CATATAN diberi bingkai sendiri, tidak dibiarkan
-                                 menyatu sebagai paragraf lepas. Ini kalimat yang
-                                 ditulis tim tentang kandidat — batas yang jelas
-                                 memisahkannya dari label dan status di atasnya,
-                                 sehingga tidak terbaca sebagai keterangan sistem. -->
-                            <div v-if="c.catatan" class="ld-cat__note">
-                                <span class="ld-cat__note-lbl"><i class="bi bi-chat-left-quote-fill"></i> CATATAN TIM REKRUTMEN</span>
-                                <p>{{ c.catatan }}</p>
-                            </div>
-
-                            <!-- Catatan per aktivitas (wawancara, tes offline). -->
-                            <div v-if="c.tes.length" class="ld-cat__list">
-                                <div v-for="x in c.tes" :key="x.label" class="ld-cat__sub">
-                                    <b>{{ x.label }}<small v-if="x.tipeNama"> · {{ x.tipeNama }}</small></b>
-                                    <p>{{ x.catatan }}</p>
-                                </div>
-                            </div>
-
-                            <!-- Berkas hasil dari tim (MCU, hasil wawancara, dst.). -->
-                            <div v-if="c.berkas.length" class="ld-cat__berkas">
-                                <span class="ld-cat__berkas-lbl">BERKAS HASIL</span>
-                                <button v-for="b in c.berkas" :key="b.url" type="button" @click="bukaDok(b)">
-                                    <i class="bi" :class="b.isImage ? 'bi-file-earmark-image-fill' : 'bi-file-earmark-pdf-fill'"></i>
-                                    <span>{{ b.nama }}</span>
-                                    <em>Lihat</em>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-
                     <!-- ── Formulir & Berkas Saya ── -->
                     <div v-if="formulir.length" v-show="tab === 'berkas'">
                         <div class="ld-secrow">
@@ -766,16 +822,22 @@
                                 </button>
                                 <div v-if="openForm === fi" class="ld-form__body">
                                     <div v-if="f.jawaban.length" class="ld-fields">
-                                        <div v-for="j in f.jawaban" :key="j.key" class="ld-field">
+                                        <div
+                                            v-for="j in f.jawaban" :key="j.key"
+                                            class="ld-field" :class="{ 'is-panjang': isianPanjang(j) }"
+                                        >
                                             <div class="ld-field__k">{{ labelIsian(j) }}</div>
-                                            <!-- Isian yang ternyata berkas dibuat bisa diklik di
-                                                 tempatnya; teks mati tidak memberi tahu kandidat
-                                                 bahwa dokumennya memang tersimpan. -->
-                                            <button v-if="j.berkas" type="button" class="ld-field__file" @click="bukaDok(j.berkas)">
-                                                <i class="bi" :class="j.berkas.isImage ? 'bi-file-earmark-image-fill' : 'bi-file-earmark-pdf-fill'"></i>
-                                                <span>{{ j.nilai }}</span>
-                                                <em>Lihat</em>
-                                            </button>
+                                            <!-- ISIAN BERUPA BERKAS = LENCANA, bukan nama file +
+                                                 tombol Lihat. Berkasnya sendiri — berikut ukuran,
+                                                 status verifikasi, dan pratinjau — sudah ada di
+                                                 "Dokumen & Verifikasi" tepat di bawah. Di daftar
+                                                 isian yang perlu dijawab cuma satu: ADA atau TIDAK. -->
+                                            <div v-if="isianBerkas(j)" class="ld-field__v">
+                                                <span class="ld-badge" :class="j.berkas ? 'is-ada' : 'is-kosong'">
+                                                    <i class="bi" :class="j.berkas ? 'bi-check-circle-fill' : 'bi-dash-circle'"></i>
+                                                    {{ j.berkas ? 'Terlampir' : 'Belum ada' }}
+                                                </span>
+                                            </div>
                                             <div v-else class="ld-field__v">{{ j.nilai || '—' }}</div>
                                         </div>
                                     </div>
@@ -921,6 +983,13 @@ const ST = {
     berjalan: { c: '#b45309', bg: 'rgba(245,158,11,.14)', dot: '#f59e0b' },
     lolos: { c: '#059669', bg: 'rgba(16,185,129,.12)', dot: '#10b981' },
     gugur: { c: '#dc2626', bg: 'rgba(239,68,68,.1)', dot: '#ef4444' },
+    // Disimpan untuk kesempatan berikutnya — belum berakhir, jadi bukan merah.
+    menunggu: { c: '#4f46e5', bg: 'rgba(99,102,241,.12)', dot: '#6366f1' },
+    // KEPUTUSAN DARI KANDIDAT (mengundurkan diri, menolak penawaran).
+    // Sengaja abu-abu: prosesnya memang berhenti, tetapi bukan karena ia
+    // ditolak. Mewarnainya merah seperti "Tidak Lolos" mengatakan hal yang
+    // salah kepada orang yang justru memilih pergi sendiri.
+    netral: { c: '#475569', bg: 'rgba(100,116,139,.12)', dot: '#64748b' },
 };
 // Ikon fakta cepat (stroke) — dipakai kartu Detail Lowongan.
 const SVG = (path) => `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${path}</svg>`;
@@ -971,6 +1040,16 @@ export default {
             unggahDi: null,
             seretDi: null,
             tab: 'alur',
+            // Layar antara menuju ruang ujian (tab yang sama, jeda 3 detik).
+            menujuUjian: false,
+            hitungPindah: 3,
+            timerPindah: null,
+            // ── PULANG DARI RUANG UJIAN ──
+            // { id, at } aktivitas yang barusan dikerjakan, dibaca kembali dari
+            // sessionStorage saat kandidat diantar pulang oleh CAT.
+            pulangTes: null,
+            pulangCek: 0,
+            pulangTimer: null,
             lbLoading: false,
             lbError: false,
             toast: '',
@@ -995,7 +1074,17 @@ export default {
         feedbackPending() { return this.$page.props.feedbackPending; },
         komponen() { return this.tugas ? komponenFormulir(this.tugas.komponen) : null; },
         totalTahap() { return this.lamaran.totalTahap || this.tahap.length || 0; },
-        stKey() { return { BERJALAN: 'berjalan', LULUS: 'lolos', GUGUR: 'gugur' }[this.lamaran.status] || 'berjalan'; },
+        /**
+         * Nada status DARI SERVER (turunan Master Hasil Keputusan).
+         *
+         * Peta literal sebelumnya hanya mengenal tiga status, sehingga lamaran
+         * ber-status MENGUNDURKAN_DIRI jatuh ke cadangan 'berjalan' — halaman
+         * menampilkan proses yang masih berlangsung untuk lamaran yang sudah
+         * ditutup kandidatnya sendiri.
+         */
+        stKey() { return ST[this.lamaran.statusNada] ? this.lamaran.statusNada : 'berjalan'; },
+        /** Status yang SUDAH final — dipakai menghentikan animasi "sedang jalan". */
+        lamaranBerhenti() { return !!this.lamaran.status && this.lamaran.status !== 'BERJALAN'; },
         katChipStyle() {
             return this.lamaran.kategori === 'MT'
                 ? { background: 'rgba(245,158,11,.14)', color: '#b45309' }
@@ -1036,6 +1125,104 @@ export default {
             if (pilih) return { label: pilih.label || t.label, ujian: pilih.ujian || t.ujian };
             return { label: t.label, ujian: t.ujian };
         },
+        /**
+         * KEADAAN TAHAP dalam satu kalimat — pengganti daftar aktivitas.
+         *
+         * Yang dijawab hanya dua hal yang memang milik kandidat: apakah ada
+         * yang harus ia kerjakan sekarang, dan kalau tidak, ia sedang menunggu
+         * apa. Nama-nama asesmen yang belum dilalui SENGAJA tidak disebut —
+         * membeberkannya kepada orang yang sedang dinilai memberinya waktu
+         * mempersiapkan alat ukurnya, dan itu merusak nilai ukurnya sendiri.
+         *
+         * Urutannya dari yang paling menuntut tindakan ke yang paling pasif;
+         * yang pertama cocok yang dipakai, supaya kandidat tidak pernah membaca
+         * "sedang diproses" padahal ada tes yang menunggu dikerjakannya.
+         */
+        /**
+         * Aktivitas yang jawabannya SUDAH dikirim tapi hasilnya belum sampai.
+         *
+         * Null berarti tidak ada yang ditunggu — entah karena kandidat memang
+         * tidak baru pulang dari ujian, atau karena hasilnya sudah masuk.
+         */
+        tesDitunggu() {
+            if (!this.pulangTes) return null;
+
+            const t = (this.aktivitas || []).find((x) => x.id === this.pulangTes.id);
+
+            // Aktivitasnya tak lagi ada di tahap aktif = tahapnya sudah bergerak.
+            // Itu kabar yang lebih baru daripada jejak kita, jadi jejaknya kalah.
+            if (!t) return null;
+
+            return this.sudahSelesai(t) || t.selesai ? null : t;
+        },
+        keadaanTahap() {
+            const akt = this.aktivitas || [];
+            const belum = akt.filter((x) => !x.selesai);
+
+            // BARU PULANG DARI RUANG UJIAN — didahulukan dari keadaan mana pun.
+            // Selama hasilnya belum sampai, keadaan lain masih membaca tes itu
+            // sebagai "bisa dikerjakan sekarang", dan kandidat yang baru saja
+            // menekan kirim akan disambut ajakan mengerjakannya lagi.
+            if (this.tesDitunggu) {
+                return {
+                    nada: 'kirim',
+                    ikon: 'bi-send-check-fill',
+                    judul: 'Jawaban tesmu sudah terkirim',
+                    pesan: 'Terima kasih sudah menyelesaikan tes. Hasilnya sedang diterima sistem — halaman ini memperbarui dirinya sendiri, jadi tidak perlu kamu muat ulang.',
+                };
+            }
+
+            if (!belum.length) {
+                return {
+                    nada: 'proses',
+                    ikon: 'bi-hourglass-split',
+                    judul: 'Seluruh rangkaian tahap ini sudah kamu selesaikan',
+                    pesan: 'Hasilnya sedang ditinjau tim rekrutmen. Keputusannya muncul di halaman ini begitu terbit, dan kamu juga diberi tahu lewat email.',
+                };
+            }
+
+            // Ada yang bisa dikerjakan SEKARANG (tes online terbuka).
+            if (belum.some((x) => x.ujian?.bisaAkses && !x.terkunci)) {
+                return {
+                    nada: 'aksi',
+                    ikon: 'bi-play-circle-fill',
+                    judul: 'Ada aktivitas yang bisa kamu kerjakan sekarang',
+                    pesan: 'Ikuti petunjuk pada kartu di bawah. Pastikan koneksi stabil sebelum memulai.',
+                };
+            }
+
+            // DITAHAN TIM. Rangkaian berikutnya sengaja belum dibuka karena
+            // hasil sebelumnya sedang ditinjau. Ini keadaan yang paling mudah
+            // disalahpahami kandidat sebagai "sistemnya macet", jadi ia
+            // didahulukan dan disebut apa adanya.
+            if (belum.every((x) => x.terkunci) && belum.length) {
+                return {
+                    nada: 'tinjau',
+                    ikon: 'bi-shield-lock-fill',
+                    judul: 'Hasil kamu sedang ditinjau',
+                    pesan: 'Rangkaian berikutnya dibuka setelah tim rekrutmen selesai meninjau bagian yang sudah kamu jalani. Tidak ada yang perlu kamu lakukan sekarang.',
+                };
+            }
+
+            // Sudah ada undangan bertanggal — itu yang paling perlu ia tahu.
+            const terjadwal = belum.find((x) => x.jadwal);
+            if (terjadwal) {
+                return {
+                    nada: 'jadwal',
+                    ikon: 'bi-calendar-check-fill',
+                    judul: 'Kamu sudah dijadwalkan',
+                    pesan: 'Rincian waktu dan tempatnya ada di bawah. Undangan yang sama juga dikirim ke emailmu — mohon hadir tepat waktu.',
+                };
+            }
+
+            return {
+                nada: 'tunggu',
+                ikon: 'bi-clock-history',
+                judul: 'Menunggu jadwal dari tim rekrutmen',
+                pesan: 'Tahap ini masih berjalan dan belum ada yang perlu kamu kerjakan. Begitu jadwalnya ditetapkan, rinciannya muncul di halaman ini dan dikirim ke emailmu.',
+            };
+        },
+
         // Apa yang terjadi SETELAH tes dikerjakan. Sengaja TIDAK menyebut lulus
         // atau tidak: kapan hasil boleh dilihat kandidat diatur Mode Pengumuman
         // tahap, jadi membocorkannya di sini akan mendahului aturan itu.
@@ -1051,10 +1238,15 @@ export default {
             // dua aktivitas lain belum dijalankan sama sekali.
             const sisa = this.aktivitas.filter((x) => !x.selesai);
             if (sisa.length) {
-                const nama = sisa.map((x) => x.label).join(', ');
-
-                return `Tahap ini belum selesai — masih menunggu: ${nama}. `
-                    + 'Keputusan tahap baru diambil setelah seluruh aktivitas rampung, jadi pantau terus halaman ini.';
+                // NAMA AKTIVITAS YANG TERSISA TIDAK DISEBUT.
+                //
+                // Sebelumnya kalimat ini berbunyi "masih menunggu: DISC, FGD,
+                // Wawancara" — membeberkan alat ukur yang belum dilalui kepada
+                // orang yang sedang diukur. Yang berguna baginya bukan nama
+                // asesmennya, melainkan bahwa tahapnya belum selesai dan tak ada
+                // yang perlu ia kerjakan sekarang.
+                return 'Tahap ini masih berjalan. Tim rekrutmen akan menghubungi kamu bila ada yang perlu kamu ikuti berikutnya — '
+                    + 'keputusan tahap baru diambil setelah seluruh rangkaiannya rampung.';
             }
 
             return 'Hasilnya sudah masuk dan sedang ditinjau tim rekrutmen. Keputusan tahap ini akan muncul di halaman ini begitu terbit.';
@@ -1182,25 +1374,36 @@ export default {
             if (this.formulir.length) {
                 out.push({ k: 'berkas', label: 'Formulir & Berkas', ikon: 'bi-folder-fill', jml: this.formulir.length });
             }
-            if (this.catatanTahap.length) {
-                // Judulnya memakai istilah yang kandidat kenali — "Catatan Tim"
-                // terbaca sebagai urusan internal, bukan miliknya.
-                out.push({ k: 'catatan', label: 'Hasil Tahapan', ikon: 'bi-clipboard2-check-fill', jml: this.catatanTahap.length });
-            }
+            // TAB "HASIL TAHAPAN" DIHAPUS.
+            //
+            // Isinya menggandakan apa yang sudah terbaca di halaman ini: hasil
+            // tiap tahap tampil di kartu keputusan paling atas dan di timeline
+            // progres, lengkap dengan status dan tanggalnya. Tab tersendiri
+            // membuat kandidat mengira ada keterangan LAIN yang belum ia baca,
+            // lalu membukanya dan menemukan hal yang sama — hanya dengan tata
+            // letak berbeda.
+            //
+            // `catatanTahap` sengaja DIPERTAHANKAN: dipakai bagian lain dan
+            // menghapusnya hanya menambah perubahan tanpa manfaat.
 
             return out;
         },
         /**
-         * Catatan tim per tahap yang boleh dibaca kandidat.
+         * Catatan keputusan per tahap yang boleh dibaca kandidat.
          *
-         * NILAI sengaja tidak ikut — kandidat cukup tahu catatannya, bukan
-         * angkanya. Hanya tahap yang hasilnya sudah boleh diumumkan yang masuk,
-         * supaya aturan Mode Pengumuman tetap dihormati di sini.
+         * NILAI tidak ikut — kandidat cukup tahu keterangannya, bukan angkanya.
+         * Hanya tahap yang hasilnya sudah boleh diumumkan yang masuk, supaya
+         * aturan Mode Pengumuman tetap dihormati di sini.
+         *
+         * CATATAN PER AKTIVITAS DIHAPUS DARI SINI. Yang ditulis tim di sana
+         * adalah penilaian internal ("gugup, tidak direkomendasikan"), dan sejak
+         * catatannya bisa memuat lembar penilaian terpindai, menampilkannya
+         * berarti menyerahkan rapor internal ke kandidat. Server pun tidak lagi
+         * mengirimkannya — lihat LamaranController::portalDetail().
          */
         catatanTahap() {
             return this.tahap
-                .filter((t) => t.hasilTampil && (t.catatan || (t.berkas || []).length
-                    || (t.tes || []).some((x) => x.catatan)))
+                .filter((t) => t.hasilTampil && (t.catatan || (t.berkas || []).length))
                 .map((t) => ({
                     urutan: t.urutan,
                     label: t.label,
@@ -1208,10 +1411,6 @@ export default {
                     catatan: t.catatan,
                     at: t.diputusAt,
                     berkas: t.berkas || [],
-                    // Catatan per aktivitas (DISC, Wawancara, dst.). NILAI tidak
-                    // ikut dikirim server — kandidat cukup tahu catatannya.
-                    tes: (t.tes || []).filter((x) => x.catatan)
-                        .map((x) => ({ label: x.label, tipeNama: x.tipeNama, catatan: x.catatan })),
                 }));
         },
         /** Aktivitas tahap aktif yang SUDAH punya jadwal tatap muka. */
@@ -1230,7 +1429,6 @@ export default {
                 .filter((x) => x.unggah && !x.selesai)
                 .map((x) => ({ key: x.urutan, id: x.id, label: x.label, ...x.unggah }));
         },
-        aktivitasSelesai() { return this.aktivitas.filter((x) => x.selesai).length; },
         k() { return this.kartu || {}; },
         ringkasan() { return this.k.ringkasan || this.k.deskripsi || ''; },
         tanggungJawab() { return this.k.tanggungJawab || []; },
@@ -1259,8 +1457,14 @@ export default {
         heroSteps() {
             const src = this.tahap.length ? this.tahap : Array.from({ length: this.totalTahap }, (_, i) => ({ urutan: i + 1, label: `Tahap ${i + 1}`, status: 'MENUNGGU' }));
             return src.map((t) => {
+                // Tahap yang masih BERJALAN pada lamaran yang sudah BERHENTI
+                // bukan lagi tahap "sedang berlangsung". Dulu hanya status
+                // GUGUR yang dihitung, sehingga kandidat yang mengundurkan diri
+                // tetap melihat tahapnya berkedip seolah prosesnya jalan terus.
                 const st = t.status === 'SELESAI' ? (t.hasil === 'GUGUR' ? 'fail' : 'done')
-                    : t.status === 'BERJALAN' ? (this.lamaran.status === 'GUGUR' ? 'fail' : 'current') : 'todo';
+                    : t.status === 'BERJALAN'
+                        ? (this.lamaranBerhenti ? (this.stKey === 'gugur' ? 'fail' : 'todo') : 'current')
+                        : 'todo';
                 return {
                     name: t.label,
                     st,
@@ -1330,10 +1534,13 @@ export default {
             this.muatDraf();
         }
         this.jam = setInterval(() => { this.now = Date.now(); }, 15000);
+        this.sambutPulangTes();
     },
     beforeUnmount() {
         if (this.jam) clearInterval(this.jam);
         if (this.tm) clearTimeout(this.tm);
+        if (this.timerPindah) clearInterval(this.timerPindah);
+        this.hentikanPantauHasil();
     },
     methods: {
         katLabel(k) { return { REKRUTMEN: 'Rekrutmen', MT: 'Management Trainee', INTERNSHIP: 'Internship' }[k] || k || '—'; },
@@ -1358,6 +1565,21 @@ export default {
         labelIsian(j) {
             return LABEL_FIELD[j.key] || j.label;
         },
+        /**
+         * Isian ini memang berupa berkas?
+         *
+         * Dinilai dari POLA KUNCI juga, bukan cuma dari ada-tidaknya berkas
+         * terunggah — kalau hanya dari berkasnya, dokumen yang BELUM diunggah
+         * terbaca sebagai isian teks biasa lalu tampil "—". Padahal justru
+         * kekosongan itu yang perlu terbaca sebagai "Belum ada".
+         */
+        isianBerkas(j) {
+            return !!j.berkas || /^(dok|file|berkas|upload)_/i.test(j.key || '');
+        },
+        /** Jawaban panjang (alamat, uraian) memakai satu baris penuh. */
+        isianPanjang(j) {
+            return !this.isianBerkas(j) && String(j.nilai ?? '').length > 60;
+        },
         statusFormulir(f) {
             const t = this.tahap.find((x) => x.urutan === f.urutan);
 
@@ -1375,7 +1597,20 @@ export default {
 
             return { teks: 'Menunggu Diproses', kelas: 'is-wait' };
         },
-        stLabel(s) { return { BERJALAN: 'Berjalan', LULUS: 'Diterima', GUGUR: 'Tidak Lolos' }[s] || s; },
+        /**
+         * Kata status — dari server (Master Hasil Keputusan), bukan peta di sini.
+         *
+         * Peta literal sebelumnya berhenti di tiga status, sehingga kandidat
+         * yang mengundurkan diri membaca `MENGUNDURKAN_DIRI` apa adanya di
+         * layarnya sendiri.
+         */
+        stLabel(s) {
+            if (s === this.lamaran.status && this.lamaran.statusLabel) {
+                return this.lamaran.statusLabel;
+            }
+
+            return { BERJALAN: 'Berjalan', LULUS: 'Diterima', GUGUR: 'Tidak Lolos' }[s] || s;
+        },
         stepStatus(t) {
             if (t.status === 'SELESAI') return t.hasil === 'GUGUR' ? 'Gugur' : 'Lulus';
             if (t.status === 'BERJALAN') return 'Berlangsung';
@@ -1386,30 +1621,55 @@ export default {
         // yang ditunggu di sana adalah kabar dari tim, bukan tombol mulai tes.
         subState(x) {
             if (x.selesai) return x.hasil === 'GAGAL' ? 'fail' : 'done';
+            // TAHAP BERURUTAN — giliran aktivitas ini belum tiba. Didahulukan
+            // di atas segalanya: tanpa ini, tes online yang terkunci tetap
+            // terbaca "bisa dikerjakan" padahal tombolnya tidak akan bekerja.
+            if (x.terkunci) return 'antre';
             if (!x.eksternal) return 'tim';
             if (x.ujian?.bisaAkses) return 'open';
             if (x.ujian?.terjadwal) return 'sched';
             return 'wait';
         },
         subLabel(x) {
+            // Nama aktivitas yang ditunggu disebut bila ada — tapi hanya bila
+            // server memang mengirimkannya. Aktivitas internal sengaja tidak
+            // punya nama di sini, dan menyebutnya akan membocorkan langkah yang
+            // justru disembunyikan.
+            if (this.subState(x) === 'antre') {
+                return x.menunggu ? `menunggu ${x.menunggu} selesai` : 'menunggu tahap sebelumnya';
+            }
+
             return {
                 done: 'selesai', fail: 'tidak lolos', open: 'bisa dikerjakan',
                 sched: 'terjadwal', wait: 'menunggu jadwal', tim: 'diatur tim rekrutmen',
             }[this.subState(x)];
         },
         // Timeline node styling (design).
+        // Lamaran yang sudah BERHENTI — apa pun sebabnya — tidak lagi punya
+        // tahap "sedang berlangsung". Pemeriksaan lama hanya mengenal GUGUR,
+        // sehingga pengunduran diri menyisakan titik berkedip di timeline.
         tlState(t) {
             if (t.status === 'SELESAI') return t.hasil === 'GUGUR' ? 'fail' : 'done';
-            if (t.status === 'BERJALAN') return this.lamaran.status === 'GUGUR' ? 'fail' : 'current';
+            if (t.status === 'BERJALAN') {
+                if (!this.lamaranBerhenti) return 'current';
+
+                return this.stKey === 'gugur' ? 'fail' : 'todo';
+            }
+
             return 'todo';
         },
         tlTodo(t) { return t.status !== 'SELESAI' && t.status !== 'BERJALAN'; },
         tlCol(t) {
             if (t.status === 'SELESAI') return t.hasil === 'GUGUR' ? '#ef4444' : '#10b981';
-            if (t.status === 'BERJALAN') return this.lamaran.status === 'GUGUR' ? '#ef4444' : '#f59e0b';
+            if (t.status === 'BERJALAN') {
+                if (!this.lamaranBerhenti) return '#f59e0b';
+
+                return this.stKey === 'gugur' ? '#ef4444' : '#cbd2e0';
+            }
+
             return '#cbd2e0';
         },
-        tlNode(t) { return { borderColor: this.tlCol(t), animation: t.status === 'BERJALAN' && this.lamaran.status !== 'GUGUR' ? 'ldPulse 2s infinite' : 'none' }; },
+        tlNode(t) { return { borderColor: this.tlCol(t), animation: t.status === 'BERJALAN' && !this.lamaranBerhenti ? 'ldPulse 2s infinite' : 'none' }; },
         tlTagStyle(t) {
             if (t.status === 'SELESAI') return t.hasil === 'GUGUR' ? { background: 'rgba(239,68,68,.1)', color: '#dc2626' } : { background: 'rgba(16,185,129,.12)', color: '#059669' };
             if (t.status === 'BERJALAN') return { background: 'rgba(245,158,11,.14)', color: '#b45309' };
@@ -1553,6 +1813,12 @@ export default {
         bisaAkses(t) {
             const u = t.ujian;
             if (!u || !u.link || this.sudahSelesai(t)) return false;
+            // Tahap BERURUTAN: tesnya boleh saja sudah punya token dan jendela
+            // waktunya terbuka, tapi gilirannya belum tiba. Membiarkan tombolnya
+            // hidup berarti kandidat mengerjakan tes di luar urutan yang sudah
+            // disusun — dan urutan itu tidak bisa dikembalikan setelahnya.
+            if (t.terkunci) return false;
+
             return !this.belumMulai(t) && !this.sudahLewat(t);
         },
         hitungMundur(t) {
@@ -1565,7 +1831,180 @@ export default {
             if (jam < 24) return `${jam} jam lagi`;
             return `${Math.floor(jam / 24)} hari lagi`;
         },
-        bukaTes(t) { if (this.bisaAkses(t)) window.open(t.ujian.link, '_blank', 'noopener'); },
+        /**
+         * Masuk ruang ujian DI TAB YANG SAMA, setelah jeda singkat.
+         *
+         * Tab baru bermasalah pada dua hal sekaligus: pemblokir popup kerap
+         * menahannya tanpa kabar (kandidat mengira tombolnya rusak), dan begitu
+         * ujian selesai, tab CAT tidak punya jalan pulang — kandidat menutupnya
+         * lalu menatap halaman lamaran yang isinya belum berubah.
+         *
+         * Jeda 3 detik bukan hiasan: berpindah domain tanpa peringatan terbaca
+         * seperti halaman yang tiba-tiba hilang, dan di layar inilah kandidat
+         * sempat membaca bahwa ia akan dipindahkan.
+         */
+        bukaTes(t) {
+            if (!this.bisaAkses(t) || this.menujuUjian) {
+                return;
+            }
+
+            // TITIPKAN JEJAK sebelum pergi. Saat kandidat diantar pulang oleh
+            // CAT, hasil tesnya belum tentu sudah sampai ke sini — callback-nya
+            // antrean, bukan seketika. Tanpa jejak ini halaman menyambutnya
+            // dengan tombol "Mulai Tes Sekarang" untuk tes yang baru saja ia
+            // kerjakan: pesan paling menakutkan yang bisa dibaca seseorang yang
+            // baru selesai ujian.
+            //
+            // sessionStorage, bukan localStorage: jejaknya milik tab ini saja
+            // dan ikut hilang saat tabnya ditutup — tidak menempel di peramban
+            // bersama orang lain yang memakai komputer yang sama.
+            this.tandaiPergiTes(t);
+
+            this.menujuUjian = true;
+            this.hitungPindah = 3;
+
+            this.timerPindah = setInterval(() => {
+                this.hitungPindah--;
+                if (this.hitungPindah > 0) {
+                    return;
+                }
+
+                clearInterval(this.timerPindah);
+                // `replace`, bukan `href`: menekan Kembali dari ruang ujian tak
+                // boleh melempar kandidat ke halaman perantara ini lalu
+                // memindahkannya lagi secara otomatis.
+                window.location.replace(t.ujian.link);
+            }, 1000);
+        },
+        batalKeUjian() {
+            clearInterval(this.timerPindah);
+            this.menujuUjian = false;
+            // Batal berarti tidak jadi pergi — jejaknya harus ikut hilang,
+            // kalau tidak halaman ini menyambut kepulangan yang tak pernah ada.
+            this.lupakanPergiTes();
+        },
+
+        // ── Jejak "sedang di ruang ujian" ────────────────────────────────────
+        kunciPergiTes() {
+            return 'wc_tes_pergi_' + (this.lamaran?.id || '');
+        },
+        tandaiPergiTes(t) {
+            try {
+                sessionStorage.setItem(this.kunciPergiTes(), JSON.stringify({ id: t.id, at: Date.now() }));
+            } catch (e) {
+                // Mode privat / storage penuh — fitur sambutan hilang, tapi
+                // membuka tesnya TIDAK BOLEH ikut gagal karenanya.
+            }
+        },
+        bacaPergiTes() {
+            try {
+                const isi = JSON.parse(sessionStorage.getItem(this.kunciPergiTes()) || 'null');
+                if (!isi || !isi.id) return null;
+
+                // Jejak basi dibuang. Batasnya longgar (12 jam) karena satu sesi
+                // tes bisa berjam-jam, tapi tetap ada supaya tab yang dibiarkan
+                // menganggur berhari-hari tidak menyambut kandidat dengan kabar
+                // tes yang sudah lama selesai.
+                if (Date.now() - (isi.at || 0) > 12 * 60 * 60 * 1000) {
+                    this.lupakanPergiTes();
+                    return null;
+                }
+
+                return isi;
+            } catch (e) {
+                return null;
+            }
+        },
+        lupakanPergiTes() {
+            this.pulangTes = null;
+            this.hentikanPantauHasil();
+            try {
+                sessionStorage.removeItem(this.kunciPergiTes());
+            } catch (e) {
+                /* diabaikan — lihat tandaiPergiTes() */
+            }
+        },
+
+        /**
+         * Cadangan bila jejak sessionStorage tidak ada: penanda `?dari=tes`
+         * yang dipasang di alamat pulang (lihat WcPenjadwalanJob).
+         *
+         * Jejak bisa hilang secara wajar — kandidat menutup tabnya di tengah
+         * ujian lalu membuka tautan pulang dari email, peramban ponsel yang
+         * membersihkan penyimpanan sesi saat berpindah domain, atau mode privat.
+         *
+         * Penanda alamat tidak menyebut aktivitas MANA, jadi ia hanya dipakai
+         * bila jawabannya cuma satu: tepat satu tes daring yang belum selesai.
+         * Bila ada dua, menebak berarti bisa menyembunyikan tes yang justru
+         * masih harus dikerjakan — itu lebih buruk daripada tidak menyambut.
+         */
+        tebakPulangDariAlamat() {
+            try {
+                if (new URLSearchParams(window.location.search).get('dari') !== 'tes') {
+                    return null;
+                }
+            } catch (e) {
+                return null;
+            }
+
+            const daring = (this.aktivitas || []).filter((x) => x.ujian && !x.selesai && !this.sudahSelesai(x));
+
+            return daring.length === 1 ? { id: daring[0].id, at: Date.now() } : null;
+        },
+
+        /**
+         * Sambut kepulangan dari ruang ujian, lalu tunggu hasilnya masuk.
+         *
+         * Hasil tes datang lewat callback CAT yang diproses antrean, jadi ada
+         * jeda antara "kandidat sampai di halaman ini" dan "tahapnya berubah
+         * jadi selesai". Halaman menyegarkan dirinya sendiri selama jeda itu,
+         * supaya posisinya berubah di depan mata kandidat — bukan menuntutnya
+         * menekan muat-ulang untuk sesuatu yang memang sedang berjalan.
+         */
+        sambutPulangTes() {
+            const jejak = this.bacaPergiTes() || this.tebakPulangDariAlamat();
+            if (!jejak) {
+                return;
+            }
+
+            this.pulangTes = jejak;
+
+            // Sudah tercatat selesai sebelum ia sampai — tidak ada yang perlu
+            // ditunggu, dan sambutannya tidak perlu ditampilkan sama sekali.
+            if (!this.tesDitunggu) {
+                this.lupakanPergiTes();
+
+                return;
+            }
+
+            this.pulangCek = 0;
+            this.pulangTimer = setInterval(() => {
+                if (!this.tesDitunggu) {
+                    this.lupakanPergiTes();
+
+                    return;
+                }
+
+                // Berhenti setelah ~3 menit. Callback yang belum juga sampai
+                // sesudah itu bukan lagi soal jeda antrean, dan menyegarkan
+                // halaman tanpa akhir hanya membebani server tanpa mengubah
+                // apa pun. Keterangannya tetap tampil — yang berhenti hanya
+                // pemeriksaannya.
+                if (++this.pulangCek > 12) {
+                    this.hentikanPantauHasil();
+
+                    return;
+                }
+
+                router.reload({ preserveScroll: true });
+            }, 15000);
+        },
+        hentikanPantauHasil() {
+            if (this.pulangTimer) {
+                clearInterval(this.pulangTimer);
+                this.pulangTimer = null;
+            }
+        },
         fmtWaktu(iso) {
             if (!iso) return '—';
             return new Date(iso).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -1960,7 +2399,7 @@ export default {
    seperti kartu yang terpotong. */
 .ld-jdwwrap:last-child,
 .ld-mcu:last-child,
-.ld-akt:last-child,
+.ld-keadaan:last-child,
 .ld-notice:last-child { margin-bottom: 20px; }
 
 .ld-mcu { display: flex; gap: 13px; margin: 16px 20px 0; padding: 15px 17px; border-radius: 16px; border: 1px solid; }
@@ -1999,19 +2438,98 @@ export default {
 .ld-upl__del:hover { color: #dc2626; }
 .ld-upl__kosong { display: flex; align-items: center; gap: 7px; margin: 11px 0 0; font-size: 12px; font-weight: 700; color: #b45309; }
 
-.ld-akt { margin: 16px 20px 0; border: 1px solid #eef0f7; border-radius: 14px; overflow: hidden; }
-.ld-akt__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 13px; background: #f8fafc; border-bottom: 1px solid #eef0f7; font-size: 10.5px; font-weight: 800; letter-spacing: .08em; color: #a2a9ba; }
-.ld-akt__head b { letter-spacing: 0; font-size: 11.5px; color: #4f46e5; }
-.ld-akt__i { display: flex; align-items: center; gap: 10px; padding: 10px 13px; border-bottom: 1px solid #f4f5fa; }
-.ld-akt__i:last-child { border-bottom: 0; }
-.ld-akt__i > .bi { flex: none; font-size: 15px; }
-.ld-akt__i.is-ok > .bi { color: #10b981; }
-.ld-akt__i.is-wait > .bi { color: #f59e0b; }
-.ld-akt__i b { display: block; font-size: 13px; font-weight: 700; color: #1e293b; }
-.ld-akt__i small { display: block; font-size: 11px; color: #94a3b8; margin-top: 1px; }
-.ld-akt__st { flex: none; font-size: 10.5px; font-weight: 800; padding: 3px 9px; border-radius: 999px; }
-.ld-akt__i.is-ok .ld-akt__st { color: #059669; background: rgba(16, 185, 129, .12); }
-.ld-akt__i.is-wait .ld-akt__st { color: #b45309; background: rgba(245, 158, 11, .14); }
+/* ── KEADAAN TAHAP — satu panel tenang, bukan daftar asesmen ────────────────
+   Menggantikan daftar aktivitas berikut statusnya. Bentuknya sengaja
+   menyerupai pemberitahuan, bukan tabel: tidak ada yang bisa ditelusuri
+   kandidat di sini, dan tabel selalu mengundang untuk ditelusuri. */
+.ld-keadaan {
+    display: flex; align-items: flex-start; gap: 14px;
+    margin: 16px 20px 0; padding: 16px 18px;
+    border-radius: 18px; border: 1px solid;
+    /* --ldk = warna aksen keadaan; seluruh bagian di dalam mewarisinya, jadi
+       menambah keadaan baru cukup menyetel satu variabel. */
+    color: var(--ldk);
+    animation: ldKeadaanMasuk .45s cubic-bezier(.22, 1, .36, 1) both;
+}
+@keyframes ldKeadaanMasuk { from { opacity: 0; transform: translateY(6px); } }
+
+.ld-keadaan__ico {
+    flex: none; display: grid; place-items: center;
+    width: 46px; height: 46px; border-radius: 15px;
+    background: color-mix(in srgb, var(--ldk) 13%, transparent);
+}
+.ld-keadaan__teks { min-width: 0; }
+.ld-keadaan b { display: block; font-size: 14.5px; font-weight: 800; letter-spacing: -.01em; color: var(--ldk); }
+.ld-keadaan p { margin: 5px 0 0; font-size: 12.5px; line-height: 1.62; color: #64748b; }
+
+/* ── Bagian SVG: mewarisi --ldk, jadi satu set gaya melayani semua keadaan ── */
+.ld-kico__halo { fill: color-mix(in srgb, var(--ldk) 12%, transparent); stroke: none; transform-origin: center; }
+.ld-kico__ring,
+.ld-kico__jarum,
+.ld-kico__gagang,
+.ld-kico__check { stroke: var(--ldk); stroke-width: 2.1; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+.ld-kico__body { stroke: var(--ldk); stroke-width: 2.1; fill: color-mix(in srgb, var(--ldk) 14%, transparent); }
+.ld-kico__pin,
+.ld-kico__pasir,
+.ld-kico__play { fill: var(--ldk); stroke: none; }
+
+/* Jam berdetak — jarum menitnya berputar penuh, jarum jamnya lambat. */
+.ld-kico__jarum--m { transform-origin: 24px 24px; animation: ldPutar 6s linear infinite; }
+.ld-kico__jarum--h { transform-origin: 24px 24px; animation: ldPutar 36s linear infinite; }
+@keyframes ldPutar { to { transform: rotate(360deg); } }
+
+/* Halo berdenyut pelan — menandakan proses masih hidup, bukan macet. */
+.ld-keadaan .ld-kico__halo { animation: ldDenyut 2.8s ease-in-out infinite; }
+@keyframes ldDenyut { 0%, 100% { opacity: .55; transform: scale(1); } 50% { opacity: 1; transform: scale(1.06); } }
+
+/* Centang & gembok digambar sekali saat muncul. */
+.ld-kico__check { stroke-dasharray: 22; stroke-dashoffset: 22; animation: ldGambar .7s .25s ease-out forwards; }
+.ld-kico__gagang { stroke-dasharray: 30; stroke-dashoffset: 30; animation: ldGambar .6s .2s ease-out forwards; }
+@keyframes ldGambar { to { stroke-dashoffset: 0; } }
+
+/* Tombol putar berdenyut — satu-satunya keadaan yang meminta tindakan. */
+.ld-kico__ring--denyut { animation: ldRing 2s ease-out infinite; transform-origin: center; }
+@keyframes ldRing { 0% { transform: scale(.9); opacity: 1; } 100% { transform: scale(1.18); opacity: 0; } }
+
+/* Butir pasir jatuh — proses yang berjalan tanpa perlu campur tangan. */
+.ld-kico__pasir { animation: ldPasir 1.9s ease-in infinite; }
+@keyframes ldPasir { 0% { transform: translateY(-6px); opacity: 0; } 30% { opacity: 1; } 100% { transform: translateY(8px); opacity: 0; } }
+
+/* Pesawat kertas melaju & kembali — "sudah berangkat, sedang di jalan".
+   Jejak garisnya digambar sekali, memakai animasi ldGambar yang sama. */
+.ld-kico__pesawat { fill: var(--ldk); stroke: none; animation: ldTerbang 2.6s ease-in-out infinite; }
+@keyframes ldTerbang {
+    0%, 100% { transform: translate(0, 0); opacity: 1; }
+    45% { transform: translate(3px, -3px); opacity: .85; }
+}
+
+/* ── Nada tiap keadaan: cukup satu variabel + latar ── */
+.ld-keadaan.is-tunggu { --ldk: #475569; background: #f8fafc; border-color: #e6e9f0; }
+/* TERKIRIM — biru laut: kabar baik yang sudah tuntas dari sisi kandidat,
+   tapi belum jadi keputusan. Sengaja beda dari hijau "bisa dikerjakan"
+   supaya tidak terbaca sebagai ajakan mengerjakan sesuatu lagi. */
+.ld-keadaan.is-kirim  { --ldk: #0284c7; background: linear-gradient(135deg, rgba(14, 165, 233, .1), rgba(14, 165, 233, .03)); border-color: rgba(14, 165, 233, .3); }
+.ld-keadaan.is-tinjau { --ldk: #7c3aed; background: linear-gradient(135deg, rgba(124, 58, 237, .09), rgba(124, 58, 237, .03)); border-color: rgba(124, 58, 237, .26); }
+.ld-keadaan.is-jadwal { --ldk: #4f46e5; background: linear-gradient(135deg, rgba(99, 102, 241, .09), rgba(99, 102, 241, .03)); border-color: rgba(99, 102, 241, .28); }
+.ld-keadaan.is-aksi   { --ldk: #059669; background: linear-gradient(135deg, rgba(16, 185, 129, .1), rgba(16, 185, 129, .03)); border-color: rgba(16, 185, 129, .3); }
+.ld-keadaan.is-proses { --ldk: #b45309; background: linear-gradient(135deg, rgba(245, 158, 11, .1), rgba(245, 158, 11, .03)); border-color: rgba(245, 158, 11, .3); }
+
+/* Ponsel: ikon mengecil & panel merapat, teks tetap terbaca penuh. */
+@media (max-width: 520px) {
+    .ld-keadaan { gap: 11px; padding: 14px; border-radius: 15px; }
+    .ld-keadaan__ico { width: 38px; height: 38px; border-radius: 12px; }
+    .ld-keadaan__ico svg { width: 25px; height: 25px; }
+    .ld-keadaan b { font-size: 13.5px; }
+    .ld-keadaan p { font-size: 12px; }
+}
+
+/* Gerak dihentikan bagi yang memintanya — animasi di sini hiasan, bukan isi. */
+@media (prefers-reduced-motion: reduce) {
+    .ld-keadaan,
+    .ld-keadaan * { animation: none !important; }
+    .ld-kico__check, .ld-kico__gagang { stroke-dashoffset: 0; }
+}
+
 
 /* ── Kartu keputusan tahap ─────────────────────────────────────────────── */
 .ld-verdict { display: flex; align-items: center; gap: 14px; margin: 0 0 16px; padding: 16px 18px; border-radius: 18px; border: 1px solid; }
@@ -2052,6 +2570,54 @@ export default {
 
 .ld-btn-tes { margin: 16px 20px 20px; width: calc(100% - 40px); display: inline-flex; align-items: center; justify-content: center; gap: 9px; padding: 14px; border: none; border-radius: 14px; font-family: inherit; font-size: 14px; font-weight: 800; cursor: pointer; color: #fff; background: linear-gradient(135deg, #8b5cf6, #6366f1); box-shadow: 0 12px 28px rgba(99, 102, 241, 0.3); transition: transform 0.16s; }
 .ld-btn-tes:hover:not(:disabled) { transform: translateY(-2px); }
+/* ── Layar antara menuju ruang ujian ─────────────────────────────────────── */
+.ld-pindah { display: flex; align-items: center; gap: 14px; margin: 16px 20px 20px; padding: 15px 17px; border-radius: 16px; background: linear-gradient(135deg, rgba(99, 102, 241, .1), rgba(99, 102, 241, .03)); border: 1px solid rgba(99, 102, 241, .3); }
+.ld-pindah__ring { position: relative; flex: none; display: grid; place-items: center; width: 44px; height: 44px; }
+.ld-pindah__ring b { position: absolute; font-size: 14px; font-weight: 800; color: #4f46e5; font-variant-numeric: tabular-nums; }
+.ld-pindah__jalur { stroke: rgba(99, 102, 241, .2); stroke-width: 3.5; }
+/* Lingkaran menyusut selama tiga detik — hitungannya terlihat, bukan cuma angka. */
+.ld-pindah__isi { stroke: #4f46e5; stroke-width: 3.5; stroke-linecap: round; stroke-dasharray: 119.4; transform: rotate(-90deg); transform-origin: center; animation: ldPindah 3s linear forwards; }
+@keyframes ldPindah { from { stroke-dashoffset: 0; } to { stroke-dashoffset: 119.4; } }
+.ld-pindah__teks { flex: 1; min-width: 0; }
+.ld-pindah__teks b { display: block; font-size: 14px; font-weight: 800; color: #3730a3; }
+.ld-pindah__teks p { margin: 3px 0 0; font-size: 12.5px; line-height: 1.55; color: #64748b; }
+.ld-pindah__batal { flex: none; border: 1px solid #c7d2fe; background: #fff; color: #4f46e5; font-size: 12px; font-weight: 800; border-radius: 9px; padding: 7px 13px; cursor: pointer; }
+.ld-pindah__batal:hover { background: #eef2ff; }
+@media (max-width: 520px) {
+    .ld-pindah { flex-wrap: wrap; margin-left: 14px; margin-right: 14px; }
+    .ld-pindah__batal { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) { .ld-pindah__isi { animation: none; } }
+
+/* Belum gilirannya — keterangan, bukan tombol mati. Nadanya netral: tidak ada
+   yang salah, hanya belum saatnya. */
+.ld-antre { margin: 16px 20px 20px; display: flex; align-items: flex-start; gap: 9px; padding: 13px 15px; border-radius: 14px; font-size: 13px; line-height: 1.55; color: #475569; background: #f1f5f9; border: 1px solid #e2e8f0; }
+.ld-antre svg { flex: none; margin-top: 1px; color: #94a3b8; }
+.ld-antre b { color: #334155; }
+
+/* ── Jawaban baru terkirim, hasilnya belum sampai ──────────────────────────
+   Menempati posisi tombol "Mulai Tes" supaya kandidat yang baru pulang dari
+   ruang ujian tidak pernah melihat ajakan mengerjakannya lagi. Birunya sama
+   dengan panel keadaan is-kirim — satu peristiwa, satu warna. */
+.ld-terkirim { --ldt: #0284c7; margin: 16px 20px 20px; display: flex; align-items: flex-start; gap: 11px; padding: 13px 15px; border-radius: 14px; background: linear-gradient(135deg, rgba(14, 165, 233, .1), rgba(14, 165, 233, .03)); border: 1px solid rgba(14, 165, 233, .3); }
+.ld-terkirim__ring { flex: 0 0 auto; margin-top: -2px; }
+.ld-terkirim__ring svg { display: block; overflow: visible; }
+.ld-terkirim__halo { fill: var(--ldt); opacity: .14; transform-origin: 22px 22px; animation: ldHalo 3.2s ease-in-out infinite; }
+.ld-terkirim__pesawat { fill: var(--ldt); stroke: none; animation: ldTerbang 2.6s ease-in-out infinite; }
+.ld-terkirim__teks { min-width: 0; }
+.ld-terkirim b { display: block; font-size: 13.5px; font-weight: 800; color: #075985; }
+.ld-terkirim p { margin: 4px 0 0; font-size: 12.5px; line-height: 1.6; color: #64748b; }
+
+@media (max-width: 520px) {
+    .ld-terkirim { margin: 14px 14px 18px; padding: 12px 13px; gap: 9px; }
+    .ld-terkirim b { font-size: 13px; }
+    .ld-terkirim p { font-size: 12px; }
+}
+
+/* Gerak hanyalah penekanan di sini — isinya tetap terbaca penuh tanpanya. */
+@media (prefers-reduced-motion: reduce) {
+    .ld-terkirim * { animation: none !important; }
+}
 .ld-btn-tes:disabled { background: #e2e8f0; color: #94a3b8; cursor: not-allowed; box-shadow: none; }
 
 /* ALUR SELEKSI · WATERFALL (gantt bertingkat) */
@@ -2141,8 +2707,16 @@ export default {
 .ld-form.is-open .ld-form__chev { transform: rotate(180deg); }
 .ld-form__body { padding: 6px 18px 18px; animation: ldAcc 0.28s cubic-bezier(0.22, 1, 0.36, 1) both; }
 @keyframes ldAcc { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
-.ld-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: #eef0f7; border: 1px solid #eef0f7; border-radius: 14px; overflow: hidden; margin-top: 8px; }
+/* DUA KOLOM HANYA BILA MUAT. `1fr 1fr` yang dipatok memaksa dua kolom sesempit
+   apa pun layarnya — di ponsel, alamat dan uraian terjepit jadi kolom setipis
+   dua kata. auto-fit + minmax menurunkannya sendiri jadi satu kolom. */
+.ld-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 1px; background: #eef0f7; border: 1px solid #eef0f7; border-radius: 14px; overflow: hidden; margin-top: 8px; }
 .ld-field { background: #fff; padding: 11px 14px; min-width: 0; }
+.ld-field.is-panjang { grid-column: 1 / -1; }
+/* ADA / TIDAK ADA — berkasnya sendiri ada di "Dokumen & Verifikasi" di bawah. */
+.ld-badge { display: inline-flex; align-items: center; gap: 5px; margin-top: 3px; padding: 3px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 800; }
+.ld-badge.is-ada { color: #047857; background: rgba(16, 185, 129, .12); }
+.ld-badge.is-kosong { color: #94a3b8; background: #f1f5f9; }
 .ld-field__k { font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; color: #a2a9ba; text-transform: uppercase; }
 .ld-field__v { font-size: 13.5px; font-weight: 700; color: #1e293b; margin-top: 3px; word-break: break-word; }
 .ld-docs { margin-top: 14px; display: flex; flex-direction: column; gap: 9px; }
@@ -2273,7 +2847,7 @@ export default {
     .ld-hero__in { padding: 18px; }
     /* Kartu jadwal & hasil menempel lebih rapat ke tepi layar sempit —
        margin 20px membuat isinya tinggal separuh lebar di ponsel. */
-    .ld-jdwwrap, .ld-mcu, .ld-akt { margin-left: 14px; margin-right: 14px; }
+    .ld-jdwwrap, .ld-mcu, .ld-keadaan { margin-left: 14px; margin-right: 14px; }
     .ld-cat__i { padding: 14px; }
     /* Indent 41px (selebar nomor tahap) tidak muat di ponsel: catatannya
        jadi kolom sempit yang setiap kalimatnya patah. */
