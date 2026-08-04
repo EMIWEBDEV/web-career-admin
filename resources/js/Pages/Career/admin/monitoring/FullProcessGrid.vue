@@ -58,7 +58,10 @@
                     </span>
                 </button>
 
-                <button v-for="s in o.jejak" :key="s.urutan" type="button"
+                <!-- Kunci pakai KODE kolom, bukan nomor: sesudah sel dicocokkan
+                     per identitas tahap, dua kolom bisa menunjuk tahap kandidat
+                     yang sama dan nomornya jadi kembar dalam satu baris. -->
+                <button v-for="(s, si) in o.jejak" :key="s.kode || si" type="button"
                     class="wcm-sel" :class="[`k-${s.keadaan.toLowerCase()}`, { 'is-siap': menungguKetukan(s) }]"
                     :title="judulSel(o, s)" :disabled="!bisaDibuka(s)"
                     @click="bisaDibuka(s) && $emit('open-cell', { id: o.id, urutan: s.urutan, label: s.label })">

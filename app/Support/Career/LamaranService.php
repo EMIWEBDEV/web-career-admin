@@ -209,12 +209,39 @@ class LamaranService
                     // Urutan); tidak ada mode bawaan yang ditulis di sini.
                     'Urutan_Aktivitas' => $t->Urutan_Aktivitas,
                     'Provider' => $t->Provider,
-                    'Keputusan_Mode' => $t->Keputusan ?? null,
+                    // DARI Mode_Keputusan_Kode, BUKAN Keputusan.
+                    //
+                    // Keduanya ada di master dan namanya mirip, tapi hanya
+                    // Mode_Keputusan_Kode yang berisi kode yang dikenali
+                    // Master_Mode_Keputusan (MANUAL_REVIEW / AUTO_SEMUA_LULUS /
+                    // AUTO_TERAKHIR / HYBRID). Kolom `Keputusan` peninggalan
+                    // lama hanya berisi 'MANUAL'/'SYSTEM' — kode yang tak
+                    // pernah cocok, sehingga snapshot-nya diam-diam jatuh ke
+                    // MANUAL_REVIEW dan tahap ber-mode otomatis berhenti
+                    // meloloskan sendiri.
+                    'Keputusan_Mode' => $t->Mode_Keputusan_Kode ?? null,
+                    // Perilaku berkas hasil ikut dibekukan. Tanpa ini,
+                    // menyalakan "wajib unggah" di master mengunci kandidat
+                    // yang tahapnya sudah selesai dinilai — menuntut berkas
+                    // yang saat mereka menjalaninya memang tidak diminta.
+                    'Flag_Upload_Hasil' => $t->Flag_Upload_Hasil ?? 'T',
+                    'Flag_Wajib_Upload' => $t->Flag_Wajib_Upload ?? 'T',
                     // Tahap pertama mewarisi formulir pendaftaran bawaan bila
                     // Master Alur lama belum menautkannya.
                     'Formulir_Kode' => $i === 0
                         ? ($t->Formulir_Kode ?? $formulirPendaftaranKode)
                         : $t->Formulir_Kode,
+                    // ISI formulirnya ikut dibekukan, bukan cuma kodenya.
+                    //
+                    // Formulir_Kode hanya penunjuk; skema sesungguhnya dicari
+                    // lewat Master_Formulir.Komponen_Kode saat halaman dibuka.
+                    // Sambungan tengah itu yang bocor: begitu admin mengarahkan
+                    // Komponen_Kode ke versi baru, seluruh kandidat yang belum
+                    // mengisi — termasuk yang sudah berjalan berminggu-minggu —
+                    // langsung mendapat formulir baru tanpa peringatan apa pun.
+                    ...self::bekukanFormulir(
+                        $i === 0 ? ($t->Formulir_Kode ?? $formulirPendaftaranKode) : $t->Formulir_Kode
+                    ),
                     'Jenis_Tes_Kode' => $t->Jenis_Tes_Kode,
                     // Tahap pertama: GUGUR bila knock-out, kalau tidak BERJALAN.
                     'Status' => $i === 0 ? ($gugur ? 'GUGUR' : 'BERJALAN') : 'MENUNGGU',
@@ -338,7 +365,16 @@ class LamaranService
                 'Lamaran_Id' => $lamaran->Id_Lamaran,
                 'Lamaran_Tahap_Id' => $tahap->Id_Lamaran_Tahap,
                 'Master_Formulir_Id' => $formulir?->Id_Master_Formulir,
-                'Komponen_Kode' => $formulir?->Komponen_Kode,
+                // KOMPONEN YANG DIBEKUKAN, bukan yang sedang menempel di master.
+                //
+                // Inilah yang menentukan label pertanyaan saat pengisian ini
+                // dibuka lagi berbulan-bulan kemudian. Kalau diambil dari master
+                // yang hidup, jawaban lama akan dibacakan memakai daftar
+                // pertanyaan versi baru: field yang berganti nama jadi kosong,
+                // dan admin menyimpulkan kandidatnya tidak mengisi — padahal
+                // mengisi lengkap.
+                'Komponen_Kode' => $tahap->Formulir_Komponen ?: $formulir?->Komponen_Kode,
+                'Formulir_Versi' => $tahap->Formulir_Versi ?? null,
                 'Sumber' => $tahap->Urutan == 1 ? 'PENDAFTARAN' : 'TAHAP',
                 'Master_Alur_Tahap_Id' => $tahap->Master_Alur_Tahap_Id,
                 'Program_Id' => $lamaran->Program_Id,
@@ -1052,8 +1088,14 @@ class LamaranService
                     // Urutan); tidak ada mode bawaan yang ditulis di sini.
                     'Urutan_Aktivitas' => $t->Urutan_Aktivitas,
                     'Provider' => $t->Provider,
-                    'Keputusan_Mode' => $t->Keputusan ?? null,
+                    // Lihat penjelasan panjang di jalur pendaftaran biasa:
+                    // Mode_Keputusan_Kode, bukan kolom `Keputusan` peninggalan.
+                    'Keputusan_Mode' => $t->Mode_Keputusan_Kode ?? null,
+                    'Flag_Upload_Hasil' => $t->Flag_Upload_Hasil ?? 'T',
+                    'Flag_Wajib_Upload' => $t->Flag_Wajib_Upload ?? 'T',
                     'Formulir_Kode' => $t->Formulir_Kode,
+                    // Lihat penjelasan di jalur pendaftaran biasa.
+                    ...self::bekukanFormulir($t->Formulir_Kode),
                     'Jenis_Tes_Kode' => $t->Jenis_Tes_Kode,
                     'Status' => $bypass ? 'SELESAI' : ($isEntry ? 'BERJALAN' : 'MENUNGGU'),
                     'Hasil' => $bypass ? 'LULUS' : null,
@@ -1146,7 +1188,23 @@ class LamaranService
         }
     }
 
-    /** Pastikan tahap punya sub-tes (self-heal lamaran lama pra-mesin). */
+    /**
+     * Pastikan tahap punya sub-tes (self-heal lamaran lama pra-mesin).
+     *
+     * SATU-SATUNYA JALUR YANG MASIH MEMUNGUT DARI MASTER, dan karena itu ia
+     * memeriksa dulu apakah masternya masih menggambarkan tahap yang sama.
+     *
+     * MasterAlurController sengaja MEMAKAI ULANG baris tahap per Urutan saat
+     * alur disunting, supaya lamaran berjalan tidak kehilangan rujukan. Efek
+     * sampingnya: Id_Master_Alur_Tahap yang tersimpan di lamaran bisa hari ini
+     * menggambarkan tahap yang sama sekali lain. Memungut aktivitas dari sana
+     * berarti menanam "Wawancara User" ke dalam tahap yang menurut kandidat —
+     * dan menurut seluruh layar — bernama "Psikotes".
+     *
+     * Kalau kodenya sudah tidak cocok, master diabaikan dan tahapnya diberi
+     * satu aktivitas yang dibentuk dari dirinya sendiri (blok di bawah). Lebih
+     * baik sederhana dan benar daripada lengkap tapi milik tahap lain.
+     */
     private function pastikanSubTes(int $lamaranTahapId): void
     {
         if (DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')->where('Lamaran_Tahap_Id', $lamaranTahapId)->exists()) {
@@ -1156,7 +1214,7 @@ class LamaranService
         if (! $t) {
             return;
         }
-        if ($t->Master_Alur_Tahap_Id) {
+        if ($t->Master_Alur_Tahap_Id && $this->masterMasihTahapYangSama($t)) {
             $this->snapshotSubTes($lamaranTahapId, (int) $t->Master_Alur_Tahap_Id, now(), 'SISTEM', null);
         }
         // Master tak punya sub-tes (data lama) → buat 1 dari tahap itu sendiri.
@@ -1239,7 +1297,7 @@ class LamaranService
                 return ['outcome' => 'NOOP'];
             }
 
-            $mode = $this->modeKeputusan((int) $tahap->Master_Alur_Tahap_Id);
+            $mode = $this->modeKeputusan($tahap);
 
             // ── HOLD MENGHENTIKAN MESIN, BUKAN HANYA TOMBOL ADMIN ────────────
             // Tanpa ini, hold tak berarti apa-apa pada tahap ber-mode otomatis:
@@ -1310,11 +1368,117 @@ class LamaranService
         });
     }
 
-    /** Baca mode keputusan tahap; fallback AMAN (MANUAL) bila konfigurasi hilang. */
-    private function modeKeputusan(int $masterAlurTahapId): object
+    /**
+     * Mode keputusan tahap — DARI SNAPSHOT LAMARAN, master hanya cadangan.
+     *
+     * KENAPA SNAPSHOT DULU
+     * Dulu ini membaca Master_Alur_Tahap.Mode_Keputusan_Kode hidup-hidup lewat
+     * Master_Alur_Tahap_Id, padahal Lamaran_Tahap.Keputusan_Mode sudah menyimpan
+     * salinannya sejak orang melamar. Akibatnya dua hal yang sama-sama sunyi:
+     *
+     *   1. Menyunting mode tahap mengubah aturan orang yang SEDANG menjalaninya.
+     *      Tahap yang dimulai sebagai MANUAL bisa tiba-tiba meloloskan sendiri.
+     *   2. MasterAlurController memakai ULANG baris tahap per Urutan supaya
+     *      lamaran berjalan tak kehilangan rujukan. Efek sampingnya, Id yang
+     *      sama bisa berganti arti — dan pembacaan lewat Id itu ikut berganti
+     *      arti tanpa ada yang memintanya.
+     *
+     * Master tetap dipakai sebagai cadangan untuk lamaran lama yang dibuat
+     * sebelum kolom snapshot ada; itu satu-satunya kasus yang tersisa.
+     */
+    /**
+     * Apakah baris master yang dirujuk tahap ini MASIH tahap yang sama?
+     *
+     * Dibandingkan lewat KODE — identitasnya — bukan lewat Id, karena Id-nya
+     * memang sengaja dipertahankan saat alur disunting. Tahap lamaran tanpa
+     * Kode (data pra-mesin) dianggap masih cocok: di situ tak ada apa pun yang
+     * bisa dibandingkan, dan menolak memungut hanya membuat tahapnya kosong.
+     */
+    private function masterMasihTahapYangSama(object $tahap): bool
     {
-        $kode = DB::table('N_WEB_CAREERS_Master_Alur_Tahap')->where('Id_Master_Alur_Tahap', $masterAlurTahapId)->value('Mode_Keputusan_Kode');
-        $mode = $kode ? DB::table('N_WEB_CAREERS_Master_Mode_Keputusan')->where('Kode', $kode)->first() : null;
+        $kodeLamaran = trim((string) ($tahap->Kode ?? ''));
+        if ($kodeLamaran === '') {
+            return true;
+        }
+
+        $kodeMaster = DB::table('N_WEB_CAREERS_Master_Alur_Tahap')
+            ->where('Id_Master_Alur_Tahap', $tahap->Master_Alur_Tahap_Id)
+            ->value('Kode');
+
+        return trim((string) $kodeMaster) === $kodeLamaran;
+    }
+
+    /**
+     * Bekukan formulir sebuah tahap: komponen + nomor versi terbit saat ini.
+     *
+     * KENAPA KOMPONEN, BUKAN CUMA KODE
+     * `Formulir_Kode` sudah dibekukan sejak dulu, tapi ia hanya penunjuk. Isi
+     * pertanyaannya baru dicari saat halaman dibuka lewat
+     * Master_Formulir.Komponen_Kode — dan sambungan itulah yang bocor. Admin
+     * mengarahkan komponen ke versi baru; detik itu juga kandidat yang belum
+     * mengisi mendapat formulir yang berbeda dari yang dijanjikan saat mereka
+     * melamar.
+     *
+     * BATASNYA JUJUR: ini mengunci formulir MANA yang dipakai. Bila berkas
+     * skema di frontend itu sendiri disunting di tempat, tidak ada apa pun di
+     * basis data yang bisa menolong. Versi formulir baru wajib komponen baru.
+     *
+     * @return array{Formulir_Komponen: ?string, Formulir_Versi: ?int}
+     */
+    private static function bekukanFormulir(?string $formulirKode): array
+    {
+        if (! $formulirKode) {
+            return ['Formulir_Komponen' => null, 'Formulir_Versi' => null];
+        }
+
+        $master = DB::table('N_WEB_CAREERS_Master_Formulir')
+            ->where('Kode', $formulirKode)
+            ->first(['Id_Master_Formulir', 'Komponen_Kode']);
+
+        if (! $master) {
+            return ['Formulir_Komponen' => null, 'Formulir_Versi' => null];
+        }
+
+        // MAX, bukan sembarang baris terbit: satu formulir bisa punya beberapa
+        // baris PUBLISHED dari rilis berturut-turut, dan yang berlaku adalah
+        // yang terakhir.
+        $versi = DB::table('N_WEB_CAREERS_Master_Formulir_Versi')
+            ->where('Master_Formulir_Id', $master->Id_Master_Formulir)
+            ->where('Status', 'PUBLISHED')
+            ->max('Versi');
+
+        return [
+            'Formulir_Komponen' => $master->Komponen_Kode,
+            'Formulir_Versi' => $versi !== null ? (int) $versi : null,
+        ];
+    }
+
+    private function modeKeputusan(object $tahap): object
+    {
+        // Snapshot dipakai hanya bila kodenya BENAR-BENAR DIKENALI master.
+        //
+        // Baris lama menyimpan 'MANUAL'/'SYSTEM' — warisan kolom `Keputusan`
+        // yang dulu keliru dijadikan sumber snapshot. Kode itu tidak pernah
+        // cocok dengan Master_Mode_Keputusan. Kalau snapshot diterima mentah,
+        // tahap ber-mode AUTO_SEMUA_LULUS akan diam-diam turun jadi manual dan
+        // kandidatnya menggantung menunggu keputusan yang seharusnya otomatis.
+        //
+        // Jadi: kode tak dikenal DIPERLAKUKAN SEPERTI KOSONG — jatuh ke master,
+        // bukan ke bawaan.
+        $mode = null;
+        $kodeSnapshot = $tahap->Keputusan_Mode ?? null;
+
+        if ($kodeSnapshot) {
+            $mode = DB::table('N_WEB_CAREERS_Master_Mode_Keputusan')->where('Kode', $kodeSnapshot)->first();
+        }
+
+        if (! $mode && ! empty($tahap->Master_Alur_Tahap_Id)) {
+            $kode = DB::table('N_WEB_CAREERS_Master_Alur_Tahap')
+                ->where('Id_Master_Alur_Tahap', $tahap->Master_Alur_Tahap_Id)
+                ->value('Mode_Keputusan_Kode');
+
+            $mode = $kode ? DB::table('N_WEB_CAREERS_Master_Mode_Keputusan')->where('Kode', $kode)->first() : null;
+        }
 
         return $mode ?: (object) ['Kode' => 'MANUAL_REVIEW', 'Tunggu' => 'SEMUA', 'Auto_Lanjut' => 'N', 'Syarat_Lulus' => 'MANUAL', 'Auto_Gugur' => 'N'];
     }

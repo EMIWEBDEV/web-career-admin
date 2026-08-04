@@ -166,12 +166,23 @@
 
                     <!-- KANBAN -->
                     <div v-else class="plw-kanban" :class="{ 'is-gugur': statusTab === 'GUGUR' }">
-                        <div v-for="(col, i) in kolomTampil" :key="col.kode || col.label" class="plw-col">
+                        <div v-for="(col, i) in kolomTampil" :key="col.kode || col.label" class="plw-col" :class="{ 'is-lawas': col.alurLain }">
                             <div class="plw-col__head">
                                 <span class="plw-col__num" :class="{ 'is-hot': kartuKolom(col).length > 0 }">{{ String(i + 1).padStart(2, '0') }}</span>
                                 <span class="plw-col__name">
                                     <span class="plw-ell">{{ col.label }}</span>
                                     <svg v-if="col.provider === 'THIRD_PARTY'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" style="flex: 0 0 auto"><rect x="4" y="4" width="16" height="16" rx="2" /><path d="M9 9h6v6H9z" /></svg>
+                                    <!-- Kolom ini bukan bagian alur program sekarang: rombongan
+                                         yang masih berjalan di alur sebelumnya. Tanpa keterangan,
+                                         admin melihat tahap asing di papannya dan mengira alurnya
+                                         rusak — lalu ragu mengambil keputusan di sana. -->
+                                    <span
+                                        v-if="col.alurLain"
+                                        class="plw-col__lawas"
+                                        :title="col.cadangan
+                                            ? 'Tahap ini sudah tidak ada di alur mana pun. Kandidatnya tetap ditampilkan agar tidak terlewat.'
+                                            : 'Tahap dari alur sebelumnya. Kandidat di sini melanjutkan alur yang mereka masuki saat melamar.'"
+                                    >alur lama</span>
                                 </span>
                                 <span class="plw-col__count">{{ kartuKolom(col).length }}</span>
                                 <!-- Penyaring MILIK KOLOM INI. Satu tahap bisa
@@ -2232,9 +2243,18 @@ export default {
          * "Loloskan" pada langkah terakhir terbaca seolah masih ada lanjutannya.
          */
         putusTuntas() {
-            const col = (this.detail.kolom || []).find((k) => k.urutan === this.putusTarget?.urutan);
-
-            return !!(col && col.tuntas);
+            // DARI KANDIDATNYA SENDIRI, bukan dari kolom master.
+            //
+            // Dulu ini mencari kolom yang NOMOR URUT-nya sama lalu membaca flag
+            // di sana. Nomor urut cuma benar selama alur tak pernah berubah:
+            // begitu alur disunting (baris dipakai ulang per urutan) atau
+            // program diarahkan ke alur lain, "kolom ke-6" bisa tahap yang sama
+            // sekali berbeda — dan tombol "Loloskan" berubah arti diam-diam
+            // menjadi "Terima Kandidat", atau sebaliknya.
+            //
+            // `perilaku` dibekukan bersama tahapnya, jadi tetap benar apa pun
+            // yang terjadi pada master sesudahnya.
+            return !!this.putusTarget?.perilaku?.tuntas;
         },
         putusJudul() {
             if (!this.putusDef) return 'Keputusan';
@@ -2250,17 +2270,11 @@ export default {
         },
         /** Tahap aktif kandidat membawa penawaran yang harus dijawab? */
         tahapPenawaran() {
-            if (!this.detailKandidat) return false;
-            const col = (this.detail.kolom || []).find((k) => k.urutan === this.detailKandidat.urutan);
-
-            return !!(col && col.penawaran);
+            return !!this.detailKandidat?.perilaku?.penawaran;
         },
         /** Tahap aktif adalah titik tuntas — meloloskan di sini = diterima bekerja. */
         tahapTuntas() {
-            if (!this.detailKandidat) return false;
-            const col = (this.detail.kolom || []).find((k) => k.urutan === this.detailKandidat.urutan);
-
-            return !!(col && col.tuntas);
+            return !!this.detailKandidat?.perilaku?.tuntas;
         },
         /**
          * Keputusan PERUSAHAAN yang boleh muncul untuk kandidat ini.
@@ -2569,11 +2583,16 @@ export default {
             if (r.nungguSistem) return 'linear-gradient(135deg,#fbbf24,#f59e0b)';
             return 'linear-gradient(135deg,#8b5cf6,#6366f1)';
         },
-        /** Tahap aktif kandidat ini di-cut-off ke Talent Pool? (dari kolom alur) */
+        /**
+         * Tahap aktif kandidat ini di-cut-off ke Talent Pool?
+         *
+         * Dibaca dari salinan tahap MILIK KANDIDAT, bukan dari kolom master.
+         * Menggeser cut-off di Master Alur tidak boleh mengubah pilihan yang
+         * ditawarkan untuk orang yang sudah berjalan — apalagi menawarkan
+         * Talent Pool pada tahap yang saat mereka melamar belum termasuk.
+         */
         bolehTalentPool(r) {
-            if (!r) return false;
-            const col = (this.detail.kolom || []).find((k) => k.urutan === r.urutan);
-            return !!(col && col.talentPool);
+            return !!(r && (r.perilaku?.talentPool ?? r.bolehTalentPool));
         },
         /** Loloskan diblokir bila kuota penuh DAN kandidat di tahap terakhir. */
         kuotaBlokir(r) { return !!(r && r.kuotaPenuh && r.diTahapAkhir); },
@@ -2607,7 +2626,21 @@ export default {
          */
         kartuKolom(col) {
             const f = this.filterKolom[this.kunciKolom(col)];
-            let baris = this.pelamarTampil.filter((r) => r.kolomUrutan === col.urutan);
+            // PENEMPATAN PER IDENTITAS TAHAP, bukan per nomor urut.
+            //
+            // Server sudah memutuskan kolom mana milik siapa (AlurKolom::cocok)
+            // dan mengirimnya sebagai `kolomKode`. Mencocokkan nomor di sini
+            // akan mengulang anggapan lama — bahwa tahap ke-N kandidat sama
+            // dengan kolom ke-N papan — yang runtuh begitu alur disunting atau
+            // program dialihkan ke alur lain.
+            //
+            // Cadangan ke nomor hanya untuk muatan lama yang belum membawa
+            // kolomKode (mis. tab yang sudah lama terbuka lalu difilter ulang).
+            let baris = this.pelamarTampil.filter((r) => (
+                r.kolomKode != null && col.kode != null
+                    ? r.kolomKode === col.kode
+                    : r.kolomUrutan === col.urutan
+            ));
 
             if (f?.q) {
                 const q = f.q.trim().toLowerCase();
@@ -2760,14 +2793,18 @@ export default {
         },
         tutupKandidat() { this.detailKandidat = null; this.lightbox = null; this.berkasHasil = []; },
         /* ── Berkas hasil tahap (MCU/Interview) ── */
+        // Keduanya dari SALINAN TAHAP milik kandidat, bukan kolom master yang
+        // dicari lewat nomor urut. Ini yang paling merugikan kalau salah:
+        // menyalakan "wajib unggah" di Master Alur akan mengunci kandidat yang
+        // tahapnya sudah selesai dinilai — menuntut dokumen yang saat mereka
+        // menjalaninya memang tidak pernah diminta.
         bolehUpload(r) {
             if (!r || !r.butuhKeputusan) return false;
-            const col = (this.detail.kolom || []).find((k) => k.urutan === r.urutan);
-            return !!(col && col.uploadHasil);
+
+            return !!r.perilaku?.uploadHasil;
         },
         wajibUpload(r) {
-            const col = (this.detail.kolom || []).find((k) => k.urutan === (r && r.urutan));
-            return !!(col && col.wajibUpload);
+            return !!r?.perilaku?.wajibUpload;
         },
         /**
          * Konfirmasi "Ya, Loloskan" tertahan bila upload wajib tapi belum ada
@@ -3565,6 +3602,10 @@ export default {
 .plw-kanban.is-gugur .plw-col__num.is-hot { background: rgba(239, 68, 68, .14); color: #b91c1c; }
 .plw-kanban.is-gugur .plw-col__count:not(:empty) { color: #b91c1c; background: rgba(239, 68, 68, .1); }
 .plw-col__name { font-size: 13.5px; font-weight: 800; color: #334155; flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; }
+/* Kolom rombongan alur lama — dibedakan, bukan diredupkan. Orang-orang di
+   dalamnya tetap harus dikerjakan; hanya asal alurnya yang berbeda. */
+.plw-col.is-lawas { border-style: dashed; border-color: rgba(167, 139, 250, .55); background: rgba(250, 248, 255, 0.72); }
+.plw-col__lawas { flex: 0 0 auto; padding: 1px 7px; border-radius: 999px; font-size: 9.5px; font-weight: 800; letter-spacing: .02em; text-transform: uppercase; background: #ede9fe; color: #6d28d9; cursor: help; }
 .plw-col__count { font-size: 12px; font-weight: 800; color: #94a3b8; background: #eef0f7; border-radius: 8px; padding: 2px 9px; flex: 0 0 auto; }
 .plw-col__cards { display: flex; flex-direction: column; gap: 11px; min-height: 60px; }
 .plw-col__empty { display: flex; align-items: center; justify-content: center; height: 80px; color: #c3cad8; font-size: 22px; font-weight: 300; }

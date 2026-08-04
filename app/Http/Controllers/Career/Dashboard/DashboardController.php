@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Career\Dashboard;
 use App\Helpers\ResponseHelper;
 use App\Http\Controllers\Controller;
 use App\Support\Career\AksesService;
+use App\Support\Career\AlurKolom;
 use App\Support\Career\MetrikRekrutmen;
 use App\Support\CareerShell;
 use Illuminate\Http\Request;
@@ -865,9 +866,9 @@ class DashboardController extends Controller
         }
 
         $in = implode(',', $ids);
-        $penempatan = DB::table(DB::raw('(' . MetrikRekrutmen::sqlUrutanDisplay("l.Program_Id IN ({$in})") . ') d'))
-            ->groupBy('d.Program_Id', 'd.UrutanDisplay')
-            ->select('d.Program_Id', 'd.UrutanDisplay',
+        $penempatan = DB::table(DB::raw('(' . MetrikRekrutmen::sqlUrutanDisplayBerkode("l.Program_Id IN ({$in})") . ') d'))
+            ->groupBy('d.Program_Id', 'd.UrutanDisplay', 'd.KodeDisplay')
+            ->select('d.Program_Id', 'd.UrutanDisplay', 'd.KodeDisplay',
                 DB::raw("SUM(CASE WHEN d.Status = 'BERJALAN' THEN 1 ELSE 0 END) as aktif"),
                 DB::raw("SUM(CASE WHEN d.Status = 'GUGUR' THEN 1 ELSE 0 END) as gugur"),
                 DB::raw("SUM(CASE WHEN d.Status = 'LULUS' THEN 1 ELSE 0 END) as lulus"),
@@ -892,12 +893,25 @@ class DashboardController extends Controller
             }
             $maxUrutan = (int) $kolom->max('Urutan');
 
-            // Jumlahkan seluruh program pemakai alur ini per UrutanDisplay,
-            // urutan di luar alur diikat ke kolom terakhir (pola Monitoring).
+            // Jumlahkan seluruh program pemakai alur ini, DIPASANGKAN LEWAT KODE
+            // tahap. Kandidat yang alurnya berbeda tetap dihitung di tahap yang
+            // benar selama namanya sama — dan itu kasus yang paling sering,
+            // karena alur baru biasanya menambah/menggeser tahap, bukan
+            // mengganti seluruh namanya.
+            //
+            // Nomor urut (dengan pengikatan ke kolom terakhir) tetap dipakai
+            // bila kodenya tak dikenal alur ini — supaya tak ada yang hilang
+            // dari hitungan, sekalipun tahapnya sudah tak ada lagi.
+            $urutanPerKode = $kolom->filter(fn ($t) => (string) ($t->Kode ?? '') !== '')
+                ->mapWithKeys(fn ($t) => [$t->Kode => (int) $t->Urutan]);
+
             $per = [];
             foreach ($grup as $p) {
                 foreach ($penempatan->get($p->Id_Program, []) as $c) {
-                    $u = (int) $c->UrutanDisplay;
+                    $kode = (string) ($c->KodeDisplay ?? '');
+                    $u = $kode !== '' && $urutanPerKode->has($kode)
+                        ? $urutanPerKode->get($kode)
+                        : (int) $c->UrutanDisplay;
                     $u = ($maxUrutan > 0 && $u > $maxUrutan) ? $maxUrutan : max(1, $u);
                     $per[$u] ??= ['aktif' => 0, 'gugur' => 0, 'lulus' => 0, 'talent' => 0];
                     foreach ($per[$u] as $k => $v) {
@@ -1467,10 +1481,12 @@ class DashboardController extends Controller
 
         // sqlUrutanDisplay + kolom tambahan Program_Posisi_Id: penempatan
         // dihitung dengan aturan yang sama seperti funnel, hanya dipecah posisi.
-        $sub = MetrikRekrutmen::sqlUrutanDisplay("l.Program_Id IN ({$in})", ['l.Program_Posisi_Id']);
+        // Berkode: angka dipasangkan ke kolom lewat IDENTITAS tahap, bukan
+        // nomor urutnya — lihat MetrikRekrutmen::sqlUrutanDisplayBerkode().
+        $sub = MetrikRekrutmen::sqlUrutanDisplayBerkode("l.Program_Id IN ({$in})", ['l.Program_Posisi_Id']);
         $sel = DB::table(DB::raw("({$sub}) d"))
-            ->groupBy('d.Program_Posisi_Id', 'd.UrutanDisplay')
-            ->selectRaw("d.Program_Posisi_Id, d.UrutanDisplay,
+            ->groupBy('d.Program_Posisi_Id', 'd.UrutanDisplay', 'd.KodeDisplay')
+            ->selectRaw("d.Program_Posisi_Id, d.UrutanDisplay, d.KodeDisplay,
                          SUM(CASE WHEN d.Status = 'BERJALAN' THEN 1 ELSE 0 END) as aktif,
                          SUM(CASE WHEN d.Status = 'GUGUR' THEN 1 ELSE 0 END) as gugur,
                          SUM(CASE WHEN d.Status = 'LULUS' THEN 1 ELSE 0 END) as lulus,
@@ -1478,17 +1494,27 @@ class DashboardController extends Controller
             ->get()
             ->groupBy('Program_Posisi_Id');
 
-        // Kolom matriks = gabungan tahap semua alur yang dipakai, diurut Urutan.
-        $tahap = DB::table('N_WEB_CAREERS_Master_Alur_Tahap as t')
-            ->join('N_WEB_CAREERS_Master_Alur as a', 'a.Id_Master_Alur', '=', 't.Master_Alur_Id')
-            ->join('N_WEB_CAREERS_Program as p', 'p.Alur_Kode', '=', 'a.Kode')
-            ->whereIn('p.Id_Program', $ids)
-            ->groupBy('t.Urutan', 't.Label')
-            ->orderBy('t.Urutan')
-            ->selectRaw('t.Urutan, MIN(t.Label) as Label')
-            ->get()
-            ->map(fn ($r) => ['urutan' => (int) $r->Urutan, 'label' => $r->Label ?: ('Tahap ' . $r->Urutan)])
-            ->all();
+        // Kolom matriks = gabungan tahap dari alur yang BENAR-BENAR DIPAKAI
+        // lamaran di program-program ini.
+        //
+        // Dulu join-nya lewat Program.Alur_Kode, yaitu alur yang SEKARANG
+        // menempel di program. Begitu admin mengarahkan program ke alur baru,
+        // rombongan yang masih berjalan di alur lama kehilangan kolomnya —
+        // angkanya menempel di tahap yang salah, atau hilang sama sekali dari
+        // rekap yang justru paling sering dilaporkan ke atas.
+        $alurPerProgram = AlurKolom::alurDipakaiBanyak(
+            array_map('intval', $ids),
+            DB::table('N_WEB_CAREERS_Program as p')
+                ->leftJoin('N_WEB_CAREERS_Master_Alur as a', 'a.Kode', '=', 'p.Alur_Kode')
+                ->whereIn('p.Id_Program', $ids)
+                ->pluck('a.Id_Master_Alur', 'p.Id_Program')
+                ->map(fn ($v) => $v ? (int) $v : null)
+                ->all(),
+        );
+
+        $tahap = collect(AlurKolom::susun(
+            collect($alurPerProgram)->flatten()->unique()->values()->all(),
+        ))->map(fn ($k) => ['urutan' => $k['urutan'], 'kode' => $k['kode'], 'label' => $k['label']])->all();
 
         $posisi = DB::table('N_WEB_CAREERS_Program_Posisi as pos')
             ->join('N_WEB_CAREERS_Program as p', 'p.Id_Program', '=', 'pos.Program_Id')
@@ -1510,14 +1536,17 @@ class DashboardController extends Controller
             ->keyBy('Program_Posisi_Id');
 
         $matriks = $posisi->map(function ($r) use ($sel, $tahap, $skorPer) {
-            $counts = collect($sel->get($r->Id_Program_Posisi, []))->keyBy('UrutanDisplay');
+            $baris = collect($sel->get($r->Id_Program_Posisi, []));
+            // Per KODE dulu; nomor urut hanya untuk baris lama tanpa Kode.
+            $perKode = $baris->filter(fn ($c) => (string) ($c->KodeDisplay ?? '') !== '')->keyBy('KodeDisplay');
+            $perUrutan = $baris->filter(fn ($c) => (string) ($c->KodeDisplay ?? '') === '')->keyBy('UrutanDisplay');
             $kuota = (int) $r->Kuota;
 
             $sel_ = [];
             $total = 0;
             $lulus = 0;
             foreach ($tahap as $t) {
-                $c = $counts->get($t['urutan']);
+                $c = $perKode->get($t['kode']) ?? $perUrutan->get($t['urutan']);
                 $isi = [
                     'aktif' => (int) ($c->aktif ?? 0),
                     'gugur' => (int) ($c->gugur ?? 0),

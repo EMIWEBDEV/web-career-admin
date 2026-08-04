@@ -101,10 +101,10 @@
 
                                 <button
                                     v-for="t in tesAlur"
-                                    :key="t.tahapUrutan + '-' + t.tesUrutan"
+                                    :key="kunciTes(t)"
                                     type="button"
                                     class="pjd-stage"
-                                    :class="{ 'is-on': tesTerpilihKey === t.tahapUrutan + '-' + t.tesUrutan }"
+                                    :class="{ 'is-on': tesTerpilihKey === kunciTes(t), 'is-lawas': t.alurLain }"
                                     @click="pilihTes(t)"
                                 >
                                     <span class="pjd-stage__no">{{ t.tahapUrutan }}</span>
@@ -113,6 +113,10 @@
                                         <span class="pjd-stage__meta">
                                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2" /><path d="M9 9h6v6H9z" /></svg>
                                             {{ t.tipeNama || 'Tes Online' }}<template v-if="t.peran === 'INFORMATIF'"> · informatif</template>
+                                            <!-- Baris ini tidak ada di alur program sekarang: sisa
+                                                 kandidat dari alur sebelumnya. Tanpa keterangan ini
+                                                 admin mengira daftarnya salah dan tidak berani menekan. -->
+                                            <template v-if="t.alurLain"> · <b>alur lama</b></template>
                                         </span>
                                     </span>
                                     <span class="pjd-stage__badge" :class="{ 'is-wait': t.menunggu > 0 }">{{ t.menunggu }} menunggu</span>
@@ -739,7 +743,7 @@ export default {
             // Hanya bagian JAM yang dipakai Element Plus; tanggalnya diabaikan.
             jamMulaiBawaan: new Date(2000, 0, 1, 8, 0, 0),
             jamAkhirBawaan: new Date(2000, 0, 1, 23, 59, 0),
-            form: { programId: null, tahapUrutan: null, tesUrutan: null, idMasterUjian: null, namaUjian: '', waktuMulai: '', waktuAkhir: '', peserta: [] },
+            form: { programId: null, tahapUrutan: null, tahapKode: null, tesUrutan: null, idMasterUjian: null, namaUjian: '', waktuMulai: '', waktuAkhir: '', peserta: [] },
         };
     },
     computed: {
@@ -750,7 +754,12 @@ export default {
             return this.opsi.program.find((p) => p.id === this.form.programId) || null;
         },
         tesTerpilihKey() {
-            return this.form.tahapUrutan ? `${this.form.tahapUrutan}-${this.form.tesUrutan}` : '';
+            // Kunci memakai KODE tahap bila ada. Dengan hadirnya baris
+            // "rombongan alur lama", dua baris bisa bernomor urut sama —
+            // memilih satu akan menyorot keduanya kalau kuncinya cuma nomor.
+            return this.form.tahapUrutan || this.form.tahapKode
+                ? this.kunciTes({ tahapKode: this.form.tahapKode, tahapUrutan: this.form.tahapUrutan, tesUrutan: this.form.tesUrutan })
+                : '';
         },
         semuaTercentang() {
             return this.kandidat.length > 0 && this.kandidat.every((k) => this.form.peserta.includes(k.kode));
@@ -865,6 +874,7 @@ export default {
         // Kosongkan pilihan tes + turunannya (kandidat ikut tahap yang dipilih).
         lupakanTes() {
             this.form.tahapUrutan = null;
+            this.form.tahapKode = null;
             this.form.tesUrutan = null;
             this.form.peserta = [];
             this.kandidat = [];
@@ -896,8 +906,17 @@ export default {
                 this.memuatTes = false;
             }
         },
+        /** Identitas satu baris tes — dipakai `:key` maupun penanda terpilih. */
+        kunciTes(t) {
+            return `${t.tahapKode || 'U' + t.tahapUrutan}#${t.tesUrutan}`;
+        },
         pilihTes(t) {
             this.form.tahapUrutan = t.tahapUrutan;
+            // IDENTITAS tahap ikut dibawa. Nomor urut saja tidak cukup begitu
+            // alur program disunting atau diganti: nomor yang sama bisa
+            // menunjuk tahap yang lain, dan jadwal terkirim untuk tes yang
+            // bukan itu — ke orang yang bukan itu juga.
+            this.form.tahapKode = t.tahapKode || null;
             this.form.tesUrutan = t.tesUrutan;
             this.form.peserta = [];
             this.muatKandidat();
@@ -935,6 +954,7 @@ export default {
             this.memuatKandidat = true;
             try {
                 const params = { programId: this.form.programId, tahapUrutan: this.form.tahapUrutan };
+                if (this.form.tahapKode) params.tahapKode = this.form.tahapKode;
                 if (this.form.tesUrutan) params.tesUrutan = this.form.tesUrutan;
                 if (this.cariKandidat) params.q = this.cariKandidat;
                 const res = await axios.get('/api/v1/penjadwalan/kandidat', { params, headers: { Accept: 'application/json' } });
@@ -1275,6 +1295,10 @@ export default {
 .pjd-stage { appearance: none; cursor: pointer; font-family: inherit; width: 100%; display: flex; align-items: center; gap: 12px; padding: 13px 15px; border-radius: 15px; border: 1.5px solid #eef0f7; background: #fff; transition: all .18s; }
 .pjd-stage:hover { border-color: #c7cdf0; }
 .pjd-stage.is-on { border-color: #8b5cf6; background: linear-gradient(135deg, rgba(139, 92, 246, .06), rgba(99, 102, 241, .06)); box-shadow: 0 8px 22px rgba(99, 102, 241, .12); }
+/* Rombongan alur lama — dibedakan lembut, bukan diredupkan: barisnya tetap
+   harus dikerjakan, hanya asalnya yang berbeda. */
+.pjd-stage.is-lawas { border-style: dashed; border-color: #dcd3f0; background: #fbfaff; }
+.pjd-stage.is-lawas .pjd-stage__no { background: #ede9fe; color: #6d28d9; }
 .pjd-stage__no { width: 28px; height: 28px; border-radius: 9px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; color: #8792a6; background: #f1f2f9; }
 .pjd-stage.is-on .pjd-stage__no { color: #fff; background: linear-gradient(135deg, #8b5cf6, #6366f1); }
 .pjd-stage__in { flex: 1; min-width: 0; text-align: left; }

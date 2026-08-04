@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Career\Monitoring;
 use App\Helpers\ResponseHelper;
 use App\Http\Controllers\Career\Lamaran\LamaranController;
 use App\Http\Controllers\Controller;
+use App\Support\Career\AlurKolom;
 use App\Support\Career\GcsBerkas;
 use App\Support\Career\MetrikRekrutmen;
 use App\Support\Career\PipelineProgress;
@@ -82,24 +83,35 @@ class MonitoringController extends Controller
                     ->get();
 
                 $programIds = $programs->pluck('Id_Program')->map(fn ($v) => (int) $v)->all();
-                $alurIds = $programs->pluck('Id_Master_Alur')->filter()->unique()->all();
 
-                // 2) Kolom funnel = tahap master alur (urut Urutan).
-                $tahapMaster = $alurIds
-                    ? DB::table('N_WEB_CAREERS_Master_Alur_Tahap')
-                        ->whereIn('Master_Alur_Id', $alurIds)
-                        ->orderBy('Urutan')
-                        ->get(['Master_Alur_Id', 'Urutan', 'Kode', 'Label', 'Provider'])
-                        ->groupBy('Master_Alur_Id')
-                    : collect();
+                // 2) KOLOM FUNNEL = alur yang BENAR-BENAR DIPAKAI lamaran program
+                //    itu, bukan penunjuk alur di programnya.
+                //
+                //    Dulu kolom disusun dari Program.Alur_Kode saja. Begitu admin
+                //    mengarahkan program ke alur baru, rombongan yang masih
+                //    berjalan di alur lama tergambar di kolom yang bukan miliknya —
+                //    angkanya tetap keluar, hanya menempel di tahap yang salah.
+                $alurProgram = $programs->pluck('Id_Master_Alur', 'Id_Program')
+                    ->map(fn ($v) => $v ? (int) $v : null)->all();
+                $alurPerProgram = AlurKolom::alurDipakaiBanyak($programIds, $alurProgram);
 
-                // 3) Penempatan pelamar per tahap — SATU statement untuk semua program.
+                $kolomProgram = [];
+                foreach ($programIds as $pid) {
+                    $kolomProgram[$pid] = AlurKolom::susun(
+                        $alurPerProgram[$pid] ?? [],
+                        $alurProgram[$pid] ?? null,
+                    );
+                }
+
+                // 3) Penempatan pelamar per tahap — SATU statement untuk semua
+                //    program, dikelompokkan per KODE tahap (identitas), bukan
+                //    per nomor urut.
                 $penempatan = collect();
                 if ($programIds) {
                     $in = implode(',', $programIds);
-                    $penempatan = DB::table(DB::raw('(' . MetrikRekrutmen::sqlUrutanDisplay("l.Program_Id IN ({$in})") . ') d'))
-                        ->groupBy('d.Program_Id', 'd.UrutanDisplay')
-                        ->select('d.Program_Id', 'd.UrutanDisplay',
+                    $penempatan = DB::table(DB::raw('(' . MetrikRekrutmen::sqlUrutanDisplayBerkode("l.Program_Id IN ({$in})") . ') d'))
+                        ->groupBy('d.Program_Id', 'd.UrutanDisplay', 'd.KodeDisplay')
+                        ->select('d.Program_Id', 'd.UrutanDisplay', 'd.KodeDisplay',
                             DB::raw("SUM(CASE WHEN d.Status = 'BERJALAN' THEN 1 ELSE 0 END) as aktif"),
                             DB::raw("SUM(CASE WHEN d.Status = 'GUGUR' THEN 1 ELSE 0 END) as gugur"),
                             DB::raw("SUM(CASE WHEN d.Status = 'LULUS' THEN 1 ELSE 0 END) as lulus"),
@@ -163,47 +175,71 @@ class MonitoringController extends Controller
                         ->get()
                     : collect();
 
-                return compact('programs', 'tahapMaster', 'penempatan', 'kpiStatus', 'kpiTahap',
+                return compact('programs', 'kolomProgram', 'penempatan', 'kpiStatus', 'kpiTahap',
                     'kuotaPer', 'terisiPer', 'perhatian', 'sehatPer', 'macetHari', 'sorotHari');
             });
 
             // Rakit payload program + funnel (clamp urutan di luar alur ke kolom terakhir).
             $programsOut = $data['programs']->map(function ($p) use ($data) {
-                $kolom = collect($data['tahapMaster']->get($p->Id_Master_Alur, []));
-                $counts = collect($data['penempatan']->get($p->Id_Program, []))->keyBy('UrutanDisplay');
-                $maxUrutan = (int) ($kolom->max('Urutan') ?? 0);
+                $kolom = collect($data['kolomProgram'][(int) $p->Id_Program] ?? []);
+                $counts = collect($data['penempatan']->get($p->Id_Program, []));
 
-                $luarAlur = ['aktif' => 0, 'gugur' => 0, 'lulus' => 0, 'talent' => 0];
-                foreach ($counts as $urutan => $c) {
-                    if ($maxUrutan > 0 && (int) $urutan > $maxUrutan) {
-                        foreach ($luarAlur as $k => $v) {
-                            $luarAlur[$k] += (int) $c->{$k};
-                        }
+                // Angka dipasangkan lewat KODE tahap. Nomor urut hanya cadangan
+                // untuk baris pra-mesin yang memang tidak punya Kode — di situ
+                // nomor adalah satu-satunya petunjuk yang tersisa.
+                $perKode = $counts->filter(fn ($c) => (string) ($c->KodeDisplay ?? '') !== '')->keyBy('KodeDisplay');
+                $perUrutan = $counts->filter(fn ($c) => (string) ($c->KodeDisplay ?? '') === '')->keyBy('UrutanDisplay');
+
+                $dipakai = [];
+                $tahap = $kolom->map(function ($t) use ($perKode, $perUrutan, &$dipakai) {
+                    $c = $perKode->get($t['kode']) ?? $perUrutan->get($t['urutan']);
+                    if ($c) {
+                        $dipakai[spl_object_id($c)] = true;
                     }
-                }
 
-                $tahap = $kolom->map(function ($t) use ($counts, $maxUrutan, $luarAlur) {
-                    $c = $counts->get((int) $t->Urutan);
-                    $row = [
-                        'urutan' => (int) $t->Urutan,
-                        'kode' => $t->Kode,
-                        'label' => $t->Label,
-                        'provider' => $t->Provider,
+                    return [
+                        'urutan' => (int) $t['urutan'],
+                        'kode' => $t['kode'],
+                        'label' => $t['label'],
+                        'provider' => $t['provider'],
+                        // Kolom peninggalan alur sebelumnya — layar memberinya
+                        // keterangan supaya tidak terbaca sebagai alur yang rusak.
+                        'alurLain' => (bool) ($t['alurLain'] ?? false),
                         'aktif' => (int) ($c->aktif ?? 0),
                         'gugur' => (int) ($c->gugur ?? 0),
                         'lulus' => (int) ($c->lulus ?? 0),
                         'talent' => (int) ($c->talent ?? 0),
                     ];
-                    // Pelamar dengan urutan di luar alur saat ini menumpang kolom terakhir.
-                    if ((int) $t->Urutan === $maxUrutan && array_sum($luarAlur) > 0) {
-                        foreach ($luarAlur as $k => $v) {
-                            $row[$k] += $v;
-                        }
-                        $row['adaLuarAlur'] = true;
-                    }
-
-                    return $row;
                 })->values();
+
+                // ── SISA YANG TAK TERTAMPUNG KOLOM MANA PUN ──
+                // Tahap yang alurnya sudah dihapus sama sekali. Dulu mereka
+                // "menumpang kolom terakhir" — yang membuat tahap akhir tampak
+                // lebih ramai daripada kenyataannya, tepat di angka yang paling
+                // sering dilaporkan ke atas. Sekarang dipisah dan disebut.
+                $sisa = ['aktif' => 0, 'gugur' => 0, 'lulus' => 0, 'talent' => 0];
+                foreach ($counts as $c) {
+                    if (isset($dipakai[spl_object_id($c)])) {
+                        continue;
+                    }
+                    foreach ($sisa as $k => $v) {
+                        $sisa[$k] += (int) $c->{$k};
+                    }
+                }
+
+                if (array_sum($sisa) > 0) {
+                    $tahap->push([
+                        'urutan' => (int) ($kolom->max('urutan') ?? 0) + 1,
+                        'kode' => AlurKolom::KODE_LAINNYA,
+                        'label' => 'Tahap di luar alur',
+                        'provider' => null,
+                        'alurLain' => true,
+                        'aktif' => $sisa['aktif'],
+                        'gugur' => $sisa['gugur'],
+                        'lulus' => $sisa['lulus'],
+                        'talent' => $sisa['talent'],
+                    ]);
+                }
 
                 $total = $counts->reduce(fn ($sum, $c) => $sum + (int) $c->aktif + (int) $c->gugur + (int) $c->lulus + (int) $c->talent, 0);
 
@@ -289,12 +325,26 @@ class MonitoringController extends Controller
                     return null;
                 }
 
-                $kolom = $program->Id_Master_Alur
-                    ? DB::table('N_WEB_CAREERS_Master_Alur_Tahap')
-                        ->where('Master_Alur_Id', $program->Id_Master_Alur)
-                        ->orderBy('Urutan')
-                        ->get(['Urutan', 'Kode', 'Label', 'Tipe_Tahap_Kode', 'Provider'])
-                    : collect();
+                // Kolom dari alur yang BENAR-BENAR DIPAKAI lamaran program ini,
+                // bukan dari penunjuk alur di programnya — lihat AlurKolom.
+                //
+                // Disusun SEKALI, lalu dipakai dalam dua bentuk: array (untuk
+                // AlurKolom::cocok) dan objek (untuk pemakai lama di bawah yang
+                // sudah membaca ->Urutan/->Kode). Satu sumber, dua bentuk —
+                // supaya tak ada yang menyusun ulang aturannya sendiri.
+                $alurProgramId = $program->Id_Master_Alur ? (int) $program->Id_Master_Alur : null;
+                $kolomArray = AlurKolom::susun(
+                    AlurKolom::alurDipakai((int) $programId, $alurProgramId),
+                    $alurProgramId,
+                );
+                $kolom = collect($kolomArray)->map(fn ($k) => (object) [
+                    'Urutan' => $k['urutan'],
+                    'Kode' => $k['kode'],
+                    'Label' => $k['label'],
+                    'Tipe_Tahap_Kode' => $k['tipe'],
+                    'Provider' => $k['provider'],
+                    'Alur_Lain' => $k['alurLain'],
+                ]);
 
                 $lamaran = DB::table('N_WEB_CAREERS_Lamaran as l')
                     ->leftJoin('N_WEB_CAREERS_Users as u', 'u.Id_Users', '=', 'l.Id_Users')
@@ -355,7 +405,7 @@ class MonitoringController extends Controller
 
                 // 'subPer' ikut dibawa: PipelineProgress memerlukannya untuk
                 // menilai apakah hasil aktivitas tahap aktif sudah tercatat.
-                return compact('program', 'kolom', 'lamaran', 'tahapPer', 'subPer', 'pengisian', 'kuota', 'terisi', 'posisiRows', 'rekapPosisi');
+                return compact('program', 'kolom', 'kolomArray', 'lamaran', 'tahapPer', 'subPer', 'pengisian', 'kuota', 'terisi', 'posisiRows', 'rekapPosisi');
             });
 
             if (! $data) {
@@ -396,9 +446,13 @@ class MonitoringController extends Controller
                 $st = PipelineProgress::state($l, $tAktif, $tk, $data['subPer']->get($tAktif->Id_Lamaran_Tahap ?? 0, []));
                 $acuan = $tAktif ?? $tk;
 
-                // Clamp ke kolom terakhir bila urutannya di luar alur saat ini —
-                // sama persis dengan cara live() merakit funnel.
+                // Penempatan per IDENTITAS tahap — sama persis dengan cara
+                // worklist & live() menempatkan kartunya. Nomor urut tetap
+                // dikirim untuk urutan tampilan, tapi bukan lagi dasar
+                // pencocokan kolom: nomor bisa menunjuk tahap yang lain begitu
+                // alur disunting atau program dialihkan.
                 $urutan = (int) ($tk->Urutan ?? $l->Urutan_Tahap ?? 1);
+                $kolomKode = AlurKolom::cocok($data['kolomArray'], $tk);
                 $kolomUrutan = ($maxUrutan > 0 && $urutan > $maxUrutan) ? $maxUrutan : $urutan;
 
                 return [
@@ -408,9 +462,10 @@ class MonitoringController extends Controller
                     'posisi' => $l->Posisi ?: $l->Kategori,
                     'status' => $l->Status,
                     'badge' => PipelineProgress::badge($l, $st, $tAktif),
+                    'kolomKode' => $kolomKode,
                     'kolomUrutan' => $kolomUrutan,
                     'tahapLabel' => $tk->Label ?? '—',
-                    'luarAlur' => $maxUrutan > 0 && $urutan > $maxUrutan,
+                    'luarAlur' => $kolomKode === AlurKolom::KODE_LAINNYA || ($maxUrutan > 0 && $urutan > $maxUrutan),
                     'agingHari' => $acuan ? self::agingHari($acuan->Waktu_Mulai ?? $acuan->Created_At ?? null) : null,
                     'siapDiputus' => (bool) $st['siap'],
                     'nungguSistem' => (bool) $st['nungguSistem'],
@@ -460,6 +515,9 @@ class MonitoringController extends Controller
                     'label' => $t->Label,
                     'tipe' => $t->Tipe_Tahap_Kode,
                     'provider' => $t->Provider,
+                    // Kolom peninggalan alur sebelumnya — dibedakan di layar
+                    // agar tidak terbaca sebagai alur yang rusak.
+                    'alurLain' => (bool) $t->Alur_Lain,
                 ])->values(),
                 'pelamar' => $pelamar,
                 'filterAtribut' => self::filterDariAtribut($atributPer),
@@ -477,7 +535,7 @@ class MonitoringController extends Controller
      * yang menyangkut tahap itu. Daftar orang tidak diulang di sini — client
      * memfilternya dari payload papan (hemat query & konsisten).
      */
-    public function stageDetail(string $id, int $urutan)
+    public function stageDetail(Request $request, string $id, int $urutan)
     {
         try {
             $programId = Hashids::decode($id)[0] ?? null;
@@ -488,11 +546,26 @@ class MonitoringController extends Controller
             $macetHari = (int) config('career_monitoring.macet_hari');
             $agingSql = MetrikRekrutmen::sqlUmurTahap('lt');
 
-            $data = DB::transaction(function () use ($programId, $urutan, $agingSql, $macetHari) {
+            // IDENTITAS TAHAP, bila layar mengirimkannya.
+            //
+            // Nomor di URL adalah nomor KOLOM papan, sedangkan kueri di bawah
+            // mencarinya di Lamaran_Tahap dengan penomoran KANDIDAT. Selama
+            // kolom disusun dari gabungan beberapa alur — atau program pernah
+            // dialihkan — kedua penomoran itu tidak lagi sama, dan panel ini
+            // akan menghitung statistik tahap yang bukan yang diklik.
+            //
+            // Kode menutupnya. Nomor tetap jadi cadangan untuk baris lama yang
+            // memang tak punya Kode.
+            $kode = trim((string) $request->query('kode', '')) ?: null;
+            $sempit = fn ($q) => $kode
+                ? $q->where('lt.Kode', $kode)
+                : $q->where('lt.Urutan', $urutan);
+
+            $data = DB::transaction(function () use ($programId, $urutan, $agingSql, $macetHari, $kode, $sempit) {
                 // 1) Statistik tahap (semua lamaran yang PERNAH menyentuh tahap ini).
                 $stats = DB::table('N_WEB_CAREERS_Lamaran_Tahap as lt')
                     ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'lt.Lamaran_Id')
-                    ->where('l.Program_Id', $programId)->where('lt.Urutan', $urutan)
+                    ->where('l.Program_Id', $programId)->where($sempit)
                     ->selectRaw("COUNT(*) as total,
                                  SUM(CASE WHEN lt.Status = 'BERJALAN' THEN 1 ELSE 0 END) as aktif,
                                  SUM(CASE WHEN lt.Status = 'MENUNGGU' THEN 1 ELSE 0 END) as menunggu,
@@ -510,7 +583,7 @@ class MonitoringController extends Controller
                 $subtes = DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes as tt')
                     ->join('N_WEB_CAREERS_Lamaran_Tahap as lt', 'lt.Id_Lamaran_Tahap', '=', 'tt.Lamaran_Tahap_Id')
                     ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'lt.Lamaran_Id')
-                    ->where('l.Program_Id', $programId)->where('lt.Urutan', $urutan)
+                    ->where('l.Program_Id', $programId)->where($sempit)
                     ->groupByRaw('tt.Label, tt.Peran, tt.Provider')
                     ->selectRaw("tt.Label as Label, tt.Peran, tt.Provider,
                                  COUNT(*) as jml,
@@ -528,7 +601,7 @@ class MonitoringController extends Controller
                     ->join('N_WEB_CAREERS_Lamaran_Tahap as lt', 'lt.Id_Lamaran_Tahap', '=', 'tt.Lamaran_Tahap_Id')
                     ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'lt.Lamaran_Id')
                     ->leftJoin('N_WEB_CAREERS_Users as u', 'u.Id_Users', '=', 'l.Id_Users')
-                    ->where('l.Program_Id', $programId)->where('lt.Urutan', $urutan)
+                    ->where('l.Program_Id', $programId)->where($sempit)
                     ->where('l.Status', 'BERJALAN')
                     ->whereIn('tt.Status', ['BELUM', 'DIJADWALKAN', 'TIDAK_HADIR'])
                     ->orderBy('u.Nama')
@@ -540,7 +613,7 @@ class MonitoringController extends Controller
                 // 4) Sesi penjadwalan yang dipakai tahap ini + jumlah pesertanya.
                 $jadwalIds = DB::table('N_WEB_CAREERS_Lamaran_Tahap as lt')
                     ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'lt.Lamaran_Id')
-                    ->where('l.Program_Id', $programId)->where('lt.Urutan', $urutan)
+                    ->where('l.Program_Id', $programId)->where($sempit)
                     ->whereNotNull('lt.Penjadwalan_Tahap_Id')
                     ->distinct()->pluck('lt.Penjadwalan_Tahap_Id')->all();
 
@@ -1424,19 +1497,25 @@ class MonitoringController extends Controller
     {
         $selesaiLamaran = in_array($l->Status, ['GUGUR', 'TALENT_POOL', 'LULUS'], true);
         $perUrutan = $tahapList->keyBy('Urutan');
+        // Peta per KODE — inilah pasangan yang sebenarnya. Nomor urut hanya
+        // cadangan untuk baris lama yang memang tak punya Kode. Tanpa ini, satu
+        // kolom "Wawancara User" bisa menampilkan perjalanan "Psikotes" milik
+        // kandidat yang alurnya berbeda, dan matriksnya terbaca meyakinkan
+        // justru karena setiap selnya terisi.
+        $perKode = $tahapList->filter(fn ($t) => (string) ($t->Kode ?? '') !== '')->keyBy('Kode');
 
         $out = [];
         $selesaiSebelumnya = null;
 
         foreach ($kolom as $k) {
             $urutan = (int) $k->Urutan;
-            $t = $perUrutan->get($urutan);
+            $t = $perKode->get($k->Kode) ?? $perUrutan->get($urutan);
 
             if (! $t) {
                 // Alur berubah setelah lamaran dibuat — tahap ini tidak dimiliki
                 // pelamar tsb. Ditandai apa adanya, bukan disembunyikan.
                 $out[] = [
-                    'urutan' => $urutan, 'label' => $k->Label, 'keadaan' => 'TIDAK_ADA',
+                    'urutan' => $urutan, 'kode' => $k->Kode, 'label' => $k->Label, 'keadaan' => 'TIDAK_ADA',
                     'hari' => null, 'skor' => null, 'siapDiputus' => false,
                     'mulai' => null, 'selesai' => null, 'catatan' => null,
                 ];
@@ -1463,7 +1542,22 @@ class MonitoringController extends Controller
             };
 
             $out[] = [
-                'urutan' => $urutan,
+                // NOMOR MILIK KANDIDAT, bukan nomor kolomnya.
+                //
+                // Sel ini bisa diklik, dan yang dikirim ke
+                // /monitoring/pelamar/{id}/tahap/{urutan} adalah angka ini —
+                // dicari lagi di Lamaran_Tahap dengan penomoran KANDIDAT.
+                // Selama barisnya dicocokkan lewat Kode, nomor kolom dan nomor
+                // kandidat bisa berbeda (alur baru menyisipkan tahap di tengah,
+                // atau alur lama punya urutan lain). Mengirim nomor kolom
+                // membuat drawer membuka tahap yang bukan itu — rapi, terisi,
+                // dan salah orang.
+                'urutan' => (int) ($t->Urutan ?? $urutan),
+                // Kode kolom — dipakai layar sebagai kunci baris matriks.
+                // Nomor tidak lagi aman jadi kunci: setelah dicocokkan per
+                // Kode, dua kolom bisa jatuh ke tahap kandidat yang sama dan
+                // Vue menemukan dua kunci kembar dalam satu baris.
+                'kode' => $k->Kode,
                 'label' => $t->Label ?: $k->Label,
                 'keadaan' => $keadaan,
                 'hari' => $hari,
