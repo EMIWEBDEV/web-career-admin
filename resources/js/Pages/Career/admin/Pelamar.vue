@@ -1062,71 +1062,14 @@
                 </span>
             </div>
 
-            <!-- HASIL MCU — dicatat DI SINI, di jendela keputusan.
-                 Pemeriksaan kesehatan tidak punya keputusan sendiri yang terpisah
-                 dari nasib tahapnya: begitu hasilnya keluar, admin meloloskan atau
-                 tidak. Menaruhnya di tombol "Catat Hasil" terpisah berarti dua
-                 jendela untuk satu peristiwa, dan yang kedua kerap terlewat —
-                 sehingga status kesehatannya tak pernah tersimpan. -->
-            <div v-if="mcuTes" class="plw-mform" :class="{ 'is-kurang': mcuKurangPutus }">
-                <div class="plw-mform__head">
-                    <span class="plw-mform__ico"><i class="bi bi-heart-pulse-fill"></i></span>
-                    <div style="min-width: 0; flex: 1">
-                        <div class="plw-mform__title">Hasil Pemeriksaan Kesehatan</div>
-                        <div class="plw-mform__sub">{{ mcuTes.label }}<template v-if="mcuTes.jadwal"> · {{ jadwalRingkas(mcuTes.jadwal) }}</template></div>
-                    </div>
-                    <span v-if="mcuWajibSekarang" class="plw-req">wajib</span>
-                    <span v-else class="plw-opt">opsional</span>
-                </div>
-
-                <div class="plw-fld">
-                    <label class="plw-fld__lbl">Status Kesehatan <b v-if="mcuWajibSekarang">*</b></label>
-                    <!-- Pilihan berbentuk kartu, bukan radio bawaan: statusnya
-                         berwarna sesuai artinya, dan sasaran kliknya selebar baris. -->
-                    <div class="plw-opts">
-                        <button
-                            v-for="o in MCU_STATUS" :key="o.v"
-                            type="button" class="plw-opt-card" :class="[`is-${o.tone}`, { 'is-on': mcuStatus === o.v }]"
-                            @click="mcuStatus = o.v"
-                        >
-                            <span class="plw-opt-card__dot"><i class="bi" :class="o.ikon"></i></span>
-                            <span class="plw-opt-card__txt">
-                                <b>{{ o.label }}</b>
-                                <small>{{ o.ket }}</small>
-                            </span>
-                        </button>
-                    </div>
-                </div>
-
-                <div class="plw-fld__row">
-                    <div class="plw-fld">
-                        <label class="plw-fld__lbl" for="mcu-penyedia">Penyedia (klinik / RS) <b v-if="mcuWajibSekarang">*</b></label>
-                        <!-- Contoh sengaja TIDAK memakai nama rumah sakit yang nyata:
-                             teks samar begitu mudah terbaca sebagai isian yang sudah
-                             terisi, dan nama yang salah pada hasil kesehatan bukan
-                             kekeliruan yang murah. -->
-                        <input id="mcu-penyedia" v-model="mcuPenyedia" type="text" class="plw-inp" placeholder="Nama klinik / rumah sakit pelaksana" maxlength="200" />
-                    </div>
-                    <div class="plw-fld">
-                        <label class="plw-fld__lbl" for="mcu-tanggal">Tanggal Pemeriksaan</label>
-                        <input id="mcu-tanggal" v-model="mcuTanggal" type="date" class="plw-inp" />
-                    </div>
-                </div>
-
-                <div class="plw-fld">
-                    <label class="plw-fld__lbl" for="mcu-catatan">Catatan Medis <small>ringkas, opsional</small></label>
-                    <textarea id="mcu-catatan" v-model="mcuCatatan" class="plw-inp plw-inp--ta" rows="2" maxlength="1000" placeholder="mis. Disarankan kontrol tekanan darah berkala."></textarea>
-                </div>
-
-                <p class="plw-note is-lock">
-                    <i class="bi bi-shield-lock-fill"></i>
-                    <span>Tulis ringkas saja. Diagnosis rinci adalah data kesehatan &mdash; simpan di berkas terlampir, bukan di catatan yang dibaca banyak orang.</span>
-                </p>
-                <p v-if="mcuKurangPutus" class="plw-note is-err">
-                    <i class="bi bi-exclamation-circle-fill"></i>
-                    <span>Status kesehatan dan penyedia wajib diisi — hasil pemeriksaan tanpa penerbitnya tidak sah.</span>
-                </p>
-            </div>
+            <!-- HASIL MCU TIDAK LAGI DI SINI.
+                 Status kesehatan dicatat saat KEHADIRAN ditetapkan — satu
+                 peristiwa: kandidat datang ke klinik, diperiksa, inilah
+                 hasilnya. Menaruhnya di jendela ini berarti petugas yang
+                 menerima hasil dari klinik tidak punya tempat mencatatnya, dan
+                 orang yang menekan "Loloskan" disodori formulir medis yang
+                 bukan urusannya. Server pun tak lagi menerimanya di sini.
+                 Lihat modal "Tandai Hadir". -->
 
             <!-- KANDIDAT MUNDUR — DISIMPAN ATAU TIDAK?
                  Dua pilihan, bukan satu nasib yang dipaksakan. Sebab mundurnya
@@ -1474,6 +1417,86 @@
                     </button>
                 </div>
 
+                <!-- HASIL PEMERIKSAAN KESEHATAN — di langkah inilah tempatnya.
+                     Kandidat datang ke klinik, diperiksa, dan inilah hasilnya:
+                     satu peristiwa, satu jendela. Empat status baku dari master
+                     (Fit / Fit with Note / Temporary Unfit / Unfit) — bukan tiga
+                     yang ditulis mati di layar, yang membuat kandidat yang cuma
+                     perlu diperiksa ulang dua minggu lagi terpaksa dicatat
+                     "Unfit" dan gugur permanen. -->
+                <div v-if="hadirTarget?.isMcu" class="plw-mform" :class="{ 'is-kurang': mcuKurangHadir }">
+                    <div class="plw-mform__head">
+                        <span class="plw-mform__ico"><i class="bi bi-heart-pulse-fill"></i></span>
+                        <div style="min-width: 0; flex: 1">
+                            <div class="plw-mform__title">Hasil Pemeriksaan Kesehatan</div>
+                            <div class="plw-mform__sub">{{ hadirTarget.label }}<template v-if="hadirTarget.jadwal"> · {{ jadwalRingkas(hadirTarget.jadwal) }}</template></div>
+                        </div>
+                        <span class="plw-req">wajib</span>
+                    </div>
+
+                    <div class="plw-fld">
+                        <label class="plw-fld__lbl">Status Kesehatan <b>*</b></label>
+                        <!-- Kartu, bukan radio bawaan: statusnya berwarna sesuai
+                             artinya dan sasaran kliknya selebar baris. -->
+                        <div class="plw-opts">
+                            <button
+                                v-for="o in mcuStatusOpsi" :key="o.kode"
+                                type="button" class="plw-opt-card" :class="[`is-${o.nada}`, { 'is-on': mcuStatus === o.kode }]"
+                                @click="mcuStatus = o.kode"
+                            >
+                                <span class="plw-opt-card__dot"><i class="bi" :class="o.ikon"></i></span>
+                                <span class="plw-opt-card__txt">
+                                    <b>{{ o.label }}</b>
+                                    <small>{{ o.keterangan }}</small>
+                                </span>
+                            </button>
+                        </div>
+                        <!-- Arti pilihan itu bagi proses DIKATAKAN, tidak dibiarkan
+                             ditebak: "Temporary Unfit" dan "Unfit" sama-sama tidak
+                             lolos, dan penilai berhak tahu itu SEBELUM menekan. -->
+                        <p v-if="mcuDef" class="plw-fld__hint">
+                            <i class="bi" :class="mcuDef.lolos ? 'bi-check-circle-fill' : 'bi-x-circle-fill'"></i>
+                            Pilihan ini menutup MCU sebagai <b>{{ mcuDef.lolos ? 'LULUS' : 'TIDAK LULUS' }}</b>.
+                        </p>
+                    </div>
+
+                    <div class="plw-fld">
+                        <label class="plw-fld__lbl" for="mcu-penyedia">Penyedia (klinik / RS)</label>
+                        <!-- Contoh sengaja TIDAK memakai nama rumah sakit nyata:
+                             teks samar mudah terbaca sebagai isian yang sudah
+                             terisi, dan nama yang salah pada hasil kesehatan
+                             bukan kekeliruan yang murah. -->
+                        <input id="mcu-penyedia" v-model="mcuPenyedia" type="text" class="plw-inp" placeholder="Nama klinik / rumah sakit pelaksana" maxlength="200" />
+                    </div>
+                    <div class="plw-fld">
+                        <label class="plw-fld__lbl" for="mcu-tanggal">Tanggal Pemeriksaan</label>
+                        <input id="mcu-tanggal" v-model="mcuTanggal" type="date" class="plw-inp" />
+                    </div>
+
+                    <div class="plw-fld">
+                        <label class="plw-fld__lbl" for="mcu-catatan">
+                            Keterangan
+                            <b v-if="mcuDef?.butuhCatatan">*</b>
+                            <small v-else>ringkas, opsional</small>
+                        </label>
+                        <textarea
+                            id="mcu-catatan" v-model="mcuCatatan" class="plw-inp plw-inp--ta" rows="2" maxlength="1000"
+                            :placeholder="mcuDef?.butuhCatatan
+                                ? 'Wajib: tuliskan temuan / pembatasannya, dan kapan diperiksa ulang bila sementara.'
+                                : 'mis. Disarankan kontrol tekanan darah berkala.'"
+                        ></textarea>
+                    </div>
+
+                    <p class="plw-note is-lock">
+                        <i class="bi bi-shield-lock-fill"></i>
+                        <span>Tulis ringkas saja. Diagnosis rinci adalah data kesehatan &mdash; simpan di berkas terlampir, bukan di catatan yang dibaca banyak orang.</span>
+                    </p>
+                    <p v-if="mcuKurangHadir" class="plw-note is-err">
+                        <i class="bi bi-exclamation-circle-fill"></i>
+                        <span>{{ mcuKurangHadir }}</span>
+                    </p>
+                </div>
+
                 <!-- HASIL DI SINI JUGA — satu tindakan, bukan dua.
                      Dulu ada tombol "Catat Hasil" terpisah dengan jendelanya
                      sendiri; keduanya menjelaskan SATU peristiwa ("kandidat
@@ -1481,7 +1504,7 @@
                      jendela kedua tidak pernah dibuka, dan hasilnya tak pernah
                      tercatat. Hanya untuk aktivitas yang hasilnya memang
                      dikerjakan tim — ujian online nilainya datang dari HCLearn. -->
-                <div v-if="hadirTarget?.dinilaiTim && hadirTarget?.peran !== 'INFORMATIF'" class="plw-fld">
+                <div v-if="hadirTarget?.dinilaiTim && hadirTarget?.peran !== 'INFORMATIF' && !hadirTarget?.isMcu" class="plw-fld">
                     <label class="plw-fld__lbl">Hasil <b>*</b></label>
                     <div class="plw-seg">
                         <button type="button" class="plw-seg__b is-ok" :class="{ 'is-on': hadirHasil === 'LULUS' }" @click="hadirHasil = 'LULUS'">
@@ -2029,11 +2052,6 @@ function teksDariHtml(html) {
  * boleh bekerja dengan catatan — justru yang paling sering, dan itulah yang
  * menentukan penempatan saat onboarding.
  */
-const MCU_STATUS = [
-    { v: 'FIT', label: 'Fit', ket: 'Memenuhi syarat kesehatan', tone: 'ok', ikon: 'bi-check-lg' },
-    { v: 'FIT_WITH_NOTE', label: 'Fit dengan catatan', ket: 'Boleh bekerja, ada hal yang perlu diperhatikan', tone: 'warn', ikon: 'bi-exclamation-lg' },
-    { v: 'UNFIT', label: 'Unfit', ket: 'Belum memenuhi syarat kesehatan', tone: 'no', ikon: 'bi-x-lg' },
-];
 
 export default {
     // Halaman ini merender BEBERAPA simpul akar (konten + modal + lightbox yang
@@ -2051,12 +2069,16 @@ export default {
         // Bentuk pelaksanaan jadwal (daring / tatap muka / telepon) — dari
         // master, sumber yang sama dengan hasilKeputusan.
         modeJadwal: { type: Array, default: () => [] },
+        // Status hasil MCU (Fit / Fit with Note / Temporary Unfit / Unfit) —
+        // dari master. Dulu tiga nilai ditulis mati di berkas ini, dan yang
+        // hilang justru "belum layak sementara": kandidat yang cuma perlu
+        // diperiksa ulang terpaksa dicatat Unfit, yang berarti gugur permanen.
+        mcuStatusOpsi: { type: Array, default: () => [] },
     },
     data() {
         return {
             // Sama dengan batas di LamaranController::putus().
             MIN_ALASAN: 10,
-            MCU_STATUS,
             URL_GAMBAR,
             programs: this.programAwal.data || [],
             page: this.programAwal.page || 1,
@@ -2438,31 +2460,6 @@ export default {
         },
         /** Menggugurkan menuntut centang persetujuan dulu; yang lain langsung boleh. */
         /** DARING wajib tautan, LURING wajib lokasi; keduanya wajib waktu mulai. */
-        /**
-         * Aktivitas MCU pada tahap yang sedang diputus — sumber borang kesehatan
-         * di modal keputusan. Satu tahap MCU hanya punya satu pemeriksaan.
-         */
-        mcuTes() {
-            return (this.putusTarget?.tests || []).find((t) => t.isMcu) || null;
-        },
-        /**
-         * Status & penyedia WAJIB saat tahap MCU benar-benar diputus (lolos atau
-         * tidak). Hasil kesehatan tanpa penerbitnya tidak sah, dan inilah satu-
-         * satunya tempat ia dicatat. Talent Pool dikecualikan: kandidatnya tidak
-         * dinilai di lowongan ini, hanya disimpan untuk kesempatan lain.
-         */
-        mcuWajibSekarang() {
-            // Keputusan yang datang dari KANDIDAT tidak menuntutnya: ia mundur
-            // sebelum pemeriksaannya selesai, dan menahan pencatatan itu hanya
-            // membuat lamarannya menggantung.
-            return !!this.mcuTes
-                && !!this.putusDef
-                && !this.putusDef.olehKandidat
-                && !this.putusDef.talentPool;
-        },
-        mcuKurangPutus() {
-            return this.mcuWajibSekarang && (!this.mcuStatus || !this.mcuPenyedia.trim());
-        },
         lokasiTerpilih() {
             return this.daftarLokasi.find((l) => l.id === this.jadwalLokasiId) || null;
         },
@@ -2580,9 +2577,6 @@ export default {
         bolehKonfirmPutus() {
             if (!this.putusDef) return false;
 
-            // Hasil kesehatan wajib lengkap sebelum tahap MCU diputus.
-            if (this.mcuKurangPutus) return false;
-
             if (this.alasanWajib && !this.catatanCukup) return false;
 
             // Aktivitas yang belum selesai harus diakui lebih dulu.
@@ -2601,6 +2595,10 @@ export default {
          */
         bolehSimpanHadir() {
             if (this.hadirNilai !== 'Y') return true;
+            // MCU: verdict-nya DITURUNKAN dari status kesehatan, jadi yang
+            // dituntut status itu — bukan pilihan Lulus/Gagal terpisah yang
+            // bisa berselisih dengannya ("Unfit" tapi ditandai lulus).
+            if (this.hadirTarget?.isMcu) return !this.mcuKurangHadir;
             if (!this.hadirTarget?.dinilaiTim) return true;
 
             return this.hadirTarget.peran === 'INFORMATIF' || !!this.hadirHasil;
@@ -3192,21 +3190,6 @@ export default {
                 this.muatDetail(this.selectedId);
             }
         },
-        /**
-         * Isi ulang borang MCU dari data yang sudah tersimpan.
-         *
-         * Dipanggil tiap kali modal keputusan dibuka: koreksi keputusan tidak
-         * boleh menuntut admin mengetik ulang penyedia dan tanggalnya.
-         */
-        muatMcu(t) {
-            const m = t?.mcu || {};
-            this.mcuStatus = m.status || 'FIT';
-            this.mcuPenyedia = m.penyedia || '';
-            // Input tanggal HTML hanya menerima YYYY-MM-DD; nilai bertimestamp
-            // dari server ("2026-08-10 00:00:00") ditolak diam-diam oleh peramban.
-            this.mcuTanggal = (m.tanggal || '').slice(0, 10);
-            this.mcuCatatan = m.catatan || '';
-        },
         /** Alasan HOLD dari master — dimuat sekali per sesi. */
         async muatAlasanHold() {
             if (this.alasanHold.length) return;
@@ -3472,6 +3455,15 @@ export default {
             this.hadirHasil = t.hasil || '';
             this.hadirNilaiSkor = t.nilai ?? null;
             this.hadirNilaiTeks = t.nilaiTeks || '';
+            // MCU: isi bidangnya dari yang SUDAH tercatat, dan JANGAN memprasetel
+            // status apa pun. 'Fit' yang sudah tercentang sejak jendela dibuka
+            // membuat penilai yang cuma menulis catatan lalu menyimpan telah
+            // menyatakan orang itu sehat tanpa pernah memutuskannya.
+            const m = t.mcu || {};
+            this.mcuStatus = m.status || '';
+            this.mcuPenyedia = m.penyedia || '';
+            this.mcuTanggal = (m.tanggal || '').slice(0, 10);
+            this.mcuCatatan = m.catatan || '';
             this.hadirShow = true;
         },
         async konfirmHadir() {
@@ -3492,6 +3484,15 @@ export default {
                     nilaiTeks: catat ? (this.hadirNilaiTeks || null) : null,
                     catatan: hadir ? (teksDariHtml(this.hadirCatatanHtml) || null) : (this.hadirCatatan || null),
                     catatanHtml: hadir ? (this.hadirCatatanHtml || null) : null,
+                    // Hasil pemeriksaan ikut di permintaan yang SAMA. Tidak ada
+                    // jendela lanjutan yang bisa terlupakan, dan verdict-nya
+                    // diturunkan server dari status ini — bukan ditanyakan dua kali.
+                    ...(this.hadirTarget.isMcu && hadir ? {
+                        mcuStatus: this.mcuStatus || null,
+                        mcuPenyedia: this.mcuPenyedia.trim() || null,
+                        mcuTanggal: this.mcuTanggal || null,
+                        mcuCatatan: this.mcuCatatan.trim() || null,
+                    } : {}),
                 }, CFG);
                 this.notice(res.data?.message || 'Kehadiran dicatat.');
                 this.hadirShow = false;
@@ -3665,9 +3666,8 @@ export default {
                 && (this.hasilKeputusan.find((h) => h.kode === hasil)?.talentPool) !== false;
             // Prasetel hari ini: kabar mundur paling sering dicatat di hari yang sama.
             this.putusTanggal = this.hariIni;
-            // Borang kesehatan menumpang modal ini pada tahap MCU — isinya
-            // disemai dari hasil yang mungkin sudah pernah dicatat.
-            this.muatMcu((r?.tests || []).find((t) => t.isMcu));
+            // Borang kesehatan TIDAK LAGI menumpang modal ini — ia pindah ke
+            // langkah kehadiran, tempat hasilnya memang diterima.
             // Tampilkan berkas yang mungkin sudah diunggah sebelumnya.
             this.loadBerkas(r?.tahapId || null);
             this.putusSetuju = false; // selalu minta ulang, jangan warisi centang sebelumnya
@@ -3689,12 +3689,6 @@ export default {
                     // Hasil MCU ikut pada keputusan yang sama — satu perjalanan
                     // ke server, jadi mustahil ada keputusan tanpa hasil
                     // kesehatannya (atau sebaliknya) bila salah satu gagal.
-                    ...(this.mcuTes ? {
-                        mcuStatus: this.mcuStatus || null,
-                        mcuPenyedia: this.mcuPenyedia || null,
-                        mcuTanggal: this.mcuTanggal || null,
-                        mcuCatatan: this.mcuCatatan || null,
-                    } : {}),
                 }, CFG);
                 this.notice(res.data?.message || 'Keputusan tersimpan.');
                 this.konfirmShow = false;
@@ -4122,6 +4116,25 @@ export default {
 .plw-opt-card.is-on.is-warn .plw-opt-card__dot { background: #f59e0b; color: #fff; }
 .plw-opt-card.is-on.is-no { border-color: rgba(239, 68, 68, .45); background: rgba(239, 68, 68, .06); box-shadow: 0 0 0 3px rgba(239, 68, 68, .09); }
 .plw-opt-card.is-on.is-no .plw-opt-card__dot { background: #dc2626; color: #fff; }
+/* HOLD — "belum layak SEMENTARA". Sengaja BUKAN merah: ia bukan penolakan,
+   melainkan penundaan yang bisa diperiksa ulang. Memberinya warna yang sama
+   dengan Unfit membuat penilai yang membaca sekilas memperlakukan keduanya
+   sama — dan itu persis kekeliruan yang kategori ini ada untuk mencegahnya. */
+.plw-opt-card.is-on.is-hold { border-color: rgba(2, 132, 199, .5); background: rgba(2, 132, 199, .07); box-shadow: 0 0 0 3px rgba(2, 132, 199, .1); }
+.plw-opt-card.is-on.is-hold .plw-opt-card__dot { background: #0284c7; color: #fff; }
+
+/* Ikon tiap pilihan tetap berwarna meski belum terpilih: empat status MCU
+   dibedakan lebih dulu oleh warnanya, baru oleh kata-katanya. */
+.plw-opt-card.is-ok    .plw-opt-card__dot { color: #059669; background: rgba(16, 185, 129, .1); }
+.plw-opt-card.is-warn  .plw-opt-card__dot { color: #b45309; background: rgba(245, 158, 11, .12); }
+.plw-opt-card.is-hold  .plw-opt-card__dot { color: #0369a1; background: rgba(2, 132, 199, .1); }
+.plw-opt-card.is-no    .plw-opt-card__dot { color: #b91c1c; background: rgba(239, 68, 68, .1); }
+.plw-opt-card__dot .bi { font-size: 13px; }
+/* Kartu MCU lebih tinggi dari pilihan lain — labelnya dua bahasa dan
+   keterangannya kerap dua baris. */
+.plw-mform .plw-opt-card { align-items: flex-start; padding: 11px 13px; }
+.plw-mform .plw-opt-card .plw-opt-card__dot { margin-top: 1px; }
+.plw-mform .plw-opt-card__txt small { color: #64748b; }
 
 /* Dua pilihan berdampingan (Lulus / Gagal) — pengganti radio-button bawaan. */
 .plw-seg { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }

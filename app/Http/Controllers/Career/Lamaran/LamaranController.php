@@ -711,12 +711,11 @@ class LamaranController extends Controller
                     // yang dimaksud bila perlu menanyakannya ke klinik.
                     'mcu' => $s->Mcu_Status ? [
                         'status' => $s->Mcu_Status,
-                        'label' => match ($s->Mcu_Status) {
-                            'FIT' => 'Memenuhi syarat kesehatan',
-                            'FIT_WITH_NOTE' => 'Memenuhi syarat dengan catatan',
-                            'UNFIT' => 'Belum memenuhi syarat kesehatan',
-                            default => $s->Mcu_Status,
-                        },
+                        // Label dari MASTER — status keempat (Temporary Unfit)
+                        // yang baru ditambahkan langsung ikut terbaca, tanpa
+                        // jatuh ke `default` dan memuntahkan kode mentah
+                        // "TEMPORARY_UNFIT" ke layar kandidat.
+                        'label' => self::masterMcuStatus()->get($s->Mcu_Status)->Nama ?? $s->Mcu_Status,
                         'penyedia' => $s->Mcu_Penyedia,
                         'tanggal' => (string) ($s->Mcu_Tanggal ?: ''),
                         'catatan' => $s->Mcu_Catatan,
@@ -2147,6 +2146,20 @@ class LamaranController extends Controller
                     // sendiri, bukan diam-diam lolos dari gerbang.
                     'butuhTuntas' => ($h->Flag_Butuh_Tuntas ?? 'T') === 'Y',
                 ])->all(),
+            // STATUS HASIL MCU — dari master, bukan array yang ditulis di layar.
+            // Empat nilai baku ketenagakerjaan; `lolos` menerjemahkannya jadi
+            // verdict aktivitas, `butuhCatatan` menandai yang tak berarti
+            // apa-apa tanpa keterangannya.
+            'mcuStatusOpsi' => self::masterMcuStatus()->values()->map(fn ($m) => [
+                'kode' => $m->Kode,
+                'nama' => $m->Nama,
+                'label' => $m->Label_Panjang ?: $m->Nama,
+                'keterangan' => $m->Keterangan,
+                'ikon' => $m->Ikon,
+                'nada' => $m->Nada ?: 'ok',
+                'lolos' => ($m->Flag_Lolos ?? 'T') === 'Y',
+                'butuhCatatan' => ($m->Flag_Butuh_Catatan ?? 'T') === 'Y',
+            ])->all(),
             // BENTUK PELAKSANAAN JADWAL — dari master, bukan dua tombol yang
             // ditulis mati di layar. Tiap bentuk membawa sendiri field apa yang
             // wajib diisi untuknya, jadi modal tidak perlu tahu nama-namanya.
@@ -2806,7 +2819,12 @@ class LamaranController extends Controller
         // kesehatan, penyedia, dan tanggalnya dicatat di JENDELA KEPUTUSAN
         // (lihat putus()) bersama berkas dari kliniknya — satu peristiwa, satu
         // jendela, bukan dua yang salah satunya kerap terlewat.
-        $dicatatTim = ! $online && $jumlahAktivitasTahap > 1 && ! $isMcu && ! $isPenawaran;
+        // MCU SELALU punya hasilnya sendiri untuk dicatat, berapa pun jumlah
+        // aktivitas tahapnya. Dulu ia dikecualikan karena hasilnya diisi di
+        // jendela keputusan; sejak status kesehatan pindah ke langkah kehadiran
+        // (satu peristiwa: kandidat diperiksa, inilah hasilnya), pengecualian
+        // itu justru membuat modal kehadiran tidak menampilkan bidang apa pun.
+        $dicatatTim = ! $online && ($jumlahAktivitasTahap > 1 || $isMcu) && ! $isPenawaran;
 
         // Apa yang masih ditunggu dari aktivitas ini — null = tuntas. Dihitung
         // SEKALI, dipakai dua kali di bawah.
@@ -3035,6 +3053,12 @@ class LamaranController extends Controller
             return 'hasil ujian belum masuk';
         }
 
+        // MCU: yang ditunggu adalah STATUS KESEHATANNYA, bukan verdict lulus/gagal
+        // — verdict-nya diturunkan dari status itu (lihat Flag_Lolos di master).
+        if (($x->Tipe_Tahap_Kode ?? '') === 'MCU') {
+            return empty($x->Mcu_Status) ? 'hasil MCU belum dicatat' : null;
+        }
+
         if ($dicatatTim) {
             return 'hasil belum dicatat';
         }
@@ -3073,11 +3097,6 @@ class LamaranController extends Controller
             // sebelum tercatat, dan selisih itu menentukan sejak kapan kursinya
             // sebenarnya kosong.
             'tanggalKonfirmasi' => 'nullable|date',
-            // Rincian MCU — hanya terisi bila tahapnya memang berisi pemeriksaan.
-            'mcuStatus' => 'nullable|in:FIT,FIT_WITH_NOTE,UNFIT',
-            'mcuPenyedia' => 'nullable|string|max:200',
-            'mcuCatatan' => 'nullable|string|max:1000',
-            'mcuTanggal' => 'nullable|date',
         ]);
 
         try {
@@ -3169,12 +3188,14 @@ class LamaranController extends Controller
                     ->update(['Catatan_Html' => $htmlPutus]);
             }
 
-            // MCU disimpan SEBELUM palu diketuk: begitu tahap ditutup, sub-tesnya
-            // ikut final dan tidak boleh disentuh lagi.
-            $galatMcu = $this->simpanHasilMcu((int) $realId, $data);
-            if ($galatMcu) {
-                return ResponseHelper::error($galatMcu, 422);
-            }
+            // HASIL MCU TIDAK LAGI DITULIS DI SINI.
+            //
+            // Status kesehatan dicatat saat KEHADIRAN ditetapkan — satu
+            // peristiwa: kandidat datang ke klinik, diperiksa, inilah hasilnya.
+            // Membiarkan pintu kedua di jendela keputusan berarti dua tempat
+            // bisa menulis kolom yang sama dan berselisih diam-diam: "Unfit"
+            // dari klinik lalu ditimpa "Fit" oleh orang yang mengetuk palu.
+            // Lihat subTesKehadiran().
 
             $hasil = $this->svc->ketukPalu((int) $realId, $data['hasil'], $catatanPutus, (int) session('career_auth.id'), $talentPool);
             if (! $hasil['ok']) {
@@ -3383,66 +3404,6 @@ class LamaranController extends Controller
             ->keyBy('Kode');
     }
 
-    /**
-     * Rekam hasil MCU pada aktivitas pemeriksaan milik satu tahap.
-     *
-     * Mengembalikan pesan galat bila datanya kurang, atau null bila beres
-     * (termasuk saat tahapnya memang tidak berisi MCU).
-     *
-     * Aktivitasnya ditutup langsung lewat DB, TANPA memanggil evaluasiTahap():
-     * yang menentukan nasib tahap ini adalah palu admin sesaat kemudian, dan
-     * membiarkan mesin ikut menyimpulkan lebih dulu berarti tahapnya bisa
-     * berpindah keadaan di tengah satu permintaan.
-     */
-    private function simpanHasilMcu(int $tahapId, array $data): ?string
-    {
-        $mcu = DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')
-            ->where('Lamaran_Tahap_Id', $tahapId)
-            ->where('Tipe_Tahap_Kode', 'MCU')
-            ->first();
-
-        if (! $mcu) {
-            return null;
-        }
-
-        // Talent Pool tidak menilai kandidat di lowongan ini — hasil kesehatan
-        // boleh menyusul. LULUS/GUGUR menuntutnya: keputusan tahap MCU tanpa
-        // status & penerbitnya tidak punya dasar yang bisa ditelusuri.
-        $wajib = in_array($data['hasil'], ['LULUS', 'GUGUR'], true);
-        $status = $data['mcuStatus'] ?? null;
-        $penyedia = trim((string) ($data['mcuPenyedia'] ?? ''));
-
-        if ($wajib && (! $status || $penyedia === '')) {
-            return 'Status kesehatan dan penyedia (klinik/RS) wajib diisi untuk memutus tahap MCU.';
-        }
-
-        if (! $status) {
-            return null;
-        }
-
-        $now = now();
-        $nama = session('career_auth.nama');
-
-        DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')
-            ->where('Id_Lamaran_Tahap_Tes', $mcu->Id_Lamaran_Tahap_Tes)
-            ->update([
-                'Mcu_Status' => $status,
-                'Mcu_Penyedia' => $penyedia ?: null,
-                'Mcu_Tanggal' => $data['mcuTanggal'] ?? null,
-                'Mcu_Catatan' => $data['mcuCatatan'] ?? null,
-                // UNFIT = tidak memenuhi syarat; dua status lainnya memenuhi
-                // (yang satu dengan catatan). Aktivitas INFORMATIF tidak diberi
-                // hasil — ia memang bukan penentu.
-                'Hasil' => $mcu->Peran === 'INFORMATIF' ? null : ($status === 'UNFIT' ? 'GAGAL' : 'LULUS'),
-                'Status' => 'SELESAI',
-                'Flag_Selesai' => 'Y',
-                'Waktu_Selesai' => $mcu->Waktu_Selesai ?: $now,
-                'Updated_At' => $now,
-                'Updated_By' => $nama,
-            ]);
-
-        return null;
-    }
 
     /** Upload berkas hasil tahap (MCU/Interview) — PDF/JPG, oleh admin/requester. */
     public function unggahBerkasTahap(Request $request, string $id)
@@ -4355,6 +4316,22 @@ class LamaranController extends Controller
      * ketiga — telepon, yang justru paling lazim untuk penawaran gaji — menuntut
      * kesepuluhnya diubah serempak. Sekarang cukup satu baris data.
      */
+    /**
+     * Master status MCU (Fit / Fit with Note / Temporary Unfit / Unfit), by Kode.
+     *
+     * Dulu ketiganya array JavaScript di dalam Pelamar.vue. Status MCU
+     * menentukan NASIB ORANG — Flag_Lolos menerjemahkannya langsung jadi
+     * LULUS/GAGAL — dan aturan sebesar itu tidak boleh hanya hidup di berkas
+     * layar, tempat ia tak bisa ditinjau maupun diaudit.
+     */
+    private static function masterMcuStatus()
+    {
+        static $cache = null;
+
+        return $cache ??= DB::table('N_WEB_CAREERS_Master_Mcu_Status')
+            ->where('Flag_Aktif', 'Y')->orderBy('Urutan')->get()->keyBy('Kode');
+    }
+
     private static function masterModeJadwal()
     {
         static $cache = null;
@@ -4674,6 +4651,18 @@ class LamaranController extends Controller
             // memotongnya di 500 karakter berarti penilai menyingkat sampai
             // catatannya tak lagi bisa dipakai orang lain.
             'catatanHtml' => 'nullable|string|max:200000',
+            // ── HASIL MCU IKUT DI LANGKAH INI ────────────────────────────────
+            // Kehadiran dan hasil pemeriksaan adalah SATU peristiwa: kandidat
+            // datang ke klinik, diperiksa, dan inilah hasilnya. Dulu statusnya
+            // diisi di jendela KEPUTUSAN — sehingga petugas yang menerima hasil
+            // dari klinik tidak punya tempat mencatatnya, dan orang yang
+            // menekan "Loloskan" disodori formulir medis yang bukan urusannya.
+            //
+            // Daftar statusnya dari MASTER, bukan `in:` yang ditulis di sini.
+            'mcuStatus' => ['nullable', Rule::in(self::masterMcuStatus()->keys()->all())],
+            'mcuPenyedia' => 'nullable|string|max:200',
+            'mcuCatatan' => 'nullable|string|max:1000',
+            'mcuTanggal' => 'nullable|date',
         ]);
 
         $sub = DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')->where('Id_Lamaran_Tahap_Tes', $realId)->first();
@@ -4683,6 +4672,28 @@ class LamaranController extends Controller
 
         if (! $sub->Jadwal_Mulai) {
             return ResponseHelper::error('Aktivitas ini belum dijadwalkan.', 409);
+        }
+
+        // ── SYARAT KHUSUS MCU ────────────────────────────────────────────────
+        // Hanya berlaku bila kandidat HADIR: orang yang tidak datang tidak
+        // punya hasil pemeriksaan, dan menuntutnya berarti tak ada cara menutup
+        // MCU yang batal.
+        $isMcuSub = ($sub->Tipe_Tahap_Kode ?? '') === 'MCU';
+        $defMcu = $isMcuSub ? self::masterMcuStatus()->get($data['mcuStatus'] ?? '') : null;
+
+        if ($isMcuSub && $data['hadir'] === 'Y') {
+            if (! $defMcu) {
+                return ResponseHelper::error('Status hasil MCU wajib dipilih.', 422);
+            }
+            // Pembatasan kerja tanpa penjelasan tidak bisa ditindaklanjuti siapa
+            // pun, dan "belum layak sementara" tanpa keterangan kapan diperiksa
+            // ulang sama saja menggantung orang tanpa batas waktu.
+            if (($defMcu->Flag_Butuh_Catatan ?? 'T') === 'Y' && trim((string) ($data['mcuCatatan'] ?? '')) === '') {
+                return ResponseHelper::error(
+                    "\"{$defMcu->Label_Panjang}\" wajib disertai keterangan — tuliskan temuan / pembatasannya.",
+                    422,
+                );
+            }
         }
 
         if ($kunci = self::kunciUrutan($sub)) {
@@ -4706,7 +4717,12 @@ class LamaranController extends Controller
             'Catatan_Html' => $html ?: $sub->Catatan_Html,
             'Updated_At' => $now,
             'Updated_By' => $nama,
-        ]);
+        ] + ($isMcuSub ? [
+            'Mcu_Status' => $data['mcuStatus'] ?? $sub->Mcu_Status,
+            'Mcu_Penyedia' => $data['mcuPenyedia'] ?? $sub->Mcu_Penyedia,
+            'Mcu_Tanggal' => $data['mcuTanggal'] ?? $sub->Mcu_Tanggal,
+            'Mcu_Catatan' => $data['mcuCatatan'] ?? $sub->Mcu_Catatan,
+        ] : []));
 
         // TIDAK HADIR = aktivitas selesai dengan hasil GAGAL; mesin keputusan
         // yang menentukan nasib tahapnya (bisa gugur, bisa menunggu aktivitas
@@ -4734,6 +4750,14 @@ class LamaranController extends Controller
         // mengetiknya di sini berarti menimpa angka resmi dengan tebakan.
         $tipeSub = self::masterTipeTahap()[$sub->Tipe_Tahap_Kode ?? ''] ?? null;
         $online = ($tipeSub->Perilaku_Kode ?? null) === 'CAT' || ($sub->Provider ?? '') === 'THIRD_PARTY';
+        // VERDICT MCU DITURUNKAN DARI STATUSNYA, tidak ditanyakan dua kali.
+        // Flag_Lolos di master sudah menyatakan apakah status itu berarti
+        // memenuhi syarat; meminta penilai memilih LULUS/GAGAL lagi hanya
+        // membuka peluang keduanya berselisih — "Unfit" tapi ditandai lulus.
+        if ($defMcu) {
+            $data['hasil'] = ($defMcu->Flag_Lolos ?? 'T') === 'Y' ? 'LULUS' : 'GAGAL';
+        }
+
         $bolehTutup = ! $online && ($data['hasil'] !== null || $sub->Peran === 'INFORMATIF');
 
         if (! $bolehTutup) {
