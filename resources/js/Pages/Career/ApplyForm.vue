@@ -164,7 +164,8 @@
                             </div>
                         </div>
                         <DynamicForm
-                            v-model="dynamicJawaban"
+                            :model-value="dynamicJawaban"
+                            @update:model-value="(v) => Object.assign(dynamicJawaban, v)"
                             :skema="flow.formulir.schema"
                             :judul="flow.formulir?.nama || 'Formulir Lamaran'"
                             :keterangan="'Lengkapi data berikut untuk melamar posisi ini.'"
