@@ -219,7 +219,10 @@ export function periksaLangkah(langkah, jawaban) {
                 fieldTampil(B.field, r).forEach((f) => {
                     if (f.wajib && kosong(r[f.key])) {
                         galat.push(`${B.judul} baris ${i + 1}: "${f.label}" wajib diisi.`);
+                        return;
                     }
+                    const gFormat = galatFormat(f, r[f.key]);
+                    if (gFormat) galat.push(`${B.judul} baris ${i + 1}: ${gFormat}`);
                 });
             });
             return;
@@ -236,8 +239,8 @@ export function periksaLangkah(langkah, jawaban) {
                 );
                 return;
             }
-            const gTelepon = galatTelepon(f, jawaban[f.key]);
-            if (gTelepon) galat.push(gTelepon);
+            const gFormat = galatFormat(f, jawaban[f.key]);
+            if (gFormat) galat.push(gFormat);
 
             const gBeda = galatBedaDengan(f, jawaban);
             if (gBeda) galat.push(gBeda);
@@ -245,6 +248,34 @@ export function periksaLangkah(langkah, jawaban) {
     });
 
     return galat;
+}
+
+/** Gabungan pemeriksaan format nilai satu field: telepon, email, digit saja. */
+function galatFormat(f, v) {
+    return galatTelepon(f, v) || galatEmail(f, v) || galatAngka(f, v);
+}
+
+/** Email harus berbentuk "sesuatu@sesuatu.sesuatu" — bukan sekadar terisi. */
+function galatEmail(f, v) {
+    const tipeEfektif = f.tipe === 'prefill' ? f.tipe_buka : f.tipe;
+    if (tipeEfektif !== 'email' || kosong(v)) return '';
+    const ok = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v).trim());
+    return ok ? '' : `"${f.label}" belum berupa format email yang benar.`;
+}
+
+/**
+ * Field `hanya_angka` (mis. NIK): isinya sudah disaring jadi digit saja sejak
+ * diketik (lihat FieldRenderer.vue), pemeriksaan ini jaring pengaman kedua —
+ * mis. nilai lama yang tersimpan sebelum aturan ini ditambahkan.
+ */
+function galatAngka(f, v) {
+    if (!f.hanya_angka || kosong(v)) return '';
+    const s = String(v).trim();
+    if (!/^\d+$/.test(s)) return `"${f.label}" hanya boleh berisi angka.`;
+    if (f.maks_panjang && s.length !== f.maks_panjang) {
+        return `"${f.label}" harus tepat ${f.maks_panjang} digit.`;
+    }
+    return '';
 }
 
 /**

@@ -1,7 +1,22 @@
 <!-- WEB CAREER — Render SATU field sesuai tipe di skema. Dipakai semua template. -->
 <template>
-    <div class="fr" :class="{ 'fr--full': field.penuh || lebarPenuh }" :style="gayaLebar">
-        <label class="fr__lbl">
+    <div
+        class="fr"
+        :class="{
+            'fr--full': field.penuh || lebarPenuh,
+            'fr--consent': field.tipe === 'consent',
+            'fr--consent-aktif': field.tipe === 'consent' && !!nilai,
+        }"
+        :style="gayaLebar"
+    >
+        <!-- Consent: label pendek saja di sini -- teks pernyataan lengkapnya
+             jadi label CHECKBOX itu sendiri di bawah (satu sumber teks, bukan
+             diulang dua kali dengan kata-kata berbeda). -->
+        <label v-if="field.tipe === 'consent'" class="fr__lbl fr__lbl--consent">
+            <i class="bi bi-shield-check fr__consent-ico"></i> Pernyataan Persetujuan
+            <span v-if="field.wajib" class="fr__wajib">*</span>
+        </label>
+        <label v-else class="fr__lbl">
             {{ field.label }}
             <span v-if="field.wajib && !prefillTerkunci" class="fr__wajib">*</span>
             <span v-if="prefillTerkunci" class="fr__auto"><i class="bi bi-magic"></i> otomatis</span>
@@ -34,6 +49,8 @@
             :model-value="nilai"
             :disabled="disabled"
             :placeholder="field.ph"
+            :maxlength="field.maks_panjang || undefined"
+            :inputmode="field.hanya_angka ? 'numeric' : undefined"
             @update:model-value="ubah"
         />
 
@@ -86,12 +103,16 @@
         <!-- select: opsi statis dari skema, ATAU dinamis dari konteks (sumber_opsi,
              mis. kampus dari Master Kampus). Field ber-sumber_opsi DIKUNCI ke daftar
              resmi: bisa dicari (filterable) tapi kandidat TIDAK boleh mengetik bebas
-             (tanpa allow-create). Kalau daftar belum ada -> input terkunci, bukan bebas. -->
+             (tanpa allow-create). Kalau daftar belum ada -> input terkunci, bukan bebas.
+             `bebas_ketik` — opsi statis dipakai sebagai SARAN saja, kandidat tetap
+             boleh mengetik jawabannya sendiri (mis. pekerjaan/pendidikan orang tua). -->
         <template v-else-if="field.tipe === 'select'">
             <el-select
                 v-if="opsiEfektif.length"
                 :model-value="nilai"
                 filterable
+                :allow-create="!!field.bebas_ketik"
+                :default-first-option="!!field.bebas_ketik"
                 :disabled="disabled"
                 :placeholder="field.ph || 'Cari lalu pilih'"
                 style="width: 100%"
@@ -114,15 +135,43 @@
             />
         </template>
 
+        <!-- bulan/tahun: dipakai memisah field "Bulan/Tahun" jadi dua kolom
+             sendiri-sendiri (mis. mulai/selesai bekerja) tanpa mengetik bebas. -->
+        <el-date-picker
+            v-else-if="field.tipe === 'bulan'"
+            :model-value="nilai"
+            type="month"
+            value-format="YYYY-MM"
+            format="MMM YYYY"
+            :disabled="disabled"
+            :placeholder="field.ph || 'Pilih bulan'"
+            style="width: 100%"
+            @update:model-value="(v) => ubah(v ?? '')"
+        />
+        <el-date-picker
+            v-else-if="field.tipe === 'tahun'"
+            :model-value="nilai"
+            type="year"
+            value-format="YYYY"
+            format="YYYY"
+            :disabled="disabled"
+            :placeholder="field.ph || 'Pilih tahun'"
+            style="width: 100%"
+            @update:model-value="(v) => ubah(v ?? '')"
+        />
+
         <!-- referensi: opsi DICARI ke server sambil mengetik, bukan dikirim di
              muka. Master Kampus berisi ratusan ribu baris — mustahil dimuat
-             seluruhnya. Field terkunci ke daftar resmi (tanpa allow-create). -->
+             seluruhnya. Field terkunci ke daftar resmi, KECUALI ditandai
+             `bebas_ketik` — mis. kampus/prodi yang belum masuk daftar resmi
+             tetap boleh diketik manual, daftar tetap dipakai sebagai saran. -->
         <el-select
             v-else-if="field.tipe === 'referensi'"
             :model-value="nilai || undefined"
             filterable
             remote
             clearable
+            :allow-create="!!field.bebas_ketik"
             :remote-method="cariReferensi"
             :loading="memuat"
             default-first-option
@@ -138,6 +187,19 @@
                 <span v-if="o.ket" class="fr__opsi-ket">{{ o.ket }}</span>
             </el-option>
         </el-select>
+
+        <!-- currency: dipakai untuk nominal Rupiah (mis. ekspektasi gaji).
+             el-input BIASA (bukan el-input-number) supaya format "Rp 5.000.000"
+             tampil LANGSUNG sambil mengetik -- formatter el-input-number di Element
+             Plus baru menata ulang tampilan saat blur, bukan tiap ketukan. -->
+        <el-input
+            v-else-if="field.tipe === 'currency'"
+            :model-value="formatRupiah(nilai)"
+            :disabled="disabled"
+            :placeholder="field.ph || 'Rp 0'"
+            inputmode="numeric"
+            @update:model-value="ubahRupiah"
+        />
 
         <el-radio-group
             v-else-if="field.tipe === 'radio'"
@@ -159,33 +221,70 @@
 
         <!-- Berkas: file-nya sendiri disimpan di N_WEB_CAREERS_Formulir_Berkas,
              yang tersimpan di jawaban hanya nama berkasnya sebagai penanda. -->
-        <el-upload
-            v-else-if="field.tipe === 'file'"
-            class="fr__drop"
-            :class="{ 'is-ada': nilai, 'is-mati': disabled }"
-            drag
-            :accept="field.accept || '.pdf'"
-            :auto-upload="false"
-            :show-file-list="false"
-            :disabled="disabled"
-            :on-change="pilihBerkas"
-        >
-            <span class="fr__drop-ico">
-                <i class="bi" :class="nilai ? 'bi-file-earmark-check-fill' : 'bi-cloud-arrow-up-fill'"></i>
-            </span>
-            <span class="fr__drop-txt">
+        <template v-else-if="field.tipe === 'file'">
+            <!-- Belum ada berkas -> dropzone ringkas. -->
+            <el-upload
+                v-if="!nilai"
+                class="fr__drop"
+                :class="{ 'is-mati': disabled }"
+                drag
+                :accept="field.accept || '.pdf'"
+                :auto-upload="false"
+                :show-file-list="false"
+                :disabled="disabled"
+                :on-change="pilihBerkas"
+            >
+                <span class="fr__drop-ico"><i class="bi bi-cloud-arrow-up-fill"></i></span>
+                <span class="fr__drop-txt">
+                    <strong>Klik atau seret berkas ke sini</strong>
+                    <small>{{ field.accept || '.pdf' }} · maks {{ field.maks_mb || 2 }} MB</small>
+                </span>
+            </el-upload>
+
+            <!-- Sudah ada berkas -> satu baris ringkas: pratinjau + nama + ganti + hapus,
+                 bukan lagi dropzone besar DITAMBAH blok pratinjau terpisah di bawahnya. -->
+            <div v-else class="fr__chip">
                 <button
-                    v-if="nilai && urlPratinjau"
                     type="button"
-                    class="fr__drop-nama"
-                    @click.stop="lihatBerkas"
+                    class="fr__chip-pv"
+                    :class="{ 'is-kosong': !urlPratinjau }"
+                    :disabled="!urlPratinjau"
+                    :title="urlPratinjau ? 'Lihat berkas' : 'Berkas belum tersimpan di server'"
+                    @click="lihatBerkas"
+                >
+                    <img v-if="urlPratinjau && gambarPratinjau" :src="urlPratinjau" :alt="String(nilai)" />
+                    <i v-else class="bi" :class="urlPratinjau ? 'bi-file-earmark-pdf-fill' : 'bi-file-earmark-fill'"></i>
+                </button>
+                <button
+                    type="button"
+                    class="fr__chip-nama"
+                    :disabled="!urlPratinjau"
+                    :title="urlPratinjau ? 'Lihat berkas' : 'Berkas belum tersimpan di server'"
+                    @click="lihatBerkas"
                 >{{ nilai }}</button>
-                <strong v-else>{{ nilai || 'Seret berkas ke sini' }}</strong>
-                <small v-if="nilai">Berkas siap dikirim · klik untuk mengganti</small>
-                <small v-else>atau klik untuk memilih · {{ field.accept || '.pdf' }} · maks {{ field.maks_mb || 2 }} MB</small>
-            </span>
-            <span class="fr__drop-act">{{ nilai ? 'Ganti' : 'Pilih' }}</span>
-        </el-upload>
+                <el-upload
+                    class="fr__chip-ganti"
+                    :accept="field.accept || '.pdf'"
+                    :auto-upload="false"
+                    :show-file-list="false"
+                    :disabled="disabled"
+                    :on-change="pilihBerkas"
+                >
+                    <button type="button" class="fr__chip-btn" :disabled="disabled" title="Ganti berkas">
+                        <i class="bi bi-arrow-repeat"></i>
+                    </button>
+                </el-upload>
+                <button
+                    type="button"
+                    class="fr__chip-btn fr__chip-btn--danger"
+                    :disabled="disabled"
+                    title="Hapus berkas"
+                    @click="hapusBerkas"
+                >
+                    <i class="bi bi-trash3-fill"></i>
+                </button>
+            </div>
+        </template>
 
 
         <el-checkbox
@@ -195,38 +294,10 @@
             class="fr__consent"
             @update:model-value="ubah"
         >
-            Saya menyetujui pernyataan di atas
+            {{ field.label }}
         </el-checkbox>
 
         <el-input v-else :model-value="nilai" :disabled="disabled" @update:model-value="ubah" />
-
-        <!-- Pratinjau berkas terpilih. Gambar (mis. foto KTP) ditampilkan apa
-             adanya; PDF cukup tautan buka di tab baru karena tidak semua
-             peramban bisa menyematkannya dengan andal. -->
-        <div v-if="field.tipe === 'file' && nilai" class="fr__pv">
-            <button v-if="urlPratinjau && gambarPratinjau" type="button" class="fr__pv-img" @click="lihatBerkas">
-                <img :src="urlPratinjau" :alt="String(nilai)">
-            </button>
-            <!-- NAMA BERKAS-nya sendiri yang jadi tautan — itu yang pertama
-                 dicari orang untuk diklik, bukan kata "Buka" di sebelahnya. -->
-            <button v-else-if="urlPratinjau" type="button" class="fr__pv-doc" @click="lihatBerkas">
-                <i class="bi bi-file-earmark-pdf-fill"></i>
-                <span>{{ nilai }}</span>
-                <em><i class="bi bi-eye-fill"></i> Lihat berkas</em>
-            </button>
-            <!-- Belum ada URL sama sekali (mis. simpan sementara gagal). Nama
-                 tetap ditampilkan, tapi tanpa tautan yang pasti gagal dibuka. -->
-            <span v-else class="fr__pv-doc is-mati" title="Berkas belum tersimpan di server">
-                <i class="bi bi-file-earmark-fill"></i>
-                <span>{{ nilai }}</span>
-            </span>
-
-            <!-- Salah pilih berkas harus bisa dibatalkan tanpa mengunggah ulang
-                 berkas lain sebagai penggantinya. -->
-            <button type="button" class="fr__pv-del" :disabled="disabled" title="Hapus berkas" @click="hapusBerkas">
-                <i class="bi bi-trash3-fill"></i> Hapus
-            </button>
-        </div>
 
         <div v-if="field.bantuan" class="fr__bantuan">{{ field.bantuan }}</div>
         <div v-if="galat" class="fr__galat"><i class="bi bi-exclamation-circle"></i> {{ galat }}</div>
@@ -381,7 +452,26 @@ watch(
     { immediate: true },
 );
 
+/** Format angka polos -> "Rp 5.000.000" untuk tampilan field `currency`. */
+function formatRupiah(v) {
+    const angka = String(v ?? '').replace(/\D/g, '');
+    if (!angka) return '';
+    return 'Rp ' + angka.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
+
+/** Ketikan "Rp 5.000.000" -> disaring jadi angka murni sebelum disimpan. */
+function ubahRupiah(v) {
+    const angka = String(v ?? '').replace(/\D/g, '');
+    ubah(angka ? Number(angka) : null);
+}
+
 function ubah(v) {
+    // `hanya_angka` — mis. NIK: apa pun yang diketik disaring jadi digit saja,
+    // supaya tidak ada validasi tambahan yang bisa dilewati lewat tempel teks.
+    if (props.field.hanya_angka && typeof v === 'string') {
+        v = v.replace(/\D/g, '');
+        if (props.field.maks_panjang) v = v.slice(0, props.field.maks_panjang);
+    }
     emit('update:modelValue', v);
 }
 
@@ -482,80 +572,106 @@ function pilihBerkas(uf) {
 .fr__bantuan { font-size: 11px; color: #94a3b8; line-height: 1.5; }
 .fr__galat { font-size: 11.5px; color: #dc2626; display: flex; align-items: center; gap: .25rem; }
 
+/* -- Ukuran seragam untuk SEMUA kontrol (input, select, number, date, upload
+   trigger) — sebelumnya tiap komponen Element Plus punya tinggi bawaan
+   sendiri-sendiri (32px vs 40px vs custom), jadi baris terlihat tidak rata. */
+.fr :deep(.el-input__wrapper),
+.fr :deep(.el-textarea__inner),
+.fr :deep(.el-select__wrapper) {
+    min-height: 40px;
+    border-radius: 10px;
+    box-shadow: 0 0 0 1px rgba(11, 16, 51, .12) inset;
+}
+.fr :deep(.el-input__wrapper.is-focus),
+.fr :deep(.el-select__wrapper.is-focused) {
+    box-shadow: 0 0 0 1px #6366f1 inset;
+}
+.fr :deep(.el-textarea__inner) { border-radius: 10px; padding-top: .55rem; }
+.fr :deep(.el-input-number) { width: 100%; }
+.fr :deep(.el-input-number .el-input__wrapper) { padding-left: .9rem; }
+.fr :deep(.el-input-number.is-without-controls .el-input__inner) { text-align: left; }
+
 
 /* -- Pilihan Ya/Tidak: satu baris rata -------------------------------------
    Element Plus memberi el-radio margin kanan 30px bawaan dan tinggi tetap 32px,
    sehingga opsi terpilih tampak bergeser dari yang tidak, dan antar pertanyaan
    tidak sejajar. Diseragamkan lewat flex + gap. */
 .fr :deep(.el-radio-group),
-.fr :deep(.el-checkbox-group) { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem 1.75rem; }
+.fr :deep(.el-checkbox-group) { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .6rem; }
 .fr :deep(.el-radio),
-.fr :deep(.el-checkbox) { margin: 0 !important; height: auto; min-width: 4.5rem; }
+.fr :deep(.el-checkbox) {
+    margin: 0 !important; height: auto; min-height: 40px; min-width: 4.5rem;
+    padding: 0 .9rem; border: 1.5px solid rgba(11, 16, 51, .13); border-radius: 10px;
+    transition: border-color .15s ease, background .15s ease;
+}
+.fr :deep(.el-radio:hover),
+.fr :deep(.el-checkbox:hover) { border-color: rgba(99, 102, 241, .45); }
+.fr :deep(.el-radio.is-checked),
+.fr :deep(.el-checkbox.is-checked) { border-color: #6366f1; background: rgba(99, 102, 241, .07); }
 .fr :deep(.el-radio__label),
 .fr :deep(.el-checkbox__label) { padding-left: .5rem; font-size: 13px; font-weight: 600; }
 
-/* -- Unggah berkas: dropzone selebar kolom -------------------------------- */
+/* -- Unggah berkas: dropzone ringkas saat KOSONG --------------------------- */
 .fr__drop { display: block; width: 100%; }
 .fr__drop :deep(.el-upload) { display: block; width: 100%; }
 .fr__drop :deep(.el-upload-dragger) {
-    display: flex; align-items: center; gap: .85rem;
-    width: 100%; padding: 1rem 1.1rem;
-    border: 1.5px dashed rgba(99, 102, 241, .32); border-radius: 16px;
+    display: flex; align-items: center; gap: .6rem;
+    width: 100%; min-height: 40px; padding: .4rem .7rem;
+    border: 1.5px dashed rgba(99, 102, 241, .32); border-radius: 10px;
     background: linear-gradient(135deg, rgba(99, 102, 241, .05), rgba(139, 92, 246, .03));
-    transition: border-color .18s ease, background .18s ease, transform .18s ease, box-shadow .18s ease;
+    transition: border-color .16s ease, background .16s ease;
 }
 .fr__drop :deep(.el-upload-dragger:hover),
-.fr__drop :deep(.el-upload-dragger.is-dragover) {
-    border-color: #6366f1; background: rgba(99, 102, 241, .09);
-    transform: translateY(-2px); box-shadow: 0 12px 26px -14px rgba(79, 70, 229, .8);
-}
-.fr__drop-ico { flex: 0 0 auto; width: 44px; height: 44px; border-radius: 13px; display: grid; place-items: center; background: linear-gradient(140deg, #8b5cf6, #6366f1); color: #fff; font-size: 1.15rem; box-shadow: 0 8px 18px -10px rgba(79, 70, 229, .9); }
-.fr__drop-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; text-align: left; line-height: 1.4; }
-.fr__drop-txt strong { font-size: 13.5px; font-weight: 700; color: #1e293b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fr__drop-txt small { font-size: 11.5px; color: #8b93a7; }
-.fr__drop-act { flex: 0 0 auto; padding: .45rem .95rem; border-radius: 999px; font-size: 12px; font-weight: 700; color: #4f46e5; background: rgba(99, 102, 241, .12); }
-
-/* Sudah ada berkas -> hijau, supaya beda jelas dari yang masih kosong. */
-.fr__drop.is-ada :deep(.el-upload-dragger) { border-style: solid; border-color: rgba(16, 185, 129, .45); background: rgba(16, 185, 129, .07); }
-.fr__drop.is-ada .fr__drop-ico { background: linear-gradient(140deg, #34d399, #10b981); box-shadow: 0 8px 18px -10px rgba(16, 185, 129, .9); }
-.fr__drop.is-ada .fr__drop-act { color: #059669; background: rgba(16, 185, 129, .14); }
+.fr__drop :deep(.el-upload-dragger.is-dragover) { border-color: #6366f1; background: rgba(99, 102, 241, .09); }
+.fr__drop-ico { flex: 0 0 auto; width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; background: linear-gradient(140deg, #8b5cf6, #6366f1); color: #fff; font-size: .85rem; }
+.fr__drop-txt { flex: 1; min-width: 0; text-align: left; line-height: 1.3; }
+.fr__drop-txt strong { display: block; font-size: 12.5px; font-weight: 700; color: #1e293b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fr__drop-txt small { font-size: 10.5px; color: #8b93a7; }
 .fr__drop.is-mati { opacity: .55; pointer-events: none; }
 
-.fr__pv { margin-top: .5rem; display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; }
-.fr__pv-del { display: inline-flex; align-items: center; gap: .4rem; padding: .45rem .8rem; border: 1px solid rgba(220, 38, 38, .28); border-radius: 10px; background: #fff; color: #dc2626; font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; transition: background .16s ease, border-color .16s ease; }
-.fr__pv-del:hover:not(:disabled) { background: #fef2f2; border-color: rgba(220, 38, 38, .5); }
-.fr__pv-del:disabled { opacity: .5; cursor: not-allowed; }
-.fr__pv-img { display: inline-block; padding: 0; border: 0; background: none; cursor: zoom-in; border-radius: 12px; overflow: hidden; border: 1px solid rgba(11, 16, 51, .12); line-height: 0; }
-.fr__pv-img img { display: block; max-width: 180px; max-height: 130px; object-fit: cover; }
-.fr__pv-doc { font: inherit; cursor: pointer; display: inline-flex; align-items: center; gap: .5rem; padding: .45rem .75rem; border-radius: 10px; background: #f8fafc; border: 1px solid rgba(11, 16, 51, .1); font-size: 12.5px; font-weight: 600; color: #334155; text-decoration: none; max-width: 100%; }
-.fr__pv-doc .bi { color: #dc2626; font-size: 1rem; flex: none; }
-.fr__pv-doc span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fr__pv-doc em { font-style: normal; color: #4f46e5; font-weight: 700; flex: none; display: inline-flex; align-items: center; gap: .3rem; }
-.fr__pv-doc:hover { border-color: rgba(79, 70, 229, .45); background: #f5f3ff; }
-.fr__drop-nama { border: 0; background: none; padding: 0; cursor: pointer; font-family: inherit; text-align: left; font-size: 13.5px; font-weight: 700; color: #4f46e5; text-decoration: underline; text-underline-offset: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fr__drop-nama:hover { color: #4338ca; }
-.fr__pv-doc.is-mati { color: #64748b; }
-.fr__pv-doc.is-mati .bi { color: #94a3b8; }
-
-@media (max-width: 520px) {
-    .fr__drop :deep(.el-upload-dragger) { flex-wrap: wrap; gap: .6rem; }
-    .fr__drop-txt { flex: 1 1 100%; order: 3; }
-    .fr__drop-act { margin-left: auto; }
+/* -- Berkas TERPASANG: satu baris ringkas (pratinjau + nama + ganti + hapus),
+   menggantikan dropzone besar + blok pratinjau terpisah yang tadinya tampil
+   berbarengan dan memakan tempat, apalagi di dalam bagian berulang. -------- */
+.fr__chip {
+    display: flex; align-items: center; gap: .5rem; width: 100%; min-height: 40px;
+    padding: .3rem .4rem; border: 1.5px solid rgba(16, 185, 129, .35); border-radius: 10px;
+    background: rgba(16, 185, 129, .06);
 }
-
-.fr__file { display: flex; align-items: center; gap: .5rem; }
-.fr__file-box { flex: 1; min-width: 0; display: flex; align-items: center; gap: .5rem; padding: .5rem .65rem; border: 1px dashed rgba(11, 16, 51, .18); border-radius: 10px; background: #f8fafc; }
-.fr__file-box.is-ada { border-style: solid; border-color: rgba(16, 185, 129, .4); background: rgba(16, 185, 129, .06); }
-.fr__file-box .bi { font-size: 1.05rem; color: #64748b; }
-.fr__file-box.is-ada .bi { color: #059669; }
-.fr__file-txt { min-width: 0; display: flex; flex-direction: column; }
-.fr__file-txt strong { font-size: 12px; color: #0f172a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fr__file-txt small { font-size: 10.5px; color: #94a3b8; }
-
-.fr__btn { flex: none; border: 0; border-radius: 9px; padding: .5rem .8rem; background: linear-gradient(140deg, #4f46e5, #7c3aed); color: #fff; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
-.fr__btn:disabled { opacity: .5; cursor: not-allowed; }
+.fr__chip-pv {
+    flex: none; width: 30px; height: 30px; border-radius: 8px; overflow: hidden;
+    border: 0; padding: 0; display: grid; place-items: center; cursor: zoom-in;
+    background: #fff; color: #059669; font-size: .95rem;
+}
+.fr__chip-pv img { width: 100%; height: 100%; object-fit: cover; }
+.fr__chip-pv.is-kosong { cursor: default; color: #94a3b8; }
+.fr__chip-nama {
+    flex: 1; min-width: 0; border: 0; background: none; padding: 0; text-align: left;
+    font: inherit; font-size: 12.5px; font-weight: 700; color: #0f766e; cursor: pointer;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.fr__chip-nama:disabled { color: #475569; cursor: default; }
+.fr__chip-btn {
+    flex: none; width: 28px; height: 28px; border-radius: 8px; border: 0;
+    display: grid; place-items: center; background: rgba(15, 23, 42, .06); color: #475569;
+    cursor: pointer; transition: background .15s ease, color .15s ease;
+}
+.fr__chip-btn:hover:not(:disabled) { background: rgba(99, 102, 241, .14); color: #4f46e5; }
+.fr__chip-btn:disabled { opacity: .5; cursor: not-allowed; }
+.fr__chip-btn--danger:hover:not(:disabled) { background: rgba(220, 38, 38, .12); color: #dc2626; }
 
 .fr__consent { white-space: normal; height: auto; align-items: flex-start; }
+
+/* -- Kartu persetujuan: teks pernyataan panjang lebih nyaman dibaca dalam
+   kotak sendiri daripada tercampur sebagai "field" biasa, dan berubah warna
+   begitu dicentang supaya jelas mana yang sudah disetujui. */
+.fr--consent {
+    grid-column: 1 / -1; padding: .9rem 1.05rem; border: 1.5px solid rgba(11, 16, 51, .12);
+    border-radius: 14px; background: #f8fafc; transition: border-color .15s ease, background .15s ease;
+}
+.fr--consent-aktif { border-color: #6366f1; background: rgba(99, 102, 241, .06); }
+.fr--consent .fr__lbl { font-size: 12.5px; font-weight: 700; color: #475569; margin-bottom: .55rem; line-height: 1.55; }
+.fr__consent-ico { color: #6366f1; font-size: 13px; }
+.fr--consent :deep(.el-checkbox__label) { white-space: normal; line-height: 1.5; font-size: 13px; font-weight: 600; color: #1e293b; padding-left: .6rem; }
 
 /* Opsi referensi: nama di kiri, keterangan (kota / gelar) menepi ke kanan. */
 .fr__opsi { float: left; }
