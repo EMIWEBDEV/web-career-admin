@@ -986,6 +986,10 @@ class CareerLandingController extends Controller
      */
     public function showTim(string $slug = 'it')
     {
+        if (! config('career_divisi_guard.enabled', true)) {
+            abort(404);
+        }
+
         $info = $this->timInfoRows();
 
         $divisiId = null;
@@ -1079,6 +1083,10 @@ class CareerLandingController extends Controller
     {
         if ($this->timInfoCache !== null) {
             return $this->timInfoCache;
+        }
+
+        if (! config('career_divisi_guard.enabled', true)) {
+            return $this->timInfoCache = [];
         }
 
         try {

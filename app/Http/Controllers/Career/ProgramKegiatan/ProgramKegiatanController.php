@@ -292,6 +292,10 @@ class ProgramKegiatanController extends Controller
      */
     public function cekInfoDivisi(Request $request)
     {
+        if (! config('career_divisi_guard.enabled', true)) {
+            return ResponseHelper::success(['belumLengkap' => []], 'Cek info divisi (nonaktif)');
+        }
+
         try {
             $refs = collect($request->input('mppRefs', []))->map(fn ($r) => trim((string) $r))->filter()->unique()->values();
             if ($refs->isEmpty()) {
