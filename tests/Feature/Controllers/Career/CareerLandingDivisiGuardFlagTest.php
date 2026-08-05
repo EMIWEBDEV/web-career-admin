@@ -9,6 +9,20 @@ use Tests\TestCase;
 
 class CareerLandingDivisiGuardFlagTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // Isolate from whatever real DB connection happens to be configured
+        // in .env (this repo has no dedicated testing DB) — point the
+        // default connection at an empty in-memory sqlite DB so tests never
+        // depend on, or are confounded by, real production-like data.
+        config([
+            'database.default' => 'sqlite',
+            'database.connections.sqlite.database' => ':memory:',
+        ]);
+    }
+
     public function test_tim_info_rows_returns_empty_and_skips_db_when_flag_disabled(): void
     {
         config(['career_divisi_guard.enabled' => false]);
@@ -33,5 +47,14 @@ class CareerLandingDivisiGuardFlagTest extends TestCase
         $this->expectException(NotFoundHttpException::class);
 
         (new CareerLandingController)->showTim('divisi-manapun');
+    }
+
+    public function test_show_tim_does_not_abort_when_flag_enabled(): void
+    {
+        config(['career_divisi_guard.enabled' => true]);
+
+        $result = (new CareerLandingController)->showTim('divisi-manapun');
+
+        $this->assertInstanceOf(\Inertia\Response::class, $result);
     }
 }
