@@ -1473,24 +1473,41 @@
                         <input id="mcu-tanggal" v-model="mcuTanggal" type="date" class="plw-inp" />
                     </div>
 
+                    <!-- DUA KOTAK CATATAN, DAN ITU DISENGAJA.
+                         Bukan karena "beda maksud" — karena PEMBACANYA BERBEDA.
+                         Yang ini dikirim ke portal dan dibaca KANDIDAT SENDIRI
+                         (portalDetail → mcu.catatan); yang berformat di bawah
+                         ditahan khusus untuk tim.
+
+                         Menggabungkannya hanya punya dua hasil, dua-duanya
+                         buruk: kandidat tak pernah tahu ada pembatasan kerja
+                         pada dirinya, atau temuan klinis bocor ke orang yang
+                         sedang dinilai. Yang dibetulkan bukan jumlahnya,
+                         melainkan labelnya — yang dulu sama-sama berbunyi
+                         "catatan" tanpa menyebut siapa yang membacanya. -->
                     <div class="plw-fld">
                         <label class="plw-fld__lbl" for="mcu-catatan">
-                            Keterangan
+                            Keterangan untuk kandidat
                             <b v-if="mcuDef?.butuhCatatan">*</b>
-                            <small v-else>ringkas, opsional</small>
+                            <span class="plw-lihat is-publik">
+                                <i class="bi bi-eye-fill"></i> DIBACA KANDIDAT
+                            </span>
                         </label>
                         <textarea
                             id="mcu-catatan" v-model="mcuCatatan" class="plw-inp plw-inp--ta" rows="2" maxlength="1000"
                             :placeholder="mcuDef?.butuhCatatan
-                                ? 'Wajib: tuliskan temuan / pembatasannya, dan kapan diperiksa ulang bila sementara.'
+                                ? 'Wajib: pembatasan atau tindak lanjut yang perlu kandidat ketahui — mis. hindari kerja malam; periksa ulang 2 minggu lagi.'
                                 : 'mis. Disarankan kontrol tekanan darah berkala.'"
                         ></textarea>
+                        <p class="plw-note is-lock">
+                            <i class="bi bi-shield-lock-fill"></i>
+                            <span>
+                                Kalimat ini muncul di halaman lamaran kandidat. Tulis <b>akibatnya bagi
+                                pekerjaan</b>, bukan diagnosisnya &mdash; temuan klinis rinci ditulis di
+                                catatan internal di bawah atau tetap di berkas terlampir.
+                            </span>
+                        </p>
                     </div>
-
-                    <p class="plw-note is-lock">
-                        <i class="bi bi-shield-lock-fill"></i>
-                        <span>Tulis ringkas saja. Diagnosis rinci adalah data kesehatan &mdash; simpan di berkas terlampir, bukan di catatan yang dibaca banyak orang.</span>
-                    </p>
                     <p v-if="mcuKurangHadir" class="plw-note is-err">
                         <i class="bi bi-exclamation-circle-fill"></i>
                         <span>{{ mcuKurangHadir }}</span>
@@ -1549,8 +1566,19 @@
 
                 <div class="plw-fld">
                     <label class="plw-fld__lbl">
-                        Catatan hasil {{ (hadirTarget?.tipeNama || 'aktivitas').toLowerCase() }}
+                        <!-- Dulu dirakit dari nama tipe lalu di-toLowerCase(),
+                             sehingga "MCU" jadi "mcu" — nama yang sudah punya
+                             bentuk bakunya sendiri jadi rusak. -->
+                        {{ hadirTarget?.labelCatatan || 'Catatan hasil aktivitas' }}
                         <small>opsional</small>
+                        <!-- Penanda pembaca, bukan hiasan: inilah satu-satunya
+                             pembeda antara kotak ini dan "Keterangan untuk
+                             kandidat" di atas. Tanpa itu keduanya terbaca
+                             sebagai pengulangan, dan orang mengisi salah satu
+                             secara acak. -->
+                        <span class="plw-lihat is-internal">
+                            <i class="bi bi-eye-slash-fill"></i> HANYA TIM
+                        </span>
                     </label>
                     <EditorQuill
                         v-model="hadirCatatanHtml"
@@ -1562,13 +1590,21 @@
                     />
                 </div>
 
+                <!-- Nama lampirannya DARI TIPE AKTIVITAS, bukan satu kalimat
+                     untuk semua: MCU meminta hasil dari klinik, wawancara
+                     meminta lembar penilaian, tes offline meminta lembar
+                     jawaban. Kalimat yang salah membuat petugas ragu apakah ia
+                     sedang membuka jendela yang benar. -->
                 <BerkasAktivitas
                     :sub-tes-id="hadirTarget?.id || ''"
                     :awal="hadirTarget?.berkas || []"
-                    label="Form hasil wawancara / berkas penilaian"
+                    :label="hadirTarget?.labelBerkas || 'Berkas hasil / lampiran penilaian'"
                     @berubah="tandaiBerkasBerubah"
                     @lihat="bukaDok"
                 />
+                <p v-if="hadirTarget?.petunjukBerkas" class="plw-fld__hint">
+                    <i class="bi bi-info-circle"></i> {{ hadirTarget.petunjukBerkas }}
+                </p>
             </template>
 
             <div v-else class="plw-fld">
@@ -4617,4 +4653,19 @@ export default {
 /* Segmented mode: tiga bentuk harus muat di modal sempit tanpa terpotong. */
 .plw-seg { display: flex; flex-wrap: wrap; gap: 6px; }
 .plw-seg .plw-seg__b { flex: 1 1 130px; min-width: 0; justify-content: center; }
+
+/* PENANDA PEMBACA — dipakai di mana pun ada dua kotak isian berdampingan yang
+   tujuannya berbeda hanya pada SIAPA YANG MEMBACANYA. Warnanya kontras penuh
+   (biru vs abu) karena inilah pembeda satu-satunya; bila ia selembut label
+   biasa, matanya terlewat dan orang mengisi kotak yang salah. */
+.plw-lihat {
+    display: inline-flex; align-items: center; gap: 4px; margin-left: 7px;
+    padding: 1px 7px; border-radius: 999px; font-size: 9.5px; font-weight: 800;
+    letter-spacing: .04em; vertical-align: middle; white-space: nowrap;
+}
+.plw-lihat.is-publik   { background: rgba(2, 132, 199, .12); color: #0369a1; border: 1px solid rgba(2, 132, 199, .3); }
+.plw-lihat.is-internal { background: rgba(100, 116, 139, .12); color: #475569; border: 1px solid rgba(100, 116, 139, .26); }
+/* Peringatan privasi menempel PADA bidangnya, bukan melayang di bawah kotak
+   hasil — supaya terbaca sebagai aturan untuk kotak yang sedang diisi. */
+.plw-mform .plw-fld .plw-note.is-lock { margin-top: 6px; }
 </style>

@@ -57,8 +57,19 @@ class LamaranController extends Controller
 
     public static function masterTipeTahap(): \Illuminate\Support\Collection
     {
+        // SELURUH KOLOM, bukan daftar pilih.
+        //
+        // Daftar kolom yang ditulis manual di sini sudah dua kali diam-diam
+        // membuang kolom baru: `Mode_Jadwal_Bawaan` (bentuk jadwal bawaan tiap
+        // tipe) dan `Label_Berkas` sama-sama tersimpan rapi di master lalu
+        // hilang sebelum sampai ke layar — tanpa satu pun galat, karena
+        // `$tipe->Kolom_Baru ?? null` dengan patuh menghasilkan null.
+        //
+        // Masternya belasan baris; mengambil semua kolomnya tidak lebih mahal,
+        // dan menutup kelas kekeliruan yang tak terlihat sampai ada yang
+        // bertanya kenapa setelannya "tidak berfungsi".
         return self::$tipeCache ??= DB::table('N_WEB_CAREERS_Master_Tipe_Tahap')
-            ->get(['Kode', 'Nama', 'Ikon', 'Perilaku_Kode', 'Flag_Formulir', 'Flag_Upload_Hasil', 'Flag_Jadwal', 'Flag_Wajib_Luring', 'Flag_Penawaran', 'Pesan_Kandidat'])
+            ->get()
             ->keyBy('Kode');
     }
 
@@ -2897,6 +2908,17 @@ class LamaranController extends Controller
             // kali. Yang lupa akan mengirim undangan bertautan Meet untuk
             // percakapan yang sebenarnya cuma panggilan telepon.
             'modeJadwalBawaan' => $tipe->Mode_Jadwal_Bawaan ?? null,
+            // TIAP TIPE MENYEBUT BERKAS & CATATANNYA SENDIRI.
+            //
+            // Dulu kotak lampiran selalu berbunyi "Form hasil wawancara /
+            // berkas penilaian" untuk semua tipe — sehingga petugas MCU diminta
+            // melampirkan form wawancara untuk hasil dari klinik. Yang paling
+            // merugikan: orang yang membaca teliti justru ragu, mengira ia
+            // membuka jendela yang salah, lalu menutupnya tanpa melampirkan
+            // apa pun. Kosong → kalimat umum yang netral, bukan milik tipe lain.
+            'labelBerkas' => $tipe->Label_Berkas ?? null,
+            'petunjukBerkas' => $tipe->Petunjuk_Berkas ?? null,
+            'labelCatatan' => $tipe->Label_Catatan ?? null,
             // Penanda agar modal "Catat Hasil" menampilkan bidang khusus MCU.
             'isMcu' => $isMcu,
             // Aktivitas ini MEMBAWA PENAWARAN (negosiasi, surat penawaran, kontrak).
