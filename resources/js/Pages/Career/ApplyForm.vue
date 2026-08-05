@@ -750,8 +750,14 @@ const uploadErr = ref('');
 const form = reactive({});
 const files = reactive({});
 const formulirDinamis = computed(() => !!props.flow.formulir?.schema);
+// `posisi` disisipkan ke profil supaya field ber-`prefill: 'posisi'` (mis.
+// "Jabatan yang Dilamar") terisi otomatis dari lowongan yang sedang dilamar —
+// dikunci, karena jabatannya sudah pasti sesuai lowongan ini, tidak perlu
+// (dan tidak boleh) diketik ulang oleh kandidat.
 const dynamicJawaban = reactive(
-    props.flow.formulir?.schema ? jawabanAwal(props.flow.formulir.schema, props.flow.kandidat || {}) : {},
+    props.flow.formulir?.schema
+        ? jawabanAwal(props.flow.formulir.schema, { ...(props.flow.kandidat || {}), posisi: lowongan.posisi || '' })
+        : {},
 );
 const dynamicFiles = reactive({});
 // ── Cascade pendidikan (Jenjang → Jenis Institusi → Nama Kampus) ──

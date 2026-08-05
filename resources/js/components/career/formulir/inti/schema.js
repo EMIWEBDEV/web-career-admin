@@ -19,6 +19,9 @@ const TIPE_VALID = new Set([
     'consent',
     'prefill',
     'referensi',
+    'currency',
+    'bulan',
+    'tahun',
 ]);
 
 export function normalisasiSkema(skema) {
@@ -44,7 +47,10 @@ export function normalisasiSkema(skema) {
 function normalisasiBagian(bagian, langkahIndex = 0) {
     return (Array.isArray(bagian) ? bagian : []).map((B, i) => ({
         key: B.key || '',
-        judul: String(B.judul || `Bagian ${i + 1}`).trim(),
+        // Judul eksplisit '' (mis. langkah bertahap yang cuma punya satu bagian,
+        // sehingga header langkah sudah cukup) sengaja dibiarkan kosong — beda
+        // dengan tidak diisi sama sekali, yang tetap dapat label bawaan.
+        judul: B.judul === undefined || B.judul === null ? `Bagian ${i + 1}` : String(B.judul).trim(),
         deskripsi: B.deskripsi || '',
         berulang: !!B.berulang,
         maks_baris: Number(B.maks_baris || 5),
