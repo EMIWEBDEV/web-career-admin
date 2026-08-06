@@ -39,6 +39,20 @@ class HclClient
         return $this->kirim('PUT', $path, $body, [], $konteksLog);
     }
 
+    /**
+     * PATCH — perubahan SEBAGIAN.
+     *
+     * Dibedakan dari PUT bukan demi kerapian istilah: pada sinkron biodata,
+     * field yang TIDAK disebut harus dibiarkan apa adanya, sementara PUT
+     * berarti "inilah seluruh isinya". Rutenya di CAT pun terdaftar per metode
+     * (whitelist endpoint), jadi mengirim PUT ke rute PATCH akan ditolak 403 —
+     * penolakan yang terbaca persis seperti kredensial salah.
+     */
+    public function patch(string $path, array $body = [], array $konteksLog = []): array
+    {
+        return $this->kirim('PATCH', $path, $body, [], $konteksLog);
+    }
+
     public function delete(string $path, array $konteksLog = []): array
     {
         return $this->kirim('DELETE', $path, [], [], $konteksLog);

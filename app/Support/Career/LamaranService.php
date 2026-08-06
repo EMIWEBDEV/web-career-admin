@@ -509,105 +509,144 @@ class LamaranService
             return ['ok' => false, 'pesan' => "Alasan wajib diisi untuk keputusan \"{$def->Nama}\"."];
         }
 
-        $tahap = DB::table('N_WEB_CAREERS_Lamaran_Tahap')->where('Id_Lamaran_Tahap', $lamaranTahapId)->first();
-        if (! $tahap) {
-            return ['ok' => false, 'pesan' => 'Tahap tidak ditemukan.'];
-        }
-        if ($tahap->Status === 'SELESAI') {
-            return ['ok' => false, 'pesan' => 'Tahap ini sudah diputus.'];
-        }
-
-        // ── GERBANG HOLD ─────────────────────────────────────────────────────
-        // Kandidat yang sedang DITAHAN tidak bisa diputus tanpa melepas tahannya
-        // lebih dulu. Kalau boleh, hold jadi sekadar hiasan: seseorang yang
-        // tidak melihat penandanya tetap bisa mengetuk palu atas kandidat yang
-        // justru sedang ditunggu — dan keputusannya tidak bisa ditarik kembali.
+        // ── SATU TRANSAKSI, SATU PALU ────────────────────────────────────────
         //
-        // Melepas tahan itu satu klik, dan klik itulah yang memaksa admin sadar
-        // bahwa ada alasan kenapa kandidat ini sengaja belum diputus.
-        if (($tahap->Hold_Flag ?? 'T') === 'Y') {
-            return ['ok' => false, 'pesan' => 'Kandidat ini sedang DITAHAN (' . ($tahap->Hold_Alasan_Kode ?: 'tanpa alasan') . '). Lepaskan penahanannya dulu sebelum memutuskan.'];
-        }
-
-        // ── GERBANG MODE KEPUTUSAN (dari Master Alur) ────────────────────────
-        // Tahap ber-mode OTOMATIS diputus mesin begitu aktivitasnya selesai.
-        // Kalau admin masih bisa mengetuk palu di sini, mode otomatis yang
-        // disetel di Master Alur jadi tak berarti dan hasilnya bisa berbeda
-        // dari yang dihitung mesin. Diblokir di server, bukan hanya di layar.
-        if (strtoupper((string) ($tahap->Keputusan_Mode ?? 'MANUAL')) === 'SYSTEM') {
-            return ['ok' => false, 'pesan' => 'Tahap ini disetel OTOMATIS di Master Alur — keputusannya ditentukan sistem setelah seluruh aktivitas selesai, bukan oleh admin.'];
-        }
-
-        // ── GERBANG HASIL AKTIVITAS ──────────────────────────────────────────
-        // Aktivitas penentu yang berupa TES (punya jenis tes / dari pihak ke-3)
-        // wajib punya hasil sebelum tahapnya diputus. Meloloskan tes yang
-        // nilainya belum tercatat berarti memutus tanpa dasar.
-        $belum = DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')
-            ->where('Lamaran_Tahap_Id', $lamaranTahapId)
-            ->where('Peran', 'PENENTU')
-            ->where('Flag_Selesai', '<>', 'Y')
-            ->where(fn ($q) => $q->whereNotNull('Jenis_Tes_Kode')->orWhere('Provider', 'THIRD_PARTY'))
-            ->get(['Label']);
-        if ($belum->isNotEmpty() && ($tahap->Siap_Diputus ?? 'N') !== 'Y') {
-            $nama = $belum->pluck('Label')->filter()->implode(', ');
-
-            return ['ok' => false, 'pesan' => 'Hasil aktivitas berikut belum dicatat: ' . ($nama ?: $belum->count() . ' aktivitas') . '. Catat hasilnya dulu sebelum memutuskan.'];
-        }
-
-        // Dulu di sini ada GATE WAJIB UPLOAD: tahap tak bisa diloloskan sebelum
-        // berkas hasil diunggah. Gate itu dicabut karena titik unggahnya —
-        // "Berkas Pendukung" di modal keputusan — sudah dihapus: syarat yang
-        // tak punya cara dipenuhi bukan pengaman, melainkan jalan buntu.
+        // Seluruh blok di bawah dulu berjalan TANPA transaksi. Padahal
+        // tetapkanTahap() menulis ke empat tabel berbeda — tahap, lamaran,
+        // Talent Pool, dan tahap berikutnya. Kegagalan di tengahnya (koneksi
+        // putus, deadlock, penyimpanan Talent Pool menolak) meninggalkan
+        // keadaan yang tak bisa dibaca siapa pun: tahapnya SELESAI/LULUS
+        // sementara lamarannya masih BERJALAN, atau kandidat diputus tanpa
+        // tahap berikutnya pernah dibuka — menggantung selamanya menunggu
+        // peristiwa yang tidak akan datang lagi.
         //
-        // Kewajiban berkas kini melekat pada SUB-AKTIVITAS (Unggah_Wajib di
-        // Lamaran_Tahap_Tes), tempat berkasnya benar-benar diunggah, dan
-        // ditegakkan lewat gate "hasil aktivitas belum dicatat" di atas.
+        // BARIS TAHAPNYA DIKUNCI, lalu statusnya diperiksa ULANG SESUDAH kunci
+        // didapat. Pemeriksaan sebelum kunci tidak menjamin apa pun: dua klik
+        // "Loloskan" yang berselisih sepersekian detik sama-sama membaca
+        // 'BERJALAN', dan keduanya mengetuk palu atas tahap yang sama.
+        // evaluasiTahap() sudah memakai pengaman ini sejak awal; jalur ADMIN —
+        // yang justru paling sering ditekan dua kali — tidak pernah
+        // mendapatkannya.
+        return DB::transaction(function () use ($lamaranTahapId, $hasil, $def, $catatan, $adminId, $talentPool) {
+            $tahap = DB::table('N_WEB_CAREERS_Lamaran_Tahap')
+                ->where('Id_Lamaran_Tahap', $lamaranTahapId)
+                ->lockForUpdate()
+                ->first();
+            if (! $tahap) {
+                return ['ok' => false, 'pesan' => 'Tahap tidak ditemukan.'];
+            }
+            if ($tahap->Status === 'SELESAI') {
+                return ['ok' => false, 'pesan' => 'Tahap ini sudah diputus.'];
+            }
 
-        // GERBANG KUOTA: LULUS di tahap TERAKHIR = kandidat DITERIMA → menempati
-        // kursi. Bila kuota MPP posisi sudah penuh, tolak — arahkan ke Tidak Lolos
-        // atau Masuk Talent Pool. Tahap antara (masih ada tahap berikut) tak dibatasi.
-        if ($hasil === 'LULUS') {
-            $adaBerikut = DB::table('N_WEB_CAREERS_Lamaran_Tahap')
-                ->where('Lamaran_Id', $tahap->Lamaran_Id)
-                ->where('Urutan', '>', $tahap->Urutan)
-                ->exists();
-            if (! $adaBerikut) {
-                $lam = DB::table('N_WEB_CAREERS_Lamaran')->where('Id_Lamaran', $tahap->Lamaran_Id)->first();
-                if ($lam && $lam->Program_Posisi_Id) {
-                    $kuota = (int) DB::table('N_WEB_CAREERS_Program_Posisi')->where('Id_Program_Posisi', $lam->Program_Posisi_Id)->value('Kuota');
-                    if ($kuota > 0) {
-                        $terisi = DB::table('N_WEB_CAREERS_Lamaran')
-                            ->where('Program_Posisi_Id', $lam->Program_Posisi_Id)
-                            ->where('Status', 'LULUS')->count();
-                        if ($terisi >= $kuota) {
-                            return ['ok' => false, 'pesan' => "Kuota posisi sudah penuh ({$terisi}/{$kuota}). Pilih \"Tidak Lolos\" atau \"Masuk Talent Pool\"."];
+            // ── GERBANG HOLD ─────────────────────────────────────────────────
+            // Kandidat yang sedang DITAHAN tidak bisa diputus tanpa melepas
+            // tahannya lebih dulu. Kalau boleh, hold jadi sekadar hiasan:
+            // seseorang yang tidak melihat penandanya tetap bisa mengetuk palu
+            // atas kandidat yang justru sedang ditunggu — dan keputusannya
+            // tidak bisa ditarik kembali.
+            //
+            // Melepas tahan itu satu klik, dan klik itulah yang memaksa admin
+            // sadar bahwa ada alasan kenapa kandidat ini sengaja belum diputus.
+            if (($tahap->Hold_Flag ?? 'T') === 'Y') {
+                return ['ok' => false, 'pesan' => 'Kandidat ini sedang DITAHAN (' . ($tahap->Hold_Alasan_Kode ?: 'tanpa alasan') . '). Lepaskan penahanannya dulu sebelum memutuskan.'];
+            }
+
+            // ── GERBANG MODE KEPUTUSAN (dari Master Alur) ────────────────────
+            // Tahap ber-mode OTOMATIS diputus mesin begitu aktivitasnya selesai.
+            // Kalau admin masih bisa mengetuk palu di sini, mode otomatis yang
+            // disetel di Master Alur jadi tak berarti dan hasilnya bisa berbeda
+            // dari yang dihitung mesin. Diblokir di server, bukan hanya di layar.
+            if (strtoupper((string) ($tahap->Keputusan_Mode ?? 'MANUAL')) === 'SYSTEM') {
+                return ['ok' => false, 'pesan' => 'Tahap ini disetel OTOMATIS di Master Alur — keputusannya ditentukan sistem setelah seluruh aktivitas selesai, bukan oleh admin.'];
+            }
+
+            // ── GERBANG HASIL AKTIVITAS ──────────────────────────────────────
+            // Aktivitas penentu yang berupa TES (punya jenis tes / dari pihak
+            // ke-3) wajib punya hasil sebelum tahapnya diputus. Meloloskan tes
+            // yang nilainya belum tercatat berarti memutus tanpa dasar.
+            $belum = DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')
+                ->where('Lamaran_Tahap_Id', $lamaranTahapId)
+                ->where('Peran', 'PENENTU')
+                ->where('Flag_Selesai', '<>', 'Y')
+                ->where(fn ($q) => $q->whereNotNull('Jenis_Tes_Kode')->orWhere('Provider', 'THIRD_PARTY'))
+                ->get(['Label']);
+            if ($belum->isNotEmpty() && ($tahap->Siap_Diputus ?? 'N') !== 'Y') {
+                $nama = $belum->pluck('Label')->filter()->implode(', ');
+
+                return ['ok' => false, 'pesan' => 'Hasil aktivitas berikut belum dicatat: ' . ($nama ?: $belum->count() . ' aktivitas') . '. Catat hasilnya dulu sebelum memutuskan.'];
+            }
+
+            // Dulu di sini ada GATE WAJIB UPLOAD: tahap tak bisa diloloskan
+            // sebelum berkas hasil diunggah. Gate itu dicabut karena titik
+            // unggahnya — "Berkas Pendukung" di modal keputusan — sudah
+            // dihapus: syarat yang tak punya cara dipenuhi bukan pengaman,
+            // melainkan jalan buntu.
+            //
+            // Kewajiban berkas kini melekat pada SUB-AKTIVITAS (Unggah_Wajib di
+            // Lamaran_Tahap_Tes), tempat berkasnya benar-benar diunggah, dan
+            // ditegakkan lewat gate "hasil aktivitas belum dicatat" di atas.
+
+            // GERBANG KUOTA: LULUS di tahap TERAKHIR = kandidat DITERIMA →
+            // menempati kursi. Bila kuota MPP posisi sudah penuh, tolak —
+            // arahkan ke Tidak Lolos atau Masuk Talent Pool. Tahap antara
+            // (masih ada tahap berikut) tak dibatasi.
+            if ($hasil === 'LULUS') {
+                $adaBerikut = DB::table('N_WEB_CAREERS_Lamaran_Tahap')
+                    ->where('Lamaran_Id', $tahap->Lamaran_Id)
+                    ->where('Urutan', '>', $tahap->Urutan)
+                    ->exists();
+                if (! $adaBerikut) {
+                    $lam = DB::table('N_WEB_CAREERS_Lamaran')->where('Id_Lamaran', $tahap->Lamaran_Id)->first();
+                    if ($lam && $lam->Program_Posisi_Id) {
+                        // BARIS POSISINYA DIKUNCI, bukan sekadar dibaca.
+                        //
+                        // Hitung-lalu-putuskan tanpa kunci adalah lomba yang
+                        // pasti kalah pada kuota terakhir: dua rekruter yang
+                        // meloloskan kandidat berbeda di detik yang sama
+                        // sama-sama membaca "9 dari 10 terisi", dan keduanya
+                        // lolos gerbang ini. Kursinya jadi sebelas. Kunci di
+                        // sini membuat yang kedua menunggu sampai yang pertama
+                        // selesai, lalu membaca angka yang sudah benar.
+                        $kuota = (int) DB::table('N_WEB_CAREERS_Program_Posisi')
+                            ->where('Id_Program_Posisi', $lam->Program_Posisi_Id)
+                            ->lockForUpdate()
+                            ->value('Kuota');
+                        if ($kuota > 0) {
+                            $terisi = DB::table('N_WEB_CAREERS_Lamaran')
+                                ->where('Program_Posisi_Id', $lam->Program_Posisi_Id)
+                                ->where('Status', 'LULUS')->count();
+                            if ($terisi >= $kuota) {
+                                return ['ok' => false, 'pesan' => "Kuota posisi sudah penuh ({$terisi}/{$kuota}). Pilih \"Tidak Lolos\" atau \"Masuk Talent Pool\"."];
+                            }
                         }
                     }
                 }
             }
-        }
 
-        $this->tetapkanTahap($lamaranTahapId, $hasil, $catatan, $adminId, now(), $talentPool);
+            $this->tetapkanTahap($lamaranTahapId, $hasil, $catatan, $adminId, now(), $talentPool);
 
-        // Pesannya DARI MASTER untuk hasil di luar tiga yang lama. Peta literal
-        // di bawah tidak pernah memuat MENGUNDURKAN_DIRI / DITOLAK_KANDIDAT,
-        // sehingga keduanya mengembalikan pesan kosong — layar menampilkan
-        // notifikasi hampa untuk keputusan yang justru menutup lamaran orang.
-        $pesan = [
-            'LULUS' => 'Kandidat diloloskan ke tahap berikutnya.',
-            'GUGUR' => 'Kandidat digugurkan.',
-            'TALENT_POOL' => 'Kandidat dialihkan ke Talent Pool.',
-        ][$hasil] ?? ('Keputusan dicatat: ' . ($def->Nama ?? $hasil) . '.');
+            // Pesannya DARI MASTER untuk hasil di luar tiga yang lama. Peta
+            // literal di bawah tidak pernah memuat MENGUNDURKAN_DIRI /
+            // DITOLAK_KANDIDAT, sehingga keduanya mengembalikan pesan kosong —
+            // layar menampilkan notifikasi hampa untuk keputusan yang justru
+            // menutup lamaran orang.
+            $pesan = [
+                'LULUS' => 'Kandidat diloloskan ke tahap berikutnya.',
+                'GUGUR' => 'Kandidat digugurkan.',
+                'TALENT_POOL' => 'Kandidat dialihkan ke Talent Pool.',
+            ][$hasil] ?? ('Keputusan dicatat: ' . ($def->Nama ?? $hasil) . '.');
 
-        // Nasib Talent Pool ikut disebut — itu satu-satunya bagian keputusan
-        // yang tidak terbaca dari nama hasilnya.
-        if ($talentPool !== null && ($def->Flag_Pilih_Talent_Pool ?? 'T') === 'Y') {
-            $pesan .= $talentPool
-                ? ' Kandidat disimpan di Talent Pool.'
-                : ' Kandidat tidak disimpan di Talent Pool.';
-        }
+            // Nasib Talent Pool ikut disebut — itu satu-satunya bagian keputusan
+            // yang tidak terbaca dari nama hasilnya.
+            if ($talentPool !== null && ($def->Flag_Pilih_Talent_Pool ?? 'T') === 'Y') {
+                $pesan .= $talentPool
+                    ? ' Kandidat disimpan di Talent Pool.'
+                    : ' Kandidat tidak disimpan di Talent Pool.';
+            }
 
-        return ['ok' => true, 'pesan' => $pesan];
+            return ['ok' => true, 'pesan' => $pesan];
+        });
     }
 
     // ═══════════════════════ INTERNAL ═══════════════════════
@@ -708,6 +747,19 @@ class LamaranService
     /**
      * Tetapkan hasil sebuah tahap dan gerakkan lamaran. Dipakai baik oleh
      * auto-gugur mesin maupun ketuk palu admin.
+     */
+    /**
+     * WAJIB DIPANGGIL DI DALAM TRANSAKSI.
+     *
+     * Metode ini menulis ke empat tabel — tahap, lamaran, Talent Pool, dan
+     * tahap berikutnya — dan pada jalur "nilai lama masih berlaku" ia memanggil
+     * dirinya sendiri untuk tahap sesudahnya. Tidak ada satu pun titik di
+     * tengahnya yang aman untuk berhenti: berhenti di sana berarti tahapnya
+     * sudah diputus sementara lamarannya belum, atau sebaliknya.
+     *
+     * Kedua pemanggilnya sudah memenuhi syarat ini — ketukPalu() dan
+     * evaluasiTahap() sama-sama membuka transaksi lebih dulu. Catatan ini ada
+     * supaya pemanggil KETIGA tidak pernah lahir tanpa transaksinya.
      */
     private function tetapkanTahap(int $lamaranTahapId, string $hasil, ?string $catatan, ?int $adminId, $now, ?bool $talentPool = null): void
     {
@@ -1345,19 +1397,30 @@ class LamaranService
             return ['outcome' => 'NOOP']; // semua sub-tes sudah final (idempoten)
         }
 
-        DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')->where('Id_Lamaran_Tahap_Tes', $sub->Id_Lamaran_Tahap_Tes)->update([
-            'Status' => 'SELESAI',
-            // Tes INFORMATIF tidak menyatakan lulus — Hasil dibiarkan NULL.
-            'Hasil' => $sub->Peran === 'INFORMATIF' ? null : ($hasil === 'LULUS' ? 'LULUS' : 'GAGAL'),
-            'Nilai' => $nilai,
-            'Total_Soal' => $totalSoal,
-            'Penjadwalan_Tahap_Id' => $penjadwalanTahapId,
-            'Flag_Selesai' => 'Y',
-            'Waktu_Selesai' => now(),
-            'Updated_At' => now(),
-        ]);
+        // SATU TRANSAKSI untuk "rekam hasilnya" + "simpulkan tahapnya".
+        //
+        // Dulu keduanya terpisah: nilai tes ditulis, lalu evaluasiTahap()
+        // membuka transaksinya sendiri. Bila evaluasi gagal di tengah — deadlock,
+        // koneksi putus — nilainya sudah telanjur tersimpan dan aktivitasnya
+        // ditandai selesai, sementara tahapnya tak pernah menyimpulkan apa pun.
+        // Hasil ujian dari CAT tidak dikirim dua kali, jadi tahap itu diam
+        // selamanya: gerbang idempoten di pemanggil membaca "sudah selesai" dan
+        // menolak memprosesnya lagi.
+        return DB::transaction(function () use ($sub, $hasil, $nilai, $totalSoal, $penjadwalanTahapId, $lamaranTahapId) {
+            DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')->where('Id_Lamaran_Tahap_Tes', $sub->Id_Lamaran_Tahap_Tes)->update([
+                'Status' => 'SELESAI',
+                // Tes INFORMATIF tidak menyatakan lulus — Hasil dibiarkan NULL.
+                'Hasil' => $sub->Peran === 'INFORMATIF' ? null : ($hasil === 'LULUS' ? 'LULUS' : 'GAGAL'),
+                'Nilai' => $nilai,
+                'Total_Soal' => $totalSoal,
+                'Penjadwalan_Tahap_Id' => $penjadwalanTahapId,
+                'Flag_Selesai' => 'Y',
+                'Waktu_Selesai' => now(),
+                'Updated_At' => now(),
+            ]);
 
-        return $this->evaluasiTahap($lamaranTahapId, null);
+            return $this->evaluasiTahap($lamaranTahapId, null);
+        });
     }
 
     /**

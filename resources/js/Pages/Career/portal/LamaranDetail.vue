@@ -778,13 +778,19 @@
                         </div>
                     </div>
 
-                    <!-- ═══ JAWABAN ATAS PENAWARAN ═══
-                             Tahap penawaran berakhir pada satu hal yang hanya
-                             kandidat yang tahu: ia menerima atau mundur. Sebelum
-                             ini portal cuma berkata "tim akan menghubungimu",
-                             sehingga kandidat yang sudah memutuskan tidak punya
-                             cara mengabari — dan tim tidak bisa membedakan yang
-                             sedang menimbang dari yang sudah pergi. -->
+                    <!-- ═══ PENAWARAN — KETERANGAN, BUKAN TINDAKAN ═══
+                         Tombol "Terima Penawaran" dan "Mengundurkan Diri"
+                         DICABUT beserta endpoint-nya. Keputusan itu kini hanya
+                         dicatat tim di worklist, lewat "Keputusan dari
+                         Kandidat" — satu pintu, dengan jejak siapa mencatat dan
+                         kapan.
+
+                         Kartunya sendiri TETAP ADA. Menghapusnya sekalian
+                         membuat kandidat di tahap penawaran melihat halaman
+                         yang kosong: pemberitahuan "menunggu dihubungi" di
+                         bawah sengaja tidak berlaku untuk tahap penawaran,
+                         jadi tak ada satu pun kalimat yang menjelaskan apa yang
+                         sedang terjadi padanya. -->
                     <div v-if="tahapAktif.penawaran" class="ld-offer">
                         <div class="ld-offer__head">
                             <span class="ld-offer__ico"><i class="bi bi-envelope-paper-fill"></i></span>
@@ -794,80 +800,17 @@
                             </div>
                         </div>
 
-                        <!-- Sudah menjawab: yang ditampilkan keadaannya, bukan
-                                 tombol yang tak lagi bisa ditekan. -->
-                        <div
-                            v-if="tahapAktif.tanggapan"
-                            class="ld-offer__done"
-                            :class="tahapAktif.tanggapan.jawab === 'TERIMA' ? 'is-ya' : 'is-no'"
-                        >
-                            <i
-                                class="bi"
-                                :class="
-                                    tahapAktif.tanggapan.jawab === 'TERIMA'
-                                        ? 'bi-check-circle-fill'
-                                        : 'bi-box-arrow-left'
-                                "
-                            ></i>
-                            <div style="min-width: 0">
-                                <b>{{
-                                    tahapAktif.tanggapan.jawab === 'TERIMA'
-                                        ? 'Kamu sudah menerima penawaran ini.'
-                                        : 'Kamu menyatakan mundur dari proses ini.'
-                                }}</b>
-                                <p v-if="tahapAktif.tanggapan.jawab === 'TERIMA'">
-                                    Tim rekrutmen sedang menindaklanjuti. Rincian berikutnya kami kabarkan lewat email
-                                    dan halaman ini.
-                                </p>
-                                <p v-else>
-                                    Terima kasih sudah mengabari kami. Kamu tetap bisa melamar lowongan lain kapan saja.
-                                </p>
-                                <p v-if="tahapAktif.tanggapan.catatan" class="ld-offer__cat">
-                                    “{{ tahapAktif.tanggapan.catatan }}”
-                                </p>
-                            </div>
-                        </div>
-
-                        <!-- BELUM ADA PENAWARANNYA. Tidak ada yang bisa dijawab,
-                                 jadi yang diberikan keterangan — bukan tombol
-                                 "Terima / Mundur" untuk surat yang belum ia pegang. -->
-                        <div v-else-if="!tahapAktif.penawaranDiajukan" class="ld-offer__wait">
+                        <div class="ld-offer__wait">
                             <i class="bi bi-hourglass-split"></i>
                             <div style="min-width: 0">
-                                <b>Menunggu tim rekrutmen menghubungimu.</b>
+                                <b>Tim rekrutmen akan menghubungimu.</b>
                                 <p>
-                                    Kami akan mengontakmu lebih lanjut untuk membahas penawaran — jadwal pertemuan dan
-                                    surat penawarannya dikirim lewat email dan muncul di halaman ini. Setelah itu kamu
-                                    bisa memilih
-                                    <b>Terima</b> atau <b>Mengundurkan Diri</b> di sini.
+                                    Jadwal pertemuan dan surat penawarannya dikirim lewat email dan muncul di
+                                    halaman ini. Sampaikan keputusanmu langsung kepada tim rekrutmen yang
+                                    menghubungimu — merekalah yang mencatatnya.
                                 </p>
                             </div>
                         </div>
-
-                        <template v-else>
-                            <p class="ld-offer__txt">
-                                Beri tahu kami keputusanmu. Jawabanmu tidak langsung menutup apa pun kecuali kamu
-                                memilih mundur — tim tetap menghubungimu untuk rincian berikutnya.
-                            </p>
-                            <div class="ld-offer__act">
-                                <button
-                                    type="button"
-                                    class="ld-offer__btn is-ya"
-                                    :disabled="jawabSibuk"
-                                    @click="bukaJawab('TERIMA')"
-                                >
-                                    <i class="bi bi-hand-thumbs-up-fill"></i> Terima Penawaran
-                                </button>
-                                <button
-                                    type="button"
-                                    class="ld-offer__btn is-no"
-                                    :disabled="jawabSibuk"
-                                    @click="bukaJawab('MUNDUR')"
-                                >
-                                    <i class="bi bi-box-arrow-left"></i> Mengundurkan Diri
-                                </button>
-                            </div>
-                        </template>
                     </div>
 
                     <!-- Kalimat "menunggu dihubungi" hanya benar SELAMA belum
@@ -1495,60 +1438,8 @@
             </div>
         </div>
 
-        <!-- KONFIRMASI JAWABAN PENAWARAN.
-             Keduanya dikonfirmasi, bukan hanya yang mundur: menerima penawaran
-             pun keputusan besar yang tidak boleh terjadi karena salah sentuh di
-             ponsel. Yang mundur menuntut alasan — itulah satu-satunya umpan
-             balik kenapa penawaran ini tidak diambil. -->
-        <div class="ld-ask" :class="{ 'is-on': !!jawabPilih }" @click="tutupJawab">
-            <div v-if="jawabPilih" class="ld-ask__box" @click.stop>
-                <span class="ld-ask__ico" :class="jawabPilih === 'TERIMA' ? 'is-ya' : 'is-no'">
-                    <i class="bi" :class="jawabPilih === 'TERIMA' ? 'bi-hand-thumbs-up-fill' : 'bi-box-arrow-left'"></i>
-                </span>
-                <h3>{{ jawabPilih === 'TERIMA' ? 'Terima penawaran ini?' : 'Mengundurkan diri?' }}</h3>
-                <p v-if="jawabPilih === 'TERIMA'">
-                    Kami teruskan ke tim rekrutmen untuk ditindaklanjuti. Kamu masih akan dihubungi untuk rincian
-                    kontrak dan tanggal mulai.
-                </p>
-                <p v-else>
-                    Proses lamaranmu di lowongan ini akan <b>ditutup</b> dan tidak bisa dibuka kembali. Datamu tetap
-                    kami simpan untuk kesempatan berikutnya.
-                </p>
+        <!-- Dialog "Terima / Mundur" DICABUT bersama tombolnya. -->
 
-                <label class="ld-ask__lbl" for="jawab-catatan">
-                    {{ jawabPilih === 'TERIMA' ? 'Catatan untuk tim' : 'Alasan mundur' }}
-                    <b v-if="jawabPilih === 'MUNDUR'">*</b>
-                    <small v-else>opsional</small>
-                </label>
-                <textarea
-                    id="jawab-catatan"
-                    v-model="jawabCatatan"
-                    class="ld-ask__ta"
-                    rows="3"
-                    maxlength="500"
-                    :placeholder="
-                        jawabPilih === 'TERIMA'
-                            ? 'mis. saya siap mulai awal bulan depan'
-                            : 'mis. sudah menerima tawaran di tempat lain'
-                    "
-                ></textarea>
-
-                <div class="ld-ask__act">
-                    <button type="button" class="ld-ask__btn is-batal" :disabled="jawabSibuk" @click="tutupJawab">
-                        Batal
-                    </button>
-                    <button
-                        type="button"
-                        class="ld-ask__btn"
-                        :class="jawabPilih === 'TERIMA' ? 'is-ya' : 'is-no'"
-                        :disabled="jawabSibuk || (jawabPilih === 'MUNDUR' && !jawabCatatan.trim())"
-                        @click="kirimJawab"
-                    >
-                        {{ jawabSibuk ? 'Mengirim…' : jawabPilih === 'TERIMA' ? 'Ya, Terima' : 'Ya, Mundur' }}
-                    </button>
-                </div>
-            </div>
-        </div>
 
         <transition name="ld-toast"
             ><div v-if="toast" class="ld-toast" :class="{ 'is-err': toastErr }">
@@ -1670,10 +1561,6 @@ export default {
             lbError: false,
             toast: '',
             toastErr: false,
-            // Jawaban atas penawaran: null = tidak ada dialog terbuka.
-            jawabPilih: null,
-            jawabCatatan: '',
-            jawabSibuk: false,
             tm: null,
             now: Date.now(),
             jam: null,
@@ -2935,45 +2822,6 @@ export default {
                 this.jawaban[x.key] = '';
             });
             this.notice(`${basi.length} berkas perlu diunggah ulang — salinannya tidak ditemukan di server.`, true);
-        },
-        /* ── Jawaban atas penawaran ── */
-        bukaJawab(pilih) {
-            this.jawabPilih = pilih;
-            this.jawabCatatan = '';
-        },
-        tutupJawab() {
-            if (this.jawabSibuk) return;
-            this.jawabPilih = null;
-            this.jawabCatatan = '';
-        },
-        /**
-         * Kirim jawaban, lalu MUAT ULANG halaman dari server.
-         *
-         * Sengaja tidak menebak keadaan barunya di sisi klien: memilih mundur
-         * menutup lamaran dan mengubah banyak hal sekaligus (status tahap,
-         * status lamaran, kartu Talent Pool). Membacanya ulang dari server
-         * memastikan yang terlihat kandidat sama dengan yang tersimpan.
-         */
-        async kirimJawab() {
-            const tahapId = this.tahapAktif?.id;
-            if (this.jawabSibuk || !this.jawabPilih || !tahapId) return;
-
-            this.jawabSibuk = true;
-            try {
-                const { data } = await axios.post(
-                    `/kandidat/lamaran/tahap/${tahapId}/tanggapan`,
-                    { jawab: this.jawabPilih, catatan: this.jawabCatatan || null },
-                    { headers: { Accept: 'application/json' } },
-                );
-                this.jawabPilih = null;
-                this.jawabCatatan = '';
-                this.notice(data?.message || 'Jawabanmu tersimpan.');
-                router.reload({ preserveScroll: true });
-            } catch (e) {
-                this.notice(e.response?.data?.message || 'Gagal mengirim jawaban.', true);
-            } finally {
-                this.jawabSibuk = false;
-            }
         },
         /** Tarik ulang daftar berkas draf dari server. */
         async muatBerkasDraf() {
@@ -5006,96 +4854,11 @@ export default {
     color: #1e293b;
     margin-top: 2px;
 }
-.ld-offer__txt {
-    margin: 13px 0 0;
-    font-size: 13px;
-    line-height: 1.6;
-    color: #475569;
-}
-.ld-offer__act {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-    gap: 10px;
-    margin-top: 14px;
-}
-.ld-offer__btn {
-    appearance: none;
-    cursor: pointer;
-    font-family: inherit;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    padding: 13px 18px;
-    border-radius: 13px;
-    font-size: 14px;
-    font-weight: 800;
-    transition:
-        transform 0.16s,
-        background 0.16s;
-}
-.ld-offer__btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-    transform: none;
-}
-.ld-offer__btn.is-ya {
-    border: none;
-    color: #fff;
-    background: linear-gradient(135deg, #34d399, #10b981);
-    box-shadow: 0 10px 24px -10px rgba(16, 185, 129, 0.8);
-}
-.ld-offer__btn.is-ya:hover:not(:disabled) {
-    transform: translateY(-2px);
-}
-/* Mundur sengaja TIDAK dibuat semenarik "terima": ia pilihan yang sah, tapi
-   tidak perlu diundang. */
-.ld-offer__btn.is-no {
-    background: #fff;
-    border: 1px solid #ddd6fe;
-    color: #6d28d9;
-}
-.ld-offer__btn.is-no:hover:not(:disabled) {
-    background: #faf9ff;
-}
-.ld-offer__done {
-    display: flex;
-    align-items: flex-start;
-    gap: 11px;
-    margin-top: 13px;
-    padding: 13px 15px;
-    border-radius: 13px;
-    border: 1px solid;
-}
-.ld-offer__done .bi {
-    flex: none;
-    font-size: 17px;
-    margin-top: 1px;
-}
-.ld-offer__done b {
-    display: block;
-    font-size: 13.5px;
-    font-weight: 800;
-}
-.ld-offer__done p {
-    margin: 4px 0 0;
-    font-size: 12.5px;
-    line-height: 1.6;
-    color: #475569;
-}
-.ld-offer__done.is-ya {
-    color: #047857;
-    background: rgba(16, 185, 129, 0.08);
-    border-color: rgba(16, 185, 129, 0.3);
-}
-.ld-offer__done.is-no {
-    color: #6d28d9;
-    background: rgba(124, 58, 237, 0.06);
-    border-color: rgba(124, 58, 237, 0.25);
-}
-.ld-offer__cat {
-    font-style: italic;
-}
+
+
+
+
+
 /* Penawaran belum terbit — keadaan menunggu, bukan galat. */
 .ld-offer__wait {
     display: flex;
@@ -5125,137 +4888,11 @@ export default {
     color: #475569;
 }
 
-.ld-ask {
-    position: fixed;
-    inset: 0;
-    z-index: 1400;
-    display: grid;
-    place-items: center;
-    padding: 20px;
-    background: rgba(15, 23, 42, 0.55);
-    backdrop-filter: blur(3px);
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.2s;
-}
-.ld-ask.is-on {
-    opacity: 1;
-    pointer-events: auto;
-}
-.ld-ask__box {
-    width: min(440px, 100%);
-    max-height: 90vh;
-    overflow-y: auto;
-    padding: 24px;
-    border-radius: 20px;
-    background: #fff;
-    text-align: center;
-    box-shadow: 0 30px 70px rgba(15, 23, 42, 0.35);
-}
-.ld-ask__ico {
-    display: inline-grid;
-    place-items: center;
-    width: 62px;
-    height: 62px;
-    border-radius: 50%;
-    font-size: 26px;
-    margin-bottom: 14px;
-}
-.ld-ask__ico.is-ya {
-    color: #059669;
-    background: rgba(16, 185, 129, 0.12);
-}
-.ld-ask__ico.is-no {
-    color: #7c3aed;
-    background: rgba(124, 58, 237, 0.1);
-}
-.ld-ask__box h3 {
-    margin: 0 0 8px;
-    font-size: 18px;
-    font-weight: 800;
-    color: #0f1235;
-}
-.ld-ask__box > p {
-    margin: 0 0 16px;
-    font-size: 13.5px;
-    line-height: 1.6;
-    color: #475569;
-}
-.ld-ask__lbl {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    font-size: 11.5px;
-    font-weight: 800;
-    color: #475569;
-    text-align: left;
-}
-.ld-ask__lbl b {
-    color: #dc2626;
-}
-.ld-ask__lbl small {
-    font-weight: 700;
-    color: #a2a9ba;
-}
-.ld-ask__ta {
-    width: 100%;
-    margin-top: 6px;
-    padding: 10px 12px;
-    border: 1px solid #e3e6f0;
-    border-radius: 10px;
-    background: #fff;
-    font: inherit;
-    font-size: 13px;
-    line-height: 1.55;
-    color: #1e293b;
-    resize: vertical;
-}
-.ld-ask__ta:focus {
-    outline: none;
-    border-color: #818cf8;
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.14);
-}
-.ld-ask__act {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
-    margin-top: 18px;
-}
-.ld-ask__btn {
-    appearance: none;
-    cursor: pointer;
-    font-family: inherit;
-    padding: 12px;
-    border-radius: 12px;
-    border: none;
-    font-size: 13.5px;
-    font-weight: 800;
-    transition: background 0.16s;
-}
-.ld-ask__btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-.ld-ask__btn.is-batal {
-    background: #f1f3f9;
-    color: #475569;
-}
-.ld-ask__btn.is-ya {
-    background: linear-gradient(135deg, #34d399, #10b981);
-    color: #fff;
-}
-.ld-ask__btn.is-no {
-    background: linear-gradient(135deg, #a78bfa, #7c3aed);
-    color: #fff;
-}
 
 @media (max-width: 560px) {
     .ld-offer {
         margin-left: 14px;
         margin-right: 14px;
-    }
-    .ld-ask__act {
-        grid-template-columns: 1fr;
     }
 }
 
