@@ -842,11 +842,30 @@ export default {
         /** Jumlah aktivitas nyata: daftar kosong tetap dihitung 1 (dibuat sistem). */
         jumlahTes(s) { return Math.max(1, (s.tests || []).length); },
 
-        /** Tahap ini memuat aktivitas ujian online? (daftar kosong = ikut tipe tahap) */
-        adaUjianOnline(s) {
+        /**
+         * Tahap ini memuat ujian online yang MENGIKAT (PENENTU)?
+         *
+         * PERANNYA IKUT DIHITUNG, dan itu inti perbaikannya. Sebelumnya cukup
+         * "ada ujian online" — apa pun perannya. Akibatnya psikotes yang sengaja
+         * disetel INFORMATIF (nilainya cuma bahan pertimbangan, bukan penentu)
+         * tetap menghapus pilihan "Manual — admin memutuskan" dari layar,
+         * padahal server MENERIMANYA: gerbang di MasterAlurController hanya
+         * berlaku untuk ujian online ber-peran PENENTU.
+         *
+         * Selisih itu tak menimbulkan galat apa pun — pilihannya sekadar tidak
+         * pernah muncul, dan admin menyimpulkan sendiri bahwa mode itu memang
+         * tidak ada. Tes kepribadian seperti PAPI Kostick dan DISC justru paling
+         * dirugikan: hasilnya memang bukan lulus/gagal, jadi INFORMATIF adalah
+         * tempatnya yang benar, dan justru di situlah keputusan admin diperlukan.
+         *
+         * Daftar kosong = backend membuat satu aktivitas bawaan ber-peran
+         * PENENTU yang mengikuti tipe tahapnya.
+         */
+        adaUjianOnlinePenentu(s) {
             const t = s.tests || [];
+            if (!t.length) return this.tesOnline(s.tipe);
 
-            return t.length ? t.some((x) => this.tesOnline(x.tipe || s.tipe)) : this.tesOnline(s.tipe);
+            return t.some((x) => this.tesOnline(x.tipe || s.tipe) && (x.peran || 'PENENTU') === 'PENENTU');
         },
 
         /**
@@ -854,11 +873,16 @@ export default {
          *
          * Dua penyaringan, keduanya berdasar KOLOM PERILAKU mode (bukan kodenya):
          *
-         * 1. Tahap ber-UJIAN ONLINE tidak boleh memakai mode yang gagalnya
-         *    menggantung (`autoGugur` mati). Hasil CAT sudah final & objektif;
-         *    membiarkan kandidat yang jelas gagal menunggu keputusan admin cuma
-         *    menumpuk antrean. Server juga menolaknya — menawarkannya di sini
-         *    berarti menjanjikan sesuatu yang akan diam-diam diubah saat disimpan.
+         * 1. Tahap ber-UJIAN ONLINE **PENENTU** tidak boleh memakai mode yang
+         *    gagalnya menggantung (`autoGugur` mati). Untuk ujian yang mengikat,
+         *    hasil CAT sudah final & objektif; membiarkan kandidat yang jelas
+         *    gagal menunggu keputusan admin cuma menumpuk antrean. Server juga
+         *    menolaknya — menawarkannya di sini berarti menjanjikan sesuatu yang
+         *    akan diam-diam diubah saat disimpan.
+         *
+         *    Ujian online INFORMATIF tidak kena aturan ini: ia tidak pernah
+         *    menyatakan lulus/gagal, jadi tidak ada "gagal" yang bisa
+         *    menggantung. Lihat adaUjianOnlinePenentu().
          *
          * 2. Dengan 1 aktivitas, "tunggu semua" dan "tunggu tes terakhir" berakhir
          *    sama persis. Maka mode dikelompokkan per PASANGAN perilaku yang
@@ -868,7 +892,7 @@ export default {
          *    dikonfirmasi admin" tak pernah muncul di layar sama sekali.
          */
         modeTampil(s) {
-            const online = this.adaUjianOnline(s);
+            const online = this.adaUjianOnlinePenentu(s);
             const layak = this.modeKeputusan.filter((m) => !online || m.autoGugur);
             if (this.jumlahTes(s) >= 2) return layak;
 
