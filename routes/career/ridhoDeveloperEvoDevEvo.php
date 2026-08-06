@@ -14,3 +14,9 @@ Route::middleware(['career.auth', 'career.role:ADMIN,SUPERADMIN'])->group(functi
     require base_path('routes/career/MasterBenefit/MasterBenefitWeb.php');
 });
 require base_path('routes/career/MasterBenefit/MasterBenefitApi.php');
+
+// ── Master Skill (admin) — keahlian yang disyaratkan lowongan MPP ──
+Route::middleware(['career.auth', 'career.role:ADMIN,SUPERADMIN'])->group(function () {
+    require base_path('routes/career/MasterSkill/MasterSkillWeb.php');
+});
+require base_path('routes/career/MasterSkill/MasterSkillApi.php');
