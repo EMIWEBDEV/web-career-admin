@@ -196,11 +196,14 @@ Route::prefix('kandidat')
         Route::post('/lamaran/tahap/{id}/draf/berkas', [FormulirDrafController::class, 'unggahBerkas'])->name('draf.berkas.unggah');
         Route::get('/lamaran/tahap/{id}/draf/berkas/{field}', [FormulirDrafController::class, 'berkas'])->name('draf.berkas');
 
-        // ── JAWABAN KANDIDAT ATAS PENAWARAN ──
-        // Menerima atau mundur. Kepemilikan tahap diperiksa lewat
-        // Lamaran.Id_Users di controller, jadi id tahap orang lain tidak bisa
-        // dipakai menjawabkan penawaran atas nama mereka.
-        Route::post('/lamaran/tahap/{id}/tanggapan', [LamaranController::class, 'portalTanggapanPenawaran'])->name('tanggapan');
+        // JAWABAN KANDIDAT ATAS PENAWARAN — DICABUT.
+        //
+        // Kandidat tidak lagi menyatakan "terima" atau "mundur" sendiri lewat
+        // portal; keputusan itu dicatat tim di worklist (Keputusan dari
+        // Kandidat). Rutenya ikut dihapus, bukan cuma tombolnya disembunyikan:
+        // pintu yang masih terbuka tetap bisa diketuk langsung tanpa lewat
+        // layar, dan lamaran bisa tertutup oleh permintaan yang tak seorang pun
+        // tahu datang dari mana.
     });
 
 // ── Referensi pendidikan untuk formulir (login saja) ──

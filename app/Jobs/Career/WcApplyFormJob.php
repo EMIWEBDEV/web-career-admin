@@ -135,6 +135,20 @@ class WcApplyFormJob implements ShouldQueue, ShouldBeUnique
             // Kirim email HASIL ke kandidat lewat QUEUE TERPISAH (wc-applymail) —
             // tidak menahan job apply. Gagal antre email TIDAK menggagalkan apply.
             $this->kirimEmailHasil($lamaranId, (int) $payload['userId']);
+
+            // ── BIODATA → HRIS REKRUTMEN ────────────────────────────────────
+            //
+            // Formulir pendaftaran inilah yang memuat tanggal lahir, jenis
+            // kelamin, dan alamat kandidat — data yang dulu tidak pernah sampai
+            // ke HCLearn, karena satu-satunya pengiriman terjadi saat ia
+            // MENDAFTAR AKUN, tepat ketika belum mengisi apa pun.
+            //
+            // Posisi yang dilamar ikut terbawa, dan ikut berubah bila kandidat
+            // yang sama melamar posisi lain dengan akun yang sama.
+            //
+            // Queue tersendiri, best-effort: lamarannya sudah tersimpan, jadi
+            // HCLearn yang sedang tumbang tidak boleh menggagalkan apa pun.
+            WcBiodataHrisJob::dispatch((int) $payload['userId'], 'APPLY');
         } catch (\Throwable $e) {
             // Kompensasi: hapus berkas yang sudah terunggah (tidak boleh ada yatim).
             $gcs->hapus($terunggah);

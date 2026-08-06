@@ -824,17 +824,12 @@
                             </p>
                         </div>
                     </div>
-                    <!-- Tahap berpenawaran yang sudah diajukan tapi BELUM dijawab.
-                         Menunggu itu wajar, tapi menunggu tanpa batas tidak — jadi
-                         keadaannya disebut, bukan dibiarkan terbaca sebagai
-                         "tidak ada apa-apa". -->
-                    <div v-else-if="tahapPenawaran" class="plw-jawab is-wait">
-                        <i class="bi bi-hourglass-split"></i>
-                        <div style="min-width: 0">
-                            <b>Kandidat belum menjawab penawaran.</b>
-                            <p>Ia bisa menekan Terima / Mundur di portalnya. Bila menggantung, tim tetap bisa memutus sendiri lewat tombol di bawah.</p>
-                        </div>
-                    </div>
+                    <!-- Peringatan "Kandidat belum menjawab penawaran — ia bisa
+                         menekan Terima / Mundur di portalnya" DIHAPUS.
+                         Tombol itu sudah dicabut dari portal; kalimatnya
+                         mengarahkan tim ke sesuatu yang tidak ada. Jawabannya
+                         kini dicatat tim sendiri di modal "Tandai Hadir" pada
+                         aktivitas negosiasi. -->
 
                     <!-- DITAHAN — mendahului semua keterangan lain. Selama hold
                          berlaku, seluruh tombol keputusan terkunci: melepasnya
@@ -1417,6 +1412,61 @@
                     </button>
                 </div>
 
+                <!-- JAWABAN KANDIDAT ATAS PENAWARAN.
+                     Seluruh proses berakhir pada satu pertanyaan: kandidat
+                     mengambil penawaran ini atau tidak. Dicatat DI SINI karena
+                     di sinilah jawabannya diterima — tim menelepon, kandidat
+                     menjawab. Dulu pertanyaan itu tidak punya satu pun kolom:
+                     aktivitas negosiasi berperan INFORMATIF sehingga modal ini
+                     tidak menampilkan bidang hasil apa pun. -->
+                <div v-if="hadirTarget?.penawaran" class="plw-mform" :class="{ 'is-kurang': jawabKurang }">
+                    <div class="plw-mform__head">
+                        <span class="plw-mform__ico"><i class="bi bi-envelope-paper-fill"></i></span>
+                        <div style="min-width: 0; flex: 1">
+                            <div class="plw-mform__title">Jawaban Kandidat atas Penawaran</div>
+                            <div class="plw-mform__sub">{{ hadirTarget.label }}<template v-if="hadirTarget.jadwal"> · {{ jadwalRingkas(hadirTarget.jadwal) }}</template></div>
+                        </div>
+                        <span class="plw-req">wajib</span>
+                    </div>
+
+                    <div class="plw-fld">
+                        <label class="plw-fld__lbl">Apa jawabannya? <b>*</b></label>
+                        <div class="plw-opts">
+                            <button
+                                v-for="o in jawabanPenawaran" :key="o.kode"
+                                type="button" class="plw-opt-card" :class="[`is-${o.nada}`, { 'is-on': jawabPenawaran === o.kode }]"
+                                @click="jawabPenawaran = o.kode"
+                            >
+                                <span class="plw-opt-card__dot"><i class="bi" :class="o.ikon"></i></span>
+                                <span class="plw-opt-card__txt">
+                                    <b>{{ o.label }}</b>
+                                    <small>{{ o.keterangan }}</small>
+                                </span>
+                            </button>
+                        </div>
+                        <!-- AKIBATNYA DIKATAKAN SEBELUM DITEKAN. Dua dari tiga
+                             jawaban menutup lamaran seketika, dan itu tidak bisa
+                             ditarik kembali — admin berhak tahu sebelum, bukan
+                             sesudah. -->
+                        <p v-if="jawabDef" class="plw-fld__hint" :class="{ 'is-tegas': jawabDef.menutup }">
+                            <i class="bi" :class="jawabDef.menutup ? 'bi-exclamation-triangle-fill' : 'bi-info-circle-fill'"></i>
+                            <template v-if="jawabDef.menutup">
+                                Menyimpan akan <b>menutup lamaran ini seketika</b> dan mengirim pemberitahuan.
+                                Tuliskan alasannya di catatan di bawah &mdash; minimal 10 karakter.
+                            </template>
+                            <template v-else>
+                                Lamaran <b>tidak</b> ditutup di sini. Keputusan mengangkat kandidat tetap lewat
+                                tombol tahap di worklist.
+                            </template>
+                        </p>
+                    </div>
+
+                    <p v-if="jawabKurang" class="plw-note is-err">
+                        <i class="bi bi-exclamation-circle-fill"></i>
+                        <span>{{ jawabKurang }}</span>
+                    </p>
+                </div>
+
                 <!-- HASIL PEMERIKSAAN KESEHATAN — di langkah inilah tempatnya.
                      Kandidat datang ke klinik, diperiksa, dan inilah hasilnya:
                      satu peristiwa, satu jendela. Empat status baku dari master
@@ -1487,10 +1537,19 @@
                          "catatan" tanpa menyebut siapa yang membacanya. -->
                     <div class="plw-fld">
                         <label class="plw-fld__lbl" for="mcu-catatan">
-                            Keterangan untuk kandidat
+                            {{ hadirTarget?.internal ? 'Keterangan hasil' : 'Keterangan untuk kandidat' }}
                             <b v-if="mcuDef?.butuhCatatan">*</b>
-                            <span class="plw-lihat is-publik">
-                                <i class="bi bi-eye-fill"></i> DIBACA KANDIDAT
+                            <!-- PENANDA MENGIKUTI SETELAN AKTIVITAS INI, bukan
+                                 anggapan umum. MCU bisa disetel internal di
+                                 Master Alur (Tampil_Kandidat='T'), dan pada alur
+                                 begitu kalimat ini TIDAK pernah sampai ke
+                                 kandidat. Memasang lencana "dibaca kandidat"
+                                 apa adanya berarti penilai menahan diri menulis
+                                 hal yang sebenarnya aman — atau sebaliknya,
+                                 menulis untuk pembaca yang tidak ada. -->
+                            <span class="plw-lihat" :class="hadirTarget?.internal ? 'is-internal' : 'is-publik'">
+                                <i class="bi" :class="hadirTarget?.internal ? 'bi-eye-slash-fill' : 'bi-eye-fill'"></i>
+                                {{ hadirTarget?.internal ? 'HANYA TIM' : 'DIBACA KANDIDAT' }}
                             </span>
                         </label>
                         <textarea
@@ -1501,7 +1560,12 @@
                         ></textarea>
                         <p class="plw-note is-lock">
                             <i class="bi bi-shield-lock-fill"></i>
-                            <span>
+                            <span v-if="hadirTarget?.internal">
+                                Aktivitas MCU ini disetel <b>internal</b> di Master Alur, jadi keterangan
+                                ini <b>tidak</b> ditampilkan ke kandidat &mdash; ia tetap perlu diberi tahu
+                                lewat jalur lain bila ada pembatasan kerja.
+                            </span>
+                            <span v-else>
                                 Kalimat ini muncul di halaman lamaran kandidat. Tulis <b>akibatnya bagi
                                 pekerjaan</b>, bukan diagnosisnya &mdash; temuan klinis rinci ditulis di
                                 catatan internal di bawah atau tetap di berkas terlampir.
@@ -1521,7 +1585,7 @@
                      jendela kedua tidak pernah dibuka, dan hasilnya tak pernah
                      tercatat. Hanya untuk aktivitas yang hasilnya memang
                      dikerjakan tim — ujian online nilainya datang dari HCLearn. -->
-                <div v-if="hadirTarget?.dinilaiTim && hadirTarget?.peran !== 'INFORMATIF' && !hadirTarget?.isMcu" class="plw-fld">
+                <div v-if="hadirTarget?.dinilaiTim && hadirTarget?.peran !== 'INFORMATIF' && !hadirTarget?.isMcu && !hadirTarget?.penawaran" class="plw-fld">
                     <label class="plw-fld__lbl">Hasil <b>*</b></label>
                     <div class="plw-seg">
                         <button type="button" class="plw-seg__b is-ok" :class="{ 'is-on': hadirHasil === 'LULUS' }" @click="hadirHasil = 'LULUS'">
@@ -1595,16 +1659,22 @@
                      meminta lembar penilaian, tes offline meminta lembar
                      jawaban. Kalimat yang salah membuat petugas ragu apakah ia
                      sedang membuka jendela yang benar. -->
-                <BerkasAktivitas
-                    :sub-tes-id="hadirTarget?.id || ''"
-                    :awal="hadirTarget?.berkas || []"
-                    :label="hadirTarget?.labelBerkas || 'Berkas hasil / lampiran penilaian'"
-                    @berubah="tandaiBerkasBerubah"
-                    @lihat="bukaDok"
-                />
-                <p v-if="hadirTarget?.petunjukBerkas" class="plw-fld__hint">
-                    <i class="bi bi-info-circle"></i> {{ hadirTarget.petunjukBerkas }}
-                </p>
+                <!-- ADA-TIDAKNYA kotak ini ditentukan TIPE AKTIVITASNYA.
+                     Negosiasi gaji berlangsung lewat telepon dan tidak
+                     menghasilkan dokumen; kotak kosong di sana cuma meminta
+                     sesuatu yang memang tidak ada. -->
+                <template v-if="hadirTarget?.berkasAktivitas !== false">
+                    <BerkasAktivitas
+                        :sub-tes-id="hadirTarget?.id || ''"
+                        :awal="hadirTarget?.berkas || []"
+                        :label="hadirTarget?.labelBerkas || 'Berkas hasil / lampiran penilaian'"
+                        @berubah="tandaiBerkasBerubah"
+                        @lihat="bukaDok"
+                    />
+                    <p v-if="hadirTarget?.petunjukBerkas" class="plw-fld__hint">
+                        <i class="bi bi-info-circle"></i> {{ hadirTarget.petunjukBerkas }}
+                    </p>
+                </template>
             </template>
 
             <div v-else class="plw-fld">
@@ -2110,6 +2180,10 @@ export default {
         // hilang justru "belum layak sementara": kandidat yang cuma perlu
         // diperiksa ulang terpaksa dicatat Unfit, yang berarti gugur permanen.
         mcuStatusOpsi: { type: Array, default: () => [] },
+        // Jawaban kandidat atas penawaran (setuju / menolak / mundur) — dari
+        // master. Dicatat TIM saat menandai kehadiran negosiasi; tombolnya di
+        // portal kandidat sudah dicabut.
+        jawabanPenawaran: { type: Array, default: () => [] },
     },
     data() {
         return {
@@ -2182,6 +2256,7 @@ export default {
             mcuPenyedia: '',
             mcuTanggal: '',
             mcuCatatan: '',
+            jawabPenawaran: '',
             jadwalShow: false,
             jadwalTarget: null,
             jadwalMode: 'DARING',
@@ -2471,6 +2546,18 @@ export default {
         putusanKandidat() {
             if (!this.detailKandidat) return [];
 
+            // SUDAH DICATAT DI MODAL "TANDAI HADIR" → tidak diulang di sini.
+            //
+            // Tahap yang punya aktivitas penawaran BERJADWAL (negosiasi telepon)
+            // menangkap jawaban kandidat di modal kehadirannya, lengkap dengan
+            // alasan dan penutupan lamarannya. Menyisakan tombol yang sama di
+            // sini berarti dua jalan menuju keadaan yang sama — dan admin harus
+            // menebak mana yang benar.
+            //
+            // Yang TIDAK berjadwal (Surat Penawaran / `infoSaja`) tidak punya
+            // modal kehadiran sama sekali, jadi tombolnya tetap dibutuhkan.
+            if (this.jawabanDiCatatKehadiran) return [];
+
             // Pada tahap berpenawaran, TIDAK ADA jawaban kandidat yang masuk akal
             // sebelum penawarannya benar-benar diajukan — belum ada yang bisa
             // ditolak. Di tahap lain, mundur tetap boleh kapan saja.
@@ -2479,6 +2566,16 @@ export default {
             return this.hasilKeputusan.filter(
                 (h) => h.olehKandidat && (this.tahapPenawaran || h.kode !== 'DITOLAK_KANDIDAT'),
             );
+        },
+        /**
+         * Jawaban kandidat ditangkap di modal kehadiran, bukan di tombol tahap?
+         *
+         * Benar bila tahap aktif punya aktivitas penawaran yang BERJADWAL —
+         * `infoSaja` menandai penawaran berdokumen (surat penawaran) yang tidak
+         * punya jendela kehadiran, jadi ia tidak dihitung.
+         */
+        jawabanDiCatatKehadiran() {
+            return (this.detailKandidat?.tests || []).some((t) => t.penawaran && !t.infoSaja);
         },
         /** Tahap penawaran yang suratnya belum diajukan — tim masih menyiapkan. */
         penawaranBelumDiajukan() {
@@ -2635,6 +2732,8 @@ export default {
             // dituntut status itu — bukan pilihan Lulus/Gagal terpisah yang
             // bisa berselisih dengannya ("Unfit" tapi ditandai lulus).
             if (this.hadirTarget?.isMcu) return !this.mcuKurangHadir;
+            // Penawaran: verdict-nya diturunkan dari jawaban kandidat.
+            if (this.hadirTarget?.penawaran) return !this.jawabKurang;
             if (!this.hadirTarget?.dinilaiTim) return true;
 
             return this.hadirTarget.peran === 'INFORMATIF' || !!this.hadirHasil;
@@ -3500,6 +3599,9 @@ export default {
             this.mcuPenyedia = m.penyedia || '';
             this.mcuTanggal = (m.tanggal || '').slice(0, 10);
             this.mcuCatatan = m.catatan || '';
+            // Tanpa prasetel: menutup lamaran orang tidak boleh berjarak satu
+            // klik tak sengaja dari jendela yang baru saja dibuka.
+            this.jawabPenawaran = '';
             this.hadirShow = true;
         },
         async konfirmHadir() {
@@ -3529,6 +3631,7 @@ export default {
                         mcuTanggal: this.mcuTanggal || null,
                         mcuCatatan: this.mcuCatatan.trim() || null,
                     } : {}),
+                    ...(this.hadirTarget.penawaran && hadir ? { jawabanPenawaran: this.jawabPenawaran || null } : {}),
                 }, CFG);
                 this.notice(res.data?.message || 'Kehadiran dicatat.');
                 this.hadirShow = false;
@@ -4668,4 +4771,9 @@ export default {
 /* Peringatan privasi menempel PADA bidangnya, bukan melayang di bawah kotak
    hasil — supaya terbaca sebagai aturan untuk kotak yang sedang diisi. */
 .plw-mform .plw-fld .plw-note.is-lock { margin-top: 6px; }
+
+/* Peringatan akibat yang tidak bisa ditarik — lebih tegas dari petunjuk biasa,
+   karena dua dari tiga jawaban menutup lamaran seketika. */
+.plw-fld__hint.is-tegas { color: #b45309; font-weight: 700; }
+.plw-fld__hint.is-tegas b { color: #92400e; }
 </style>

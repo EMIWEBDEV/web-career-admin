@@ -70,7 +70,22 @@ return [
             'table' => 'N_WEB_CAREERS_Jobs',
             'queue' => 'default',
             'retry_after' => 300,
-            'after_commit' => false,
+
+            // ── JOB BARU DIDAFTARKAN SETELAH TRANSAKSINYA COMMIT ─────────────
+            //
+            // Job modul ini mengabarkan KEPUTUSAN kepada kandidat: lolos,
+            // gugur, undangan wawancara. Dengan 'false', job yang didaftarkan di
+            // dalam sebuah transaksi langsung masuk antrean — dan worker yang
+            // menjemputnya sepersekian detik kemudian bisa mendahului commit-nya.
+            // Bila transaksi itu ternyata digulung balik, suratnya sudah telanjur
+            // terkirim atas keputusan yang tidak pernah terjadi. Surat tidak bisa
+            // ditarik kembali; barisnya bisa.
+            //
+            // Ini JARING PENGAMAN, bukan jaminan utamanya: pemanggil di
+            // LamaranController sudah sengaja memindahkan seluruh dispatch-nya
+            // ke luar transaksi, sebab koneksi 'cloudtasks' yang dipakai di
+            // produksi belum tentu menghormati tanda ini.
+            'after_commit' => true,
         ],
 
         'beanstalkd' => [
