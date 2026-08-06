@@ -59,6 +59,20 @@
             </div>
         </div>
 
+        <!-- TEMPAT TANPA PETA — diketik tim, belum terdaftar di Master Lokasi.
+             Petanya sengaja TIDAK dikarang dari hasil pencarian nama: pin yang
+             belum tentu benar tampil sama persis seperti pin yang sudah
+             dipastikan, dan kandidat tak punya cara membedakannya. Yang
+             ditampilkan alamatnya apa adanya — itu yang bisa ia percaya. -->
+        <div v-else-if="!j.daring && tempat.lepas && tempat.nama" class="jdw__alamat is-teks">
+            <i class="bi bi-geo-alt-fill"></i>
+            <div style="min-width: 0; flex: 1">
+                <b>{{ tempat.nama }}</b>
+                <small v-if="tempat.alamat">{{ tempat.alamat }}</small>
+                <small v-else class="jdw__alamat-kosong">Alamat menyusul dari tim rekrutmen.</small>
+            </div>
+        </div>
+
         <!-- CATATAN diberi judulnya sendiri. Tanpa itu kalimat seperti "bawa KTP,
              bawa KK" muncul begitu saja di dasar kartu — kandidat tidak tahu itu
              pesan dari tim, syarat masuk, atau keterangan sistem. -->
@@ -110,6 +124,11 @@ export default {
                 return { embed: this.tempat.mapsEmbed, url: this.tempat.mapsUrl };
             }
 
+            // Tempat yang diketik tim TIDAK dipetakan — termasuk lewat cadangan
+            // di bawah. Tanpa penjagaan ini, patokan seperti "Lantai 2, poli
+            // MCU" akan dicarikan petanya sendiri dan menghasilkan pin acak.
+            if (this.tempat.lepas) return { embed: null, url: null };
+
             const teks = (this.j.lokasi || '').trim();
             if (!teks) return { embed: null, url: null };
 
@@ -160,6 +179,10 @@ export default {
 .jdw__alamat b { display: block; font-size: 13px; font-weight: 800; color: #1e293b; }
 .jdw__alamat small { display: block; font-size: 11.5px; color: #64748b; margin-top: 2px; line-height: 1.5; }
 .jdw__alamat small .bi { color: #94a3b8; }
+/* Tanpa peta di atasnya, blok alamat ini berdiri sendiri — garis atasnya
+   dihapus supaya tidak terbaca sebagai potongan kartu yang gagal dimuat. */
+.jdw__alamat.is-teks { border-top: 0; background: #f8fafc; border-radius: 11px; margin: 0 13px 13px; }
+.jdw__alamat-kosong { font-style: italic; }
 .jdw__peta-btn { flex: none; align-self: center; display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 9px; font-size: 11.5px; font-weight: 800; color: #4f46e5; background: rgba(99, 102, 241, .1); text-decoration: none; }
 .jdw__peta-btn:hover { background: rgba(99, 102, 241, .16); }
 

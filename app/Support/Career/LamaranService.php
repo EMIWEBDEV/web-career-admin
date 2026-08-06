@@ -1407,15 +1407,37 @@ class LamaranService
         // selamanya: gerbang idempoten di pemanggil membaca "sudah selesai" dan
         // menolak memprosesnya lagi.
         return DB::transaction(function () use ($sub, $hasil, $nilai, $totalSoal, $penjadwalanTahapId, $lamaranTahapId) {
+            // ── SIAPA YANG MENYATAKAN LULUS ──────────────────────────────────
+            //
+            // PENENTU  → alat tesnya sendiri yang menyatakan. Nilai keluar dari
+            //            HCLearn berikut ambang batasnya, jadi verdict-nya
+            //            objektif dan langsung final.
+            //
+            // INFORMATIF → ADMIN yang menyatakan. Alat tes seperti PAPI Kostick,
+            //            DISC, dan Kraeplin memang TIDAK berbunyi lulus/gagal —
+            //            keluarannya profil kepribadian atau ketelitian, dan
+            //            layak-tidaknya seseorang baru muncul saat penilai
+            //            membacanya bersama hasil lain di tahap yang sama.
+            //
+            // Dulu keduanya sama-sama ditutup di sini, dan INFORMATIF ditutup
+            // TANPA verdict apa pun. Akibatnya penilaian alat tes kepribadian
+            // tidak punya tempat untuk dinyatakan: nilainya masuk, aktivitasnya
+            // final, dan tak seorang pun pernah bisa bilang orang ini lolos.
+            $adminYangMemutuskan = $sub->Peran === 'INFORMATIF';
+
             DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')->where('Id_Lamaran_Tahap_Tes', $sub->Id_Lamaran_Tahap_Tes)->update([
-                'Status' => 'SELESAI',
-                // Tes INFORMATIF tidak menyatakan lulus — Hasil dibiarkan NULL.
-                'Hasil' => $sub->Peran === 'INFORMATIF' ? null : ($hasil === 'LULUS' ? 'LULUS' : 'GAGAL'),
+                // MENUNGGU_KEPUTUSAN bukan sekadar label: seluruh gerbang
+                // membaca Flag_Selesai, jadi selama masih 'N' tahapnya belum
+                // bisa diloloskan dan kandidat tidak berpindah diam-diam.
+                'Status' => $adminYangMemutuskan ? 'MENUNGGU_KEPUTUSAN' : 'SELESAI',
+                'Hasil' => $adminYangMemutuskan ? null : ($hasil === 'LULUS' ? 'LULUS' : 'GAGAL'),
                 'Nilai' => $nilai,
                 'Total_Soal' => $totalSoal,
                 'Penjadwalan_Tahap_Id' => $penjadwalanTahapId,
-                'Flag_Selesai' => 'Y',
-                'Waktu_Selesai' => now(),
+                'Flag_Selesai' => $adminYangMemutuskan ? 'N' : 'Y',
+                // Waktu_Selesai = kapan AKTIVITASNYA tuntas, bukan kapan tesnya
+                // dikerjakan. Untuk yang menunggu admin, ia belum tuntas.
+                'Waktu_Selesai' => $adminYangMemutuskan ? null : now(),
                 'Updated_At' => now(),
             ]);
 

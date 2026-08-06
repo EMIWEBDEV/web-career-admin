@@ -54,6 +54,14 @@
                         <span class="mlk-tag" :class="l.jenis === 'VENDOR' ? 'is-vendor' : 'is-kantor'">{{ l.jenis === 'VENDOR' ? 'Vendor' : 'Kantor' }}</span>
                         <span v-if="l.utama" class="mlk-tag is-utama"><i class="bi bi-star-fill"></i> Utama</span>
                         <span v-if="!l.aktif" class="mlk-tag is-off">Nonaktif</span>
+                        <!-- Terbaca langsung dari daftar: tempat ini muncul di
+                             dropdown mana saat menjadwalkan. Tanpa lencana ini,
+                             satu-satunya cara mengetahuinya adalah membuka
+                             jendela ubah satu per satu. -->
+                        <span v-for="k in (l.peruntukan || [])" :key="k" class="mlk-tag is-guna">{{ namaPeruntukan(k) }}</span>
+                        <span v-if="!(l.peruntukan || []).length" class="mlk-tag is-warn" title="Tidak akan muncul saat menjadwalkan">
+                            <i class="bi bi-exclamation-triangle-fill"></i> Tanpa peruntukan
+                        </span>
                     </div>
 
                     <h3>{{ l.nama }}</h3>
@@ -104,6 +112,30 @@
                                 <el-option label="Vendor (klinik / pihak ketiga)" value="VENDOR" />
                             </el-select>
                         </div>
+                    </div>
+                    <!-- PERUNTUKAN menentukan tempat ini muncul di dropdown MANA
+                         saat menjadwalkan. MCU hanya menawarkan yang ber-MEDIS,
+                         wawancara hanya yang ber-KANTOR. Boleh lebih dari satu:
+                         rumah sakit yang juga menyediakan ruang wawancara tetap
+                         SATU baris — satu titik peta, satu riwayat pemakaian. -->
+                    <div>
+                        <label class="wca-field-lbl">Dipakai untuk <b class="mlk-req">*</b></label>
+                        <el-select v-model="form.peruntukan" multiple style="width: 100%" placeholder="Pilih peruntukan">
+                            <el-option v-for="p in peruntukan" :key="p.kode" :value="p.kode" :label="p.nama">
+                                <div class="mlk-opt">
+                                    <b>{{ p.nama }}</b>
+                                    <small>{{ p.deskripsi }}</small>
+                                </div>
+                            </el-option>
+                        </el-select>
+                        <!-- Tanpa peruntukan, tempat ini TIDAK PERNAH muncul di
+                             mana pun. Disebutkan di sini, bukan dibiarkan
+                             ketahuan berminggu-minggu kemudian saat seseorang
+                             mencarinya di jendela jadwal. -->
+                        <p v-if="!form.peruntukan.length" class="mlk-hint is-warn">
+                            <i class="bi bi-exclamation-triangle-fill"></i>
+                            Belum dipilih — lokasi ini tidak akan muncul saat menjadwalkan.
+                        </p>
                     </div>
                     <div class="wca-frow">
                         <div>
@@ -209,6 +241,9 @@ const CFG = { headers: { Accept: 'application/json' } };
 const KOSONG = () => ({
     nama: '', jenis: 'KANTOR', kategori: '', alamat: '', kota: '', provinsi: '',
     lintang: '', bujur: '', kontakNama: '', kontakTelp: '', catatan: '', utama: false,
+    // Untuk apa lokasi ini dipakai — menentukan ia muncul di dropdown mana saat
+    // menjadwalkan. Kosong = tidak muncul di mana pun.
+    peruntukan: [],
 });
 
 export default {
@@ -220,7 +255,7 @@ export default {
     inheritAttrs: false,
     data() {
         return {
-            rows: [], loading: false, cari: '', jenis: '',
+            rows: [], loading: false, cari: '', jenis: '', peruntukan: [],
             show: false, saving: false, editingId: null, form: KOSONG(), tempelMaps: '',
             delShow: false, deleting: false, delTarget: null,
             toast: '', toastErr: false, tm: null,
@@ -237,12 +272,28 @@ export default {
             return `https://www.google.com/maps?q=${la},${bu}&output=embed`;
         },
     },
-    mounted() { this.muat(); },
+    mounted() {
+        this.muat();
+        this.muatPeruntukan();
+    },
     methods: {
         notice(x, err = false) {
             this.toast = x; this.toastErr = err;
             if (this.tm) clearTimeout(this.tm);
             this.tm = setTimeout(() => (this.toast = ''), 4000);
+        },
+        /** Daftar peruntukan (kantor / medis / …) — dari master, bukan ditulis di sini. */
+        async muatPeruntukan() {
+            try {
+                const res = await axios.get('/api/v1/master-lokasi/peruntukan', CFG);
+                this.peruntukan = res.data.result || [];
+            } catch (e) {
+                this.notice('Daftar peruntukan gagal dimuat.', true);
+            }
+        },
+        /** Nama peruntukan untuk lencana di daftar. */
+        namaPeruntukan(kode) {
+            return this.peruntukan.find((p) => p.kode === kode)?.nama || kode;
         },
         async muat() {
             this.loading = true;
@@ -307,6 +358,7 @@ export default {
                 lintang: l.lintang ?? '', bujur: l.bujur ?? '',
                 kontakNama: l.kontakNama || '', kontakTelp: l.kontakTelp || '',
                 catatan: l.catatan || '', utama: !!l.utama,
+                peruntukan: [...(l.peruntukan || [])],
             };
             this.tempelMaps = '';
             this.show = true;
@@ -392,6 +444,12 @@ export default {
 .mlk-tag.is-vendor { color: #b45309; background: rgba(245, 158, 11, .15); }
 .mlk-tag.is-utama { color: #059669; background: rgba(16, 185, 129, .13); }
 .mlk-tag.is-off { color: #64748b; background: #f1f5f9; }
+.mlk-tag.is-guna { color: #0f766e; background: rgba(20, 184, 166, .13); }
+.mlk-tag.is-warn { color: #b45309; background: #fef3c7; }
+.mlk-opt { display: flex; flex-direction: column; line-height: 1.35; padding: 2px 0; }
+.mlk-opt small { color: #94a3b8; font-size: 11px; }
+.mlk-hint { display: flex; align-items: flex-start; gap: 6px; margin: 6px 0 0; font-size: 11.5px; color: #64748b; }
+.mlk-hint.is-warn { color: #b45309; }
 .mlk-card__body h3 { margin: 0; font-size: 15.5px; font-weight: 800; color: #0f172a; letter-spacing: -.01em; }
 .mlk-card__kat { margin: 2px 0 0; font-size: 11.5px; font-weight: 700; color: #6366f1; }
 .mlk-card__alamat { margin: 7px 0 0; font-size: 12.5px; line-height: 1.55; color: #64748b; }
