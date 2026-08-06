@@ -126,7 +126,26 @@ function tolakBukanAngka(e) {
 function ubahLokal(e) {
     const el = e.target;
     // Hanya digit; buang 0 di depan (trunk prefix, mis. 0812 -> 812 untuk +62).
-    const bersih = String(el.value || '').replace(/\D/g, '').replace(/^0+/, '');
+    let bersih = String(el.value || '').replace(/\D/g, '').replace(/^0+/, '');
+
+    // NOMOR LENGKAP YANG DITEMPEL DIPECAH, BUKAN DITUMPUK.
+    //
+    // Menempelkan "+62 812-3456-789" ke kolom nomor adalah hal yang paling
+    // lazim dilakukan orang. Hasilnya dulu 62628123456789: kode negaranya ikut
+    // jadi bagian nomor lokal, lalu dial ditambahkan LAGI di depannya.
+    // Panjangnya tetap masuk akal (14 digit), jadi validasi meloloskannya —
+    // dan yang tersimpan adalah nomor yang tak bisa dihubungi siapa pun.
+    //
+    // DUA PAGAR supaya nomor lokal yang sah tidak ikut terpotong:
+    //   1. hanya saat TEMPEL — mengetik digit satu per satu tak pernah memicunya;
+    //   2. hanya bila berawalan kode negara YANG SEDANG DIPILIH, bukan kode
+    //      negara mana pun. Tanpa pagar kedua, nomor Indonesia "812345678"
+    //      akan terbaca berkode Jepang (+81) lalu dipenggal jadi "2345678".
+    if (e.inputType === 'insertFromPaste'
+        && bersih.startsWith(dialTerpilih.value)
+        && bersih.length - dialTerpilih.value.length >= 6) {
+        bersih = bersih.slice(dialTerpilih.value.length).replace(/^0+/, '');
+    }
 
     // KOTAKNYA DIPAKSA IKUT BERSIH — dan ini bukan kehati-hatian berlebihan.
     //

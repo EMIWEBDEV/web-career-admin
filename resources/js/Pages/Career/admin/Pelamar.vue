@@ -756,6 +756,21 @@
                                                     {{ j.berkas ? 'Terlampir' : 'Belum ada' }}
                                                 </span>
                                             </div>
+                                            <!-- ISIAN BERULANG (riwayat kerja, organisasi,
+                                                 sertifikasi) — ditampilkan sebagai DAFTAR,
+                                                 sama seperti di portal kandidat. Peninjau
+                                                 membandingkan keduanya, jadi bentuknya tidak
+                                                 boleh berbeda. -->
+                                            <div v-else-if="j.baris && j.baris.length" class="plw-field__v plw-rows">
+                                                <div v-for="(row, ri) in j.baris" :key="ri" class="plw-row">
+                                                    <span v-if="j.baris.length > 1" class="plw-row__no">{{ ri + 1 }}</span>
+                                                    <div class="plw-row__isi">
+                                                        <span v-for="(p, pi) in row" :key="pi" class="plw-row__p">
+                                                            <b v-if="p.label">{{ p.label }}</b>{{ p.nilai }}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </div>
                                             <div v-else class="plw-field__v">{{ j.nilai || '—' }}</div>
                                         </div>
                                     </div>
@@ -2847,7 +2862,12 @@ export default {
          * dihindari hanya paragraf yang terjepit di kolom setipis dua kata.
          */
         isianPanjang(isian) {
-            return !this.isianBerkas(isian) && String(isian.nilai ?? '').length > 60;
+            if (this.isianBerkas(isian)) return false;
+            // Isian BERULANG selalu selebar penuh — satu baris riwayat kerja
+            // memuat perusahaan, jabatan, periode, dan uraian sekaligus.
+            if (isian.baris && isian.baris.length) return true;
+
+            return String(isian.nilai ?? '').length > 60;
         },
         inisial(n) { return (n || '?').split(' ').slice(0, 2).map((s) => s[0]).join('').toUpperCase(); },
         katLabel(k) { return { REKRUTMEN: 'Rekrutmen', MT: 'Management Trainee', INTERNSHIP: 'Internship / Magang' }[k] || k || '—'; },
@@ -4412,6 +4432,22 @@ export default {
 .plw-field__file span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .plw-field__file em { flex: none; font-style: normal; font-size: 11.5px; font-weight: 800; color: #4f46e5; }
 .plw-field__v { font-size: 13.5px; font-weight: 700; color: #1e293b; margin-top: 3px; word-break: break-word; }
+
+/* ── ISIAN BERULANG — bentuknya SENGAJA sama dengan portal kandidat
+   (.ld-rows di LamaranDetail.vue). Peninjau membuka keduanya berdampingan
+   saat memverifikasi data; tata letak yang berbeda membuat mereka mengira
+   isinya juga berbeda. */
+.plw-rows { display: flex; flex-direction: column; gap: 6px; margin-top: 5px; }
+.plw-row { display: flex; gap: 8px; align-items: flex-start; background: #f8fafc; border: 1px solid #e8eef6; border-radius: 9px; padding: 7px 9px; }
+.plw-row__no { flex: none; min-width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; background: #e0e7ff; color: #4338ca; border-radius: 999px; font-size: 10.5px; font-weight: 800; margin-top: 1px; }
+.plw-row__isi { display: flex; flex-wrap: wrap; gap: 3px 14px; min-width: 0; }
+.plw-row__p { font-size: 12.5px; font-weight: 600; color: #334155; min-width: 0; word-break: break-word; }
+.plw-row__p b { display: block; font-size: 10px; font-weight: 800; letter-spacing: .03em; text-transform: uppercase; color: #94a3b8; }
+
+@media (max-width: 640px) {
+    .plw-row__isi { gap: 3px 10px; }
+    .plw-row__p { font-size: 12px; }
+}
 .plw-docs { margin-top: 14px; display: flex; flex-direction: column; gap: 9px; }
 .plw-docs__label { font-size: 11px; font-weight: 800; letter-spacing: 0.12em; color: #a2a9ba; }
 .plw-doc { display: flex; align-items: center; gap: 13px; padding: 12px 14px; border: 1px solid #eef0f7; border-radius: 14px; background: #fbfbfe; transition: all 0.16s; }

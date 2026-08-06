@@ -1254,6 +1254,20 @@
                                                 {{ j.berkas ? 'Terlampir' : 'Belum ada' }}
                                             </span>
                                         </div>
+                                        <!-- ISIAN BERULANG (riwayat kerja, organisasi,
+                                             sertifikasi) — daftar, bukan satu paragraf.
+                                             Digabung jadi satu baris teks, isinya jadi
+                                             dinding kata yang tak bisa dibaca siapa pun. -->
+                                        <div v-else-if="j.baris && j.baris.length" class="ld-field__v ld-rows">
+                                            <div v-for="(row, ri) in j.baris" :key="ri" class="ld-row">
+                                                <span v-if="j.baris.length > 1" class="ld-row__no">{{ ri + 1 }}</span>
+                                                <div class="ld-row__isi">
+                                                    <span v-for="(p, pi) in row" :key="pi" class="ld-row__p">
+                                                        <b v-if="p.label">{{ p.label }}</b>{{ p.nilai }}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
                                         <div v-else class="ld-field__v">{{ j.nilai || '—' }}</div>
                                     </div>
                                 </div>
@@ -2204,7 +2218,13 @@ export default {
         },
         /** Jawaban panjang (alamat, uraian) memakai satu baris penuh. */
         isianPanjang(j) {
-            return !this.isianBerkas(j) && String(j.nilai ?? '').length > 60;
+            if (this.isianBerkas(j)) return false;
+            // Isian BERULANG selalu memakai lebar penuh: satu baris riwayat
+            // kerja saja sudah memuat perusahaan, jabatan, periode, dan uraian
+            // — dijejalkan ke setengah kolom, semuanya terpotong.
+            if (j.baris && j.baris.length) return true;
+
+            return String(j.nilai ?? '').length > 60;
         },
         statusFormulir(f) {
             const t = this.tahap.find((x) => x.urutan === f.urutan);
@@ -4563,6 +4583,21 @@ export default {
 .ld-badge.is-kosong { color: #94a3b8; background: #f1f5f9; }
 .ld-field__k { font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; color: #a2a9ba; text-transform: uppercase; }
 .ld-field__v { font-size: 13.5px; font-weight: 700; color: #1e293b; margin-top: 3px; word-break: break-word; }
+
+/* ── ISIAN BERULANG: tiap baris berdiri sendiri ──────────────────────────────
+   Bernomor hanya bila lebih dari satu — nomor "1" tunggal cuma menambah bunyi
+   pada baris yang sudah jelas berdiri sendirian. */
+.ld-rows { display: flex; flex-direction: column; gap: 6px; margin-top: 5px; }
+.ld-row { display: flex; gap: 8px; align-items: flex-start; background: #f8fafc; border: 1px solid #e8eef6; border-radius: 9px; padding: 7px 9px; }
+.ld-row__no { flex: none; min-width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; background: #e0e7ff; color: #4338ca; border-radius: 999px; font-size: 10.5px; font-weight: 800; margin-top: 1px; }
+.ld-row__isi { display: flex; flex-wrap: wrap; gap: 3px 14px; min-width: 0; }
+.ld-row__p { font-size: 12.5px; font-weight: 600; color: #334155; min-width: 0; word-break: break-word; }
+.ld-row__p b { display: block; font-size: 10px; font-weight: 800; letter-spacing: .03em; text-transform: uppercase; color: #94a3b8; }
+
+@media (max-width: 640px) {
+    .ld-row__isi { gap: 3px 10px; }
+    .ld-row__p { font-size: 12px; }
+}
 .ld-docs { margin-top: 14px; display: flex; flex-direction: column; gap: 9px; }
 .ld-docs__label { font-size: 11px; font-weight: 800; letter-spacing: 0.12em; color: #a2a9ba; }
 .ld-doc { display: flex; align-items: center; gap: 13px; padding: 12px 14px; border: 1px solid #eef0f7; border-radius: 14px; background: #fbfbfe; }
