@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Career\Lamaran;
 
 use App\Helpers\ResponseHelper;
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Career\MasterLokasi\MasterLokasiController;
 use App\Jobs\Career\WcApplyEmailJob;
 use App\Jobs\Career\WcBiodataHrisJob;
 use App\Jobs\Career\WcJadwalEmailJob;
@@ -248,7 +249,7 @@ class LamaranController extends Controller
         }
         $gugurAlasan = filter_var($request->input('gugur'), FILTER_VALIDATE_BOOLEAN) ? ($data['alasan'] ?? 'Tidak memenuhi syarat wajib.') : null;
 
-        $nama = $jawaban['nama'] ?? $jawaban['nama_lengkap'] ?? session('career_auth.nama', 'Kandidat');
+        $nama = self::namaDariJawaban($jawaban) ?: session('career_auth.nama', 'Kandidat');
         $processId = (string) Str::uuid();
         $now = now();
 
@@ -746,8 +747,15 @@ class LamaranController extends Controller
                         // Tempatnya sendiri, LENGKAP dengan peta. Kandidat butuh
                         // tahu di mana persisnya — alamat teks menuntut dia
                         // menyalinnya sendiri ke aplikasi peta.
-                        'tempat' => \App\Http\Controllers\Career\MasterLokasi\MasterLokasiController::bentukLokasi(
-                            $s->Jadwal_Lokasi_Id ? $lokasiJadwal->get($s->Jadwal_Lokasi_Id) : null
+                        //
+                        // Berlaku juga untuk tempat yang DIKETIK rekruter (RS
+                        // yang belum terdaftar): petanya disusun dari nama +
+                        // alamatnya, jadi kandidat tidak menerima undangan yang
+                        // lebih miskin hanya karena tempatnya belum sempat
+                        // didaftarkan.
+                        'tempat' => self::tempatJadwal(
+                            $s,
+                            $s->Jadwal_Lokasi_Id ? $lokasiJadwal->get($s->Jadwal_Lokasi_Id) : null,
                         ),
                         'catatan' => $s->Jadwal_Catatan,
                     ] : null,
@@ -2534,7 +2542,10 @@ class LamaranController extends Controller
         // kandidat. PipelineProgress sengaja tidak menyentuh database sendiri.
         $alasanHold = self::masterAlasanHold()->map(fn ($a) => $a->Nama)->all();
 
-        $pelamar = $lamaran->map(function ($l) use ($tahapPer, $subPer, $kuotaPosisi, $terisiKuota, $berkasCount, $berkasSub, $berkasKandidat, $alasanHold, $kolom) { // NOSONAR
+        // Nama resmi dari formulir — satu kueri untuk seluruh daftar.
+        $namaResmi = self::namaResmiPerLamaran($lamaran->pluck('Id_Lamaran')->all());
+
+        $pelamar = $lamaran->map(function ($l) use ($tahapPer, $subPer, $kuotaPosisi, $terisiKuota, $berkasCount, $berkasSub, $berkasKandidat, $alasanHold, $kolom, $namaResmi) { // NOSONAR
             $tahapList = collect($tahapPer->get($l->Id_Lamaran, []));
 
             // Aturan penempatan + badge + kuota dipusatkan di PipelineProgress
@@ -2562,7 +2573,15 @@ class LamaranController extends Controller
                 'id' => Hashids::encode($l->Id_Lamaran),
                 'tahapId' => $tAktif ? Hashids::encode($tAktif->Id_Lamaran_Tahap) : null,
                 'lamaranKode' => $l->Kode,
-                'pelamar' => $l->Pelamar ?: $l->Created_By,
+                // NAMA RESMI dari formulir lebih dulu; nama akun jadi cadangan.
+                // Nama akun diketik saat mendaftar dan kerap seadanya — kartu,
+                // undangan, dan berkas lalu menyebut orang yang sama dengan tiga
+                // nama berbeda, dan rekruter mencarinya dengan nama yang tidak
+                // pernah ia tulis sendiri.
+                'pelamar' => $namaResmi->get($l->Id_Lamaran) ?: ($l->Pelamar ?: $l->Created_By),
+                // Nama akun tetap dibawa: saat keduanya berbeda, itu fakta yang
+                // perlu terlihat — bukan disembunyikan.
+                'pelamarAkun' => $l->Pelamar ?: null,
                 'email' => $l->Email ?? null,
                 'hp' => $l->NoHp ?? null,
                 'posisi' => $l->Posisi ?: $l->Kategori,
@@ -2976,6 +2995,21 @@ class LamaranController extends Controller
         // SEKALI, dipakai dua kali di bawah.
         $belumTuntas = self::aktivitasTuntas($x, $final, $terkunci, $tipe, $online, $dicatatTim, $isPenawaran, $tipeBerjadwal);
 
+        // ── UJIAN ONLINE YANG KEPUTUSANNYA MILIK ADMIN ──────────────────────
+        //
+        // Nilainya sudah masuk dari HCLearn, tapi alat tesnya memang tidak
+        // berbunyi lulus/gagal (PAPI Kostick, DISC, Kraeplin). Yang tersisa
+        // hanya satu hal: penilai menyatakan lulus atau tidak.
+        //
+        // Dihitung SEKALI di sini karena tiga tombol bergantung padanya —
+        // dan ketiganya harus sepakat. Sebelumnya keadaan ini menyalakan
+        // "Catat Hasil" (jendela berisi bidang nilai & catatan yang tak satu
+        // pun perlu diisi) dan membiarkan "Sinkronkan" ikut tampil, padahal
+        // yang ditunggu bukan HCLearn melainkan orang di kantor ini.
+        $butuhKeputusan = $online
+            && ($x->Peran ?? '') === 'INFORMATIF'
+            && ($x->Status ?? '') === 'MENUNGGU_KEPUTUSAN';
+
         return [
             'id' => Hashids::encode($x->Id_Lamaran_Tahap_Tes),
             'label' => $x->Label,
@@ -3088,11 +3122,25 @@ class LamaranController extends Controller
                 'selesai' => (string) ($x->Jadwal_Selesai ?: ''),
                 'link' => $x->Jadwal_Link,
                 'lokasi' => $x->Jadwal_Lokasi,
-                'lokasiId' => $x->Jadwal_Lokasi_Id ? Hashids::encode($x->Jadwal_Lokasi_Id) : null,
+                // Tempat di luar master memakai penanda yang sama seperti di
+                // layar, sehingga membuka kembali jendela jadwal langsung
+                // menemukan pilihan "Lainnya" beserta isiannya.
+                'lokasiId' => $x->Jadwal_Lokasi_Id
+                    ? Hashids::encode($x->Jadwal_Lokasi_Id)
+                    : (($x->Jadwal_Lokasi_Nama ?? null) ? MasterLokasiController::LAINNYA : null),
+                'lokasiNama' => $x->Jadwal_Lokasi_Nama ?? null,
+                'lokasiAlamat' => $x->Jadwal_Lokasi_Alamat ?? null,
+                // Tempat LENGKAP berikut petanya — dipakai kartu lokasi di
+                // rapor. Bentuknya sama untuk lokasi master maupun yang diketik.
+                'tempat' => self::tempatJadwal($x),
                 'catatan' => $x->Jadwal_Catatan,
                 'olehSiapa' => $x->Jadwal_By,
                 'kontak' => $x->Jadwal_Kontak ?? null,
             ] : null,
+            // Peruntukan lokasi yang boleh dipilih untuk tipe aktivitas ini —
+            // null = tidak dibatasi. Jendela jadwal menyaring dropdown-nya dari
+            // sini, dan server memeriksa hal yang sama persis.
+            'lokasiPeruntukan' => $tipe->Lokasi_Peruntukan_Kode ?? null,
             // ── "CATAT HASIL" HANYA UNTUK YANG TIDAK BISA DIJADWALKAN ────────
             //
             // Aktivitas yang PUNYA jadwal punya alurnya sendiri yang utuh:
@@ -3105,7 +3153,13 @@ class LamaranController extends Controller
             // Yang tersisa memakainya: tipe yang memang TIDAK berjadwal
             // (Flag_Jadwal='T') — tanpa tombol ini, aktivitas itu tak punya
             // satu pun cara diselesaikan.
-            'dapatDicatat' => $dicatatTim && ! $final && ! $terkunci && ! $tipeBerjadwal,
+            // Ujian online ber-peran INFORMATIF TIDAK ikut di sini. Ia memang
+            // menunggu verdict penilai, tapi jendela ini menawarkan nilai,
+            // catatan, dan lampiran — tak satu pun yang perlu diisi, sebab
+            // nilainya sudah datang dari HCLearn. Yang tersisa cuma "lulus atau
+            // tidak", dan itu dua tombol, bukan sebuah formulir: lihat
+            // `butuhKeputusan` di bawah.
+            'dapatDicatat' => ($dicatatTim && ! $tipeBerjadwal) && ! $final && ! $terkunci,
             // HASILNYA DINILAI TIM — lepas dari tombol mana yang tampil.
             // Dipakai jendela "Hadir" untuk tahu perlu-tidaknya menampilkan
             // bidang hasil. `dapatDicatat` di atas hanya mengatur tombol
@@ -3134,7 +3188,11 @@ class LamaranController extends Controller
             // pun — jaring pengaman saat webhook CAT tidak sampai. TIDAK ikut
             // dikunci urutan: bila hasilnya sudah ada di HCLearn, menahannya di
             // sini hanya membuat data yang sudah sah tidak bisa masuk.
-            'dapatSinkron' => $online && ! $final && ! empty($x->Penjadwalan_Tahap_Id),
+            //
+            // TIDAK saat keputusan yang ditunggu: hasilnya sudah sampai, dan
+            // "Sinkronkan" di sebelah "Lulus / Tidak Lulus" membuat penilai
+            // mengira masih ada yang harus ditarik dulu sebelum boleh memutus.
+            'dapatSinkron' => $online && ! $final && ! $butuhKeputusan && ! empty($x->Penjadwalan_Tahap_Id),
             // "Tidak hadir" berlaku untuk keduanya — hanya tim yang tahu, dan
             // untuk ujian online inilah jalan keluar bila kandidat tak mengerjakan.
             // Penawaran BERJADWAL ikut: ia tak punya "Catat Hasil", jadi tanpa ini
@@ -3148,6 +3206,29 @@ class LamaranController extends Controller
                 && ! $final && ! $terkunci && empty($x->Jadwal_Hadir),
             // Penanda UI: aktivitas ini menunggu hasil dari sistem lain.
             'online' => $online,
+            // Layar memakainya untuk MENAMPILKAN sepasang tombol Lulus/Tidak
+            // Lulus.
+            'butuhKeputusan' => $butuhKeputusan,
+            // ── ANGKANYA BERARTI, ATAU TIDAK? ────────────────────────────────
+            //
+            // Alat tes online ber-peran INFORMATIF (PAPI Kostick, DISC,
+            // Kraeplin) mengeluarkan PROFIL, bukan nilai kelulusan. "78" di
+            // sebelah lencana Selesai terbaca sebagai skor — padahal ia tidak
+            // punya ambang batas, tidak bisa dibandingkan antar-alat, dan sama
+            // sekali bukan dasar keputusan yang barusan diambil penilai.
+            //
+            // Berlaku SEBELUM maupun SESUDAH diputuskan: angka yang tak berarti
+            // tidak berubah jadi berarti hanya karena verdict-nya sudah ada.
+            //
+            // Yang TETAP tampil: nilai ujian PENENTU (objektif, berambang
+            // batas) dan nilai yang diketik tim sendiri pada aktivitas manual —
+            // di sana angkanya memang sengaja ditulis seseorang.
+            'skorBermakna' => ! ($online && ($x->Peran ?? '') === 'INFORMATIF'),
+            // Sepasang tombolnya boleh ditekan — dipisah dari keadaan di atas
+            // supaya aktivitas yang masih TERKUNCI URUTAN tetap terbaca "sudah
+            // dites, tunggu keputusan" tanpa menawarkan tombol yang akan
+            // ditolak server.
+            'dapatPutusTes' => $butuhKeputusan && ! $final && ! $terkunci,
             // ── MASIH ADA YANG DITUNGGU DARI AKTIVITAS INI? ──────────────────
             //
             // Dipakai gerbang keputusan: "Lolos" dan "Talent Pool" tidak boleh
@@ -3213,7 +3294,12 @@ class LamaranController extends Controller
         }
 
         if ($online) {
-            return 'hasil ujian belum masuk';
+            // Nilainya SUDAH masuk, yang ditunggu keputusan penilainya.
+            // Dibedakan karena tindakannya berbeda: yang pertama menunggu
+            // kandidat/HCLearn, yang kedua menunggu ORANG DI KANTOR INI.
+            return ($x->Status ?? '') === 'MENUNGGU_KEPUTUSAN'
+                ? 'sudah dites — menunggu keputusan penilai'
+                : 'hasil ujian belum masuk';
         }
 
         // MCU: yang ditunggu adalah STATUS KESEHATANNYA, bukan verdict lulus/gagal
@@ -4463,6 +4549,11 @@ class LamaranController extends Controller
             // master, patokan rincinya diketik.
             'lokasiId' => 'nullable|string|max:64',
             'lokasi' => 'nullable|string|max:300',
+            // Tempat yang BELUM terdaftar (lokasiId = "__LAINNYA__"): RS dadakan
+            // untuk kandidat luar kota. Wajib-tidaknya ditegakkan dari master
+            // peruntukan, bukan dari `required_if` di sini.
+            'lokasiNama' => 'nullable|string|max:200',
+            'lokasiAlamat' => 'nullable|string|max:500',
             'catatan' => 'nullable|string|max:1000',
         ], [
             'link.required_if' => 'Tautan pertemuan wajib diisi untuk wawancara daring.',
@@ -4494,7 +4585,7 @@ class LamaranController extends Controller
         // kandidat datang ke tautan yang tidak akan pernah ada orangnya.
         $tipeSub = self::masterTipeTahap()[$sub->Tipe_Tahap_Kode ?? ''] ?? null;
 
-        if ($galat = self::periksaBidangJadwal($data)) {
+        if ($galat = self::periksaBidangJadwal($data, $tipeSub)) {
             return ResponseHelper::error($galat, 422);
         }
 
@@ -4581,7 +4672,7 @@ class LamaranController extends Controller
      *
      * @return string|null pesan galat, null bila lengkap
      */
-    private static function periksaBidangJadwal(array $data): ?string
+    private static function periksaBidangJadwal(array $data, ?object $tipe = null): ?string
     {
         $m = self::masterModeJadwal()->get($data['mode'] ?? '');
         if (! $m) {
@@ -4593,10 +4684,172 @@ class LamaranController extends Controller
         if (($m->Flag_Butuh_Lokasi ?? 'T') === 'Y' && empty($data['lokasiId'])) {
             return "Bentuk \"{$m->Nama}\" wajib memilih lokasi.";
         }
+        if (($m->Flag_Butuh_Lokasi ?? 'T') === 'Y'
+            && ($galat = self::periksaPeruntukanLokasi($data, $tipe))) {
+            return $galat;
+        }
         // Nomor tidak boleh diambil diam-diam dari profil: yang dijanjikan ke
         // kandidat harus yang benar-benar tercatat, bukan yang kebetulan ada.
         if (($m->Flag_Butuh_Kontak ?? 'T') === 'Y' && empty($data['kontak'])) {
             return "Bentuk \"{$m->Nama}\" wajib mencantumkan nomor yang akan dihubungi.";
+        }
+
+        return null;
+    }
+
+    /**
+     * LOKASI YANG DIPILIH HARUS COCOK DENGAN PERUNTUKAN TIPE AKTIVITASNYA.
+     *
+     * MCU hanya boleh ke rumah sakit. Layar memang sudah menyaring dropdown-nya,
+     * tetapi layar bisa dilewati — dan akibat lolosnya bukan galat yang terlihat
+     * melainkan undangan yang benar-benar terkirim: kandidat berangkat ke kantor
+     * untuk pemeriksaan kesehatan, dan baru tahu di tempat bahwa tak ada yang
+     * memeriksanya.
+     *
+     * Tipe TANPA peruntukan (phone screen, negosiasi) tidak dibatasi sama sekali
+     * — membatasi sesuatu yang memang bisa di mana saja hanya membuat rekruter
+     * buntu tanpa sebab.
+     *
+     * @return string|null pesan galat, null bila sah
+     */
+    /** Kunci formulir yang memuat nama kandidat, urut prioritas — DARI MASTER. */
+    private static function kunciNama(): array
+    {
+        static $cache = null;
+
+        return $cache ??= DB::table('N_WEB_CAREERS_Master_Kunci_Identitas')
+            ->where('Kode', 'NAMA')->where('Flag_Aktif', 'Y')
+            ->orderBy('Urutan')->pluck('Field_Key')->all();
+    }
+
+    /**
+     * Nama kandidat dari jawaban formulir — null bila tidak ada.
+     *
+     * Nama AKUN diketik saat mendaftar dan kerap seadanya ("salni", "andi123");
+     * yang dipakai seluruh dokumen resmi justru yang ditulis di formulir. Kunci
+     * mana yang memuatnya dibaca dari master, bukan ditulis di sini: formulir
+     * dirancang lewat layar, jadi kunci baru bisa lahir kapan saja — dan tempat
+     * yang lupa disunting akan diam-diam kembali memakai nama akun tanpa satu
+     * pun galat.
+     */
+    private static function namaDariJawaban(?array $jawaban): ?string
+    {
+        foreach (self::kunciNama() as $k) {
+            $v = $jawaban[$k] ?? null;
+            if (is_string($v) && trim($v) !== '') {
+                return trim($v);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Nama resmi tiap lamaran, diambil dari FORMULIR — [Lamaran_Id => nama].
+     *
+     * Satu kueri untuk seluruh daftar, bukan satu per kartu. Pengisian dibaca
+     * urut dari yang PALING AWAL: formulir lamaran diisi lebih dulu dan itulah
+     * yang memuat identitas; formulir tahap lanjutan umumnya tidak menanyakan
+     * nama lagi.
+     */
+    private static function namaResmiPerLamaran(array $lamaranIds): \Illuminate\Support\Collection
+    {
+        if (! $lamaranIds) {
+            return collect();
+        }
+
+        return DB::table('N_WEB_CAREERS_Formulir_Pengisian')
+            ->whereIn('Lamaran_Id', $lamaranIds)
+            ->orderBy('Id_Formulir_Pengisian')
+            ->get(['Lamaran_Id', 'Jawaban_Json'])
+            ->groupBy('Lamaran_Id')
+            ->map(function ($g) {
+                foreach ($g as $fp) {
+                    $nama = self::namaDariJawaban(json_decode($fp->Jawaban_Json ?: '{}', true) ?: []);
+                    if ($nama) {
+                        return $nama;
+                    }
+                }
+
+                return null;
+            })
+            ->filter();
+    }
+
+    /**
+     * TEMPAT sebuah jadwal — dari master ATAU yang diketik sendiri.
+     *
+     * Satu pintu untuk undangan email, portal kandidat, dan rapor admin. Dulu
+     * masing-masing membaca kolomnya sendiri, dan begitu tempat "Lainnya"
+     * ditambahkan, ketiganya akan menampilkan hal berbeda untuk jadwal yang
+     * sama — yang paling merugikan justru undangan, karena ia sudah terkirim
+     * sebelum siapa pun sempat melihat selisihnya.
+     *
+     * @param  object  $s  baris N_WEB_CAREERS_Lamaran_Tahap_Tes
+     */
+    public static function tempatJadwal(object $s, ?object $master = null): ?array
+    {
+        if ($s->Jadwal_Lokasi_Id ?? null) {
+            return MasterLokasiController::bentukLokasi(
+                $master ?: DB::table('N_WEB_CAREERS_Master_Lokasi')
+                    ->where('Id_Master_Lokasi', $s->Jadwal_Lokasi_Id)->first(),
+                MasterLokasiController::petaPeruntukan([(int) $s->Jadwal_Lokasi_Id])
+                    ->get((int) $s->Jadwal_Lokasi_Id, []),
+            );
+        }
+
+        return MasterLokasiController::lokasiLepas(
+            $s->Jadwal_Lokasi_Nama ?? null,
+            $s->Jadwal_Lokasi_Alamat ?? null,
+        );
+    }
+
+    private static function periksaPeruntukanLokasi(array $data, ?object $tipe): ?string
+    {
+        $butuh = $tipe->Lokasi_Peruntukan_Kode ?? null;
+        $lepas = ($data['lokasiId'] ?? null) === MasterLokasiController::LAINNYA;
+
+        // ── Tempat yang diketik sendiri ────────────────────────────────────
+        if ($lepas) {
+            $p = $butuh ? MasterLokasiController::masterPeruntukan()->get($butuh) : null;
+
+            // Tanpa peruntukan, tak ada master yang menyatakan "Lainnya" boleh.
+            // Menutupnya adalah pilihan yang aman: yang terlanjur dibuka tak
+            // bisa ditarik, sedangkan yang tertutup cukup dibuka lewat master.
+            if (! $p || ($p->Flag_Izinkan_Lainnya ?? 'T') !== 'Y') {
+                return 'Tempat di luar daftar tidak diizinkan untuk aktivitas ini — pilih dari daftar lokasi.';
+            }
+            if (empty(trim((string) ($data['lokasiNama'] ?? '')))) {
+                return ($p->Label_Nama_Lainnya ?: 'Nama tempat') . ' wajib diisi.';
+            }
+            if (($p->Flag_Wajib_Alamat_Lainnya ?? 'Y') === 'Y'
+                && empty(trim((string) ($data['lokasiAlamat'] ?? '')))) {
+                return ($p->Label_Alamat_Lainnya ?: 'Alamat') . ' wajib diisi — undangan tanpa alamat membuat kandidat tidak tahu harus datang ke mana.';
+            }
+
+            return null;
+        }
+
+        if (! $butuh) {
+            return null;
+        }
+
+        $id = Hashids::decode($data['lokasiId'] ?? '')[0] ?? null;
+        if (! $id) {
+            return 'Lokasi tidak valid.';
+        }
+
+        $cocok = DB::table('N_WEB_CAREERS_Master_Lokasi_Peruntukan_Map')
+            ->where('Id_Master_Lokasi', $id)
+            ->where('Peruntukan_Kode', $butuh)
+            ->exists();
+
+        if (! $cocok) {
+            $nama = DB::table('N_WEB_CAREERS_Master_Lokasi')->where('Id_Master_Lokasi', $id)->value('Nama') ?: 'Lokasi itu';
+            $p = MasterLokasiController::masterPeruntukan()->get($butuh);
+
+            return "\"{$nama}\" bukan " . mb_strtolower($p->Nama ?? $butuh)
+                . '. ' . ($p->Label_Pilih ?? 'Pilih lokasi yang sesuai') . '.';
         }
 
         return null;
@@ -4607,6 +4860,9 @@ class LamaranController extends Controller
         $mode = self::masterModeJadwal()->get($data['mode']);
         $now = now();
         $nama = session('career_auth.nama');
+        $pakaiLokasi = ($mode->Flag_Butuh_Lokasi ?? 'T') === 'Y';
+        // Tempat di luar master — sudah divalidasi di periksaPeruntukanLokasi().
+        $lepas = $pakaiLokasi && ($data['lokasiId'] ?? null) === MasterLokasiController::LAINNYA;
 
         DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')
             ->where('Id_Lamaran_Tahap_Tes', $subTesId)
@@ -4622,10 +4878,16 @@ class LamaranController extends Controller
                 // ditambahkan lewat master langsung ikut aturan ini tanpa satu
                 // baris pun disentuh di sini.
                 'Jadwal_Link' => ($mode->Flag_Butuh_Tautan ?? 'T') === 'Y' ? ($data['link'] ?? null) : null,
-                'Jadwal_Lokasi' => ($mode->Flag_Butuh_Lokasi ?? 'T') === 'Y' ? ($data['lokasi'] ?? null) : null,
-                'Jadwal_Lokasi_Id' => ($mode->Flag_Butuh_Lokasi ?? 'T') === 'Y' && ! empty($data['lokasiId'])
+                'Jadwal_Lokasi' => $pakaiLokasi ? ($data['lokasi'] ?? null) : null,
+                'Jadwal_Lokasi_Id' => ($pakaiLokasi && ! $lepas && ! empty($data['lokasiId']))
                     ? (Hashids::decode($data['lokasiId'])[0] ?? null)
                     : null,
+                // TEMPAT YANG DIKETIK SENDIRI — kolomnya terpisah dari patokan.
+                // Keduanya dikosongkan saat lokasi terdaftar yang dipilih,
+                // supaya sisa isian percobaan sebelumnya tidak ikut terbaca
+                // sebagai tempat kedua di undangan yang sama.
+                'Jadwal_Lokasi_Nama' => $lepas ? trim((string) ($data['lokasiNama'] ?? '')) : null,
+                'Jadwal_Lokasi_Alamat' => $lepas ? (trim((string) ($data['lokasiAlamat'] ?? '')) ?: null) : null,
                 // Nomor yang akan dihubungi — bagian dari JANJINYA, bukan
                 // salinan profil. Lihat penjelasan panjang di .sql-nya.
                 'Jadwal_Kontak' => ($mode->Flag_Butuh_Kontak ?? 'T') === 'Y' ? ($data['kontak'] ?? null) : null,
@@ -4680,6 +4942,8 @@ class LamaranController extends Controller
             'kontak' => 'nullable|string|max:40',
             'lokasiId' => 'nullable|string|max:64',
             'lokasi' => 'nullable|string|max:300',
+            'lokasiNama' => 'nullable|string|max:200',
+            'lokasiAlamat' => 'nullable|string|max:500',
             'catatan' => 'nullable|string|max:1000',
         ], [
             'link.required_if' => 'Tautan pertemuan wajib diisi untuk kegiatan daring.',
@@ -4728,7 +4992,10 @@ class LamaranController extends Controller
             // MCU & tanda tangan kontrak mustahil daring — dijaga sama seperti
             // pada penjadwalan satuan.
             $tipeSub = $tipeSemua[$sub->Tipe_Tahap_Kode ?? ''] ?? null;
-            if ($galat = self::periksaBidangJadwal($data)) {
+            // Peruntukan lokasi ikut diperiksa — kalau tidak, penjadwalan MASSAL
+            // jadi pintu belakang yang mengirim seratus orang MCU ke kantor
+            // sekaligus, persis kesalahan yang dijaga di jalur satuan.
+            if ($galat = self::periksaBidangJadwal($data, $tipeSub)) {
                 return ResponseHelper::error($galat, 422);
             }
 
@@ -4809,11 +5076,7 @@ class LamaranController extends Controller
             // bahkan tidak menyebut lokasi sama sekali. Sekarang keduanya
             // dikirim: TEMPAT sebagai alamat resmi, PATOKAN sebagai penunjuk
             // rinci di dalamnya.
-            $tempat = $sub->Jadwal_Lokasi_Id
-                ? \App\Http\Controllers\Career\MasterLokasi\MasterLokasiController::bentukLokasi(
-                    DB::table('N_WEB_CAREERS_Master_Lokasi')->where('Id_Master_Lokasi', $sub->Jadwal_Lokasi_Id)->first()
-                )
-                : null;
+            $tempat = self::tempatJadwal($sub);
 
             WcJadwalEmailJob::dispatch((int) $sub->Id_Users, [
                 'nama' => $sub->Nama,
@@ -5238,10 +5501,44 @@ class LamaranController extends Controller
             // sebaliknya: tak ada sistem lain yang mengirim hasilnya.
             $tipeSub = self::masterTipeTahap()[$sub->Tipe_Tahap_Kode ?? ''] ?? null;
             $online = ($tipeSub->Perilaku_Kode ?? null) === 'CAT' || ($sub->Provider ?? '') === 'THIRD_PARTY';
-            if ($online) {
+
+            // UJIAN ONLINE BER-PERAN INFORMATIF JUSTRU MENUNGGU ADMIN.
+            //
+            // Alat tes seperti PAPI Kostick, DISC, dan Kraeplin tidak berbunyi
+            // lulus/gagal — keluarannya profil, bukan angka kelulusan. Yang
+            // menyatakan layak-tidaknya memang penilai, bukan mesinnya.
+            //
+            // Yang tetap ditolak hanya ujian PENENTU: nilainya objektif dan
+            // sudah punya ambang batas, jadi mengetiknya sendiri di sini berarti
+            // menimpa angka resmi dengan tebakan.
+            //
+            // STATUS-nya ikut disyaratkan. Tanpa itu, ujian yang baru
+            // DIJADWALKAN — kandidatnya belum menyentuh soal — sudah bisa
+            // dinyatakan lulus lewat pintu ini. Layar memang tidak menawarkan
+            // tombolnya, tapi pintu belakang tidak boleh lebih longgar daripada
+            // layar depan. Bila hasilnya tak kunjung datang, yang benar adalah
+            // "Tidak hadir".
+            $adminYangMemutuskan = $online
+                && $sub->Peran === 'INFORMATIF'
+                && ($sub->Status ?? '') === 'MENUNGGU_KEPUTUSAN';
+
+            if ($online && ! $adminYangMemutuskan) {
+                // Dua sebab, dua kalimat. Menyamakannya membuat admin yang
+                // sekadar terlalu cepat mengira alat tesnya salah dipasang.
                 return ResponseHelper::error(
-                    "\"{$sub->Label}\" adalah ujian online — hasilnya masuk sendiri dari HCLearn dan tidak dicatat manual. "
-                    . 'Bila kandidat tidak mengerjakannya, tandai "Tidak hadir".',
+                    $sub->Peran === 'INFORMATIF'
+                        ? "Hasil \"{$sub->Label}\" belum masuk dari HCLearn — keputusannya baru bisa diberikan setelah kandidat mengerjakannya. "
+                            . 'Bila ia memang tidak mengerjakan, tandai "Tidak hadir".'
+                        : "\"{$sub->Label}\" adalah ujian online penentu — hasilnya masuk sendiri dari HCLearn dan tidak dicatat manual. "
+                            . 'Bila kandidat tidak mengerjakannya, tandai "Tidak hadir".',
+                    422
+                );
+            }
+
+            // Nilainya milik HCLearn; admin hanya menyatakan lulus/tidaknya.
+            if ($adminYangMemutuskan && empty($data['hasil'])) {
+                return ResponseHelper::error(
+                    "Pilih Lulus atau Tidak Lulus untuk \"{$sub->Label}\" — nilainya sudah masuk, keputusannya yang ditunggu.",
                     422
                 );
             }
@@ -5276,11 +5573,17 @@ class LamaranController extends Controller
             // satu keputusan. Bila evaluasi gagal setelah aktivitasnya ditandai
             // final, tak ada jalan mengulang — pintu ini menolak aktivitas yang
             // sudah final, dan tahapnya diam menunggu kesimpulan yang tak datang.
-            $outcome = DB::transaction(function () use ($realId, $sub, $data, $catatan, $html, $mcu, $nama) {
+            $outcome = DB::transaction(function () use ($realId, $sub, $data, $catatan, $html, $mcu, $nama, $adminYangMemutuskan) {
                 DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')->where('Id_Lamaran_Tahap_Tes', $realId)->update([
                     'Status' => 'SELESAI',
-                    'Hasil' => $sub->Peran === 'INFORMATIF' ? null : $data['hasil'],
-                    'Nilai' => $data['nilai'] ?? null,
+                    // INFORMATIF pada UJIAN ONLINE tetap menyimpan verdict-nya:
+                    // itulah satu-satunya alasan admin menekan Lulus/Tidak Lulus.
+                    // Yang tidak diberi verdict hanya INFORMATIF non-ujian
+                    // (wawancara pendamping, catatan) — di sana perannya memang
+                    // sekadar bahan pertimbangan.
+                    'Hasil' => ($sub->Peran === 'INFORMATIF' && ! $adminYangMemutuskan) ? null : $data['hasil'],
+                    // Nilai ujian online milik HCLearn — jangan ditimpa kosong.
+                    'Nilai' => $adminYangMemutuskan ? $sub->Nilai : ($data['nilai'] ?? null),
                     'Catatan' => $catatan ?: $sub->Catatan,
                     'Catatan_Html' => $html ?: $sub->Catatan_Html,
                     'Flag_Selesai' => 'Y',
@@ -5417,7 +5720,11 @@ class LamaranController extends Controller
         return ResponseHelper::success([
             'lamaran' => [
                 'kode' => $lamaran->Kode,
-                'pelamar' => $lamaran->Pelamar ?: $lamaran->Created_By,
+                // Sumber yang sama dengan kartu worklist — kalau berbeda, satu
+                // orang punya dua nama di dua layar yang saling bersebelahan.
+                'pelamar' => self::namaResmiPerLamaran([(int) $realId])->get((int) $realId)
+                    ?: ($lamaran->Pelamar ?: $lamaran->Created_By),
+                'pelamarAkun' => $lamaran->Pelamar ?: null,
                 'email' => $lamaran->EmailAkun,
                 'posisi' => $lamaran->Posisi ?: $lamaran->Kategori,
                 'program' => $lamaran->ProgramNama,

@@ -605,6 +605,12 @@
                                 <p>Hasilnya sedang diterima sistem. Halaman ini memperbarui dirinya sendiri — tidak perlu kamu muat ulang.</p>
                             </div>
                         </div>
+                        <!-- SUDAH DIKERJAKAN — tidak ada tombol apa pun, dan tidak
+                             ada panel tambahan: keterangannya sudah disampaikan
+                             sekali di atas ("Tes sudah kamu kerjakan"). Panel
+                             kedua di sini pernah ada, dan hasilnya kandidat
+                             membaca kalimat yang sama dua kali berturut-turut
+                             lalu mengira keduanya menunjuk tes yang berbeda. -->
                         <button
                             v-else-if="!sudahSelesai(sesi)"
                             class="ld-btn-tes"
@@ -1651,10 +1657,28 @@ export default {
         tesList() {
             return this.aktivitas.filter((x) => x.eksternal);
         },
+        /** Ujian online yang masih menuntut sesuatu dari kandidat. */
+        tesBelumTuntas() {
+            return this.tesList.filter((x) => !x.selesai && !this.sudahSelesai(x));
+        },
         // Tahap ini menampilkan kartu ujian online bila ada aktivitas online di
         // dalamnya — bukan karena tipe tahapnya kebetulan "Tes Online".
+        //
+        // KARTUNYA MENGHILANG setelah seluruh ujiannya dikerjakan DAN masih ada
+        // aktivitas lain yang menunggu kandidat. Tanpa itu, kartu "Tes sudah
+        // kamu kerjakan" tetap terpampang di bawah kartu jadwal FGD — dua
+        // aktivitas berbeda berdampingan di satu layar, dan kalimat tentang tes
+        // yang sudah lewat terbaca seolah menerangkan FGD yang justru sedang
+        // ditunggu. Kandidat lalu ragu apakah FGD-nya masih perlu dihadiri.
+        //
+        // Bila TIDAK ada aktivitas lain yang menunggu, kartunya dipertahankan:
+        // di situ "sudah dikerjakan, hasilnya sedang ditinjau" memang satu-
+        // satunya kabar yang ia punya.
         tahapTes() {
-            return this.tesList.length ? this.tahapAktif : null;
+            if (! this.tesList.length) return null;
+            if (! this.tesBelumTuntas.length && this.aktivitasManual.length) return null;
+
+            return this.tahapAktif;
         },
         // Aktivitas non-online yang masih ditunggu (wawancara, tes manual, MCU).
         aktivitasManual() {
@@ -1665,7 +1689,14 @@ export default {
         sesi() {
             const t = this.tahapTes;
             if (!t) return { label: '', ujian: null };
-            const belum = this.tesList.filter((x) => !x.selesai);
+            // Yang SUDAH dikerjakan tidak boleh merebut kartu ini. Ujian
+            // ber-peran informatif menunggu keputusan penilai — jadi belum
+            // `selesai`, padahal kandidat tak punya urusan lagi dengannya.
+            // Dulu ia tetap terpilih dan menutupi tes berikutnya yang justru
+            // menunggu dikerjakan.
+            const belum = this.tesBelumTuntas.length
+                ? this.tesBelumTuntas
+                : this.tesList.filter((x) => !x.selesai);
             const pilih =
                 belum.find((x) => x.ujian?.bisaAkses) || belum.find((x) => x.ujian) || belum[0] || this.tesList[0];
             if (pilih) return { label: pilih.label || t.label, ujian: pilih.ujian || t.ujian };

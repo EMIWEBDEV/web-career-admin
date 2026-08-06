@@ -83,6 +83,68 @@ class HclClient
     }
 
     /**
+     * Admin yang atas namanya panggilan ini dilakukan — dipakai saat TIDAK ADA
+     * SESI, yaitu di dalam antrean.
+     */
+    private ?int $penggunaId = null;
+
+    /**
+     * Bertindak atas nama seorang admin, tanpa bergantung pada sesi.
+     *
+     * ══ KENAPA PERLU ══
+     *
+     * Penjadwalan ujian dikerjakan di ANTREAN (WcPenjadwalanJob): menerbitkan
+     * ratusan token bisa memakan menit, jadi permintaannya sengaja dilepas.
+     * Tapi job berjalan jauh setelah permintaan aslinya selesai — tanpa sesi
+     * siapa pun. Akibatnya kunci pengguna tak pernah ikut terkirim, dan CAT
+     * menolak dengan "Akun Anda belum ditautkan" untuk akun yang SEBENARNYA
+     * sudah ditautkan.
+     *
+     * Yang dibawa job cukup ID-nya, bukan kuncinya. Dua alasan: kunci tidak
+     * ikut mengendap di tabel antrean, dan pencabutan tautan langsung berlaku
+     * bahkan untuk job yang sudah telanjur mengantre.
+     */
+    public function sebagaiPengguna(?int $userId): static
+    {
+        $this->penggunaId = $userId && $userId > 0 ? $userId : null;
+
+        return $this;
+    }
+
+    /**
+     * Kunci HCLearn milik admin di balik panggilan ini — null bila tak ada.
+     *
+     * Null itu WAJAR untuk sebagian panggilan: pendaftaran kandidat dan sinkron
+     * biodata memang tidak berbicara atas nama seorang admin, dan endpoint yang
+     * dituju pun tidak menuntutnya.
+     *
+     * Yang MENUNTUT kunci ini — daftar paket ujian dan penjadwalan — akan
+     * ditolak CAT bila kuncinya tidak ada. Ditolak di sana, bukan di sini:
+     * pengaman yang hanya berlaku di sisi peminta bukan pengaman.
+     */
+    private function kunciPengguna(): ?string
+    {
+        // Yang disebut eksplisit menang atas sesi: di dalam antrean sesinya
+        // memang tidak ada, dan di luar antrean keduanya selalu orang yang sama.
+        $id = $this->penggunaId ?: (int) session('career_auth.id');
+
+        if ($id < 1) {
+            return null;
+        }
+
+        // Dibaca sekali per proses. Satu permintaan bisa memanggil CAT beberapa
+        // kali (mis. penjadwalan massal), dan mengulang kueri yang sama untuk
+        // orang yang sama tak menambah apa pun.
+        static $cache = [];
+
+        return $cache[$id] ??= (function () use ($id) {
+            $kunci = DB::table('N_WEB_CAREERS_Users')->where('Id_Users', $id)->value('User_Key');
+
+            return is_string($kunci) && trim($kunci) !== '' ? trim($kunci) : null;
+        })();
+    }
+
+    /**
      * @return array{sukses:bool, status:int, message:string, result:mixed}
      */
     private function kirim(string $metode, string $path, array $body, array $query, array $konteksLog): array
@@ -134,6 +196,25 @@ class HclClient
                 'Accept' => 'application/json',
                 'Content-Type' => 'application/json',
             ];
+
+            // ── SIAPA YANG SEDANG MEMINTA ────────────────────────────────────
+            //
+            // Kredensial di atas menjawab "aplikasi mana", bukan "orang mana".
+            // Tanpa yang kedua, CAT tak punya dasar mempersempit apa pun:
+            // daftar paket ujian keluar seluruhnya, dan ujian internal —
+            // asesmen promosi karyawan — bisa dijadwalkan kepada pelamar luar.
+            //
+            // Kunci ini milik AKUN, bukan milik kanal. Yang berlaku adalah izin
+            // orang yang sedang masuk, dan jejaknya menyebut namanya — bukan
+            // "WEB_CAREERS" yang tak bisa ditanyai siapa pun.
+            //
+            // TIDAK ikut ditandatangani, dan itu disengaja: tanda tangan
+            // menjaga keaslian permintaan, sedangkan kunci ini menjawab
+            // pertanyaan berbeda — dan CAT tetap memeriksanya sendiri ke tabel
+            // penggunanya, jadi kunci palsu tidak membuka apa pun.
+            if ($kunciPengguna = $this->kunciPengguna()) {
+                $headers['X-HC-User-Key'] = $kunciPengguna;
+            }
 
             $mulai = microtime(true);
 

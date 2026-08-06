@@ -8,6 +8,7 @@ use App\Support\CareerShell;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Vinkla\Hashids\Facades\Hashids;
 
@@ -30,6 +31,106 @@ use Vinkla\Hashids\Facades\Hashids;
 class MasterLokasiController extends Controller
 {
     private const JENIS = ['KANTOR', 'VENDOR'];
+
+    /**
+     * Nilai penanda "tempat ini belum terdaftar di master".
+     *
+     * Bukan hashid, dan mustahil bertabrakan dengan salah satunya: alfabet
+     * hashid tidak memuat garis bawah. Dipakai layar sebagai nilai pilihan
+     * "Lainnya" dan diperiksa server dengan perbandingan yang sama persis.
+     */
+    public const LAINNYA = '__LAINNYA__';
+
+    /** Master peruntukan lokasi (KANTOR / MEDIS / …), by Kode. */
+    public static function masterPeruntukan(): \Illuminate\Support\Collection
+    {
+        static $cache = null;
+
+        return $cache ??= DB::table('N_WEB_CAREERS_Master_Lokasi_Peruntukan')
+            ->where('Flag_Aktif', 'Y')->orderBy('Urutan')->get()->keyBy('Kode');
+    }
+
+    /** Peruntukan tiap lokasi: [Id_Master_Lokasi => ['KANTOR', …]]. */
+    public static function petaPeruntukan(array $ids = []): \Illuminate\Support\Collection
+    {
+        $q = DB::table('N_WEB_CAREERS_Master_Lokasi_Peruntukan_Map');
+        if ($ids) {
+            $q->whereIn('Id_Master_Lokasi', $ids);
+        }
+
+        return $q->get()
+            ->groupBy('Id_Master_Lokasi')
+            ->map(fn ($g) => $g->pluck('Peruntukan_Kode')->values()->all());
+    }
+
+    /**
+     * URL peta dari sebuah kueri bebas.
+     *
+     * Dipakai baris master MAUPUN tempat "Lainnya" yang diketik saat menjadwal.
+     * Satu tempat, supaya keduanya mustahil menghasilkan peta yang berbeda.
+     */
+    private static function petaDari(?string $kueri): array
+    {
+        $kueri = trim((string) $kueri);
+
+        return [
+            'mapsEmbed' => $kueri ? 'https://www.google.com/maps?q=' . urlencode($kueri) . '&output=embed' : null,
+            'mapsUrl' => $kueri ? 'https://www.google.com/maps/search/?api=1&query=' . urlencode($kueri) : null,
+        ];
+    }
+
+    /**
+     * Tempat yang DIKETIK saat menjadwal ("Lainnya"), dibentuk menyerupai baris
+     * master supaya layar tak perlu tahu bedanya.
+     *
+     * TANPA PETA — sengaja. Tempat ini tidak punya koordinat yang pernah
+     * diverifikasi siapa pun; menyusun peta dari hasil pencarian nama berarti
+     * menampilkan pin yang BELUM TENTU benar dengan tampilan yang sama persis
+     * seperti pin yang sudah dipastikan. Kandidat tidak punya cara membedakan
+     * keduanya, dan yang salah mengirim orang ke gedung yang keliru di hari-H.
+     *
+     * Yang ditampilkan: nama dan alamatnya sebagai teks. Bila tempat itu memang
+     * sering dipakai, daftarkan di Master Lokasi berikut titiknya — di sana
+     * petanya muncul karena ada yang bertanggung jawab atas titik itu.
+     */
+    public static function lokasiLepas(?string $nama, ?string $alamat): ?array
+    {
+        $nama = trim((string) $nama);
+        if ($nama === '') {
+            return null;
+        }
+
+        $alamat = trim((string) $alamat) ?: null;
+
+        return [
+            'id' => self::LAINNYA,
+            'kode' => null,
+            'nama' => $nama,
+            'jenis' => null,
+            'kategori' => null,
+            'alamat' => $alamat,
+            'alamatLengkap' => $alamat,
+            'kota' => null,
+            'provinsi' => null,
+            'kodePos' => null,
+            'lintang' => null,
+            'bujur' => null,
+            'kontakNama' => null,
+            'kontakTelp' => null,
+            'catatan' => null,
+            'utama' => false,
+            'aktif' => true,
+            'peruntukan' => [],
+            // Penanda: tempat ini tidak ada di master. Layar memakainya untuk
+            // menyebutkan itu apa adanya, alih-alih menampilkannya seolah
+            // tempat terdaftar yang datanya kurang lengkap.
+            'lepas' => true,
+            // Kosong, dan HARUS tetap kosong. Layar yang menemukan keduanya null
+            // menampilkan alamatnya sebagai teks — lihat JadwalKartu.
+            'mapsEmbed' => null,
+            'mapsUrl' => null,
+        ];
+    }
 
     public function index()
     {
@@ -71,7 +172,7 @@ class MasterLokasiController extends Controller
      * portal kandidat, dan menaruhnya di satu tempat mencegah keduanya lambat
      * laun berbeda.
      */
-    public static function bentukLokasi(?object $r): ?array
+    public static function bentukLokasi(?object $r, array $peruntukan = []): ?array
     {
         if (! $r) {
             return null;
@@ -105,10 +206,14 @@ class MasterLokasiController extends Controller
             'catatan' => $r->Catatan,
             'utama' => ($r->Flag_Default ?? 'T') === 'Y',
             'aktif' => ($r->Flag_Aktif ?? 'Y') === 'Y',
+            // UNTUK APA tempat ini boleh dipakai — kantor, medis, atau keduanya.
+            // Jendela jadwal menyaring dengan ini, bukan dengan menebak dari
+            // `jenis`: sebuah rumah sakit yang juga menyediakan ruang wawancara
+            // tetap satu baris, satu titik peta, satu riwayat pemakaian.
+            'peruntukan' => array_values($peruntukan),
+            'lepas' => false,
             // Peta sematan (iframe) & tautan buka di aplikasi peta.
-            'mapsEmbed' => $kueri ? 'https://www.google.com/maps?q=' . urlencode($kueri) . '&output=embed' : null,
-            'mapsUrl' => $kueri ? 'https://www.google.com/maps/search/?api=1&query=' . urlencode($kueri) : null,
-        ];
+        ] + self::petaDari($kueri);
     }
 
     /** GET /api/v1/master-lokasi — daftar + pencarian + saringan jenis. */
@@ -129,16 +234,59 @@ class MasterLokasiController extends Controller
             $q->where('Jenis', strtoupper($jenis));
         }
 
+        // SARINGAN PERUNTUKAN — dipakai jendela jadwal: MCU hanya boleh melihat
+        // rumah sakit.
+        //
+        // Jendela jadwal memuat daftarnya SEKALI lalu menyaring di layar (satu
+        // tahap bisa memuat wawancara dan MCU sekaligus, dan menembak ulang per
+        // aktivitas membuat dropdown-nya berkedip). Saringan di sini tetap
+        // disediakan untuk pemakaian lain — dan yang menjaga kebenarannya bukan
+        // keduanya, melainkan periksaPeruntukanLokasi() di LamaranController:
+        // di sanalah lokasi yang tidak cocok ditolak, apa pun yang dikirim layar.
+        if ($peruntukan = strtoupper(trim((string) $request->query('peruntukan', '')))) {
+            $q->whereExists(fn ($w) => $w->select(DB::raw(1))
+                ->from('N_WEB_CAREERS_Master_Lokasi_Peruntukan_Map as pm')
+                ->whereColumn('pm.Id_Master_Lokasi', 'N_WEB_CAREERS_Master_Lokasi.Id_Master_Lokasi')
+                ->where('pm.Peruntukan_Kode', $peruntukan));
+        }
+
         // Hanya yang aktif — dipakai dropdown penjadwalan.
         if ($request->boolean('aktif')) {
             $q->where('Flag_Aktif', 'Y');
         }
 
         $rows = $q->orderByDesc('Flag_Default')->orderBy('Urutan')->orderBy('Nama')->get();
+        $peta = self::petaPeruntukan($rows->pluck('Id_Master_Lokasi')->all());
 
         return ResponseHelper::success(
-            $rows->map(fn ($r) => self::bentukLokasi($r))->all(),
+            $rows->map(fn ($r) => self::bentukLokasi($r, $peta->get($r->Id_Master_Lokasi, [])))->all(),
             'Daftar lokasi',
+        );
+    }
+
+    /**
+     * GET /api/v1/master-lokasi/peruntukan — master peruntukan berikut labelnya.
+     *
+     * Layar mengambil label, teks kosong, dan boleh-tidaknya "Lainnya" dari
+     * sini. Tanpa itu, jendela jadwal harus tahu sendiri bahwa MEDIS berarti
+     * rumah sakit — dan peruntukan baru menuntut layarnya ikut disunting.
+     */
+    public function peruntukan()
+    {
+        return ResponseHelper::success(
+            self::masterPeruntukan()->values()->map(fn ($p) => [
+                'kode' => $p->Kode,
+                'nama' => $p->Nama,
+                'deskripsi' => $p->Deskripsi,
+                'labelPilih' => $p->Label_Pilih,
+                'labelKosong' => $p->Label_Kosong,
+                'izinkanLainnya' => ($p->Flag_Izinkan_Lainnya ?? 'T') === 'Y',
+                'labelLainnya' => $p->Label_Lainnya,
+                'labelNamaLainnya' => $p->Label_Nama_Lainnya,
+                'labelAlamatLainnya' => $p->Label_Alamat_Lainnya,
+                'wajibAlamatLainnya' => ($p->Flag_Wajib_Alamat_Lainnya ?? 'Y') === 'Y',
+            ])->all(),
+            'Peruntukan lokasi',
         );
     }
 
@@ -160,7 +308,41 @@ class MasterLokasiController extends Controller
             'kontakTelp' => 'nullable|string|max:40',
             'catatan' => 'nullable|string|max:1000',
             'utama' => 'nullable|boolean',
+            // Daftarnya DARI MASTER — peruntukan baru langsung bisa dipilih.
+            'peruntukan' => 'nullable|array',
+            'peruntukan.*' => ['string', Rule::in(self::masterPeruntukan()->keys()->all())],
         ];
+    }
+
+    /**
+     * Tulis ulang peruntukan sebuah lokasi.
+     *
+     * Hapus-lalu-isi, bukan tambal: peruntukan yang DICABUT harus benar-benar
+     * hilang. Kalau hanya yang baru yang ditambahkan, rumah sakit yang dulu
+     * salah dipetakan sebagai KANTOR akan terus muncul di dropdown wawancara
+     * meski admin sudah membetulkannya di layar.
+     */
+    private function simpanPeruntukan(int $id, array $kode): void
+    {
+        $kode = array_values(array_unique(array_filter($kode)));
+
+        DB::transaction(function () use ($id, $kode) {
+            DB::table('N_WEB_CAREERS_Master_Lokasi_Peruntukan_Map')
+                ->where('Id_Master_Lokasi', $id)->delete();
+
+            if (! $kode) {
+                return;
+            }
+
+            DB::table('N_WEB_CAREERS_Master_Lokasi_Peruntukan_Map')->insert(
+                array_map(fn ($k) => [
+                    'Id_Master_Lokasi' => $id,
+                    'Peruntukan_Kode' => $k,
+                    'Created_At' => now(),
+                    'Created_By' => session('career_auth.nama'),
+                ], $kode),
+            );
+        });
     }
 
     /** Susun payload DB dari input yang sudah tervalidasi. */
@@ -224,6 +406,8 @@ class MasterLokasiController extends Controller
             $this->jadikanUtamaTunggal((int) $id);
         }
 
+        $this->simpanPeruntukan((int) $id, $d['peruntukan'] ?? []);
+
         return ResponseHelper::success(['id' => Hashids::encode($id)], 'Lokasi ditambahkan.');
     }
 
@@ -247,6 +431,13 @@ class MasterLokasiController extends Controller
 
         if (! empty($d['utama'])) {
             $this->jadikanUtamaTunggal((int) $realId);
+        }
+
+        // Field-nya TIDAK dikirim → peruntukan lama dibiarkan. Dikirim kosong →
+        // memang dikosongkan. Menyamakan keduanya berarti setiap penyuntingan
+        // dari layar lama diam-diam mencabut seluruh pemetaannya.
+        if ($request->has('peruntukan')) {
+            $this->simpanPeruntukan((int) $realId, $d['peruntukan'] ?? []);
         }
 
         return ResponseHelper::success(null, 'Lokasi diperbarui.');
@@ -301,6 +492,7 @@ class MasterLokasiController extends Controller
             );
         }
 
+        DB::table('N_WEB_CAREERS_Master_Lokasi_Peruntukan_Map')->where('Id_Master_Lokasi', $realId)->delete();
         DB::table('N_WEB_CAREERS_Master_Lokasi')->where('Id_Master_Lokasi', $realId)->delete();
 
         return ResponseHelper::success(null, 'Lokasi dihapus.');

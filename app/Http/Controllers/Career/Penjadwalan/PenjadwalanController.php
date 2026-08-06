@@ -908,6 +908,10 @@ class PenjadwalanController extends Controller
                 (string) $data['idMasterUjian'],
                 $data['waktuMulai'],
                 $data['waktuAkhir'],
+                // Siapa yang meminta — job berjalan tanpa sesi, dan HCLearn
+                // menuntut identitas orangnya untuk menentukan ujian mana yang
+                // boleh dijadwalkan.
+                (int) session('career_auth.id'),
             );
 
             $jml = count($data['peserta']);
@@ -1178,6 +1182,7 @@ class PenjadwalanController extends Controller
             (string) $refUjian,
             (string) $tahap->Waktu_Mulai,
             (string) $tahap->Waktu_Akhir,
+            (int) session('career_auth.id'),
         );
 
         Log::channel('web_career')->info(
