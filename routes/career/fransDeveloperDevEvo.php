@@ -45,3 +45,5 @@ require base_path('routes/career/Penjadwalan/PenjadwalanWeb.php');
 require base_path('routes/career/Penjadwalan/PenjadwalanApi.php');
 require base_path('routes/career/MasterMasaTalentPool/MasterMasaTalentPoolWeb.php');
 require base_path('routes/career/MasterHero/MasterHeroWeb.php');
+require base_path('routes/career/MasterEmployment/MasterEmploymentWeb.php');
+require base_path('routes/career/MasterExperienceLevel/MasterExperienceLevelWeb.php');
