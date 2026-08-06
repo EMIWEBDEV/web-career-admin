@@ -132,11 +132,22 @@ class AuthController extends Controller
         $data = $request->validate([
             'nama' => 'required|string|max:150',
             'email' => 'required|email|max:150',
-            'phone' => 'nullable|string|max:30',
+            // NOMOR HP: ANGKA SAJA, 8–15 digit termasuk kode negara (batas E.164).
+            //
+            // Ditegakkan DI SERVER, bukan cukup di layar. Aturan yang hanya hidup
+            // di browser bukan aturan: pintu ini bisa diketuk langsung, dan huruf
+            // yang lolos masuk akan mendarat di HRIS Rekrutmen lewat sinkron
+            // biodata — lalu ada yang mencoba menelepon nomor yang tak bisa
+            // ditelepon siapa pun.
+            //
+            // Awalan '62' SENGAJA tidak dituntut: negaranya dipilih kandidat,
+            // dan memaksa +62 menutup pintu bagi pelamar luar negeri.
+            'phone' => ['nullable', 'string', 'regex:/^[0-9]{8,15}$/'],
             // KTP/NIK: WAJIB tepat 16 digit (tidak boleh kurang / lebih).
             'nik' => 'required|digits:16',
             'password' => 'required|string|min:6',
         ], [
+            'phone.regex' => 'No. HP hanya boleh angka (8–15 digit termasuk kode negara).',
             'nik.required' => 'Nomor KTP (NIK) wajib diisi.',
             'nik.digits' => 'Nomor KTP harus tepat 16 digit angka.',
         ]);

@@ -248,7 +248,13 @@ export const KODE_TELEPON = [
 // Cari negara berdasarkan nomor tersimpan: cocokkan prefix dial TERPANJANG dulu
 // (mis. "62"812… -> ID). Kembalikan { iso, dial } atau default bila tak cocok.
 export function deteksiNegara(nomor) {
-    const s = String(nomor || "").replace(/D/g, "");
+    // `\D` (bukan-angka), BUKAN `D`. Garis miringnya pernah hilang, sehingga
+    // yang dibuang justru huruf "D" dan tanda baca dibiarkan lolos: "+62 812"
+    // tetap diawali "+" dan tak pernah cocok dengan satu pun kode negara,
+    // lalu diam-diam jatuh ke Indonesia. Pemanggil satu-satunya kebetulan
+    // sudah membersihkan nomornya lebih dulu — jadi cacat ini tak pernah
+    // terlihat, dan akan menunggu pemanggil kedua untuk muncul.
+    const s = String(nomor || "").replace(/\D/g, "");
     if (!s) return { iso: KODE_DEFAULT, dial: "62" };
     let best = null;
     for (const k of KODE_TELEPON) {
