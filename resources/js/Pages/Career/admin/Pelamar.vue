@@ -333,7 +333,16 @@
                     <div class="plw-drawer__headrow">
                         <div class="plw-drawer__avatar" :style="{ background: avatarBg(detailKandidat) }">{{ inisial(detailKandidat.pelamar) }}</div>
                         <div style="flex: 1; min-width: 0">
+                            <!-- Nama RESMI dari formulir. Nama akun disebut di
+                                 bawahnya HANYA bila berbeda: rekruter perlu tahu
+                                 akun mana yang akan menerima surelnya, dan
+                                 menyembunyikannya membuat "SUPRIADI MAMI PERI"
+                                 di layar ini tak bisa dicocokkan dengan
+                                 "SUPRIADI" di kotak masuk. -->
                             <div class="plw-drawer__name">{{ detailKandidat.pelamar }}</div>
+                            <div v-if="namaAkunBeda(detailKandidat)" class="plw-drawer__akun">
+                                <i class="bi bi-person-badge"></i> Nama akun: {{ detailKandidat.pelamarAkun }}
+                            </div>
                             <div class="plw-drawer__meta">{{ detailKandidat.posisi }} · <span class="plw-mono">{{ detailKandidat.lamaranKode }}</span></div>
                             <!-- Konteks lowongan & kontak: dulu admin harus menebak
                                  atau membuka layar lain untuk tahu ini. -->
@@ -601,7 +610,12 @@
                                         </div>
                                     </div>
                                 </div>
-                                <span v-if="t.nilai != null" class="plw-test__score">{{ t.nilai }}</span>
+                                <!-- ANGKANYA DISEMBUNYIKAN pada alat tes yang keputusannya milik
+                                     penilai (PAPI Kostick, DISC, Kraeplin) — sebelum maupun
+                                     sesudah diputuskan. Keluarannya profil, bukan nilai
+                                     kelulusan; yang tersisa cukup lencana statusnya.
+                                     Server yang menentukan lewat `skorBermakna`. -->
+                                <span v-if="t.nilai != null && t.skorBermakna" class="plw-test__score">{{ t.nilai }}</span>
                                 <span class="plw-test__pill" :class="pillTes(t)">{{ labelTes(t) }}</span>
                                 <!-- Tombol aksi turun ke barisnya sendiri: drawer hanya
                                      560px dan bisa memuat tiga tombol sekaligus, sehingga
@@ -675,6 +689,32 @@
                                     <i class="bi" :class="t.jadwal ? 'bi-calendar-check-fill' : 'bi-calendar-plus'"></i>
                                     {{ t.jadwal ? 'Ubah Jadwal' : 'Atur Jadwal' }}
                                 </button>
+                                <!-- KEPUTUSAN LANGSUNG — ujian online ber-peran INFORMATIF.
+                                     Kandidat sudah mengerjakan, nilainya sudah masuk dari
+                                     HCLearn; yang tersisa satu hal saja: layak atau tidak.
+                                     Karena itu dua tombol, bukan jendela berisi bidang nilai
+                                     dan catatan yang tak satu pun perlu diisi. Sekali klik
+                                     tanpa konfirmasi — ini bukan aksi final yang menutup
+                                     lamaran, dan tahapnya masih bisa dinilai ulang lewat
+                                     keputusan tahap. -->
+                                <template v-if="bisaPutusTes(t)">
+                                    <button
+                                        type="button" class="plw-test__ver is-lulus" :disabled="keputusanId === t.id"
+                                        title="Kandidat dinyatakan LULUS pada aktivitas ini"
+                                        @click="putusTes(t, 'LULUS')"
+                                    >
+                                        <i class="bi" :class="keputusanId === t.id && keputusanHasil === 'LULUS' ? 'bi-arrow-repeat plw-spin' : 'bi-check-circle-fill'"></i>
+                                        Lulus
+                                    </button>
+                                    <button
+                                        type="button" class="plw-test__ver is-gagal" :disabled="keputusanId === t.id"
+                                        title="Kandidat dinyatakan TIDAK LULUS pada aktivitas ini"
+                                        @click="putusTes(t, 'GAGAL')"
+                                    >
+                                        <i class="bi" :class="keputusanId === t.id && keputusanHasil === 'GAGAL' ? 'bi-arrow-repeat plw-spin' : 'bi-x-circle-fill'"></i>
+                                        Tidak Lulus
+                                    </button>
+                                </template>
                                 <button
                                     v-if="bisaCatat(t) && bisaCatatKehadiran(t)"
                                     type="button" class="plw-test__rec"
@@ -1311,16 +1351,22 @@
                     <!-- Lokasi DIPILIH dari Master Lokasi, bukan diketik bebas.
                          Titik petanya ikut, sehingga kandidat menerima peta yang
                          bisa dibuka — bukan alamat yang harus disalin sendiri. -->
-                    <label class="plw-fld__lbl" style="margin-top: 12px">Lokasi <b>*</b></label>
+                    <!-- DAFTARNYA DISARING MENURUT PERUNTUKAN aktivitas ini: MCU
+                         hanya menampilkan rumah sakit, wawancara hanya kantor.
+                         Labelnya pun dari master — jendela ini tidak tahu bahwa
+                         "MEDIS" berarti rumah sakit, ia cuma membaca teksnya. -->
+                    <label class="plw-fld__lbl" style="margin-top: 12px">
+                        {{ peruntukanJadwal?.nama || 'Lokasi' }} <b>*</b>
+                    </label>
                     <el-select
                         v-model="jadwalLokasiId"
                         filterable
-                        placeholder="Pilih kantor / klinik"
+                        :placeholder="peruntukanJadwal?.labelPilih || 'Pilih kantor / klinik'"
                         style="width: 100%; margin-top: 6px"
                         :loading="lokasiLoading"
                     >
                         <el-option
-                            v-for="l in daftarLokasi"
+                            v-for="l in lokasiUntukJadwal"
                             :key="l.id"
                             :value="l.id"
                             :label="l.nama + (l.kota ? ' — ' + l.kota : '')"
@@ -1330,11 +1376,51 @@
                                 <small>{{ [l.kategori, l.kota].filter(Boolean).join(' · ') || l.alamat }}</small>
                             </div>
                         </el-option>
+                        <!-- TEMPAT DADAKAN — RS yang belum terdaftar. Tanpa ini,
+                             nama RS terpaksa dititipkan di kotak patokan, dan di
+                             sana ia bukan alamat, bukan peta, dan tak terhitung. -->
+                        <el-option v-if="bolehLokasiLain" :value="LOKASI_LAIN" :label="peruntukanJadwal?.labelLainnya || 'Lainnya'">
+                            <div class="plw-lok__opt">
+                                <b>{{ peruntukanJadwal?.labelLainnya || 'Lainnya' }}</b>
+                                <small>Isi sendiri nama &amp; alamatnya</small>
+                            </div>
+                        </el-option>
                     </el-select>
 
+                    <!-- Daftar kosong disebutkan APA ADANYA. Dropdown kosong tanpa
+                         keterangan terbaca sebagai layar yang rusak, dan rekruter
+                         menutupnya alih-alih memakai "Lainnya". -->
+                    <p v-if="!lokasiLoading && !lokasiUntukJadwal.length" class="plw-note" style="margin-top: 8px">
+                        <i class="bi bi-info-circle"></i>
+                        <span>{{ peruntukanJadwal?.labelKosong || 'Belum ada lokasi terdaftar untuk aktivitas ini.' }}</span>
+                    </p>
+
+                    <!-- Isian tempat di luar daftar. Alamatnya WAJIB (dari master):
+                         undangan tanpa alamat membuat kandidat tidak tahu harus
+                         datang ke mana, dan itu baru ketahuan di hari-H. -->
+                    <template v-if="jadwalLokasiId === LOKASI_LAIN">
+                        <div class="plw-fld">
+                            <label class="plw-fld__lbl" for="jdw-lok-nama">
+                                {{ peruntukanJadwal?.labelNamaLainnya || 'Nama tempat' }} <b>*</b>
+                            </label>
+                            <input id="jdw-lok-nama" v-model="jadwalLokasiNama" type="text" class="plw-inp" placeholder="mis. RS Siti Khadijah" maxlength="200" />
+                        </div>
+                        <div class="plw-fld">
+                            <label class="plw-fld__lbl" for="jdw-lok-alamat">
+                                {{ peruntukanJadwal?.labelAlamatLainnya || 'Alamat' }}
+                                <b v-if="peruntukanJadwal?.wajibAlamatLainnya">*</b>
+                                <small v-else>opsional</small>
+                            </label>
+                            <input id="jdw-lok-alamat" v-model="jadwalLokasiAlamat" type="text" class="plw-inp" placeholder="mis. Jl. Demang Lebar Daun No. 7, Palembang" maxlength="500" />
+                        </div>
+                    </template>
+
                     <!-- Pratinjau peta: rekruter memastikan titiknya benar SEBELUM
-                         undangan terkirim, bukan setelah kandidat tersesat. -->
-                    <div v-if="lokasiTerpilih" class="plw-lok">
+                         undangan terkirim, bukan setelah kandidat tersesat.
+                         BERLAKU JUGA untuk tempat yang diketik sendiri — petanya
+                         disusun dari nama + alamatnya, jadi tidak ada undangan
+                         berperingkat dua hanya karena tempatnya belum terdaftar. -->
+                    <div v-if="lokasiTerpilih" class="plw-lok" :class="{ 'is-teks': lokasiTerpilih.lepas }">
                         <iframe
                             v-if="lokasiTerpilih.mapsEmbed"
                             :src="lokasiTerpilih.mapsEmbed"
@@ -1346,8 +1432,15 @@
                         <div class="plw-lok__info">
                             <i class="bi bi-geo-alt-fill"></i>
                             <div style="min-width: 0">
-                                <b>{{ lokasiTerpilih.nama }}</b>
+                                <b>
+                                    {{ lokasiTerpilih.nama }}
+                                    <!-- Disebut apa adanya: tempat ini tidak ada di master,
+                                         jadi petanya hasil pencarian nama + alamat — bukan
+                                         titik yang pernah diverifikasi seseorang. -->
+                                    <span v-if="lokasiTerpilih.lepas" class="plw-lok__tag">tanpa peta</span>
+                                </b>
                                 <small v-if="lokasiTerpilih.alamat">{{ lokasiTerpilih.alamat }}</small>
+                                <small v-if="lokasiTerpilih.lepas">Alamat ini dikirim apa adanya ke kandidat. Daftarkan di Master Lokasi bila tempatnya sering dipakai — di sana petanya ikut.</small>
                                 <small v-if="lokasiTerpilih.kontakTelp">Kontak: {{ lokasiTerpilih.kontakTelp }}</small>
                             </div>
                             <a v-if="lokasiTerpilih.mapsUrl" :href="lokasiTerpilih.mapsUrl" target="_blank" rel="noopener">Buka peta</a>
@@ -1993,10 +2086,34 @@
                     <input v-model="massalLink" type="url" class="plw-inp" placeholder="https://meet.google.com/..." maxlength="500" />
                 </div>
                 <template v-else>
-                    <label class="plw-fld__lbl" style="margin-top: 12px">Lokasi <b>*</b></label>
-                    <el-select v-model="massalLokasiId" filterable placeholder="Pilih kantor / klinik" style="width: 100%; margin-top: 6px" :loading="lokasiLoading">
-                        <el-option v-for="l in daftarLokasi" :key="l.id" :value="l.id" :label="l.nama + (l.kota ? ' — ' + l.kota : '')" />
+                    <!-- Disaring menurut peruntukan aktivitas yang dipilih, sama
+                         seperti jendela satuan. Tanpa ini, menjadwalkan MCU
+                         massal bisa mengirim seratus orang ke kantor sekaligus. -->
+                    <label class="plw-fld__lbl" style="margin-top: 12px">
+                        {{ peruntukanMassal?.nama || 'Lokasi' }} <b>*</b>
+                    </label>
+                    <el-select v-model="massalLokasiId" filterable :placeholder="peruntukanMassal?.labelPilih || 'Pilih kantor / klinik'" style="width: 100%; margin-top: 6px" :loading="lokasiLoading">
+                        <el-option v-for="l in lokasiUntukMassal" :key="l.id" :value="l.id" :label="l.nama + (l.kota ? ' — ' + l.kota : '')" />
+                        <el-option v-if="peruntukanMassal?.izinkanLainnya" :value="LOKASI_LAIN" :label="peruntukanMassal?.labelLainnya || 'Lainnya'" />
                     </el-select>
+                    <p v-if="!lokasiLoading && !lokasiUntukMassal.length" class="plw-note" style="margin-top: 8px">
+                        <i class="bi bi-info-circle"></i>
+                        <span>{{ peruntukanMassal?.labelKosong || 'Belum ada lokasi terdaftar untuk aktivitas ini.' }}</span>
+                    </p>
+                    <template v-if="massalLokasiId === LOKASI_LAIN">
+                        <div class="plw-fld">
+                            <label class="plw-fld__lbl">{{ peruntukanMassal?.labelNamaLainnya || 'Nama tempat' }} <b>*</b></label>
+                            <input v-model="massalLokasiNama" type="text" class="plw-inp" placeholder="mis. RS Siti Khadijah" maxlength="200" />
+                        </div>
+                        <div class="plw-fld">
+                            <label class="plw-fld__lbl">
+                                {{ peruntukanMassal?.labelAlamatLainnya || 'Alamat' }}
+                                <b v-if="peruntukanMassal?.wajibAlamatLainnya">*</b>
+                                <small v-else>opsional</small>
+                            </label>
+                            <input v-model="massalLokasiAlamat" type="text" class="plw-inp" placeholder="mis. Jl. Demang Lebar Daun No. 7, Palembang" maxlength="500" />
+                        </div>
+                    </template>
                     <div class="plw-fld">
                         <label class="plw-fld__lbl">Patokan / detail lokasi <small>opsional</small></label>
                         <input v-model="massalLokasi" type="text" class="plw-inp" placeholder="mis. Gedung B lantai 3, temui resepsionis" maxlength="300" />
@@ -2281,7 +2398,16 @@ export default {
             jadwalKontak: '',
             jadwalLokasi: '',
             jadwalLokasiId: null,
+            // Tempat di luar master (RS dadakan) — dua isian wajibnya.
+            jadwalLokasiNama: '',
+            jadwalLokasiAlamat: '',
+            // Penanda pilihan "Lainnya". Nilainya SAMA PERSIS dengan konstanta
+            // MasterLokasiController::LAINNYA di server; garis bawah membuatnya
+            // mustahil bertabrakan dengan hashid mana pun.
+            LOKASI_LAIN: '__LAINNYA__',
             daftarLokasi: [],
+            // Master peruntukan (KANTOR / MEDIS / …) berikut seluruh labelnya.
+            daftarPeruntukan: [],
             lokasiLoading: false,
             jadwalCatatan: '',
             hadirShow: false,
@@ -2335,10 +2461,17 @@ export default {
             massalLink: '',
             massalLokasi: '',
             massalLokasiId: null,
+            massalLokasiNama: '',
+            massalLokasiAlamat: '',
             massalCatatan: '',
             sibuk: false,
             // Id aktivitas yang sedang ditarik hasilnya dari HCLearn.
             sinkronId: null,
+            // Aktivitas yang sedang diputus lulus/tidak (ujian online informatif).
+            // Hasilnya ikut disimpan supaya spinner muncul di tombol YANG DITEKAN,
+            // bukan di keduanya.
+            keputusanId: null,
+            keputusanHasil: null,
             // Aktivitas yang sedang dibuka jalannya (tombol "Lanjutkan").
             lanjutId: null,
             // Konfirmasi "Tidak hadir" — aksi final, tak boleh sekali klik.
@@ -2371,6 +2504,19 @@ export default {
         // sedang dilihat siapa pun.
         statusTab() { this.terpilih = []; },
         posisiPilih() { this.terpilih = []; },
+        /**
+         * Ganti aktivitas → lokasi yang sudah dipilih DIBATALKAN.
+         *
+         * Peruntukannya bisa ikut berganti (wawancara → MCU), dan pilihan lama
+         * lalu tak lagi ada di dropdown — tetapi nilainya tetap tersimpan di
+         * v-model. Layar menampilkan kotak yang seolah kosong sementara yang
+         * terkirim adalah kantor, untuk seratus orang sekaligus.
+         */
+        massalAktivitas() {
+            this.massalLokasiId = null;
+            this.massalLokasiNama = '';
+            this.massalLokasiAlamat = '';
+        },
         keadaanPilih() { this.terpilih = []; },
         // Ganti program = papan yang sama sekali lain. Penyaring kolom milik
         // program lama tidak boleh ikut, karena kunci kolomnya bisa kebetulan
@@ -2440,17 +2586,33 @@ export default {
                 for (const t of r.tests || []) {
                     if (!t.butuhJadwal || t.selesai || t.terkunci) continue;
                     const k = t.label;
-                    if (!peta.has(k)) peta.set(k, { label: k, jumlah: 0, wajibLuring: false });
+                    if (!peta.has(k)) peta.set(k, { label: k, jumlah: 0, wajibLuring: false, lokasiPeruntukan: null });
                     const a = peta.get(k);
                     a.jumlah++;
                     a.wajibLuring = a.wajibLuring || !!t.wajibLuring;
+                    // Peruntukan lokasinya ikut dibawa — satu nama aktivitas
+                    // selalu satu tipe tahap, jadi nilainya sama untuk seluruh
+                    // kandidat yang terkumpul di baris ini.
+                    a.lokasiPeruntukan = a.lokasiPeruntukan || t.lokasiPeruntukan || null;
                 }
             }
 
             return [...peta.values()].sort((a, b) => b.jumlah - a.jumlah);
         },
-        massalWajibLuring() {
-            return !!this.aktivitasTerpilih.find((a) => a.label === this.massalAktivitas)?.wajibLuring;
+        aktivitasMassalDef() {
+            return this.aktivitasTerpilih.find((a) => a.label === this.massalAktivitas) || null;
+        },
+        massalWajibLuring() { return !!this.aktivitasMassalDef?.wajibLuring; },
+        peruntukanMassal() {
+            const kode = this.aktivitasMassalDef?.lokasiPeruntukan;
+
+            return kode ? this.daftarPeruntukan.find((p) => p.kode === kode) || null : null;
+        },
+        lokasiUntukMassal() {
+            const kode = this.aktivitasMassalDef?.lokasiPeruntukan;
+            if (!kode) return this.daftarLokasi;
+
+            return this.daftarLokasi.filter((l) => (l.peruntukan || []).includes(kode));
         },
         /** Pasangan kandidat→aktivitas untuk nama aktivitas yang dipilih. */
         sasaranMassal() {
@@ -2487,8 +2649,16 @@ export default {
         },
         bolehSimpanMassal() {
             if (!this.massalAktivitas || !this.massalMulai || !this.sasaranMassal.length) return false;
+            if (this.massalMode === 'DARING') return !!this.massalLink.trim();
+            if (!this.massalLokasiId) return false;
+            // Tempat luar-master: syaratnya sama persis dengan jendela satuan
+            // dan dengan server.
+            if (this.massalLokasiId === this.LOKASI_LAIN) {
+                if (!this.massalLokasiNama.trim()) return false;
+                if (this.peruntukanMassal?.wajibAlamatLainnya && !this.massalLokasiAlamat.trim()) return false;
+            }
 
-            return this.massalMode === 'DARING' ? !!this.massalLink.trim() : !!this.massalLokasiId;
+            return true;
         },
         /** Definisi hasil yang sedang dipilih — semua labelnya dari master. */
         putusDef() { return this.hasilKeputusan.find((h) => h.kode === this.putusHasil) || null; },
@@ -2608,7 +2778,53 @@ export default {
         },
         /** Menggugurkan menuntut centang persetujuan dulu; yang lain langsung boleh. */
         /** DARING wajib tautan, LURING wajib lokasi; keduanya wajib waktu mulai. */
+        /**
+         * Peruntukan yang berlaku untuk aktivitas yang sedang dijadwalkan.
+         *
+         * null = tipe ini tidak dibatasi (phone screen, negosiasi) — seluruh
+         * lokasi boleh, persis seperti sebelum pembagian ini ada.
+         */
+        peruntukanJadwal() {
+            const kode = this.jadwalTarget?.lokasiPeruntukan;
+
+            return kode ? this.daftarPeruntukan.find((p) => p.kode === kode) || null : null;
+        },
+        /** Lokasi yang boleh dipilih untuk aktivitas ini. */
+        lokasiUntukJadwal() {
+            const kode = this.jadwalTarget?.lokasiPeruntukan;
+            if (!kode) return this.daftarLokasi;
+
+            return this.daftarLokasi.filter((l) => (l.peruntukan || []).includes(kode));
+        },
+        bolehLokasiLain() { return !!this.peruntukanJadwal?.izinkanLainnya; },
+        /**
+         * Tempat yang sedang dipilih — dari master ATAU yang diketik sendiri.
+         *
+         * Yang diketik dibentuk MENYERUPAI baris master (termasuk peta dari nama
+         * + alamatnya), sehingga kartu pratinjau di bawahnya tidak perlu tahu
+         * bedanya dan rekruter tetap bisa memastikan titiknya sebelum undangan
+         * terkirim.
+         */
         lokasiTerpilih() {
+            if (this.jadwalLokasiId === this.LOKASI_LAIN) {
+                const nama = (this.jadwalLokasiNama || '').trim();
+                if (!nama) return null;
+
+                // TANPA PETA. Titiknya belum pernah diverifikasi siapa pun, dan
+                // peta hasil tebakan tampil sama persis seperti peta yang sudah
+                // dipastikan — rekruter lalu mengira ia sudah memeriksa
+                // tempatnya padahal belum. Yang dijanjikan ke kandidat cukup
+                // alamat yang ia ketik sendiri.
+                return {
+                    nama,
+                    alamat: (this.jadwalLokasiAlamat || '').trim() || null,
+                    kontakTelp: null,
+                    lepas: true,
+                    mapsEmbed: null,
+                    mapsUrl: null,
+                };
+            }
+
             return this.daftarLokasi.find((l) => l.id === this.jadwalLokasiId) || null;
         },
         /** Bentuk yang boleh dipilih: tipe wajib-luring hanya menerima yang luring. */
@@ -2625,7 +2841,19 @@ export default {
             const m = this.modeJadwalDef;
             if (!m) return false;
             if (m.butuhTautan) return !!this.jadwalLink.trim();
-            if (m.butuhLokasi) return !!this.jadwalLokasiId;
+            if (m.butuhLokasi) {
+                if (!this.jadwalLokasiId) return false;
+                // Tempat di luar master: nama wajib, alamat wajib bila masternya
+                // bilang begitu. Dicermin dari `periksaPeruntukanLokasi` di
+                // server — tombol yang menyala lalu ditolak 422 membuat rekruter
+                // mengira sistemnya rusak.
+                if (this.jadwalLokasiId === this.LOKASI_LAIN) {
+                    if (!(this.jadwalLokasiNama || '').trim()) return false;
+                    if (this.peruntukanJadwal?.wajibAlamatLainnya && !(this.jadwalLokasiAlamat || '').trim()) return false;
+                }
+
+                return true;
+            }
             if (m.butuhKontak) return !!this.jadwalKontak.trim();
 
             return true;
@@ -3274,6 +3502,8 @@ export default {
             if (t.infoSaja && t.status !== 'SELESAI') return 'Diunggah saat keputusan';
             // Ujian online: sebutkan yang sedang ditunggu. "Menunggu" saja bikin
             // admin mengira ada yang harus ia kerjakan, padahal giliran sistem.
+            // Nilainya sudah masuk; yang ditunggu ORANG DI KANTOR INI, bukan HCLearn.
+            if (t.butuhKeputusan) return 'Sudah dites — tunggu keputusan';
             if (t.status === 'DIJADWALKAN') return t.online ? 'Menunggu hasil HCLearn' : 'Dijadwalkan';
             if (t.status !== 'SELESAI') return t.online ? 'Belum dijadwalkan' : 'Menunggu';
             if (t.peran === 'INFORMATIF') return 'Selesai';
@@ -3290,9 +3520,26 @@ export default {
          * Tanpa gerbang ini, tim bisa melampirkan hasil MCU untuk orang yang
          * ternyata tidak datang — dan itu baru ketahuan jauh di belakang.
          */
+        /** Nama akun berbeda dari nama formulir? Perbandingan tak peka huruf besar. */
+        namaAkunBeda(r) {
+            const a = (r?.pelamarAkun || '').trim().toLowerCase();
+            const f = (r?.pelamar || '').trim().toLowerCase();
+
+            return !!a && !!f && a !== f;
+        },
         bisaCatatKehadiran(t) { return !t.butuhKehadiran; },
         bisaCatat(t) {
             return this.detailKandidat?.statusLamaran === 'BERJALAN' && !!t.dapatDicatat;
+        },
+        /**
+         * Sepasang tombol Lulus / Tidak Lulus pada ujian online INFORMATIF.
+         *
+         * Server yang menentukan (`dapatPutusTes` di rapotTes): ujian sudah
+         * dikerjakan, nilainya sudah masuk, dan perannya memang menyerahkan
+         * verdict ke penilai.
+         */
+        bisaPutusTes(t) {
+            return this.detailKandidat?.statusLamaran === 'BERJALAN' && !!t.dapatPutusTes;
         },
         /**
          * "Tidak hadir" sebagai ESCAPE HATCH — untuk aktivitas yang tidak punya
@@ -3543,6 +3790,8 @@ export default {
             this.massalLink = '';
             this.massalLokasi = '';
             this.massalLokasiId = null;
+            this.massalLokasiNama = '';
+            this.massalLokasiAlamat = '';
             this.massalCatatan = '';
             this.massalShow = true;
         },
@@ -3562,6 +3811,8 @@ export default {
                     link: this.massalMode === 'DARING' ? this.massalLink : null,
                     lokasiId: this.massalMode === 'LURING' ? this.massalLokasiId : null,
                     lokasi: this.massalMode === 'LURING' ? (this.massalLokasi || null) : null,
+                    lokasiNama: this.massalLokasiId === this.LOKASI_LAIN ? (this.massalLokasiNama.trim() || null) : null,
+                    lokasiAlamat: this.massalLokasiId === this.LOKASI_LAIN ? (this.massalLokasiAlamat.trim() || null) : null,
                     catatan: this.massalCatatan || null,
                 }, CFG);
 
@@ -3585,13 +3836,24 @@ export default {
             }
         },
 
-        /** Daftar lokasi aktif dari Master Lokasi — dimuat sekali per sesi. */
+        /**
+         * Master Lokasi + master peruntukannya — dimuat sekali per sesi.
+         *
+         * Keduanya sekaligus: daftar lokasi tanpa peruntukan tidak bisa disaring,
+         * dan menyaring dengan daftar yang belum sampai berarti dropdown MCU
+         * tampak kosong selama sekejap — cukup lama untuk membuat rekruter
+         * mengira memang tak ada rumah sakit terdaftar.
+         */
         async muatLokasi() {
             if (this.daftarLokasi.length || this.lokasiLoading) return;
             this.lokasiLoading = true;
             try {
-                const res = await axios.get('/api/v1/master-lokasi', { ...CFG, params: { aktif: 1 } });
-                this.daftarLokasi = res.data.result || [];
+                const [lok, per] = await Promise.all([
+                    axios.get('/api/v1/master-lokasi', { ...CFG, params: { aktif: 1 } }),
+                    axios.get('/api/v1/master-lokasi/peruntukan', CFG),
+                ]);
+                this.daftarLokasi = lok.data.result || [];
+                this.daftarPeruntukan = per.data.result || [];
             } catch (e) {
                 this.notice('Daftar lokasi gagal dimuat.', true);
             } finally {
@@ -3693,8 +3955,21 @@ export default {
             // pernah ia pilih, dan surelnya sudah telanjur terkirim. Memilih
             // tempat harus tindakan sadar.
             this.jadwalLokasiId = j.lokasiId || null;
+            this.jadwalLokasiNama = j.lokasiNama || '';
+            this.jadwalLokasiAlamat = j.lokasiAlamat || '';
             this.jadwalCatatan = j.catatan || '';
             this.jadwalShow = true;
+        },
+        /** Nama & alamat tempat luar-master — hanya saat "Lainnya" dipilih. */
+        isianLokasiLain() {
+            if (!this.modeJadwalDef?.butuhLokasi || this.jadwalLokasiId !== this.LOKASI_LAIN) {
+                return { lokasiNama: null, lokasiAlamat: null };
+            }
+
+            return {
+                lokasiNama: (this.jadwalLokasiNama || '').trim() || null,
+                lokasiAlamat: (this.jadwalLokasiAlamat || '').trim() || null,
+            };
         },
         async konfirmJadwal() {
             if (this.sibuk || !this.jadwalTarget) return;
@@ -3709,6 +3984,10 @@ export default {
                     link: this.modeJadwalDef?.butuhTautan ? this.jadwalLink : null,
                     lokasiId: this.modeJadwalDef?.butuhLokasi ? this.jadwalLokasiId : null,
                     lokasi: this.modeJadwalDef?.butuhLokasi ? (this.jadwalLokasi || null) : null,
+                    // Hanya ikut saat "Lainnya" — kalau selalu dikirim, sisa
+                    // ketikan dari percobaan sebelumnya tersimpan sebagai tempat
+                    // kedua pada jadwal yang lokasinya sudah dipilih dari master.
+                    ...this.isianLokasiLain(),
                     kontak: this.modeJadwalDef?.butuhKontak ? this.jadwalKontak.trim() : null,
                     catatan: this.jadwalCatatan || null,
                 }, CFG);
@@ -3771,6 +4050,36 @@ export default {
                 this.notice(e.response?.data?.message || 'Gagal membuka aktivitas berikutnya.', true);
             } finally {
                 this.lanjutId = null;
+            }
+        },
+        /**
+         * Nyatakan lulus / tidak lulus pada ujian online ber-peran INFORMATIF.
+         *
+         * LANGSUNG, tanpa jendela konfirmasi. Alat tes seperti PAPI Kostick dan
+         * DISC tidak berbunyi lulus/gagal sendiri, jadi keputusannya memang milik
+         * penilai — dan ia sudah membaca hasilnya sebelum menekan. Menyisipkan
+         * dialog "yakin?" di sini hanya menambah satu klik pada pekerjaan yang
+         * dilakukan berpuluh kali sehari, sementara yang dipertaruhkan bukan
+         * aksi final: lamaran baru berhenti pada keputusan TAHAP, yang tetap
+         * punya konfirmasinya sendiri.
+         *
+         * Nilai dan catatan TIDAK dikirim. Angkanya milik HCLearn dan server
+         * mempertahankan catatan lama bila field-nya absen — mengirim keduanya
+         * kosong berarti menghapus apa yang sudah ditulis.
+         */
+        async putusTes(t, hasil) {
+            if (this.keputusanId) return;
+            this.keputusanId = t.id;
+            this.keputusanHasil = hasil;
+            try {
+                const res = await axios.patch(`/api/v1/karir/lamaran/sub-tes/${t.id}/catat-hasil`, { hasil }, CFG);
+                this.notice(res.data?.message || (hasil === 'LULUS' ? 'Dinyatakan lulus.' : 'Dinyatakan tidak lulus.'));
+                await this.muatDetail(this.selectedId);
+            } catch (e) {
+                this.notice(e.response?.data?.message || 'Gagal menyimpan keputusan.', true);
+            } finally {
+                this.keputusanId = null;
+                this.keputusanHasil = null;
             }
         },
         async sinkronHasil(t) {
@@ -4113,6 +4422,7 @@ export default {
 .plw-drawer__avatar { width: 52px; height: 52px; border-radius: 15px; color: #fff; font-size: 17px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex: 0 0 auto; box-shadow: 0 10px 24px rgba(99, 102, 241, 0.28); }
 .plw-drawer__name { font-size: 19px; font-weight: 800; color: #0f172a; letter-spacing: -0.015em; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .plw-drawer__meta { font-size: 12.5px; color: #7c869a; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.plw-drawer__akun { display: inline-flex; align-items: center; gap: 5px; margin-top: 3px; font-size: 11px; font-weight: 600; color: #64748b; background: #f1f5f9; border-radius: 7px; padding: 2px 8px; }
 .plw-drawer__chips { display: flex; flex-wrap: wrap; gap: 5px 10px; margin-top: 7px; font-size: 11px; color: #94a3b8; }
 .plw-drawer__chips span, .plw-drawer__chips a { display: inline-flex; align-items: center; gap: 4px; }
 .plw-drawer__chips .is-mpp { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; color: #64748b; background: #f1f5f9; padding: 1px 6px; border-radius: 4px; }
@@ -4187,6 +4497,17 @@ export default {
 .plw-test__pill.is-absent { background: rgba(148, 163, 184, .18); color: #475569; }
 .plw-test__skip { flex: none; display: inline-flex; align-items: center; gap: 5px; border: 1px solid #fca5a5; background: #fff; color: #b91c1c; font-size: 11px; font-weight: 700; border-radius: 9px; padding: 5px 9px; cursor: pointer; transition: background .15s; }
 .plw-test__skip:hover { background: #fef2f2; }
+/* Keputusan lulus/tidak lulus — dua tombol yang saling berlawanan, jadi
+   keduanya BERISI warna (bukan garis tepi seperti tombol lain di baris ini):
+   pada aktivitas yang menunggu keputusan, inilah satu-satunya yang harus
+   ditekan, dan sepasang tombol pucat di antara tombol pucat lain membuatnya
+   luput terbaca. */
+.plw-test__ver { flex: none; display: inline-flex; align-items: center; gap: 5px; border: 1px solid transparent; font-size: 11px; font-weight: 700; border-radius: 9px; padding: 5px 10px; cursor: pointer; transition: filter .15s; }
+.plw-test__ver:hover:not(:disabled) { filter: brightness(.94); }
+.plw-test__ver:disabled { opacity: .6; cursor: default; }
+.plw-test__ver.is-lulus { background: #059669; color: #fff; }
+.plw-test__ver.is-gagal { background: #fff; border-color: #fca5a5; color: #b91c1c; }
+.plw-test__ver.is-gagal:hover:not(:disabled) { background: #fef2f2; filter: none; }
 .plw-test__sync { flex: none; display: inline-flex; align-items: center; gap: 5px; border: 1px solid #a5b4fc; background: #fff; color: #4338ca; font-size: 11px; font-weight: 700; border-radius: 9px; padding: 5px 9px; cursor: pointer; transition: background .15s; }
 .plw-test__sync:hover:not(:disabled) { background: #eef0fe; }
 .plw-test__sync:disabled { opacity: .6; cursor: default; }
@@ -4415,6 +4736,10 @@ export default {
 .plw-jdw :deep(.el-input__inner::placeholder),
 .plw-jdw :deep(.el-select__placeholder.is-transparent) { color: #a8b0c0; }
 .plw-lok__opt { display: flex; flex-direction: column; line-height: 1.35; padding: 2px 0; }
+/* Tempat yang diketik sendiri: petanya hasil pencarian nama + alamat, bukan
+   titik yang pernah diverifikasi. Disebut supaya tidak terbaca setara dengan
+   lokasi master yang koordinatnya sudah dipastikan. */
+.plw-lok__tag { display: inline-block; margin-left: 6px; font-size: 10px; font-weight: 700; border-radius: 999px; padding: 1px 7px; background: #fef3c7; color: #92400e; vertical-align: middle; }
 .plw-lok__opt b { font-size: 13px; font-weight: 700; color: #1e293b; }
 .plw-lok__opt small { font-size: 11px; color: #94a3b8; }
 .plw-lok { margin-top: 8px; border: 1px solid #e6e8f2; border-radius: 12px; overflow: hidden; background: #fff; }

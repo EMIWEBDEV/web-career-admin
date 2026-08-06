@@ -38,21 +38,106 @@ class MasterExperienceLevelController extends Controller
         );
     }
 
-    /** Data list Master Experience Level + nama pembuat/pengubah + jumlah pemakaian di MPP. */
-    public function list()
+    /**
+     * Query dasar + filter (q / status). Dipakai bersama oleh baris, penghitung
+     * total, DAN penghitung cacah facet.
+     *
+     * $abaikan memungkinkan satu penyaring dilewati — itulah cara cacah facet
+     * dihitung: cacah status dihitung dengan mengabaikan filter status. Tanpa
+     * itu, angka pada tab selalu sama dengan jumlah baris yang sedang tampil
+     * dan tidak memberi tahu apa pun.
+     */
+    private function dasarFilter(Request $request, array $abaikan = [])
+    {
+        $base = DB::table(self::TABEL . ' as x');
+
+        $q = trim((string) $request->query('q', ''));
+        if ($q !== '' && ! in_array('q', $abaikan, true)) {
+            $base->where(function ($w) use ($q) {
+                $w->where('x.Nama_Experience_Level', 'like', "%{$q}%")
+                    ->orWhere('x.Keterangan', 'like', "%{$q}%");
+            });
+        }
+
+        $status = strtoupper(trim((string) $request->query('status', '')));
+        if (! in_array('status', $abaikan, true)) {
+            if ($status === 'AKTIF') {
+                $base->where('x.Flag_Aktif', 'Y');
+            } elseif ($status === 'NONAKTIF') {
+                $base->where('x.Flag_Aktif', '!=', 'Y');
+            }
+        }
+
+        return $base;
+    }
+
+    /**
+     * Angka untuk kartu statistik & cacah facet. Dihitung di server karena klien
+     * cuma memegang satu halaman — menjumlahkan baris yang tampil akan salah.
+     */
+    private function ringkasan(Request $request): array
+    {
+        $statusBase = $this->dasarFilter($request, ['status']);
+        $facetSemua = (clone $statusBase)->count();
+        $facetAktif = (clone $statusBase)->where('x.Flag_Aktif', 'Y')->count();
+
+        $total = (int) DB::table(self::TABEL)->count();
+        $aktif = (int) DB::table(self::TABEL)->where('Flag_Aktif', 'Y')->count();
+
+        return [
+            'total' => $total,
+            'aktif' => $aktif,
+            'nonaktif' => $total - $aktif,
+            'dipakai' => (int) DB::table('N_WEB_CAREERS_Detail_MPP')
+                ->whereIn('Experience_Level', DB::table(self::TABEL)->select('Id_Experience_Level'))
+                ->count(),
+            'status' => [
+                'semua' => $facetSemua,
+                'aktif' => $facetAktif,
+                'nonaktif' => $facetSemua - $facetAktif,
+            ],
+        ];
+    }
+
+    /**
+     * Data list Master Experience Level + nama pembuat/pengubah + jumlah pemakaian di MPP.
+     * PAGINASI + FILTER + URUT dikerjakan server (pola Master Kampus).
+     */
+    public function list(Request $request)
     {
         try {
-            $rows = DB::table(self::TABEL . ' as x')
+            $perPage = min(max((int) $request->query('perPage', 25), 5), 100);
+            $page = max((int) $request->query('page', 1), 1);
+            $sortBy = (string) $request->query('sortBy', 'urutan');
+            $sortDir = strtolower((string) $request->query('sortDir', 'asc')) === 'desc' ? 'desc' : 'asc';
+
+            $base = $this->dasarFilter($request);
+            $total = (clone $base)->count();
+
+            $rows = (clone $base)
                 ->leftJoin('N_WEB_CAREERS_Users as u', 'u.Id_Users', '=', 'x.Created_By')
                 ->leftJoin('N_WEB_CAREERS_Users as ux', 'ux.Id_Users', '=', 'x.Updated_By')
                 ->leftJoinSub($this->pemakaian(), 'p', 'p.Experience_Level', '=', 'x.Id_Experience_Level')
-                ->orderBy('x.Id_Experience_Level')
                 ->select(
                     'x.*',
                     'u.Nama as Pembuat',
                     'ux.Nama as Pengubah',
                     DB::raw('ISNULL(p.Jumlah, 0) as Dipakai')
-                )
+                );
+
+            // Id jadi pemecah seri di semua mode: data ini BERJENJANG (fresh graduate
+            // → senior), dan Id menyimpan jenjang itu. Tanpa pemecah seri, nilai
+            // Dipakai yang banyak bernilai 0 membuat urutan antarhalaman tidak
+            // stabil dan satu baris bisa terlihat di dua halaman.
+            if ($sortBy === 'dipakai') {
+                $rows->orderBy('Dipakai', $sortDir)->orderBy('x.Id_Experience_Level');
+            } elseif ($sortBy === 'nama') {
+                $rows->orderBy('x.Nama_Experience_Level', $sortDir)->orderBy('x.Id_Experience_Level');
+            } else {
+                $rows->orderBy('x.Id_Experience_Level', $sortDir);
+            }
+
+            $rows = $rows->forPage($page, $perPage)
                 ->get()
                 ->map(function ($r) {
                     return [
@@ -69,7 +154,13 @@ class MasterExperienceLevelController extends Controller
                 })
                 ->values();
 
-            return ResponseHelper::success($rows, 'Data experience level dimuat');
+            return ResponseHelper::success([
+                'rows' => $rows,
+                'total' => $total,
+                'page' => $page,
+                'perPage' => $perPage,
+                'ringkasan' => $this->ringkasan($request),
+            ], 'Data experience level dimuat');
         } catch (\Throwable $e) {
             Log::channel('web_career')->error('Gagal memuat experience level: ' . $e->getMessage());
 

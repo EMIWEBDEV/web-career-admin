@@ -57,6 +57,19 @@ class WcPenjadwalanJob implements ShouldQueue
         private string $idMasterUjian,
         private string $waktuMulai,
         private string $waktuAkhir,
+        /**
+         * Admin yang meminta penjadwalan ini.
+         *
+         * Job berjalan tanpa sesi, sementara HCLearn menuntut identitas ORANG
+         * untuk menentukan ujian mana yang boleh dijadwalkan. Tanpa ini,
+         * penjadwalan selalu ditolak "Akun Anda belum ditautkan" — bahkan untuk
+         * akun yang sudah ditautkan.
+         *
+         * Yang dibawa ID-nya, bukan kuncinya: kunci tidak ikut mengendap di
+         * tabel antrean, dan pencabutan tautan langsung berlaku bahkan untuk
+         * job yang sudah telanjur mengantre.
+         */
+        private ?int $dimintaOlehId = null,
     ) {
         $this->aturAntrean(self::QUEUE);
     }
@@ -161,7 +174,7 @@ class WcPenjadwalanJob implements ShouldQueue
         $program = DB::table('N_WEB_CAREERS_Program')
             ->where('Id_Program', $penjadwalan->Program_Id)->first();
 
-        $hasil = $hcl->post('penjadwalan', [
+        $hasil = $hcl->sebagaiPengguna($this->dimintaOlehId)->post('penjadwalan', [
             'Kode_WC_Penjadwalan' => $penjadwalan->Kode,
             'Nama_Penjadwalan' => $penjadwalan->Nama,
             'Id_WC_Penjadwalan' => $this->penjadwalanId,
