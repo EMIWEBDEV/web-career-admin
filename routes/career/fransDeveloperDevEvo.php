@@ -47,3 +47,4 @@ require base_path('routes/career/MasterMasaTalentPool/MasterMasaTalentPoolWeb.ph
 require base_path('routes/career/MasterHero/MasterHeroWeb.php');
 require base_path('routes/career/MasterEmployment/MasterEmploymentWeb.php');
 require base_path('routes/career/MasterExperienceLevel/MasterExperienceLevelWeb.php');
+require base_path('routes/career/MasterMpp/MasterMppWeb.php');

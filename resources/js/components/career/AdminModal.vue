@@ -44,7 +44,7 @@
                                 <button class="wca-btn wca-btn--ghost" type="button" :disabled="busy" @click="tutup">
                                     <i class="bi bi-x-lg"></i> {{ cancelLabel }}
                                 </button>
-                                <button class="wca-btn wca-btn--dark" type="button" :disabled="busy" @click="$emit('save')">
+                                <button class="wca-btn wca-btn--dark" type="button" :disabled="busy || saveDisabled" @click="$emit('save')">
                                     <span v-if="busy" class="wca-spin" aria-hidden="true"></span>
                                     <i v-else class="bi bi-save"></i>
                                     {{ busy ? busyLabel : saveLabel }}
@@ -69,6 +69,7 @@ const props = defineProps({
     lg: { type: Boolean, default: false },
     xl: { type: Boolean, default: false },
     saveLabel: { type: String, default: 'Simpan Data' },
+    saveDisabled: { type: Boolean, default: false },
     cancelLabel: { type: String, default: 'Batal' },
     footNote: { type: String, default: 'Periksa kembali data sebelum disimpan.' },
     /* Proses simpan sedang berjalan: tombol dikunci + spinner, modal tak bisa

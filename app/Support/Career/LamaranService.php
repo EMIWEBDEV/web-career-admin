@@ -60,6 +60,21 @@ class LamaranService
         $jawaban = self::jawabanGabungan($lamaranId);
         $ambil = fn (string $kode) => self::dariKunci($jawaban, $kode);
 
+        // ── DUA CABANG MENEMUKAN BUG YANG SAMA ──────────────────────────────
+        //
+        // fix/formulir-mt-rekrutmen memperbaikinya dengan menambah ejaan baru
+        // langsung di sini (`tanggal_lahir`, `nama_kampus`, `nama_institusi`).
+        // Bentuk di bawah ini menyelesaikan hal yang sama lewat master
+        // N_WEB_CAREERS_Master_Kunci_Identitas — dan KETIGA kunci itu sudah
+        // terdaftar di sana, jadi tidak ada perilaku cabang itu yang hilang:
+        //
+        //     TGL_LAHIR : tanggal_lahir, lahir, tgl_lahir
+        //     KAMPUS    : nama_kampus, nama_institusi, kampus, perguruan_tinggi
+        //
+        // SATU HAL SENGAJA TIDAK DIBAWA: `institusi` sebagai cadangan kampus.
+        // Di data ia berisi JENIS institusi ("Universitas", "SMK"), bukan
+        // namanya — sehingga laporan berbunyi "Institusi: Universitas". Terbaca
+        // benar sekilas, padahal sama sekali bukan jawaban kandidatnya.
         return [
             'tglLahir' => $ambil('TGL_LAHIR'),
             'jkel' => $ambil('JKEL'),

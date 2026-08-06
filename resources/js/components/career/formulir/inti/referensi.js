@@ -26,6 +26,35 @@ const SINGGAHAN_MAKS = 40;
 /** Permintaan yang sedang berjalan per field, supaya bisa dibatalkan. */
 const berjalan = new Map();
 
+/**
+ * Bendera negara per nilai yang pernah termuat (nama kampus -> kode negara).
+ *
+ * Yang tersimpan di jawaban hanya NAMA kampusnya, tanpa negara. Layout bertahap
+ * melepas komponen langkah yang tidak sedang dibuka, jadi tiap kali kandidat
+ * menekan Kembali lalu maju lagi, daftar opsinya kosong dan benderanya lenyap
+ * dari kolom yang sudah terisi — terlihat seperti pilihannya ikut hilang.
+ * Ingatan kecil ini membuatnya bertahan tanpa permintaan ulang ke server.
+ */
+const benderaNilai = new Map();
+const BENDERA_MAKS = 500;
+
+function ingatBendera(daftar) {
+    for (const o of daftar) {
+        if (! o?.nilai || ! o.bendera) {
+            continue;
+        }
+        if (benderaNilai.size >= BENDERA_MAKS) {
+            benderaNilai.delete(benderaNilai.keys().next().value);
+        }
+        benderaNilai.set(o.nilai, o.bendera);
+    }
+}
+
+/** Bendera yang pernah terlihat untuk sebuah nilai, atau null. */
+export function benderaDiingat(nilai) {
+    return nilai ? benderaNilai.get(nilai) || null : null;
+}
+
 function kunci(sumber, param) {
     const q = Object.entries(param)
         .filter(([, v]) => v !== '' && v !== null && v !== undefined)
@@ -57,6 +86,7 @@ export async function ambilOpsi(sumber, param = {}, token = sumber) {
     try {
         const { data } = await axios.get(url, { signal: kendali.signal });
         const hasil = Array.isArray(data?.result) ? data.result : [];
+        ingatBendera(hasil);
         if (bolehSinggah) {
             if (singgahan.size >= SINGGAHAN_MAKS) singgahan.delete(singgahan.keys().next().value);
             singgahan.set(url, hasil);
