@@ -200,11 +200,13 @@ defineProps({
 defineEmits(['close-notice']);
 
 const tahun = new Date().getFullYear();
-// Urutan resmi: ENB → GMN → EMI.
+// Urutan resmi: ER → ECT → ENB → GMN → EMI.
 const subsidiaries = [
     { src: '/logo/ENB.png', alt: 'PT EVO Nusa Bersaudara' },
     { src: '/logo/GMN.png', alt: 'PT Graha Maju Nusantara' },
     { src: '/logo/EMI.png', alt: 'PT EVO Manufacturing Indonesia' },
+    { src: '/logo/ER.webp', alt: 'ER' },
+    { src: '/logo/ECT.webp', alt: 'ECT' },
 ];
 </script>
 
@@ -446,13 +448,18 @@ const subsidiaries = [
 .authx .subs .lbl { font-size: 12px; font-weight: 700; letter-spacing: 0.18em; color: #94a3b8; text-transform: uppercase; }
 .authx .subs .logos { display: flex; align-items: center; gap: clamp(16px, 2.5vw, 32px); flex-wrap: wrap; }
 /* Logo anak perusahaan: kinclong (warna penuh) + sheen sweep seperti tombol. */
-.authx .logo-wrap { position: relative; overflow: hidden; display: inline-flex; align-items: center; border-radius: 10px; padding: 4px 6px; transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.authx .logo-wrap { position: relative; overflow: hidden; display: inline-flex; align-items: center; justify-content: center; height: 34px; border-radius: 10px; padding: 4px 6px; transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); }
 .authx .logo-wrap::after { content: ''; position: absolute; top: 0; left: 0; width: 55%; height: 100%; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.9), transparent); transform: translateX(-190%) skewX(-18deg); animation: authSheen 5s ease-in-out infinite; pointer-events: none; }
+.authx .logo-wrap--3 img { width: 100px !important; }
+.authx .logo-wrap--5 img { width: 83px !important; }
+.authx .logo-wrap--4 img { width: 130px !important; }
 .authx .logo-wrap--1::after { animation-delay: 0.4s; }
 .authx .logo-wrap--2::after { animation-delay: 1.9s; }
 .authx .logo-wrap--3::after { animation-delay: 3.4s; }
+.authx .logo-wrap--4::after { animation-delay: 4.9s; }
+.authx .logo-wrap--5::after { animation-delay: 6.4s; }
 .authx .logo-wrap:hover { transform: scale(1.08) translateY(-2px); }
-.authx .subs .logos img { position: relative; z-index: 1; height: 30px; filter: none; opacity: 1; }
+.authx .subs .logos img { position: relative; z-index: 1; height: auto; max-height: 30px; width: 80px; filter: none; opacity: 1; object-fit: contain; }
 .authx .subs .logos .dv { width: 1px; height: 26px; background: #e2e8f0; }
 
 /* TOAST */
