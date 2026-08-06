@@ -742,7 +742,12 @@ import ConfirmModal from '@career/ConfirmModal.vue';
 import AuditStamp from '@career/AuditStamp.vue';
 import RefSelect from '@career/RefSelect.vue';
 import { skemaDariFormulir, semuaField } from '@career/formulir';
-import { titleCase } from '../monitoring-mpp/mppHelpers';
+
+// Salinan lokal (dulu impor dari folder monitoring-mpp yang sudah dihapus —
+// fitur itu digabung ke master-mpp, folder ini tetap butuh helper kecilnya).
+function titleCase(s) {
+    return (s || '').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+}
 
 const API = '/api/v1/program-kegiatan';
 const CFG = { headers: { Accept: 'application/json' } };
