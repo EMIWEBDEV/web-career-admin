@@ -1,27 +1,30 @@
-<!-- WEB CAREER — Master Employment (jenis ikatan kerja). Data via web route + ResponseHelper (axios). -->
+<!-- WEB CAREER — Master Workplace (tipe LOKASI kerja). Data via web route + ResponseHelper (axios).
+     Bentuk halaman sengaja dibuat kembar dengan Master Experience Level: dua-duanya
+     master pendamping Detail_MPP dengan skema yang sama persis, jadi admin tidak
+     perlu belajar dua tata letak untuk pekerjaan yang sama. -->
 <template>
-    <Head><title>Master Employment - Web Career</title></Head>
+    <Head><title>Master Workplace - Web Career</title></Head>
     <div class="wca">
         <div class="wca-phead">
             <div>
-                <h1>Master Employment</h1>
-                <p>Jenis ikatan kerja (Full-time, Kontrak/PKWT, Magang, …). Dipakai sebagai pilihan <b>Employment Type</b> saat menyusun MPP &amp; lowongan. Hanya jenis <b>Aktif</b> yang muncul di pilihan baru.</p>
+                <h1>Master Workplace</h1>
+                <p>Tipe lokasi kerja (On-site/WFO, Hybrid, Remote/WFH, …). Dipakai sebagai pilihan <b>Workplace Type</b> saat menyusun MPP &amp; lowongan. Hanya tipe <b>Aktif</b> yang muncul di pilihan baru.</p>
             </div>
             <div class="wca-phead__actions">
-                <button class="wca-btn wca-btn--primary" @click="openCreate"><i class="bi bi-plus-lg"></i> Jenis Employment Baru</button>
+                <button class="wca-btn wca-btn--primary" @click="openCreate"><i class="bi bi-plus-lg"></i> Tipe Baru</button>
             </div>
         </div>
 
         <div class="wca-note wca-note--info">
             <i class="bi bi-info-circle"></i>
-            <span>Jenis yang sudah dipakai MPP <b>tidak bisa dihapus</b> — nonaktifkan saja supaya data lama tetap utuh dan jenis ini berhenti muncul sebagai pilihan baru.</span>
+            <span>Tipe yang sudah dipakai lowongan <b>tidak bisa dihapus</b> — nonaktifkan saja supaya data lama tetap utuh dan tipe ini berhenti muncul sebagai pilihan baru.</span>
         </div>
 
         <div class="wca-stats">
             <div class="wca-stat">
-                <div class="wca-stat__top"><span class="wca-stat__ico"><i class="bi bi-briefcase"></i></span></div>
+                <div class="wca-stat__top"><span class="wca-stat__ico"><i class="bi bi-geo-alt"></i></span></div>
                 <div class="wca-stat__num">{{ ringkasan.total }}</div>
-                <div class="wca-stat__label">Total Jenis</div>
+                <div class="wca-stat__label">Total Tipe</div>
             </div>
             <div class="wca-stat">
                 <div class="wca-stat__top"><span class="wca-stat__ico" style="background: rgba(16, 185, 129, 0.12); color: #059669"><i class="bi bi-check-circle"></i></span></div>
@@ -45,10 +48,10 @@
                 <i class="bi bi-search"></i>
                 <input
                     v-model="filters.q" type="text" placeholder="Cari nama / keterangan…"
-                    aria-label="Cari jenis employment" @input="cariTertunda" @keyup.enter="reload" @keyup.esc="bersihkanCari"
+                    aria-label="Cari tipe lokasi kerja" @input="cariTertunda" @keyup.enter="reload" @keyup.esc="bersihkanCari"
                 />
                 <!-- Tombol bersihkan: tersembunyi sampai ada isian, jadi tidak menambah beban visual toolbar. -->
-                <button v-if="filters.q" class="emp-clear" type="button" title="Bersihkan pencarian" @click="bersihkanCari">
+                <button v-if="filters.q" class="mw-clear" type="button" title="Bersihkan pencarian" @click="bersihkanCari">
                     <i class="bi bi-x-lg"></i>
                 </button>
             </div>
@@ -69,62 +72,62 @@
                     <table class="wca-table">
                         <thead>
                             <tr>
-                                <th>
-                                    <button class="emp-sort" :class="{ on: sortBy === 'nama' }" @click="setSort('nama')">
-                                        Jenis Employment <i class="bi" :class="sortIcon('nama')"></i>
-                                    </button>
-                                </th>
+                                <th style="width: 60px">Urutan</th>
+                                <th>Tipe Lokasi Kerja</th>
                                 <th>Keterangan</th>
-                                <th style="width: 130px">
-                                    <button class="emp-sort" :class="{ on: sortBy === 'dipakai' }" @click="setSort('dipakai')">
+                                <th style="width: 150px">
+                                    <button class="mw-sort" :class="{ on: sortBy === 'dipakai' }" @click="setSort('dipakai')">
                                         Dipakai <i class="bi" :class="sortIcon('dipakai')"></i>
                                     </button>
                                 </th>
-                                <th class="emp-hide-sm" style="width: 190px">Dibuat</th>
+                                <th class="mw-hide-sm" style="width: 190px">Dibuat</th>
                                 <th style="width: 150px">Status</th>
                                 <th style="width: 90px"></th>
                             </tr>
                         </thead>
                         <tbody>
-                            <tr v-for="e in list" :key="e.id" :class="{ 'is-off': e.status !== 'AKTIF' }">
+                            <tr v-for="(w, i) in list" :key="w.id" :class="{ 'is-off': w.status !== 'AKTIF' }">
+                                <!-- Nomor berjalan lintas halaman — indeks dalam halaman
+                                     saja akan mengulang 1,2,3 di tiap halaman. -->
+                                <td><span class="wca-badge wca-b--slate">{{ (page - 1) * perPage + i + 1 }}</span></td>
                                 <td>
-                                    <div class="emp-name">
-                                        <span class="emp-ico"><i class="bi" :class="ikon(e.nama)"></i></span>
-                                        <strong>{{ e.nama }}</strong>
+                                    <div class="mw-name">
+                                        <span class="mw-ico"><i class="bi" :class="ikon(w.nama)"></i></span>
+                                        <strong>{{ w.nama }}</strong>
                                     </div>
                                 </td>
-                                <td><span class="emp-desc">{{ e.keterangan || '—' }}</span></td>
+                                <td><span class="mw-desc">{{ w.keterangan || '—' }}</span></td>
                                 <td>
-                                    <span v-if="e.dipakai" class="wca-badge wca-b--indigo" :title="`Dipakai ${e.dipakai} data MPP`">{{ e.dipakai }} MPP</span>
-                                    <span v-else class="emp-muted">—</span>
+                                    <span v-if="w.dipakai" class="wca-badge wca-b--indigo" :title="`Dipakai ${w.dipakai} lowongan`">{{ w.dipakai }} lowongan</span>
+                                    <span v-else class="mw-muted">—</span>
                                 </td>
-                                <td class="emp-hide-sm"><AuditStamp :at="e.createdAt" :by="e.createdBy || 'SISTEM'" /></td>
+                                <td class="mw-hide-sm"><AuditStamp :at="w.createdAt" :by="w.createdBy || 'SISTEM'" /></td>
                                 <td>
-                                    <div class="emp-status">
-                                        <el-switch :model-value="e.status === 'AKTIF'" @change="(v) => setStatus(e, v)" />
-                                        <span class="emp-status__lbl" :class="e.status === 'AKTIF' ? 'is-on' : 'is-off'">{{ e.status === 'AKTIF' ? 'Aktif' : 'Nonaktif' }}</span>
+                                    <div class="mw-status">
+                                        <el-switch :model-value="w.status === 'AKTIF'" @change="(v) => setStatus(w, v)" />
+                                        <span class="mw-status__lbl" :class="w.status === 'AKTIF' ? 'is-on' : 'is-off'">{{ w.status === 'AKTIF' ? 'Aktif' : 'Nonaktif' }}</span>
                                     </div>
                                 </td>
                                 <td>
-                                    <div class="emp-actions">
-                                        <button class="wca-iconbtn" title="Ubah" @click="openEdit(e)"><i class="bi bi-pencil"></i></button>
+                                    <div class="mw-actions">
+                                        <button class="wca-iconbtn" title="Ubah" @click="openEdit(w)"><i class="bi bi-pencil"></i></button>
                                         <button
                                             class="wca-iconbtn wca-iconbtn--danger"
-                                            :disabled="!!e.dipakai"
-                                            :title="e.dipakai ? `Tidak bisa dihapus — dipakai ${e.dipakai} data MPP` : 'Hapus'"
-                                            @click="askRemove(e)"
+                                            :disabled="!!w.dipakai"
+                                            :title="w.dipakai ? `Tidak bisa dihapus — dipakai ${w.dipakai} lowongan` : 'Hapus'"
+                                            @click="askRemove(w)"
                                         >
-                                            <i class="bi" :class="e.dipakai ? 'bi-lock' : 'bi-trash'"></i>
+                                            <i class="bi" :class="w.dipakai ? 'bi-lock' : 'bi-trash'"></i>
                                         </button>
                                     </div>
                                 </td>
                             </tr>
                             <tr v-if="!loading && !list.length">
-                                <td colspan="6">
+                                <td colspan="7">
                                     <div class="wca-empty">
-                                        <i class="bi" :class="adaFilter ? 'bi-funnel' : 'bi-briefcase'"></i>
-                                        <h4>{{ adaFilter ? 'Tidak ada jenis employment cocok' : 'Belum ada jenis employment' }}</h4>
-                                        <button v-if="adaFilter" class="wca-btn wca-btn--ghost emp-empty__btn" type="button" @click="resetFilter">
+                                        <i class="bi" :class="adaFilter ? 'bi-funnel' : 'bi-geo-alt'"></i>
+                                        <h4>{{ adaFilter ? 'Tidak ada tipe lokasi kerja cocok' : 'Belum ada tipe lokasi kerja' }}</h4>
+                                        <button v-if="adaFilter" class="wca-btn wca-btn--ghost mw-empty__btn" type="button" @click="resetFilter">
                                             <i class="bi bi-arrow-counterclockwise"></i> Reset filter
                                         </button>
                                     </div>
@@ -134,9 +137,9 @@
                     </table>
                 </div>
 
-                <div class="emp-pager">
-                    <span class="emp-pager__info">
-                        Menampilkan <b>{{ list.length }}</b> dari <b>{{ total.toLocaleString('id-ID') }}</b> jenis
+                <div class="mw-pager">
+                    <span class="mw-pager__info">
+                        Menampilkan <b>{{ list.length }}</b> dari <b>{{ total.toLocaleString('id-ID') }}</b> tipe
                     </span>
                     <!-- Pilihan terkecil 5 — sama dengan batas bawah yang dijaga
                          server (perPage dijepit 5–100), jadi UI dan backend
@@ -151,35 +154,35 @@
         </div>
 
         <AdminModal
-            :busy="saving" :show="show" icon="bi-briefcase"
-            :title="editingId ? 'Ubah Jenis Employment' : 'Jenis Employment Baru'"
-            subtitle="Jenis ikatan kerja untuk MPP & lowongan"
-            :save-label="editingId ? 'Perbarui' : 'Simpan Jenis'"
+            :busy="saving" :show="show" icon="bi-geo-alt"
+            :title="editingId ? 'Ubah Tipe Lokasi Kerja' : 'Tipe Lokasi Kerja Baru'"
+            subtitle="Tipe lokasi kerja untuk MPP & lowongan"
+            :save-label="editingId ? 'Perbarui' : 'Simpan Tipe'"
             foot-note="Nama harus unik — dipakai sebagai label pilihan di MPP."
             @close="show = false" @save="save"
         >
             <div class="wca-fsection">
-                <div class="wca-fsection__label"><i class="bi bi-briefcase"></i> Data Employment</div>
+                <div class="wca-fsection__label"><i class="bi bi-geo-alt"></i> Data Tipe Lokasi Kerja</div>
                 <div class="wca-form">
                     <div>
-                        <label class="wca-field-lbl">Nama Employment</label>
-                        <el-input v-model="form.nama" maxlength="100" show-word-limit placeholder="mis. Full-time" @keyup.enter="save" />
+                        <label class="wca-field-lbl">Nama Tipe Lokasi Kerja</label>
+                        <el-input v-model="form.nama" maxlength="100" show-word-limit placeholder="mis. Remote (WFH)" @keyup.enter="save" />
                     </div>
                     <div>
-                        <label class="wca-field-lbl">Keterangan <span class="emp-hint">(opsional — dijelaskan singkat, tampil sebagai pendamping nama)</span></label>
-                        <el-input v-model="form.keterangan" type="textarea" :rows="2" maxlength="100" show-word-limit placeholder="mis. Pekerjaan tetap, 40 jam/minggu" />
+                        <label class="wca-field-lbl">Keterangan <span class="mw-hint">(opsional — dijelaskan singkat, tampil sebagai pendamping nama)</span></label>
+                        <el-input v-model="form.keterangan" type="textarea" :rows="2" maxlength="100" show-word-limit placeholder="mis. Bekerja dari rumah / mana saja (full remote)" />
                     </div>
                 </div>
             </div>
-            <div v-if="editingId && editingDipakai" class="wca-note wca-note--info emp-note-modal">
+            <div v-if="editingId && editingDipakai" class="wca-note wca-note--info mw-note-modal">
                 <i class="bi bi-clipboard-data"></i>
-                <span>Jenis ini dipakai <b>{{ editingDipakai }} data MPP</b>. Mengubah namanya ikut mengubah label pada data tersebut.</span>
+                <span>Tipe ini dipakai <b>{{ editingDipakai }} lowongan</b>. Mengubah namanya ikut mengubah label pada data tersebut.</span>
             </div>
         </AdminModal>
 
         <ConfirmModal
-            :show="delShow" :busy="deleting" title="Hapus Jenis Employment" confirm-label="Ya, Hapus Jenis"
-            note="Jenis employment akan dihapus permanen. Hanya jenis yang belum dipakai MPP yang bisa dihapus."
+            :show="delShow" :busy="deleting" title="Hapus Tipe Lokasi Kerja" confirm-label="Ya, Hapus Tipe"
+            note="Tipe lokasi kerja akan dihapus permanen. Hanya tipe yang belum dipakai lowongan yang bisa dihapus."
             @cancel="delShow = false" @confirm="confirmDelete"
         >
             Yakin ingin menghapus <strong>{{ delTarget?.nama }}</strong>?
@@ -196,19 +199,17 @@ import AdminModal from '@career/AdminModal.vue';
 import AuditStamp from '@career/AuditStamp.vue';
 import ConfirmModal from '@career/ConfirmModal.vue';
 
-const API = '/api/v1/master-employment';
+const API = '/api/v1/master-workplace';
 const CFG = { headers: { Accept: 'application/json' } };
 
 // Ikon hanya hiasan sisi tampilan — tabelnya memang tidak punya kolom ikon.
 // Dicocokkan dari nama supaya barisnya mudah dibedakan sekilas.
 const IKON = [
-    [/(intern|magang|apprentice)/i, 'bi-mortarboard'],
-    [/(part.?time|paruh)/i, 'bi-clock-history'],
-    [/(project|proyek)/i, 'bi-kanban'],
-    [/(contract|kontrak|pkwt)/i, 'bi-file-earmark-text'],
-    [/(freelance|lepas)/i, 'bi-person-workspace'],
-    [/(outsourc|alih daya)/i, 'bi-people'],
-    [/(full.?time|tetap|pkwtt)/i, 'bi-briefcase-fill'],
+    [/(on[\s-]?site|wfo|kantor)/i, 'bi-building'],
+    [/(hybrid|campur)/i, 'bi-shuffle'],
+    [/(remote|wfh|rumah)/i, 'bi-house-door'],
+    [/(lapangan|field|proyek|project)/i, 'bi-cone-striped'],
+    [/./, 'bi-geo-alt'],
 ];
 
 const RINGKASAN_KOSONG = {
@@ -223,7 +224,7 @@ export default {
             list: [], total: 0, page: 1, perPage: 25, loading: false,
             ringkasan: { ...RINGKASAN_KOSONG },
             filters: { q: '', status: '' },
-            sortBy: 'nama', sortDir: 'asc', // dikerjakan server
+            sortBy: 'urutan', sortDir: 'asc', // 'urutan' = urutan asli (id), dikerjakan server — bukan abjad.
             show: false, editingId: null, editingDipakai: 0, saving: false,
             form: { nama: '', keterangan: '' },
             delShow: false, delTarget: null, deleting: false,
@@ -250,7 +251,7 @@ export default {
     methods: {
         ikon(nama) {
             const cocok = IKON.find(([pola]) => pola.test(nama || ''));
-            return cocok ? cocok[1] : 'bi-briefcase';
+            return cocok ? cocok[1] : 'bi-geo-alt';
         },
         /** Setiap perubahan filter/urut kembali ke halaman 1 — halaman 3 dari hasil lama tidak bermakna. */
         reload() {
@@ -318,7 +319,7 @@ export default {
                     await this.load();
                 }
             } catch (e) {
-                this.notice('Gagal memuat data employment.');
+                this.notice('Gagal memuat data tipe lokasi kerja.');
             } finally {
                 this.loading = false;
             }
@@ -329,50 +330,50 @@ export default {
             this.form = { nama: '', keterangan: '' };
             this.show = true;
         },
-        openEdit(e) {
-            this.editingId = e.id;
-            this.editingDipakai = e.dipakai || 0;
-            this.form = { nama: e.nama, keterangan: e.keterangan || '' };
+        openEdit(w) {
+            this.editingId = w.id;
+            this.editingDipakai = w.dipakai || 0;
+            this.form = { nama: w.nama, keterangan: w.keterangan || '' };
             this.show = true;
         },
         async save() {
             if (this.saving) return;
-            if (!this.form.nama.trim()) return this.notice('Nama employment wajib diisi.');
+            if (!this.form.nama.trim()) return this.notice('Nama tipe lokasi kerja wajib diisi.');
             this.saving = true;
             const payload = { nama: this.form.nama.trim(), keterangan: this.form.keterangan.trim() };
             try {
                 if (this.editingId) {
                     await axios.put(`${API}/${this.editingId}`, payload, CFG);
-                    this.notice('Jenis employment diperbarui.');
+                    this.notice('Tipe lokasi kerja diperbarui.');
                 } else {
                     await axios.post(API, payload, CFG);
-                    this.notice('Jenis employment ditambahkan.');
+                    this.notice('Tipe lokasi kerja ditambahkan.');
                 }
                 this.show = false;
                 await this.load();
             } catch (e) {
-                this.notice(e.response?.data?.message || 'Gagal menyimpan jenis employment.');
+                this.notice(e.response?.data?.message || 'Gagal menyimpan tipe lokasi kerja.');
             } finally {
                 this.saving = false;
             }
         },
-        async setStatus(e, v) {
-            const prev = e.status;
-            e.status = v ? 'AKTIF' : 'NONAKTIF';
+        async setStatus(w, v) {
+            const prev = w.status;
+            w.status = v ? 'AKTIF' : 'NONAKTIF';
             try {
-                await axios.patch(`${API}/${e.id}/toggle`, { aktif: v }, CFG);
-                this.notice(`"${e.nama}" ${v ? 'diaktifkan' : 'dinonaktifkan'}.`);
+                await axios.patch(`${API}/${w.id}/toggle`, { aktif: v }, CFG);
+                this.notice(`"${w.nama}" ${v ? 'diaktifkan' : 'dinonaktifkan'}.`);
                 // Muat ulang: kartu statistik & cacah tab dihitung server,
                 // jadi tidak bisa disesuaikan dari sini.
                 await this.load();
             } catch (err) {
-                e.status = prev;
+                w.status = prev;
                 this.notice(err.response?.data?.message || 'Gagal mengubah status.');
             }
         },
-        askRemove(e) {
-            if (e.dipakai) return this.notice(`"${e.nama}" dipakai ${e.dipakai} data MPP — nonaktifkan saja.`);
-            this.delTarget = e;
+        askRemove(w) {
+            if (w.dipakai) return this.notice(`"${w.nama}" dipakai ${w.dipakai} lowongan — nonaktifkan saja.`);
+            this.delTarget = w;
             this.delShow = true;
         },
         async confirmDelete() {
@@ -380,12 +381,12 @@ export default {
             this.deleting = true;
             try {
                 await axios.delete(`${API}/${this.delTarget.id}`, CFG);
-                this.notice('Jenis employment dihapus.');
+                this.notice('Tipe lokasi kerja dihapus.');
                 this.delShow = false;
                 this.delTarget = null;
                 await this.load();
             } catch (e) {
-                this.notice(e.response?.data?.message || 'Gagal menghapus jenis employment.');
+                this.notice(e.response?.data?.message || 'Gagal menghapus tipe lokasi kerja.');
             } finally {
                 this.deleting = false;
             }
@@ -400,8 +401,8 @@ export default {
 </script>
 
 <style scoped>
-.emp-name { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.emp-ico {
+.mw-name { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.mw-ico {
     flex: 0 0 auto;
     width: 32px;
     height: 32px;
@@ -412,13 +413,13 @@ export default {
     color: #4f46e5;
     font-size: 14px;
 }
-.emp-name strong { font-size: 13px; color: #0f1235; }
-.emp-desc { color: #64748b; font-size: 12.5px; }
-.emp-muted { color: #94a3b8; }
-.emp-hint { font-weight: 400; color: #94a3b8; font-size: 11px; }
-.emp-note-modal { margin-top: 0.9rem; }
+.mw-name strong { font-size: 13px; color: #0f1235; }
+.mw-desc { color: #64748b; font-size: 12.5px; }
+.mw-muted { color: #94a3b8; }
+.mw-hint { font-weight: 400; color: #94a3b8; font-size: 11px; }
+.mw-note-modal { margin-top: 0.9rem; }
 
-.emp-sort {
+.mw-sort {
     display: inline-flex;
     align-items: center;
     gap: 5px;
@@ -429,19 +430,19 @@ export default {
     color: inherit;
     cursor: pointer;
 }
-.emp-sort i { font-size: 11px; color: #94a3b8; }
-.emp-sort:hover, .emp-sort.on { color: #4f46e5; }
-.emp-sort.on i { color: #4f46e5; }
+.mw-sort i { font-size: 11px; color: #94a3b8; }
+.mw-sort:hover, .mw-sort.on { color: #4f46e5; }
+.mw-sort.on i { color: #4f46e5; }
 
-.emp-status { display: flex; align-items: center; gap: 10px; --el-switch-on-color: #059669; }
-.emp-status__lbl { font-size: 12px; font-weight: 700; }
-.emp-status__lbl.is-on { color: #059669; }
-.emp-status__lbl.is-off { color: #94a3b8; }
+.mw-status { display: flex; align-items: center; gap: 10px; --el-switch-on-color: #059669; }
+.mw-status__lbl { font-size: 12px; font-weight: 700; }
+.mw-status__lbl.is-on { color: #059669; }
+.mw-status__lbl.is-off { color: #94a3b8; }
 
-.emp-actions { display: flex; gap: 0.35rem; justify-content: flex-end; }
-.emp-actions .wca-iconbtn:disabled { opacity: 0.45; cursor: not-allowed; }
+.mw-actions { display: flex; gap: 0.35rem; justify-content: flex-end; }
+.mw-actions .wca-iconbtn:disabled { opacity: 0.45; cursor: not-allowed; }
 
-.emp-clear {
+.mw-clear {
     flex: none;
     display: grid;
     place-items: center;
@@ -455,10 +456,10 @@ export default {
     font-size: 9px;
     cursor: pointer;
 }
-.emp-clear:hover { background: rgba(239, 68, 68, 0.15); color: #dc2626; }
-.emp-empty__btn { margin-top: 0.9rem; }
+.mw-clear:hover { background: rgba(239, 68, 68, 0.15); color: #dc2626; }
+.mw-empty__btn { margin-top: 0.9rem; }
 
-.emp-pager {
+.mw-pager {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -467,18 +468,18 @@ export default {
     padding: 0.85rem 1.1rem;
     border-top: 1px solid var(--line, rgba(11, 16, 51, 0.08));
 }
-.emp-pager__info { font-size: 12px; font-weight: 600; color: #64748b; }
-.emp-pager__info b { color: #0f1235; }
+.mw-pager__info { font-size: 12px; font-weight: 600; color: #64748b; }
+.mw-pager__info b { color: #0f1235; }
 
-tr.is-off .emp-ico { background: rgba(148, 163, 184, 0.16); color: #64748b; }
-tr.is-off .emp-name strong { color: #64748b; }
+tr.is-off .mw-ico { background: rgba(148, 163, 184, 0.16); color: #64748b; }
+tr.is-off .mw-name strong { color: #64748b; }
 
 @media (max-width: 900px) {
-    .emp-hide-sm { display: none; }
+    .mw-hide-sm { display: none; }
 }
 @media (max-width: 640px) {
-    .emp-status__lbl { display: none; }
-    .emp-pager { justify-content: center; }
-    .emp-pager__info { width: 100%; text-align: center; }
+    .mw-status__lbl { display: none; }
+    .mw-pager { justify-content: center; }
+    .mw-pager__info { width: 100%; text-align: center; }
 }
 </style>

@@ -38,21 +38,102 @@ class MasterEmploymentController extends Controller
         );
     }
 
-    /** Data list Master Employment + nama pembuat/pengubah + jumlah pemakaian di MPP. */
-    public function list()
+    /**
+     * Query dasar + filter (q / status). Dipakai bersama oleh baris, penghitung
+     * total, DAN penghitung cacah facet.
+     *
+     * $abaikan memungkinkan satu penyaring dilewati — itulah cara cacah facet
+     * dihitung: cacah status dihitung dengan mengabaikan filter status. Tanpa
+     * itu, angka pada tab selalu sama dengan jumlah baris yang sedang tampil
+     * dan tidak memberi tahu apa pun.
+     */
+    private function dasarFilter(Request $request, array $abaikan = [])
+    {
+        $base = DB::table(self::TABEL . ' as e');
+
+        $q = trim((string) $request->query('q', ''));
+        if ($q !== '' && ! in_array('q', $abaikan, true)) {
+            $base->where(function ($x) use ($q) {
+                $x->where('e.Nama_Employment', 'like', "%{$q}%")
+                    ->orWhere('e.Keterangan', 'like', "%{$q}%");
+            });
+        }
+
+        $status = strtoupper(trim((string) $request->query('status', '')));
+        if (! in_array('status', $abaikan, true)) {
+            if ($status === 'AKTIF') {
+                $base->where('e.Flag_Aktif', 'Y');
+            } elseif ($status === 'NONAKTIF') {
+                $base->where('e.Flag_Aktif', '!=', 'Y');
+            }
+        }
+
+        return $base;
+    }
+
+    /**
+     * Angka untuk kartu statistik & cacah facet. Dihitung di server karena klien
+     * cuma memegang satu halaman — menjumlahkan baris yang tampil akan salah.
+     */
+    private function ringkasan(Request $request): array
+    {
+        $statusBase = $this->dasarFilter($request, ['status']);
+        $facetSemua = (clone $statusBase)->count();
+        $facetAktif = (clone $statusBase)->where('e.Flag_Aktif', 'Y')->count();
+
+        $total = (int) DB::table(self::TABEL)->count();
+        $aktif = (int) DB::table(self::TABEL)->where('Flag_Aktif', 'Y')->count();
+
+        return [
+            'total' => $total,
+            'aktif' => $aktif,
+            'nonaktif' => $total - $aktif,
+            'dipakai' => (int) DB::table('N_WEB_CAREERS_Detail_MPP')
+                ->whereIn('Employment_Type', DB::table(self::TABEL)->select('Id_Employment'))
+                ->count(),
+            'status' => [
+                'semua' => $facetSemua,
+                'aktif' => $facetAktif,
+                'nonaktif' => $facetSemua - $facetAktif,
+            ],
+        ];
+    }
+
+    /**
+     * Data list Master Employment + nama pembuat/pengubah + jumlah pemakaian di MPP.
+     * PAGINASI + FILTER + URUT dikerjakan server (pola Master Kampus).
+     */
+    public function list(Request $request)
     {
         try {
-            $rows = DB::table(self::TABEL . ' as e')
+            $perPage = min(max((int) $request->query('perPage', 25), 5), 100);
+            $page = max((int) $request->query('page', 1), 1);
+            $sortBy = (string) $request->query('sortBy', 'nama');
+            $sortDir = strtolower((string) $request->query('sortDir', 'asc')) === 'desc' ? 'desc' : 'asc';
+
+            $base = $this->dasarFilter($request);
+            $total = (clone $base)->count();
+
+            $rows = (clone $base)
                 ->leftJoin('N_WEB_CAREERS_Users as u', 'u.Id_Users', '=', 'e.Created_By')
                 ->leftJoin('N_WEB_CAREERS_Users as ux', 'ux.Id_Users', '=', 'e.Updated_By')
                 ->leftJoinSub($this->pemakaian(), 'p', 'p.Employment_Type', '=', 'e.Id_Employment')
-                ->orderBy('e.Nama_Employment')
                 ->select(
                     'e.*',
                     'u.Nama as Pembuat',
                     'ux.Nama as Pengubah',
                     DB::raw('ISNULL(p.Jumlah, 0) as Dipakai')
-                )
+                );
+
+            if ($sortBy === 'dipakai') {
+                // Nama jadi pemecah seri: tanpa itu, banyaknya nilai 0 membuat urutan
+                // antarhalaman tidak stabil dan baris bisa terlihat dua kali.
+                $rows->orderBy('Dipakai', $sortDir)->orderBy('e.Nama_Employment');
+            } else {
+                $rows->orderBy('e.Nama_Employment', $sortDir);
+            }
+
+            $rows = $rows->forPage($page, $perPage)
                 ->get()
                 ->map(function ($r) {
                     return [
@@ -69,7 +150,13 @@ class MasterEmploymentController extends Controller
                 })
                 ->values();
 
-            return ResponseHelper::success($rows, 'Data employment dimuat');
+            return ResponseHelper::success([
+                'rows' => $rows,
+                'total' => $total,
+                'page' => $page,
+                'perPage' => $perPage,
+                'ringkasan' => $this->ringkasan($request),
+            ], 'Data employment dimuat');
         } catch (\Throwable $e) {
             Log::channel('web_career')->error('Gagal memuat employment: ' . $e->getMessage());
 
