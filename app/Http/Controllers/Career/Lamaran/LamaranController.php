@@ -1070,11 +1070,15 @@ class LamaranController extends Controller
                 // isian, padahal dokumennya ada dan seharusnya bisa dibuka.
                 'jawaban' => collect($jawaban)->map(function ($v, $k) use ($berkas) {
                     $b = $berkas->firstWhere('field', $k);
+                    // Satu aturan untuk seluruh bentuk jawaban — termasuk field
+                    // berulang yang dulu menjatuhkan halaman ini. Lihat nilaiIsian().
+                    $isi = self::nilaiIsian($v);
 
                     return [
                         'key' => $k,
                         'label' => ucwords(str_replace(['_', '-'], ' ', $k)),
-                        'nilai' => is_array($v) ? implode(', ', $v) : (is_bool($v) ? ($v ? 'Ya' : 'Tidak') : $v),
+                        'nilai' => $isi['nilai'],
+                        'baris' => $isi['baris'],
                         'berkas' => $b ? [
                             'field' => $b['field'],
                             'nama' => $b['nama'],
@@ -1087,6 +1091,169 @@ class LamaranController extends Controller
                 'berkas' => $berkas,
             ];
         })->all();
+    }
+
+    /**
+     * Satu jawaban formulir → bentuk yang bisa DIBACA ORANG.
+     *
+     * ══ KENAPA ADA ══
+     *
+     * Sebelumnya jawaban dirapikan langsung di tempat, dengan satu baris yang
+     * sama persis disalin di DUA layar:
+     *
+     *     is_array($v) ? implode(', ', $v) : (is_bool($v) ? … : $v)
+     *
+     * Baris itu benar hanya selama isinya DATAR. Begitu formulir memakai field
+     * BERULANG — riwayat kerja, organisasi, sertifikasi, daftar kenalan — tiap
+     * barisnya adalah OBJEK berisi beberapa sub-isian, dan implode() tidak bisa
+     * memampatkan objek jadi teks: PHP melempar "Array to string conversion"
+     * dan SELURUH halaman detail lamaran mati. Kandidat tidak bisa membuka
+     * lamarannya sendiri hanya karena ia mengisi riwayat kerjanya.
+     *
+     * Bahkan seandainya tidak melempar, hasilnya "Array, Array" — sama tidak
+     * bergunanya.
+     *
+     * SATU TEMPAT, bukan dua salinan: layar kandidat dan worklist admin
+     * menampilkan jawaban yang sama, dan dua salinan aturan pasti berselisih —
+     * yang satu diperbaiki, yang lain tertinggal, dan selisihnya baru ketahuan
+     * saat ada yang membandingkan dua layar itu berdampingan.
+     *
+     * @return array{nilai: string, baris: array} `baris` hanya terisi untuk
+     *         field berulang, supaya layar bisa menampilkannya sebagai daftar
+     *         alih-alih satu paragraf panjang.
+     */
+    private static function nilaiIsian(mixed $v, int $dalam = 0): array
+    {
+        if ($v === null) {
+            return ['nilai' => '', 'baris' => []];
+        }
+
+        if (is_bool($v)) {
+            return ['nilai' => $v ? 'Ya' : 'Tidak', 'baris' => []];
+        }
+
+        if ($v instanceof \stdClass) {
+            $v = (array) $v;
+        }
+
+        if (! is_array($v)) {
+            return ['nilai' => trim((string) $v), 'baris' => []];
+        }
+
+        // Pagar kedalaman: jawaban formulir tak pernah bersarang sedalam ini,
+        // dan tanpa pagar satu data rusak bisa membuat halaman berputar
+        // sampai kehabisan memori — kegagalan yang jauh lebih sulit dilacak
+        // daripada nilai yang sekadar tidak tampil.
+        if ($dalam > 3) {
+            return ['nilai' => '…', 'baris' => []];
+        }
+
+        $bersarang = false;
+        foreach ($v as $x) {
+            if (is_array($x) || $x instanceof \stdClass) {
+                $bersarang = true;
+                break;
+            }
+        }
+
+        // ── DATAR: centang berganda / pilihan berganda ───────────────────────
+        if (! $bersarang) {
+            $isi = [];
+            foreach ($v as $x) {
+                $t = self::nilaiIsian($x, $dalam + 1)['nilai'];
+                if ($t !== '') {
+                    $isi[] = $t;
+                }
+            }
+
+            return ['nilai' => implode(', ', $isi), 'baris' => []];
+        }
+
+        // ── BERULANG: satu objek per baris ───────────────────────────────────
+        $baris = [];
+        foreach ($v as $row) {
+            if ($row instanceof \stdClass) {
+                $row = (array) $row;
+            }
+
+            if (! is_array($row)) {
+                $t = self::nilaiIsian($row, $dalam + 1)['nilai'];
+                if ($t !== '') {
+                    $baris[] = [['label' => '', 'nilai' => $t]];
+                }
+                continue;
+            }
+
+            $awalan = self::awalanBersama(array_keys($row));
+            $pasangan = [];
+
+            foreach ($row as $k => $x) {
+                $t = self::nilaiIsian($x, $dalam + 1)['nilai'];
+                if ($t === '') {
+                    // Sub-isian kosong DILEWATI, bukan ditampilkan "—".
+                    // Baris riwayat kerja yang uraiannya belum diisi tetap
+                    // terbaca utuh; deretan tanda hubung hanya menutupi yang
+                    // benar-benar ada.
+                    continue;
+                }
+
+                $nama = $awalan !== '' && str_starts_with((string) $k, $awalan)
+                    ? substr((string) $k, strlen($awalan))
+                    : (string) $k;
+
+                $pasangan[] = [
+                    'label' => ucwords(str_replace(['_', '-'], ' ', $nama)),
+                    'nilai' => $t,
+                ];
+            }
+
+            if ($pasangan) {
+                $baris[] = $pasangan;
+            }
+        }
+
+        // Ringkasan teks tetap disediakan: dipakai ekspor, pencarian, dan layar
+        // lama yang belum membaca `baris`.
+        $ringkas = [];
+        foreach ($baris as $i => $pasangan) {
+            $isi = implode(', ', array_map(fn ($p) => ($p['label'] !== '' ? $p['label'] . ': ' : '') . $p['nilai'], $pasangan));
+            $ringkas[] = count($baris) > 1 ? ($i + 1) . ') ' . $isi : $isi;
+        }
+
+        return ['nilai' => implode(' | ', $ringkas), 'baris' => $baris];
+    }
+
+    /**
+     * Awalan yang DIPAKAI BERSAMA seluruh kunci satu baris berulang, mis.
+     * `kerja_` pada kerja_perusahaan / kerja_jabatan / kerja_periode.
+     *
+     * Dibuang dari label supaya terbaca "Perusahaan, Jabatan, Periode" —
+     * bukan "Kerja Perusahaan, Kerja Jabatan, Kerja Periode" yang mengulang
+     * nama fieldnya di tiap kolom.
+     *
+     * Syaratnya ketat: minimal dua kunci, seluruhnya berawalan segmen yang
+     * sama, dan tiap kunci masih menyisakan sesuatu sesudah awalan itu. Tanpa
+     * syarat itu, `nama` dan `nomor` akan terpotong jadi `a` dan `omor`.
+     */
+    private static function awalanBersama(array $kunci): string
+    {
+        if (count($kunci) < 2) {
+            return '';
+        }
+
+        $awal = null;
+        foreach ($kunci as $k) {
+            $bagian = explode('_', (string) $k);
+            if (count($bagian) < 2 || $bagian[0] === '') {
+                return '';
+            }
+            $awal ??= $bagian[0];
+            if ($bagian[0] !== $awal) {
+                return '';
+            }
+        }
+
+        return $awal . '_';
     }
 
     /**
@@ -5216,7 +5383,6 @@ class LamaranController extends Controller
                 // ditebak dari nama kuncinya, dan `v_nama`/`v_wa` terbaca
                 // "V Nama"/"V Wa": bahasa mesin, bukan bahasa manusia.
                 'komponen' => $fp->Komponen_Kode,
-                'komponen' => $fp->Komponen_Kode,
                 // String mentah SQL Server — optional()->__toString() di atasnya
                 // menghasilkan NULL, membuat formulir terkirim dianggap belum.
                 'waktuKirim' => (string) ($fp->Waktu_Kirim ?: ''),
@@ -5225,11 +5391,15 @@ class LamaranController extends Controller
                 // hanya melihat nama berkas sebagai teks mati.
                 'jawaban' => collect($jawaban)->map(function ($v, $k) use ($berkas) {
                     $b = $berkas->firstWhere('field', $k);
+                    // Aturan yang SAMA PERSIS dengan layar kandidat — satu
+                    // sumber, bukan dua salinan. Lihat nilaiIsian().
+                    $isi = self::nilaiIsian($v);
 
                     return [
                         'key' => $k,
                         'label' => ucwords(str_replace(['_', '-'], ' ', $k)),
-                        'nilai' => is_array($v) ? implode(', ', $v) : (is_bool($v) ? ($v ? 'Ya' : 'Tidak') : $v),
+                        'nilai' => $isi['nilai'],
+                        'baris' => $isi['baris'],
                         'berkas' => $b ? [
                             'field' => $b['field'],
                             'nama' => $b['nama'],

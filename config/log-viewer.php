@@ -43,6 +43,26 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Kunci rahasia pembuka Log Viewer
+    |--------------------------------------------------------------------------
+    | Dipakai App\Http\Middleware\GerbangLogViewer. Tanpa
+    | ?secret-key=<kunci ini> yang cocok, /log-viewer membalas 404 — bukan 403,
+    | supaya keberadaan halamannya sendiri tidak ikut terbongkar.
+    |
+    | KOSONG = TERTUTUP UNTUK SEMUA. Bukan "bebas masuk": pengaman yang mati
+    | sendiri saat lupa disetel bukan pengaman, dan justru server yang lupa
+    | disetel itulah yang lognya paling menarik bagi orang luar.
+    |
+    | Buat kuncinya (64 karakter):
+    |     php -r "echo bin2hex(random_bytes(32));"
+    |
+    | Simpan di .env sebagai LOG_VIEWER_SECRET — JANGAN ditulis di berkas ini,
+    | karena config ikut masuk repositori sementara .env tidak.
+    */
+    'secret' => env('LOG_VIEWER_SECRET', ''),
+
+    /*
+    |--------------------------------------------------------------------------
     | Back to system URL
     |--------------------------------------------------------------------------
     | When set, displays a link to easily get back to this URL.
@@ -87,6 +107,9 @@ return [
 
     'middleware' => [
         'web',
+        // KUNCI RAHASIA — tanpa ?secret-key= yang benar, halamannya 404.
+        // Lihat App\Http\Middleware\GerbangLogViewer.
+        \App\Http\Middleware\GerbangLogViewer::class,
         // \Opcodes\LogViewer\Http\Middleware\AuthorizeLogViewer::class,
     ],
 
@@ -101,6 +124,15 @@ return [
 
     'api_middleware' => [
         \Opcodes\LogViewer\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
+        // API-nya DIJAGA JUGA, dan ini bagian yang paling penting: yang
+        // benar-benar menyajikan isi berkas log adalah /log-viewer/api/*,
+        // bukan halamannya. Menjaga halaman saja berarti pintu depan dikunci
+        // sementara jendelanya dibiarkan terbuka.
+        //
+        // EnsureFrontendRequestsAreStateful WAJIB berada di atasnya — dialah
+        // yang menyalakan sesi, dan tanpa sesi gerbang ini tak bisa mengenali
+        // halaman yang tadi sudah membuka kuncinya.
+        \App\Http\Middleware\GerbangLogViewer::class,
         // \Opcodes\LogViewer\Http\Middleware\AuthorizeLogViewer::class,
     ],
 
