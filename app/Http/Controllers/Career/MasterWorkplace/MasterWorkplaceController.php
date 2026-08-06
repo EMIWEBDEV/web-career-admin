@@ -45,18 +45,97 @@ class MasterWorkplaceController extends Controller
             ->groupBy('Workplace_Type');
     }
 
-    public function list()
+    /**
+     * Query dasar + filter (q / status). Dipakai bersama oleh baris, penghitung
+     * total, DAN penghitung cacah facet.
+     *
+     * $abaikan memungkinkan satu penyaring dilewati — itulah cara cacah facet
+     * dihitung: cacah status dihitung dengan mengabaikan filter status. Tanpa
+     * itu, angka pada tab selalu sama dengan jumlah baris yang sedang tampil
+     * dan tidak memberi tahu apa pun.
+     */
+    private function dasarFilter(Request $request, array $abaikan = [])
+    {
+        $base = DB::table($this->tbl . ' as w');
+
+        $q = trim((string) $request->query('q', ''));
+        if ($q !== '' && ! in_array('q', $abaikan, true)) {
+            $base->where(function ($x) use ($q) {
+                $x->where('w.Nama_Workplace', 'like', "%{$q}%")
+                    ->orWhere('w.Keterangan', 'like', "%{$q}%");
+            });
+        }
+
+        $status = strtoupper(trim((string) $request->query('status', '')));
+        if (! in_array('status', $abaikan, true)) {
+            if ($status === 'AKTIF') {
+                $base->where('w.Flag_Aktif', 'Y');
+            } elseif ($status === 'NONAKTIF') {
+                $base->where('w.Flag_Aktif', '!=', 'Y');
+            }
+        }
+
+        return $base;
+    }
+
+    /**
+     * Angka untuk kartu statistik & cacah facet. Dihitung di server karena klien
+     * cuma memegang satu halaman — menjumlahkan baris yang tampil akan salah.
+     */
+    private function ringkasan(Request $request): array
+    {
+        $statusBase = $this->dasarFilter($request, ['status']);
+        $facetSemua = (clone $statusBase)->count();
+        $facetAktif = (clone $statusBase)->where('w.Flag_Aktif', 'Y')->count();
+
+        $total = (int) DB::table($this->tbl)->count();
+        $aktif = (int) DB::table($this->tbl)->where('Flag_Aktif', 'Y')->count();
+
+        return [
+            'total' => $total,
+            'aktif' => $aktif,
+            'nonaktif' => $total - $aktif,
+            'dipakai' => (int) DB::table('N_WEB_CAREERS_Detail_MPP')
+                ->whereIn('Workplace_Type', DB::table($this->tbl)->select($this->pk))
+                ->count(),
+            'status' => [
+                'semua' => $facetSemua,
+                'aktif' => $facetAktif,
+                'nonaktif' => $facetSemua - $facetAktif,
+            ],
+        ];
+    }
+
+    /** Data tipe lokasi kerja — PAGINASI + FILTER + URUT server-side. */
+    public function list(Request $request)
     {
         try {
-            // Urut menurut Id, bukan abjad: urutan seed sudah berjenjang dari
-            // paling "di kantor" ke paling "jauh dari kantor" (WFO → Hybrid → WFH),
-            // dan itu urutan yang diharapkan muncul di pilihan MPP.
-            $rows = DB::table($this->tbl . ' as w')
+            $perPage = min(max((int) $request->query('perPage', 25), 5), 100);
+            $page = max((int) $request->query('page', 1), 1);
+            $sortBy = (string) $request->query('sortBy', 'urutan');
+            $sortDir = strtolower((string) $request->query('sortDir', 'asc')) === 'desc' ? 'desc' : 'asc';
+
+            $base = $this->dasarFilter($request);
+            $total = (clone $base)->count();
+
+            $rows = (clone $base)
                 ->leftJoin('N_WEB_CAREERS_Users as uc', 'uc.Id_Users', '=', 'w.Created_By')
                 ->leftJoin('N_WEB_CAREERS_Users as uu', 'uu.Id_Users', '=', 'w.Updated_By')
                 ->leftJoinSub($this->pemakaian(), 'p', 'p.Workplace_Type', '=', 'w.Id_Workplace')
-                ->orderBy('w.' . $this->pk)
-                ->select('w.*', 'uc.Nama as Pembuat', 'uu.Nama as Pengubah', DB::raw('ISNULL(p.Jumlah, 0) as Dipakai'))
+                ->select('w.*', 'uc.Nama as Pembuat', 'uu.Nama as Pengubah', DB::raw('ISNULL(p.Jumlah, 0) as Dipakai'));
+
+            if ($sortBy === 'dipakai') {
+                // Id jadi pemecah seri: tanpa itu, banyaknya nilai 0 membuat urutan
+                // antarhalaman tidak stabil dan baris bisa terlihat dua kali.
+                $rows->orderBy('Dipakai', $sortDir)->orderBy('w.' . $this->pk);
+            } else {
+                // Urut menurut Id, bukan abjad: urutan seed sudah berjenjang dari
+                // paling "di kantor" ke paling "jauh dari kantor" (WFO → Hybrid → WFH),
+                // dan itu urutan yang diharapkan muncul di pilihan MPP.
+                $rows->orderBy('w.' . $this->pk);
+            }
+
+            $rows = $rows->forPage($page, $perPage)
                 ->get()
                 ->map(fn ($r) => [
                     'id' => Hashids::encode($r->Id_Workplace),
@@ -71,7 +150,13 @@ class MasterWorkplaceController extends Controller
                 ])
                 ->values();
 
-            return ResponseHelper::success($rows, 'Data tipe lokasi kerja dimuat');
+            return ResponseHelper::success([
+                'rows' => $rows,
+                'total' => $total,
+                'page' => $page,
+                'perPage' => $perPage,
+                'ringkasan' => $this->ringkasan($request),
+            ], 'Data tipe lokasi kerja dimuat');
         } catch (\Throwable $e) {
             Log::channel('web_career')->error('Gagal memuat master workplace: ' . $e->getMessage());
 

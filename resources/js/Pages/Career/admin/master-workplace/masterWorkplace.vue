@@ -23,22 +23,22 @@
         <div class="wca-stats">
             <div class="wca-stat">
                 <div class="wca-stat__top"><span class="wca-stat__ico"><i class="bi bi-geo-alt"></i></span></div>
-                <div class="wca-stat__num">{{ list.length }}</div>
+                <div class="wca-stat__num">{{ ringkasan.total }}</div>
                 <div class="wca-stat__label">Total Tipe</div>
             </div>
             <div class="wca-stat">
                 <div class="wca-stat__top"><span class="wca-stat__ico" style="background: rgba(16, 185, 129, 0.12); color: #059669"><i class="bi bi-check-circle"></i></span></div>
-                <div class="wca-stat__num">{{ jmlAktif }}</div>
+                <div class="wca-stat__num">{{ ringkasan.aktif }}</div>
                 <div class="wca-stat__label">Aktif (jadi pilihan)</div>
             </div>
             <div class="wca-stat">
                 <div class="wca-stat__top"><span class="wca-stat__ico" style="background: rgba(148, 163, 184, 0.16); color: #475569"><i class="bi bi-eye-slash"></i></span></div>
-                <div class="wca-stat__num">{{ list.length - jmlAktif }}</div>
+                <div class="wca-stat__num">{{ ringkasan.nonaktif }}</div>
                 <div class="wca-stat__label">Nonaktif (tersembunyi)</div>
             </div>
             <div class="wca-stat">
                 <div class="wca-stat__top"><span class="wca-stat__ico" style="background: rgba(99, 102, 241, 0.12); color: #4f46e5"><i class="bi bi-clipboard-data"></i></span></div>
-                <div class="wca-stat__num">{{ totalDipakai }}</div>
+                <div class="wca-stat__num">{{ ringkasan.dipakai }}</div>
                 <div class="wca-stat__label">Pemakaian di MPP</div>
             </div>
         </div>
@@ -46,14 +46,20 @@
         <div class="wca-toolbar">
             <div class="wca-search2">
                 <i class="bi bi-search"></i>
-                <input v-model="q" type="text" placeholder="Cari nama / keterangan…" aria-label="Cari tipe lokasi kerja" @keyup.esc="q = ''" />
+                <input
+                    v-model="filters.q" type="text" placeholder="Cari nama / keterangan…"
+                    aria-label="Cari tipe lokasi kerja" @input="cariTertunda" @keyup.enter="reload" @keyup.esc="bersihkanCari"
+                />
                 <!-- Tombol bersihkan: tersembunyi sampai ada isian, jadi tidak menambah beban visual toolbar. -->
-                <button v-if="q" class="mw-clear" type="button" title="Bersihkan pencarian" @click="q = ''">
+                <button v-if="filters.q" class="mw-clear" type="button" title="Bersihkan pencarian" @click="bersihkanCari">
                     <i class="bi bi-x-lg"></i>
                 </button>
             </div>
             <div class="wca-segt wca-segt--sm">
-                <button v-for="t in tabs" :key="t.key" class="wca-segt__it" :class="{ on: tab === t.key }" @click="tab = t.key">
+                <button
+                    v-for="t in tabs" :key="t.key" class="wca-segt__it" :class="{ on: filters.status === t.key }"
+                    :aria-pressed="filters.status === t.key" @click="pilihStatus(t.key)"
+                >
                     <i class="bi" :class="t.icon"></i> {{ t.label }}
                     <span class="wca-tabn">{{ t.count }}</span>
                 </button>
@@ -80,8 +86,10 @@
                             </tr>
                         </thead>
                         <tbody>
-                            <tr v-for="(w, i) in filtered" :key="w.id" :class="{ 'is-off': w.status !== 'AKTIF' }">
-                                <td><span class="wca-badge wca-b--slate">{{ sortBy === 'urutan' ? i + 1 : urutanAsli(w) }}</span></td>
+                            <tr v-for="(w, i) in list" :key="w.id" :class="{ 'is-off': w.status !== 'AKTIF' }">
+                                <!-- Nomor berjalan lintas halaman — indeks dalam halaman
+                                     saja akan mengulang 1,2,3 di tiap halaman. -->
+                                <td><span class="wca-badge wca-b--slate">{{ (page - 1) * perPage + i + 1 }}</span></td>
                                 <td>
                                     <div class="mw-name">
                                         <span class="mw-ico"><i class="bi" :class="ikon(w.nama)"></i></span>
@@ -114,7 +122,7 @@
                                     </div>
                                 </td>
                             </tr>
-                            <tr v-if="!loading && !filtered.length">
+                            <tr v-if="!loading && !list.length">
                                 <td colspan="7">
                                     <div class="wca-empty">
                                         <i class="bi" :class="adaFilter ? 'bi-funnel' : 'bi-geo-alt'"></i>
@@ -127,6 +135,20 @@
                             </tr>
                         </tbody>
                     </table>
+                </div>
+
+                <div class="mw-pager">
+                    <span class="mw-pager__info">
+                        Menampilkan <b>{{ list.length }}</b> dari <b>{{ total.toLocaleString('id-ID') }}</b> tipe
+                    </span>
+                    <!-- Pilihan terkecil 5 — sama dengan batas bawah yang dijaga
+                         server (perPage dijepit 5–100), jadi UI dan backend
+                         tidak bisa berbeda pendapat. -->
+                    <el-pagination
+                        background layout="prev, pager, next, sizes"
+                        :total="total" :current-page="page" :page-size="perPage" :page-sizes="[5, 10, 25, 50, 100]"
+                        @current-change="onPage" @size-change="onSize"
+                    />
                 </div>
             </div>
         </div>
@@ -190,52 +212,37 @@ const IKON = [
     [/./, 'bi-geo-alt'],
 ];
 
+const RINGKASAN_KOSONG = {
+    total: 0, aktif: 0, nonaktif: 0, dipakai: 0,
+    status: { semua: 0, aktif: 0, nonaktif: 0 },
+};
+
 export default {
     components: { Head, AdminModal, AuditStamp, ConfirmModal },
     data() {
         return {
-            list: [], loading: false, q: '', tab: 'semua',
-            sortBy: 'urutan', sortDir: 'asc', // 'urutan' = urutan asli (id) — bukan abjad.
+            list: [], total: 0, page: 1, perPage: 25, loading: false,
+            ringkasan: { ...RINGKASAN_KOSONG },
+            filters: { q: '', status: '' },
+            sortBy: 'urutan', sortDir: 'asc', // 'urutan' = urutan asli (id), dikerjakan server — bukan abjad.
             show: false, editingId: null, editingDipakai: 0, saving: false,
             form: { nama: '', keterangan: '' },
             delShow: false, delTarget: null, deleting: false,
-            toast: '', tm: null,
+            toast: '', tm: null, dtm: null,
         };
     },
     computed: {
-        jmlAktif() {
-            return this.list.filter((w) => w.status === 'AKTIF').length;
-        },
-        totalDipakai() {
-            return this.list.reduce((n, w) => n + (w.dipakai || 0), 0);
-        },
         adaFilter() {
-            return this.q.trim() !== '' || this.tab !== 'semua';
+            return this.filters.q.trim() !== '' || this.filters.status !== '';
         },
+        /** Cacah datang dari server: klien cuma memegang satu halaman. */
         tabs() {
+            const s = this.ringkasan.status || RINGKASAN_KOSONG.status;
             return [
-                { key: 'semua', label: 'Semua', icon: 'bi-collection', count: this.list.length },
-                { key: 'aktif', label: 'Aktif', icon: 'bi-check-circle', count: this.jmlAktif },
-                { key: 'nonaktif', label: 'Nonaktif', icon: 'bi-eye-slash', count: this.list.length - this.jmlAktif },
+                { key: '', label: 'Semua', icon: 'bi-collection', count: s.semua },
+                { key: 'AKTIF', label: 'Aktif', icon: 'bi-check-circle', count: s.aktif },
+                { key: 'NONAKTIF', label: 'Nonaktif', icon: 'bi-eye-slash', count: s.nonaktif },
             ];
-        },
-        filtered() {
-            const s = this.q.trim().toLowerCase();
-            const arah = this.sortDir === 'asc' ? 1 : -1;
-
-            return this.list
-                .filter((w) => {
-                    if (this.tab === 'aktif' && w.status !== 'AKTIF') return false;
-                    if (this.tab === 'nonaktif' && w.status === 'AKTIF') return false;
-                    if (!s) return true;
-                    return `${w.nama} ${w.keterangan || ''}`.toLowerCase().includes(s);
-                })
-                .slice()
-                .sort((a, b) => {
-                    if (this.sortBy === 'dipakai') return ((a.dipakai || 0) - (b.dipakai || 0)) * arah;
-                    if (this.sortBy === 'nama') return String(a.nama).localeCompare(String(b.nama), 'id') * arah;
-                    return 0; // 'urutan' — list sudah datang terurut dari server (ORDER BY Id).
-                });
         },
     },
     mounted() {
@@ -246,20 +253,44 @@ export default {
             const cocok = IKON.find(([pola]) => pola.test(nama || ''));
             return cocok ? cocok[1] : 'bi-geo-alt';
         },
-        urutanAsli(w) {
-            return this.list.findIndex((e) => e.id === w.id) + 1;
+        /** Setiap perubahan filter/urut kembali ke halaman 1 — halaman 3 dari hasil lama tidak bermakna. */
+        reload() {
+            this.page = 1;
+            this.load();
+        },
+        cariTertunda() {
+            if (this.dtm) clearTimeout(this.dtm);
+            this.dtm = setTimeout(() => this.reload(), 400);
+        },
+        bersihkanCari() {
+            this.filters.q = '';
+            this.reload();
+        },
+        pilihStatus(key) {
+            this.filters.status = key;
+            this.reload();
         },
         resetFilter() {
-            this.q = '';
-            this.tab = 'semua';
+            this.filters = { q: '', status: '' };
+            this.reload();
+        },
+        onPage(p) {
+            this.page = p;
+            this.load();
+        },
+        onSize(s) {
+            this.perPage = s;
+            this.page = 1;
+            this.load();
         },
         setSort(kolom) {
             if (this.sortBy === kolom) {
                 this.sortDir = this.sortDir === 'asc' ? 'desc' : 'asc';
-                return;
+            } else {
+                this.sortBy = kolom;
+                this.sortDir = kolom === 'dipakai' ? 'desc' : 'asc';
             }
-            this.sortBy = kolom;
-            this.sortDir = kolom === 'dipakai' ? 'desc' : 'asc';
+            this.reload();
         },
         sortIcon(kolom) {
             if (this.sortBy !== kolom) return 'bi-arrow-down-up';
@@ -268,8 +299,25 @@ export default {
         async load() {
             this.loading = true;
             try {
-                const res = await axios.get(API, CFG);
-                this.list = res.data.result || [];
+                const params = {
+                    q: this.filters.q.trim(),
+                    status: this.filters.status,
+                    sortBy: this.sortBy,
+                    sortDir: this.sortDir,
+                    page: this.page,
+                    perPage: this.perPage,
+                };
+                const res = await axios.get(API, { ...CFG, params });
+                const r = res.data.result || {};
+                this.list = r.rows || [];
+                this.total = r.total || 0;
+                this.ringkasan = r.ringkasan || { ...RINGKASAN_KOSONG };
+
+                // Halaman terakhir bisa jadi kosong setelah baris dihapus/disaring.
+                if (!this.list.length && this.page > 1) {
+                    this.page = 1;
+                    await this.load();
+                }
             } catch (e) {
                 this.notice('Gagal memuat data tipe lokasi kerja.');
             } finally {
@@ -315,6 +363,9 @@ export default {
             try {
                 await axios.patch(`${API}/${w.id}/toggle`, { aktif: v }, CFG);
                 this.notice(`"${w.nama}" ${v ? 'diaktifkan' : 'dinonaktifkan'}.`);
+                // Muat ulang: kartu statistik & cacah tab dihitung server,
+                // jadi tidak bisa disesuaikan dari sini.
+                await this.load();
             } catch (err) {
                 w.status = prev;
                 this.notice(err.response?.data?.message || 'Gagal mengubah status.');
@@ -408,6 +459,18 @@ export default {
 .mw-clear:hover { background: rgba(239, 68, 68, 0.15); color: #dc2626; }
 .mw-empty__btn { margin-top: 0.9rem; }
 
+.mw-pager {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    padding: 0.85rem 1.1rem;
+    border-top: 1px solid var(--line, rgba(11, 16, 51, 0.08));
+}
+.mw-pager__info { font-size: 12px; font-weight: 600; color: #64748b; }
+.mw-pager__info b { color: #0f1235; }
+
 tr.is-off .mw-ico { background: rgba(148, 163, 184, 0.16); color: #64748b; }
 tr.is-off .mw-name strong { color: #64748b; }
 
@@ -416,5 +479,7 @@ tr.is-off .mw-name strong { color: #64748b; }
 }
 @media (max-width: 640px) {
     .mw-status__lbl { display: none; }
+    .mw-pager { justify-content: center; }
+    .mw-pager__info { width: 100%; text-align: center; }
 }
 </style>
