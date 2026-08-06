@@ -82,8 +82,7 @@ const dashboardLabel = computed(() => (isAdminRole.value ? 'Panel Admin' : 'Port
 const links = computed(() => {
     const l = [
         { id: 'hero', label: 'Beranda' },
-        // Section #lowongan sudah tidak ada sejak redesign landing — daftar
-        // lowongan kini dijelajahi lewat section Fungsi Perusahaan (#tim).
+        { id: 'tentang', label: 'Tentang Kami' },
         { id: 'tim', label: 'Lowongan' },
     ];
     if (props.hasMt) l.push({ id: 'mt', label: 'Management Trainee' });

@@ -5,7 +5,7 @@
      ══════════════════════════════════════════════════════════ -->
 <template>
     <Head>
-        <title>Karir - EVO Group | Naik Level Bersama Kami</title>
+        <title>Karir - EVO Group | Bangun Karirmu Bersama Kami</title>
     </Head>
 
     <CareerLayout :has-mt="hasMt" :offices="offices">

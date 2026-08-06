@@ -44,12 +44,11 @@
                     <div class="wc-hero2__content" aria-hidden="false">
                         <span class="wc-hero2__eyebrow"><span class="wc-hero2__dot"></span> EVO Group Career</span>
                         <h1 class="wc-hero2__title">
-                            Naik Level Hidupmu Bersama
+                            Bangun Karirmu Bersama
                             <span class="wc-hero2__grad">EVO Group</span>
                         </h1>
                         <p class="wc-hero2__sub">
-                            Bergabunglah dengan ekosistem people, pet &amp; manufacturing terkemuka di
-                            Sumatera Selatan. Temukan peran, tumbuh, dan wujudkan versi terbaik dirimu.
+                            Bergabunglah dengan EVO FAMILY, perusahaan terdepan di bidang pet food industry di Indonesia. Temukan peran, tumbuh, dan wujudkan versi terbaik dirimu.
                         </p>
 
                         <div class="wc-hero2__search">
@@ -102,7 +101,7 @@
                         </div>
                         <div class="wc-hero2__ribbon">
                             <span class="wc-hero2__ribbon-dot" aria-hidden="true"></span>
-                            <span>Ekosistem people, pet &amp; manufacturing yang terus bertumbuh</span>
+                            <span>Perusahaan terdepan di bidang pet food industry di Indonesia</span>
                         </div>
                     </aside>
                 </div>
