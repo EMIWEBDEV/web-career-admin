@@ -425,12 +425,16 @@
                                                         </div>
                                                     </header>
 
-                                                    <!-- Fields Grid (Draggable Fields) -->
+                                                    <!-- Fields Grid (Draggable Fields) -- `group` SAMA di semua section/step
+                                                         supaya field bisa digeser lintas section maupun lintas step,
+                                                         tidak lagi terkunci hanya di dalam section-nya sendiri. -->
                                                     <draggable
                                                         v-model="B.field"
                                                         item-key="field_id"
                                                         handle=".mfb-drag-field"
+                                                        group="mfb-fields"
                                                         class="mfb-fields-grid"
+                                                        @change="(e) => onFieldDragChange(e, li, bi)"
                                                     >
                                                         <template #item="{ element: F, index: fi }">
                                                             <div
@@ -1742,7 +1746,25 @@ export default {
             this.pilihTarget = { tipe: 'section', li, bi };
         },
         selectField(li, bi, fi) {
-            this.pilihTarget = { tipe: 'field', li, bi, fi };
+            const fieldId = this.schema.langkah?.[li]?.bagian?.[bi]?.field?.[fi]?.field_id;
+            this.pilihTarget = { tipe: 'field', li, bi, fi, fieldId };
+        },
+        /**
+         * Field yang lagi dipilih ikut digeser lintas section/step -> `li/bi/fi`
+         * lama jadi salah alamat begitu drag selesai (posisinya sudah pindah).
+         * Dicocokkan lewat `field_id` (bukan index) supaya inspector tetap
+         * menunjuk field yang benar, bukan field lain yang kebetulan menempati
+         * posisi lama itu sekarang.
+         */
+        onFieldDragChange(evt, li, bi) {
+            const t = this.pilihTarget;
+            if (!t || t.tipe !== 'field' || !t.fieldId) return;
+
+            if (evt.added && evt.added.element?.field_id === t.fieldId) {
+                this.pilihTarget = { tipe: 'field', li, bi, fi: evt.added.newIndex, fieldId: t.fieldId };
+            } else if (evt.moved && evt.moved.element?.field_id === t.fieldId) {
+                this.pilihTarget = { ...t, li, bi, fi: evt.moved.newIndex };
+            }
         },
         targetSection() {
             const t = this.pilihTarget;
