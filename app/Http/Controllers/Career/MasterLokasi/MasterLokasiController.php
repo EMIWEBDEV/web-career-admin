@@ -306,7 +306,7 @@ class MasterLokasiController extends Controller
             'bujur' => 'nullable|numeric|between:-180,180',
             'kontakNama' => 'nullable|string|max:150',
             'kontakTelp' => 'nullable|string|max:40',
-            'catatan' => 'nullable|string|max:1000',
+            'catatan' => 'nullable|string',
             'utama' => 'nullable|boolean',
             // Daftarnya DARI MASTER — peruntukan baru langsung bisa dipilih.
             'peruntukan' => 'nullable|array',

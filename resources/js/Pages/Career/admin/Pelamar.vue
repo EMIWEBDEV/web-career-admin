@@ -1928,29 +1928,37 @@
             icon="bi-printer-fill"
             title="Cetak Laporan Kandidat"
             :subtitle="detailKandidat ? `${detailKandidat.pelamar} — ${detailKandidat.lamaranKode}` : ''"
-            :confirm-label="laporanSiap ? 'Tutup' : 'Buat Laporan'"
+            confirm-label="Buat & Unduh"
             :busy="sibuk"
-            :confirm-disabled="laporanProses"
             form-mode
-            @confirm="laporanSiap ? (laporanShow = false) : konfirmLaporan()"
+            @confirm="konfirmLaporan"
             @cancel="laporanShow = false"
         >
             <div class="plw-fld">
                 <label class="plw-fld__lbl">Format berkas <b>*</b></label>
                 <div class="plw-opts">
-                    <button type="button" class="plw-opt-card" :class="{ 'is-on': laporanFormat === 'PDF' }" @click="laporanFormat = 'PDF'">
+                    <!-- PILIHAN YANG TERPILIH HARUS TERLIHAT TERPILIH.
+                         Sebelumnya kedua kartu tampak sama persis: satu-satunya
+                         pembeda perubahan warna tepi yang nyaris tak terbaca,
+                         sehingga admin menekan "Buat" tanpa yakin format mana
+                         yang akan keluar — dan baru tahu setelah berkasnya jadi.
+                         Sekarang kartunya berwarna, bertepi tebal, dan membawa
+                         tanda centang yang tak bisa salah baca. -->
+                    <button type="button" class="plw-opt-card is-fmt" :class="{ 'is-on': laporanFormat === 'PDF' }" @click="laporanFormat = 'PDF'">
                         <span class="plw-opt-card__dot" style="color:#dc2626"><i class="bi bi-file-earmark-pdf-fill"></i></span>
                         <span class="plw-opt-card__txt">
                             <b>PDF — untuk dibaca &amp; diarsip</b>
-                            <small>Berkop EVO Group, lengkap dengan foto verifikasi dan perjalanan seleksi. Siap dicetak.</small>
+                            <small>Profil kandidat berkop EVO Group: identitas, perjalanan seleksi, dan jawaban formulir. Siap dicetak.</small>
                         </span>
+                        <span class="plw-opt-card__cek"><i class="bi bi-check-lg"></i></span>
                     </button>
-                    <button type="button" class="plw-opt-card" :class="{ 'is-on': laporanFormat === 'XLSX' }" @click="laporanFormat = 'XLSX'">
+                    <button type="button" class="plw-opt-card is-fmt" :class="{ 'is-on': laporanFormat === 'XLSX' }" @click="laporanFormat = 'XLSX'">
                         <span class="plw-opt-card__dot" style="color:#15803d"><i class="bi bi-file-earmark-spreadsheet-fill"></i></span>
                         <span class="plw-opt-card__txt">
                             <b>Excel — untuk diolah</b>
-                            <small>Tiga lembar: profil, perjalanan per aktivitas, dan jawaban formulir. Bisa disaring &amp; dipivot.</small>
+                            <small>Tiga lembar bersaringan: profil, perjalanan per aktivitas, dan jawaban formulir. Siap dipivot.</small>
                         </span>
+                        <span class="plw-opt-card__cek"><i class="bi bi-check-lg"></i></span>
                     </button>
                 </div>
             </div>
@@ -1977,18 +1985,63 @@
                 <span>Kandidat ini punya satu formulir (<b>{{ laporanOpsi[0].label }}</b>) — langsung disertakan.</span>
             </p>
 
-            <div v-if="laporanProses" class="plw-note is-info">
-                <i class="bi bi-arrow-repeat plw-spin"></i>
-                <span>Laporan sedang dibuat di latar belakang…</span>
-            </div>
-            <a v-else-if="laporanSiap" :href="laporanUrl" target="_blank" rel="noopener" class="plw-unduh">
-                <i class="bi bi-download"></i> Unduh laporan {{ laporanFormat === 'XLSX' ? 'Excel' : 'PDF' }}
-            </a>
-            <p v-else-if="laporanGagal" class="plw-note is-err">
+            <!-- TIDAK ADA LAGI TOMBOL "UNDUH" DI SINI.
+                 Dulu: tekan "Buat Laporan" → tunggu di dalam modal → muncul
+                 tautan → tekan lagi. Dua kali menekan untuk satu maksud, dan
+                 modal yang harus dijaga tetap terbuka selama menunggu. Sekarang
+                 modalnya menutup begitu permintaan terkirim, kemajuannya pindah
+                 ke panel unduhan di pojok, dan berkasnya tersimpan sendiri
+                 begitu siap. -->
+            <p v-if="laporanGagal" class="plw-note is-err">
                 <i class="bi bi-exclamation-circle-fill"></i>
                 <span>{{ laporanGagal }}</span>
             </p>
         </ConfirmModal>
+
+        <!-- ══ PANEL UNDUHAN — pojok kanan bawah ══════════════════════════
+             Membuat laporan berjalan di antrean dan bisa memakan puluhan
+             detik. Menahan admin di dalam modal selama itu berarti ia tidak
+             bisa mengerjakan apa pun; menutup modal tanpa jejak berarti ia
+             tidak tahu permintaannya masih hidup. Panel ini menjawab keduanya:
+             pekerjaannya terlihat, halamannya tetap bisa dipakai. -->
+        <transition name="plw-unduhan">
+            <div v-if="unduhan.length" class="plw-unduhan">
+                <div class="plw-unduhan__head">
+                    <span>
+                        <i class="bi bi-cloud-arrow-down-fill"></i>
+                        {{ judulUnduhan }}
+                    </span>
+                    <button type="button" class="plw-unduhan__x" title="Tutup" @click="bersihkanUnduhan">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </div>
+                <div class="plw-unduhan__list">
+                    <div v-for="u in unduhan" :key="u.id" class="plw-unduhan__row">
+                        <!-- Cincin kemajuan: satu lingkaran mengatakan "berapa
+                             lagi" tanpa perlu dibaca. Saat selesai ia berganti
+                             ceklis, bukan hilang — hilang membuat orang ragu
+                             berkasnya benar-benar turun. -->
+                        <span class="plw-ring" :class="'is-' + u.keadaan">
+                            <svg viewBox="0 0 36 36" width="34" height="34">
+                                <circle class="plw-ring__bg" cx="18" cy="18" r="15.5" />
+                                <circle
+                                    class="plw-ring__val" cx="18" cy="18" r="15.5"
+                                    :stroke-dasharray="busur(u.persen)"
+                                />
+                            </svg>
+                            <i v-if="u.keadaan === 'selesai'" class="bi bi-check-lg"></i>
+                            <i v-else-if="u.keadaan === 'gagal'" class="bi bi-exclamation-lg"></i>
+                            <b v-else>{{ bulat(u.persen) }}</b>
+                        </span>
+                        <span class="plw-unduhan__txt">
+                            <b :title="u.nama">{{ u.nama }}</b>
+                            <small :class="{ 'is-err': u.keadaan === 'gagal' }">{{ u.pesan }}</small>
+                        </span>
+                        <i class="bi plw-unduhan__ikon" :class="u.format === 'XLSX' ? 'bi-file-earmark-spreadsheet-fill is-xls' : 'bi-file-earmark-pdf-fill is-pdf'"></i>
+                    </div>
+                </div>
+            </div>
+        </transition>
 
         <!-- JADWAL MASSAL. Satu jendela untuk seratus kandidat.
              Rinciannya sengaja dipampang di muka (siapa saja, jam berapa
@@ -2348,11 +2401,13 @@ export default {
             laporanFormat: 'PDF',
             laporanOpsi: [],
             laporanFormulir: [],
-            laporanProses: false,
-            laporanSiap: false,
-            laporanUrl: '',
             laporanGagal: '',
-            laporanTimer: null,
+            // Antrean unduhan yang sedang berjalan — ditampilkan di pojok kanan
+            // bawah. Array, bukan satu objek: admin kerap mencetak beberapa
+            // kandidat berturut-turut tanpa menunggu yang sebelumnya selesai.
+            unduhan: [],
+            // Pegangan gelung animasi progres — satu untuk seluruh baris.
+            unduhanRaf: null,
             // Peta label per komponen formulir — dihitung sekali, dipakai
             // berkali-kali (drawer dibuka-tutup terus sepanjang hari).
             cacheLabel: {},
@@ -2485,17 +2540,13 @@ export default {
             posisiPilih: '', // '' = semua lowongan
         };
     },
-    // Interval pemantau laporan hidup di luar siklus Vue — tanpa dibersihkan,
-    // ia terus menembak API setelah halaman ditinggalkan.
+    // Pemantau unduhan hidup di luar siklus Vue — tanpa dibersihkan, ia terus
+    // menembak API setelah halaman ditinggalkan.
     beforeUnmount() {
-        clearInterval(this.laporanTimer);
+        this.unduhan.forEach((u) => clearTimeout(u.timer));
+        if (this.unduhanRaf) cancelAnimationFrame(this.unduhanRaf);
     },
     watch: {
-        // Modal ditutup = berhenti bertanya. Admin yang menutupnya sudah tidak
-        // menunggu jawabannya, dan berkasnya tetap tersimpan bila memang jadi.
-        laporanShow(buka) {
-            if (!buka) clearInterval(this.laporanTimer);
-        },
         // Pilihan DIKOSONGKAN saat papan berganti isi.
         //
         // Tanpa ini, kandidat yang terpilih lalu tersaring keluar tetap terbawa
@@ -2797,6 +2848,14 @@ export default {
             return this.daftarLokasi.filter((l) => (l.peruntukan || []).includes(kode));
         },
         bolehLokasiLain() { return !!this.peruntukanJadwal?.izinkanLainnya; },
+        /** Judul panel unduhan — menyebut jumlahnya, bukan sekadar "Unduhan". */
+        judulUnduhan() {
+            const jalan = this.unduhan.filter((u) => u.keadaan === 'siap' || u.keadaan === 'unduh').length;
+
+            return jalan
+                ? `Menyiapkan ${jalan} berkas…`
+                : `${this.unduhan.length} berkas selesai`;
+        },
         /**
          * Tempat yang sedang dipilih — dari master ATAU yang diketik sendiri.
          *
@@ -3645,9 +3704,6 @@ export default {
         async askLaporan() {
             if (!this.detailKandidat?.id) return;
             this.laporanFormat = 'PDF';
-            this.laporanSiap = false;
-            this.laporanProses = false;
-            this.laporanUrl = '';
             this.laporanGagal = '';
             this.laporanOpsi = [];
             this.laporanFormulir = [];
@@ -3663,66 +3719,288 @@ export default {
                 this.laporanGagal = e.response?.data?.message || 'Gagal memuat daftar formulir.';
             }
         },
+        /**
+         * Minta laporan → modal MENUTUP → kemajuannya pindah ke pojok.
+         *
+         * Modal tidak lagi menunggui pekerjaannya. Membuat laporan berjalan di
+         * antrean dan bisa memakan puluhan detik; menahan admin di dalam jendela
+         * selama itu membuat seluruh halaman tak bisa dipakai untuk hal lain.
+         */
         async konfirmLaporan() {
-            if (this.laporanProses || !this.detailKandidat?.id) return;
-            this.laporanProses = true;
+            if (!this.detailKandidat?.id) return;
             this.laporanGagal = '';
+
+            const format = this.laporanFormat;
+            const nama = `${this.detailKandidat.pelamar || 'Kandidat'} — ${this.detailKandidat.lamaranKode || ''}`.trim();
+            const unduh = this.mulaiUnduhan(nama, format);
+
+            this.laporanShow = false;
+
             try {
                 const res = await axios.post(`/api/v1/karir/lamaran/${this.detailKandidat.id}/laporan`, {
-                    format: this.laporanFormat,
+                    format,
                     formulir: this.laporanFormulir,
                 }, CFG);
-                this.pantauLaporan(res.data?.result?.id);
+                this.pantauLaporan(unduh, res.data?.result?.id);
             } catch (e) {
-                this.laporanProses = false;
-                this.laporanGagal = e.response?.data?.message || 'Gagal meminta laporan.';
+                this.gagalkanUnduhan(unduh, e.response?.data?.message || 'Gagal meminta laporan.');
             }
         },
+
+        /** Baris baru di panel unduhan. Mengembalikan objeknya, bukan indeksnya:
+         *  indeks bergeser begitu ada baris lain yang ditutup. */
+        mulaiUnduhan(nama, format) {
+            const u = {
+                id: `u${Date.now()}${this.unduhan.length}`,
+                nama,
+                format,
+                // DUA ANGKA, BUKAN SATU.
+                //
+                // `target` adalah kebenaran yang datang dari server; `persen`
+                // adalah yang dilihat mata dan selalu MENGEJAR target, tidak
+                // pernah melompat ke sana. Bilah yang melompat 0 → 100 saat
+                // jawaban tiba terbaca seperti kerusakan, dan bilah yang diam
+                // lama lalu melompat justru membuat orang menekan tombolnya
+                // lagi. Yang meyakinkan adalah gerak yang tak pernah berhenti.
+                persen: 0,
+                target: 0,
+                keadaan: 'siap',       // siap → unduh → selesai | gagal
+                pesan: 'Menyiapkan berkas…',
+                // Berkas sudah benar-benar tersimpan; tinggal menunggu cincinnya
+                // sampai di 100 supaya perpindahan ke "Selesai" tidak mendahului
+                // animasinya.
+                tuntas: false,
+                timer: null,
+            };
+            this.unduhan.push(u);
+            this.jalankanAnimasi();
+
+            return u;
+        },
+
+        gagalkanUnduhan(u, pesan) {
+            clearTimeout(u.timer);
+            u.keadaan = 'gagal';
+            u.pesan = pesan;
+            u.persen = 0;
+            u.target = 0;
+        },
+
         /**
-         * Tanya berkala sampai laporannya jadi.
+         * Satu gelung animasi untuk SELURUH baris — bukan satu per baris.
          *
-         * Berhenti sendiri setelah ~2 menit: antrean yang mati membuat status
-         * DIPROSES bertahan selamanya, dan lingkaran berputar tanpa akhir lebih
-         * membingungkan daripada pesan gagal yang jujur.
+         * Tiap bingkai, angka yang tampil mendekat ke targetnya sebesar
+         * sebagian dari selisihnya: cepat saat jauh, melambat saat mendekat.
+         * Itu sebabnya lompatan 90 → 100 terbaca sebagai "mengejar", bukan
+         * sebagai kedipan.
+         *
+         * Gelungnya berhenti sendiri begitu tak ada lagi yang perlu digerakkan
+         * — rAF yang berjalan selamanya membuat tab ini terus membangunkan CPU
+         * meski tak ada unduhan sama sekali.
          */
-        pantauLaporan(id) {
+        jalankanAnimasi() {
+            if (this.unduhanRaf) return;
+
+            const langkah = () => {
+                let hidup = false;
+
+                for (const u of this.unduhan) {
+                    const selisih = u.target - u.persen;
+                    if (selisih > 0.05) {
+                        // Minimal 0,25 supaya sisa terakhir tidak merayap
+                        // selamanya karena selisihnya mengecil terus.
+                        u.persen = Math.min(u.target, u.persen + Math.max(0.25, selisih * 0.11));
+                        hidup = true;
+                    } else if (selisih > 0) {
+                        u.persen = u.target;
+                    }
+
+                    // Label berganti SETELAH cincinnya penuh — bukan sebelum.
+                    if (u.tuntas && u.keadaan !== 'selesai' && u.persen >= 99.5) {
+                        u.keadaan = 'selesai';
+                        u.pesan = u.pesanSelesai || 'Tersimpan';
+                    }
+                    if (u.tuntas && u.keadaan !== 'selesai') hidup = true;
+                }
+
+                this.unduhanRaf = hidup ? requestAnimationFrame(langkah) : null;
+            };
+
+            this.unduhanRaf = requestAnimationFrame(langkah);
+        },
+
+        /** Angka bulat untuk ditampilkan — nilainya sendiri disimpan pecahan. */
+        bulat(n) { return Math.min(100, Math.round(n || 0)); },
+
+        /**
+         * Panjang busur cincin. Memakai nilai PECAHAN, bukan yang sudah
+         * dibulatkan: pembulatan membuat lingkarannya bergerak melangkah satu
+         * persen sekali — dan gerak melangkah persis yang ingin dihindari.
+         */
+        busur(n) {
+            const KELILING = 97.4;   // 2πr, r = 15.5
+
+            return `${(Math.min(100, Math.max(0, n || 0)) / 100) * KELILING} ${KELILING}`;
+        },
+
+        /** Tutup panel — hanya membuang tampilannya, berkas yang sudah turun tetap ada. */
+        bersihkanUnduhan() {
+            this.unduhan.forEach((u) => clearTimeout(u.timer));
+            this.unduhan = [];
+            if (this.unduhanRaf) {
+                cancelAnimationFrame(this.unduhanRaf);
+                this.unduhanRaf = null;
+            }
+        },
+
+        /**
+         * Tanya berkala sampai laporannya jadi, lalu unduh sendiri.
+         *
+         * Berhenti setelah ~2 menit: antrean yang mati membuat status DIPROSES
+         * bertahan selamanya, dan lingkaran berputar tanpa akhir lebih
+         * membingungkan daripada pesan gagal yang jujur.
+         *
+         * KEMAJUAN TAHAP PENYIAPAN DISIMULASIKAN sampai 90%, dan itu disengaja:
+         * server tidak tahu berapa persen sebuah PDF "sudah jadi", dan mengarang
+         * angka yang melompat ke 100 lalu diam justru lebih menyesatkan daripada
+         * bilah yang merambat pelan. Sisa 10% diisi unduhan yang persentasenya
+         * BENAR — dihitung dari byte yang sudah turun.
+         */
+        pantauLaporan(u, id) {
             if (!id) {
-                this.laporanProses = false;
-                this.laporanGagal = 'Permintaan tidak dikenali.';
+                this.gagalkanUnduhan(u, 'Permintaan tidak dikenali.');
 
                 return;
             }
 
-            let sisa = 40;
-            clearInterval(this.laporanTimer);
-            this.laporanTimer = setInterval(async () => {
-                sisa--;
-                if (sisa <= 0) {
-                    clearInterval(this.laporanTimer);
-                    this.laporanProses = false;
-                    this.laporanGagal = 'Laporan belum selesai — pastikan worker antrean berjalan, lalu coba lagi.';
+            u.keadaan = 'siap';
+            u.pesan = 'Menyiapkan berkas…';
+
+            // ── ANGGARAN WAKTU: 4 MENIT ────────────────────────────────────
+            //
+            // Diukur dari riwayat nyata di N_WEB_CAREERS_Export_Log: laporan
+            // memakan 17–97 detik, dan yang terlama terjadi saat worker baru
+            // bangun. Batas sebelumnya 80 detik — lebih pendek daripada
+            // pekerjaan yang memang normal, sehingga panelnya menyerah pada
+            // berkas yang sebentar lagi jadi dan admin mengulang permintaan
+            // yang sebenarnya masih hidup.
+            //
+            // Jarak tanyanya melebar seiring waktu: cepat di awal supaya yang
+            // ringan terasa seketika, melambat kemudian supaya menunggu tiga
+            // menit tidak berarti 150 permintaan.
+            const MULAI = Date.now();
+            const BATAS = 4 * 60 * 1000;
+            const jeda = (lewat) => (lewat < 15000 ? 1200 : lewat < 45000 ? 2500 : 5000);
+
+            const tanya = async () => {
+                const lewat = Date.now() - MULAI;
+
+                // Yang dinaikkan TARGET-nya; yang tampil mengejarnya sendiri.
+                // Merambat melambat mendekati 90 — memberi kesan bergerak tanpa
+                // pernah berjanji hampir selesai. Angka 90 disengaja: sisanya
+                // milik unduhan yang persentasenya benar-benar terukur, jadi
+                // bilah ini tak pernah sampai penuh atas dasar tebakan.
+                u.target = Math.min(90, u.target + Math.max(1.2, (90 - u.target) / 9));
+                this.jalankanAnimasi();
+
+                if (lewat > BATAS) {
+                    this.gagalkanUnduhan(u, 'Belum selesai setelah 4 menit — periksa worker antrean, lalu coba lagi.');
 
                     return;
                 }
+
                 try {
                     const { data } = await axios.get(`/api/v1/karir/lamaran/laporan/${id}`, CFG);
                     const r = data?.result || {};
+
                     if (r.selesai) {
-                        clearInterval(this.laporanTimer);
-                        this.laporanProses = false;
-                        this.laporanSiap = true;
-                        this.laporanUrl = r.url;
-                    } else if (r.gagal) {
-                        clearInterval(this.laporanTimer);
-                        this.laporanProses = false;
-                        this.laporanGagal = r.pesan || 'Laporan gagal dibuat.';
+                        await this.tarikBerkas(u, id);
+
+                        return;
+                    }
+                    if (r.gagal) {
+                        this.gagalkanUnduhan(u, r.pesan || 'Laporan gagal dibuat.');
+
+                        return;
+                    }
+                    // Menunggu lama bukan kerusakan — tapi diam tanpa kabar
+                    // membuatnya terasa begitu. Kalimatnya berubah supaya
+                    // terlihat masih hidup.
+                    if (lewat > 30000) {
+                        u.pesan = `Masih diproses… ${Math.round(lewat / 1000)} detik`;
                     }
                 } catch (e) {
-                    clearInterval(this.laporanTimer);
-                    this.laporanProses = false;
-                    this.laporanGagal = 'Gagal memeriksa status laporan.';
+                    this.gagalkanUnduhan(u, 'Gagal memeriksa status laporan.');
+
+                    return;
                 }
-            }, 3000);
+
+                u.timer = setTimeout(tanya, jeda(lewat));
+            };
+
+            clearTimeout(u.timer);
+            u.timer = setTimeout(tanya, 900);
+        },
+
+        /**
+         * Tarik berkasnya sebagai blob lalu SIMPAN SENDIRI.
+         *
+         * Bukan membuka tautan di tab baru: tab yang terbuka lalu menutup
+         * sendiri terlihat seperti kedipan tak jelas, dan pemblokir pop-up
+         * kerap menahannya tanpa memberi tahu siapa pun. Dengan blob,
+         * persentasenya nyata dan berkasnya benar-benar tersimpan.
+         */
+        async tarikBerkas(u, id) {
+            u.keadaan = 'unduh';
+            u.target = Math.max(u.target, 90);
+            u.pesan = 'Mengunduh…';
+            this.jalankanAnimasi();
+
+            try {
+                const res = await axios.get(`/api/v1/karir/lamaran/laporan/${id}/unduh`, {
+                    ...CFG,
+                    responseType: 'blob',
+                    onDownloadProgress: (e) => {
+                        if (!e.total) return;
+                        // 90–100%: penyiapan sudah memakai 0–90.
+                        u.target = 90 + (e.loaded / e.total) * 10;
+                        this.jalankanAnimasi();
+                    },
+                });
+
+                const nama = this.namaBerkas(res, u);
+                const url = URL.createObjectURL(res.data);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = nama;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                // Dilepas setelah peramban sempat memulai unduhan; mencabutnya
+                // seketika membatalkan berkas yang baru saja diklik.
+                setTimeout(() => URL.revokeObjectURL(url), 60000);
+
+                // Berkasnya SUDAH tersimpan. Yang ditunda hanya labelnya —
+                // sampai cincinnya benar-benar penuh, supaya "Selesai" tidak
+                // muncul di atas lingkaran yang masih separuh.
+                u.target = 100;
+                u.tuntas = true;
+                u.pesanSelesai = `Tersimpan · ${nama}`;
+                this.jalankanAnimasi();
+            } catch (e) {
+                this.gagalkanUnduhan(u, 'Berkas gagal diunduh.');
+            }
+        },
+
+        /** Nama berkas dari header server; kalau tak ada, disusun sendiri. */
+        namaBerkas(res, u) {
+            const cd = res.headers?.['content-disposition'] || '';
+            const m = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(cd);
+            if (m) return decodeURIComponent(m[1]);
+
+            const aman = (u.nama || 'laporan').replace(/[^\w\s.-]+/g, '').trim().replace(/\s+/g, '-');
+
+            return `${aman}.${u.format === 'XLSX' ? 'xlsx' : 'pdf'}`;
         },
 
         /* ── PENYARING & PILIH BANYAK ──────────────────────────────────────── */
@@ -4441,8 +4719,55 @@ export default {
 .plw-cek input { margin-top: 2px; width: 15px; height: 15px; accent-color: #4f46e5; flex: none; cursor: pointer; }
 .plw-cek b { display: block; font-size: 12.5px; font-weight: 800; color: #1e293b; }
 .plw-cek small { display: block; margin-top: 1px; font-size: 11px; color: #64748b; }
-.plw-unduh { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 12px; padding: 11px; border-radius: 11px; background: linear-gradient(135deg, #059669, #10b981); color: #fff; font-size: 13px; font-weight: 800; text-decoration: none; box-shadow: 0 8px 20px rgba(16, 185, 129, .28); }
-.plw-unduh:hover { filter: brightness(1.05); }
+/* ══ PANEL UNDUHAN (pojok kanan bawah) ══════════════════════════════════
+   Melayang di atas halaman, bukan di dalam modal: pekerjaannya berjalan di
+   antrean dan admin harus tetap bisa memakai papan sementara menunggu. */
+.plw-unduhan {
+    position: fixed; right: 20px; bottom: 20px; z-index: 3000;
+    width: 340px; max-width: calc(100vw - 40px);
+    background: #fff; border: 1px solid #e6e9f2; border-radius: 14px;
+    box-shadow: 0 18px 44px rgba(15, 23, 42, .18); overflow: hidden;
+}
+.plw-unduhan__head {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 11px 13px; background: #1e293b; color: #fff;
+    font-size: 12.5px; font-weight: 700;
+}
+.plw-unduhan__head i { margin-right: 6px; }
+.plw-unduhan__x {
+    border: 0; background: transparent; color: #94a3b8; cursor: pointer;
+    font-size: 12px; padding: 2px 4px; border-radius: 6px;
+}
+.plw-unduhan__x:hover { color: #fff; background: rgba(255, 255, 255, .12); }
+.plw-unduhan__list { max-height: 260px; overflow-y: auto; }
+.plw-unduhan__row { display: flex; align-items: center; gap: 11px; padding: 11px 13px; border-bottom: 1px solid #f1f4f9; }
+.plw-unduhan__row:last-child { border-bottom: 0; }
+.plw-unduhan__txt { flex: 1; min-width: 0; }
+.plw-unduhan__txt b { display: block; font-size: 12.5px; font-weight: 700; color: #1e293b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.plw-unduhan__txt small { display: block; font-size: 11px; color: #94a3b8; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.plw-unduhan__txt small.is-err { color: #dc2626; }
+.plw-unduhan__ikon { flex: none; font-size: 17px; }
+.plw-unduhan__ikon.is-pdf { color: #dc2626; }
+.plw-unduhan__ikon.is-xls { color: #15803d; }
+
+/* Cincin kemajuan — satu lingkaran menjawab "berapa lagi" tanpa perlu dibaca. */
+.plw-ring { position: relative; flex: none; width: 34px; height: 34px; display: grid; place-items: center; }
+.plw-ring svg { position: absolute; inset: 0; transform: rotate(-90deg); }
+.plw-ring__bg { fill: none; stroke: #eef1f7; stroke-width: 3; }
+.plw-ring__val { fill: none; stroke: #6366f1; stroke-width: 3; stroke-linecap: round; transition: stroke-dasharray .3s ease; }
+.plw-ring b { position: relative; font-size: 10px; font-weight: 800; color: #475569; }
+.plw-ring i { position: relative; font-size: 15px; }
+.plw-ring.is-selesai .plw-ring__val { stroke: #10b981; }
+.plw-ring.is-selesai i { color: #10b981; }
+.plw-ring.is-gagal .plw-ring__val { stroke: #ef4444; }
+.plw-ring.is-gagal i { color: #ef4444; }
+
+.plw-unduhan-enter-active, .plw-unduhan-leave-active { transition: transform .22s ease, opacity .22s ease; }
+.plw-unduhan-enter-from, .plw-unduhan-leave-to { transform: translateY(16px); opacity: 0; }
+
+@media (max-width: 520px) {
+    .plw-unduhan { right: 12px; left: 12px; bottom: 12px; width: auto; }
+}
 
 .plw-drawer__close { appearance: none; border: 1px solid #e6e9f3; background: #fff; width: 38px; height: 38px; border-radius: 11px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.16s; color: #64748b; }
 .plw-drawer__close:hover { background: #f1f5f9; color: #0f172a; }
@@ -4590,6 +4915,26 @@ export default {
 .plw-opt-card__txt { min-width: 0; }
 .plw-opt-card__txt b { display: block; font-size: 13px; font-weight: 800; color: #1e293b; }
 .plw-opt-card__txt small { display: block; font-size: 11px; color: #94a3b8; margin-top: 1px; line-height: 1.4; }
+/* ── PILIHAN FORMAT BERKAS ──────────────────────────────────────────────
+   Kedua kartu dulu tampak sama persis; satu-satunya pembeda perubahan warna
+   tepi yang nyaris tak terbaca. Admin menekan "Buat" tanpa yakin format mana
+   yang akan keluar. Sekarang: tepi tebal, latar berwarna, dan ceklis di kanan
+   yang muncul HANYA pada yang terpilih. */
+.plw-opt-card.is-fmt { padding: 11px 13px; }
+.plw-opt-card.is-fmt .plw-opt-card__cek {
+    flex: none; margin-left: auto; width: 21px; height: 21px; border-radius: 50%;
+    display: grid; place-items: center; font-size: 11px;
+    border: 1.5px solid #d8dcea; color: transparent; background: #fff;
+    transition: background .16s, border-color .16s, color .16s;
+}
+.plw-opt-card.is-fmt.is-on {
+    border-color: #6366f1; background: rgba(99, 102, 241, .06);
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, .12);
+}
+.plw-opt-card.is-fmt.is-on .plw-opt-card__cek { background: #6366f1; border-color: #6366f1; color: #fff; }
+.plw-opt-card.is-fmt.is-on .plw-opt-card__dot { background: #fff; box-shadow: 0 1px 3px rgba(30, 41, 59, .12); }
+.plw-opt-card.is-fmt.is-on .plw-opt-card__txt b { color: #3730a3; }
+
 .plw-opt-card.is-on.is-ok { border-color: rgba(16, 185, 129, .5); background: rgba(16, 185, 129, .07); box-shadow: 0 0 0 3px rgba(16, 185, 129, .1); }
 .plw-opt-card.is-on.is-ok .plw-opt-card__dot { background: #10b981; color: #fff; }
 .plw-opt-card.is-on.is-warn { border-color: rgba(245, 158, 11, .55); background: rgba(245, 158, 11, .09); box-shadow: 0 0 0 3px rgba(245, 158, 11, .1); }

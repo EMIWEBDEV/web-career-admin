@@ -148,32 +148,71 @@ class WcLaporanKandidatJob implements ShouldQueue
         $s = $book->getActiveSheet();
         $s->setTitle('Profil');
 
-        $judul = fn (string $teks, int $baris) => $s->setCellValue("A{$baris}", $teks);
+        // ── KEPALA DOKUMEN ──────────────────────────────────────────────
+        // Judul + identitas kandidat berdiri sendiri di atas. Berkas ini
+        // sering disalin ke lampiran email dan dibuka tanpa konteks apa pun;
+        // tanpa kepala, yang membukanya tidak tahu ini milik siapa.
+        $s->setCellValue('A1', 'PROFIL KANDIDAT — EVO GROUP');
+        $s->mergeCells('A1:B1');
+        $s->getStyle('A1')->getFont()->setBold(true)->setSize(15)->getColor()->setRGB('FFFFFF');
+        $s->getStyle('A1')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('1D4ED8');
+        $s->getStyle('A1')->getAlignment()->setVertical(Alignment::VERTICAL_CENTER)->setIndent(1);
+        $s->getRowDimension(1)->setRowHeight(30);
 
-        $judul('LAPORAN KANDIDAT SELEKSI — EVO GROUP', 1);
-        $s->mergeCells('A1:D1');
-        $s->getStyle('A1')->getFont()->setBold(true)->setSize(14)->getColor()->setRGB('FFFFFF');
-        $s->getStyle('A1')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('1E40AF');
-        $s->getStyle('A1')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
-        $s->getRowDimension(1)->setRowHeight(26);
+        $s->setCellValue('A2', $d['kandidat']['nama'] . ' · ' . $d['kandidat']['kodeLamaran']);
+        $s->mergeCells('A2:B2');
+        $s->getStyle('A2')->getFont()->setBold(true)->setSize(10)->getColor()->setRGB('1E293B');
+        $s->getStyle('A2')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('EEF2F9');
+        $s->getStyle('A2')->getAlignment()->setVertical(Alignment::VERTICAL_CENTER)->setIndent(1);
+        $s->getRowDimension(2)->setRowHeight(20);
 
-        $baris = 3;
-        foreach ([
-            'Nama Kandidat' => $d['kandidat']['nama'],
-            'Kode Lamaran' => $d['kandidat']['kodeLamaran'],
-            'Email' => $d['kandidat']['email'],
-            'No. Handphone' => $d['kandidat']['hp'],
-            'Institusi' => $d['kandidat']['kampus'],
-            'Tahun Lulus' => $d['kandidat']['tahunLulus'],
-            'Program' => $d['lamaran']['program'],
-            'Posisi Dilamar' => $d['lamaran']['posisi'],
-            'Departemen' => $d['lamaran']['departemen'],
-            'Lokasi' => $d['lamaran']['lokasi'],
-            'Status Akhir' => $d['lamaran']['status'],
-        ] as $k => $v) {
-            $s->setCellValue("A{$baris}", $k);
-            $s->setCellValue("B{$baris}", (string) ($v ?: '—'));
-            $s->getStyle("A{$baris}")->getFont()->setBold(true);
+        $baris = 4;
+        // Dikelompokkan dengan sub-judul: 20 baris label-nilai beruntun tanpa
+        // pemisah memaksa mata menelusuri satu per satu untuk menemukan
+        // "posisi apa yang ia lamar".
+        $blok = [
+            'DATA KANDIDAT' => [
+                'Nama Kandidat' => $d['kandidat']['nama'],
+                'Kode Lamaran' => $d['kandidat']['kodeLamaran'],
+                'Email' => $d['kandidat']['email'],
+                'No. Handphone' => $d['kandidat']['hp'],
+                'Tanggal Lahir' => $d['kandidat']['tglLahir'],
+                'Jenis Kelamin' => $d['kandidat']['jkel'],
+                'Institusi' => $d['kandidat']['kampus'],
+                'Tahun Lulus' => $d['kandidat']['tahunLulus'],
+            ],
+            'LAMARAN' => [
+                'Program' => $d['lamaran']['program'],
+                'Posisi Dilamar' => $d['lamaran']['posisi'],
+                'Level' => $d['lamaran']['level'],
+                'Departemen' => $d['lamaran']['departemen'],
+                'Penempatan' => $d['lamaran']['lokasi'],
+                'Tanggal Melamar' => $d['lamaran']['waktuLamar'],
+            ],
+            'HASIL' => [
+                'Status Akhir' => $d['lamaran']['status'],
+                'Berhenti di Tahap' => $d['lamaran']['gugurDi'],
+                'Alasan' => $d['lamaran']['alasanGugur'],
+                'Dicetak' => $d['dicetak'],
+            ],
+        ];
+
+        foreach ($blok as $judulBlok => $isi) {
+            $s->setCellValue("A{$baris}", $judulBlok);
+            $s->mergeCells("A{$baris}:B{$baris}");
+            $s->getStyle("A{$baris}")->getFont()->setBold(true)->setSize(8)->getColor()->setRGB('1D4ED8');
+            $s->getStyle("A{$baris}")->getBorders()->getBottom()->setBorderStyle(Border::BORDER_THIN);
+            $baris++;
+
+            foreach ($isi as $k => $v) {
+                $s->setCellValue("A{$baris}", $k);
+                $s->setCellValueExplicit("B{$baris}", (string) ($v ?: '—'),
+                    \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+                $s->getStyle("A{$baris}")->getFont()->getColor()->setRGB('64748B');
+                $s->getStyle("B{$baris}")->getFont()->setBold(true);
+                $s->getStyle("B{$baris}")->getAlignment()->setWrapText(true);
+                $baris++;
+            }
             $baris++;
         }
 
@@ -205,9 +244,7 @@ class WcLaporanKandidatJob implements ShouldQueue
                 $r++;
             }
         }
-        foreach (range('A', 'H') as $k) {
-            $t->getColumnDimension($k)->setAutoSize(true);
-        }
+        $this->rapikanTabel($t, 'A', 'H', $r);
 
         // ── Sheet jawaban formulir ──────────────────────────────────────
         $f = $book->createSheet();
@@ -223,14 +260,15 @@ class WcLaporanKandidatJob implements ShouldQueue
                 $r++;
             }
         }
-        foreach (range('A', 'D') as $k) {
-            $f->getColumnDimension($k)->setAutoSize(true);
-        }
-        $f->getStyle('D1:D' . max(2, $r))->getAlignment()->setWrapText(true);
+        $this->rapikanTabel($f, 'A', 'D', $r);
+        // Jawaban bisa satu paragraf; lebar otomatis akan melebar sampai layar
+        // habis, jadi kolomnya dipatok dan dibungkus.
+        $f->getColumnDimension('D')->setAutoSize(false);
+        $f->getColumnDimension('D')->setWidth(62);
+        $f->getStyle('D2:D' . max(2, $r - 1))->getAlignment()->setWrapText(true)->setVertical(Alignment::VERTICAL_TOP);
 
-        foreach (range('A', 'B') as $k) {
-            $s->getColumnDimension($k)->setAutoSize(true);
-        }
+        $s->getColumnDimension('A')->setWidth(24);
+        $s->getColumnDimension('B')->setWidth(52);
         $book->setActiveSheetIndex(0);
 
         // Ditulis ke memori, bukan ke berkas sementara: laporan satu kandidat
@@ -248,10 +286,48 @@ class WcLaporanKandidatJob implements ShouldQueue
     /** Gaya baris kepala tabel — sama di seluruh sheet. */
     private function kepala(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet, string $range): void
     {
-        $sheet->getStyle($range)->getFont()->setBold(true)->getColor()->setRGB('FFFFFF');
-        $sheet->getStyle($range)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('1E40AF');
-        $sheet->getStyle($range)->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
+        $sheet->getStyle($range)->getFont()->setBold(true)->setSize(9)->getColor()->setRGB('FFFFFF');
+        $sheet->getStyle($range)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('1D4ED8');
+        $sheet->getStyle($range)->getAlignment()->setVertical(Alignment::VERTICAL_CENTER);
+        $sheet->getRowDimension(1)->setRowHeight(22);
         $sheet->freezePane('A2');
+    }
+
+    /**
+     * Rapikan tabel data: lebar kolom, garis, baris berselang, dan SARINGAN.
+     *
+     * Autofilter yang paling menentukan — sheet ini memang dibuat untuk
+     * diolah, dan tanpa saringan pembaca harus memasangnya sendiri tiap kali
+     * membuka berkas. Baris berselang dipakai karena tabel perjalanan mengulang
+     * nama tahap di tiap aktivitas; tanpa selang-seling, mata kehilangan baris
+     * saat menggeser ke kanan.
+     *
+     * @param  int  $akhir  nomor baris SESUDAH baris terakhir yang terisi
+     */
+    private function rapikanTabel(
+        \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet,
+        string $dari,
+        string $sampai,
+        int $akhir,
+    ): void {
+        $terakhir = max(2, $akhir - 1);
+        $rentang = "{$dari}1:{$sampai}{$terakhir}";
+
+        foreach (range($dari, $sampai) as $k) {
+            $sheet->getColumnDimension($k)->setAutoSize(true);
+        }
+
+        $sheet->getStyle($rentang)->getBorders()->getAllBorders()
+            ->setBorderStyle(Border::BORDER_THIN)->getColor()->setRGB('E2E8F0');
+
+        for ($b = 2; $b <= $terakhir; $b++) {
+            if ($b % 2 === 0) {
+                $sheet->getStyle("{$dari}{$b}:{$sampai}{$b}")->getFill()
+                    ->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('F8FAFC');
+            }
+        }
+
+        $sheet->setAutoFilter($rentang);
     }
 
     public function failed(\Throwable $e): void

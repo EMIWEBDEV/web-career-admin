@@ -234,7 +234,7 @@ class TalentPoolController extends Controller
             $data = $request->validate([
                 'status' => 'required|in:AKTIF,DITARIK,ARSIP',
                 'tag' => 'nullable|string|max:150',
-                'catatan' => 'nullable|string|max:1000',
+                'catatan' => 'nullable|string',
             ]);
 
             $ubah = [

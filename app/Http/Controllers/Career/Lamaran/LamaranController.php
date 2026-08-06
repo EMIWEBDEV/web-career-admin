@@ -195,7 +195,7 @@ class LamaranController extends Controller
                 'pembukaanId' => 'required|string',
                 'posisiId' => 'required|string',
                 'gugur' => 'nullable',
-                'alasan' => 'nullable|string|max:500',
+                'alasan' => 'nullable|string',
                 'jawaban' => 'nullable',
                 'berkas' => 'nullable|array',
                 'berkas.*' => 'file|max:2048|mimetypes:application/pdf,image/jpeg',
@@ -3333,10 +3333,21 @@ class LamaranController extends Controller
             // Daftar hasil dibaca dari MASTER, bukan ditulis mati — menambah
             // hasil baru cukup satu baris di Master Hasil Keputusan.
             'hasil' => ['required', Rule::in(\App\Support\Career\LamaranService::masterHasilKeputusan()->keys()->all())],
-            'catatan' => 'nullable|string|max:500',
+            // ── TANPA BATAS PANJANG, DAN ITU DISENGAJA ───────────────────────
+            //
+            // Kolomnya VARCHAR(MAX). Batas di sini dulu 500 dan 200.000; yang
+            // pertama tercapai oleh catatan wawancara biasa, yang kedua oleh
+            // catatan berisi pindaian lembar penilaian. Keduanya menolak SETELAH
+            // penilai selesai menulis — isinya hilang, dan tak ada cara
+            // memperpendeknya tanpa membuang penilaian yang memang perlu ada.
+            //
+            // Menggeser angkanya hanya memindahkan tanggal kejadiannya. Yang
+            // membatasi sekarang adalah ukuran badan permintaan (post_max_size),
+            // satu tempat, dan itu memang batas yang benar.
+            'catatan' => 'nullable|string',
             // Alasan berformat — keputusan yang menutup lamaran orang layak
             // ditulis selengkap catatan wawancara, bukan satu baris.
-            'catatanHtml' => 'nullable|string|max:200000',
+            'catatanHtml' => 'nullable|string',
             // Kandidat ini disimpan di Talent Pool atau tidak. HANYA dipakai
             // untuk hasil ber-Flag_Pilih_Talent_Pool='Y' (pengunduran diri &
             // penolakan penawaran); hasil lain tetap mengikuti masternya.
@@ -3545,8 +3556,8 @@ class LamaranController extends Controller
             // ketikan berbeda untuk sebab yang sama tak akan pernah
             // terkelompokkan.
             'alasanKode' => ['nullable', 'string', 'max:40'],
-            'catatan' => 'nullable|string|max:500',
-            'catatanHtml' => 'nullable|string|max:200000',
+            'catatan' => 'nullable|string',
+            'catatanHtml' => 'nullable|string',
         ]);
 
         $tahap = DB::table('N_WEB_CAREERS_Lamaran_Tahap')->where('Id_Lamaran_Tahap', $realId)->first();
@@ -3944,13 +3955,49 @@ class LamaranController extends Controller
             abort(404);
         }
 
+        // DIALIRKAN LEWAT ORIGIN KITA, BUKAN DIALIHKAN KE URL BERTANDA TANGAN.
+        //
+        // Pengalihan ke bucket memang lebih hemat, tetapi menutup satu-satunya
+        // cara peramban mengetahui KEMAJUAN unduhan: permintaan lintas-origin ke
+        // GCS ditolak sebelum satu byte pun terbaca, sehingga indikator progres
+        // tak pernah bergerak dan berkasnya tak bisa disimpan otomatis.
+        //
+        // Berkas laporan satu kandidat berukuran ~1 MB dan dialirkan, bukan
+        // dibaca utuh ke memori — biayanya sepadan dengan unduhan yang bisa
+        // dipantau dan tersimpan sendiri begitu selesai.
         try {
             $disk = Storage::disk(GcsBerkas::DISK);
-            if ($disk->exists($row->File_Path)) {
-                return redirect()->away($disk->temporaryUrl($row->File_Path, now()->addMinutes(15)));
+            if (! $disk->exists($row->File_Path)) {
+                abort(404, 'Berkas laporan tidak ditemukan.');
             }
+
+            $namaFile = basename($row->File_Path);
+            $ext = strtolower(pathinfo($namaFile, PATHINFO_EXTENSION));
+
+            return response()->streamDownload(
+                function () use ($disk, $row) {
+                    $aliran = $disk->readStream($row->File_Path);
+                    if ($aliran) {
+                        fpassthru($aliran);
+                        fclose($aliran);
+                    }
+                },
+                $namaFile,
+                [
+                    'Content-Type' => $ext === 'xlsx'
+                        ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                        : 'application/pdf',
+                    // Panjangnya disebut supaya bilah kemajuan tahu totalnya;
+                    // tanpa ini peramban hanya bisa melaporkan byte terunduh,
+                    // dan persentasenya mustahil dihitung.
+                    'Content-Length' => (string) $disk->size($row->File_Path),
+                    'Cache-Control' => 'private, no-store',
+                ],
+            );
+        } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
+            throw $e;
         } catch (\Throwable $e) {
-            Log::channel('web_career')->warning('[LAPORAN] signed URL gagal: ' . $e->getMessage());
+            Log::channel('web_career')->warning('[LAPORAN] aliran unduhan gagal: ' . $e->getMessage());
         }
 
         abort(404, 'Berkas laporan tidak ditemukan.');
@@ -4265,6 +4312,58 @@ class LamaranController extends Controller
     }
 
     /**
+     * GET /karir/laporan/{lamaran}/berkas/{berkas} — dokumen yang ditautkan
+     * dari dalam PDF laporan. BERTANDA TANGAN, tanpa sesi.
+     *
+     * Pembaca PDF tidak membawa cookie; tautan ke rute admin biasa akan selalu
+     * mendarat di halaman login. Yang menggantikan sesi di sini adalah tanda
+     * tangan HMAC pada URL-nya (middleware `signed`) berikut kedaluwarsanya.
+     *
+     * DUA GERBANG, bukan satu:
+     *   1. Tanda tangan sah & belum kedaluwarsa — dijaga middleware.
+     *   2. Berkasnya BENAR milik lamaran yang disebut di URL — dijaga di sini.
+     *      Tanpa nomor 2, satu tautan sah bisa dipelintir nomor berkasnya dan
+     *      berubah jadi kunci ke dokumen kandidat lain.
+     */
+    public function laporanBerkas(string $lamaran, string $berkas)
+    {
+        $lamaranId = Hashids::decode($lamaran)[0] ?? null;
+        $berkasId = Hashids::decode($berkas)[0] ?? null;
+
+        if (! $lamaranId || ! $berkasId) {
+            abort(404);
+        }
+
+        $b = DB::table('N_WEB_CAREERS_Formulir_Berkas as fb')
+            ->join('N_WEB_CAREERS_Formulir_Pengisian as fp', 'fp.Id_Formulir_Pengisian', '=', 'fb.Formulir_Pengisian_Id')
+            ->where('fb.Id_Formulir_Berkas', $berkasId)
+            ->where('fp.Lamaran_Id', $lamaranId)
+            ->select('fb.Path_File', 'fb.Nama_Asli')
+            ->first();
+
+        if (! $b || ! $b->Path_File) {
+            abort(404);
+        }
+
+        // Dicatat: tautan ini hidup di luar sesi, jadi jejaknya satu-satunya
+        // cara mengetahui dokumen siapa yang dibuka dari salinan PDF yang mana.
+        Log::channel('web_career')->info(
+            "[LAPORAN-BERKAS] lamaran #{$lamaranId} berkas #{$berkasId} dibuka dari tautan bertanda tangan"
+        );
+
+        try {
+            $disk = Storage::disk(GcsBerkas::DISK);
+            if ($disk->exists($b->Path_File)) {
+                return redirect()->away($disk->temporaryUrl($b->Path_File, now()->addMinutes(15)));
+            }
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->warning('[LAPORAN-BERKAS] signed URL gagal: ' . $e->getMessage());
+        }
+
+        abort(404, 'Berkas tidak ditemukan.');
+    }
+
+    /**
      * GET /api/v1/karir/lamaran/catatan/gambar/{id} — sajikan gambar catatan.
      *
      * Lewat rute berwenang, bukan tautan publik GCS: isi catatan penilaian
@@ -4452,7 +4551,7 @@ class LamaranController extends Controller
         }
 
         $data = $request->validate([
-            'catatan' => 'nullable|string|max:500',
+            'catatan' => 'nullable|string',
         ]);
 
         try {
@@ -4554,7 +4653,7 @@ class LamaranController extends Controller
             // peruntukan, bukan dari `required_if` di sini.
             'lokasiNama' => 'nullable|string|max:200',
             'lokasiAlamat' => 'nullable|string|max:500',
-            'catatan' => 'nullable|string|max:1000',
+            'catatan' => 'nullable|string',
         ], [
             'link.required_if' => 'Tautan pertemuan wajib diisi untuk wawancara daring.',
             'lokasiId.required_if' => 'Pilih lokasi untuk kegiatan tatap muka.',
@@ -4944,7 +5043,7 @@ class LamaranController extends Controller
             'lokasi' => 'nullable|string|max:300',
             'lokasiNama' => 'nullable|string|max:200',
             'lokasiAlamat' => 'nullable|string|max:500',
-            'catatan' => 'nullable|string|max:1000',
+            'catatan' => 'nullable|string',
         ], [
             'link.required_if' => 'Tautan pertemuan wajib diisi untuk kegiatan daring.',
             'lokasiId.required_if' => 'Pilih lokasi untuk kegiatan tatap muka.',
@@ -5142,13 +5241,13 @@ class LamaranController extends Controller
             'nilai' => 'nullable|numeric|min:0|max:1000',
             // Hasil mode KATEGORI (mis. "Dominance", "Sangat Baik").
             'nilaiTeks' => 'nullable|string|max:100',
-            'catatan' => 'nullable|string|max:500',
+            'catatan' => 'nullable|string',
             // Catatan penilaian yang sesungguhnya — HTML dari editor berformat.
             // Batasnya jauh lebih longgar dari `catatan`: hasil wawancara ditulis
             // per kompetensi dan kerap memuat kutipan jawaban kandidat, dan
             // memotongnya di 500 karakter berarti penilai menyingkat sampai
             // catatannya tak lagi bisa dipakai orang lain.
-            'catatanHtml' => 'nullable|string|max:200000',
+            'catatanHtml' => 'nullable|string',
             // ── HASIL MCU IKUT DI LANGKAH INI ────────────────────────────────
             // Kehadiran dan hasil pemeriksaan adalah SATU peristiwa: kandidat
             // datang ke klinik, diperiksa, dan inilah hasilnya. Dulu statusnya
@@ -5159,7 +5258,7 @@ class LamaranController extends Controller
             // Daftar statusnya dari MASTER, bukan `in:` yang ditulis di sini.
             'mcuStatus' => ['nullable', Rule::in(self::masterMcuStatus()->keys()->all())],
             'mcuPenyedia' => 'nullable|string|max:200',
-            'mcuCatatan' => 'nullable|string|max:1000',
+            'mcuCatatan' => 'nullable|string',
             'mcuTanggal' => 'nullable|date',
             // JAWABAN KANDIDAT ATAS PENAWARAN — hanya untuk aktivitas
             // berpenawaran. Daftarnya dari master, bukan `in:` di sini.
@@ -5456,10 +5555,9 @@ class LamaranController extends Controller
         $data = $request->validate([
             'hasil' => 'nullable|in:LULUS,GAGAL',
             'nilai' => 'nullable|numeric|min:0|max:1000',
-            'catatan' => 'nullable|string|max:500',
-            // Isi editor berformat — lihat alasan batas longgarnya di
-            // subTesKehadiran().
-            'catatanHtml' => 'nullable|string|max:200000',
+            'catatan' => 'nullable|string',
+            // Isi editor berformat — tanpa batas panjang, lihat alasannya di putus().
+            'catatanHtml' => 'nullable|string',
             // Field khusus MCU. Menumpang endpoint ini, BUKAN endpoint sendiri:
             // hasil MCU tetap melewati mesin keputusan yang sama seperti hasil
             // aktivitas lain, hanya membawa rincian medis tambahan.
@@ -5472,7 +5570,7 @@ class LamaranController extends Controller
             // yang lupa disunting.
             'mcuStatus' => ['nullable', Rule::in(self::masterMcuStatus()->keys()->all())],
             'mcuPenyedia' => 'nullable|string|max:200',
-            'mcuCatatan' => 'nullable|string|max:1000',
+            'mcuCatatan' => 'nullable|string',
             'mcuTanggal' => 'nullable|date',
         ]);
 

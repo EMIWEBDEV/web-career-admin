@@ -125,8 +125,27 @@ class FeedbackAdminController extends Controller
     {
         $userId = session('career_auth.id');
 
+        // ── PANEL INI HANYA MILIK EKSPOR FEEDBACK ───────────────────────────
+        //
+        // Tabel Export_Log dipakai bersama beberapa fitur, dan panel melayang
+        // ini dulu menyapu SELURUH isinya. Akibatnya laporan kandidat yang
+        // dibuat dari worklist muncul di DUA panel sekaligus, di sudut layar
+        // yang sama persis — dan panel yang bukan pemiliknya membawa dua tombol
+        // yang justru berbahaya untuknya:
+        //
+        //   • "Unduh" mengalihkan ke signed URL GCS mentah, melewati keputusan
+        //     sengaja mengalirkan berkas berisi data pribadi kandidat lewat
+        //     origin sendiri (lihat LamaranController::laporanUnduh);
+        //   • "X" memanggil dismissExport() yang MENGHAPUS berkasnya di GCS —
+        //     admin mengira ia menutup pemberitahuan, yang terjadi berkasnya
+        //     hilang.
+        //
+        // Disaring dari jenisnya, bukan dari kepemilikan layar: fitur baru yang
+        // menumpang tabel ini tidak akan ikut muncul di sini kecuali memang
+        // didaftarkan.
         $items = DB::table('N_WEB_CAREERS_Export_Log')
             ->where('Id_Users', $userId)
+            ->where('Export_Type', 'FEEDBACK')
             ->where('Flag_Cancellation', 'T')
             ->where(function ($q) {
                 $q->where('Status_Export', 'DIPROSES')

@@ -96,6 +96,24 @@ export default {
             this.quill.enable(false);
         }
 
+        // ── POSISI KURSOR DIREKAM TERUS-MENERUS, BUKAN DITANYAKAN SAAT DIBUTUHKAN ──
+        //
+        // Menekan tombol gambar memindahkan seleksi DOM ke tombol itu sendiri.
+        // Sesudah itu `getSelection()` bukan cuma mengembalikan null — ia
+        // MELEDAK: Quill mencari blot pemilik simpul seleksi, tidak menemukannya,
+        // lalu memanggil `.offset()` pada null. Galat itu terjadi SEBELUM satu
+        // baris pun kode kita sempat berjalan, jadi `?.` maupun nilai cadangan
+        // di belakangnya tak pernah kebagian giliran — dan seluruh editor,
+        // di mana pun ia dipakai, kehilangan kemampuan menyisipkan gambar.
+        //
+        // `selection-change` dipancarkan Quill selagi kursornya MASIH di dalam
+        // editor, saat jawabannya masih sah. Itulah yang direkam.
+        this.quill.on('selection-change', (range) => {
+            if (range) {
+                this.rangeTersimpan = range;
+            }
+        });
+
         this.quill.on('text-change', () => {
             // Catatan yang isinya HANYA gambar tetap punya isi. Menilai kosong
             // dari teksnya saja akan mengosongkan catatan berupa potret lembar
@@ -121,16 +139,32 @@ export default {
         this.quill = null;
     },
     methods: {
+        /**
+         * Tanya Quill di mana kursornya — TANPA bisa menjatuhkan editor.
+         *
+         * Quill melempar bila seleksi DOM menunjuk simpul yang bukan miliknya
+         * (mis. tombol toolbar yang baru ditekan, atau editor yang wadahnya
+         * sudah dilepas Vue). Di sini jawaban "tidak tahu" sepenuhnya wajar —
+         * pemanggilnya punya cadangan — sedangkan lemparannya membatalkan
+         * seluruh tindakan.
+         */
+        rangeAman() {
+            try {
+                return this.quill?.getSelection() || null;
+            } catch (e) {
+                return null;
+            }
+        },
+
         /** Tombol gambar → buka pemilih berkas. */
         pilihGambar() {
-            // POSISI KURSOR DISIMPAN DULU.
-            //
-            // Membuka dialog berkas memindahkan fokus keluar dari editor, dan
-            // Quill membuang range-nya begitu fokus hilang. Sesudah berkas
-            // dipilih, `getSelection()` mengembalikan null — lalu insertEmbed
-            // meledak dengan "Cannot read properties of null (reading 'offset')".
-            // Itulah sebabnya unggah gambar SELALU gagal.
-            this.rangeTersimpan = this.quill?.getSelection() || null;
+            // Yang dipakai adalah posisi TERAKHIR YANG DIREKAM saat kursor masih
+            // di dalam editor (lihat 'selection-change' di mounted). Menanyakan
+            // ulang di sini percuma: menekan tombolnya sendiri sudah memindahkan
+            // seleksi keluar. Tetap dicoba — kalau kebetulan masih sah, itu yang
+            // paling mutakhir — tapi jawabannya tidak pernah boleh menimpa
+            // rekaman lama dengan kosong.
+            this.rangeTersimpan = this.rangeAman() || this.rangeTersimpan;
 
             const input = document.createElement('input');
             input.type = 'file';
@@ -145,7 +179,7 @@ export default {
         },
 
         tangkapTempel(e) {
-            this.rangeTersimpan = this.quill?.getSelection() || null;
+            this.rangeTersimpan = this.rangeAman() || this.rangeTersimpan;
             const file = Array.from(e.clipboardData?.items || [])
                 .find((i) => i.type?.startsWith('image/'))
                 ?.getAsFile();
@@ -181,12 +215,21 @@ export default {
                     throw new Error('Tautan gambar tidak diterima dari server.');
                 }
 
-                // Pakai posisi yang DISIMPAN sebelum dialog berkas dibuka.
-                // `getSelection()` di sini sudah null — fokusnya baru saja
-                // kembali dan Quill belum memulihkan range-nya.
+                // EDITORNYA MASIH ADA? Unggahan berjalan asinkron; modal yang
+                // ditutup di tengah jalan sudah melepas Quill di beforeUnmount.
+                // Tanpa penjagaan ini, yang muncul adalah "Gambar gagal
+                // diunggah" — padahal gambarnya SUDAH naik dengan selamat, dan
+                // penilai lalu mengunggahnya berulang kali.
+                if (!this.quill) {
+                    return;
+                }
+
+                // Pakai posisi yang DIREKAM saat kursor masih di dalam editor.
+                // Menanyakannya sekarang tidak bisa diandalkan — fokusnya baru
+                // saja kembali dari dialog berkas.
                 const panjang = this.quill.getLength();
                 const posisi = Math.min(
-                    this.rangeTersimpan?.index ?? this.quill.getSelection()?.index ?? panjang,
+                    this.rangeTersimpan?.index ?? this.rangeAman()?.index ?? panjang,
                     panjang,
                 );
 

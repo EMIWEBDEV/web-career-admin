@@ -1,370 +1,386 @@
 {{--
-    LAPORAN KANDIDAT — dokumen internal HC EVO Group.
+    WEB CAREER — PROFIL KANDIDAT (PDF), bentuk CV dua kolom.
 
-    DIRENDER OLEH DOMPDF, dan itu menentukan seluruh cara berkas ini ditulis:
-    tidak ada flexbox, tidak ada grid, tidak ada CSS variable. Tata letak
-    memakai TABEL — bukan karena kuno, tapi karena hanya itu yang dihitung
-    dompdf dengan benar pada dokumen bertingkat seperti ini.
+    Dibaca HR, user interview, manajer, sampai direksi — kerap dicetak dan
+    dibawa ke ruang wawancara. Karena itu halaman pertamanya disusun seperti CV:
+    sidebar gelap berisi identitas yang dicari berulang kali (kontak,
+    pendidikan, dokumen), kolom kanan berisi ringkasan lamaran. Rincian jawaban
+    formulir menyusul di halaman berikutnya.
 
-    Gambar (logo & foto verifikasi) DITANAM sebagai data URI oleh
-    App\Support\Career\LaporanKandidat: dompdf mengambil gambar jarak jauh lewat
-    permintaan HTTP-nya sendiri, dan berkas kita ada di bucket berwenang —
-    permintaannya akan ditolak lalu gambarnya hilang tanpa satu pun galat.
+    ── KENAPA TIDAK ADA "PERJALANAN SELEKSI" ──────────────────────────────────
+    Dicabut atas permintaan. Isinya penilaian internal (hasil per aktivitas,
+    catatan penilai) sementara berkas ini paling sering diteruskan ke user
+    interview dan manajer lini yang justru TIDAK boleh melihatnya — dan yang
+    memang perlu, sudah membacanya di worklist. Datanya tetap tersedia di
+    ekspor Excel yang memang untuk diolah tim rekrutmen sendiri.
+
+    ── BATASAN MESIN CETAK (dompdf 3.1.5) ─────────────────────────────────────
+      • Tidak ada flexbox, grid, gradient, maupun box-shadow.
+      • Dua kolom = SATU TABEL dengan dua sel; latar sel tabel render andal,
+        latar pada elemen ber-float sering hilang.
+      • `position: fixed` hanya untuk kop/kaki halaman.
+      • Blok yang tak boleh terbelah WAJIB diberi page-break-inside: avoid.
+      • Warna ditulis HEKSA LANGSUNG, bukan var(). dompdf 3.1.5 memang sudah
+        mendukung custom property, tetapi kegagalannya senyap: bila satu var
+        tak terbaca, yang keluar hitam pekat di atas navy — dan itu baru
+        ketahuan setelah dokumen sampai ke tangan orang.
+
+    Palet EVO yang dipakai (padanan variabel tema):
+      --gold #d4a93a   --gold-l #f0c84e  --gold-d #b8902a
+      --navy #0f172a   --navy-2 #1e293b  --navy-3 #334155
+      --bg #f8fafc     --surf #ffffff    --surf-2 #f1f5f9   --bd #e2e8f0
+      --t1 #0f172a     --t2 #475569      --t3 #94a3b8
+
+    Seluruh gambar berupa data URI — dompdf tidak diizinkan menembak URL
+    (isRemoteEnabled mati), sebab sebagian isian datang dari kandidat.
 --}}
 <!DOCTYPE html>
 <html lang="id">
 <head>
     <meta charset="utf-8">
-    <title>Laporan Kandidat — {{ $d['kandidat']['nama'] }}</title>
+    <title>Profil Kandidat — {{ $d['kandidat']['nama'] }}</title>
     <style>
-        @page { margin: 92px 38px 74px; }
+        @page { margin: 0; }
 
         body {
-            margin: 0;
             font-family: "DejaVu Sans", sans-serif;
-            font-size: 9.5px;
-            color: #1e293b;
-            line-height: 1.5;
+            font-size: 9.2px;
+            line-height: 1.55;
+            color: #0f172a;
+            margin: 0;
         }
 
-        /* ── KOP & KAKI: diulang di SETIAP halaman ──────────────────────────
-           Laporan ini beredar sebagai lembaran tercetak; halaman ke-3 yang
-           terlepas dari tumpukannya harus tetap bisa dikenali milik siapa dan
-           bahwa isinya rahasia. */
-        .kop { position: fixed; top: -74px; left: 0; right: 0; height: 62px; }
-        .kaki { position: fixed; bottom: -56px; left: 0; right: 0; height: 40px; }
+        /* ── HALAMAN 1: KARTU CV ────────────────────────────────────────── */
+        table.cv { width: 100%; border-collapse: collapse; }
+        table.cv > tbody > tr > td { vertical-align: top; padding: 0; }
 
-        .kop-tbl, .kaki-tbl { width: 100%; border-collapse: collapse; }
-        .kop-logo { width: 96px; vertical-align: middle; }
-        .kop-logo img { height: 46px; }
-        .kop-teks { text-align: right; vertical-align: middle; font-size: 8px; color: #64748b; line-height: 1.55; }
-        .kop-teks b { display: block; font-size: 11px; color: #0f172a; letter-spacing: .02em; }
-        .kop-garis { height: 3px; background: #1e40af; margin-top: 8px; }
-
-        .kaki-rahasia {
-            background: #1e40af; color: #fff; text-align: center;
-            font-size: 7.5px; letter-spacing: .06em; padding: 6px 0; font-weight: bold;
+        /* Sidebar gelap. Tingginya mengikuti isi — pada dompdf, memaksa
+           setinggi halaman menghasilkan sel yang meluber ke halaman kedua
+           sebagai balok kosong. */
+        td.sisi {
+            width: 33%;
+            background: #0f172a;
+            padding: 26px 20px 30px;
+            color: #cbd5e1;
         }
-        .kaki-meta { font-size: 7px; color: #94a3b8; padding-top: 5px; }
-        .kaki-meta td { padding: 0; }
+        td.utama { width: 67%; background: #ffffff; padding: 26px 26px 30px; }
 
-        /* ── JUDUL DOKUMEN ─────────────────────────────────────────────── */
-        .judul {
-            background: #1e40af; color: #fff; text-align: center;
-            padding: 9px; font-size: 13px; font-weight: bold; letter-spacing: .04em;
-            border-radius: 3px;
+        /* Foto: bingkai emas tipis. Tanpa border-radius — dompdf
+           menggambarnya bergerigi pada gambar berukuran kecil. */
+        .foto-bingkai { border: 2px solid #d4a93a; padding: 3px; background: #1e293b; }
+        .foto-bingkai img { width: 100%; height: auto; display: block; }
+
+        .sisi-judul {
+            font-size: 7.4px; font-weight: bold; color: #d4a93a;
+            letter-spacing: 1.8px; text-transform: uppercase;
+            border-bottom: 1px solid #334155; padding-bottom: 4px;
+            margin: 20px 0 8px;
         }
-        .subjudul { text-align: center; font-size: 8px; color: #64748b; margin: 5px 0 14px; letter-spacing: .08em; }
+        .sisi-baris { margin-bottom: 7px; }
+        .sisi-lbl { font-size: 6.8px; color: #64748b; letter-spacing: .9px; text-transform: uppercase; }
+        .sisi-val { font-size: 9px; color: #f1f5f9; font-weight: bold; word-wrap: break-word; }
+        .sisi-val a { color: #f0c84e; text-decoration: none; }
 
-        /* ── IDENTITAS: biodata kiri, FOTO KANAN ────────────────────────── */
-        .id-tbl { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
-        .id-tbl > tbody > tr > td { vertical-align: top; }
-        .id-kiri { padding-right: 12px; }
-        .id-kanan { width: 132px; }
+        /* Daftar dokumen di sidebar — tiap baris bisa diklik. */
+        .dok { margin-bottom: 5px; }
+        .dok a { color: #f1f5f9; text-decoration: none; font-size: 8.4px; font-weight: bold; }
+        .dok small { display: block; font-size: 6.8px; color: #64748b; letter-spacing: .3px; }
+        .dok .buka { color: #d4a93a; font-size: 6.8px; letter-spacing: .5px; }
 
-        .bio { width: 100%; border-collapse: collapse; border: 1px solid #dbe1ea; }
-        .bio td { padding: 5px 9px; border-bottom: 1px solid #eef1f6; font-size: 9px; }
-        .bio tr:last-child td { border-bottom: 0; }
-        .bio .k { width: 108px; color: #64748b; background: #f8fafc; }
-        .bio .v { color: #0f172a; font-weight: bold; }
+        /* ── KOLOM UTAMA ────────────────────────────────────────────────── */
+        .merek { border-bottom: 2px solid #d4a93a; padding-bottom: 9px; margin-bottom: 14px; }
+        .merek img { height: 26px; }
+        .merek .ket { font-size: 6.8px; color: #94a3b8; letter-spacing: 1.7px; text-transform: uppercase; }
 
-        /* Kartu foto — dibingkai supaya terbaca sebagai dokumen identitas,
-           bukan hiasan yang kebetulan ditempel di pojok. */
-        .foto-kartu { border: 1px solid #dbe1ea; border-radius: 3px; overflow: hidden; }
-        .foto-kartu .cap {
-            background: #1e40af; color: #fff; font-size: 6.5px; letter-spacing: .1em;
-            text-align: center; padding: 4px 0; font-weight: bold;
+        .nama { font-size: 25px; font-weight: bold; color: #0f172a; line-height: 1.1; }
+        .jabatan {
+            font-size: 11.5px; color: #b8902a; font-weight: bold;
+            letter-spacing: .4px; margin-top: 4px;
         }
-        .foto-kartu .isi { padding: 7px; text-align: center; background: #fff; }
-        .foto-kartu img { width: 112px; height: 140px; object-fit: cover; }
-        .foto-kosong {
-            width: 112px; height: 140px; background: #f1f5f9; color: #94a3b8;
-            font-size: 7.5px; text-align: center; line-height: 140px;
-        }
+        .sub { font-size: 8.6px; color: #475569; margin-top: 3px; }
 
-        /* ── LENCANA HASIL ─────────────────────────────────────────────── */
-        .hasil-kotak { border: 1px solid #dbe1ea; border-radius: 3px; margin-top: 8px; overflow: hidden; }
-        .hasil-kotak .cap {
-            background: #f1f5f9; color: #475569; font-size: 6.5px; letter-spacing: .1em;
-            text-align: center; padding: 4px 0; font-weight: bold; border-bottom: 1px solid #dbe1ea;
-        }
         .lencana {
-            display: block; text-align: center; color: #fff; font-weight: bold;
-            font-size: 11px; letter-spacing: .05em; padding: 8px 4px;
+            display: inline-block; padding: 4px 13px; color: #fff;
+            font-size: 8.2px; font-weight: bold; letter-spacing: .5px; text-transform: uppercase;
         }
-        .l-lolos   { background: #15803d; }
-        .l-gugur   { background: #b91c1c; }
-        .l-jalan   { background: #b45309; }
-        .l-netral  { background: #475569; }
-        .l-talent  { background: #a16207; }
+        .l-lolos  { background: #15803d; }
+        .l-gugur  { background: #b91c1c; }
+        .l-talent { background: #7c3aed; }
+        .l-jalan  { background: #b8902a; }
+        .l-netral { background: #475569; }
 
-        /* ── SEKSI ─────────────────────────────────────────────────────── */
-        .seksi { margin-top: 16px; }
-        .seksi-judul {
-            background: #1e40af; color: #fff; font-size: 9.5px; font-weight: bold;
-            letter-spacing: .05em; padding: 6px 10px; border-radius: 3px 3px 0 0;
+        .judul {
+            font-size: 7.8px; font-weight: bold; color: #0f172a;
+            letter-spacing: 1.8px; text-transform: uppercase;
+            border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;
+            margin: 18px 0 9px;
         }
-        .seksi-isi { border: 1px solid #dbe1ea; border-top: 0; border-radius: 0 0 3px 3px; }
+        .judul span { color: #d4a93a; }
 
         table.data { width: 100%; border-collapse: collapse; }
+        table.data td, table.data th { padding: 5px 9px; vertical-align: top; }
         table.data th {
-            background: #f1f5f9; color: #334155; font-size: 7.5px; letter-spacing: .07em;
-            text-align: left; padding: 6px 9px; border-bottom: 1px solid #dbe1ea;
+            background: #f1f5f9; color: #334155; font-size: 7.2px;
+            letter-spacing: 1px; text-transform: uppercase; text-align: left;
+            border-bottom: 1px solid #e2e8f0;
         }
-        table.data td { padding: 6px 9px; border-bottom: 1px solid #eef1f6; font-size: 8.5px; vertical-align: top; }
-        table.data tr:last-child td { border-bottom: 0; }
-        .num { width: 26px; text-align: center; color: #94a3b8; font-weight: bold; }
+        table.data td { border-bottom: 1px solid #f1f5f9; }
+        table.data tr.zebra td { background: #f8fafc; }
+        .k { color: #94a3b8; width: 38%; }
+        .v { color: #0f172a; font-weight: bold; }
+        .v a { color: #b8902a; }
 
-        .pil {
-            display: inline-block; padding: 2px 7px; border-radius: 8px;
-            font-size: 7px; font-weight: bold; letter-spacing: .04em;
+        .putus {
+            margin-top: 12px; padding: 9px 12px;
+            background: #fef2f2; border-left: 3px solid #b91c1c; color: #7f1d1d;
+            font-size: 8.6px;
         }
-        .p-lolos  { background: #dcfce7; color: #15803d; }
-        .p-gugur  { background: #fee2e2; color: #b91c1c; }
-        .p-jalan  { background: #fef3c7; color: #b45309; }
-        .p-diam   { background: #f1f5f9; color: #64748b; }
-        .p-internal { background: #ede9fe; color: #6d28d9; }
+        .putus b { display: block; font-size: 7.6px; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 2px; }
 
-        .akt { color: #475569; font-size: 8px; }
-        .akt-nilai { font-weight: bold; color: #1e40af; }
-        .catatan { color: #64748b; font-size: 7.5px; font-style: italic; }
+        /* ── HALAMAN LANJUTAN ───────────────────────────────────────────── */
+        .lanjutan { padding: 26px 26px 40px; }
+        .kop-l {
+            border-bottom: 2px solid #d4a93a; padding-bottom: 7px; margin-bottom: 14px;
+        }
+        .kop-l table { width: 100%; border-collapse: collapse; }
+        .kop-l td { border: 0; padding: 0; vertical-align: middle; }
+        .kop-l .nm { font-size: 12px; font-weight: bold; color: #0f172a; }
+        .kop-l .kd { font-size: 7.4px; color: #94a3b8; letter-spacing: 1.2px; text-align: right; }
 
-        /* Isian formulir: dua kolom sejajar, label di atas nilai. */
-        .isian { width: 100%; border-collapse: collapse; }
-        .isian td { width: 50%; padding: 6px 9px; border-bottom: 1px solid #eef1f6; vertical-align: top; }
-        .isian .lbl { display: block; font-size: 6.8px; letter-spacing: .07em; color: #94a3b8; text-transform: uppercase; }
-        .isian .val { display: block; font-size: 9px; color: #0f172a; font-weight: bold; margin-top: 1px; word-wrap: break-word; }
-
-        .kosong { padding: 12px; text-align: center; color: #94a3b8; font-size: 8px; }
-        /* Judul seksi tidak boleh tertinggal sendirian di dasar halaman. */
-        .seksi, tr { page-break-inside: avoid; }
+        .kosong { color: #94a3b8; font-size: 8.4px; font-style: italic; padding: 8px 0; }
+        .kaki-doc {
+            margin-top: 22px; padding-top: 8px; border-top: 1px solid #e2e8f0;
+            font-size: 6.8px; color: #94a3b8; text-align: center; line-height: 1.6;
+        }
     </style>
 </head>
 <body>
 
-{{-- ══ KOP (berulang tiap halaman) ══ --}}
-<div class="kop">
-    <table class="kop-tbl">
-        <tr>
-            <td class="kop-logo">
-                @if ($logo)<img src="{{ $logo }}" alt="EVO Group">@endif
-            </td>
-            <td class="kop-teks">
-                <b>EVO GROUP</b>
-                Jl. Sapta Marga No.21, Bukit Sangkal, Kalidoni, Palembang, Sumatera Selatan 30114<br>
-                www.evonusabersaudara.co.id &nbsp;|&nbsp; evonusabersaudara@co.id
-            </td>
-        </tr>
-    </table>
-    <div class="kop-garis"></div>
-</div>
-
-{{-- ══ KAKI (berulang tiap halaman) ══ --}}
-<div class="kaki">
-    <div class="kaki-rahasia">
-        DOKUMEN RAHASIA — DILARANG MENCETAK ATAU MENYEBARLUASKAN TANPA SEIZIN HC EVO GROUP
-    </div>
-    <table class="kaki-meta">
-        <tr>
-            <td>{{ $d['kandidat']['kodeLamaran'] }} · Dicetak {{ $d['dicetak'] }}</td>
-            <td style="text-align:right">Halaman <span class="pagenum"></span></td>
-        </tr>
-    </table>
-</div>
-
-{{-- ══ JUDUL ══ --}}
-<div class="judul">LAPORAN KANDIDAT SELEKSI</div>
-<div class="subjudul">{{ strtoupper($d['lamaran']['program'] ?? '—') }}</div>
-
-{{-- ══ IDENTITAS + FOTO ══ --}}
-<table class="id-tbl">
+{{-- ══════════════════════ HALAMAN 1 — KARTU CV ══════════════════════════ --}}
+<table class="cv">
     <tr>
-        <td class="id-kiri">
-            <table class="bio">
-                <tr><td class="k">Nama Kandidat</td><td class="v">{{ $d['kandidat']['nama'] ?: '—' }}</td></tr>
-                <tr><td class="k">Kode Lamaran</td><td class="v">{{ $d['kandidat']['kodeLamaran'] ?: '—' }}</td></tr>
-                <tr><td class="k">Posisi Dilamar</td><td class="v">{{ $d['lamaran']['posisi'] ?: ($d['lamaran']['program'] ?: '—') }}</td></tr>
-                <tr><td class="k">Level / Departemen</td><td class="v">{{ trim(($d['lamaran']['level'] ?: '—') . ' / ' . ($d['lamaran']['departemen'] ?: '—')) }}</td></tr>
-                <tr><td class="k">Lokasi</td><td class="v">{{ $d['lamaran']['lokasi'] ?: '—' }}</td></tr>
-                <tr><td class="k">Email</td><td class="v">{{ $d['kandidat']['email'] ?: '—' }}</td></tr>
-                <tr><td class="k">No. Handphone</td><td class="v">{{ $d['kandidat']['hp'] ?: '—' }}</td></tr>
-                <tr><td class="k">Institusi</td><td class="v">{{ $d['kandidat']['kampus'] ?: '—' }}</td></tr>
-                <tr><td class="k">Tahun Lulus</td><td class="v">{{ $d['kandidat']['tahunLulus'] ?: '—' }}</td></tr>
-                <tr><td class="k">Tanggal Melamar</td><td class="v">{{ $tglLamar ?: '—' }}</td></tr>
-            </table>
+        {{-- ── SIDEBAR ────────────────────────────────────────────────────
+             FOTO HANYA BILA ADA. Tanpa foto, sidebar dimulai langsung dari
+             blok kontak — bukan bingkai abu-abu bertuliskan "tanpa foto".
+             Placeholder semacam itu terbaca seperti berkas yang gagal dimuat,
+             dan pada dokumen yang dibaca direksi itu menjatuhkan kepercayaan
+             pada seluruh isinya. --}}
+        <td class="sisi">
+            @if ($d['kandidat']['foto'])
+                <div class="foto-bingkai"><img src="{{ $d['kandidat']['foto'] }}" alt=""></div>
+            @endif
+
+            <div class="sisi-judul" @if (! $d['kandidat']['foto']) style="margin-top: 0" @endif>Kontak</div>
+            @if ($d['kandidat']['email'])
+                <div class="sisi-baris">
+                    <div class="sisi-lbl">Email</div>
+                    <div class="sisi-val">{{ $d['kandidat']['email'] }}</div>
+                </div>
+            @endif
+            @if ($d['kandidat']['hp'])
+                <div class="sisi-baris">
+                    <div class="sisi-lbl">Telepon</div>
+                    <div class="sisi-val">{{ $d['kandidat']['hp'] }}</div>
+                </div>
+            @endif
+            <div class="sisi-baris">
+                <div class="sisi-lbl">Kode Lamaran</div>
+                <div class="sisi-val">{{ $d['kandidat']['kodeLamaran'] }}</div>
+            </div>
+
+            {{-- PENDIDIKAN. Formulir MT tidak menanyakan tahun lulus — hanya
+                 status kemahasiswaan & semester berjalan. Keduanya ikut supaya
+                 blok ini tidak berbunyi "—" hanya karena pertanyaannya memang
+                 tidak pernah diajukan. --}}
+            @php
+                $didik = collect([
+                    'Jenjang' => $d['kandidat']['jenjang'] ?? null,
+                    'Institusi' => $d['kandidat']['kampus'] ?? null,
+                    'Jurusan' => $d['kandidat']['jurusan'] ?? null,
+                    'IPK' => $d['kandidat']['ipk'] ?? null,
+                    'Tahun Lulus' => $d['kandidat']['tahunLulus'] ?? null,
+                    'Status' => ($d['kandidat']['statusStudi'] ?? null)
+                        . (($d['kandidat']['semester'] ?? null) ? ' · Semester ' . $d['kandidat']['semester'] : ''),
+                ])->map(fn ($v) => trim((string) $v))->filter();
+            @endphp
+            @if ($didik->count())
+                <div class="sisi-judul">Pendidikan</div>
+                @foreach ($didik as $lbl => $isi)
+                    <div class="sisi-baris">
+                        <div class="sisi-lbl">{{ $lbl }}</div>
+                        <div class="sisi-val">{{ $isi }}</div>
+                    </div>
+                @endforeach
+            @endif
+
+            @php
+                $pribadi = collect([
+                    'Tanggal Lahir' => $d['kandidat']['tglLahir'] ?? null,
+                    'Jenis Kelamin' => $d['kandidat']['jkel'] ?? null,
+                ])->filter();
+            @endphp
+            @if ($pribadi->count())
+                <div class="sisi-judul">Data Pribadi</div>
+                @foreach ($pribadi as $lbl => $isi)
+                    <div class="sisi-baris">
+                        <div class="sisi-lbl">{{ $lbl }}</div>
+                        <div class="sisi-val">{{ $isi }}</div>
+                    </div>
+                @endforeach
+            @endif
+
+            {{-- DOKUMEN — bisa diklik langsung dari dalam PDF.
+                 Tautannya BERTANDA TANGAN & berumur (lihat
+                 LaporanKandidat::tautanBerkas): pembaca PDF tidak membawa
+                 cookie sesi, jadi tautan ke rute admin biasa akan selalu
+                 mendarat di halaman login. --}}
+            @php
+                $dok = collect($d['formulir'])->flatMap(fn ($f) => $f['dokumen'])
+                    ->unique(fn ($x) => $x['field'] . '|' . $x['nama'])->values();
+            @endphp
+            @if ($dok->count())
+                <div class="sisi-judul">Dokumen ({{ $dok->count() }})</div>
+                @foreach ($dok as $x)
+                    <div class="dok">
+                        @if ($x['tautan'])
+                            <a href="{{ $x['tautan'] }}">{{ ucwords(str_replace(['_', '-'], ' ', $x['field'])) }}</a>
+                            <small>{{ \Illuminate\Support\Str::limit($x['nama'], 30) }}</small>
+                            <span class="buka">▸ KLIK UNTUK MEMBUKA</span>
+                        @else
+                            <span style="color:#f1f5f9; font-size: 8.4px; font-weight: bold">{{ ucwords(str_replace(['_', '-'], ' ', $x['field'])) }}</span>
+                            <small>{{ \Illuminate\Support\Str::limit($x['nama'], 30) }}</small>
+                        @endif
+                    </div>
+                @endforeach
+            @endif
         </td>
 
-        {{-- FOTO VERIFIKASI di ujung kanan — permintaan eksplisit, dan memang
-             tempatnya: pembaca laporan mencocokkan wajah dengan identitas di
-             sebelahnya tanpa perlu membalik halaman. --}}
-        <td class="id-kanan">
-            <div class="foto-kartu">
-                <div class="cap">FOTO VERIFIKASI</div>
-                <div class="isi">
-                    @if ($d['kandidat']['foto'])
-                        <img src="{{ $d['kandidat']['foto'] }}" alt="Foto verifikasi">
-                    @else
-                        <div class="foto-kosong">Tidak ada foto</div>
-                    @endif
-                </div>
+        {{-- ── KOLOM UTAMA ────────────────────────────────────────────── --}}
+        <td class="utama">
+            <div class="merek">
+                @if ($logo)<img src="{{ $logo }}" alt="EVO Group">@endif
+                <div class="ket">Profil Kandidat &middot; Rahasia / Confidential</div>
             </div>
 
-            <div class="hasil-kotak">
-                <div class="cap">STATUS AKHIR</div>
-                <span class="lencana {{ $nadaHasil }}">{{ $labelHasil }}</span>
+            <div class="nama">{{ $d['kandidat']['nama'] ?: '—' }}</div>
+            <div class="jabatan">{{ $d['lamaran']['posisi'] ?: $d['lamaran']['program'] ?: '—' }}</div>
+            <div class="sub">
+                {{ collect([$d['lamaran']['departemen'], $d['lamaran']['level'], $d['lamaran']['lokasi']])->filter()->implode(' · ') ?: $d['lamaran']['program'] }}
             </div>
+
+            <div style="margin-top: 13px">
+                <span class="lencana {{ $nadaHasil }}">{{ $labelHasil }}</span>
+                <span style="font-size: 7.6px; color: #94a3b8; padding-left: 9px">
+                    Melamar <b style="color:#475569">{{ $tglLamar ?: '—' }}</b>
+                </span>
+            </div>
+
+            <div class="judul"><span>//</span> Ringkasan Lamaran</div>
+            <table class="data">
+                <tr><td class="k">Program</td><td class="v">{{ $d['lamaran']['program'] ?: '—' }}</td></tr>
+                <tr class="zebra"><td class="k">Posisi Dilamar</td><td class="v">{{ $d['lamaran']['posisi'] ?: '—' }}</td></tr>
+                <tr><td class="k">Departemen</td><td class="v">{{ $d['lamaran']['departemen'] ?: '—' }}</td></tr>
+                <tr class="zebra"><td class="k">Level</td><td class="v">{{ $d['lamaran']['level'] ?: '—' }}</td></tr>
+                <tr><td class="k">Penempatan</td><td class="v">{{ $d['lamaran']['lokasi'] ?: '—' }}</td></tr>
+                <tr class="zebra"><td class="k">Status Lamaran</td><td class="v">{{ str_replace('_', ' ', (string) $d['lamaran']['status']) ?: '—' }}</td></tr>
+            </table>
+
+            @if ($d['lamaran']['status'] === 'GUGUR' && ($d['lamaran']['gugurDi'] || $d['lamaran']['alasanGugur']))
+                <div class="putus">
+                    <b>Berhenti di tahap {{ $d['lamaran']['gugurDi'] ?: '—' }}</b>
+                    {{ $d['lamaran']['alasanGugur'] ?: 'Tanpa alasan tercatat.' }}
+                </div>
+            @endif
+
+            {{-- Cuplikan jawaban formulir TERBARU ditarik ke halaman muka:
+                 delapan pertanyaan pertama biasanya identitas & pendidikan,
+                 dan itulah yang ditanya lebih dulu di ruang wawancara. --}}
+            @php
+                $ringkas = collect($d['formulir'])->last()['isian'] ?? [];
+                $ringkas = collect($ringkas)->filter(fn ($j) => ! $j['berkas'] && trim((string) $j['nilai']) !== '')->take(8);
+            @endphp
+            @if ($ringkas->count())
+                <div class="judul"><span>//</span> Sekilas Data Diri</div>
+                <table class="data">
+                    @foreach ($ringkas->values() as $n => $j)
+                        <tr class="{{ $n % 2 ? 'zebra' : '' }}">
+                            <td class="k">{{ $j['label'] }}</td>
+                            <td class="v">{{ \Illuminate\Support\Str::limit($j['nilai'], 90) }}</td>
+                        </tr>
+                    @endforeach
+                </table>
+            @endif
         </td>
     </tr>
 </table>
 
-{{-- ══ PERJALANAN SELEKSI ══ --}}
-<div class="seksi">
-    <div class="seksi-judul">PERJALANAN SELEKSI</div>
-    <div class="seksi-isi">
-        <table class="data">
-            <thead>
+{{-- ══════════════════ HALAMAN LANJUTAN — JAWABAN FORMULIR ════════════════ --}}
+@foreach ($d['formulir'] as $i => $form)
+    <div style="page-break-before: always"></div>
+    <div class="lanjutan">
+        <div class="kop-l">
+            <table>
                 <tr>
-                    <th class="num">#</th>
-                    <th>TAHAP</th>
-                    <th style="width:78px">HASIL</th>
-                    <th style="width:200px">AKTIVITAS &amp; NILAI</th>
-                    <th style="width:120px">DIPUTUS</th>
-                </tr>
-            </thead>
-            <tbody>
-            @forelse ($d['tahap'] as $t)
-                <tr>
-                    <td class="num">{{ $t['urutan'] }}</td>
                     <td>
-                        <b>{{ $t['label'] }}</b>
-                        @if ($t['ditahan'])<br><span class="pil p-diam">DITAHAN</span>@endif
-                        @if ($t['catatan'])<br><span class="catatan">{{ \Illuminate\Support\Str::limit($t['catatan'], 150) }}</span>@endif
+                        <div class="nm">{{ $d['kandidat']['nama'] }}</div>
+                        <div style="font-size: 7.4px; color: #94a3b8; letter-spacing: 1.2px; text-transform: uppercase">
+                            {{ $form['label'] }}
+                        </div>
                     </td>
-                    <td>
-                        @php
-                            $ph = $t['hasil'] ?: $t['status'];
-                            $pk = match (true) {
-                                $t['hasil'] === 'LULUS' => 'p-lolos',
-                                $t['hasil'] === 'GUGUR' => 'p-gugur',
-                                $t['status'] === 'BERJALAN' => 'p-jalan',
-                                default => 'p-diam',
-                            };
-                        @endphp
-                        <span class="pil {{ $pk }}">{{ $ph ?: '—' }}</span>
-                    </td>
-                    <td>
-                        @forelse ($t['aktivitas'] as $a)
-                            <div class="akt">
-                                • {{ $a['label'] }}
-                                @if ($a['nilai'] !== null)<span class="akt-nilai">{{ rtrim(rtrim(number_format($a['nilai'], 2, ',', '.'), '0'), ',') }}</span>@endif
-                                @if ($a['hasil']) — {{ $a['hasil'] }}@elseif ($a['status']) — {{ strtolower($a['status']) }}@endif
-                                @if ($a['mcuStatus']) ({{ $a['mcuStatus'] }})@endif
-                                @if ($a['internal'])<span class="pil p-internal">INTERNAL</span>@endif
-                            </div>
-                        @empty
-                            <span class="catatan">—</span>
-                        @endforelse
-                    </td>
-                    <td>
-                        @if ($t['diputusAt'])
-                            {{ \Illuminate\Support\Carbon::parse($t['diputusAt'])->format('d M Y H:i') }}<br>
-                            <span class="catatan">{{ $t['diputusOleh'] ?: '—' }}</span>
-                        @else
-                            <span class="catatan">—</span>
-                        @endif
+                    <td class="kd">
+                        {{ $d['kandidat']['kodeLamaran'] }}<br>
+                        Dikirim {{ \Illuminate\Support\Str::of($form['waktuKirim'])->substr(0, 16) }}
                     </td>
                 </tr>
-            @empty
-                <tr><td colspan="5" class="kosong">Belum ada tahap yang tercatat.</td></tr>
-            @endforelse
-            </tbody>
-        </table>
-    </div>
-</div>
-
-{{-- ══ DATA FORMULIR ══ --}}
-@foreach ($d['formulir'] as $f)
-    <div class="seksi">
-        <div class="seksi-judul">
-            DATA {{ strtoupper($f['label']) }}
-            <span style="float:right;font-weight:normal;font-size:8px">
-                Dikirim {{ $f['waktuKirim'] ? \Illuminate\Support\Carbon::parse($f['waktuKirim'])->format('d M Y H:i') : '—' }}
-            </span>
+            </table>
         </div>
-        <div class="seksi-isi">
-            @if (count($f['isian']))
-                <table class="isian">
-                    @foreach (array_chunk($f['isian'], 2) as $baris)
-                        <tr>
-                            @foreach ($baris as $j)
-                                <td>
-                                    <span class="lbl">{{ $j['label'] }}</span>
-                                    @if ($j['berkas'] || \Illuminate\Support\Str::startsWith($j['key'], ['dok_', 'file_', 'berkas_', 'upload_']))
-                                        {{-- Berkas dicetak sebagai ADA/TIDAK: nama file tidak
-                                             berarti apa pun di atas kertas, dan berkasnya
-                                             sendiri tidak ikut tercetak. --}}
-                                        <span class="val">
-                                            <span class="pil {{ $j['berkas'] ? 'p-lolos' : 'p-diam' }}">
-                                                {{ $j['berkas'] ? 'TERLAMPIR' : 'BELUM ADA' }}
-                                            </span>
-                                        </span>
-                                    @else
-                                        <span class="val">{{ $j['nilai'] !== '' ? $j['nilai'] : '—' }}</span>
-                                    @endif
-                                </td>
-                            @endforeach
-                            @if (count($baris) === 1)<td></td>@endif
-                        </tr>
-                    @endforeach
-                </table>
-            @else
-                <div class="kosong">Formulir ini tidak berisi jawaban.</div>
-            @endif
-        </div>
-    </div>
 
-    @if (count($f['dokumen']))
-        <div class="seksi">
-            <div class="seksi-judul">DOKUMEN — {{ strtoupper($f['label']) }}</div>
-            <div class="seksi-isi">
-                <table class="data">
-                    <thead>
-                        <tr>
-                            <th class="num">#</th>
-                            <th>JENIS DOKUMEN</th>
-                            <th>NAMA BERKAS</th>
-                            <th style="width:96px">VERIFIKASI</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                    @foreach ($f['dokumen'] as $i => $b)
-                        <tr>
-                            <td class="num">{{ $i + 1 }}</td>
-                            <td>{{ ucwords(str_replace(['_', '-'], ' ', $b['field'])) }}</td>
-                            <td>{{ \Illuminate\Support\Str::limit($b['nama'], 58) }}</td>
-                            <td>
-                                <span class="pil {{ $b['status'] === 'VALID' ? 'p-lolos' : 'p-diam' }}">
-                                    {{ $b['status'] ?: 'BELUM' }}
+        @if (count($form['isian']))
+            <table class="data">
+                @foreach ($form['isian'] as $n => $j)
+                    <tr class="{{ $n % 2 ? 'zebra' : '' }}">
+                        <td class="k">{{ $j['label'] }}</td>
+                        <td class="v">
+                            @if ($j['berkas'])
+                                @if ($j['berkas']['tautan'])
+                                    <a href="{{ $j['berkas']['tautan'] }}">{{ $j['berkas']['nama'] }}</a>
+                                @else
+                                    {{ $j['berkas']['nama'] }}
+                                @endif
+                                <span style="color:#94a3b8; font-weight: normal">
+                                    &middot; {{ $j['berkas']['status'] ?: 'belum diperiksa' }}
                                 </span>
-                            </td>
-                        </tr>
-                    @endforeach
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    @endif
+                            @else
+                                {{ $j['nilai'] !== '' ? $j['nilai'] : '—' }}
+                            @endif
+                        </td>
+                    </tr>
+                @endforeach
+            </table>
+        @else
+            <p class="kosong">Formulir ini terkirim tanpa isian.</p>
+        @endif
+
+        @if ($loop->last)
+            <p class="kaki-doc">
+                Dokumen internal rekrutmen EVO Group — memuat data pribadi kandidat, dilarang disebarkan
+                di luar keperluan seleksi.<br>
+                Dihasilkan otomatis pada {{ $d['dicetak'] }}; tidak memerlukan tanda tangan.
+                Tautan dokumen di dalamnya berlaku 30 hari sejak dicetak.
+            </p>
+        @endif
+    </div>
 @endforeach
 
-{{-- Nomor halaman: dompdf mengisinya saat render, bukan Blade. --}}
-<script type="text/php">
-    if (isset($pdf)) {
-        $pdf->page_script(function ($pageNumber, $pageCount, $canvas, $fontMetrics) {
-            $font = $fontMetrics->getFont("DejaVu Sans", "normal");
-            $canvas->text(508, 786, "$pageNumber / $pageCount", $font, 7, [0.58, 0.64, 0.72]);
-        });
-    }
-</script>
+@if (! count($d['formulir']))
+    <div class="lanjutan">
+        <p class="kaki-doc">
+            Dokumen internal rekrutmen EVO Group — memuat data pribadi kandidat, dilarang disebarkan
+            di luar keperluan seleksi.<br>
+            Dihasilkan otomatis pada {{ $d['dicetak'] }}; tidak memerlukan tanda tangan.
+        </p>
+    </div>
+@endif
 
 </body>
 </html>

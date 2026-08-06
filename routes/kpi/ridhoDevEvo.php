@@ -238,3 +238,19 @@ Route::prefix('api/v1/lamaran')
         Route::post('/tahap/{id}/kirim', [LamaranController::class, 'kirimFormulir'])->name('kirim')->middleware('career.permission:portalPage,EDIT');
         Route::delete('/{id}', [LamaranController::class, 'batalkan'])->name('batal');
     });
+
+// ── BERKAS YANG DITAUTKAN DARI DALAM LAPORAN PDF (tanpa sesi) ──────────────
+//
+// PDF laporan dibuka di aplikasi pembaca PDF, dan aplikasi itu TIDAK membawa
+// cookie sesi. Tautan yang menunjuk rute admin biasa akan mendarat di halaman
+// login — tautan yang selalu gagal lebih buruk daripada tidak ada tautan.
+//
+// Karena itu satu rute tersendiri bertanda tangan Laravel (`signed`): URL-nya
+// memuat tanda tangan HMAC dari APP_KEY berikut waktu kedaluwarsanya, jadi ia
+// tidak bisa ditebak, tidak bisa disunting, dan mati dengan sendirinya.
+// Gerbang kepemilikan tetap ditegakkan di controller — berkas WAJIB milik
+// lamaran yang disebut di URL, sehingga satu tautan sah tidak bisa dipelintir
+// jadi kunci ke berkas kandidat lain.
+Route::get('/karir/laporan/{lamaran}/berkas/{berkas}', [LamaranController::class, 'laporanBerkas'])
+    ->middleware('signed')
+    ->name('career.laporan.berkas');
