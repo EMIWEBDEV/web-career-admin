@@ -14,3 +14,9 @@ Route::middleware(['career.auth', 'career.role:ADMIN,SUPERADMIN'])->group(functi
     require base_path('routes/career/MasterWorkplace/MasterWorkplaceWeb.php');
 });
 require base_path('routes/career/MasterWorkplace/MasterWorkplaceApi.php');
+
+// ── Master Lokasi Kerja (admin) — kantor pusat & cabang per kota (N_HRIS_Master_Lokasi) ──
+Route::middleware(['career.auth', 'career.role:ADMIN,SUPERADMIN'])->group(function () {
+    require base_path('routes/career/MasterLokasiKerja/MasterLokasiKerjaWeb.php');
+});
+require base_path('routes/career/MasterLokasiKerja/MasterLokasiKerjaApi.php');
