@@ -884,6 +884,16 @@ export default {
 </script>
 
 <style scoped>
+/* Kartu punya popover "+N atribut" (position:absolute, tersembunyi via
+   visibility:hidden) yang tetap dihitung dalam area scroll dokumen walau tak
+   terlihat, dan bisa melebihi tepi grid untuk kartu di kolom pinggir. Tanpa
+   penjagaan ini seluruh halaman jadi bisa di-scroll horizontal untuk
+   mengakomodasi elemen yang sebenarnya tak terlihat itu — beda dengan
+   .wc-page (landing publik) yang sudah punya proteksi serupa, .wca (dipakai
+   semua halaman admin) belum. Dikunci di sini saja (scoped), bukan di
+   evo-theme.css, supaya tidak mengubah perilaku halaman admin lain. */
+.wca { overflow-x: hidden; }
+
 .mmp-toggle { display: inline-flex; gap: 0.25rem; border: 1px solid var(--line); border-radius: 0.7rem; padding: 0.2rem; }
 .mmp-toggle .wca-iconbtn.is-active { background: #eef0ff; color: #4338ca; border-color: #c7d2fe; }
 
