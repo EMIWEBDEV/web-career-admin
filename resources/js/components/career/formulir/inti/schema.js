@@ -22,6 +22,10 @@ const TIPE_VALID = new Set([
     'currency',
     'bulan',
     'tahun',
+    // Foto wajah yang diambil LANGSUNG dari kamera, bukan diunggah dari galeri.
+    // Dipakai untuk verifikasi identitas: berkas hasil unggahan bisa berupa foto
+    // siapa saja, sedangkan tangkapan kamera memaksa orangnya hadir saat itu.
+    'foto',
 ]);
 
 export function normalisasiSkema(skema) {
@@ -72,9 +76,31 @@ function normalisasiField(field, langkahIndex = 0, bagianIndex = 0) {
             wajib: !!F.wajib,
             penuh: !!F.penuh || F.lebar === 'full',
             lebar_persen: normalisasiLebarPersen(F),
+            lebar_jika: normalisasiLebarJika(F.lebar_jika),
             opsi: Array.isArray(F.opsi) ? F.opsi : [],
         };
     });
+}
+
+/**
+ * Lebar BERSYARAT — lebar field berubah mengikuti jawaban field lain.
+ *
+ * Contoh: "Status Kemahasiswaan" memakan satu baris penuh selagi belum dijawab
+ * atau dijawab "Sudah Lulus", lalu menyusut jadi setengah begitu dijawab
+ * "Mahasiswa" — karena saat itu field "Semester" muncul di sebelahnya.
+ *
+ * Ditulis sebagai DATA di skema (diatur admin lewat Master Formulir), bukan
+ * if/else per nama field di kode tampilan. Syaratnya memakai kosakata yang sama
+ * dengan `tampil_jika` supaya admin tidak menghafal dua aturan berbeda.
+ */
+function normalisasiLebarJika(aturan) {
+    if (!aturan || typeof aturan !== 'object' || !aturan.field) return null;
+    return {
+        field: String(aturan.field),
+        operator: String(aturan.operator || '='),
+        nilai: aturan.nilai ?? '',
+        lebar_persen: Math.min(100, Math.max(33, Math.round(Number(aturan.lebar_persen) || 100))),
+    };
 }
 
 export function slugKey(s) {

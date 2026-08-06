@@ -3,7 +3,8 @@
     <div
         class="fr"
         :class="{
-            'fr--full': field.penuh || lebarPenuh,
+            'fr--full': lebarPenuh,
+            'fr--foto': field.tipe === 'foto',
             'fr--consent': field.tipe === 'consent',
             'fr--consent-aktif': field.tipe === 'consent' && !!nilai,
         }"
@@ -182,7 +183,31 @@
             @visible-change="(buka) => buka && cariReferensi('')"
             @update:model-value="(v) => ubah(v ?? '')"
         >
+            <!-- Bendera nilai terpilih: el-select menampilkan `label` sebagai teks
+                 polos, jadi bendera di dalam opsi tidak ikut terbawa ke kotaknya. -->
+            <template v-if="benderaTerpilih" #prefix>
+                <img class="fr__bendera" :src="benderaUrl(benderaTerpilih)" alt="" width="20" height="15" />
+            </template>
             <el-option v-for="o in opsiReferensi" :key="o.nilai" :value="o.nilai" :label="o.label">
+                <img
+                    v-if="o.bendera"
+                    class="fr__bendera fr__bendera--opsi"
+                    :src="benderaUrl(o.bendera)"
+                    alt=""
+                    width="20"
+                    height="15"
+                    loading="lazy"
+                />
+                <!-- `bendera: null` = baris kampus yang negaranya tidak tercatat di
+                     data impor. Diberi ikon netral supaya nama kampus tetap sejajar
+                     dengan baris yang berbendera; kunci `bendera` tidak ada sama
+                     sekali pada sumber non-kampus (prodi, jenjang), jadi di sana
+                     tidak muncul ikon apa pun. -->
+                <i
+                    v-else-if="o.bendera === null"
+                    class="bi bi-globe2 fr__bendera--opsi fr__bendera-kosong"
+                    title="Negara tidak tercatat di data institusi"
+                ></i>
                 <span class="fr__opsi">{{ o.label }}</span>
                 <span v-if="o.ket" class="fr__opsi-ket">{{ o.ket }}</span>
             </el-option>
@@ -287,6 +312,18 @@
         </template>
 
 
+        <!-- Foto verifikasi dari kamera. Yang tersimpan di jawaban hanya nama
+             berkasnya (seperti tipe `file`); gambarnya sendiri dikirim ke induk
+             lewat event `berkas` supaya ikut jalur unggah yang sama. -->
+        <AmbilFoto
+            v-else-if="field.tipe === 'foto'"
+            :model-value="fotoTampil"
+            :nama-tersimpan="String(nilai ?? '')"
+            :disabled="disabled"
+            @update:model-value="(v) => (fotoDataUrl = v)"
+            @foto="terimaFoto"
+        />
+
         <el-checkbox
             v-else-if="field.tipe === 'consent'"
             :model-value="!!nilai"
@@ -306,9 +343,10 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue';
-import { ambilOpsi, tunda } from './referensi';
+import { ambilOpsi, benderaDiingat, tunda } from './referensi';
 import { syaratTerpenuhi } from './aturan';
 import TeleponNegara from '@career/TeleponNegara.vue';
+import AmbilFoto from './AmbilFoto.vue';
 
 const props = defineProps({
     field: { type: Object, required: true },
@@ -359,14 +397,30 @@ const opsiEfektif = computed(() => {
     return props.field.opsi || [];
 });
 
-// Consent & textarea selalu memakan lebar penuh — dipaksa di sini supaya
-// admin tidak perlu ingat mencentang "lebar penuh" untuk keduanya.
-const lebarPenuh = computed(() => false);
-const lebarGrid = computed(() => {
-    if (props.field.penuh || lebarPenuh.value) return 12;
-    const persen = Number(props.field.lebar_persen || 33);
-    return Math.min(12, Math.max(4, Math.round((Math.min(100, Math.max(33, persen)) / 100) * 12)));
+/**
+ * Lebar EFEKTIF field dalam persen.
+ *
+ * `lebar_jika` (diatur admin di Master Formulir) menang atas lebar tetap selama
+ * syaratnya terpenuhi — mis. "Status Kemahasiswaan" jadi setengah baris hanya
+ * ketika dijawab "Mahasiswa", karena saat itu "Semester" muncul di sebelahnya.
+ * Selama syarat belum terpenuhi, lebar tetap yang dipakai.
+ */
+const lebarPersenEfektif = computed(() => {
+    const alt = props.field.lebar_jika;
+    if (alt?.field && syaratTerpenuhi(alt, props.jawabanKonteks)) {
+        return Number(alt.lebar_persen) || 100;
+    }
+    if (props.field.penuh) return 100;
+    return Number(props.field.lebar_persen || 33);
 });
+const lebarGrid = computed(() => {
+    const persen = Math.min(100, Math.max(33, lebarPersenEfektif.value));
+    return Math.min(12, Math.max(4, Math.round((persen / 100) * 12)));
+});
+// Kelas penuh mengikuti lebar EFEKTIF, bukan `field.penuh` mentah — kalau tidak,
+// field ber-`penuh` yang sedang menyusut lewat `lebar_jika` tetap dipaksa
+// satu baris penuh oleh `grid-column: 1 / -1` dan aturannya tak terlihat.
+const lebarPenuh = computed(() => lebarGrid.value >= 12);
 const gayaLebar = computed(() => ({ '--fr-span': String(lebarGrid.value) }));
 
 /* ── Field bertipe `referensi` ──────────────────────────────────────────
@@ -406,7 +460,10 @@ async function muat(cari) {
     memuat.value = true;
     const hasil = await ambilOpsi(
         props.field.sumber,
-        { cari, ...indukWajib.value, ...indukSaring.value },
+        // 50 bawaan terasa terlalu sedikit saat digulir, apalagi untuk kampus
+        // yang daftarnya ratusan ribu. 100 adalah batas atas yang diizinkan
+        // server; permintaan lebih dari itu tetap dipangkas di sana.
+        { cari, limit: 100, ...indukWajib.value, ...indukSaring.value },
         props.field.key,
     );
     // null = permintaan dibatalkan karena ada ketikan lebih baru; jangan
@@ -423,10 +480,39 @@ async function muat(cari) {
 function sertakanNilaiTerpilih(daftar) {
     const v = props.modelValue;
     if (!v || daftar.some((o) => o.nilai === v)) return daftar;
-    return [{ nilai: v, label: String(v), ket: null }, ...daftar];
+
+    const baris = { nilai: v, label: String(v), ket: null };
+    // Kunci `bendera` HANYA ditempelkan bila benderanya memang diketahui.
+    // Menaruh null di sini akan membuat sumber non-kampus (prodi, jenjang)
+    // ikut memunculkan ikon globe "negara tidak tercatat".
+    const bendera = benderaDiingat(v);
+    if (bendera) baris.bendera = bendera;
+
+    return [baris, ...daftar];
 }
 
 const cariReferensi = tunda((cari) => muat(String(cari || '')));
+
+/**
+ * Ikon bendera negara kampus — gambar, bukan emoji.
+ *
+ * Emoji bendera tidak punya glif di Windows/Chrome dan hanya tampil sebagai dua
+ * huruf kode negara. Sumbernya disamakan dengan pemilih kode telepon supaya
+ * benderanya konsisten di seluruh formulir.
+ */
+function benderaUrl(kode) {
+    return `https://flagcdn.com/20x15/${String(kode).toLowerCase()}.png`;
+}
+
+/**
+ * Bendera milik nilai yang SEDANG terpilih. Bernilai null sampai daftar opsinya
+ * termuat — jawaban tersimpan hanya menyimpan nama kampus, bukan negaranya.
+ */
+const benderaTerpilih = computed(
+    () => opsiReferensi.value.find((o) => o.nilai === props.modelValue)?.bendera
+        || benderaDiingat(props.modelValue)
+        || null,
+);
 
 // Induk berubah -> pilihan anak hampir pasti tidak berlaku lagi (prodi S1
 // tidak masuk akal setelah jenjang diganti SMK). Dikosongkan supaya tidak ada
@@ -512,6 +598,45 @@ function lihatBerkas() {
         field: props.field,
         lihat: { url: urlPratinjau.value, nama: String(nilai.value || 'Berkas'), gambar: gambarPratinjau.value },
     });
+}
+
+/* ── Foto verifikasi (tipe `foto`) ───────────────────────────────────────
+   Gambar hasil jepretan hidup di komponen ini saja; yang mengalir ke jawaban
+   hanya NAMA berkasnya, persis seperti tipe `file`. dataURL sebuah foto bisa
+   ratusan kilobyte, dan jawaban formulir ikut tersimpan sebagai draf berkali-
+   kali — menaruhnya di sana akan menggelembungkan Jawaban_Json tanpa guna. */
+const fotoDataUrl = ref('');
+
+/**
+ * Yang ditampilkan: jepretan baru bila ada, kalau tidak foto draf yang sudah
+ * tersimpan di server. Tanpa jalur kedua, kandidat yang melanjutkan pengisian
+ * esok hari melihat panggung kamera kosong dan mengira fotonya hilang, lalu
+ * mengambil ulang tanpa perlu.
+ */
+const fotoTampil = computed(() => fotoDataUrl.value || drafBerkas.value?.url || '');
+
+/** dataURL hasil kamera -> File JPG, supaya jalur unggahnya sama dengan berkas biasa. */
+function fotoKeFile(dataUrl, nama) {
+    const [kepala, b64] = String(dataUrl).split(',');
+    const mime = (kepala.match(/:(.*?);/) || [])[1] || 'image/jpeg';
+    const biner = atob(b64);
+    const buf = new Uint8Array(biner.length);
+    for (let i = 0; i < biner.length; i++) buf[i] = biner.charCodeAt(i);
+
+    return new File([buf], nama, { type: mime });
+}
+
+function terimaFoto(dataUrl) {
+    if (! dataUrl) {
+        emit('update:modelValue', '');
+        emit('berkas', { field: props.field, hapus: true });
+
+        return;
+    }
+
+    const nama = `${props.field.key || 'foto'}-verifikasi.jpg`;
+    emit('update:modelValue', nama);
+    emit('berkas', { field: props.field, file: fotoKeFile(dataUrl, nama) });
 }
 
 function hapusBerkas() {
@@ -659,6 +784,13 @@ function pilihBerkas(uf) {
 .fr__chip-btn:disabled { opacity: .5; cursor: not-allowed; }
 .fr__chip-btn--danger:hover:not(:disabled) { background: rgba(220, 38, 38, .12); color: #dc2626; }
 
+/* Field foto: label & teks bantuan ikut ke tengah mengikuti panggung kameranya.
+   Kalau hanya panggungnya yang dipusatkan, labelnya menggantung sendirian di
+   kiri dan blok itu justru terlihat lebih berantakan daripada sebelum dirapikan. */
+.fr--foto .fr__lbl { justify-content: center; }
+.fr--foto .fr__bantuan,
+.fr--foto .fr__galat { text-align: center; justify-content: center; }
+
 .fr__consent { white-space: normal; height: auto; align-items: flex-start; }
 
 /* -- Kartu persetujuan: teks pernyataan panjang lebih nyaman dibaca dalam
@@ -676,4 +808,29 @@ function pilihBerkas(uf) {
 /* Opsi referensi: nama di kiri, keterangan (kota / gelar) menepi ke kanan. */
 .fr__opsi { float: left; }
 .fr__opsi-ket { float: right; margin-left: 1.2rem; color: #94a3b8; font-size: 11.5px; }
+
+/* Bendera negara kampus. Garis tipis di tepinya supaya bendera yang sisinya
+   putih (mis. Jepang) tidak lenyap ke latar terang. */
+.fr__bendera {
+    flex: none;
+    width: 20px;
+    height: 15px;
+    border-radius: 2px;
+    object-fit: cover;
+    box-shadow: 0 0 0 1px rgba(15, 23, 42, .12);
+}
+/* Baris opsi memakai float; 0.6rem mendudukkannya di tengah baris setinggi 34px. */
+.fr__bendera--opsi { float: left; margin: .6rem .5rem 0 0; }
+/* Ikon pengganti bendera: lebar dipatok 20px agar nama kampus tetap satu garis
+   lurus dengan baris yang berbendera. */
+/* `display` dipatok karena ada aturan global `.bi { display: inline-table }`
+   yang kalau dibiarkan membuat lebar 20px tidak dihormati. */
+.fr__bendera-kosong {
+    display: block;
+    width: 20px;
+    text-align: center;
+    color: #cbd5e1;
+    font-size: 13px;
+    line-height: 15px;
+}
 </style>

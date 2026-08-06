@@ -476,7 +476,12 @@
                                                                         >Wajib</span
                                                                     >
                                                                     <span class="mfb-field-card__width"
-                                                                        >{{ Number(F.lebar_persen || 33) }}%</span
+                                                                        >{{ Number(F.lebar_persen || 33) }}%<template
+                                                                            v-if="F.lebar_jika?.field"
+                                                                            >&nbsp;→&nbsp;{{
+                                                                                F.lebar_jika.lebar_persen
+                                                                            }}%</template
+                                                                        ></span
                                                                     >
 
                                                                     <span
@@ -624,6 +629,59 @@
                                         />
                                         <span>100%</span>
                                     </div>
+                                </div>
+
+                                <!-- Lebar bersyarat: lebar berubah mengikuti jawaban field lain -->
+                                <div class="mfb-inspector__group">
+                                    <label><i class="bi bi-arrows-angle-expand"></i> Lebar Berubah Jika (Kondisional)</label>
+                                    <el-select
+                                        :model-value="fieldAktif.lebar_jika?.field || ''"
+                                        style="width: 100%"
+                                        clearable
+                                        placeholder="Lebar selalu tetap"
+                                        @change="aturLebarSyarat"
+                                    >
+                                        <el-option
+                                            v-for="f in fieldAcuanLebarOptions"
+                                            :key="f.field_id || f.key"
+                                            :value="f.key"
+                                            :label="f.label || f.key"
+                                        />
+                                    </el-select>
+                                    <template v-if="fieldAktif.lebar_jika?.field">
+                                        <div class="mfb-condition-row">
+                                            <el-select v-model="fieldAktif.lebar_jika.operator" style="width: 48%">
+                                                <el-option
+                                                    v-for="o in conditionOperators"
+                                                    :key="o.value"
+                                                    :value="o.value"
+                                                    :label="o.label"
+                                                />
+                                            </el-select>
+                                            <el-input
+                                                v-model="fieldAktif.lebar_jika.nilai"
+                                                placeholder="Nilai pemicu"
+                                                style="width: 52%"
+                                            />
+                                        </div>
+                                        <div class="mfb-segmented" style="margin-top: 0.5rem">
+                                            <button
+                                                v-for="opt in lebarCepatOptions"
+                                                :key="opt.value"
+                                                type="button"
+                                                class="mfb-segmented__item"
+                                                :class="{ active: fieldAktif.lebar_jika.lebar_persen === opt.value }"
+                                                @click="fieldAktif.lebar_jika.lebar_persen = opt.value"
+                                            >
+                                                {{ opt.label }}
+                                            </button>
+                                        </div>
+                                        <small class="mfb-inspector__hint">
+                                            Saat syarat terpenuhi lebar jadi
+                                            <b>{{ fieldAktif.lebar_jika.lebar_persen }}%</b>; selain itu tetap
+                                            <b>{{ Number(fieldAktif.lebar_persen || 33) }}%</b>.
+                                        </small>
+                                    </template>
                                 </div>
 
                                 <div class="mfb-inspector__group">
@@ -1214,6 +1272,7 @@ export default {
                 { value: 'radio', label: 'Radio Button' },
                 { value: 'checkbox', label: 'Checkbox' },
                 { value: 'file', label: 'Upload Berkas' },
+                { value: 'foto', label: 'Foto Verifikasi (Kamera)' },
                 { value: 'phone', label: 'Nomor Telepon' },
                 { value: 'email', label: 'Email' },
                 { value: 'consent', label: 'Persetujuan / Declaration' },
@@ -1273,6 +1332,26 @@ export default {
                         tipe: 'file',
                         accept: '.pdf,.jpg,.jpeg,.png',
                         maks_mb: 5,
+                        lebar_persen: 100,
+                        penuh: true,
+                    },
+                },
+                {
+                    value: 'foto',
+                    label: 'Foto Kamera',
+                    icon: 'bi-person-bounding-box',
+                    field: {
+                        // Key-nya SENGAJA `foto_verifikasi`. Nilai itu sudah jadi
+                        // kesepakatan di seluruh sistem: LamaranService mencarinya
+                        // untuk lampiran email, dan halaman Pelamar serta Detail
+                        // Lamaran memakainya untuk memberi label "Foto verifikasi
+                        // identitas kandidat". Key lain tetap tersimpan, tapi
+                        // fotonya berhenti dikenali sebagai foto verifikasi.
+                        key: 'foto_verifikasi',
+                        label: 'Foto Verifikasi Wajah',
+                        tipe: 'foto',
+                        wajib: true,
+                        bantuan: 'Ambil foto wajah langsung dari kamera perangkat Anda.',
                         lebar_persen: 100,
                         penuh: true,
                     },
@@ -1438,6 +1517,17 @@ export default {
         fieldAcuanOptions() {
             const id = this.fieldAktif?.field_id;
             return this.semuaField.filter((f) => f.field_id !== id && f.key);
+        },
+        /**
+         * Acuan untuk lebar bersyarat SENGAJA menyertakan field itu sendiri.
+         *
+         * Berbeda dari `tampil_jika` yang melingkar kalau mengacu diri sendiri,
+         * pemakaian utama lebar bersyarat justru begitu: "Status Kemahasiswaan"
+         * menyusut jadi setengah baris ketika JAWABANNYA SENDIRI "Mahasiswa",
+         * memberi ruang bagi "Semester" yang baru muncul di sebelahnya.
+         */
+        fieldAcuanLebarOptions() {
+            return this.semuaField.filter((f) => f.key);
         },
         jumlahIssue() {
             return this.semuaField.reduce((jumlah, f) => jumlah + this.fieldIssues(f).length, 0);
@@ -1843,6 +1933,16 @@ export default {
             if (!this.fieldAktif) return;
             this.fieldAktif.tampil_jika = key ? { field: key, operator: '=', nilai: '' } : null;
         },
+        /**
+         * Lebar bersyarat: lebar target diawali 50% karena pemakaian utamanya
+         * memberi ruang bagi satu field pendamping yang baru muncul di sebelahnya.
+         */
+        aturLebarSyarat(key) {
+            if (!this.fieldAktif) return;
+            this.fieldAktif.lebar_jika = key
+                ? { field: key, operator: '=', nilai: '', lebar_persen: 50 }
+                : null;
+        },
         aturSectionSyarat(key) {
             if (!this.sectionAktif) return;
             this.sectionAktif.tampil_jika = key ? { field: key, operator: '=', nilai: '' } : null;
@@ -1970,6 +2070,7 @@ export default {
                     radio: 'bi-record-circle',
                     checkbox: 'bi-check2-square',
                     file: 'bi-paperclip',
+                    foto: 'bi-person-bounding-box',
                     phone: 'bi-telephone',
                     email: 'bi-envelope',
                     consent: 'bi-shield-check',
@@ -3236,6 +3337,18 @@ export default {
     display: flex;
     gap: 0.4rem;
     margin-top: 0.4rem;
+}
+
+.mfb-inspector__hint {
+    display: block;
+    margin-top: 0.4rem;
+    font-size: 11px;
+    line-height: 1.5;
+    color: #94a3b8;
+}
+.mfb-inspector__hint b {
+    color: #4f46e5;
+    font-weight: 700;
 }
 
 .mfb-optrow {

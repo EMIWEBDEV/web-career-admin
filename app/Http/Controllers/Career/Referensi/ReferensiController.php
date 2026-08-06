@@ -22,6 +22,8 @@ use Illuminate\Support\Facades\Log;
  *     [{ nilai, label, ket }]
  *   `nilai` yang tersimpan di Jawaban_Json, `label` yang dibaca kandidat,
  *   `ket` keterangan kecil di sebelah kanan (kota, kelompok bidang, dsb).
+ *   Khusus `kampus` ada tambahan `bendera` — kode negara ISO alfa-2 huruf
+ *   kecil, atau null. Sumber lain tidak mengirimnya sama sekali.
  *
  * NILAI YANG DISIMPAN sengaja dipilih supaya syarat auto-gugur yang sudah
  * berjalan tidak perlu diubah:
@@ -79,12 +81,20 @@ class ReferensiController extends Controller
         }
     }
 
-    /** Jenjang pendidikan — daftar pendek, urut jenjang bukan abjad. */
+    /**
+     * Jenjang pendidikan — urut dari yang TERTINGGI (S3) turun ke SD.
+     *
+     * `Urutan` di master menaik dari SD=10 sampai S3=120, jadi dibalik di sini.
+     * Pelamar EVO Group didominasi lulusan perguruan tinggi; menaruh SD di
+     * puncak daftar memaksa mayoritas menggulir melewati jenjang yang tidak
+     * relevan setiap kali. Abjad tidak dipakai karena akan mengacak D1 dan S3
+     * ke tempat yang tidak bermakna.
+     */
     private function jenjang(string $cari, int $batas): array
     {
         $q = DB::table('N_WEB_CAREERS_Master_Jenjang')
             ->where('Flag_Aktif', 'Y')
-            ->orderBy('Urutan')
+            ->orderByDesc('Urutan')
             ->limit($batas);
 
         $this->cocokkan($q, ['Nama', 'Kode'], $cari);
@@ -103,9 +113,12 @@ class ReferensiController extends Controller
      */
     private function jenisInstitusi(string $cari, string $jenjang, int $batas): array
     {
+        // Urut abjad, bukan `Urutan` master. Setelah disaring jenjang, sisanya
+        // tinggal beberapa baris yang setara — mencarinya menurut nama lebih
+        // cepat daripada menghafal urutan hierarki yang tidak terlihat.
         $q = DB::table('N_WEB_CAREERS_Master_Jenis_Institusi as ji')
             ->where('ji.Flag_Aktif', 'Y')
-            ->orderBy('ji.Urutan')
+            ->orderBy('ji.Nama')
             ->limit($batas)
             ->select('ji.Kode', 'ji.Nama', 'ji.Kategori');
 
@@ -131,10 +144,13 @@ class ReferensiController extends Controller
      */
     private function kampus(string $cari, string $jenjang, string $jenis, int $batas): array
     {
+        // Diambil dua kali lipat: baris kembar dibuang setelah query (rapikanKembar),
+        // dan tanpa cadangan ini satu halaman penuh pasangan kembar akan menyusut
+        // jadi setengah isi. Tetap dipagari BATAS_MAKS supaya tidak jadi celah beban.
         $q = DB::table('N_WEB_CAREERS_Master_Kampus')
             ->where('Flag_Aktif', 'Y')
-            ->limit($batas)
-            ->select('Nama', 'Kode', 'Kota', 'Provinsi', 'Negara', 'Kepemilikan');
+            ->limit(min(self::BATAS_MAKS * 2, $batas * 2))
+            ->select('Nama', 'Kode', 'Kota', 'Provinsi', 'Negara', 'Negara_Kode', 'Kepemilikan');
 
         if ($jenis !== '') {
             $q->where('Jenis_Institusi_Kode', $jenis);
@@ -157,7 +173,54 @@ class ReferensiController extends Controller
             'nilai' => $r->Nama,
             'label' => $r->Nama,
             'ket' => $this->lokasi($r),
-        ], $this->jalankan($q));
+            'bendera' => $this->benderaKode($r->Negara_Kode),
+        ], $this->rapikanKembar($this->jalankan($q), $batas));
+    }
+
+    /**
+     * Buang kampus kembar, pertahankan baris yang datanya paling lengkap.
+     *
+     * Impor PDDIKTI daftar luar negeri menduplikasi daftar `world`: 1.370 nama
+     * tercatat dua kali, dan salinan PDDIKTI-nya tidak menyimpan negara sama
+     * sekali. Akibatnya pelamar melihat "Abilene Christian University" dua kali
+     * berturut-turut — satu berbendera Amerika, satu tanpa negara — lalu harus
+     * menebak mana yang benar. Padahal keduanya kampus yang sama.
+     *
+     * Dibereskan saat DIBACA, bukan dengan menghapus baris master: data impor
+     * masih dipakai modul lain, dan `Kode`-nya sudah telanjur tersimpan di
+     * lamaran yang berjalan.
+     *
+     * Karena LIMIT bekerja di SQL sebelum penyaringan ini, pemanggil mengambil
+     * lebih banyak baris lalu memotongnya di sini — kalau tidak, satu halaman
+     * penuh pasangan kembar menyusut jadi setengah.
+     */
+    private function rapikanKembar(array $rows, int $batas): array
+    {
+        $terbaik = [];
+        foreach ($rows as $r) {
+            $kunci = mb_strtolower(preg_replace('/\s+/', ' ', trim($r->Nama)));
+            $lama = $terbaik[$kunci] ?? null;
+            if (! $lama || (! $lama->Negara_Kode && $r->Negara_Kode)) {
+                $terbaik[$kunci] = $r;
+            }
+        }
+
+        return array_slice(array_values($terbaik), 0, $batas);
+    }
+
+    /**
+     * Kode negara ISO-3166 alfa-2 HURUF KECIL untuk ikon bendera, atau null.
+     *
+     * Data impor Dapodik/PDDIKTI menyisakan ribuan baris tanpa kode negara, dan
+     * sebagian berisi teks yang bukan kode sama sekali. Yang tidak lolos pola
+     * dikembalikan null supaya tampilan menghilangkan benderanya — jauh lebih
+     * baik daripada memuat gambar yang pasti 404 di tiap baris daftar.
+     */
+    private function benderaKode(?string $kode): ?string
+    {
+        $k = strtolower(trim((string) $kode));
+
+        return preg_match('/^[a-z]{2}$/', $k) === 1 ? $k : null;
     }
 
     /**

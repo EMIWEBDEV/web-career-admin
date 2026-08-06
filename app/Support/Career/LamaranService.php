@@ -47,9 +47,19 @@ class LamaranService
         $jawaban = json_decode($json ?: '{}', true) ?: [];
 
         return [
-            'tglLahir' => $jawaban['lahir'] ?? null,
+            // `tanggal_lahir` & `nama_kampus`/`nama_institusi` adalah key yang
+            // dipakai formulir dinamis Master Formulir; `lahir`/`kampus`/
+            // `institusi` warisan formulir bawaan lama. Keduanya harus diterima —
+            // sejak seluruh pembukaan beralih ke formulir dinamis, menyebut key
+            // lama saja membuat tanggal lahir dan kampus kosong di email
+            // kandidat tanpa ada yang menyadarinya.
+            'tglLahir' => $jawaban['lahir'] ?? $jawaban['tanggal_lahir'] ?? null,
             'jkel' => $jawaban['jkel'] ?? $jawaban['jenis_kelamin'] ?? null,
-            'kampus' => $jawaban['kampus'] ?? $jawaban['institusi'] ?? null,
+            'kampus' => $jawaban['kampus']
+                ?? $jawaban['institusi']
+                ?? $jawaban['nama_kampus']
+                ?? $jawaban['nama_institusi']
+                ?? null,
             // TAHUN LULUS / PERKIRAAN LULUS.
             //
             // Beberapa kunci ditoleransi karena formulir pendaftaran tidak

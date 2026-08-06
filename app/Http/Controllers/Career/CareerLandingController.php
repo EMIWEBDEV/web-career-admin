@@ -190,15 +190,31 @@ class CareerLandingController extends Controller
             $steps = $this->rekrutmenSteps();
         }
 
+        // ── KELAYAKAN (aturan jalur) + status SUDAH-MELAMAR (form read-only) ──
+        $userId = (int) session('career_auth.id');
+
         // Identitas kandidat dari SESI LOGIN (bukan sessionStorage) untuk prefill.
+        //
+        // No. HP dan NIK dibaca dari tabel pengguna, BUKAN dari sesi: yang
+        // disimpan saat login hanya id/nama/email/role/klasifikasi, sehingga
+        // `session('career_auth.hp')` selalu null dan kolomnya tampak kosong
+        // padahal datanya ada sejak kandidat mendaftar.
         $kandidat = [
             'nama' => session('career_auth.nama'),
             'email' => session('career_auth.email'),
-            'hp' => session('career_auth.hp'),
+            'hp' => null,
+            'nik' => null,
         ];
+        if ($userId) {
+            $akun = DB::table('N_WEB_CAREERS_Users')
+                ->where('Id_Users', $userId)
+                ->first(['No_Hp', 'NIK']);
+            if ($akun) {
+                $kandidat['hp'] = $akun->No_Hp;
+                $kandidat['nik'] = $akun->NIK;
+            }
+        }
 
-        // ── KELAYAKAN (aturan jalur) + status SUDAH-MELAMAR (form read-only) ──
-        $userId = (int) session('career_auth.id');
         $kelayakan = ['boleh' => true, 'alasan' => null, 'kode' => null];
         $sudahLamar = null;
         if ($userId) {
