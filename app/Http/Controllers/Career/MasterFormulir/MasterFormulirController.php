@@ -174,7 +174,7 @@ class MasterFormulirController extends Controller
 
             $data = $request->validate([
                 'schema' => 'required|array',
-                'catatan' => 'nullable|string|max:500',
+                'catatan' => 'nullable|string',
             ]);
             $valid = $this->validasiSchema($data['schema']);
             if (! $valid['ok']) {
@@ -310,7 +310,7 @@ class MasterFormulirController extends Controller
             'deskripsi' => 'nullable|string|max:500',
             'petunjuk' => 'nullable|string|max:500',
             'schema' => 'nullable|array',
-            'catatan' => 'nullable|string|max:500',
+            'catatan' => 'nullable|string',
         ];
     }
 

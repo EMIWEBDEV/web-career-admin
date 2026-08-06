@@ -5,6 +5,7 @@ namespace App\Support\Career;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\URL;
 use Vinkla\Hashids\Facades\Hashids;
 
 /**
@@ -93,7 +94,19 @@ class LaporanKandidat
                 'jkel' => $profil['jkel'],
                 'kampus' => $profil['kampus'],
                 'tahunLulus' => $profil['tahunLulus'],
-                'foto' => self::fotoDataUri($profil['fotoPath'] ?? null),
+                // Rincian pendidikan — dipakai sidebar CV. Formulir MT tidak
+                // menanyakan tahun lulus (hanya status & semester berjalan),
+                // jadi keduanya ikut supaya kolom pendidikan tidak kosong
+                // hanya karena pertanyaannya memang tak pernah diajukan.
+                'jurusan' => $profil['jurusan'] ?? null,
+                'jenjang' => $profil['jenjang'] ?? null,
+                'ipk' => $profil['ipk'] ?? null,
+                'statusStudi' => $profil['statusStudi'] ?? null,
+                'semester' => $profil['semester'] ?? null,
+                // NULL bila memang tidak ada — dan tata letaknya menyesuaikan.
+                // Bingkai kosong berlabel "foto" pada dokumen yang dibaca
+                // direksi terbaca seperti berkas yang gagal dimuat.
+                'foto' => self::fotoDataUri(self::pathFotoKandidat($lamaranId, $profil['fotoPath'] ?? null)),
             ],
             'lamaran' => [
                 'program' => $lamaran->ProgramNama,
@@ -185,36 +198,215 @@ class LaporanKandidat
             ->get()
             ->groupBy('Formulir_Pengisian_Id');
 
-        return $rows->map(function ($fp) use ($berkas) {
+        return $rows->map(function ($fp) use ($berkas, $lamaranId) {
             $jawaban = json_decode($fp->Jawaban_Json ?: '{}', true) ?: [];
             $berkasIni = collect($berkas->get($fp->Id_Formulir_Pengisian, []));
+            // LABEL ASLI dari skema yang dibekukan saat formulir dikirim.
+            $label = self::labelSkema($fp->Schema_Snapshot_Json ?? null);
+            $urutan = array_flip(array_keys($label));
 
             return [
                 'label' => $fp->TahapLabel ?: ($fp->Sumber === 'PENDAFTARAN' ? 'Formulir Pendaftaran' : 'Formulir Tahap'),
                 'komponen' => $fp->Komponen_Kode,
                 'waktuKirim' => (string) $fp->Waktu_Kirim,
-                'isian' => collect($jawaban)->map(function ($v, $k) use ($berkasIni) {
+                'isian' => collect($jawaban)
+                    // URUTAN MENGIKUTI FORMULIR, bukan urutan kunci di JSON.
+                    // Yang diisi kandidat berurut logis (identitas → alamat →
+                    // kontak darurat); JSON menyimpannya sesuai urutan tulis,
+                    // dan dokumen yang melompat-lompat memaksa pembaca mencari.
+                    // Kunci yang tak ada di skema didorong ke belakang.
+                    ->sortBy(fn ($v, $k) => $urutan[$k] ?? 9999)
+                    ->map(function ($v, $k) use ($berkasIni, $label, $lamaranId) {
                     $b = $berkasIni->firstWhere('Field_Key', $k);
 
                     return [
                         'key' => $k,
-                        // Label mentah; pemanggil boleh menimpanya dengan label
-                        // asli dari skema (lihat KamusLabelFormulir).
-                        'label' => ucwords(str_replace(['_', '-'], ' ', $k)),
-                        'nilai' => is_array($v) ? implode(', ', $v) : (is_bool($v) ? ($v ? 'Ya' : 'Tidak') : (string) $v),
+                        // Label ASLI dari skema formulir; hanya bila kuncinya
+                        // tidak ada di sana barulah namanya dirapikan sendiri.
+                        // Tanpa ini dokumen resmi berbunyi "V Nama", "Nik",
+                        // "Alamat Ktp" — pertanyaan yang di layar berbunyi utuh
+                        // dan benar tiba-tiba jadi singkatan di atas kertas.
+                        'label' => $label[$k] ?? ucwords(str_replace(['_', '-'], ' ', $k)),
+                        'nilai' => self::nilaiTeks($v),
                         // Isian berupa berkas dicetak sebagai ADA/TIDAK, bukan
                         // nama file — nama berkas tidak berarti apa pun di
                         // atas kertas, dan berkasnya sendiri tidak ikut tercetak.
-                        'berkas' => $b ? ['nama' => $b->Nama_Asli, 'status' => $b->Status_Verifikasi] : null,
+                        'berkas' => $b ? [
+                            'nama' => $b->Nama_Asli,
+                            'status' => $b->Status_Verifikasi,
+                            'tautan' => self::tautanBerkas($lamaranId, (int) $b->Id_Formulir_Berkas),
+                        ] : null,
                     ];
                 })->values()->all(),
                 'dokumen' => $berkasIni->map(fn ($b) => [
                     'field' => $b->Field_Key,
                     'nama' => $b->Nama_Asli,
                     'status' => $b->Status_Verifikasi,
+                    // Bisa diklik langsung dari dalam PDF — lihat tautanBerkas().
+                    'tautan' => self::tautanBerkas($lamaranId, (int) $b->Id_Formulir_Berkas),
                 ])->values()->all(),
             ];
         })->values()->all();
+    }
+
+    /**
+     * Tautan dokumen yang bisa diklik DARI DALAM PDF.
+     *
+     * Bertanda tangan (HMAC dari APP_KEY) dan berumur, bukan rute admin biasa:
+     * pembaca PDF tidak membawa cookie sesi, jadi tautan ke rute admin akan
+     * selalu mendarat di halaman login — tautan yang pasti gagal lebih buruk
+     * daripada tidak ada tautan sama sekali.
+     *
+     * UMURNYA TERBATAS, dan itu disengaja. Laporan ini memuat data pribadi dan
+     * kerap diteruskan lewat surel; tautan yang berlaku selamanya berarti
+     * salinan PDF lama tetap membuka dokumen kandidat bertahun-tahun kemudian.
+     * 30 hari cukup untuk satu putaran seleksi, sesudahnya laporan tinggal
+     * dicetak ulang.
+     *
+     * Dibangun di ANTREAN, tempat tidak ada permintaan HTTP — jadi alamat
+     * dasarnya diambil dari APP_URL. Bila APP_URL salah, tautannya menunjuk ke
+     * host yang keliru; itu satu-satunya setelan yang harus benar di produksi.
+     */
+    private static function tautanBerkas(int $lamaranId, int $berkasId): ?string
+    {
+        if (! $berkasId) {
+            return null;
+        }
+
+        try {
+            return URL::temporarySignedRoute(
+                'career.laporan.berkas',
+                now()->addDays(30),
+                ['lamaran' => Hashids::encode($lamaranId), 'berkas' => Hashids::encode($berkasId)],
+            );
+        } catch (\Throwable $e) {
+            // Laporan tanpa tautan masih berguna; laporan yang gagal terbit tidak.
+            Log::channel('web_career')->warning('[LAPORAN] tautan berkas gagal dibuat: ' . $e->getMessage());
+
+            return null;
+        }
+    }
+
+    /**
+     * Peta `key => label` dari skema formulir yang dibekukan saat dikirim.
+     *
+     * Snapshot, BUKAN skema yang berlaku sekarang: pertanyaan bisa diganti
+     * namanya setelah kandidat menjawab, dan mencetak jawaban lama di bawah
+     * pertanyaan baru adalah cara paling halus menyampaikan hal yang keliru.
+     *
+     * Urutan kemunculannya ikut terjaga — dipakai mengurutkan isian di dokumen
+     * sesuai urutan formulirnya.
+     */
+    private static function labelSkema(?string $json): array
+    {
+        $skema = json_decode($json ?: '', true);
+        if (! is_array($skema)) {
+            return [];
+        }
+
+        $peta = [];
+        foreach ($skema['langkah'] ?? [] as $langkah) {
+            foreach ($langkah['bagian'] ?? [] as $bagian) {
+                foreach ($bagian['field'] ?? [] as $f) {
+                    if (! empty($f['key']) && ! empty($f['label'])) {
+                        $peta[$f['key']] = $f['label'];
+                    }
+                }
+            }
+        }
+
+        return $peta;
+    }
+
+    /**
+     * Jawaban formulir → satu untai teks yang layak dicetak.
+     *
+     * ISIAN BERULANG BERISI ARRAY OF OBJECT. Pengalaman kerja, riwayat
+     * pendidikan, dan daftar keahlian tersimpan sebagai
+     * `[{posisi: …, perusahaan: …}, …]`. `implode()` di atasnya melempar
+     * "Array to string conversion" — peringatan belaka di PHP, sehingga yang
+     * tercetak bukan galat melainkan kata "Array" di tengah dokumen resmi yang
+     * dibaca direksi. Persis kelas kekeliruan yang paling lama tak ketahuan.
+     *
+     * Bentuk cetaknya: tiap baris jadi satu kalimat "label: isi", dipisah titik
+     * koma. Kedalamannya dibatasi — struktur yang lebih dalam dari itu hampir
+     * pasti data rusak, dan menelusurinya terus hanya menghasilkan paragraf
+     * yang tak seorang pun baca.
+     */
+    private static function nilaiTeks(mixed $v, int $dalam = 0): string
+    {
+        if (is_bool($v)) {
+            return $v ? 'Ya' : 'Tidak';
+        }
+
+        if (! is_array($v)) {
+            return trim((string) $v);
+        }
+
+        if ($dalam >= 3) {
+            return '(data bersarang)';
+        }
+
+        $bagian = [];
+        foreach ($v as $k => $isi) {
+            $teks = self::nilaiTeks($isi, $dalam + 1);
+            if ($teks === '') {
+                continue;
+            }
+            // Kunci numerik tidak disebut: "1: Jakarta, 2: Bandung" hanya
+            // menambah angka yang tidak berarti apa-apa bagi pembaca.
+            $bagian[] = is_int($k) ? $teks : ucwords(str_replace(['_', '-'], ' ', (string) $k)) . ': ' . $teks;
+        }
+
+        return implode($dalam === 0 ? '; ' : ', ', $bagian);
+    }
+
+    /**
+     * FOTO MANA YANG DIPAKAI DOKUMEN — menurut urutan di master.
+     *
+     *   1. PAS FOTO dari formulir. Foto resmi, memang disiapkan untuk dokumen.
+     *   2. FOTO VERIFIKASI. Selalu diminta sejak awal apply, jadi hampir pasti
+     *      terisi — tapi tujuannya memastikan orangnya, bukan dipandang, dan
+     *      kebanyakan diambil seadanya dengan kamera depan.
+     *   3. Tidak ada. Dikembalikan null, dan tata letaknya menyesuaikan.
+     *
+     * Daftar kuncinya DARI MASTER (Kode='FOTO'), bukan ditulis di sini:
+     * formulir dirancang lewat layar, jadi kunci baru bisa lahir kapan saja —
+     * dan kode yang lupa disunting akan diam-diam kembali memakai foto
+     * verifikasi tanpa satu pun galat.
+     *
+     * @param  ?string  $cadangan  path foto verifikasi yang sudah ditemukan pemanggil
+     */
+    private static function pathFotoKandidat(int $lamaranId, ?string $cadangan): ?string
+    {
+        $kunci = DB::table('N_WEB_CAREERS_Master_Kunci_Identitas')
+            ->where('Kode', 'FOTO')->where('Flag_Aktif', 'Y')
+            ->orderBy('Urutan')->pluck('Field_Key')->all();
+
+        if (! $kunci) {
+            return $cadangan;
+        }
+
+        // Seluruh berkas foto milik lamaran ini, sekali kueri. Pengisian
+        // TERBARU didahulukan: kandidat yang memperbarui pas fotonya di tahap
+        // lanjutan berarti yang lama sudah tidak ia akui.
+        $berkas = DB::table('N_WEB_CAREERS_Formulir_Berkas as fb')
+            ->join('N_WEB_CAREERS_Formulir_Pengisian as fp', 'fp.Id_Formulir_Pengisian', '=', 'fb.Formulir_Pengisian_Id')
+            ->where('fp.Lamaran_Id', $lamaranId)
+            ->whereIn('fb.Field_Key', $kunci)
+            ->whereNotNull('fb.Path_File')
+            ->orderByDesc('fp.Waktu_Kirim')
+            ->select('fb.Field_Key', 'fb.Path_File')
+            ->get();
+
+        foreach ($kunci as $k) {
+            $path = $berkas->firstWhere('Field_Key', $k)->Path_File ?? null;
+            if ($path) {
+                return $path;
+            }
+        }
+
+        return $cadangan;
     }
 
     /**

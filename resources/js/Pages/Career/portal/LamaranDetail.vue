@@ -979,177 +979,6 @@
                     </div>
                 </div>
 
-                <!-- ── Detail Lamaran: info kaya (+ tombol lihat detail lowongan) ── -->
-                <div v-show="tab === 'lowongan'" class="ld-card ld-info">
-                    <div class="ld-inforow">
-                        <div class="ld-sectitle">
-                            <svg
-                                width="18"
-                                height="18"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="#6366f1"
-                                stroke-width="2"
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                            >
-                                <rect x="3" y="7" width="18" height="13" rx="2" />
-                                <path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                            </svg>
-                            Detail Lowongan
-                        </div>
-                        <a v-if="lowonganUrl" :href="lowonganUrl" target="_blank" rel="noopener" class="ld-detailbtn">
-                            Lihat Selengkapnya
-                            <svg
-                                width="15"
-                                height="15"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="2.4"
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                            >
-                                <path d="M7 17L17 7M8 7h9v9" />
-                            </svg>
-                        </a>
-                    </div>
-
-                    <p v-if="ringkasan" class="ld-info__desc">{{ ringkasan }}</p>
-
-                    <!-- Fakta cepat (tipe kerja / tempat kerja / lokasi / pengalaman·durasi) -->
-                    <div class="ld-facts">
-                        <span v-for="f in facts" :key="f.t" class="ld-fact">
-                            <span class="ld-fact__ico" v-html="f.icon"></span>
-                            <span
-                                ><span class="ld-fact__lbl">{{ f.t }}</span
-                                ><span class="ld-fact__val">{{ f.v }}</span></span
-                            >
-                        </span>
-                    </div>
-
-                    <!-- Tanggung Jawab -->
-                    <div v-if="tanggungJawab.length" class="ld-blk">
-                        <div class="ld-blk__title">
-                            <span class="ld-blk__ico ld-blk__ico--green"
-                                ><svg
-                                    width="15"
-                                    height="15"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    stroke-width="2"
-                                    stroke-linecap="round"
-                                    stroke-linejoin="round"
-                                >
-                                    <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" /></svg
-                            ></span>
-                            Tanggung Jawab
-                        </div>
-                        <ul class="ld-list ld-list--check">
-                            <li v-for="(t, i) in tanggungJawab" :key="i">
-                                <svg
-                                    width="15"
-                                    height="15"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="#10b981"
-                                    stroke-width="2.6"
-                                    stroke-linecap="round"
-                                    stroke-linejoin="round"
-                                >
-                                    <path d="M20 6L9 17l-5-5" /></svg
-                                >{{ t }}
-                            </li>
-                        </ul>
-                    </div>
-
-                    <!-- Persyaratan -->
-                    <div v-if="persyaratan.length" class="ld-blk">
-                        <div class="ld-blk__title">
-                            <span class="ld-blk__ico ld-blk__ico--amber"
-                                ><svg
-                                    width="15"
-                                    height="15"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    stroke-width="2"
-                                    stroke-linecap="round"
-                                    stroke-linejoin="round"
-                                >
-                                    <path d="M9 11l3 3L22 4" />
-                                    <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg
-                            ></span>
-                            Persyaratan
-                        </div>
-                        <ul class="ld-list ld-list--dot">
-                            <li v-for="(t, i) in persyaratan" :key="i"><span></span>{{ t }}</li>
-                        </ul>
-                    </div>
-
-                    <!-- Skill -->
-                    <div v-if="skill.length" class="ld-blk">
-                        <div class="ld-blk__title">
-                            <span class="ld-blk__ico ld-blk__ico--indigo"
-                                ><svg
-                                    width="15"
-                                    height="15"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    stroke-width="2"
-                                    stroke-linecap="round"
-                                    stroke-linejoin="round"
-                                >
-                                    <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z" /></svg
-                            ></span>
-                            Skill yang Dibutuhkan
-                        </div>
-                        <div class="ld-skills">
-                            <span v-for="s in skill" :key="s">{{ s }}</span>
-                        </div>
-                    </div>
-
-                    <!-- Benefit -->
-                    <div v-if="benefit.length" class="ld-blk">
-                        <div class="ld-blk__title">
-                            <span class="ld-blk__ico ld-blk__ico--green"
-                                ><svg
-                                    width="15"
-                                    height="15"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    stroke-width="2"
-                                    stroke-linecap="round"
-                                    stroke-linejoin="round"
-                                >
-                                    <rect x="3" y="8" width="18" height="4" rx="1" />
-                                    <path d="M12 8v13M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7" />
-                                    <path d="M12 8a3 3 0 1 0-3-3c0 2 3 3 3 3zM12 8a3 3 0 1 1 3-3c0 2-3 3-3 3z" /></svg
-                            ></span>
-                            Benefit &amp; Fasilitas
-                        </div>
-                        <div class="ld-benefits">
-                            <span v-for="(b, i) in benefit" :key="i" class="ld-benefit"
-                                ><svg
-                                    width="14"
-                                    height="14"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="#059669"
-                                    stroke-width="2.6"
-                                    stroke-linecap="round"
-                                    stroke-linejoin="round"
-                                >
-                                    <path d="M20 6L9 17l-5-5" /></svg
-                                >{{ b }}</span
-                            >
-                        </div>
-                    </div>
-                </div>
-
                 <!-- ── Data kandidat (dari formulir pendaftaran) ──
                          Diambil dari jawaban yang SUDAH kandidat kirim, bukan
                          disalin ulang: foto, kampus, tanggal lahir, dan sisanya
@@ -1978,7 +1807,14 @@ export default {
         tabs() {
             const out = [];
             if (this.isMtCategory) out.push({ k: 'alur', label: 'Alur Seleksi', ikon: 'bi-list-task' });
-            out.push({ k: 'lowongan', label: 'Detail Lowongan', ikon: 'bi-briefcase-fill' });
+            // TAB "DETAIL LOWONGAN" DIHAPUS.
+            //
+            // Halaman ini menjawab "bagaimana lamaranku berjalan". Rincian
+            // lowongannya — deskripsi, kualifikasi, benefit — sudah dibaca
+            // kandidat SEBELUM ia melamar, dan masih terbuka di halaman
+            // lowongannya sendiri. Menyalinnya ke sini membuat halaman proses
+            // dibuka untuk membaca ulang iklan, sementara yang benar-benar
+            // ditunggu (jadwal, tes, keputusan) terdorong ke bawah.
             if (this.formulir.length) {
                 out.push({
                     k: 'berkas',

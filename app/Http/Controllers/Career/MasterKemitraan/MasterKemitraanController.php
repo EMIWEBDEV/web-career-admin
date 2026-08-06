@@ -81,7 +81,7 @@ class MasterKemitraanController extends Controller
             'mulai' => 'nullable|date',
             'selesai' => 'nullable|date',
             'status' => 'required|in:AKTIF,BERAKHIR,DRAFT',
-            'catatan' => 'nullable|string|max:500',
+            'catatan' => 'nullable|string',
         ];
     }
 

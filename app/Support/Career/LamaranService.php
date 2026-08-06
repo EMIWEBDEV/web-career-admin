@@ -23,45 +23,55 @@ use Illuminate\Support\Str;
 class LamaranService
 {
     /**
-     * Data kartu kandidat untuk email (tanggal lahir, kampus, PATH foto).
+     * Data identitas kandidat — dipakai email, laporan PDF, dan Excel.
      *
-     * Diambil dari jawaban formulir PENDAFTARAN yang sudah kandidat kirim —
-     * bukan disalin ke tabel lain. Ditaruh di sini karena DIPAKAI DUA JALUR
-     * (email hasil apply & email keputusan tahap); kalau masing-masing menebak
-     * sendiri key mana yang menyimpan tanggal lahir, keduanya pasti melenceng
-     * begitu formulirnya berubah.
+     * ── KUNCINYA DARI MASTER, BUKAN DARI TEBAKAN ────────────────────────────
+     *
+     * Sebelumnya kunci formulir ditulis mati di sini (`lahir`, `kampus`,
+     * `jkel`). Formulir dirancang lewat layar, dan formulir MT yang berlaku
+     * sekarang menyimpannya sebagai `tanggal_lahir`, `nama_kampus`,
+     * `jenis_kelamin` — sehingga SELURUH kandidat baru punya tanggal lahir dan
+     * kampus kosong di email maupun laporan resmi, sementara kandidat lama
+     * tetap terisi. Tidak ada galat, tidak ada log: hanya dokumen bolong,
+     * bolong di kolom yang paling sering dibaca.
+     *
+     * Daftar kunci + urutan prioritasnya kini hidup di
+     * N_WEB_CAREERS_Master_Kunci_Identitas — satu tempat, bisa ditambah tanpa
+     * deploy saat formulir berikutnya memakai ejaan lain.
+     *
+     * ── SELURUH PENGISIAN DIBACA, YANG TERBARU MENANG ───────────────────────
+     *
+     * Dulu hanya pengisian ber-Sumber='PENDAFTARAN' yang PALING LAMA yang
+     * dilihat. Data yang kandidat isi di formulir TAHAP (kelengkapan data diri
+     * — tempat NIK, alamat, dan kerap pendidikan lengkap berada) tidak pernah
+     * terbaca sama sekali. Sekarang semuanya dibaca, terbaru lebih dulu:
+     * pembaruan yang kandidat kirim sendiri memang menggantikan yang lama.
+     *
+     * `institusi` SENGAJA TIDAK dipakai sebagai nama kampus — di data ia berisi
+     * JENIS institusi ("Universitas", "SMK"). Fallback lama membuat laporan
+     * berbunyi "Institusi: Universitas": terbaca benar sekilas, padahal sama
+     * sekali bukan jawabannya.
      *
      * Yang dikembalikan PATH foto, bukan isinya: payload antrean harus kecil,
      * bytes-nya diambil dari GCS saat email benar-benar dikirim.
-     *
-     * @return array{tglLahir: ?string, jkel: ?string, kampus: ?string, hp: ?string, fotoPath: ?string}
      */
     public static function dataKandidatEmail(int $lamaranId): array
     {
-        $json = DB::table('N_WEB_CAREERS_Formulir_Pengisian')
-            ->where('Lamaran_Id', $lamaranId)
-            ->where('Sumber', 'PENDAFTARAN')
-            ->orderBy('Id_Formulir_Pengisian')
-            ->value('Jawaban_Json');
-
-        $jawaban = json_decode($json ?: '{}', true) ?: [];
+        $jawaban = self::jawabanGabungan($lamaranId);
+        $ambil = fn (string $kode) => self::dariKunci($jawaban, $kode);
 
         return [
-            'tglLahir' => $jawaban['lahir'] ?? null,
-            'jkel' => $jawaban['jkel'] ?? $jawaban['jenis_kelamin'] ?? null,
-            'kampus' => $jawaban['kampus'] ?? $jawaban['institusi'] ?? null,
-            // TAHUN LULUS / PERKIRAAN LULUS.
-            //
-            // Beberapa kunci ditoleransi karena formulir pendaftaran tidak
-            // seragam: yang lama memakai `lulus`/`thn_lulus`, blok pendidikan
-            // baku memakai `tahun_lulus`. Menyebut satu kunci saja membuat
-            // prefill diam-diam kosong pada sebagian angkatan — persis pola
-            // yang sudah terjadi pada `kampus` di atas.
-            'tahunLulus' => $jawaban['tahun_lulus']
-                ?? $jawaban['thn_lulus']
-                ?? $jawaban['tahunLulus']
-                ?? $jawaban['lulus']
-                ?? null,
+            'tglLahir' => $ambil('TGL_LAHIR'),
+            'jkel' => $ambil('JKEL'),
+            'kampus' => $ambil('KAMPUS'),
+            'tahunLulus' => $ambil('TAHUN_LULUS'),
+            'jurusan' => $ambil('JURUSAN'),
+            'jenjang' => $ambil('JENJANG'),
+            'ipk' => $ambil('IPK'),
+            // Dipakai saat tahun lulus memang tidak ditanyakan — formulir MT
+            // hanya menanyakan status kemahasiswaan & semester berjalan.
+            'statusStudi' => $ambil('STATUS_STUDI'),
+            'semester' => $ambil('SEMESTER'),
             'hp' => $jawaban['hp'] ?? $jawaban['no_hp'] ?? null,
             'fotoPath' => DB::table('N_WEB_CAREERS_Formulir_Berkas as fb')
                 ->join('N_WEB_CAREERS_Formulir_Pengisian as fp', 'fp.Id_Formulir_Pengisian', '=', 'fb.Formulir_Pengisian_Id')
@@ -70,6 +80,66 @@ class LamaranService
                 ->orderByDesc('fb.Id_Formulir_Berkas')
                 ->value('fb.Path_File'),
         ];
+    }
+
+    /**
+     * Jawaban SELURUH formulir sebuah lamaran, dilebur jadi satu peta.
+     *
+     * Yang TERBARU ditumpuk paling akhir sehingga ia menang atas yang lama —
+     * kandidat yang membetulkan nomor teleponnya di formulir tahap berarti yang
+     * lama sudah tidak ia akui. Nilai kosong tidak ikut menimpa: jawaban
+     * kosong pada formulir baru tidak boleh menghapus jawaban lama yang terisi.
+     */
+    private static function jawabanGabungan(int $lamaranId): array
+    {
+        $rows = DB::table('N_WEB_CAREERS_Formulir_Pengisian')
+            ->where('Lamaran_Id', $lamaranId)
+            ->orderBy('Waktu_Kirim')            // lama → baru
+            ->orderBy('Id_Formulir_Pengisian')
+            ->pluck('Jawaban_Json');
+
+        $gabung = [];
+        foreach ($rows as $json) {
+            foreach ((json_decode($json ?: '{}', true) ?: []) as $k => $v) {
+                if ($v === null || $v === '' || $v === []) {
+                    continue;
+                }
+                $gabung[$k] = $v;
+            }
+        }
+
+        return $gabung;
+    }
+
+    /** Nilai pertama yang berisi menurut urutan kunci di master. */
+    private static function dariKunci(array $jawaban, string $kode): ?string
+    {
+        foreach (self::kunciIdentitas($kode) as $k) {
+            $v = $jawaban[$k] ?? null;
+            if (is_array($v)) {
+                $v = implode(', ', array_filter($v, 'is_scalar'));
+            }
+            if ($v !== null && trim((string) $v) !== '') {
+                return trim((string) $v);
+            }
+        }
+
+        return null;
+    }
+
+    /** Daftar kunci formulir untuk satu jenis identitas — dari master, di-cache. */
+    private static function kunciIdentitas(string $kode): array
+    {
+        static $cache = null;
+
+        $cache ??= DB::table('N_WEB_CAREERS_Master_Kunci_Identitas')
+            ->where('Flag_Aktif', 'Y')
+            ->orderBy('Urutan')
+            ->get(['Kode', 'Field_Key'])
+            ->groupBy('Kode')
+            ->map(fn ($g) => $g->pluck('Field_Key')->all());
+
+        return $cache[$kode] ?? [];
     }
 
     /**
