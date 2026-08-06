@@ -4,6 +4,7 @@
 import axios from 'axios';
 import { Link, router } from '@inertiajs/vue3';
 import AuthShell from './components/AuthShell.vue';
+import TeleponNegara from '@career/TeleponNegara.vue';
 import { logout as clearSession, syncFromServer } from './careerSession';
 import { csrfHeaders, refreshCsrfToken } from '../../utils/csrf';
 
@@ -50,7 +51,7 @@ async function authRequestConfig() {
 
 export default {
     layout: null,
-    components: { AuthShell, Link },
+    components: { AuthShell, Link, TeleponNegara },
     props: {
         mode: { type: String, default: 'login' },
         turnstileSiteKey: { type: String, default: '' },
@@ -184,12 +185,17 @@ export default {
         },
         clearErr(key) { if (this.errors[key]) delete this.errors[key]; },
         clearAll() { Object.keys(this.errors).forEach((k) => delete this.errors[k]); },
-        // No. HP dipaksa format 62 (bukan 08). 0xxx → 62xxx, 8xxx → 628xxx.
-        onPhoneInput() {
-            let d = (this.form.phone || '').replace(/\D/g, '');
-            if (d.startsWith('0')) d = '62' + d.slice(1);
-            else if (d.startsWith('8')) d = '62' + d;
-            this.form.phone = d.slice(0, 15);
+        /**
+         * Nomor sudah datang RAPI dari TeleponNegara: kode negara + nomor lokal,
+         * angka saja, nol di depan sudah dibuang.
+         *
+         * Pengubah lama (0xxx → 62xxx, 8xxx → 628xxx) DIHAPUS, dan bukan karena
+         * pindah tempat — ia justru merusak begitu negaranya bukan Indonesia:
+         * nomor Malaysia +60 12… akan dipaksa jadi 6012… lalu dibaca sebagai
+         * nomor Indonesia. Pemilih negara yang menentukan awalannya sekarang.
+         */
+        setPhone(v) {
+            this.form.phone = String(v || '').slice(0, 15);
             this.clearErr('phone');
         },
         // KTP hanya angka, maksimal 16 digit.
@@ -255,8 +261,16 @@ export default {
             else if (!this.isLogin && this.form.password.length < 6) this.errors.password = 'Minimal 6 karakter.';
             if (!this.isLogin) {
                 if (!this.form.nama) this.errors.nama = 'Nama wajib diisi.';
+                // ANGKA SAJA, 8–15 digit termasuk kode negara (batas E.164).
+                // Awalan '62' TIDAK lagi diwajibkan — negaranya dipilih sendiri,
+                // dan memaksa +62 berarti menutup pintu bagi pelamar luar negeri.
+                //
+                // Aturan yang sama persis ada di server (AuthController::register).
+                // Yang di sini hanya supaya salahnya ketahuan sebelum tombol
+                // ditekan; yang menegakkan tetap server.
                 if (!this.form.phone) this.errors.phone = 'No. HP wajib diisi.';
-                else if (!/^62\d{8,13}$/.test(this.form.phone)) this.errors.phone = 'No. HP harus format 62 (mis. 62812xxxxxxx).';
+                else if (/\D/.test(this.form.phone)) this.errors.phone = 'No. HP hanya boleh angka 0–9.';
+                else if (!/^\d{8,15}$/.test(this.form.phone)) this.errors.phone = 'No. HP harus 8–15 digit termasuk kode negara.';
                 if (!this.form.nik) this.errors.nik = 'Nomor KTP (NIK) wajib diisi.';
                 else if (!/^\d{16}$/.test(this.form.nik)) this.errors.nik = 'Nomor KTP harus tepat 16 digit angka.';
             }
@@ -390,11 +404,19 @@ export default {
                 <p v-if="errors.email" class="help">{{ errors.email }}</p>
             </div>
 
-            <!-- No. HP (register) -->
+            <!-- No. HP (register) — pemilih KODE NEGARA, sama persis dengan
+                 formulir lamaran. Dulu kotak polos yang MEMAKSA awalan 62:
+                 kandidat bernomor luar negeri tak punya cara mendaftar sama
+                 sekali, dan penolakannya berbunyi "No. HP harus format 62"
+                 seolah nomornya yang salah. Default tetap Indonesia. -->
             <div v-if="!isLogin" class="field">
-                <label for="c-phone"><span class="lbl-text"><i class="bi bi-telephone"></i> No. HP</span></label>
-                <div class="input-wrap" :class="{ 'is-error': errors.phone }">
-                    <input id="c-phone" v-model="form.phone" type="tel" inputmode="numeric" placeholder="62812xxxxxxx" autocomplete="tel" @input="onPhoneInput" />
+                <label><span class="lbl-text"><i class="bi bi-telephone"></i> No. HP</span></label>
+                <div class="input-wrap tel-wrap" :class="{ 'is-error': errors.phone }">
+                    <TeleponNegara
+                        :model-value="form.phone"
+                        placeholder="81234567890"
+                        @update:model-value="setPhone"
+                    />
                 </div>
                 <p v-if="errors.phone" class="help">{{ errors.phone }}</p>
             </div>
@@ -473,6 +495,55 @@ export default {
 </template>
 
 <style scoped>
+/* ═══ TELEPON BERKODE NEGARA — MENYATU DENGAN ISIAN LAIN ═══════════════════
+   TeleponNegara membawa bingkainya sendiri (dipakai apa adanya di formulir
+   lamaran yang memakai Element Plus). Di halaman ini bingkai itu DILEPAS dan
+   yang berlaku tinggal .input-wrap — kalau tidak, kotaknya jadi dua lapis:
+   satu bingkai di dalam satu bingkai, dengan sudut & tinggi yang berbeda.
+
+   Cincin fokus dan garis merah galat pun tetap milik .input-wrap, jadi kolom
+   telepon bereaksi persis sama dengan Email, Nama, dan Password di sebelahnya. */
+.tel-wrap :deep(.tnp) {
+    border: 0;
+    border-radius: inherit;
+    background: transparent;
+    height: auto;
+}
+.tel-wrap :deep(.tnp:focus-within) { box-shadow: none; }
+
+/* Padding & ukuran huruf disamakan dengan `.authx .input-wrap input`
+   (15px 16px / 15px) supaya tingginya sebaris dengan isian lain. */
+.tel-wrap :deep(.tnp__trigger) { padding: 15px 10px 15px 16px; }
+.tel-wrap :deep(.tnp__dial) { font-size: 15px; color: #0f172a; }
+.tel-wrap :deep(.tnp__num) { padding: 15px 16px 15px 12px; font-size: 15px; color: #0f172a; }
+.tel-wrap :deep(.tnp__num::placeholder) { color: #94a3b8; }
+.tel-wrap :deep(.tnp__sep) { margin: 10px 0; }
+
+/* Ikut mengecil di layar pendek & sempit — titik hentinya SAMA PERSIS dengan
+   AuthShell, supaya kolom telepon tidak pernah lebih tinggi dari tetangganya. */
+@media (max-height: 880px) {
+    .tel-wrap :deep(.tnp__trigger) { padding: 13px 9px 13px 15px; }
+    .tel-wrap :deep(.tnp__num) { padding: 13px 15px 13px 11px; font-size: 14.5px; }
+    .tel-wrap :deep(.tnp__dial) { font-size: 14.5px; }
+}
+@media (max-height: 760px) {
+    .tel-wrap :deep(.tnp__trigger) { padding: 12px 8px 12px 14px; }
+    .tel-wrap :deep(.tnp__num) { padding: 12px 14px 12px 10px; font-size: 14px; }
+    .tel-wrap :deep(.tnp__dial) { font-size: 14px; }
+}
+@media (max-height: 660px) {
+    .tel-wrap :deep(.tnp__trigger) { padding: 11px 8px 11px 14px; }
+    .tel-wrap :deep(.tnp__num) { padding: 11px 14px 11px 10px; }
+}
+/* Layar sangat sempit: bendera + kode dipersempit supaya kolom nomornya tetap
+   cukup lebar untuk 12 digit — kalau tidak, nomornya tergulung dan orang tak
+   bisa melihat apa yang baru saja ia ketik. */
+@media (max-width: 360px) {
+    .tel-wrap :deep(.tnp__trigger) { padding-left: 11px; padding-right: 6px; gap: 5px; }
+    .tel-wrap :deep(.tnp__num) { padding-left: 8px; padding-right: 11px; }
+    .tel-wrap :deep(.tnp__chev) { display: none; }
+}
+
 /* Turnstile custom — ruang tetap (min-height) supaya widget/kartu tidak menggeser layout. */
 .ts2 {
     margin: 6px 0 14px;

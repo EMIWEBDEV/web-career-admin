@@ -54,11 +54,13 @@
             class="tnp__num"
             type="tel"
             inputmode="numeric"
-            maxlength="18"
+            autocomplete="tel-national"
+            :maxlength="maksLokal"
             :value="lokal"
             :disabled="disabled"
             :placeholder="placeholder || '81234567890'"
-            @input="ubahLokal($event.target.value)"
+            @beforeinput="tolakBukanAngka"
+            @input="ubahLokal($event)"
         />
     </div>
 </template>
@@ -94,9 +96,54 @@ function onShow() { nextTick(() => cariEl.value && cariEl.value.focus()); }
 
 function gabung() { return lokal.value ? (dialTerpilih.value + lokal.value) : ''; }
 
-function ubahLokal(v) {
+/**
+ * Batas panjang bagian LOKAL, dihitung dari kode negaranya.
+ *
+ * E.164 membatasi nomor telepon di 15 digit TERMASUK kode negara. Angka mati 18
+ * yang dipakai sebelumnya membiarkan orang mengetik nomor yang pasti ditolak
+ * saat disimpan — dan penolakannya baru muncul setelah seluruh formulir diisi.
+ * Negara berkode panjang (mis. +1264) otomatis dapat jatah lebih pendek.
+ */
+const maksLokal = computed(() => Math.max(4, 15 - dialTerpilih.value.length));
+
+/**
+ * TOLAK HURUF SEBELUM SEMPAT MASUK.
+ *
+ * `inputmode="numeric"` hanya MENYARANKAN papan angka di ponsel; di desktop ia
+ * tidak menghalangi apa pun, dan `type="tel"` memang sengaja mengizinkan huruf
+ * (sebagian negara memakai nomor bergaya 1-800-FLOWERS). Jadi keduanya bukan
+ * pengaman.
+ */
+function tolakBukanAngka(e) {
+    // Hanya penyisipan langsung yang dicegat. Hapus/undo/tempel dibiarkan lewat
+    // lalu dibersihkan ubahLokal() — menolaknya di sini akan ikut memblokir
+    // Backspace, dan tempelan "+62 812-3456" yang sebenarnya sah jadi mustahil.
+    if (typeof e.data === 'string' && /\D/.test(e.data)) {
+        e.preventDefault();
+    }
+}
+
+function ubahLokal(e) {
+    const el = e.target;
     // Hanya digit; buang 0 di depan (trunk prefix, mis. 0812 -> 812 untuk +62).
-    lokal.value = String(v || '').replace(/\D/g, '').replace(/^0+/, '');
+    const bersih = String(el.value || '').replace(/\D/g, '').replace(/^0+/, '');
+
+    // KOTAKNYA DIPAKSA IKUT BERSIH — dan ini bukan kehati-hatian berlebihan.
+    //
+    // Input ini terikat lewat :value, jadi Vue hanya menyentuh DOM saat nilai
+    // reaktifnya BERUBAH. Ketik "8" lalu "a": hasil bersihnya tetap "8" — tidak
+    // berubah — sehingga Vue tidak memperbarui apa pun dan huruf "a" TETAP
+    // TERLIHAT di kotak. Yang tersimpan sudah benar, tapi orang membaca layar,
+    // bukan variabel: ia melihat "8a" dan mengira nomornya memang begitu.
+    if (el.value !== bersih) {
+        el.value = bersih;
+    }
+
+    if (bersih === lokal.value) {
+        return;
+    }
+
+    lokal.value = bersih;
     emit('update:modelValue', gabung());
 }
 function pilihNegara(newIso) {
