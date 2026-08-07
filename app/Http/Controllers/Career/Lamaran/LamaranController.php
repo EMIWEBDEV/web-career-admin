@@ -13,6 +13,7 @@ use App\Jobs\Career\WcLaporanKandidatJob;
 use App\Support\Career\AlurKolom;
 use App\Support\Career\GcsBerkas;
 use App\Support\Career\HtmlBersih;
+use App\Support\Career\KatalogPrefill;
 use App\Support\Career\LamaranService;
 use App\Support\Career\LamaranTargetValidator;
 use App\Support\Career\PipelineProgress;
@@ -964,7 +965,7 @@ class LamaranController extends Controller
 
         $akun = DB::table('N_WEB_CAREERS_Users')
             ->where('Id_Users', $userId)
-            ->first(['Nama', 'Email', 'No_Hp']);
+            ->first(['Nama', 'Email', 'No_Hp', 'NIK']);
 
         return Inertia::render('Career/portal/LamaranDetail', CareerShell::props('/kandidat/portal', 'Detail Lamaran', [
             'lamaran' => [
@@ -1005,20 +1006,25 @@ class LamaranController extends Controller
             // kandidat sudah memilihnya dari Master Kampus saat melamar, jadi
             // formulir tahap berikutnya cukup menampilkannya kembali (terkunci)
             // alih-alih menanyakan ulang dan berisiko dapat dua jawaban berbeda.
-            'profil' => [
+            // Kampus & tahun lulus DITARIK DARI JAWABAN FORMULIR PENDAFTARAN
+            // lamaran ini — bukan dari tabel akun. Keduanya sudah dijawab
+            // kandidat saat melamar; menanyakannya lagi di formulir tahap
+            // berikutnya membuka peluang dua jawaban berbeda untuk orang
+            // yang sama, dan tim tidak punya cara tahu mana yang benar.
+            //
+            // Disaring lewat KatalogPrefill: kunci yang ditawarkan ke admin dan
+            // kunci yang dikirim ke sini berasal dari satu daftar.
+            'profil' => KatalogPrefill::saring(KatalogPrefill::TAHAP, [
                 'nama' => $akun->Nama ?? session('career_auth.nama'),
                 'email' => $akun->Email ?? session('career_auth.email'),
                 'hp' => $akun->No_Hp ?? session('career_auth.hp'),
-                // Kampus & tahun lulus DITARIK DARI JAWABAN FORMULIR PENDAFTARAN
-                // lamaran ini — bukan dari tabel akun. Keduanya sudah dijawab
-                // kandidat saat melamar; menanyakannya lagi di formulir tahap
-                // berikutnya membuka peluang dua jawaban berbeda untuk orang
-                // yang sama, dan tim tidak punya cara tahu mana yang benar.
+                'nik' => $akun->NIK ?? null,
+                'posisi' => $lamaran->Posisi ?? null,
                 ...array_intersect_key(
                     LamaranService::dataKandidatEmail($realId),
-                    array_flip(['kampus', 'tahunLulus']),
+                    array_flip(['kampus', 'tahunLulus', 'tglLahir', 'jkel', 'jurusan', 'jenjang', 'ipk', 'statusStudi', 'semester']),
                 ),
-            ],
+            ]),
         ]));
     }
 
