@@ -11,8 +11,8 @@ namespace App\Support\Career;
  *
  * Sebelum katalog ini, daftar kunci ditulis lepas di dua tempat yang berbeda —
  * CareerLandingController untuk formulir pendaftaran, LamaranController untuk
- * formulir tahap — dan keduanya TIDAK SAMA. `nik` hanya ada di pendaftaran;
- * `kampus` dan `tahunLulus` hanya ada di tahap, karena saat mendaftar kandidat
+ * formulir tahap — dan keduanya TIDAK SAMA: `nik` tidak sampai ke formulir
+ * tahap, `kampus` dan `tahunLulus` tidak ada saat mendaftar karena kandidat
  * memang belum menjawabnya. Admin yang memilih kunci salah tidak mendapat
  * peringatan apa pun: kolomnya sekadar tampil kosong.
  *
@@ -51,16 +51,28 @@ class KatalogPrefill
         ],
         'nik' => [
             'label' => 'NIK',
-            // Formulir tahap tidak menerima NIK: LamaranController tidak
-            // mengirimkannya, dan menambahkannya berarti menyalin identitas
-            // sensitif ke tempat yang tidak membutuhkannya.
-            'konteks' => [self::PENDAFTARAN],
-            'ket' => 'NIK pada tabel pengguna. Hanya di formulir pendaftaran.',
+            // Tersedia di kedua konteks: NIK sudah terisi sejak pendaftaran,
+            // jadi formulir tahap tidak perlu menanyakannya lagi. Kandidat
+            // hanya melihat NIK miliknya sendiri, bukan NIK orang lain.
+            'konteks' => [self::PENDAFTARAN, self::TAHAP],
+            'ket' => 'NIK pada tabel pengguna.',
         ],
         'posisi' => [
             'label' => 'Posisi yang Dilamar',
-            'konteks' => [self::PENDAFTARAN],
-            'ket' => 'Nama posisi dari kartu lowongan yang diklik kandidat.',
+            // Di pendaftaran dari kartu lowongan yang diklik kandidat; di tahap
+            // dari data lamaran. Nilainya posisi yang sama, jadi aman untuk KEDUANYA.
+            'konteks' => [self::PENDAFTARAN, self::TAHAP],
+            'ket' => 'Posisi yang dilamar kandidat.',
+        ],
+        'tglLahir' => [
+            'label' => 'Tanggal Lahir',
+            'konteks' => [self::TAHAP],
+            'ket' => 'Diambil dari jawaban formulir pendaftaran lamaran ini.',
+        ],
+        'jkel' => [
+            'label' => 'Jenis Kelamin',
+            'konteks' => [self::TAHAP],
+            'ket' => 'Diambil dari jawaban formulir pendaftaran lamaran ini.',
         ],
         'kampus' => [
             'label' => 'Nama Kampus / Sekolah',
@@ -71,6 +83,31 @@ class KatalogPrefill
         ],
         'tahunLulus' => [
             'label' => 'Tahun Lulus / Perkiraan Lulus',
+            'konteks' => [self::TAHAP],
+            'ket' => 'Diambil dari jawaban formulir pendaftaran lamaran ini.',
+        ],
+        'jurusan' => [
+            'label' => 'Jurusan / Program Studi',
+            'konteks' => [self::TAHAP],
+            'ket' => 'Diambil dari jawaban formulir pendaftaran lamaran ini.',
+        ],
+        'jenjang' => [
+            'label' => 'Jenjang Pendidikan',
+            'konteks' => [self::TAHAP],
+            'ket' => 'Diambil dari jawaban formulir pendaftaran lamaran ini.',
+        ],
+        'ipk' => [
+            'label' => 'IPK',
+            'konteks' => [self::TAHAP],
+            'ket' => 'Diambil dari jawaban formulir pendaftaran lamaran ini.',
+        ],
+        'statusStudi' => [
+            'label' => 'Status Studi',
+            'konteks' => [self::TAHAP],
+            'ket' => 'Diambil dari jawaban formulir pendaftaran lamaran ini.',
+        ],
+        'semester' => [
+            'label' => 'Semester Berjalan',
             'konteks' => [self::TAHAP],
             'ket' => 'Diambil dari jawaban formulir pendaftaran lamaran ini.',
         ],

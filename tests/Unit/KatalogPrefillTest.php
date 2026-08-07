@@ -9,8 +9,8 @@ use PHPUnit\Framework\TestCase;
  * Uji KATALOG PREFILL — kosakata kunci isi-otomatis.
  *
  * Sebelum ini daftar kunci ditulis lepas di dua controller yang berbeda, dan
- * tak ada yang tahu bahwa `nik` tidak pernah terisi di formulir tahap. Uji ini
- * mengunci konsekuensi itu: konteks menentukan kunci, bukan kebiasaan.
+ * tak ada yang tahu kunci mana yang benar-benar terisi di formulir mana. Uji
+ * ini mengunci konsekuensinya: konteks menentukan kunci, bukan kebiasaan.
  */
 class KatalogPrefillTest extends TestCase
 {
@@ -21,16 +21,29 @@ class KatalogPrefillTest extends TestCase
         $this->assertContains('nik', $kunci);
         $this->assertContains('posisi', $kunci);
         $this->assertContains('nama', $kunci);
+        // Belum ada yang menjawab pertanyaan pendaftaran di titik ini — data
+        // pendidikan adalah milik konteks tahap.
+        $this->assertNotContains('kampus', $kunci);
+        $this->assertNotContains('ipk', $kunci);
     }
 
-    public function test_kunci_tahap_memuat_kampus_tapi_bukan_nik(): void
+    public function test_kunci_tahap_memuat_semua_data_yang_tersedia(): void
     {
         $kunci = KatalogPrefill::kunciUntuk('TAHAP');
 
+        // Identitas + posisi: semua yang bisa diambil dari akun/lamaran.
+        $this->assertContains('nik', $kunci);
+        $this->assertContains('posisi', $kunci);
+        // Data pendidikan dari jawaban formulir pendaftaran.
         $this->assertContains('kampus', $kunci);
         $this->assertContains('tahunLulus', $kunci);
-        $this->assertNotContains('nik', $kunci);
-        $this->assertNotContains('posisi', $kunci);
+        $this->assertContains('jurusan', $kunci);
+        $this->assertContains('jenjang', $kunci);
+        $this->assertContains('ipk', $kunci);
+        $this->assertContains('statusStudi', $kunci);
+        $this->assertContains('semester', $kunci);
+        $this->assertContains('tglLahir', $kunci);
+        $this->assertContains('jkel', $kunci);
     }
 
     /**
@@ -44,8 +57,11 @@ class KatalogPrefillTest extends TestCase
         $this->assertContains('nama', $kunci);
         $this->assertContains('email', $kunci);
         $this->assertContains('hp', $kunci);
-        $this->assertNotContains('nik', $kunci);
+        $this->assertContains('nik', $kunci);
+        $this->assertContains('posisi', $kunci);
         $this->assertNotContains('kampus', $kunci);
+        $this->assertNotContains('tglLahir', $kunci);
+        $this->assertNotContains('ipk', $kunci);
     }
 
     public function test_konteks_tak_dikenal_diperlakukan_sebagai_keduanya(): void
@@ -58,15 +74,15 @@ class KatalogPrefillTest extends TestCase
 
     public function test_saring_membuang_kunci_di_luar_konteks(): void
     {
-        $hasil = KatalogPrefill::saring('TAHAP', [
+        $hasil = KatalogPrefill::saring('PENDAFTARAN', [
             'nama' => 'Budi',
-            'nik' => '1671xxxx',
+            'posisi' => 'Management Trainee',
             'kampus' => 'Universitas Sriwijaya',
         ]);
 
         $this->assertSame('Budi', $hasil['nama']);
-        $this->assertSame('Universitas Sriwijaya', $hasil['kampus']);
-        $this->assertArrayNotHasKey('nik', $hasil);
+        $this->assertSame('Management Trainee', $hasil['posisi']);
+        $this->assertArrayNotHasKey('kampus', $hasil);
     }
 
     public function test_saring_mengisi_null_untuk_kunci_yang_belum_ada(): void
