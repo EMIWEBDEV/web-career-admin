@@ -144,6 +144,15 @@ Route::prefix('api/v1/karir')
         // Talent Pool — data kartu + kelola status/tag/catatan.
         Route::get('/talent-pool', [TalentPoolController::class, 'list'])->name('talent-pool.list')->middleware('career.permission:talentPoolPage,VIEW');
         Route::get('/talent-pool/export', [TalentPoolController::class, 'export'])->name('talent-pool.export')->middleware('career.permission:talentPoolPage,VIEW');
+        // Profil lengkap satu kartu: biodata, kelengkapan berkas, alur proses.
+        // Didaftarkan SEBELUM rute ber-{id} lain agar tidak tertelan.
+        Route::get('/talent-pool/{id}/detail', [TalentPoolController::class, 'detail'])->name('talent-pool.detail')->middleware('career.permission:talentPoolPage,VIEW');
+        // BUKA BERKAS dari halaman Talent Pool — penangannya SAMA PERSIS dengan
+        // milik Worklist (signed URL 15 menit ke bucket privat), hanya izinnya
+        // yang berbeda: pemegang talentPoolPage belum tentu punya pelamarPage.
+        // Dipakai ulang, bukan disalin — dua penyaji berkas berarti dua tempat
+        // yang harus sama-sama benar saat aturan aksesnya berubah.
+        Route::get('/talent-pool/berkas/file/{id}', [LamaranController::class, 'berkasFile'])->name('talent-pool.berkas.file')->middleware('career.permission:talentPoolPage,VIEW');
         Route::post('/talent-pool/bulk', [TalentPoolController::class, 'bulk'])->name('talent-pool.bulk')->middleware('career.permission:talentPoolPage,EDIT');
         Route::patch('/talent-pool/{id}', [TalentPoolController::class, 'ubah'])->name('talent-pool.ubah')->middleware('career.permission:talentPoolPage,EDIT');
         Route::patch('/talent-pool/{id}/perpanjang', [TalentPoolController::class, 'perpanjang'])->name('talent-pool.perpanjang')->middleware('career.permission:talentPoolPage,EDIT');

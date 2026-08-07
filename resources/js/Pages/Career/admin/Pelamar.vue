@@ -362,7 +362,7 @@
                                  papan, apa pun tahap & statusnya. Laporan paling
                                  sering justru diminta untuk yang sudah selesai
                                  (arsip keputusan), bukan yang sedang berjalan. -->
-                            <button type="button" class="plw-drawer__cetak" title="Cetak laporan kandidat (PDF / Excel)" @click="askLaporan">
+                            <button type="button" class="plw-drawer__cetak" title="Cetak laporan kandidat (PDF)" @click="askLaporan">
                                 <i class="bi bi-printer-fill"></i> Cetak
                             </button>
                             <button type="button" class="plw-drawer__close" @click="tutupKandidat">
@@ -1937,13 +1937,12 @@
             <div class="plw-fld">
                 <label class="plw-fld__lbl">Format berkas <b>*</b></label>
                 <div class="plw-opts">
-                    <!-- PILIHAN YANG TERPILIH HARUS TERLIHAT TERPILIH.
-                         Sebelumnya kedua kartu tampak sama persis: satu-satunya
-                         pembeda perubahan warna tepi yang nyaris tak terbaca,
-                         sehingga admin menekan "Buat" tanpa yakin format mana
-                         yang akan keluar — dan baru tahu setelah berkasnya jadi.
-                         Sekarang kartunya berwarna, bertepi tebal, dan membawa
-                         tanda centang yang tak bisa salah baca. -->
+                    <!-- SATU FORMAT, DAN KARTUNYA TETAP DITAMPILKAN.
+                         Bukan lagi pilihan, melainkan pemberitahuan: admin tahu
+                         persis apa yang akan keluar sebelum menekan "Buat".
+                         Menghilangkannya sama sekali membuat modal ini langsung
+                         membuka daftar formulir tanpa pernah menyebut berkas apa
+                         yang sedang dibuatnya. -->
                     <button type="button" class="plw-opt-card is-fmt" :class="{ 'is-on': laporanFormat === 'PDF' }" @click="laporanFormat = 'PDF'">
                         <span class="plw-opt-card__dot" style="color:#dc2626"><i class="bi bi-file-earmark-pdf-fill"></i></span>
                         <span class="plw-opt-card__txt">
@@ -1952,6 +1951,12 @@
                         </span>
                         <span class="plw-opt-card__cek"><i class="bi bi-check-lg"></i></span>
                     </button>
+                    <!-- EXCEL DINONAKTIFKAN DARI PILIHAN — BUKAN DIHAPUS.
+                         Job-nya (WcLaporanKandidatJob format 'XLSX' → buatExcel)
+                         masih utuh dan masih dipanggil untuk berkas lama di panel
+                         unduhan, jadi yang ditutup hanya pintunya. Kembalikan
+                         dengan membuka komentar ini; tidak ada yang lain yang
+                         perlu disentuh.
                     <button type="button" class="plw-opt-card is-fmt" :class="{ 'is-on': laporanFormat === 'XLSX' }" @click="laporanFormat = 'XLSX'">
                         <span class="plw-opt-card__dot" style="color:#15803d"><i class="bi bi-file-earmark-spreadsheet-fill"></i></span>
                         <span class="plw-opt-card__txt">
@@ -1960,6 +1965,7 @@
                         </span>
                         <span class="plw-opt-card__cek"><i class="bi bi-check-lg"></i></span>
                     </button>
+                    -->
                 </div>
             </div>
 
@@ -2118,8 +2124,9 @@
                             <span class="plw-opt-card__dot"><i class="bi bi-people-fill"></i></span>
                             <span class="plw-opt-card__txt">
                                 <b>Serentak — semua di jam yang sama</b>
-                                <small>Untuk FGD, tes tertulis massal, atau briefing bersama.</small>
+                                <small>Untuk FGD, tes tertulis massal, atau briefing bersama. Semua {{ sasaranMassal.length || 'kandidat' }} dapat jam yang sama persis.</small>
                             </span>
+                            <span class="plw-opt-card__cek"><i class="bi bi-check-lg"></i></span>
                         </button>
                         <button type="button" class="plw-opt-card" :class="{ 'is-on': massalPola === 'BERGILIR' }" @click="massalPola = 'BERGILIR'">
                             <span class="plw-opt-card__dot"><i class="bi bi-hourglass-split"></i></span>
@@ -2127,26 +2134,55 @@
                                 <b>Bergilir — satu per satu</b>
                                 <small>Untuk wawancara panel. Tiap kandidat dapat slotnya sendiri, berurutan dari jam mulai.</small>
                             </span>
+                            <span class="plw-opt-card__cek"><i class="bi bi-check-lg"></i></span>
                         </button>
                     </div>
                 </div>
 
-                <div class="plw-fld__row">
+                <!-- WAKTU MULAI MELEBAR PENUH, DUA ANGKA TURUN KE BAWAHNYA.
+                     Sebelumnya ketiganya dipaksa satu baris: tanggal separuh,
+                     durasi dan jeda seperempat masing-masing. Di lebar
+                     seperempat, "Durasi per orang" membungkus dua baris dan
+                     kotak angkanya menyisakan ruang untuk dua digit — padahal
+                     nilainya boleh sampai 480. -->
+                <div class="plw-fld">
+                    <label class="plw-fld__lbl">{{ massalPola === 'BERGILIR' ? 'Slot pertama mulai' : 'Waktu mulai' }} <b>*</b></label>
+                    <el-date-picker v-model="massalMulai" type="datetime" format="DD MMM YYYY HH:mm" value-format="YYYY-MM-DD HH:mm:ss" placeholder="Pilih tanggal & jam" style="width: 100%" />
+                </div>
+                <div v-if="massalPola === 'BERGILIR'" class="plw-fld__row">
                     <div class="plw-fld">
-                        <label class="plw-fld__lbl">{{ massalPola === 'BERGILIR' ? 'Slot pertama mulai' : 'Waktu mulai' }} <b>*</b></label>
-                        <el-date-picker v-model="massalMulai" type="datetime" format="DD MMM YYYY HH:mm" value-format="YYYY-MM-DD HH:mm:ss" placeholder="Pilih tanggal & jam" style="width: 100%" />
+                        <!-- SATUANNYA DISEBUT DI LABEL. Kotak angka tanpa satuan
+                             membuat "30" terbaca sebagai apa saja — menit, orang,
+                             atau nomor urut. -->
+                        <label class="plw-fld__lbl">Durasi per orang <small>menit</small></label>
+                        <el-input-number v-model="massalDurasi" :min="5" :max="480" :step="5" controls-position="right" style="width: 100%" />
                     </div>
-                    <div v-if="massalPola === 'BERGILIR'" class="plw-fld__row" style="gap: 8px">
-                        <div class="plw-fld">
-                            <label class="plw-fld__lbl">Durasi / orang</label>
-                            <el-input-number v-model="massalDurasi" :min="5" :max="480" :step="5" controls-position="right" style="width: 100%" />
-                        </div>
-                        <div class="plw-fld">
-                            <label class="plw-fld__lbl">Jeda antar sesi</label>
-                            <el-input-number v-model="massalJeda" :min="0" :max="240" :step="5" controls-position="right" style="width: 100%" />
-                        </div>
+                    <div class="plw-fld">
+                        <!-- step 1, bukan 5: jeda yang wajar 0–10 menit, dan panah
+                             yang melompat lima-lima memaksa admin mengetik manual
+                             untuk angka yang paling sering dipakai. -->
+                        <label class="plw-fld__lbl">Jeda antar sesi <small>menit</small></label>
+                        <el-input-number v-model="massalJeda" :min="0" :max="240" :step="1" controls-position="right" style="width: 100%" />
                     </div>
                 </div>
+
+                <!-- ARITMATIKANYA DITULISKAN, BUKAN DISIMPULKAN SENDIRI.
+                     Dua kotak angka bersebelahan tidak memberi tahu bahwa slot
+                     bergeser sebesar JUMLAH keduanya. Yang membacanya mengira
+                     jeda 2 menit berarti orang kedua masuk dua menit kemudian,
+                     lalu mengirim undangan dengan jam yang tidak ia maksud —
+                     dan undangan yang sudah terkirim tak bisa ditarik. -->
+                <p v-if="massalPola === 'BERGILIR'" class="plw-note is-info">
+                    <i class="bi bi-calculator-fill"></i>
+                    <span>
+                        Tiap orang <b>{{ massalDurasi }} menit</b><template v-if="massalJeda > 0">, lalu jeda <b>{{ massalJeda }} menit</b></template> —
+                        jadi slotnya bergeser <b>tiap {{ Number(massalDurasi || 0) + Number(massalJeda || 0) }} menit</b>.
+                        <template v-if="ritmeMassal.length">
+                            Dari jam mulai: <b>{{ ritmeMassal.join(' → ') }}</b><template v-if="sasaranMassal.length > ritmeMassal.length"> → dan seterusnya</template>.
+                        </template>
+                        <template v-else>Pilih tanggal &amp; jam untuk melihat urutannya.</template>
+                    </span>
+                </p>
 
                 <div v-if="massalMode === 'DARING'" class="plw-fld">
                     <label class="plw-fld__lbl">Tautan pertemuan <b>*</b></label>
@@ -2697,6 +2733,28 @@ export default {
             return this.barisTerpilih.filter((r) => !(r.tests || []).some(
                 (x) => x.label === this.massalAktivitas && x.butuhJadwal && !x.selesai && !x.terkunci,
             ));
+        },
+        /**
+         * Tiga jam pertama saja — contoh irama, bukan daftar lengkap.
+         *
+         * Daftar utuhnya ada di pratinjau bawah, tapi itu jauh di bawah kolom
+         * catatan: yang sedang mengetik durasi & jeda tidak melihatnya, dan
+         * justru di detik itulah ia perlu tahu apa arti angkanya. Diambil dari
+         * pratinjau yang sama supaya keduanya mustahil berselisih.
+         */
+        ritmeMassal() {
+            if (!this.massalMulai) return [];
+            const awal = new Date(String(this.massalMulai).replace(' ', 'T'));
+            if (Number.isNaN(awal.getTime())) return [];
+
+            // Rumus yang SAMA dengan pratinjauMassal dan dengan server:
+            // mulai = awal + urutan × (durasi + jeda). Jam saja, tanpa tanggal —
+            // ini contoh irama, dan tanggalnya sudah terbaca di kolom di atas.
+            const langkah = (Number(this.massalDurasi) || 0) + (Number(this.massalJeda) || 0);
+            const jumlah = Math.min(3, Math.max(2, this.sasaranMassal.length));
+
+            return Array.from({ length: jumlah }, (_, i) => new Date(awal.getTime() + i * langkah * 60000)
+                .toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }));
         },
         /** Siapa dapat jam berapa — dihitung dengan rumus yang SAMA dengan server. */
         pratinjauMassal() {
@@ -4927,8 +4985,12 @@ export default {
 .plw-fld__lbl b { color: #dc2626; }
 .plw-fld__lbl small { font-weight: 700; color: #a2a9ba; }
 /* Dua isian sebaris; turun sendiri di layar sempit. */
-.plw-fld__row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.plw-fld__row .plw-fld { min-width: 0; }
+/* Dua kolom sama lebar. Jaraknya diambil alih BARISNYA, dan margin anak-anaknya
+   dinolkan — `.plw-fld:first-child` hanya menolkan kolom PERTAMA, sehingga
+   kolom kedua turun 12px sendirian dan kedua labelnya tidak pernah sejajar. */
+.plw-fld__row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+.plw-fld__row:first-child { margin-top: 0; }
+.plw-fld__row > .plw-fld { min-width: 0; margin-top: 0; }
 
 .plw-inp {
     width: 100%; padding: 10px 12px; border: 1px solid #e3e6f0; border-radius: 10px;
@@ -4961,25 +5023,33 @@ export default {
 .plw-opt-card__txt { min-width: 0; }
 .plw-opt-card__txt b { display: block; font-size: 13px; font-weight: 800; color: #1e293b; }
 .plw-opt-card__txt small { display: block; font-size: 11px; color: #94a3b8; margin-top: 1px; line-height: 1.4; }
-/* ── PILIHAN FORMAT BERKAS ──────────────────────────────────────────────
-   Kedua kartu dulu tampak sama persis; satu-satunya pembeda perubahan warna
-   tepi yang nyaris tak terbaca. Admin menekan "Buat" tanpa yakin format mana
-   yang akan keluar. Sekarang: tepi tebal, latar berwarna, dan ceklis di kanan
-   yang muncul HANYA pada yang terpilih. */
-.plw-opt-card.is-fmt { padding: 11px 13px; }
-.plw-opt-card.is-fmt .plw-opt-card__cek {
+/* ── KARTU TERPILIH ─────────────────────────────────────────────────────
+   Aturan ini DULU TIDAK ADA. Yang punya gaya terpilih hanya varian `is-fmt`,
+   `is-ok`, dan `is-warn` — sementara kartu polos ber-`is-on` (Pola waktu,
+   predikat hasil) berubah NOL PIKSEL saat ditekan. Admin memilih "Bergilir",
+   layarnya diam saja, dan ia menekan lagi mengira klik pertamanya tidak masuk.
+
+   Dinaikkan ke kartu dasar, bukan disalin ke tiap varian: varian berikutnya
+   akan lupa membawanya, dan bug yang sama lahir lagi. Varian is-ok/is-warn
+   tetap menang karena selektornya lebih spesifik. */
+.plw-opt-card.is-on {
+    border-color: #6366f1; background: rgba(99, 102, 241, .06);
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, .12);
+}
+.plw-opt-card.is-on .plw-opt-card__dot { background: #6366f1; color: #fff; }
+.plw-opt-card.is-on .plw-opt-card__txt b { color: #3730a3; }
+
+/* Ceklis di kanan — muncul HANYA pada yang terpilih. Kartu yang tidak
+   menyediakan span-nya tidak terpengaruh. */
+.plw-opt-card__cek {
     flex: none; margin-left: auto; width: 21px; height: 21px; border-radius: 50%;
     display: grid; place-items: center; font-size: 11px;
     border: 1.5px solid #d8dcea; color: transparent; background: #fff;
     transition: background .16s, border-color .16s, color .16s;
 }
-.plw-opt-card.is-fmt.is-on {
-    border-color: #6366f1; background: rgba(99, 102, 241, .06);
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, .12);
-}
-.plw-opt-card.is-fmt.is-on .plw-opt-card__cek { background: #6366f1; border-color: #6366f1; color: #fff; }
-.plw-opt-card.is-fmt.is-on .plw-opt-card__dot { background: #fff; box-shadow: 0 1px 3px rgba(30, 41, 59, .12); }
-.plw-opt-card.is-fmt.is-on .plw-opt-card__txt b { color: #3730a3; }
+.plw-opt-card.is-on .plw-opt-card__cek { background: #6366f1; border-color: #6366f1; color: #fff; }
+.plw-opt-card.is-fmt { padding: 11px 13px; }
+.plw-opt-card.is-fmt.is-on .plw-opt-card__dot { background: #fff; color: inherit; box-shadow: 0 1px 3px rgba(30, 41, 59, .12); }
 
 .plw-opt-card.is-on.is-ok { border-color: rgba(16, 185, 129, .5); background: rgba(16, 185, 129, .07); box-shadow: 0 0 0 3px rgba(16, 185, 129, .1); }
 .plw-opt-card.is-on.is-ok .plw-opt-card__dot { background: #10b981; color: #fff; }

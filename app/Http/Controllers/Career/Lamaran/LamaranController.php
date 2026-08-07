@@ -1913,6 +1913,8 @@ class LamaranController extends Controller
             'Total_Soal' => 'nullable|integer',
             'Ambang_Batas_Nilai' => 'nullable|numeric',
             'Status_Pengerjaan' => 'nullable|string|max:30',
+            // DUA PERISTIWA LEWAT SATU PINTU — lihat cabang di bawah.
+            'Jenis_Event' => 'nullable|string|max:40',
         ]);
 
         // PENCOCOKAN LEWAT PENGENAL YANG KITA KIRIM.
@@ -1942,6 +1944,42 @@ class LamaranController extends Controller
             Log::channel('web_career')->warning("[HASIL-UJIAN] peserta tak dikenal untuk pengenal {$ref}.");
 
             return ResponseHelper::error('Peserta penjadwalan tidak ditemukan.', 404);
+        }
+
+        // ── "SELESAI MENGERJAKAN" — DATANG LEBIH DULU, TANPA VERDICT ────────
+        //
+        // CAT mengirim ini tepat saat peserta menekan kirim, sebelum skoring
+        // berjalan. Verdict-nya menyusul lewat panggilan kedua.
+        //
+        // Kenapa perlu dua panggilan: skoring bisa memakan waktu, gagal, atau
+        // tertahan di antrean — dan selama itu portal kandidat tidak tahu tesnya
+        // sudah dikerjakan, lalu menyuguhkan tombol "Mulai Tes Sekarang" untuk
+        // ujian yang baru saja ia selesaikan. Kandidat menekannya dan menemukan
+        // dirinya di ruang ujian yang sudah tertutup. Yang menentukan tombol itu
+        // bukan hasilnya, melainkan sudah-atau-belum ia mengerjakan — jadi dua
+        // hal itu dipisah.
+        //
+        // MESIN KEPUTUSAN TIDAK DIJALANKAN di sini. Payload ini tidak membawa
+        // kelulusan, dan prosesHasilUjian() membaca ketiadaan verdict sebagai
+        // GUGUR — satu panggilan ini akan menggugurkan setiap peserta yang baru
+        // selesai mengerjakan.
+        if (strtoupper((string) ($data['Jenis_Event'] ?? '')) === 'SELESAI_MENGERJAKAN') {
+            // HANYA status pengerjaan. Flag_Selesai & Status_Kelulusan sengaja
+            // tidak disentuh: keduanya milik verdict, dan mengisinya di sini
+            // membuat peserta tampak sudah dinilai padahal skoringnya belum
+            // tentu berhasil.
+            DB::table('N_WEB_CAREERS_Penjadwalan_Peserta')
+                ->where('Id_Penjadwalan_Peserta', $peserta->Id_Penjadwalan_Peserta)
+                ->update([
+                    'Status_Pengerjaan' => 'selesai',
+                    'Updated_At' => now(),
+                ]);
+
+            Log::channel('web_career')->info(
+                "[HASIL-UJIAN] peserta #{$peserta->Id_Penjadwalan_Peserta} SELESAI MENGERJAKAN — menunggu verdict."
+            );
+
+            return ResponseHelper::success(['diproses' => true], 'Status pengerjaan diperbarui.');
         }
 
         $hasil = $this->prosesHasilUjian($peserta, $data, 'CALLBACK');
