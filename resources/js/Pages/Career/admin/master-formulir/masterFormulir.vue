@@ -1223,12 +1223,18 @@ import {
     slugKey,
     validasiSkema,
 } from '@career/formulir';
+import { KATALOG_FIELD, bersihkanField, daftarTipe, galatTipe } from '@career/formulir/inti/katalogField';
 
 const API = '/api/v1/master-formulir';
 const CFG = { headers: { Accept: 'application/json' } };
 
 export default {
     components: { Head, RefSelect, AuditStamp, ConfirmModal, IconPicker, DynamicForm, draggable },
+    props: {
+        // Diisi Inertia dari KatalogPrefill::untukEditor. Selama kosong,
+        // pemeriksaan kunci isi-otomatis tidak berjalan sama sekali.
+        katalogPrefill: { type: Array, default: () => [] },
+    },
     data() {
         return {
             list: [],
@@ -1267,21 +1273,6 @@ export default {
                 { label: 'Satu Halaman', value: 'SATU_HALAMAN' },
                 { label: 'Bertahap (Stepper)', value: 'BERTAHAP' },
             ],
-            tipeField: [
-                { value: 'text', label: 'Teks Ringkas' },
-                { value: 'textarea', label: 'Paragraf / Deskripsi' },
-                { value: 'number', label: 'Angka' },
-                { value: 'date', label: 'Tanggal' },
-                { value: 'select', label: 'Dropdown Pilihan' },
-                { value: 'radio', label: 'Radio Button' },
-                { value: 'checkbox', label: 'Checkbox' },
-                { value: 'file', label: 'Upload Berkas' },
-                { value: 'foto', label: 'Foto Verifikasi (Kamera)' },
-                { value: 'phone', label: 'Nomor Telepon' },
-                { value: 'email', label: 'Email' },
-                { value: 'consent', label: 'Persetujuan / Declaration' },
-                { value: 'referensi', label: 'Referensi Master Data' },
-            ],
             lebarCepatOptions: [
                 { label: '1/3', value: 33 },
                 { label: '1/2', value: 50 },
@@ -1296,88 +1287,45 @@ export default {
                 { label: 'Termasuk dalam (ADA_DI)', value: 'ADA_DI' },
                 { label: 'Tidak termasuk (TIDAK_ADA_DI)', value: 'TIDAK_ADA_DI' },
             ],
-            fieldPalette: [
-                {
-                    value: 'text',
-                    label: 'Teks',
-                    icon: 'bi-input-cursor-text',
-                    field: { label: 'Pertanyaan Teks', tipe: 'text' },
-                },
-                {
-                    value: 'email',
-                    label: 'Email',
-                    icon: 'bi-envelope',
-                    field: { label: 'Alamat Email', tipe: 'email', ph: 'nama@contoh.com' },
-                },
-                {
-                    value: 'phone',
-                    label: 'Telepon',
-                    icon: 'bi-telephone',
-                    field: { label: 'Nomor Telepon', tipe: 'phone', ph: '08xxxxxxxxxx' },
-                },
-                {
-                    value: 'select',
-                    label: 'Pilihan',
-                    icon: 'bi-menu-button-wide',
-                    field: { label: 'Pilih Salah Satu', tipe: 'select', opsi: ['Opsi 1', 'Opsi 2'] },
-                },
-                {
-                    value: 'radio',
-                    label: 'Radio',
-                    icon: 'bi-record-circle',
-                    field: { label: 'Pilihan Radio', tipe: 'radio', opsi: ['Ya', 'Tidak'] },
-                },
-                {
-                    value: 'file',
-                    label: 'Upload',
-                    icon: 'bi-paperclip',
-                    field: {
-                        label: 'Upload Dokumen',
-                        tipe: 'file',
-                        accept: '.pdf,.jpg,.jpeg,.png',
-                        maks_mb: 5,
-                        lebar_persen: 100,
-                        penuh: true,
-                    },
-                },
-                {
-                    value: 'foto',
-                    label: 'Foto Kamera',
-                    icon: 'bi-person-bounding-box',
-                    field: {
-                        // Key-nya SENGAJA `foto_verifikasi`. Nilai itu sudah jadi
-                        // kesepakatan di seluruh sistem: LamaranService mencarinya
-                        // untuk lampiran email, dan halaman Pelamar serta Detail
-                        // Lamaran memakainya untuk memberi label "Foto verifikasi
-                        // identitas kandidat". Key lain tetap tersimpan, tapi
-                        // fotonya berhenti dikenali sebagai foto verifikasi.
+            /**
+             * Palette = jalan pintas, bukan daftar lengkap. Yang ditulis di sini
+             * hanya urutan tipe yang sering dipakai plus nilai bawaan yang khas
+             * pemakaiannya; label, ikon, dan pembersihan propertinya ikut katalog.
+             *
+             * `foto` membawa key bawaan `foto_verifikasi` — nilai itu sudah jadi
+             * kesepakatan seluruh sistem: LamaranService mencarinya untuk lampiran
+             * email, halaman Pelamar dan Detail Lamaran memakainya untuk label
+             * "foto verifikasi identitas kandidat". Key lain tetap tersimpan, tapi
+             * fotonya berhenti dikenali sebagai foto verifikasi.
+             */
+            paletteUrutan: [
+                ['text', 'Teks', { label: 'Pertanyaan Teks' }],
+                ['email', 'Email', { label: 'Alamat Email', ph: 'nama@contoh.com' }],
+                ['phone', 'Telepon', { label: 'Nomor Telepon', ph: '08xxxxxxxxxx' }],
+                ['number', 'Angka', { label: 'Pertanyaan Angka' }],
+                ['date', 'Tanggal', { label: 'Pilih Tanggal' }],
+                ['select', 'Pilihan', { label: 'Pilih Salah Satu' }],
+                ['radio', 'Radio', { label: 'Pilihan Radio' }],
+                ['checkbox', 'Checkbox', { label: 'Pilih Beberapa' }],
+                ['textarea', 'Paragraf', { label: 'Ceritakan Lebih Lanjut' }],
+                ['file', 'Upload', { label: 'Upload Dokumen', accept: '.pdf,.jpg,.jpeg,.png' }],
+                [
+                    'foto',
+                    'Foto Kamera',
+                    {
                         key: 'foto_verifikasi',
                         label: 'Foto Verifikasi Wajah',
-                        tipe: 'foto',
                         wajib: true,
                         bantuan: 'Ambil foto wajah langsung dari kamera perangkat Anda.',
-                        lebar_persen: 100,
-                        penuh: true,
                     },
-                },
-                {
-                    value: 'textarea',
-                    label: 'Paragraf',
-                    icon: 'bi-textarea-t',
-                    field: { label: 'Ceritakan Lebih Lanjut', tipe: 'textarea', lebar_persen: 67 },
-                },
-                {
-                    value: 'consent',
-                    label: 'Persetujuan',
-                    icon: 'bi-shield-check',
-                    field: {
-                        label: 'Saya menyatakan seluruh data yang diisi adalah benar',
-                        tipe: 'consent',
-                        wajib: true,
-                        lebar_persen: 100,
-                        penuh: true,
-                    },
-                },
+                ],
+                ['referensi', 'Referensi', { label: 'Pilih dari Master Data', sumber: 'jenjang' }],
+                ['prefill', 'Isi Otomatis', { label: 'Data dari Akun Anda' }],
+                [
+                    'consent',
+                    'Persetujuan',
+                    { label: 'Saya menyatakan seluruh data yang diisi adalah benar', wajib: true },
+                ],
             ],
             layoutPresetOptions: [
                 { value: 'THREE', label: '3 Kolom', help: 'Ringkas & padat', icon: 'bi-layout-three-columns' },
@@ -1492,6 +1440,39 @@ export default {
         keyFieldTerkunci() {
             if (!this.fieldAktif || !this.aktif?.published?.schema) return false;
             return this.fieldDipublish(this.fieldAktif);
+        },
+        /**
+         * Daftar tipe untuk dropdown Inspector — diturunkan dari katalog, bukan
+         * ditulis ulang. Daftar terpisah adalah asal muasal `currency`, `bulan`,
+         * `tahun`, dan `prefill` yang hidup di renderer tapi tak pernah bisa
+         * dipilih admin.
+         */
+        tipeField() {
+            return daftarTipe().map((t) => ({ value: t.value, label: t.label }));
+        },
+        fieldPalette() {
+            return this.paletteUrutan
+                .filter(([value]) => KATALOG_FIELD[value])
+                .map(([value, label, bawaan]) => ({
+                    value,
+                    label,
+                    icon: KATALOG_FIELD[value].ikon,
+                    // Lewat bersihkanField supaya nilai bawaan palette tidak bisa
+                    // menyelipkan properti yang bukan milik tipenya.
+                    field: bersihkanField({ ...bawaan, tipe: value }),
+                }));
+        },
+        /**
+         * Kunci isi-otomatis yang tersedia untuk konteks formulir ini.
+         * KEDUANYA hanya mengambil irisan: formulir yang dipakai di dua tempat
+         * tidak boleh memakai kunci yang di salah satunya selalu kosong.
+         */
+        kunciPrefillAktif() {
+            const konteks = this.schema.konteks || 'KEDUANYA';
+            const butuh = konteks === 'KEDUANYA' ? ['PENDAFTARAN', 'TAHAP'] : [konteks];
+            return (this.katalogPrefill || [])
+                .filter((k) => butuh.every((b) => k.konteks.includes(b)))
+                .map((k) => k.kunci);
         },
         lebarCepatAktif() {
             const v = Number(this.fieldAktif?.lebar_persen || 33);
@@ -1655,7 +1636,7 @@ export default {
             this.previewJawaban = jawabanAwal(this.schema, {});
         },
         async simpanDraft() {
-            const valid = validasiSkema(this.schema);
+            const valid = validasiSkema(this.schema, { kunciPrefill: this.kunciPrefillAktif });
             if (!valid.ok) return this.notice(valid.errors[0]);
             this.saving = true;
             try {
@@ -1667,7 +1648,13 @@ export default {
                     this.aktif.id = data.result?.id;
                 }
                 await this.load();
-                this.notice('Draft formulir berhasil tersimpan.');
+                // Peringatan tidak menggagalkan simpan, tapi harus terlihat —
+                // mis. field foto yang key-nya bukan `foto_verifikasi`.
+                this.notice(
+                    valid.peringatan.length
+                        ? `Draft tersimpan. Perhatikan: ${valid.peringatan[0]}`
+                        : 'Draft formulir berhasil tersimpan.',
+                );
             } catch (e) {
                 this.notice(e.response?.data?.message || 'Gagal menyimpan draft.');
             } finally {
@@ -1682,7 +1669,7 @@ export default {
             if (!force && this.aktif?.published?.schema) return (this.showCompare = true);
             if (!this.aktif?.id) await this.simpanDraft();
             if (!this.aktif?.id) return;
-            const valid = validasiSkema(this.schema);
+            const valid = validasiSkema(this.schema, { kunciPrefill: this.kunciPrefillAktif });
             if (!valid.ok) return this.notice(valid.errors[0]);
             this.saving = true;
             try {
@@ -1976,13 +1963,20 @@ export default {
             this.fieldAktif.key = this.keyUnik(rapi, this.fieldAktif.field_id);
         },
         rapikanField(f) {
-            if (this.butuhOpsi(f) && !Array.isArray(f.opsi)) f.opsi = ['Ya', 'Tidak'];
-            if (f.tipe === 'file') {
-                f.accept = f.accept || '.pdf';
-                f.maks_mb = f.maks_mb || 5;
-                f.penuh = true;
-                f.lebar_persen = 100;
-            }
+            // Dua arah: melengkapi bawaan tipe baru DAN membuang properti yang
+            // bukan miliknya. Yang kedua itu perbaikannya — sebelumnya properti
+            // sisa (opsi pada field yang sudah jadi teks, accept pada field yang
+            // sudah bukan berkas) menempel selamanya di Schema_Json.
+            //
+            // Objeknya disunting DI TEMPAT, bukan diganti, supaya `pilihTarget`
+            // yang menunjuk field ini tetap sahih.
+            const bersih = bersihkanField(f);
+            Object.keys(f).forEach((k) => {
+                if (!(k in bersih)) delete f[k];
+            });
+            Object.entries(bersih).forEach(([k, v]) => {
+                if (f[k] === undefined) f[k] = v;
+            });
         },
         aturLebarCepat(v) {
             if (!this.fieldAktif) return;
@@ -2036,14 +2030,38 @@ export default {
         butuhOpsi(f) {
             return ['select', 'radio', 'checkbox'].includes(f?.tipe);
         },
+        /**
+         * Penanda masalah di kanvas. Aturan per tipe diambil dari katalog;
+         * sisanya pemeriksaan lintas-field yang hanya bisa dilihat dari sini
+         * (key duplikat, rujukan ke field yang tidak ada).
+         */
         fieldIssues(field) {
             const issues = [];
             if (!field?.label?.trim()) issues.push('Label belum diisi');
             if (!field?.key?.trim()) issues.push('Key belum dibuat');
-            if (this.butuhOpsi(field) && (!Array.isArray(field.opsi) || field.opsi.filter(Boolean).length < 2))
-                issues.push('Minimal harus ada 2 opsi pilihan');
-            if (field.tipe === 'file' && !field.accept) issues.push('Format file upload belum diatur');
+
+            const gTipe = galatTipe(field);
+            if (gTipe) issues.push(gTipe);
+
             if (field.tampil_jika?.field === field.key) issues.push('Kondisi tidak boleh mengacu ke dirinya sendiri');
+
+            const keyAda = new Set(this.semuaField.map((f) => f.key).filter(Boolean));
+            [
+                field.beda_dengan,
+                ...(Array.isArray(field.reset_anak) ? field.reset_anak : []),
+                ...Object.values(field.bergantung || {}),
+                ...Object.values(field.saring || {}),
+                field.tampil_jika?.field,
+            ]
+                .filter(Boolean)
+                .forEach((k) => {
+                    if (!keyAda.has(k)) issues.push(`Menunjuk key "${k}" yang tidak ada`);
+                });
+
+            if (field.tipe === 'foto' && field.key !== 'foto_verifikasi') {
+                issues.push('Key sebaiknya "foto_verifikasi" agar dikenali sebagai foto verifikasi');
+            }
+
             const duplicate = this.semuaField.filter((f) => f !== field && f.key && f.key === field.key).length;
             if (duplicate) issues.push('Key identifier duplikat');
             return issues;
