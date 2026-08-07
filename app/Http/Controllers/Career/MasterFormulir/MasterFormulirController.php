@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Career\MasterFormulir;
 
 use App\Helpers\ResponseHelper;
 use App\Http\Controllers\Controller;
+use App\Support\Career\KatalogField;
+use App\Support\Career\KatalogPrefill;
 use App\Support\Career\KodeUnik;
 use App\Support\CareerShell;
 use Illuminate\Http\Request;
@@ -431,6 +433,15 @@ class MasterFormulirController extends Controller
         ], 'Id_Master_Formulir_Versi');
     }
 
+    /**
+     * Penegakan aturan skema di sisi server.
+     *
+     * Editor sudah memvalidasi sebelum mengirim, tapi endpoint ini bisa dipanggil
+     * tanpa lewat editor sama sekali — tanpa penegakan di sini, validasi browser
+     * cuma saran. Aturan dan kalimat galatnya sengaja sama persis dengan versi
+     * JS-nya (inti/schema.js), supaya kesalahan yang sama tidak dijelaskan dengan
+     * dua cara berbeda.
+     */
     private function validasiSchema(array $schema): array
     {
         $steps = $schema['langkah'] ?? [];
@@ -438,8 +449,37 @@ class MasterFormulirController extends Controller
             return ['ok' => false, 'pesan' => 'Schema minimal harus memiliki satu langkah.'];
         }
 
+        // Konteks pemakaian formulir ikut tersimpan ke Schema_Json. Skema lama
+        // tanpa konteks dianggap KEDUANYA, yang hanya mengizinkan kunci
+        // isi-otomatis yang tersedia di kedua konteks.
+        $konteks = strtoupper((string) ($schema['konteks'] ?? 'KEDUANYA'));
+        if (! in_array($konteks, ['PENDAFTARAN', 'TAHAP', 'KEDUANYA'], true)) {
+            $konteks = 'KEDUANYA';
+        }
+        $schema['konteks'] = $konteks;
+        $kunciPrefill = KatalogPrefill::kunciUntuk($konteks);
+
+        // Dua lintasan: yang pertama membangun peta posisi key, yang kedua
+        // memeriksa rujukan antar-field. Tanpa lintasan pertama, rujukan ke
+        // field yang letaknya di belakang tidak bisa dibedakan dari rujukan ke
+        // key yang memang tidak ada.
+        $posisi = [];
+        $urut = 0;
+        foreach ($steps as $step) {
+            foreach (($step['bagian'] ?? []) as $section) {
+                foreach (($section['field'] ?? []) as $field) {
+                    $key = $this->slugKey((string) ($field['key'] ?? $field['label'] ?? 'field'));
+                    if ($key !== '' && ! isset($posisi[$key])) {
+                        $posisi[$key] = $urut;
+                    }
+                    $urut++;
+                }
+            }
+        }
+
         $keys = [];
         $fieldIds = [];
+        $urut = 0;
         foreach ($steps as $li => $step) {
             $bagian = $step['bagian'] ?? [];
             if (! is_array($bagian) || count($bagian) < 1) {
@@ -468,14 +508,43 @@ class MasterFormulirController extends Controller
                     if (isset($fieldIds[$fieldId])) {
                         return ['ok' => false, 'pesan' => "ID sistem field \"{$field['label']}\" dipakai lebih dari sekali."];
                     }
-                    $lebarPersen = $this->normalisasiLebarPersen($field);
 
-                    $schema['langkah'][$li]['bagian'][$bi]['field'][$fi]['field_id'] = $fieldId;
-                    $schema['langkah'][$li]['bagian'][$bi]['field'][$fi]['key'] = $key;
-                    $schema['langkah'][$li]['bagian'][$bi]['field'][$fi]['lebar_persen'] = $lebarPersen;
-                    $schema['langkah'][$li]['bagian'][$bi]['field'][$fi]['penuh'] = $lebarPersen >= 100;
+                    // Tipe tak dikenal tidak lolos — ia dikembalikan ke text.
+                    $tipe = strtolower((string) ($field['tipe'] ?? 'text'));
+                    if (! in_array($tipe, KatalogField::tipeValid(), true)) {
+                        $tipe = 'text';
+                    }
+                    $label = (string) ($field['label'] ?? $key);
+
+                    $bersih = $this->bersihkanField($field, $tipe);
+
+                    if ($galat = KatalogField::galat($bersih)) {
+                        return ['ok' => false, 'pesan' => "Field \"{$label}\": {$galat}"];
+                    }
+
+                    if ($galat = $this->galatRujukan($bersih, $label, $key, $posisi, $urut)) {
+                        return ['ok' => false, 'pesan' => $galat];
+                    }
+
+                    if (! empty($bersih['prefill']) && ! in_array($bersih['prefill'], $kunciPrefill, true)) {
+                        return [
+                            'ok' => false,
+                            'pesan' => "Field \"{$label}\" mengisi otomatis dari \"{$bersih['prefill']}\", yang tidak tersedia untuk konteks formulir ini.",
+                        ];
+                    }
+
+                    $lebarPersen = $this->normalisasiLebarPersen($bersih);
+                    $bersih['field_id'] = $fieldId;
+                    $bersih['key'] = $key;
+                    $bersih['tipe'] = $tipe;
+                    $bersih['label'] = $label;
+                    $bersih['lebar_persen'] = $lebarPersen;
+                    $bersih['penuh'] = $lebarPersen >= 100;
+
+                    $schema['langkah'][$li]['bagian'][$bi]['field'][$fi] = $bersih;
                     $keys[$key] = true;
                     $fieldIds[$fieldId] = true;
+                    $urut++;
                 }
             }
         }
@@ -486,6 +555,60 @@ class MasterFormulirController extends Controller
         $schema['layout'] = in_array($layout, ['SATU_HALAMAN', 'BERTAHAP'], true) ? $layout : 'SATU_HALAMAN';
 
         return ['ok' => true, 'schema' => $schema];
+    }
+
+    /** Buang properti yang bukan milik tipe field ini. Lihat KatalogField. */
+    private function bersihkanField(array $field, string $tipe): array
+    {
+        $out = [];
+        foreach ($field as $prop => $nilai) {
+            if (KatalogField::bolehPunya($tipe, (string) $prop)) {
+                $out[$prop] = $nilai;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * Rujukan ke field lain. `tampil_jika` juga diperiksa ARAHNYA: acuan yang
+     * letaknya sesudah field ini tidak akan pernah terisi saat field ini dinilai
+     * pada layout bertahap, jadi syaratnya mustahil terpenuhi.
+     */
+    private function galatRujukan(array $field, string $label, string $key, array $posisi, int $urut): ?string
+    {
+        $acuan = $field['tampil_jika']['field'] ?? null;
+        if ($acuan) {
+            if (! isset($posisi[$acuan])) {
+                return "Field \"{$label}\" (tampil jika) menunjuk key \"{$acuan}\" yang tidak ada di formulir ini.";
+            }
+            if ($posisi[$acuan] >= $urut) {
+                return "Field \"{$label}\" bersyarat pada \"{$acuan}\", yang letaknya sesudah field ini — syaratnya tidak akan pernah terpenuhi.";
+            }
+        }
+
+        $rujukan = [];
+        if (! empty($field['beda_dengan'])) {
+            $rujukan['beda dengan'] = [$field['beda_dengan']];
+        }
+        if (! empty($field['reset_anak']) && is_array($field['reset_anak'])) {
+            $rujukan['reset anak'] = $field['reset_anak'];
+        }
+        foreach (['bergantung', 'saring'] as $nama) {
+            if (! empty($field[$nama]) && is_array($field[$nama])) {
+                $rujukan[$nama] = array_values($field[$nama]);
+            }
+        }
+
+        foreach ($rujukan as $nama => $daftar) {
+            foreach ($daftar as $target) {
+                if ($target && ! isset($posisi[$target])) {
+                    return "Field \"{$label}\" ({$nama}) menunjuk key \"{$target}\" yang tidak ada di formulir ini.";
+                }
+            }
+        }
+
+        return null;
     }
 
     private function guardKeyPublished(int $formulirId, array $schemaBaru): ?string
@@ -569,23 +692,20 @@ class MasterFormulirController extends Controller
         return sprintf('fld_legacy_%d_%d_%d_%s', $langkahIndex + 1, $bagianIndex + 1, $fieldIndex + 1, $this->slugKey($key));
     }
 
+    /**
+     * Lebar kolom dalam persen. Properti lama (lebar/width_percent/lebar_span/
+     * kolom) tidak lagi dibaca di sini — bersihkanField sudah membuangnya sebelum
+     * fungsi ini dipanggil.
+     */
     private function normalisasiLebarPersen(array $field): int
     {
-        if (($field['penuh'] ?? false) === true || ($field['lebar'] ?? null) === 'full') {
+        if (($field['penuh'] ?? false) === true) {
             return 100;
         }
 
-        $persen = (int) round((float) ($field['lebar_persen'] ?? $field['width_percent'] ?? 0));
+        $persen = (int) round((float) ($field['lebar_persen'] ?? 0));
         if ($persen > 0) {
             return min(100, max(33, $persen));
-        }
-
-        $span = (int) ($field['lebar_span'] ?? $field['kolom'] ?? 0);
-        if ($span >= 3) {
-            return 100;
-        }
-        if ($span === 2) {
-            return 67;
         }
 
         return 33;
