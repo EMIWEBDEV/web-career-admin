@@ -78,6 +78,11 @@ class LamaranService
         return [
             'tglLahir' => $ambil('TGL_LAHIR'),
             'jkel' => $ambil('JKEL'),
+            // Dicetak di kepala Biodata Kandidat. Lewat master juga, bukan
+            // `$jawaban['nik']` langsung: kunci NIK sudah berbeda antar
+            // formulir ('nik', 'no_ktp', 'nomor_ktp') dan menyebut satu saja
+            // membuat kepala dokumen kosong pada sebagian angkatan.
+            'nik' => $ambil('NIK'),
             'kampus' => $ambil('KAMPUS'),
             'tahunLulus' => $ambil('TAHUN_LULUS'),
             'jurusan' => $ambil('JURUSAN'),

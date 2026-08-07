@@ -4811,36 +4811,15 @@ class LamaranController extends Controller
      *
      * @return string|null pesan galat, null bila sah
      */
-    /** Kunci formulir yang memuat nama kandidat, urut prioritas — DARI MASTER. */
-    private static function kunciNama(): array
-    {
-        static $cache = null;
-
-        return $cache ??= DB::table('N_WEB_CAREERS_Master_Kunci_Identitas')
-            ->where('Kode', 'NAMA')->where('Flag_Aktif', 'Y')
-            ->orderBy('Urutan')->pluck('Field_Key')->all();
-    }
-
     /**
      * Nama kandidat dari jawaban formulir — null bila tidak ada.
      *
-     * Nama AKUN diketik saat mendaftar dan kerap seadanya ("salni", "andi123");
-     * yang dipakai seluruh dokumen resmi justru yang ditulis di formulir. Kunci
-     * mana yang memuatnya dibaca dari master, bukan ditulis di sini: formulir
-     * dirancang lewat layar, jadi kunci baru bisa lahir kapan saja — dan tempat
-     * yang lupa disunting akan diam-diam kembali memakai nama akun tanpa satu
-     * pun galat.
+     * Aturannya dipusatkan di IdentitasKandidat supaya kartu worklist, drawer,
+     * undangan, dan PDF biodata menyebut orang yang sama dengan nama yang sama.
      */
-    private static function namaDariJawaban(?array $jawaban): ?string
+    private static function namaDariJawaban(?array $jawaban, ?string $snapshotJson = null): ?string
     {
-        foreach (self::kunciNama() as $k) {
-            $v = $jawaban[$k] ?? null;
-            if (is_string($v) && trim($v) !== '') {
-                return trim($v);
-            }
-        }
-
-        return null;
+        return \App\Support\Career\IdentitasKandidat::nama($jawaban ?: [], $snapshotJson);
     }
 
     /**
@@ -4857,14 +4836,24 @@ class LamaranController extends Controller
             return collect();
         }
 
+        // Snapshot skema ikut dibaca: ia yang memberi tahu field mana yang
+        // MENANYAKAN nama, tanpa perlu kuncinya terdaftar di master lebih dulu.
+        $adaSnapshot = \App\Support\Career\FormulirSchema::punyaKolomPengisianSnapshot();
+
         return DB::table('N_WEB_CAREERS_Formulir_Pengisian')
             ->whereIn('Lamaran_Id', $lamaranIds)
             ->orderBy('Id_Formulir_Pengisian')
-            ->get(['Lamaran_Id', 'Jawaban_Json'])
+            ->get(array_merge(
+                ['Lamaran_Id', 'Jawaban_Json'],
+                $adaSnapshot ? ['Schema_Snapshot_Json'] : [],
+            ))
             ->groupBy('Lamaran_Id')
             ->map(function ($g) {
                 foreach ($g as $fp) {
-                    $nama = self::namaDariJawaban(json_decode($fp->Jawaban_Json ?: '{}', true) ?: []);
+                    $nama = self::namaDariJawaban(
+                        json_decode($fp->Jawaban_Json ?: '{}', true) ?: [],
+                        $fp->Schema_Snapshot_Json ?? null,
+                    );
                     if ($nama) {
                         return $nama;
                     }
