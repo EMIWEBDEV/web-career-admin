@@ -4725,7 +4725,6 @@ export default {
 }
 
 /* TOAST */
-/* z-index 1300 = DI ATAS modal EVO (.wca-modal-mask 1200), supaya toast tetap terbaca saat modal terbuka. */
 /* ═══ PENAWARAN: kartu + dialog jawaban kandidat ═══ */
 .ld-offer {
     margin: 16px 20px 20px;
@@ -4798,11 +4797,16 @@ export default {
     }
 }
 
+/* Lapis toast bersama — lihat --wca-z-toast di evo-theme.css. Halaman ini
+   punya lightbox berkas di 1250; 1300 lolos tipis dari situ tapi kalah oleh
+   overlay lain, jadi angkanya ikut disamakan. */
 .ld-toast {
     position: fixed;
     bottom: 24px;
     right: 24px;
-    z-index: 1300;
+    max-width: min(520px, calc(100vw - 48px));
+    line-height: 1.5;
+    z-index: var(--wca-z-toast, 100000);
     display: flex;
     align-items: center;
     gap: 9px;
@@ -5000,5 +5004,18 @@ export default {
     background: #ffffff;
     color: #0f172a;
     border-color: #94a3b8;
+}
+
+/* PONSEL — toast sudut melebar penuh. Pada 360px, lebar sudut hanya menyisakan
+   ruang teks selebar dua kata dan pesan panjang terpotong jadi banyak baris
+   sempit. Lihat --wca-z-toast di evo-theme.css untuk lapisannya. */
+@media (max-width: 560px) {
+    .ld-toast {
+        left: 12px;
+        right: 12px;
+        max-width: none;
+        align-items: flex-start;
+    }
+    .ld-toast .bi { flex: none; margin-top: 1px; }
 }
 </style>

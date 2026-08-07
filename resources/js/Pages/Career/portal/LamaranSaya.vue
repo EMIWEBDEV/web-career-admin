@@ -641,8 +641,17 @@ export default {
 .lms-modal__danger { appearance: none; cursor: pointer; font-family: inherit; font-size: 13px; font-weight: 800; padding: 11px 18px; border-radius: 12px; border: none; background: linear-gradient(135deg, #f87171, #ef4444); color: #fff; display: inline-flex; align-items: center; gap: 7px; box-shadow: 0 8px 20px rgba(239, 68, 68, 0.28); }
 .lms-modal__danger:disabled { opacity: 0.6; cursor: default; }
 
-/* z-index 1300 = DI ATAS modal EVO (.wca-modal-mask 1200), supaya toast tetap terbaca saat modal terbuka. */
-.lms-toast { position: fixed; bottom: 24px; right: 24px; z-index: 1300; display: flex; align-items: center; gap: 9px; padding: 12px 18px; border-radius: 13px; background: #0f172a; color: #fff; font-size: 13.5px; font-weight: 700; box-shadow: 0 18px 40px rgba(0, 0, 0, 0.3); }
+/* Lapis toast bersama — lihat --wca-z-toast di evo-theme.css. Portal punya
+   lightbox berkas (.lms-lb 1090) dan modal sendiri (1095) yang dulu sama-sama
+   di bawah 1300, tapi angkanya disamakan supaya tidak ada lagi dua jawaban. */
+.lms-toast {
+    position: fixed; bottom: 24px; right: 24px; z-index: var(--wca-z-toast, 100000);
+    display: flex; align-items: center; gap: 9px; padding: 12px 18px;
+    max-width: min(520px, calc(100vw - 48px));
+    border-radius: 13px; background: #0f172a; color: #fff;
+    font-size: 13.5px; font-weight: 700; line-height: 1.5;
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.3);
+}
 .lms-toast.is-err { background: #dc2626; }
 .lms-toast .bi { color: #34d399; }
 .lms-toast.is-err .bi { color: #fff; }
@@ -661,5 +670,18 @@ export default {
     .lms-drawer { width: 100%; }
     .lms-fields { grid-template-columns: 1fr; }
     .lms-hero__in { padding: 20px 18px; }
+}
+
+/* PONSEL — toast sudut melebar penuh. Pada 360px, lebar sudut hanya menyisakan
+   ruang teks selebar dua kata dan pesan panjang terpotong jadi banyak baris
+   sempit. Lihat --wca-z-toast di evo-theme.css untuk lapisannya. */
+@media (max-width: 560px) {
+    .lms-toast {
+        left: 12px;
+        right: 12px;
+        max-width: none;
+        align-items: flex-start;
+    }
+    .lms-toast .bi { flex: none; margin-top: 1px; }
 }
 </style>

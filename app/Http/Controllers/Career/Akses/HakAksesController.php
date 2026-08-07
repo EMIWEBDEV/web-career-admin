@@ -425,6 +425,13 @@ class HakAksesController extends Controller
                     } else {
                         $baruId = DB::table($this->tPage)->insertGetId([
                             'Id_Users' => $ke, 'Jenis_Page' => $s->Jenis_Page, 'Urutan_Menu' => $s->Urutan_Menu,
+                            // Susunan menu (urutan, grup, label, ikon) ikut tersalin —
+                            // kalau tidak, hasil duplikat kehilangan tata letak sidebar
+                            // yang sudah disusun di /hak-akses/susun/{user}.
+                            'Nama_Header_Custom' => $s->Nama_Header_Custom,
+                            'Sub_Header_Custom' => $s->Sub_Header_Custom,
+                            'Nama_Menu_Custom' => $s->Nama_Menu_Custom,
+                            'Icon_Menu_Custom' => $s->Icon_Menu_Custom,
                             'Created_At' => now(), 'Created_By' => $nama . ' (duplikat)', 'Created_By_Id' => session('career_auth.id'),
                             'Updated_At' => now(), 'Updated_By' => $nama,
                         ], 'Id_Page_Access');

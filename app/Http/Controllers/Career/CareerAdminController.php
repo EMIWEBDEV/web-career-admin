@@ -478,12 +478,34 @@ class CareerAdminController extends Controller
      * OPTIONS — daftar MPP (Manpower Planning) yang sudah disetujui.
      * Posisi/lowongan di Program Kegiatan WAJIB dipilih dari sini, tidak boleh diketik.
      *
-     * Sumbernya masih dummy (lowonganAdmin(), sama dengan /karir/lowongan).
-     * Saat MPP asli bisa ditarik dari HRIS desktop, cukup ganti isi method itu —
-     * bentuk balasan di sini tidak perlu berubah.
+     * ══ DISARING MENURUT KATEGORI PROGRAM ══
+     *
+     * MPP membedakan dirinya sendiri lewat `HRIS_Transaksi_GForm.Flag_MT`:
+     * 'Y' berarti permintaan itu memang untuk Management Trainee, NULL/'T'
+     * berarti pengisian posisi biasa. Pembagian itu dibuat di Master MPP saat
+     * permintaannya diajukan, dan MasterMppController sudah menyaring dengan
+     * aturan yang sama.
+     *
+     * Layar ini dulu MENGABAIKANNYA: `kategori` sudah dikirim modal Program
+     * Kegiatan, tapi tidak pernah dibaca, dan tiap baris malah dipulangkan
+     * ber-`'kategori' => null`. Akibatnya program MT disodori seluruh MPP
+     * rekrutmen biasa, dan program rekrutmen disodori MPP kaderisasi — dua
+     * daftar yang tidak boleh bertukar, karena posisi yang telanjur dipilih
+     * ikut menentukan pagu kuota batch dan divisi yang divalidasi setelahnya.
+     *
+     * Yang dipakai KODE KATEGORI dari masternya sendiri (Master_Kategori.
+     * Kategori = 'MT'), bukan istilah baru yang ditemukan di sini. Selain MT —
+     * REKRUTMEN, INTERNSHIP, dan kategori lain yang menyusul — semuanya
+     * memakai MPP non-MT, jadi aturannya cukup dua cabang dan tidak perlu
+     * diperbarui tiap kategori baru ditambahkan.
      */
     public function options_mpp()
     {
+        // Kategori program yang sedang disusun. Kosong = belum memilih apa pun;
+        // seluruh MPP dipulangkan, sama seperti perilaku sebelumnya, supaya
+        // pemanggil lama tidak mendadak menerima daftar kosong.
+        $kategori = strtoupper(trim((string) request()->query('kategori', '')));
+
         // REAL (2026-07-23): sumber = Monitoring MPP (HRIS_Transaksi_GForm ⋈ N_WEB_CAREERS_Detail_MPP),
         // bukan dummy lowonganAdmin() lagi. Hanya MPP AKTIF & BELUM SELESAI yang bisa ditautkan program.
         // Catatan: MPP tidak menyimpan kota — kolom 'lokasi' diisi tempat kerja (Onsite/Hybrid/...).
@@ -511,6 +533,12 @@ class CareerAdminController extends Controller
             )
             ->whereRaw("ISNULL(g.Status, '') <> 'Y'")
             ->whereRaw("ISNULL(g.Flag_Selesai, '') <> 'Y'")
+            // MT hanya melihat MPP ber-Flag_MT='Y'; kategori lain melihat
+            // sisanya. ISNULL dipakai karena kolomnya NULL untuk MPP biasa —
+            // `<> 'Y'` sendirian tidak pernah benar terhadap NULL di SQL
+            // Server, dan seluruh daftar akan terbaca kosong.
+            ->when($kategori === 'MT', fn ($q) => $q->where('g.Flag_MT', 'Y'))
+            ->when($kategori !== '' && $kategori !== 'MT', fn ($q) => $q->whereRaw("ISNULL(g.Flag_MT, '') <> 'Y'"))
             ->orderByDesc('g.Tanggal_Periode')
             ->orderBy('g.No_Transaksi')
             ->get([
@@ -522,6 +550,7 @@ class CareerAdminController extends Controller
                 'sd.Keterangan as sub',
                 'lv.Keterangan as level',
                 'g.Jumlah_Rekruitmen as kuota',
+                'g.Flag_MT as flag_mt',
                 'me.Nama_Employment as employment',
                 'mw.Nama_Workplace as workplace',
                 'mx.Nama_Experience_Level as experience',
@@ -548,7 +577,11 @@ class CareerAdminController extends Controller
                     'employment' => $emp,
                     'workplace' => $r->workplace,
                     'experience' => $r->experience,
-                    'kategori' => null,
+                    // Jenis MPP-nya, bukan lagi null mati. Layar memakainya
+                    // untuk menandai kartu — dan tanpa itu tidak ada cara
+                    // memastikan daftar yang tampil memang sudah tersaring.
+                    'mt' => ($r->flag_mt ?? '') === 'Y',
+                    'kategori' => ($r->flag_mt ?? '') === 'Y' ? 'MT' : 'REKRUTMEN',
                 ];
             })
             ->values();

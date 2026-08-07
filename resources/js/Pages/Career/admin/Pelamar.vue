@@ -2444,7 +2444,7 @@
             </div>
         </ConfirmModal>
 
-        <transition name="plw-toast"><div v-if="toast" class="plw-toast" :class="{ 'is-err': toastErr }"><i class="bi" :class="toastErr ? 'bi-exclamation-circle-fill' : 'bi-check-circle-fill'"></i> {{ toast }}</div></transition>
+        <transition name="plw-toast"><div v-if="toast" class="plw-toast" :class="{ 'is-err': toastErr, 'is-atas-unduhan': unduhan.length }"><i class="bi" :class="toastErr ? 'bi-exclamation-circle-fill' : 'bi-check-circle-fill'"></i> {{ toast }}</div></transition>
     </div>
 </template>
 
@@ -5680,8 +5680,35 @@ export default {
 .plw-lb__ok { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 800; color: #059669; flex: 0 0 auto; }
 
 /* TOAST */
-/* z-index 1300 = DI ATAS modal EVO (.wca-modal-mask 1200), supaya toast tetap terbaca saat modal terbuka. */
-.plw-toast { position: fixed; bottom: 24px; right: 24px; z-index: 1300; display: flex; align-items: center; gap: 9px; padding: 12px 18px; border-radius: 13px; background: #0f172a; color: #fff; font-size: 13.5px; font-weight: 700; box-shadow: 0 18px 40px rgba(0, 0, 0, 0.3); }
+/* Lapis toast bersama (--wca-z-toast, evo-theme.css). 1300 dulu cukup untuk
+   modal EVO (1200), tapi TIDAK untuk lightbox berkas (.plw-lb 1250 & 1500),
+   panel unduhan (3000), maupun drawer — padahal justru dari sanalah aksi
+   simpan/unduh dijalankan. Satu angka bersama menutup seluruh selisih itu. */
+.plw-toast {
+    position: fixed; bottom: 24px; right: 24px; z-index: var(--wca-z-toast, 100000);
+    display: flex; align-items: center; gap: 9px; padding: 12px 18px;
+    max-width: min(520px, calc(100vw - 48px));
+    border-radius: 13px; background: #0f172a; color: #fff;
+    font-size: 13.5px; font-weight: 700; line-height: 1.5;
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.3);
+}
+/* PANEL UNDUHAN MENEMPATI SUDUT YANG SAMA (.plw-unduhan, kanan-bawah).
+   Saat ia terbuka, toast digeser ke ATAS panel alih-alih menimpanya — dua-duanya
+   jawaban atas tindakan admin, dan yang satu tidak boleh menghapus yang lain
+   dari pandangan. Kelasnya dipasang halaman saat daftar unduhan tidak kosong. */
+.plw-toast.is-atas-unduhan { bottom: 96px; }
+
+@media (max-width: 560px) {
+    /* Melebar penuh: pada 360px, toast sudut menyisakan ruang teks selebar
+       dua kata dan pesan sepanjang "Waktu berakhir harus setelah waktu mulai."
+       terpotong jadi lima baris sempit. */
+    .plw-toast {
+        left: 12px; right: 12px; bottom: 16px;
+        max-width: none; align-items: flex-start;
+    }
+    .plw-toast.is-atas-unduhan { bottom: 92px; }
+    .plw-toast .bi { flex: none; margin-top: 1px; }
+}
 .plw-toast.is-err { background: #dc2626; }
 .plw-toast .bi { color: #34d399; }
 .plw-toast.is-err .bi { color: #fff; }
