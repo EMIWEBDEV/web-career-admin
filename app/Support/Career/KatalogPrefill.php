@@ -59,8 +59,20 @@ class KatalogPrefill
         ],
         'posisi' => [
             'label' => 'Posisi yang Dilamar',
-            'konteks' => [self::PENDAFTARAN],
-            'ket' => 'Nama posisi dari kartu lowongan yang diklik kandidat.',
+            // Di pendaftaran dari kartu lowongan yang diklik kandidat; di tahap
+            // dari data lamaran. Nilainya posisi yang sama, jadi aman untuk KEDUANYA.
+            'konteks' => [self::PENDAFTARAN, self::TAHAP],
+            'ket' => 'Posisi yang dilamar kandidat.',
+        ],
+        'tglLahir' => [
+            'label' => 'Tanggal Lahir',
+            'konteks' => [self::TAHAP],
+            'ket' => 'Diambil dari jawaban formulir pendaftaran lamaran ini.',
+        ],
+        'jkel' => [
+            'label' => 'Jenis Kelamin',
+            'konteks' => [self::TAHAP],
+            'ket' => 'Diambil dari jawaban formulir pendaftaran lamaran ini.',
         ],
         'kampus' => [
             'label' => 'Nama Kampus / Sekolah',
@@ -71,6 +83,31 @@ class KatalogPrefill
         ],
         'tahunLulus' => [
             'label' => 'Tahun Lulus / Perkiraan Lulus',
+            'konteks' => [self::TAHAP],
+            'ket' => 'Diambil dari jawaban formulir pendaftaran lamaran ini.',
+        ],
+        'jurusan' => [
+            'label' => 'Jurusan / Program Studi',
+            'konteks' => [self::TAHAP],
+            'ket' => 'Diambil dari jawaban formulir pendaftaran lamaran ini.',
+        ],
+        'jenjang' => [
+            'label' => 'Jenjang Pendidikan',
+            'konteks' => [self::TAHAP],
+            'ket' => 'Diambil dari jawaban formulir pendaftaran lamaran ini.',
+        ],
+        'ipk' => [
+            'label' => 'IPK',
+            'konteks' => [self::TAHAP],
+            'ket' => 'Diambil dari jawaban formulir pendaftaran lamaran ini.',
+        ],
+        'statusStudi' => [
+            'label' => 'Status Studi',
+            'konteks' => [self::TAHAP],
+            'ket' => 'Diambil dari jawaban formulir pendaftaran lamaran ini.',
+        ],
+        'semester' => [
+            'label' => 'Semester Berjalan',
             'konteks' => [self::TAHAP],
             'ket' => 'Diambil dari jawaban formulir pendaftaran lamaran ini.',
         ],

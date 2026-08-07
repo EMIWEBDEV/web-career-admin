@@ -1019,9 +1019,10 @@ class LamaranController extends Controller
                 'email' => $akun->Email ?? session('career_auth.email'),
                 'hp' => $akun->No_Hp ?? session('career_auth.hp'),
                 'nik' => $akun->NIK ?? null,
+                'posisi' => $lamaran->Posisi ?? null,
                 ...array_intersect_key(
                     LamaranService::dataKandidatEmail($realId),
-                    array_flip(['kampus', 'tahunLulus']),
+                    array_flip(['kampus', 'tahunLulus', 'tglLahir', 'jkel', 'jurusan', 'jenjang', 'ipk', 'statusStudi', 'semester']),
                 ),
             ]),
         ]));

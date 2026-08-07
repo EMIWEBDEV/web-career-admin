@@ -21,16 +21,29 @@ class KatalogPrefillTest extends TestCase
         $this->assertContains('nik', $kunci);
         $this->assertContains('posisi', $kunci);
         $this->assertContains('nama', $kunci);
+        // Belum ada yang menjawab pertanyaan pendaftaran di titik ini — data
+        // pendidikan adalah milik konteks tahap.
+        $this->assertNotContains('kampus', $kunci);
+        $this->assertNotContains('ipk', $kunci);
     }
 
-    public function test_kunci_tahap_memuat_nik_dan_kampus(): void
+    public function test_kunci_tahap_memuat_semua_data_yang_tersedia(): void
     {
         $kunci = KatalogPrefill::kunciUntuk('TAHAP');
 
+        // Identitas + posisi: semua yang bisa diambil dari akun/lamaran.
         $this->assertContains('nik', $kunci);
+        $this->assertContains('posisi', $kunci);
+        // Data pendidikan dari jawaban formulir pendaftaran.
         $this->assertContains('kampus', $kunci);
         $this->assertContains('tahunLulus', $kunci);
-        $this->assertNotContains('posisi', $kunci);
+        $this->assertContains('jurusan', $kunci);
+        $this->assertContains('jenjang', $kunci);
+        $this->assertContains('ipk', $kunci);
+        $this->assertContains('statusStudi', $kunci);
+        $this->assertContains('semester', $kunci);
+        $this->assertContains('tglLahir', $kunci);
+        $this->assertContains('jkel', $kunci);
     }
 
     /**
@@ -45,7 +58,10 @@ class KatalogPrefillTest extends TestCase
         $this->assertContains('email', $kunci);
         $this->assertContains('hp', $kunci);
         $this->assertContains('nik', $kunci);
+        $this->assertContains('posisi', $kunci);
         $this->assertNotContains('kampus', $kunci);
+        $this->assertNotContains('tglLahir', $kunci);
+        $this->assertNotContains('ipk', $kunci);
     }
 
     public function test_konteks_tak_dikenal_diperlakukan_sebagai_keduanya(): void
@@ -58,15 +74,15 @@ class KatalogPrefillTest extends TestCase
 
     public function test_saring_membuang_kunci_di_luar_konteks(): void
     {
-        $hasil = KatalogPrefill::saring('TAHAP', [
+        $hasil = KatalogPrefill::saring('PENDAFTARAN', [
             'nama' => 'Budi',
             'posisi' => 'Management Trainee',
             'kampus' => 'Universitas Sriwijaya',
         ]);
 
         $this->assertSame('Budi', $hasil['nama']);
-        $this->assertSame('Universitas Sriwijaya', $hasil['kampus']);
-        $this->assertArrayNotHasKey('posisi', $hasil);
+        $this->assertSame('Management Trainee', $hasil['posisi']);
+        $this->assertArrayNotHasKey('kampus', $hasil);
     }
 
     public function test_saring_mengisi_null_untuk_kunci_yang_belum_ada(): void
