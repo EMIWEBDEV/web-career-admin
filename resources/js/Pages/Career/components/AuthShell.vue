@@ -463,7 +463,10 @@ const subsidiaries = [
 .authx .subs .logos .dv { width: 1px; height: 26px; background: #e2e8f0; }
 
 /* TOAST */
-.authx .v3-toast { position: fixed; top: 20px; right: 20px; z-index: 50; display: flex; align-items: center; gap: 12px; max-width: min(92vw, 380px); padding: 14px 16px; border-radius: 14px; font-size: 0.9rem; font-weight: 500; color: #fff; box-shadow: 0 18px 40px -12px rgba(0, 0, 0, 0.35); backdrop-filter: blur(10px); }
+/* Lapis toast bersama — lihat --wca-z-toast di evo-theme.css. Halaman auth
+   punya lembar OTP & dialog sesi kedaluwarsa; pesan "kata sandi salah" tidak
+   boleh kalah oleh salah satunya. */
+.authx .v3-toast { position: fixed; top: 20px; right: 20px; z-index: var(--wca-z-toast, 100000); display: flex; align-items: center; gap: 12px; max-width: min(92vw, 380px); padding: 14px 16px; border-radius: 14px; font-size: 0.9rem; font-weight: 500; color: #fff; box-shadow: 0 18px 40px -12px rgba(0, 0, 0, 0.35); backdrop-filter: blur(10px); }
 .authx .v3-toast--error { background: linear-gradient(120deg, #ef4444, #dc2626); }
 .authx .v3-toast--info { background: linear-gradient(120deg, var(--indigo-2), var(--violet)); }
 .authx .v3-toast span { flex: 1; }

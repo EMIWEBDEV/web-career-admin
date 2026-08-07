@@ -307,7 +307,20 @@
                      Ikon info membuka popover detail TANPA menutup modal. -->
                 <div class="pgk-mpppick">
                     <div class="pgk-mpppick__head">
-                        <label class="wca-field-lbl">Pilih Posisi dari MPP <span class="pgk-req">klik kartu — bisa banyak</span></label>
+                        <!-- Sumber daftarnya disebut terang-terangan. Daftar ini
+                             disaring Flag_MT, jadi "kosong" bisa berarti dua hal
+                             yang sangat berbeda: belum ada MPP sama sekali, atau
+                             belum ada MPP UNTUK KATEGORI INI. Tanpa keterangan,
+                             admin membaca yang pertama dan melapor sistemnya
+                             rusak. -->
+                        <label class="wca-field-lbl">
+                            Pilih Posisi dari MPP
+                            <span class="pgk-req">klik kartu — bisa banyak</span>
+                            <span class="pgk-mppscope" :class="{ 'is-mt': form.kategori === 'MT' }">
+                                <i class="bi" :class="form.kategori === 'MT' ? 'bi-mortarboard-fill' : 'bi-briefcase-fill'"></i>
+                                {{ form.kategori === 'MT' ? 'MPP Management Trainee' : 'MPP non-MT' }}
+                            </span>
+                        </label>
                         <div class="pgk-mppsearch">
                             <i class="bi bi-search"></i>
                             <input v-model="mppCari" type="text" placeholder="Cari posisi / departemen / nomor MPP…" />
@@ -359,7 +372,20 @@
                         </div>
                         <div v-if="!mppTersaring.length" class="pgk-empty" style="grid-column:1/-1">Tidak ada MPP yang cocok dengan pencarian.</div>
                     </div>
-                    <div v-else class="pgk-empty">Tidak ada MPP untuk kategori ini.</div>
+                    <!-- Kenapa kosongnya disebutkan: daftar ini disaring
+                         Flag_MT. Program MT hanya boleh memakai MPP yang memang
+                         diajukan sebagai MT di Master MPP — jadi kosong di sini
+                         hampir selalu berarti MPP-nya belum dibuat, bukan
+                         daftarnya gagal dimuat. -->
+                    <div v-else class="pgk-empty">
+                        <template v-if="form.kategori === 'MT'">
+                            Belum ada MPP <b>Management Trainee</b> yang aktif.
+                            Ajukan dulu di Master MPP dengan jenis program <b>MT</b>.
+                        </template>
+                        <template v-else>
+                            Belum ada MPP <b>non-MT</b> yang aktif untuk dipilih.
+                        </template>
+                    </div>
                 </div>
 
                 <!-- Panel SUDAH DIPILIH — area sendiri dengan scrollbar sendiri. -->
@@ -1167,13 +1193,30 @@ export default {
             }
             this.form.posisi = [];
 
+            // MPP DIMUAT ULANG DULUAN, sebelum cabang preset.
+            //
+            // Daftarnya sekarang DISARING kategori (MT mengambil Flag_MT='Y',
+            // selainnya mengambil sisanya), jadi ini bukan lagi penyegaran
+            // opsional — ia yang menentukan kartu mana yang boleh dipilih.
+            //
+            // Dulu pemanggilannya ada SESUDAH `if (!preset) return`, dan
+            // kategori yang belum punya baris di Master Kategori membuatnya
+            // terlewat: posisinya dikosongkan tapi kartu MPP yang terpampang
+            // masih milik kategori sebelumnya — daftar yang tampak sah dan
+            // seluruhnya salah. Ia hanya bergantung pada form.kategori, yang
+            // sudah terisi di sini, jadi aman dipindah ke atas.
+            this.loadMppOptions();
+
             const preset = this.presets.find((p) => p.value === (opt?.value ?? this.form.kategori));
             if (!preset) return;
             if (preset.mode) this.form.mode = preset.mode;
             if (preset.warna) this.form.warna = preset.warna;
             if (preset.alur) this.form.alur = preset.alur;
+            // TETAP DI SINI, bukan ikut naik: ia membaca form.alur, yang baru
+            // saja dikosongkan di awal method dan hanya dipulihkan oleh preset
+            // di baris atas. Dipanggil lebih awal, ia selalu pulang dengan
+            // daftar kosong.
             this.loadTahapFormulir();
-            this.loadMppOptions();
         },
 
         async loadPresets() {
@@ -1689,6 +1732,12 @@ export default {
 .pgk-opsi__body { padding: .9rem 1rem 1rem; }
 .pgk-opsi__toolbar { display: flex; align-items: center; gap: .5rem; margin-bottom: .6rem; }
 .pgk-req { font-weight: 600; font-size: 11px; color: #b45309; background: #fef3c7; border-radius: 999px; padding: .1rem .45rem; margin-left: .35rem; }
+/* Lingkup daftar MPP yang sedang tampil — MT vs non-MT. Warnanya mengikuti
+   lencana kategori di kartu program (MT emas, rekrutmen biru) supaya keduanya
+   terbaca sebagai hal yang sama, bukan dua penanda yang kebetulan berdekatan. */
+.pgk-mppscope { display: inline-flex; align-items: center; gap: .3rem; font-weight: 700; font-size: 11px; color: #0369a1; background: #e0f2fe; border-radius: 999px; padding: .1rem .5rem; margin-left: .35rem; }
+.pgk-mppscope.is-mt { color: #b45309; background: #fef3c7; }
+.pgk-mppscope .bi { font-size: 10px; }
 .pgk-hint { font-size: 11.5px; color: #64748b; margin-top: .3rem; }
 .pgk-hint--warn { color: #b45309; }
 .pgk-syarat { border: 1px solid rgba(79,70,229,.18); border-radius: 14px; padding: .9rem; margin-bottom: .7rem; background: #fff; }

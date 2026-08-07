@@ -1356,8 +1356,8 @@ export default {
 .pjd-tab.is-on { color: #fff; background: linear-gradient(135deg, #8b5cf6, #6366f1); }
 
 /* ── TOAST ── seragam dengan Worklist Pelamar & portal kandidat. */
-/* z-index 1300 = DI ATAS modal EVO (.wca-modal-mask 1200), supaya toast tetap terbaca saat modal terbuka. */
-.pjd-toast { position: fixed; bottom: 24px; right: 24px; z-index: 1300; display: flex; align-items: center; gap: 9px; max-width: min(520px, calc(100vw - 48px)); padding: 12px 18px; border-radius: 13px; background: #0f172a; color: #fff; font-size: 13.5px; font-weight: 700; line-height: 1.5; box-shadow: 0 18px 40px rgba(0, 0, 0, .3); }
+/* Lapis toast bersama — lihat --wca-z-toast di evo-theme.css. */
+.pjd-toast { position: fixed; bottom: 24px; right: 24px; z-index: var(--wca-z-toast, 100000); display: flex; align-items: center; gap: 9px; max-width: min(520px, calc(100vw - 48px)); padding: 12px 18px; border-radius: 13px; background: #0f172a; color: #fff; font-size: 13.5px; font-weight: 700; line-height: 1.5; box-shadow: 0 18px 40px rgba(0, 0, 0, .3); }
 .pjd-toast.is-err { background: #dc2626; }
 .pjd-toast .bi { flex: 0 0 auto; color: #34d399; }
 .pjd-toast.is-err .bi { color: #fff; }
@@ -1649,5 +1649,18 @@ export default {
     .pjd-head h1 { font-size: 22px; }
     .pjd-filter { padding: 12px 16px; }
     .pjd-fsel, .pjd-fsel--sm { width: 100%; }
+}
+
+/* PONSEL — toast sudut melebar penuh. Pada 360px, lebar sudut hanya menyisakan
+   ruang teks selebar dua kata dan pesan panjang terpotong jadi banyak baris
+   sempit. Lihat --wca-z-toast di evo-theme.css untuk lapisannya. */
+@media (max-width: 560px) {
+    .pjd-toast {
+        left: 12px;
+        right: 12px;
+        max-width: none;
+        align-items: flex-start;
+    }
+    .pjd-toast .bi { flex: none; margin-top: 1px; }
 }
 </style>

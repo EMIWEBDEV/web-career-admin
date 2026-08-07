@@ -3,12 +3,14 @@
 use App\Http\Controllers\Career\Akses\HakAksesController;
 use App\Http\Controllers\Career\Akses\KlasifikasiAksesController;
 use App\Http\Controllers\Career\Akses\MasterMenuController;
+use App\Http\Controllers\Career\Akses\SusunMenuController;
 use Illuminate\Support\Facades\Route;
 
 /*
 | HAK AKSES (RBAC) — pola cat-evo-pembaharuan
 | - Master Menu            : /master-menu           (masterMenuPage)
 | - Manajemen Hak Akses    : /hak-akses             (hakAksesPage)
+| - Penyusun Menu Akun     : /hak-akses/susun/{user} (hakAksesPage, EDIT)
 | - Akses Klasifikasi Akun : /klasifikasi-akses     (klasifikasiAksesPage)
 |
 | Seluruh route dikunci career.permission:{page},{AKSI} — termasuk modul ini
@@ -63,6 +65,11 @@ Route::prefix('api/v1')->name('career.api.master-menu.')->group(function () {
 Route::get('/hak-akses', [HakAksesController::class, 'index'])->name('career.hak-akses')
     ->middleware('career.permission:hakAksesPage,VIEW');
 
+// ── PENYUSUN MENU PER AKUN (gaya WordPress: panel kiri–kanan + drag & drop) ──
+// Halaman sendiri, bukan modal: butuh ruang untuk dua panel dan geser-menggeser.
+Route::get('/hak-akses/susun/{userId}', [SusunMenuController::class, 'index'])->name('career.hak-akses.susun')
+    ->middleware('career.permission:hakAksesPage,EDIT');
+
 Route::prefix('api/v1')->name('career.api.hak-akses.')->group(function () {
     Route::get('/hak-akses', [HakAksesController::class, 'list'])->name('list')
         ->middleware('career.permission:hakAksesPage,VIEW');
@@ -82,6 +89,16 @@ Route::prefix('api/v1')->name('career.api.hak-akses.')->group(function () {
         ->middleware('career.permission:hakAksesPage,CREATE');
     Route::delete('/hak-akses/{id}', [HakAksesController::class, 'destroy'])->name('destroy')
         ->middleware('career.permission:hakAksesPage,DELETE');
+});
+
+// ── API PENYUSUN MENU ──
+// Didaftarkan di grup terpisah supaya '/hak-akses/susun/...' tidak tertelan
+// route parameter '/hak-akses/{id}' di grup atas.
+Route::prefix('api/v1')->name('career.api.susun-menu.')->group(function () {
+    Route::get('/hak-akses/susun/{userId}', [SusunMenuController::class, 'data'])->name('data')
+        ->middleware('career.permission:hakAksesPage,VIEW');
+    Route::post('/hak-akses/susun/{userId}', [SusunMenuController::class, 'simpan'])->name('simpan')
+        ->middleware('career.permission:hakAksesPage,EDIT');
 });
 
 // ── AKSES KLASIFIKASI AKUN (cetakan kandidat + whitelist program) ──

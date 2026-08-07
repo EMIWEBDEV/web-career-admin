@@ -89,6 +89,9 @@
                         </div>
                     </div>
                     <span class="wca-badge" :class="badgeRole(u.role)">{{ u.role }}</span>
+                    <button class="ha-susun" type="button" title="Susun urutan & grup menu sidebar akun ini" @click.stop="susunMenu(u)">
+                        <i class="bi bi-list-nested"></i> <span>Susun Menu</span>
+                    </button>
                     <i class="bi bi-chevron-down ha-user__chev" :class="{ open: buka === u.id }"></i>
                 </div>
 
@@ -206,7 +209,7 @@
 
 <script>
 import axios from 'axios';
-import { Head } from '@inertiajs/vue3';
+import { Head, router } from '@inertiajs/vue3';
 import AdminModal from '@career/AdminModal.vue';
 import ConfirmModal from '@career/ConfirmModal.vue';
 
@@ -243,6 +246,9 @@ export default {
             return w[s % w.length];
         },
         badgeRole(r) { return r === 'KANDIDAT' ? 'wca-b--amber' : (r === 'SUPERADMIN' ? 'wca-b--indigo' : 'wca-b--slate'); },
+
+        /** Buka penyusun menu (panel kiri–kanan + drag & drop) untuk akun ini. */
+        susunMenu(u) { router.visit(`/hak-akses/susun/${u.id}`); },
 
         async loadSummary() {
             this.loadingSum = true;
@@ -393,6 +399,8 @@ export default {
 .ha-user__info { flex: 1; min-width: 0; }
 .ha-user__nama { font-size: 14px; font-weight: 700; color: #1e2447; }
 .ha-user__meta { display: flex; flex-wrap: wrap; gap: .3rem .8rem; font-size: 11.5px; color: #94a3b8; margin-top: 2px; }
+.ha-susun { flex: none; display: inline-flex; align-items: center; gap: .35rem; border: 1px solid rgba(79,70,229,.25); background: #eef2ff; color: #4338ca; font-size: 11.5px; font-weight: 700; border-radius: 9px; padding: .35rem .65rem; cursor: pointer; white-space: nowrap; }
+.ha-susun:hover { background: #e0e7ff; }
 .ha-user__chev { color: #94a3b8; transition: transform .18s; }
 .ha-user__chev.open { transform: rotate(180deg); }
 .ha-user__body { border-top: 1px solid rgba(15,23,42,.06); padding: .8rem 1rem 1rem; background: #fafbfd; display: flex; flex-direction: column; gap: .7rem; }
@@ -438,6 +446,7 @@ export default {
 
 @media (max-width: 1100px) { .ha-stats__bar { grid-template-columns: repeat(2, 1fr); } .ha-stats__act { grid-column: 1 / -1; } }
 @media (max-width: 640px) {
+    .ha-susun span { display: none; }
     .ha-filter { display: none; }
     .ha-filter.is-open { display: block; position: fixed; left: 0; right: 0; bottom: 0; z-index: 80; margin: 0; border-radius: 18px 18px 0 0; max-height: 78vh; overflow-y: auto; box-shadow: 0 -18px 40px rgba(15,23,42,.25); }
     .ha-filter__grid { grid-template-columns: 1fr; }

@@ -4019,11 +4019,17 @@ export default {
     padding-top: 0.85rem;
 }
 
+/* Lapis toast bersama — lihat --wca-z-toast di evo-theme.css.
+   Dulu 120: DI BAWAH modal EVO (1200) dan bahkan di bawah panel penyusun
+   formulirnya sendiri. Setiap "Skema tersimpan" tertelan modal yang masih
+   terbuka — dan menyimpan skema justru selalu dilakukan dari dalam modal. */
 .mfb-toast {
     position: fixed;
     right: 1.5rem;
     bottom: 1.5rem;
-    z-index: 120;
+    max-width: min(520px, calc(100vw - 3rem));
+    line-height: 1.5;
+    z-index: var(--wca-z-toast, 100000);
     display: flex;
     gap: 0.5rem;
     align-items: center;
@@ -4093,5 +4099,18 @@ export default {
 .mfb-preview-frame--mobile :deep(.wca-fields-grid > *),
 .mfb-preview-frame--mobile :deep(.fr-grid > *) {
     grid-column: 1 / -1 !important;
+}
+
+/* PONSEL — toast sudut melebar penuh. Pada 360px, lebar sudut hanya menyisakan
+   ruang teks selebar dua kata dan pesan panjang terpotong jadi banyak baris
+   sempit. Lihat --wca-z-toast di evo-theme.css untuk lapisannya. */
+@media (max-width: 560px) {
+    .mfb-toast {
+        left: 12px;
+        right: 12px;
+        max-width: none;
+        align-items: flex-start;
+    }
+    .mfb-toast .bi { flex: none; margin-top: 1px; }
 }
 </style>
