@@ -9,8 +9,8 @@ use PHPUnit\Framework\TestCase;
  * Uji KATALOG PREFILL — kosakata kunci isi-otomatis.
  *
  * Sebelum ini daftar kunci ditulis lepas di dua controller yang berbeda, dan
- * tak ada yang tahu bahwa `nik` tidak pernah terisi di formulir tahap. Uji ini
- * mengunci konsekuensi itu: konteks menentukan kunci, bukan kebiasaan.
+ * tak ada yang tahu kunci mana yang benar-benar terisi di formulir mana. Uji
+ * ini mengunci konsekuensinya: konteks menentukan kunci, bukan kebiasaan.
  */
 class KatalogPrefillTest extends TestCase
 {
@@ -23,13 +23,13 @@ class KatalogPrefillTest extends TestCase
         $this->assertContains('nama', $kunci);
     }
 
-    public function test_kunci_tahap_memuat_kampus_tapi_bukan_nik(): void
+    public function test_kunci_tahap_memuat_nik_dan_kampus(): void
     {
         $kunci = KatalogPrefill::kunciUntuk('TAHAP');
 
+        $this->assertContains('nik', $kunci);
         $this->assertContains('kampus', $kunci);
         $this->assertContains('tahunLulus', $kunci);
-        $this->assertNotContains('nik', $kunci);
         $this->assertNotContains('posisi', $kunci);
     }
 
@@ -44,7 +44,7 @@ class KatalogPrefillTest extends TestCase
         $this->assertContains('nama', $kunci);
         $this->assertContains('email', $kunci);
         $this->assertContains('hp', $kunci);
-        $this->assertNotContains('nik', $kunci);
+        $this->assertContains('nik', $kunci);
         $this->assertNotContains('kampus', $kunci);
     }
 
@@ -60,13 +60,13 @@ class KatalogPrefillTest extends TestCase
     {
         $hasil = KatalogPrefill::saring('TAHAP', [
             'nama' => 'Budi',
-            'nik' => '1671xxxx',
+            'posisi' => 'Management Trainee',
             'kampus' => 'Universitas Sriwijaya',
         ]);
 
         $this->assertSame('Budi', $hasil['nama']);
         $this->assertSame('Universitas Sriwijaya', $hasil['kampus']);
-        $this->assertArrayNotHasKey('nik', $hasil);
+        $this->assertArrayNotHasKey('posisi', $hasil);
     }
 
     public function test_saring_mengisi_null_untuk_kunci_yang_belum_ada(): void

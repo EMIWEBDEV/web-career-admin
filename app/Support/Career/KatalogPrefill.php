@@ -11,8 +11,8 @@ namespace App\Support\Career;
  *
  * Sebelum katalog ini, daftar kunci ditulis lepas di dua tempat yang berbeda —
  * CareerLandingController untuk formulir pendaftaran, LamaranController untuk
- * formulir tahap — dan keduanya TIDAK SAMA. `nik` hanya ada di pendaftaran;
- * `kampus` dan `tahunLulus` hanya ada di tahap, karena saat mendaftar kandidat
+ * formulir tahap — dan keduanya TIDAK SAMA: `nik` tidak sampai ke formulir
+ * tahap, `kampus` dan `tahunLulus` tidak ada saat mendaftar karena kandidat
  * memang belum menjawabnya. Admin yang memilih kunci salah tidak mendapat
  * peringatan apa pun: kolomnya sekadar tampil kosong.
  *
@@ -51,11 +51,11 @@ class KatalogPrefill
         ],
         'nik' => [
             'label' => 'NIK',
-            // Formulir tahap tidak menerima NIK: LamaranController tidak
-            // mengirimkannya, dan menambahkannya berarti menyalin identitas
-            // sensitif ke tempat yang tidak membutuhkannya.
-            'konteks' => [self::PENDAFTARAN],
-            'ket' => 'NIK pada tabel pengguna. Hanya di formulir pendaftaran.',
+            // Tersedia di kedua konteks: NIK sudah terisi sejak pendaftaran,
+            // jadi formulir tahap tidak perlu menanyakannya lagi. Kandidat
+            // hanya melihat NIK miliknya sendiri, bukan NIK orang lain.
+            'konteks' => [self::PENDAFTARAN, self::TAHAP],
+            'ket' => 'NIK pada tabel pengguna.',
         ],
         'posisi' => [
             'label' => 'Posisi yang Dilamar',

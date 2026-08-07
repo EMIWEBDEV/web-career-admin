@@ -92,12 +92,12 @@ class MasterFormulirValidasiSchemaTest extends TestCase
     public function test_menolak_prefill_di_luar_konteks_formulir(): void
     {
         $h = $this->validasi(
-            $this->skema([['key' => 'nik', 'label' => 'NIK', 'tipe' => 'text', 'prefill' => 'nik']]),
+            $this->skema([['key' => 'posisi', 'label' => 'Posisi', 'tipe' => 'text', 'prefill' => 'posisi']]),
             'TAHAP',
         );
 
         $this->assertFalse($h['ok']);
-        $this->assertStringContainsString('nik', $h['pesan']);
+        $this->assertStringContainsString('posisi', $h['pesan']);
     }
 
     public function test_menerima_prefill_yang_tersedia_di_konteksnya(): void

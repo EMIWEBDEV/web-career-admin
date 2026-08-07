@@ -965,7 +965,7 @@ class LamaranController extends Controller
 
         $akun = DB::table('N_WEB_CAREERS_Users')
             ->where('Id_Users', $userId)
-            ->first(['Nama', 'Email', 'No_Hp']);
+            ->first(['Nama', 'Email', 'No_Hp', 'NIK']);
 
         return Inertia::render('Career/portal/LamaranDetail', CareerShell::props('/kandidat/portal', 'Detail Lamaran', [
             'lamaran' => [
@@ -1018,6 +1018,7 @@ class LamaranController extends Controller
                 'nama' => $akun->Nama ?? session('career_auth.nama'),
                 'email' => $akun->Email ?? session('career_auth.email'),
                 'hp' => $akun->No_Hp ?? session('career_auth.hp'),
+                'nik' => $akun->NIK ?? null,
                 ...array_intersect_key(
                     LamaranService::dataKandidatEmail($realId),
                     array_flip(['kampus', 'tahunLulus']),
