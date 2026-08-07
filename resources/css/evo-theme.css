@@ -813,7 +813,17 @@ h6,
     transition-delay: var(--d, 0ms);
     will-change: opacity, transform;
 }
-.wc-reveal.is-in {
+/* PENANDA "SUDAH MUNCUL" MEMAKAI ATRIBUT, BUKAN KELAS.
+   Kelas `is-in` dipasang IntersectionObserver lewat classList, di luar
+   sepengetahuan Vue. Begitu elemen yang sama punya :class dinamis (mis. kartu
+   FAMILY yang dapat is-dimmed/is-highlighted saat huruf diklik), Vue menimpa
+   className elemen itu seutuhnya saat merender ulang — `is-in` ikut terhapus,
+   kartunya balik ke opacity 0, dan karena observernya sudah unobserve, ia tidak
+   pernah muncul lagi sampai halaman dimuat ulang. Atribut data- tidak ikut
+   ditimpa patch kelas Vue, jadi penandanya bertahan.
+   `.is-in` tetap dikenali supaya penanda lama tidak mendadak berhenti bekerja. */
+.wc-reveal.is-in,
+.wc-reveal[data-in] {
     opacity: 1;
     transform: none;
 }

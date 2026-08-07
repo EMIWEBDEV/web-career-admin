@@ -138,15 +138,19 @@ export function scrollToId(id, offset = 84) {
     animateScroll(y);
 }
 
-// Reveal-on-scroll bersama: amati semua .wc-reveal, tambah .is-in saat masuk viewport.
+// Reveal-on-scroll bersama: amati semua .wc-reveal, tandai saat masuk viewport.
 // Dipakai landing & halaman detail. Aman bila IntersectionObserver tak tersedia.
+//
+// Penandanya ATRIBUT `data-in`, bukan kelas. Kelas yang dipasang dari luar Vue
+// akan lenyap begitu elemen yang sama punya :class dinamis lalu dirender ulang —
+// Vue menimpa className elemen itu seutuhnya. Uraiannya di evo-theme.css.
 export function observeReveal(selector = '.wc-reveal') {
     if (typeof window === 'undefined' || !('IntersectionObserver' in window)) return null;
     const obs = new IntersectionObserver(
         (entries) =>
             entries.forEach((e) => {
                 if (e.isIntersecting) {
-                    e.target.classList.add('is-in');
+                    e.target.setAttribute('data-in', '');
                     obs.unobserve(e.target);
                 }
             }),
