@@ -582,6 +582,75 @@
                                 @hapus="hapusFieldAktif"
                             />
 
+                            <template v-else-if="langkahAktif">
+                                <div class="mfb-inspector__head">
+                                    <h3><i class="bi bi-layers-half"></i> Properti Langkah</h3>
+                                </div>
+
+                                <div class="mfb-inspector__group">
+                                    <label>Judul Langkah</label>
+                                    <el-input v-model="langkahAktif.judul" placeholder="mis. Data Pendaftaran" />
+                                </div>
+
+                                <div class="mfb-inspector__group">
+                                    <label>Kode Langkah</label>
+                                    <el-input v-model="langkahAktif.kode" placeholder="PENDAFTARAN" />
+                                    <small class="mfb-help">Pengenal langkah di skema. Ubah hanya bila benar-benar perlu.</small>
+                                </div>
+
+                                <div class="mfb-inspector__group">
+                                    <label>Ikon Langkah</label>
+                                    <el-select v-model="langkahAktif.ikon" style="width: 100%" filterable>
+                                        <el-option v-for="i in ikonLangkahOptions" :key="i" :value="i" :label="i">
+                                            <i class="bi" :class="i"></i> <span class="fr__opsi">{{ i }}</span>
+                                        </el-option>
+                                    </el-select>
+                                </div>
+
+                                <div class="mfb-inspector__group">
+                                    <label>Deskripsi Langkah</label>
+                                    <el-input
+                                        v-model="langkahAktif.deskripsi"
+                                        type="textarea"
+                                        :rows="2"
+                                        placeholder="Keterangan singkat di bawah judul langkah..."
+                                    />
+                                </div>
+
+                                <div class="mfb-inspector__group">
+                                    <label>Langkah Tampil Jika (Kondisional)</label>
+                                    <el-select
+                                        :model-value="langkahAktif.tampil_jika?.field || ''"
+                                        style="width: 100%"
+                                        clearable
+                                        placeholder="Selalu Tampil"
+                                        @change="aturLangkahSyarat"
+                                    >
+                                        <el-option
+                                            v-for="f in semuaField.filter((x) => x.key)"
+                                            :key="f.field_id || f.key"
+                                            :value="f.key"
+                                            :label="f.label || f.key"
+                                        />
+                                    </el-select>
+                                    <div v-if="langkahAktif.tampil_jika?.field" class="mfb-condition-row">
+                                        <el-select v-model="langkahAktif.tampil_jika.operator" style="width: 48%">
+                                            <el-option
+                                                v-for="o in conditionOperators"
+                                                :key="o.value"
+                                                :value="o.value"
+                                                :label="o.label"
+                                            />
+                                        </el-select>
+                                        <el-input
+                                            v-model="langkahAktif.tampil_jika.nilai"
+                                            placeholder="Nilai pemicu"
+                                            style="width: 52%"
+                                        />
+                                    </div>
+                                </div>
+                            </template>
+
                             <template v-else-if="sectionAktif">
                                 <div class="mfb-inspector__head">
                                     <h3><i class="bi bi-layout-text-window-reverse"></i> Properti Section</h3>
@@ -589,6 +658,40 @@
                                 <p class="mfb-help">
                                     Atur pola layout kolom atau sisipkan blok template pertanyaan standar.
                                 </p>
+
+                                <div class="mfb-inspector__group">
+                                    <label>Judul Section</label>
+                                    <el-input v-model="sectionAktif.judul" placeholder="mis. Data Diri" />
+                                    <small class="mfb-help">Kosongkan bila judul langkah sudah cukup menjelaskan.</small>
+                                </div>
+
+                                <div class="mfb-inspector__group">
+                                    <label>Deskripsi Section</label>
+                                    <el-input
+                                        v-model="sectionAktif.deskripsi"
+                                        type="textarea"
+                                        :rows="2"
+                                        placeholder="Keterangan singkat di bawah judul section..."
+                                    />
+                                </div>
+
+                                <div class="mfb-inspector__group">
+                                    <el-checkbox v-model="sectionAktif.berulang">Section Berulang (Multi-Baris)</el-checkbox>
+                                    <small class="mfb-help">
+                                        Kandidat bisa menambah baris — mis. riwayat organisasi atau pengalaman kerja.
+                                        Jawabannya tersimpan sebagai daftar, bukan satu nilai.
+                                    </small>
+                                </div>
+
+                                <div v-if="sectionAktif.berulang" class="mfb-inspector__group">
+                                    <label>Maksimal Jumlah Baris</label>
+                                    <el-input-number
+                                        v-model="sectionAktif.maks_baris"
+                                        :min="1"
+                                        :max="20"
+                                        style="width: 100%"
+                                    />
+                                </div>
 
                                 <div class="mfb-inspector__group">
                                     <label>Preset Format Kolom</label>
@@ -1066,6 +1169,16 @@ export default {
                 { value: 'PENDAFTARAN', label: 'Formulir Pendaftaran' },
                 { value: 'TAHAP', label: 'Formulir Tahap Seleksi' },
             ],
+            ikonLangkahOptions: [
+                'bi-card-list',
+                'bi-person-vcard',
+                'bi-mortarboard',
+                'bi-briefcase',
+                'bi-file-earmark-text',
+                'bi-shield-check',
+                'bi-people',
+                'bi-clipboard-check',
+            ],
             lebarCepatOptions: [
                 { label: '1/3', value: 33 },
                 { label: '1/2', value: 50 },
@@ -1262,6 +1375,19 @@ export default {
             const t = this.pilihTarget;
             if (!t || t.tipe !== 'section') return null;
             return this.schema.langkah?.[t.li]?.bagian?.[t.bi] || null;
+        },
+        /**
+         * Langkah yang sedang dipilih di kanvas.
+         *
+         * Kanvas sudah bisa memilih langkah sejak awal (pilihTarget.tipe ===
+         * 'step'), tapi inspector tidak punya cabangnya — jadi ikon, deskripsi,
+         * dan syarat tampil langkah tidak pernah bisa diisi walau ketiganya
+         * sudah dinormalisasi dan dirender.
+         */
+        langkahAktif() {
+            const t = this.pilihTarget;
+            if (!t || t.tipe !== 'step') return null;
+            return this.schema.langkah?.[t.index] || null;
         },
         semuaField() {
             const fields = [];
@@ -1707,6 +1833,10 @@ export default {
         aturSectionSyarat(key) {
             if (!this.sectionAktif) return;
             this.sectionAktif.tampil_jika = key ? { field: key, operator: '=', nilai: '' } : null;
+        },
+        aturLangkahSyarat(key) {
+            if (!this.langkahAktif) return;
+            this.langkahAktif.tampil_jika = key ? { field: key, operator: '=', nilai: '' } : null;
         },
         rapikanKeyField() {
             if (!this.fieldAktif || this.keyFieldTerkunci) return;
