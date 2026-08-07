@@ -656,6 +656,14 @@ class MonitoringController extends Controller
                 //    `ditahan` dibandingkan langsung ke 'Y' (bukan <> 'Y'), jadi
                 //    TIDAK butuh COALESCE: NULL = 'Y' sudah otomatis false, yang
                 //    memang berarti "bukan ditahan".
+                // Di sini yang diuji lt.Hasil — keputusan pada TAHAP INI —
+                // bukan l.Status (nasib akhir lamaran). Bucket-nya tetap
+                // diturunkan dari flag master, sama seperti funnel.
+                $sqlLulus = HasilKeputusan::sqlIn(HasilKeputusan::kodeLolos());
+                $sqlGugur = HasilKeputusan::sqlIn(HasilKeputusan::kodeGugur());
+                $sqlTalent = HasilKeputusan::sqlIn(HasilKeputusan::kodeTalent());
+                $sqlKeluar = HasilKeputusan::sqlIn(HasilKeputusan::kodeKeluar());
+
                 $stats = DB::table('N_WEB_CAREERS_Lamaran_Tahap as lt')
                     ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'lt.Lamaran_Id')
                     ->where('l.Program_Id', $programId)->where($sempit)
@@ -663,15 +671,30 @@ class MonitoringController extends Controller
                                  SUM(CASE WHEN lt.Status = 'BERJALAN' AND {$bukanDitahan} THEN 1 ELSE 0 END) as aktif,
                                  SUM(CASE WHEN lt.Status = 'BERJALAN' AND lt.Hold_Flag = 'Y' THEN 1 ELSE 0 END) as ditahan,
                                  SUM(CASE WHEN lt.Status = 'MENUNGGU' THEN 1 ELSE 0 END) as menunggu,
-                                 SUM(CASE WHEN lt.Hasil = 'LULUS' THEN 1 ELSE 0 END) as lulus,
-                                 SUM(CASE WHEN lt.Hasil = 'GUGUR' THEN 1 ELSE 0 END) as gugur,
-                                 SUM(CASE WHEN lt.Hasil = 'TALENT_POOL' THEN 1 ELSE 0 END) as talent,
+                                 SUM(CASE WHEN lt.Hasil IN ({$sqlLulus}) THEN 1 ELSE 0 END) as lulus,
+                                 SUM(CASE WHEN lt.Hasil IN ({$sqlGugur}) THEN 1 ELSE 0 END) as gugur,
+                                 SUM(CASE WHEN lt.Hasil IN ({$sqlTalent}) THEN 1 ELSE 0 END) as talent,
+                                 SUM(CASE WHEN lt.Hasil IN ({$sqlKeluar}) THEN 1 ELSE 0 END) as keluar,
                                  SUM(CASE WHEN lt.Status = 'BERJALAN' AND {$bukanDitahan} AND lt.Siap_Diputus = 'Y' THEN 1 ELSE 0 END) as siapDiputus,
                                  SUM(CASE WHEN lt.Status = 'BERJALAN' AND {$bukanDitahan} AND {$agingSql} > {$macetHari} THEN 1 ELSE 0 END) as macet,
                                  AVG(CASE WHEN lt.Status = 'BERJALAN' THEN {$agingSql} * 1.0 END) as avgAging,
                                  MAX(CASE WHEN lt.Status = 'BERJALAN' THEN {$agingSql} END) as maxAging,
                                  AVG(CASE WHEN lt.Skor IS NOT NULL THEN lt.Skor END) as avgSkor")
                     ->first();
+
+                // 1b) Rincian bucket Keluar per kode. Papan hanya menampilkan
+                //     angka gabungan; panel inilah yang menjawab "keluar karena
+                //     apa" — mengundurkan diri dan menolak penawaran menuntut
+                //     tindak lanjut yang berbeda.
+                $rincianKeluar = HasilKeputusan::kodeKeluar()
+                    ? DB::table('N_WEB_CAREERS_Lamaran_Tahap as lt')
+                        ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'lt.Lamaran_Id')
+                        ->where('l.Program_Id', $programId)->where($sempit)
+                        ->whereIn('lt.Hasil', HasilKeputusan::kodeKeluar())
+                        ->groupBy('lt.Hasil')
+                        ->selectRaw('lt.Hasil as kode, COUNT(*) as jml')
+                        ->get()
+                    : collect();
 
                 // 2) Rapor sub-tes agregat per jenis tes pada tahap ini.
                 $subtes = DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes as tt')
@@ -732,7 +755,7 @@ class MonitoringController extends Controller
                         ->get()->keyBy('Penjadwalan_Tahap_Id')
                     : collect();
 
-                return compact('stats', 'subtes', 'belumSubmit', 'jadwal', 'pesertaPer');
+                return compact('stats', 'rincianKeluar', 'subtes', 'belumSubmit', 'jadwal', 'pesertaPer');
             });
 
             $s = $data['stats'];
@@ -747,15 +770,28 @@ class MonitoringController extends Controller
                     'lulus' => (int) ($s->lulus ?? 0),
                     'gugur' => (int) ($s->gugur ?? 0),
                     'talent' => (int) ($s->talent ?? 0),
+                    'keluar' => (int) ($s->keluar ?? 0),
                     'siapDiputus' => (int) ($s->siapDiputus ?? 0),
                     'macet' => (int) ($s->macet ?? 0),
                     'avgAging' => $s && $s->avgAging !== null ? round((float) $s->avgAging, 1) : null,
                     'maxAging' => $s && $s->maxAging !== null ? (int) $s->maxAging : null,
                     'avgSkor' => $s && $s->avgSkor !== null ? round((float) $s->avgSkor, 1) : null,
+                    // `keluar` SENGAJA di luar penyebut: konversi mengukur
+                    // seberapa sering KITA meloloskan, dan kandidat yang mundur
+                    // sendiri tidak pernah kita nilai. Memasukkannya akan
+                    // menurunkan angka konversi karena keputusan orang lain.
                     'konversi' => ($s && ($s->lulus + $s->gugur) > 0)
                         ? round($s->lulus * 100 / ($s->lulus + $s->gugur))
                         : null,
                 ],
+                // Rincian "keluar karena apa" — mundur dan menolak penawaran
+                // menuntut tindak lanjut yang berbeda.
+                'rincianKeluar' => $data['rincianKeluar']->map(fn ($r) => [
+                    'kode' => $r->kode,
+                    'nama' => HasilKeputusan::peta()[$r->kode]['nama'] ?? $r->kode,
+                    'warna' => HasilKeputusan::peta()[$r->kode]['warna'] ?? null,
+                    'jml' => (int) $r->jml,
+                ])->values(),
                 'subtes' => $data['subtes']->map(fn ($t) => [
                     'label' => $t->Label,
                     'peran' => $t->Peran,
