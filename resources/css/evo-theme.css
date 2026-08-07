@@ -9645,6 +9645,9 @@ h6,
     transition:
         border-color 0.15s ease,
         background 0.15s ease;
+    --el-checkbox-checked-bg-color: var(--primary, #6366f1);
+    --el-checkbox-checked-input-border-color: var(--primary, #6366f1);
+    --el-checkbox-input-border-color-hover: var(--primary, #6366f1);
 }
 .el-checkbox.wca-chk:hover {
     border-color: rgba(99, 102, 241, 0.35);
@@ -9652,6 +9655,14 @@ h6,
 .el-checkbox.wca-chk.is-checked {
     border-color: rgba(99, 102, 241, 0.45);
     background: rgba(99, 102, 241, 0.06);
+}
+.el-checkbox.wca-chk .el-checkbox__input.is-checked .el-checkbox__inner {
+    background-color: var(--primary, #6366f1) !important;
+    border-color: var(--primary, #6366f1) !important;
+}
+.el-checkbox.wca-chk .el-checkbox__input.is-focus .el-checkbox__inner,
+.el-checkbox.wca-chk .el-checkbox__input:hover .el-checkbox__inner {
+    border-color: var(--primary, #6366f1) !important;
 }
 .el-checkbox.wca-chk .el-checkbox__input {
     margin-top: 0.1rem;
