@@ -1080,7 +1080,7 @@ class LamaranController extends Controller
                     $b = $berkas->firstWhere('field', $k);
                     // Satu aturan untuk seluruh bentuk jawaban — termasuk field
                     // berulang yang dulu menjatuhkan halaman ini. Lihat nilaiIsian().
-                    $isi = self::nilaiIsian($v);
+                    $isi = self::nilaiIsian($v, 0, self::pencariBerkas($berkas));
 
                     return [
                         'key' => $k,
@@ -1091,6 +1091,7 @@ class LamaranController extends Controller
                             'field' => $b['field'],
                             'nama' => $b['nama'],
                             'url' => $b['url'],
+                            'ext' => $b['ext'],
                             'isImage' => $b['isImage'],
                             'isPdf' => $b['isPdf'],
                         ] : null,
@@ -1126,11 +1127,52 @@ class LamaranController extends Controller
      * yang satu diperbaiki, yang lain tertinggal, dan selisihnya baru ketahuan
      * saat ada yang membandingkan dua layar itu berdampingan.
      *
+     * ══ BERKAS DI DALAM BARIS BERULANG ══
+     *
+     * Satu sub-isian bisa berupa UNGGAHAN, bukan teks — `sert_file` pada
+     * riwayat sertifikasi yang paling sering. Yang tersimpan di Jawaban_Json
+     * cuma NAMA berkasnya ("LMR-9XWXPWWC-menyala-bosku-18.pdf"), sedangkan
+     * berkas sungguhannya hidup di N_WEB_CAREERS_Formulir_Berkas dengan
+     * Field_Key sub-isian itu.
+     *
+     * Tanpa `$cariBerkas`, nama itu tampil sebagai teks mati: peninjau melihat
+     * ada sertifikat tapi tidak bisa membukanya, dan berkasnya terlempar ke
+     * daftar terpisah yang berjudul nama file — persis masalah yang sudah
+     * diperbaiki untuk KTP/CV di tingkat atas, tapi masih tersisa satu tingkat
+     * di dalam.
+     *
+     * @param  ?\Closure  $cariBerkas  fn(string $kunci): ?array — berkas untuk
+     *         satu sub-isian, atau null bila sub-isian itu memang teks biasa.
      * @return array{nilai: string, baris: array} `baris` hanya terisi untuk
      *         field berulang, supaya layar bisa menampilkannya sebagai daftar
      *         alih-alih satu paragraf panjang.
      */
-    private static function nilaiIsian(mixed $v, int $dalam = 0): array
+    /**
+     * Pencari berkas per kunci isian, dipakai nilaiIsian() untuk sub-isian
+     * berulang.
+     *
+     * Hanya bentuk RINGKAS yang dikembalikan — yang benar-benar dipakai layar
+     * untuk menggambar tombol "Lihat Berkas". Ukuran & status verifikasi tidak
+     * ikut: keduanya milik daftar berkas utuh, dan mengulangnya di tiap baris
+     * riwayat cuma menggandakan muatan tanpa ada yang membacanya.
+     */
+    private static function pencariBerkas(\Illuminate\Support\Collection $berkas): \Closure
+    {
+        return static function (string $kunci) use ($berkas): ?array {
+            $b = $berkas->firstWhere('field', $kunci);
+
+            return $b ? [
+                'field' => $b['field'],
+                'nama' => $b['nama'],
+                'url' => $b['url'],
+                'ext' => $b['ext'],
+                'isImage' => $b['isImage'],
+                'isPdf' => $b['isPdf'],
+            ] : null;
+        };
+    }
+
+    private static function nilaiIsian(mixed $v, int $dalam = 0, ?\Closure $cariBerkas = null): array
     {
         if ($v === null) {
             return ['nilai' => '', 'baris' => []];
@@ -1212,6 +1254,11 @@ class LamaranController extends Controller
                 $pasangan[] = [
                     'label' => ucwords(str_replace(['_', '-'], ' ', $nama)),
                     'nilai' => $t,
+                    // Sub-isian yang ternyata UNGGAHAN dibawa berikut url-nya.
+                    // Kuncinya dicari APA ADANYA (`sert_file`), bukan yang sudah
+                    // dipangkas awalan — Field_Key di tabel berkas menyimpan
+                    // bentuk penuhnya.
+                    'berkas' => $cariBerkas ? $cariBerkas((string) $k) : null,
                 ];
             }
 
@@ -5821,7 +5868,7 @@ class LamaranController extends Controller
                     $b = $berkas->firstWhere('field', $k);
                     // Aturan yang SAMA PERSIS dengan layar kandidat — satu
                     // sumber, bukan dua salinan. Lihat nilaiIsian().
-                    $isi = self::nilaiIsian($v);
+                    $isi = self::nilaiIsian($v, 0, self::pencariBerkas($berkas));
 
                     return [
                         'key' => $k,
