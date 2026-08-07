@@ -17,22 +17,29 @@ use Illuminate\Support\Collection;
 class PipelineProgress
 {
     /**
-     * Tahap yang MEWAKILI lamaran pada papan/funnel:
-     *  - GUGUR       → tahap tempat ia gugur (tetap "di loop" tahap itu)
-     *  - TALENT_POOL → tahap tempat ia dimasukkan pool
-     *  - LULUS       → tahap terakhir
-     *  - lainnya     → tahap yang sedang BERJALAN (fallback tahap pertama)
+     * Tahap yang MEWAKILI lamaran pada papan/funnel — cerminan PHP dari
+     * MetrikRekrutmen::sqlUrutanDisplay(). Keduanya WAJIB sepakat: papan
+     * memakai yang ini, funnel memakai yang SQL. Aturannya dari FLAG master
+     * (lihat HasilKeputusan), bukan daftar kode:
+     *  - Flag_Lolos='Y' → tahap terakhir
+     *  - terminal lain  → tahap tempat keputusannya dicatat (Hasil = Status),
+     *                     fallback tahap terakhir
+     *  - lainnya        → tahap yang sedang BERJALAN (fallback tahap pertama)
+     *
+     * Dulu hanya GUGUR/TALENT_POOL/LULUS yang dikenali; outcome lain jatuh ke
+     * baris terakhir dan berhenti di tahap PERTAMA, karena kandidat terminal
+     * tak punya tahap BERJALAN.
      */
     public static function tahapKini(object $l, Collection $tahapList): ?object
     {
-        if ($l->Status === 'GUGUR') {
-            return $tahapList->firstWhere('Hasil', 'GUGUR') ?? $tahapList->last();
-        }
-        if ($l->Status === 'TALENT_POOL') {
-            return $tahapList->firstWhere('Hasil', 'TALENT_POOL') ?? $tahapList->last();
-        }
-        if ($l->Status === 'LULUS') {
-            return $tahapList->last();
+        $def = HasilKeputusan::semua()->get($l->Status);
+
+        if ($def) {
+            if (($def->Flag_Lolos ?? 'T') === 'Y') {
+                return $tahapList->last();
+            }
+
+            return $tahapList->firstWhere('Hasil', $l->Status) ?? $tahapList->last();
         }
 
         return $tahapList->firstWhere('Status', 'BERJALAN') ?? $tahapList->first();
@@ -123,13 +130,13 @@ class PipelineProgress
             if ($gagal) {
                 $hasilData = 'GAGAL';
                 $nama = implode(', ', array_map(fn ($s) => $s->Label ?? 'tes', $gagal));
-                $ringkasHasil = 'Data menyatakan TIDAK LULUS pada: ' . $nama . '.';
+                $ringkasHasil = 'Data menyatakan TIDAK LULUS pada: '.$nama.'.';
             } elseif ($lulus && $semuaFinal) {
                 $hasilData = 'LULUS';
                 $ringkasHasil = 'Seluruh tes penentu sudah selesai dan LULUS — tinggal dikonfirmasi.';
             } elseif ($lulus) {
                 $hasilData = 'SEBAGIAN';
-                $ringkasHasil = 'Sebagian tes penentu sudah lulus; ' . $belumTercatat . ' aktivitas lagi menunggu hasil.';
+                $ringkasHasil = 'Sebagian tes penentu sudah lulus; '.$belumTercatat.' aktivitas lagi menunggu hasil.';
             }
         }
 
@@ -179,18 +186,28 @@ class PipelineProgress
     /** Badge "lampu lalu lintas" kartu/baris pelamar. */
     public static function badge(object $l, array $state, ?object $tAktif): array
     {
-        if ($l->Status === 'GUGUR') {
-            return ['tone' => 'gugur', 'teks' => 'Tidak Lolos'];
+        // Outcome terminal dibaca dari master: teksnya nama resmi keputusan,
+        // tone-nya bucket funnel yang sama dengan yang dipakai papan. Dulu di
+        // sini hanya ada GUGUR dan TALENT_POOL, sehingga kandidat yang mundur
+        // atau menolak penawaran lolos sampai ke baris terakhir method ini dan
+        // dilabeli "Berjalan" — persis kebalikan dari keadaannya.
+        //
+        // LULUS sengaja TIDAK ikut di sini: ia punya dua bunyi (Diterima vs
+        // Proses Administrasi) yang bergantung pada ada tidaknya tahap aktif.
+        $def = HasilKeputusan::semua()->get($l->Status);
+        if ($def && ($def->Flag_Lolos ?? 'T') !== 'Y' && empty($state['ditahan'])) {
+            return [
+                'tone' => HasilKeputusan::bucket($l->Status) ?? 'gugur',
+                'teks' => $def->Nama ?? $l->Status,
+            ];
         }
-        if ($l->Status === 'TALENT_POOL') {
-            return ['tone' => 'talent', 'teks' => 'Talent Pool'];
-        }
+
         // DITAHAN mendahului LULUS/pasca-penerimaan — keputusan produk: HOLD
         // selalu menang. Kandidat yang sudah diterima tapi tahap administratifnya
         // (kontrak, onboarding) sedang ditahan tetap tampil "Ditahan", bukan
         // "Proses Administrasi" — sampai penahanannya dilepas.
         if (! empty($state['ditahan'])) {
-            return ['tone' => 'hold', 'teks' => $state['holdNama'] ? 'Ditahan — ' . $state['holdNama'] : 'Ditahan'];
+            return ['tone' => 'hold', 'teks' => $state['holdNama'] ? 'Ditahan — '.$state['holdNama'] : 'Ditahan'];
         }
         if ($l->Status === 'LULUS') {
             // DITERIMA tidak selalu berarti TUNTAS SELURUH TAHAP. Bila masih

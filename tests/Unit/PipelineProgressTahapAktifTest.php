@@ -2,12 +2,58 @@
 
 namespace Tests\Unit;
 
+use App\Support\Career\HasilKeputusan;
 use App\Support\Career\PipelineProgress;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Collection;
-use PHPUnit\Framework\TestCase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use Tests\TestCase;
 
+/**
+ * Dulu ini test murni (PHPUnit\Framework\TestCase, tanpa Laravel). badge()
+ * kini membaca daftar outcome dari master lewat HasilKeputusan, jadi facade DB
+ * harus hidup. Master sengaja TIDAK di-mock: yang diuji justru bahwa aturannya
+ * benar-benar mengikuti baris master, bukan daftar kode yang ditulis mati.
+ */
 class PipelineProgressTahapAktifTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        config([
+            'database.default' => 'sqlite',
+            'database.connections.sqlite.database' => ':memory:',
+        ]);
+
+        Schema::create('N_WEB_CAREERS_Master_Hasil_Keputusan', function (Blueprint $t) {
+            $t->increments('Id_Master_Hasil_Keputusan');
+            $t->string('Kode');
+            $t->string('Nama');
+            $t->string('Flag_Lolos')->default('T');
+            $t->string('Flag_Oleh_Kandidat')->default('T');
+            $t->string('Flag_Talent_Pool')->default('T');
+            $t->string('Flag_Potong_Kuota')->default('T');
+            $t->string('Flag_Aktif')->default('Y');
+            $t->integer('Urutan')->default(1);
+        });
+
+        DB::table('N_WEB_CAREERS_Master_Hasil_Keputusan')->insert([
+            ['Kode' => 'LULUS', 'Nama' => 'Lolos', 'Flag_Lolos' => 'Y', 'Flag_Oleh_Kandidat' => 'T', 'Flag_Talent_Pool' => 'T', 'Flag_Potong_Kuota' => 'Y', 'Flag_Aktif' => 'Y', 'Urutan' => 1],
+            ['Kode' => 'GUGUR', 'Nama' => 'Tidak Lolos', 'Flag_Lolos' => 'T', 'Flag_Oleh_Kandidat' => 'T', 'Flag_Talent_Pool' => 'T', 'Flag_Potong_Kuota' => 'T', 'Flag_Aktif' => 'Y', 'Urutan' => 2],
+            ['Kode' => 'TALENT_POOL', 'Nama' => 'Talent Pool', 'Flag_Lolos' => 'T', 'Flag_Oleh_Kandidat' => 'T', 'Flag_Talent_Pool' => 'Y', 'Flag_Potong_Kuota' => 'T', 'Flag_Aktif' => 'Y', 'Urutan' => 3],
+        ]);
+        HasilKeputusan::lupakanCache();
+    }
+
+    protected function tearDown(): void
+    {
+        HasilKeputusan::lupakanCache();
+        Schema::dropIfExists('N_WEB_CAREERS_Master_Hasil_Keputusan');
+        parent::tearDown();
+    }
+
     private function tahap(int $urutan, string $status, string $flagTuntas = 'T'): object
     {
         return (object) ['Id_Lamaran_Tahap' => $urutan, 'Urutan' => $urutan, 'Status' => $status, 'Flag_Tuntas' => $flagTuntas];
