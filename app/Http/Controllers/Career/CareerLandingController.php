@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Career;
 
 use App\Http\Controllers\Controller;
+use App\Support\Career\KatalogPrefill;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -199,21 +200,21 @@ class CareerLandingController extends Controller
         // disimpan saat login hanya id/nama/email/role/klasifikasi, sehingga
         // `session('career_auth.hp')` selalu null dan kolomnya tampak kosong
         // padahal datanya ada sejak kandidat mendaftar.
-        $kandidat = [
+        //
+        // Bentuknya disaring lewat KatalogPrefill supaya kunci yang ditawarkan
+        // ke admin di Master Formulir dan kunci yang benar-benar dikirim ke sini
+        // tidak bisa berbeda. `posisi` tidak diisi di sini — ApplyForm.vue
+        // menambahkannya dari kartu lowongan yang sedang dibuka.
+        $akun = $userId
+            ? DB::table('N_WEB_CAREERS_Users')->where('Id_Users', $userId)->first(['No_Hp', 'NIK'])
+            : null;
+
+        $kandidat = KatalogPrefill::saring(KatalogPrefill::PENDAFTARAN, [
             'nama' => session('career_auth.nama'),
             'email' => session('career_auth.email'),
-            'hp' => null,
-            'nik' => null,
-        ];
-        if ($userId) {
-            $akun = DB::table('N_WEB_CAREERS_Users')
-                ->where('Id_Users', $userId)
-                ->first(['No_Hp', 'NIK']);
-            if ($akun) {
-                $kandidat['hp'] = $akun->No_Hp;
-                $kandidat['nik'] = $akun->NIK;
-            }
-        }
+            'hp' => $akun->No_Hp ?? null,
+            'nik' => $akun->NIK ?? null,
+        ]);
 
         $kelayakan = ['boleh' => true, 'alasan' => null, 'kode' => null];
         $sudahLamar = null;
