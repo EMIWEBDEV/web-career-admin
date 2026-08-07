@@ -188,10 +188,31 @@ export function skemaKosong() {
     };
 }
 
-export function validasiSkema(skema) {
+/**
+ * Validasi skema sebelum disimpan/dipublish.
+ *
+ * @param {object} skema
+ * @param {object} [opsi]
+ * @param {string[]} [opsi.kunciPrefill] daftar kunci isi-otomatis yang tersedia
+ *        untuk konteks formulir ini. Bila tidak diberikan, pemeriksaan kunci
+ *        DILEWATI — skema bawaan di registry tidak tahu konteks pemakaiannya,
+ *        dan menolaknya di sana hanya akan memblokir uji tanpa alasan.
+ * @returns {{ ok: boolean, errors: string[], peringatan: string[], skema: object }}
+ */
+export function validasiSkema(skema, opsi = {}) {
     const s = normalisasiSkema(skema);
     const errors = [];
+    const peringatan = [];
     if (!s.langkah.length) errors.push('Minimal harus ada satu langkah.');
+
+    const posisi = new Map();
+    let urut = 0;
+    s.langkah.forEach((L) => L.bagian.forEach((B) => B.field.forEach((F) => {
+        if (F.key && !posisi.has(F.key)) posisi.set(F.key, urut);
+        urut++;
+    })));
+
+    const kunciPrefill = Array.isArray(opsi.kunciPrefill) ? new Set(opsi.kunciPrefill) : null;
 
     const keys = new Set();
     const ids = new Set();
@@ -208,15 +229,72 @@ export function validasiSkema(skema) {
                 if (!F.field_id) errors.push(`Field "${F.label}" belum punya ID sistem.`);
                 if (ids.has(F.field_id)) errors.push(`ID sistem field "${F.label}" terduplikasi.`);
                 ids.add(F.field_id);
-                if (['select', 'radio', 'checkbox'].includes(F.tipe) && !F.opsi.length) {
-                    errors.push(`Field "${F.label}" membutuhkan minimal satu opsi.`);
+
+                const gTipe = galatTipe(F);
+                if (gTipe) errors.push(`Field "${F.label}": ${gTipe}`);
+
+                errors.push(...galatRujukan(F, posisi));
+
+                if (kunciPrefill && F.prefill && !kunciPrefill.has(F.prefill)) {
+                    errors.push(
+                        `Field "${F.label}" mengisi otomatis dari "${F.prefill}", yang tidak tersedia untuk konteks formulir ini.`,
+                    );
                 }
-                if (F.tipe === 'file' && !F.accept) {
-                    errors.push(`Field "${F.label}" perlu aturan tipe file.`);
+
+                // Peringatan, bukan galat: formulirnya tetap sah. Yang hilang
+                // hanya pengenalannya sebagai foto verifikasi oleh LamaranService,
+                // halaman Pelamar, dan Detail Lamaran — ketiganya mencari key
+                // `foto_verifikasi` secara harfiah.
+                if (F.tipe === 'foto' && F.key !== 'foto_verifikasi') {
+                    peringatan.push(
+                        `Field "${F.label}" memakai key "${F.key}". Foto hanya dikenali sebagai foto verifikasi identitas bila key-nya "foto_verifikasi".`,
+                    );
                 }
             });
         });
     });
 
-    return { ok: errors.length === 0, errors, skema: s };
+    return { ok: errors.length === 0, errors, peringatan, skema: s };
+}
+
+/**
+ * Rujukan ke field lain: tampil_jika, beda_dengan, reset_anak, bergantung, saring.
+ *
+ * Dua kesalahan yang dijaring:
+ *
+ *   1. Menunjuk key yang tidak ada. Syaratnya diam-diam tidak pernah terpenuhi,
+ *      dan field-nya tidak pernah muncul — tanpa pesan galat apa pun.
+ *   2. `tampil_jika` menunjuk field yang letaknya SESUDAH field ini. Pada layout
+ *      bertahap acuannya berada di langkah yang belum dibuka saat field ini
+ *      dinilai, jadi syaratnya mustahil terpenuhi. `lebar_jika` sengaja TIDAK
+ *      ikut aturan ini: pemakaian utamanya justru mengacu dirinya sendiri —
+ *      sebuah field menyusut ketika jawabannya sendiri memunculkan field
+ *      pendamping di sebelahnya.
+ */
+function galatRujukan(F, posisi) {
+    const out = [];
+    const ada = (key, dari) => {
+        if (!key) return;
+        if (!posisi.has(key)) {
+            out.push(`Field "${F.label}" (${dari}) menunjuk key "${key}" yang tidak ada di formulir ini.`);
+        }
+    };
+
+    const acuan = F.tampil_jika?.field;
+    if (acuan) {
+        if (!posisi.has(acuan)) {
+            out.push(`Field "${F.label}" (tampil jika) menunjuk key "${acuan}" yang tidak ada di formulir ini.`);
+        } else if (posisi.get(acuan) >= posisi.get(F.key)) {
+            out.push(
+                `Field "${F.label}" bersyarat pada "${acuan}", yang letaknya sesudah field ini — syaratnya tidak akan pernah terpenuhi.`,
+            );
+        }
+    }
+
+    ada(F.beda_dengan, 'beda dengan');
+    (Array.isArray(F.reset_anak) ? F.reset_anak : []).forEach((k) => ada(k, 'reset anak'));
+    Object.values(F.bergantung || {}).forEach((k) => ada(k, 'bergantung'));
+    Object.values(F.saring || {}).forEach((k) => ada(k, 'saring'));
+
+    return out;
 }
