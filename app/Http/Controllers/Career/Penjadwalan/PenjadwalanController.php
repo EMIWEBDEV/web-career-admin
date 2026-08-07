@@ -671,6 +671,12 @@ class PenjadwalanController extends Controller
                 'peserta.*' => 'required|string|max:20',
             ], [
                 'tahapUrutan.required' => 'Pilih dulu tes/tahap yang mau dijadwalkan.',
+                // Pesan bawaan Laravel menyebut nama field mentah ("waktuAkhir
+                // harus setelah waktuMulai") — bahasa mesin di layar admin.
+                // Dua endpoint pengubahan jadwal sudah punya pesan ini; yang
+                // pembuatan tertinggal, padahal justru di sinilah jendela
+                // terbalik paling sering lahir.
+                'waktuAkhir.after' => 'Waktu berakhir harus setelah waktu mulai.',
             ]);
 
             $program = DB::table('N_WEB_CAREERS_Program')->where('Id_Program', $data['programId'])->first();

@@ -186,6 +186,12 @@
                             </div>
                             <div>
                                 <label class="pjd-lbl">Waktu Berakhir</label>
+                                <!-- disabled-date memadamkan seluruh TANGGAL sebelum
+                                     hari mulai, jadi jendela terbalik tidak bisa
+                                     dipilih sejak dari kalendernya. Panel JAM tidak
+                                     ikut terkunci Element Plus — untuk itu ada
+                                     jendelaSalah di bawah, yang menangkap kasus
+                                     "hari sama, jam mundur". -->
                                 <el-date-picker
                                     v-model="form.waktuAkhir"
                                     type="datetime"
@@ -193,8 +199,22 @@
                                     format="DD MMM YYYY HH:mm"
                                     value-format="YYYY-MM-DD HH:mm:ss"
                                     :default-time="jamAkhirBawaan"
+                                    :disabled-date="(d) => sebelumHari(d, form.waktuMulai)"
                                     class="pjd-date"
                                 />
+                            </div>
+                        </div>
+
+                        <!-- Jendela terbalik. Ditahan DI SINI, bukan dibiarkan
+                             sampai server: admin sudah mencentang puluhan kandidat
+                             saat menekan Generate, dan penolakan di ujung jalan
+                             berarti ia mengulang seluruh pemilihan itu. -->
+                        <div v-if="jendelaSalah" class="pjd-warn">
+                            <i class="bi bi-exclamation-triangle-fill"></i>
+                            <div>
+                                <b>Waktu berakhir tidak boleh sebelum waktu mulai.</b>
+                                Sekarang terbaca {{ fmtWaktu(form.waktuMulai) }} → {{ fmtWaktu(form.waktuAkhir) }}.
+                                Perbaiki dulu salah satunya.
                             </div>
                         </div>
 
@@ -639,6 +659,7 @@
             icon="bi-calendar-event"
             save-label="Simpan Jadwal"
             :busy="editSibuk"
+            :save-disabled="editSalah"
             foot-note="Jendela ujian & token kandidat ini ikut diperbarui."
             @close="editTampil = false"
             @save="simpanEdit"
@@ -660,7 +681,12 @@
                 <label class="pjd-lbl">Waktu Mulai</label>
                 <el-date-picker v-model="editMulai" type="datetime" placeholder="Tanggal &amp; jam mulai" format="DD MMM YYYY HH:mm" value-format="YYYY-MM-DD HH:mm:ss" :default-time="jamMulaiBawaan" class="pjd-date" />
                 <label class="pjd-lbl pjd-lbl--gap">Waktu Berakhir</label>
-                <el-date-picker v-model="editAkhir" type="datetime" placeholder="Tanggal &amp; jam berakhir" format="DD MMM YYYY HH:mm" value-format="YYYY-MM-DD HH:mm:ss" :default-time="jamAkhirBawaan" class="pjd-date" />
+                <el-date-picker v-model="editAkhir" type="datetime" placeholder="Tanggal &amp; jam berakhir" format="DD MMM YYYY HH:mm" value-format="YYYY-MM-DD HH:mm:ss" :default-time="jamAkhirBawaan" :disabled-date="(d) => sebelumHari(d, editMulai)" class="pjd-date" />
+
+                <div v-if="editSalah" class="pjd-warn pjd-warn--gap">
+                    <i class="bi bi-exclamation-triangle-fill"></i>
+                    <div><b>Waktu berakhir tidak boleh sebelum waktu mulai.</b> Perbaiki dulu sebelum menyimpan.</div>
+                </div>
             </div>
         </AdminModal>
 
@@ -767,8 +793,27 @@ export default {
         sebagianTercentang() {
             return this.form.peserta.length > 0 && !this.semuaTercentang;
         },
+        /**
+         * Jendela ujian TERBALIK — berakhir sebelum (atau tepat saat) mulai.
+         *
+         * Server sudah menolaknya (`after:waktuMulai`), tapi penolakan itu baru
+         * datang setelah admin memilih paket, mengisi waktu, DAN mencentang
+         * kandidatnya. Ditahan di layar, kesalahannya terbaca di detik yang sama
+         * saat dibuat.
+         *
+         * Sama juga ditolak: mulai == berakhir. Jendela berdurasi nol berarti
+         * token terbit untuk tes yang tidak pernah bisa dibuka.
+         */
+        jendelaSalah() {
+            return this.terbalik(this.form.waktuMulai, this.form.waktuAkhir);
+        },
+        editSalah() {
+            return this.terbalik(this.editMulai, this.editAkhir);
+        },
         bisaGenerate() {
             const f = this.form;
+            if (this.jendelaSalah) return false;
+
             return !!(f.programId && f.tahapUrutan && f.idMasterUjian && f.waktuMulai && f.waktuAkhir && f.peserta.length);
         },
         labelGenerate() {
@@ -793,6 +838,21 @@ export default {
         // Jumlah kandidat berubah (ganti tahap / cari) → jangan tertinggal di
         // halaman yang sudah tidak ada isinya.
         'kandidat.length'() { this.kandPage = 1; },
+        /**
+         * Menggeser waktu MULAI melewati waktu berakhir mengosongkan yang
+         * berakhir, bukan membiarkannya jadi jendela terbalik.
+         *
+         * Urutan isian di lapangan hampir selalu mulai → berakhir, lalu mulai
+         * digeser lagi karena ruangannya pindah hari. Membiarkan nilai lama
+         * bertahan berarti admin harus INGAT untuk membetulkannya; mengosongkan
+         * membuat kolomnya menagih sendiri.
+         */
+        'form.waktuMulai'() {
+            if (this.jendelaSalah) this.form.waktuAkhir = '';
+        },
+        editMulai() {
+            if (this.editSalah) this.editAkhir = '';
+        },
     },
     beforeUnmount() {
         // Pewaktu penutupan kredensial jangan menyala setelah halaman ditinggal.
@@ -1004,6 +1064,13 @@ export default {
             }
         },
         async simpan() {
+            // Pagar terakhir di layar. Tombolnya memang sudah mati saat jendela
+            // terbalik, tapi simpan() juga terpanggil dari jalur lain.
+            if (this.jendelaSalah) {
+                this.beritahu('Waktu berakhir harus setelah waktu mulai.', 'error');
+
+                return;
+            }
             this.menyimpan = true;
             try {
                 const res = await axios.post('/api/v1/penjadwalan', this.form, { headers: { Accept: 'application/json' } });
@@ -1172,10 +1239,47 @@ export default {
             if (!v) return '';
             return String(v).replace('T', ' ').slice(0, 19);
         },
+        /** 'YYYY-MM-DD HH:mm:ss' → Date, atau null bila tak terbaca. */
+        keTanggal(v) {
+            if (!v) return null;
+            const d = new Date(String(v).replace(' ', 'T'));
+
+            return Number.isNaN(d.getTime()) ? null : d;
+        },
+        /**
+         * Jendela terbalik? Hanya menilai bila KEDUANYA sudah terisi — selama
+         * salah satunya kosong yang berlaku adalah "belum lengkap", bukan
+         * "salah", dan peringatan merah untuk kolom yang belum disentuh cuma
+         * mengganggu.
+         */
+        terbalik(mulai, akhir) {
+            const a = this.keTanggal(mulai);
+            const b = this.keTanggal(akhir);
+
+            return !!(a && b) && b.getTime() <= a.getTime();
+        },
+        /**
+         * Sel kalender yang harus padam di pemilih "Waktu Berakhir": seluruh
+         * HARI sebelum hari mulai. Element Plus memberi Date di 00:00 tiap sel,
+         * jadi pembandingnya pun dipangkas ke awal hari — kalau tidak, memilih
+         * mulai 17:00 akan ikut memadamkan hari yang sama.
+         */
+        sebelumHari(sel, mulai) {
+            const a = this.keTanggal(mulai);
+            if (!a || !sel) return false;
+            const awal = new Date(a.getFullYear(), a.getMonth(), a.getDate()).getTime();
+
+            return sel.getTime() < awal;
+        },
         async simpanEdit() {
             if (this.editSibuk || !this.editTarget) return;
             if (!this.editMulai || !this.editAkhir) {
                 this.beritahu('Isi waktu mulai dan waktu berakhir dulu.', 'error');
+
+                return;
+            }
+            if (this.editSalah) {
+                this.beritahu('Waktu berakhir harus setelah waktu mulai.', 'error');
 
                 return;
             }
@@ -1325,6 +1429,13 @@ export default {
 
 .pjd-lock { display: flex; gap: 12px; padding: 13px 15px; border-radius: 15px; background: linear-gradient(135deg, #fffdf7, #fff8ec); border: 1px solid #f2e4c4; font-size: 12.5px; line-height: 1.55; color: #8a6d29; }
 .pjd-lock b { color: #92660a; }
+
+/* Jendela terbalik — merah, bukan kuning seperti pjd-lock: yang satu
+   keterangan, yang ini penghalang. Warnanya harus membedakan keduanya. */
+.pjd-warn { display: flex; gap: 11px; align-items: flex-start; margin-top: 12px; padding: 11px 14px; border-radius: 14px; background: #fef2f2; border: 1px solid #fecaca; font-size: 12.5px; line-height: 1.55; color: #9f1239; }
+.pjd-warn--gap { margin-top: 14px; }
+.pjd-warn .bi { flex: none; margin-top: 1px; font-size: 15px; color: #e11d48; }
+.pjd-warn b { display: block; color: #881337; }
 .pjd-lock__ico { width: 32px; height: 32px; border-radius: 10px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #fbbf24, #f59e0b); color: #fff; }
 
 .pjd-gen { appearance: none; font-family: inherit; width: 100%; font-size: 14px; font-weight: 800; padding: 14px; border-radius: 14px; border: none; display: inline-flex; align-items: center; justify-content: center; gap: 9px; cursor: pointer; color: #fff; background: linear-gradient(135deg, #8b5cf6, #6366f1); box-shadow: 0 14px 32px rgba(99, 102, 241, .34); transition: all .18s; }

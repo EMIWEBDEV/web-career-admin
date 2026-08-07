@@ -83,6 +83,16 @@ class TalentPoolController extends Controller
                 'skor' => $data->orderByDesc('tp.Skor'),
                 'kedaluwarsa' => $data->orderBy('tp.Tanggal_Kedaluwarsa'),
                 'nama' => $data->orderBy('u.Nama'),
+                // BERKAS TERLENGKAP — diurutkan di SERVER, bukan di layar.
+                // Mengurutkannya di klien hanya menata ulang 12 kartu yang
+                // kebetulan sedang terbuka, lalu menyebut hasilnya "terlengkap"
+                // — padahal yang paling lengkap bisa saja ada di halaman 7.
+                'berkas' => $data->orderByDesc(DB::raw(
+                    '(SELECT COUNT(*) FROM N_WEB_CAREERS_Formulir_Berkas fb
+                        JOIN N_WEB_CAREERS_Formulir_Pengisian fp
+                          ON fp.Id_Formulir_Pengisian = fb.Formulir_Pengisian_Id
+                       WHERE fp.Lamaran_Id = tp.Lamaran_Id)'
+                )),
                 default => $data->orderByDesc('tp.Id_Talent_Pool'),
             };
 
@@ -140,7 +150,15 @@ class TalentPoolController extends Controller
             'sisaHari' => $exp ? (int) $now->diffInDays($exp, false) : null,
             'kedaluwarsa' => $habis,
             'createdBy' => $r->Created_By ?: 'Sistem',
-            'createdAt' => $r->Created_At,
+            // DIRAPIKAN DI SINI, bukan di layar. Nilai mentah SQL Server ikut
+            // membawa pecahan detik ("2026-08-07 11:51:21.337") dan terbaca
+            // seperti data yang bocor dari dalam mesin.
+            'createdAt' => $r->Created_At
+                ? \Illuminate\Support\Carbon::parse($r->Created_At)->format('d M Y H:i')
+                : null,
+            // Bentuk mentah tetap ikut — dipakai layar untuk menghitung berapa
+            // lama kartu ini sudah menunggu di kolam.
+            'createdAtRaw' => $r->Created_At,
         ];
     }
 
@@ -264,6 +282,48 @@ class TalentPoolController extends Controller
             Log::channel('web_career')->error("Gagal ubah talent pool #{$id}: " . $e->getMessage());
 
             return ResponseHelper::error('Gagal memperbarui data', 500);
+        }
+    }
+
+    /**
+     * GET /talent-pool/{id}/detail — PROFIL LENGKAP satu kartu.
+     *
+     * Kartu di daftar sengaja tipis. Yang dibutuhkan rekruter sebelum menekan
+     * "Tarik" justru tiga hal yang tidak muat di sana: siapa orangnya, berkasnya
+     * lengkap atau belum, dan apa saja yang pernah ia lalui. Dibaca saat dibuka
+     * — bukan disalin ke kartu — supaya tidak ada data yang membeku.
+     */
+    public function detail($id)
+    {
+        try {
+            $realId = Hashids::decode($id)[0] ?? null;
+            if (! $realId) {
+                return ResponseHelper::error('Data tidak valid.', 422);
+            }
+
+            $kartu = DB::table('N_WEB_CAREERS_Talent_Pool as tp')
+                ->leftJoin('N_WEB_CAREERS_Users as u', 'u.Id_Users', '=', 'tp.Id_Users')
+                ->where('tp.Id_Talent_Pool', $realId)
+                ->select('tp.*', 'u.Nama as Kandidat', 'u.Email as KandidatEmail')
+                ->first();
+
+            if (! $kartu) {
+                return ResponseHelper::error('Kartu tidak ditemukan', 404);
+            }
+
+            $profil = \App\Support\Career\ProfilTalenta::rakit(
+                (int) $kartu->Lamaran_Id,
+                $kartu->Id_Users ? (int) $kartu->Id_Users : null
+            );
+
+            return ResponseHelper::success(array_merge(
+                $this->bentukKartu($kartu, now()),
+                $profil
+            ), 'Detail talenta dimuat');
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->error("Gagal memuat detail talent pool #{$id}: " . $e->getMessage());
+
+            return ResponseHelper::error('Gagal memuat detail talenta', 500);
         }
     }
 

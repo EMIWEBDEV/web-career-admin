@@ -83,6 +83,7 @@ class LaporanKandidat
         }
 
         $profil = LamaranService::dataKandidatEmail($lamaranId);
+        $foto = self::fotoKandidat($lamaranId, $profil['fotoPath'] ?? null);
 
         return [
             'kandidat' => [
@@ -111,7 +112,14 @@ class LaporanKandidat
                 // NULL bila memang tidak ada — dan tata letaknya menyesuaikan.
                 // Bingkai kosong berlabel "foto" pada dokumen yang dibaca
                 // direksi terbaca seperti berkas yang gagal dimuat.
-                'foto' => self::fotoKandidat($lamaranId, $profil['fotoPath'] ?? null),
+                //
+                // BENTUKNYA IKUT DIBAWA. Bingkai lingkaran hanya sah kalau
+                // fotonya benar-benar sudah dipotong lingkaran; kalau GD tidak
+                // tersedia dan yang tertanam masih persegi, cincin bulat justru
+                // memamerkan ketidakcocokannya — tata letak beralih ke bingkai
+                // persegi. Lihat fotoKandidat().
+                'foto' => $foto['uri'] ?? null,
+                'fotoBulat' => (bool) ($foto['bulat'] ?? false),
             ],
             'lamaran' => [
                 'program' => $lamaran->ProgramNama,
@@ -570,8 +578,11 @@ class LaporanKandidat
      * kamera — di dalam jawaban, tidak pernah singgah di tabel berkas.
      *
      * @param  ?string  $cadangan  path foto verifikasi yang sudah ditemukan pemanggil
+     * @return ?array{uri: string, bulat: bool}  `bulat` = sudah dipotong lingkaran;
+     *                                           bila false, tata letaknya WAJIB
+     *                                           memakai bingkai persegi.
      */
-    private static function fotoKandidat(int $lamaranId, ?string $cadangan): ?string
+    private static function fotoKandidat(int $lamaranId, ?string $cadangan): ?array
     {
         // DICOBA SATU PER SATU SAMPAI ADA YANG BENAR-BENAR TERBACA.
         //
@@ -581,8 +592,8 @@ class LaporanKandidat
         // kandidat", dokumennya terbit tanpa foto padahal foto verifikasinya
         // masih utuh — dan tak ada galat yang memberi tahu siapa pun.
         foreach (self::calonFoto($lamaranId, $cadangan) as $path) {
-            if ($uri = self::fotoDataUri($path)) {
-                return $uri;
+            if ($foto = self::fotoDataUri($path)) {
+                return $foto;
             }
         }
 
@@ -776,7 +787,7 @@ class LaporanKandidat
      * Kegagalan mengembalikan null, bukan melempar: laporan tanpa foto masih
      * berguna, laporan yang gagal terbit tidak.
      */
-    private static function fotoDataUri(?string $path): ?string
+    private static function fotoDataUri(?string $path): ?array
     {
         if (! $path) {
             return null;
@@ -793,8 +804,11 @@ class LaporanKandidat
             }
 
             $bytes = base64_decode(explode(',', $path, 2)[1] ?? '', true);
+            $bulat = $bytes !== false && $bytes !== '' ? self::bulatkan($bytes) : null;
 
-            return ($bytes !== false && $bytes !== '' ? self::bulatkan($bytes) : null) ?: $path;
+            return $bulat
+                ? ['uri' => $bulat, 'bulat' => true]
+                : ['uri' => $path, 'bulat' => false];
         }
 
         try {
@@ -812,13 +826,13 @@ class LaporanKandidat
             }
 
             if ($bulat = self::bulatkan($isi)) {
-                return $bulat;
+                return ['uri' => $bulat, 'bulat' => true];
             }
 
             $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION)) ?: 'jpg';
             $mime = $ext === 'png' ? 'image/png' : ($ext === 'webp' ? 'image/webp' : 'image/jpeg');
 
-            return 'data:' . $mime . ';base64,' . base64_encode($isi);
+            return ['uri' => 'data:' . $mime . ';base64,' . base64_encode($isi), 'bulat' => false];
         } catch (\Throwable $e) {
             Log::channel('web_career')->warning('[LAPORAN] foto verifikasi gagal dimuat: ' . $e->getMessage());
 
@@ -844,13 +858,31 @@ class LaporanKandidat
      */
     private static function bulatkan(string $isi): ?string
     {
+        // KEGAGALANNYA DICATAT, TIDAK DIAM-DIAM.
+        //
+        // Bentuk fotonya ditentukan di sini, dan kalau lolos tanpa suara satu-
+        // satunya petunjuk adalah pas foto persegi di dalam bingkai — yang
+        // terbaca sebagai salah rancang, bukan sebagai ekstensi yang hilang.
         if (! function_exists('imagecreatetruecolor') || ! function_exists('imagecreatefromstring')) {
+            Log::channel('web_career')->warning(
+                '[LAPORAN] GD tidak tersedia — pas foto tercetak PERSEGI. '
+                . 'Pasang ekstensi gd di lingkungan ini agar potongan bulatnya jalan.'
+            );
+
             return null;
         }
 
         try {
             $asli = @imagecreatefromstring($isi);
             if (! $asli) {
+                // Nyaris selalu format yang GD-nya dibangun tanpa dukungan itu
+                // (WEBP paling sering), bukan berkas rusak.
+                Log::channel('web_career')->warning(sprintf(
+                    '[LAPORAN] pas foto tak terbaca GD (%d KB, jenis: %s) — tercetak PERSEGI.',
+                    strlen($isi) / 1024,
+                    (@getimagesizefromstring($isi)['mime'] ?? null) ?: 'tidak dikenali'
+                ));
+
                 return null;
             }
 
@@ -872,22 +904,58 @@ class LaporanKandidat
             imagecopyresampled($keluar, $asli, 0, 0, $x, $y, $n, $n, $sisi, $sisi);
             imagedestroy($asli);
 
-            // Sudut di luar lingkaran dikembalikan jadi tembus pandang. Digambar
-            // per baris memakai persamaan lingkaran — imageellipse tidak bisa
-            // "menghapus" ke alfa, dan imageantialias tidak berlaku pada alfa.
+            // Di luar lingkaran dijadikan tembus pandang, dan tepinya dihaluskan.
+            // imageellipse tidak bisa "menghapus" ke alfa dan imageantialias
+            // tidak berlaku pada alfa, jadi dikerjakan per piksel.
+            //
+            // TIGA LAPIS, dari luar ke dalam:
+            //   • di luar jari-jari      → tembus pandang penuh
+            //   • pita selebar 1,2 px    → alfa sebanding jarak, supaya tepinya
+            //     tidak bergerigi. Dipotong per baris seperti sebelumnya, tepi
+            //     lingkarannya bertangga — dan pada cetakan itu terlihat.
+            //   • pita tipis di dalamnya → digelapkan samar sebagai GARIS TEPI.
+            //     Pas foto berlatar putih (dan itu mayoritas) kalau tidak diberi
+            //     garis akan menyatu dengan kertas: yang tampak cuma cincin emas
+            //     mengambang dengan wajah menggantung di tengahnya.
             imagealphablending($keluar, false);
-            $bening = imagecolorallocatealpha($keluar, 0, 0, 0, 127);
             $r = $n / 2;
+            $halus = 1.2;   // lebar pita penghalus (px)
+            $garis = 2.4;   // tebal garis tepi dalam (px)
+
             for ($by = 0; $by < $n; $by++) {
                 $dy = $by + 0.5 - $r;
-                $lebar = sqrt(max(0, $r * $r - $dy * $dy));
-                $kiri = (int) floor($r - $lebar);
-                $kanan = (int) ceil($r + $lebar);
-                if ($kiri > 0) {
-                    imagefilledrectangle($keluar, 0, $by, $kiri - 1, $by, $bening);
-                }
-                if ($kanan < $n) {
-                    imagefilledrectangle($keluar, $kanan, $by, $n - 1, $by, $bening);
+                for ($bx = 0; $bx < $n; $bx++) {
+                    $dx = $bx + 0.5 - $r;
+                    $d = sqrt($dx * $dx + $dy * $dy);
+
+                    if ($d <= $r - $halus - $garis) {
+                        continue;   // bagian dalam, biarkan apa adanya
+                    }
+
+                    if ($d >= $r) {
+                        imagesetpixel($keluar, $bx, $by, 0x7F000000);
+
+                        continue;
+                    }
+
+                    $c = imagecolorat($keluar, $bx, $by);
+                    $cr = ($c >> 16) & 0xFF;
+                    $cg = ($c >> 8) & 0xFF;
+                    $cb = $c & 0xFF;
+
+                    // Makin dekat tepi, makin gelap — 0 di pangkal pita, 0,22
+                    // tepat di tepi. Cukup untuk membatasi, terlalu tipis untuk
+                    // terbaca sebagai coretan.
+                    $pekat = 0.22 * min(1, max(0, ($d - ($r - $halus - $garis)) / $garis));
+                    $cr = (int) ($cr * (1 - $pekat) + 0x14 * $pekat);
+                    $cg = (int) ($cg * (1 - $pekat) + 0x17 * $pekat);
+                    $cb = (int) ($cb * (1 - $pekat) + 0x1F * $pekat);
+
+                    // Alfa hanya berlaku di pita terluar.
+                    $tutup = min(1, max(0, ($r - $d) / $halus));
+                    $a = (int) round(127 * (1 - $tutup));
+
+                    imagesetpixel($keluar, $bx, $by, ($a << 24) | ($cr << 16) | ($cg << 8) | $cb);
                 }
             }
             imagesavealpha($keluar, true);

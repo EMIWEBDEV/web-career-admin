@@ -309,11 +309,28 @@
         }
 
         .kepala .kanan { width: 1%; }
+        /* UKURANNYA UKURAN ISI, BUKAN UKURAN LUAR.
+           dompdf memakai `content-box` dan tidak mengenal `box-sizing`, jadi
+           126px di sini berarti KOTAK ISI 126px — sementara fotonya cuma 112px.
+           Selisih 14px itu jatuh semua ke kanan-bawah, dan lingkaran fotonya
+           duduk melenceng ke kiri-atas di dalam cincinnya. Dipatok 112px,
+           padding 3 + border 4 menumpuk jadi 126px total dan keduanya sepusat. */
         .cincin {
-            width: 126px; height: 126px; border-radius: 63px;
+            width: 112px; height: 112px; border-radius: 63px;
             border: 4px solid #c9a227; background: #ffffff; padding: 3px;
         }
         .cincin img { width: 112px; height: 112px; display: block; }
+
+        /* CADANGAN SAAT FOTONYA MASIH PERSEGI — lihat LaporanKandidat::bulatkan.
+           Pemotongan bulat butuh GD; kalau ekstensinya tidak ada, yang tertanam
+           foto asli apa adanya. Menyorongkannya ke dalam cincin bulat hanya
+           memamerkan sudut-sudut yang menyembul; bingkai persegi membuatnya
+           terbaca sebagai pilihan, bukan kegagalan. */
+        .bingkai {
+            width: 112px; height: 112px; border-radius: 10px;
+            border: 3px solid #c9a227; background: #ffffff; padding: 3px;
+        }
+        .bingkai img { width: 112px; height: 112px; display: block; }
         .kode-foto {
             display: inline-block; margin-top: 11px; padding: 6px 12px; border-radius: 50px;
             background: #fbf1d6; border: 1px solid #e0cb96; white-space: nowrap;
@@ -585,7 +602,7 @@
          bukan bingkai kosong bertuliskan "tanpa foto". --}}
     <td class="kanan">
         @if ($K['foto'])
-            <div class="cincin"><img src="{{ $K['foto'] }}" alt=""></div>
+            <div class="{{ $K['fotoBulat'] ? 'cincin' : 'bingkai' }}"><img src="{{ $K['foto'] }}" alt=""></div>
             <div style="text-align: center"><span class="kode-foto">{{ $K['kodeLamaran'] }}</span></div>
         @else
             <div class="tanpa-foto">

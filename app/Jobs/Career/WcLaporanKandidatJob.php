@@ -37,7 +37,10 @@ class WcLaporanKandidatJob implements ShouldQueue
 {
     use AntreanWebCareers, Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public const QUEUE = 'async_export';
+    // NAMA QUEUE di Cloud Tasks — bukan kunci config('queue.names.*).
+    // Cloud Tasks hanya menerima huruf, angka, dan hyphen; 'async_export'
+    // (kunci config-nya) ditolak INVALID_ARGUMENT saat task dikirim.
+    public const QUEUE = 'async-export';
 
     public $timeout = 300;
     public $tries = 2;

@@ -19,7 +19,8 @@ class FeedbackExportJob implements ShouldQueue
 {
     use AntreanWebCareers, Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public const QUEUE = 'async_export';
+    // Lihat WcLaporanKandidatJob::QUEUE — Cloud Tasks menolak underscore.
+    public const QUEUE = 'async-export';
 
     public $timeout = 600;
     public $tries = 2;
