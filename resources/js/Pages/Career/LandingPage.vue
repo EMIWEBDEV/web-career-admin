@@ -66,7 +66,10 @@ function initReveal() {
         (entries) =>
             entries.forEach((e) => {
                 if (e.isIntersecting) {
-                    e.target.classList.add('is-in');
+                    // Atribut, bukan classList — lihat catatan .wc-reveal[data-in]
+                    // di evo-theme.css: kelas yang dipasang dari luar Vue akan
+                    // terhapus saat elemennya punya :class dinamis dan dirender ulang.
+                    e.target.setAttribute('data-in', '');
                     revealObserver.unobserve(e.target);
                 }
             }),

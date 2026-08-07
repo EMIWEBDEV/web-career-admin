@@ -170,9 +170,11 @@
                             :judul="flow.formulir?.nama || 'Formulir Lamaran'"
                             :keterangan="'Lengkapi data berikut untuk melamar posisi ini.'"
                             :disabled="mengirim"
+                            :langkah-awal="drafLangkahAwal"
                             label-kirim="Finalisasi & Kirim"
                             @berkas="onDynamicBerkas"
                             @kirim="finalizeDynamic"
+                            @pindah-langkah="simpanDrafLokal"
                         />
                         <div v-if="err" class="wca-note wca-note--danger" style="margin: 0.8rem 0 0">
                             <i class="bi bi-exclamation-triangle-fill"></i><span>{{ err }}</span>
@@ -659,11 +661,19 @@
 <script setup>
 import axios from 'axios';
 import { Head, router } from '@inertiajs/vue3';
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import CareerLayout from './Layouts/CareerLayout.vue';
 import TeleponNegara from '@career/TeleponNegara.vue';
 import DynamicForm from '@career/formulir/DynamicForm.vue';
 import { jawabanAwal } from '@career/formulir';
+import {
+    bacaDraf,
+    hapusDraf,
+    kunciDraf,
+    petaSkema,
+    sapuDrafKedaluwarsa,
+    tulisDraf,
+} from '@career/formulir/inti/drafLokal';
 import { checkKnockout, clearApps, flowFor, getApp, nextActionFor, removeApp, upsertApp } from './careerSession';
 
 defineOptions({ layout: null }); // tanpa shell HCIS — pakai CareerLayout (situs karir)
@@ -750,16 +760,97 @@ const uploadErr = ref('');
 const form = reactive({});
 const files = reactive({});
 const formulirDinamis = computed(() => !!props.flow.formulir?.schema);
+
+// ── Draf lokal formulir dinamis ──────────────────────────────────────────
+// Lamaran baru lahir di database saat Kirim ditekan, jadi tidak ada tempat di
+// server untuk isian setengah jadi. Draf ditaruh di localStorage peramban
+// kandidat; lihat inti/drafLokal.js untuk alasan tiap penjaganya.
+const skemaDinamis = props.flow.formulir?.schema || null;
+const drafPeta = skemaDinamis ? petaSkema(skemaDinamis) : null;
+const drafKunci = skemaDinamis
+    ? kunciDraf({ identitas: props.flow.kandidat?.email || '', lowonganId: lowongan.id })
+    : null;
+// Dibaca SEKARANG, bukan di onMounted: Bertahap memasang langkah aktifnya
+// sekali saat setup, jadi posisi yang dipulihkan belakangan akan diabaikan dan
+// kandidat tetap dilempar balik ke langkah 1. localStorage sinkron, jadi aman
+// dibaca di sini. Formulir yang sudah terkunci (sudah pernah melamar) tidak
+// perlu dipulihkan sama sekali.
+const drafAwal = drafKunci && !terkunci.value ? bacaDraf(drafKunci, drafPeta.tanda) : null;
+const drafLangkahAwal = drafAwal?.langkah || 0;
+// Langkah yang sedang dibuka, dikabarkan Bertahap lewat `pindah-langkah`.
+// Bukan ref: hanya dipakai saat menulis draf, tidak ada tampilan yang bergantung.
+let drafLangkahKini = drafLangkahAwal;
+
 // `posisi` disisipkan ke profil supaya field ber-`prefill: 'posisi'` (mis.
 // "Jabatan yang Dilamar") terisi otomatis dari lowongan yang sedang dilamar —
 // dikunci, karena jabatannya sudah pasti sesuai lowongan ini, tidak perlu
 // (dan tidak boleh) diketik ulang oleh kandidat.
+//
+// Draf ditumpuk DI ATAS nilai awal, bukan menggantikannya: field terkunci dan
+// berkas sengaja tidak ikut tersimpan, jadi kuncinya tidak ada di draf dan
+// nilai segar dari akun tetap yang dipakai.
 const dynamicJawaban = reactive(
-    props.flow.formulir?.schema
-        ? jawabanAwal(props.flow.formulir.schema, { ...(props.flow.kandidat || {}), posisi: lowongan.posisi || '' })
+    skemaDinamis
+        ? {
+              ...jawabanAwal(skemaDinamis, { ...(props.flow.kandidat || {}), posisi: lowongan.posisi || '' }),
+              ...(drafAwal?.jawaban || {}),
+          }
         : {},
 );
 const dynamicFiles = reactive({});
+
+/**
+ * Simpan draf.
+ *
+ * Tidak menulis lagi begitu lamaran sedang dikirim atau sudah selesai: sumber
+ * kebenarannya berpindah ke database, dan menulis ulang di sela-sela itu bisa
+ * menghidupkan kembali draf yang baru saja dibersihkan.
+ */
+function simpanDrafLokal(langkah) {
+    if (typeof langkah === 'number') drafLangkahKini = langkah;
+    if (!drafKunci || mengirim.value || memproses.value || done.value || terkunci.value) return;
+    tulisDraf(drafKunci, { jawaban: dynamicJawaban, langkah: drafLangkahKini, peta: drafPeta });
+}
+
+let drafTunda = null;
+
+/** Buang draf beserta tulisan tertunda yang masih mengantre. */
+function bersihkanDrafLokal() {
+    clearTimeout(drafTunda);
+    hapusDraf(drafKunci);
+}
+
+// Menulis pada TIAP ketukan huruf berarti menyerialkan seluruh jawaban puluhan
+// kali per detik. Ditunda sebentar supaya mengetik tetap ringan, tapi tetap
+// tersimpan tanpa menunggu kandidat menekan "Lanjut" — justru refresh di
+// tengah langkah yang paling sering menghapus pekerjaan orang.
+watch(
+    dynamicJawaban,
+    () => {
+        clearTimeout(drafTunda);
+        drafTunda = setTimeout(simpanDrafLokal, 600);
+    },
+    { deep: true },
+);
+
+/**
+ * Tulis sisa yang masih tertunda saat halaman ditinggalkan.
+ *
+ * Tanpa ini, kalimat terakhir yang diketik kandidat sebelum menutup tab hilang
+ * bersama timer yang belum sempat berbunyi — persis momen yang paling sering
+ * terjadi, karena orang menutup tab justru setelah mengetik sesuatu.
+ * `pagehide`, bukan `beforeunload`: yang terakhir tidak dipanggil di Safari iOS
+ * saat tab dipindah ke latar.
+ */
+function tuntaskanDraf() {
+    clearTimeout(drafTunda);
+    simpanDrafLokal();
+}
+if (drafKunci) window.addEventListener('pagehide', tuntaskanDraf);
+onBeforeUnmount(() => {
+    clearTimeout(drafTunda);
+    window.removeEventListener('pagehide', tuntaskanDraf);
+});
 // ── Cascade pendidikan (Jenjang → Jenis Institusi → Nama Kampus) ──
 const apiOpts = reactive({}); // key field → [{ value, label, meta? }]
 const apiLoading = reactive({});
@@ -1287,9 +1378,11 @@ async function pollStatus(processId) {
                     lam.status === 'GUGUR' ? [lam.alasanGugur || 'Belum memenuhi kualifikasi yang dibutuhkan'] : [];
                 memproses.value = false;
                 done.value = true;
-                // Finalisasi tuntas → bersihkan draf sessionStorage lamaran ini
-                // (sumber kebenaran = DB). done=true membuat persistDraft tak menulis ulang.
+                // Finalisasi tuntas → bersihkan draf lamaran ini (sumber
+                // kebenaran = DB). done=true membuat persistDraft dan
+                // simpanDrafLokal tak menulis ulang.
                 removeApp(lowongan.id);
+                bersihkanDrafLokal();
                 return;
             }
             if (r?.status === 'GAGAL') {
@@ -1307,7 +1400,11 @@ async function pollStatus(processId) {
             hasilServer.value = { status: 'DIPROSES' };
             doneKo.value = [];
             done.value = true;
-            removeApp(lowongan.id); // draf tak perlu lagi — status dipantau via DB
+            // Lamarannya SUDAH masuk antrean server — yang lambat cuma
+            // pemrosesannya. Draf dibuang supaya kandidat tidak dipancing
+            // mengisi ulang dan mengirim lamaran kedua untuk posisi yang sama.
+            removeApp(lowongan.id); // status dipantau via DB
+            bersihkanDrafLokal();
             return;
         }
         setTimeout(tick, 1500);
@@ -1374,6 +1471,23 @@ function showFile(fc) {
 }
 
 onMounted(() => {
+    // Draf lowongan LAIN yang sudah kedaluwarsa ikut dibuang. Kandidat yang
+    // membuka lima lowongan lalu menuntaskan satu meninggalkan empat simpanan
+    // berisi data pribadi yang tidak pernah dijenguk siapa pun lagi.
+    sapuDrafKedaluwarsa();
+    // Sudah pernah melamar posisi ini → drafnya tidak akan pernah dipakai.
+    if (terkunci.value) bersihkanDrafLokal();
+    if (drafAwal) {
+        // Berkas & foto verifikasi sengaja TIDAK ikut tersimpan (isinya tak
+        // muat di localStorage), jadi disebut terus terang di sini — kalau
+        // tidak, kandidat baru tahu ada yang hilang saat tombol Kirim menolak.
+        notice(
+            drafPeta.punyaBerkas
+                ? 'Melanjutkan isian yang tersimpan. Berkas & foto verifikasi perlu dilampirkan ulang.'
+                : 'Melanjutkan isian yang tersimpan sebelumnya.',
+        );
+    }
+
     // Login DIJAGA SERVER (career.auth) saat FINALISASI (POST /api/v1/lamaran).
     // JANGAN pakai gate sessionStorage di sini — user login lewat sistem DB asli,
     // sessionStorage bisa kosong dan itu dulu bikin salah-redirect ke /login.
