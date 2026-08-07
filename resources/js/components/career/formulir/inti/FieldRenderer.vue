@@ -791,7 +791,7 @@ function pilihBerkas(uf) {
 .fr--foto .fr__bantuan,
 .fr--foto .fr__galat { text-align: center; justify-content: center; }
 
-.fr__consent { white-space: normal; height: auto; align-items: flex-start; }
+.fr__consent { white-space: normal; height: auto; }
 
 /* -- Kartu persetujuan: teks pernyataan panjang lebih nyaman dibaca dalam
    kotak sendiri daripada tercampur sebagai "field" biasa, dan berubah warna
@@ -803,7 +803,28 @@ function pilihBerkas(uf) {
 .fr--consent-aktif { border-color: #6366f1; background: rgba(99, 102, 241, .06); }
 .fr--consent .fr__lbl { font-size: 12.5px; font-weight: 700; color: #475569; margin-bottom: .55rem; line-height: 1.55; }
 .fr__consent-ico { color: #6366f1; font-size: 13px; }
-.fr--consent :deep(.el-checkbox__label) { white-space: normal; line-height: 1.5; font-size: 13px; font-weight: 600; color: #1e293b; padding-left: .6rem; }
+
+/* Baris pernyataan. Aturan chip di atas dibuat untuk opsi Ya/Tidak yang pendek
+   dan sebaris: tinggi tetap 40px, lebar minimum, dan padding HORIZONTAL saja.
+   Dipakai pada kalimat yang membungkus, akibatnya terlihat jelas — teksnya
+   menempel ke tepi atas-bawah, dan kotak centangnya menggantung di atas baris
+   pertama. Bingkainya sendiri juga mubazir: kartu di luar sudah berbingkai dan
+   sudah berganti warna saat dicentang, jadi yang terlihat kandidat cuma kotak
+   di dalam kotak. Di sini bingkainya dilepas dan kotak centang duduk seimbang
+   di tengah kalimat, sehingga kartunya jadi satu blok utuh. */
+.fr--consent :deep(.el-checkbox) {
+    display: flex; align-items: center; width: 100%;
+    min-height: 0; min-width: 0; padding: 0;
+    border: 0; background: none; white-space: normal;
+}
+/* Keadaan tercentang diwakili KARTUNYA (fr--consent-aktif). Tanpa baris ini
+   aturan `.el-checkbox.is-checked` di atas menang spesifisitas dan mengecat
+   ulang latar barisnya, jadi kotak-dalam-kotak yang baru dilepas muncul lagi
+   — justru pada saat kandidat mencentangnya. */
+.fr--consent :deep(.el-checkbox.is-checked),
+.fr--consent :deep(.el-checkbox:hover) { border-color: transparent; background: none; }
+.fr--consent :deep(.el-checkbox__input) { flex: none; }
+.fr--consent :deep(.el-checkbox__label) { white-space: normal; line-height: 1.6; font-size: 13px; font-weight: 600; color: #1e293b; padding-left: .65rem; }
 
 /* Opsi referensi: nama di kiri, keterangan (kota / gelar) menepi ke kanan. */
 .fr__opsi { float: left; }
