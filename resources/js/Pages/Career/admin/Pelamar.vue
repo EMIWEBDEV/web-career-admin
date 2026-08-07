@@ -1050,6 +1050,21 @@
                          Tombol ini HANYA MEMBUKA modal konfirmasi; syarat berkas
                          ditahan di tombol konfirmasi di dalamnya — satu-satunya
                          tempat mengunggah berkas justru ada di modal itu. -->
+                    <!-- TOMBOL MATI HARUS MENJELASKAN DIRINYA.
+                         Deretan tombol kelabu tanpa keterangan terbaca sebagai
+                         aplikasi rusak, bukan sebagai batas wewenang — dan
+                         tooltip saja tidak terbaca di layar sentuh. -->
+                    <div v-if="!bolehPutus" class="plw-nogate">
+                        <i class="bi bi-shield-lock-fill"></i>
+                        <div>
+                            <b>Anda tidak berwenang mengetuk keputusan.</b>
+                            Semua keputusan — Loloskan, Tidak Lolos, Talent Pool, sampai Mengundurkan Diri —
+                            menuntut izin <b>APPROVE</b> pada menu <b>Worklist Pelamar</b>.
+                            Menandai kehadiran, mencatat hasil, menahan, dan menjadwalkan tetap bisa Anda lakukan.
+                            <span>Minta penambahan izinnya di <b>Manajemen Hak Akses</b>.</span>
+                        </div>
+                    </div>
+
                     <div class="plw-actions" :class="{ 'is-three': putusanPerusahaan.length > 2 }">
                         <button
                             v-for="h in putusanPerusahaan" :key="h.kode"
@@ -2518,6 +2533,12 @@ export default {
         // master. Dicatat TIM saat menandai kehadiran negosiasi; tombolnya di
         // portal kandidat sudah dicabut.
         jawabanPenawaran: { type: Array, default: () => [] },
+        // HAK AKSES pengguna ini, dikirim shell untuk SEMUA halaman admin
+        // (PropsShell: "dipakai Vue menyembunyikan tombol yang tidak
+        // diizinkan"). Halaman ini tidak pernah membacanya — akibatnya tombol
+        // keputusan tetap digambar untuk admin yang tidak berhak, dan
+        // penolakannya baru datang setelah alasan diketik & modal dikirim.
+        akses: { type: Object, default: () => ({ permissions: {}, konten: {} }) },
     },
     data() {
         return {
@@ -3283,8 +3304,38 @@ export default {
          * Sekarang tiap hasil membawa sikapnya sendiri dari master
          * (`butuhTuntas`), dan server menolak dengan aturan yang sama persis.
          */
+        /**
+         * Aksi yang dimiliki pengguna ini pada halaman worklist.
+         *
+         * Dikirim shell ke SEMUA halaman admin lewat props `akses`. Halaman ini
+         * dulu tidak pernah membacanya.
+         */
+        aksiSaya() {
+            return this.akses?.permissions?.pelamarPage || [];
+        },
+        /**
+         * Berhak MEMUTUS tahap?
+         *
+         * Seluruh keputusan — Loloskan, Tidak Lolos, Talent Pool, Mengundurkan
+         * Diri, Menolak Penawaran — memakai satu endpoint yang sama
+         * (PATCH .../putus) dengan satu izin yang sama: APPROVE. Tidak ada
+         * keputusan yang lebih ringan dari yang lain di mata server.
+         */
+        bolehPutus() {
+            return this.aksiSaya.includes('APPROVE');
+        },
         terkunciPutus() {
             return (h) => {
+                // HAK AKSES DIPERIKSA PALING DULU.
+                //
+                // Tanpa ini tombol tetap digambar, admin mengetik alasan,
+                // memilih tanggal, mencentang persetujuan, menekan simpan —
+                // dan BARU di situ server menjawab 403. Seluruh isian hilang,
+                // dan pesannya ("tidak memiliki hak akses") muncul di ujung
+                // jalan yang seharusnya tidak pernah bisa dimasuki.
+                if (! this.bolehPutus) {
+                    return 'Akun Anda tidak punya izin APPROVE di Worklist Pelamar, jadi tidak bisa mengetuk keputusan. Minta admin menambahkannya di Manajemen Hak Akses.';
+                }
                 if (this.detailKandidat?.hold) {
                     return 'Kandidat sedang ditahan — tekan "Lanjutkan" dulu untuk melepasnya.';
                 }
@@ -4690,6 +4741,14 @@ export default {
 
         /* ── Keputusan ── */
         askPutus(r, hasil) {
+            // Pagar kedua. Tombolnya memang sudah mati, tapi modal ini juga
+            // terpanggil dari jalur lain — dan membuka borang yang pasti
+            // ditolak server adalah cara terburuk menyampaikan "tidak boleh".
+            if (! this.bolehPutus) {
+                this.notice('Akun Anda tidak punya izin APPROVE di Worklist Pelamar. Minta ditambahkan di Manajemen Hak Akses.', true);
+
+                return;
+            }
             this.putusTarget = r;
             this.putusHasil = hasil;
             this.putusCatatanHtml = '';
@@ -4997,6 +5056,19 @@ export default {
 .plw-hold__lepas:hover { background: #dcfce7; }
 .plw-hold__cat { margin: 8px 0 0; padding-top: 8px; border-top: 1px dashed rgba(100, 116, 139, 0.3); font-size: 11.5px; line-height: 1.55; color: #475569; }
 .plw-btn-hold { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; margin-top: 8px; padding: 9px 12px; border-radius: 10px; border: 1px dashed #cbd5e1; background: #fff; color: #64748b; font-size: 12px; font-weight: 800; cursor: pointer; }
+
+/* Keterangan "tidak berwenang" — biru keterangan, BUKAN merah galat. Ini
+   bukan kesalahan yang dibuat admin, melainkan batas wewenang akunnya; warna
+   merah membuatnya terbaca seolah ada yang rusak. */
+.plw-nogate {
+    display: flex; gap: 10px; align-items: flex-start; margin-bottom: 10px;
+    padding: 11px 13px; border-radius: 12px;
+    background: #eff6ff; border: 1px solid #bfdbfe;
+    font-size: 12px; line-height: 1.55; color: #1e40af;
+}
+.plw-nogate .bi { flex: none; margin-top: 1px; font-size: 14px; color: #2563eb; }
+.plw-nogate b { color: #1e3a8a; }
+.plw-nogate span { display: block; margin-top: 3px; color: #3b82f6; }
 .plw-btn-hold:hover:not(:disabled) { border-color: #94a3b8; color: #475569; background: #f8fafc; }
 .plw-btn-hold:disabled { opacity: 0.5; cursor: not-allowed; }
 
