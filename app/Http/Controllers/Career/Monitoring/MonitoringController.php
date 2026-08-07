@@ -969,6 +969,10 @@ class MonitoringController extends Controller
                     'waktuSelesai' => self::fmt($l->Waktu_Selesai),
                     'mulaiDariUrutan' => $l->Mulai_Dari_Urutan ? (int) $l->Mulai_Dari_Urutan : null,
                 ],
+                // Peta outcome ikut dikirim: drawer ini memuat datanya sendiri,
+                // jadi ia butuh label & warna keputusan tanpa bergantung pada
+                // komponen induk yang membukanya.
+                'masterHasil' => HasilKeputusan::peta(),
                 'tahap' => $tahapOut,
                 'jejak' => $data['jejak']->map(fn ($j) => [
                     'verdict' => $j->Verdict,
@@ -1123,6 +1127,9 @@ class MonitoringController extends Controller
 
             return ResponseHelper::success([
                 'checkpoint' => self::checkpoint(),
+                // Drawer ini memuat datanya sendiri, jadi label & warna
+                // keputusan ikut dikirim — bukan diwarisi dari komponen induk.
+                'masterHasil' => HasilKeputusan::peta(),
                 'pelamar' => [
                     'id' => Hashids::encode($l->Id_Lamaran),
                     'nama' => $l->Pelamar ?: $l->Created_By,

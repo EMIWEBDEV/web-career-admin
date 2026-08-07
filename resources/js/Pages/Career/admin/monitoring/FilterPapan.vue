@@ -104,6 +104,7 @@
 
 <script setup>
 import { computed, ref } from 'vue'
+import { opsiStatus } from './monitoringHelpers'
 
 const props = defineProps({
     nilai: { type: Object, required: true },
@@ -112,17 +113,16 @@ const props = defineProps({
     jumlahTampil: { type: Number, default: 0 },
     jumlahTotal: { type: Number, default: 0 },
     adaFilter: { type: Boolean, default: false },
+    masterHasil: { type: Object, default: () => ({}) },
 })
 const emit = defineEmits(['ubah', 'reset'])
 
 const panelBuka = ref(false)
 
-const STATUS = [
-    { val: 'BERJALAN', label: 'Berjalan' },
-    { val: 'LULUS', label: 'Diterima' },
-    { val: 'GUGUR', label: 'Tidak Lolos' },
-    { val: 'TALENT_POOL', label: 'Talent Pool' },
-]
+// Dibangun dari master, bukan daftar mati: dulu hanya empat opsi di sini,
+// sehingga kandidat yang mundur atau menolak penawaran tidak bisa disaring
+// sama sekali — dan "Ditahan" pun tak pernah ada opsinya.
+const STATUS = computed(() => opsiStatus(props.masterHasil))
 
 const KONDISI = [
     { val: 'SIAP', label: 'Siap Diputus', ikon: 'bi-hammer', ket: 'Semua hasil terkumpul, menunggu diketuk' },

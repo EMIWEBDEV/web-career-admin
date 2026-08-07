@@ -32,10 +32,21 @@
                                 <div class="wcm-sd__stat is-green"><b>{{ stats.lulus }}</b><span>Lolos tahap</span></div>
                                 <div class="wcm-sd__stat is-red"><b>{{ stats.gugur }}</b><span>Gugur di sini</span></div>
                                 <div class="wcm-sd__stat is-sky"><b>{{ stats.talent }}</b><span>Talent Pool</span></div>
+                                <div v-if="stats.keluar" class="wcm-sd__stat is-violet">
+                                    <b>{{ stats.keluar }}</b>
+                                    <span>Keluar</span>
+                                </div>
                             </div>
                             <div class="wcm-sd__facts">
                                 <span v-if="stats.konversi !== null" class="wcm-fact">
                                     <i class="bi bi-funnel"></i> Konversi <b>{{ stats.konversi }}%</b> yang lolos dari yang sudah diputus
+                                </span>
+                                <!-- "Keluar karena apa" — mundur dan menolak
+                                     penawaran menuntut tindak lanjut berbeda,
+                                     jadi angkanya tidak berhenti di gabungan. -->
+                                <span v-for="k in rincianKeluar" :key="k.kode" class="wcm-fact">
+                                    <i class="bi bi-box-arrow-left" :style="k.warna ? { color: k.warna } : null"></i>
+                                    <b>{{ k.jml }}</b> {{ k.nama }}
                                 </span>
                                 <span v-if="stats.siapDiputus > 0" class="wcm-fact is-warn">
                                     <i class="bi bi-hammer"></i> <b>{{ stats.siapDiputus }}</b> siap diputus
@@ -151,6 +162,7 @@ const CFG = { headers: { Accept: 'application/json' } }
 const loading = ref(false)
 const error = ref(false)
 const stats = ref({})
+const rincianKeluar = ref([])
 const subtes = ref([])
 const belumSubmit = ref([])
 const jadwal = ref([])
@@ -176,6 +188,7 @@ async function fetchDetail() {
         )
         const r = data.result || {}
         stats.value = r.stats || {}
+        rincianKeluar.value = r.rincianKeluar || []
         subtes.value = r.subtes || []
         belumSubmit.value = r.belumSubmit || []
         jadwal.value = r.jadwal || []
@@ -239,6 +252,7 @@ defineExpose({ refresh: fetchDetail })
 .wcm-sd__stat.is-green b { color: #059669; }
 .wcm-sd__stat.is-red b { color: #e11d48; }
 .wcm-sd__stat.is-sky b { color: #0284c7; }
+.wcm-sd__stat.is-violet b { color: #7c3aed; }
 
 .wcm-sd__facts { display: flex; flex-direction: column; gap: 7px; margin-top: 12px; }
 .wcm-fact { display: flex; align-items: center; gap: 8px; font-size: 0.75rem; color: #475569; font-weight: 500; }
