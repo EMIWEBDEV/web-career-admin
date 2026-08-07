@@ -31,7 +31,12 @@ class MasterFormulirController extends Controller
     {
         return Inertia::render(
             'Career/admin/master-formulir/masterFormulir',
-            CareerShell::props('/master-formulir', 'Master Formulir')
+            CareerShell::props('/master-formulir', 'Master Formulir', [
+                // Kosakata isi-otomatis dikirim dari server supaya daftar yang
+                // dilihat admin dan data yang benar-benar sampai ke formulir
+                // berasal dari satu tempat.
+                'katalogPrefill' => KatalogPrefill::untukEditor(),
+            ])
         );
     }
 

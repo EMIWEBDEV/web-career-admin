@@ -209,6 +209,17 @@
                             <RefSelect type="talent" v-model="meta.kategori" placeholder="Lintas kategori" clearable />
                         </div>
                         <div class="mfb-meta-bar__item">
+                            <label>Konteks Penggunaan</label>
+                            <el-select v-model="schema.konteks" style="width: 100%">
+                                <el-option
+                                    v-for="k in konteksOptions"
+                                    :key="k.value"
+                                    :value="k.value"
+                                    :label="k.label"
+                                />
+                            </el-select>
+                        </div>
+                        <div class="mfb-meta-bar__item">
                             <label>Mode Layout</label>
                             <div class="mfb-segmented">
                                 <button
@@ -1044,6 +1055,16 @@ export default {
             layoutOptions: [
                 { label: 'Satu Halaman', value: 'SATU_HALAMAN' },
                 { label: 'Bertahap (Stepper)', value: 'BERTAHAP' },
+            ],
+            /**
+             * Menentukan kunci isi-otomatis yang tersedia. KEDUANYA hanya
+             * mengambil irisan: formulir yang dipakai di dua tempat tidak boleh
+             * memakai kunci yang di salah satunya selalu kosong.
+             */
+            konteksOptions: [
+                { value: 'KEDUANYA', label: 'Keduanya (aman untuk semua)' },
+                { value: 'PENDAFTARAN', label: 'Formulir Pendaftaran' },
+                { value: 'TAHAP', label: 'Formulir Tahap Seleksi' },
             ],
             lebarCepatOptions: [
                 { label: '1/3', value: 33 },
