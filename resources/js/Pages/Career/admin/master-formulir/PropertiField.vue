@@ -5,10 +5,18 @@
             <span class="mfb-inspector__tag">{{ field.tipe }}</span>
         </div>
 
-        <!-- ── Universal: berlaku apa pun tipenya ── -->
+        <!-- ── Identitas ── -->
         <div class="mfb-inspector__group">
             <label>Label Pertanyaan</label>
             <el-input v-model="field.label" placeholder="Label pertanyaan" @input="$emit('ubah-label')" />
+        </div>
+
+        <div class="mfb-inspector__group">
+            <label>Tipe Input Field</label>
+            <el-select v-model="field.tipe" style="width: 100%" @change="$emit('ubah-tipe')">
+                <el-option v-for="t in tipeOptions" :key="t.value" :value="t.value" :label="t.label" />
+            </el-select>
+            <small class="mfb-help">Mengubah tipe akan membuang pengaturan yang tidak berlaku bagi tipe barunya.</small>
         </div>
 
         <div class="mfb-inspector__group">
@@ -22,14 +30,6 @@
             <small class="mfb-help">Kode unik pengenal kolom di database.</small>
         </div>
 
-        <div class="mfb-inspector__group">
-            <label>Tipe Input Field</label>
-            <el-select v-model="field.tipe" style="width: 100%" @change="$emit('ubah-tipe')">
-                <el-option v-for="t in tipeOptions" :key="t.value" :value="t.value" :label="t.label" />
-            </el-select>
-            <small class="mfb-help">Mengubah tipe akan membuang pengaturan yang tidak berlaku bagi tipe barunya.</small>
-        </div>
-
         <div class="mfb-inspector__checks">
             <el-checkbox v-model="field.wajib">Wajib Diisi (Required)</el-checkbox>
             <!-- Label diperbaiki: artinya nilainya bisa dipakai MesinSyarat untuk
@@ -39,99 +39,9 @@
             </el-checkbox>
         </div>
 
-        <div class="mfb-inspector__group">
-            <label>Lebar Presets Layout</label>
-            <div class="mfb-segmented">
-                <button
-                    v-for="opt in lebarOptions"
-                    :key="opt.value"
-                    type="button"
-                    class="mfb-segmented__item"
-                    :class="{ active: lebarAktif === opt.value }"
-                    @click="aturLebar(opt.value)"
-                >
-                    {{ opt.label }}
-                </button>
-            </div>
-            <div class="mfb-slider">
-                <span>33%</span>
-                <el-slider
-                    v-model="field.lebar_persen"
-                    :min="33"
-                    :max="100"
-                    :step="1"
-                    :format-tooltip="(v) => `${v}%`"
-                    @change="$emit('rapikan-lebar')"
-                />
-                <span>100%</span>
-            </div>
-        </div>
+        <!-- ── Cara mengisi: konfigurasi yang menentukan isi jawaban, mengikuti tipe ── -->
+        <div class="mfb-inspector__sep"><span>Cara Mengisi</span></div>
 
-        <div class="mfb-inspector__group">
-            <label><i class="bi bi-arrows-angle-expand"></i> Lebar Berubah Jika (Kondisional)</label>
-            <el-select
-                :model-value="field.lebar_jika?.field || ''"
-                style="width: 100%"
-                clearable
-                placeholder="Lebar selalu tetap"
-                @change="aturLebarSyarat"
-            >
-                <!-- Sengaja menyertakan field ini sendiri: pemakaian utamanya
-                     memang begitu — sebuah field menyusut ketika JAWABANNYA
-                     SENDIRI memunculkan field pendamping di sebelahnya. -->
-                <el-option v-for="f in semuaField" :key="f.field_id || f.key" :value="f.key" :label="f.label || f.key" />
-            </el-select>
-            <template v-if="field.lebar_jika?.field">
-                <div class="mfb-condition-row">
-                    <el-select v-model="field.lebar_jika.operator" style="width: 48%">
-                        <el-option v-for="o in operatorOptions" :key="o.value" :value="o.value" :label="o.label" />
-                    </el-select>
-                    <el-input v-model="field.lebar_jika.nilai" placeholder="Nilai pemicu" style="width: 52%" />
-                </div>
-                <div class="mfb-segmented" style="margin-top: 0.5rem">
-                    <button
-                        v-for="opt in lebarOptions"
-                        :key="opt.value"
-                        type="button"
-                        class="mfb-segmented__item"
-                        :class="{ active: field.lebar_jika.lebar_persen === opt.value }"
-                        @click="field.lebar_jika.lebar_persen = opt.value"
-                    >
-                        {{ opt.label }}
-                    </button>
-                </div>
-            </template>
-        </div>
-
-        <div class="mfb-inspector__group">
-            <label><i class="bi bi-diagram-3"></i> Logika Tampil Jika (Kondisional)</label>
-            <el-select
-                :model-value="field.tampil_jika?.field || ''"
-                style="width: 100%"
-                clearable
-                placeholder="Selalu Tampil (Tanpa Syarat)"
-                @change="aturTampilSyarat"
-            >
-                <el-option v-for="f in fieldSebelumnya" :key="f.field_id || f.key" :value="f.key" :label="f.label || f.key" />
-            </el-select>
-            <small class="mfb-help">
-                Hanya field yang letaknya sebelum field ini — syarat pada field di belakangnya tidak akan pernah
-                terpenuhi saat kandidat mengisi.
-            </small>
-            <div v-if="field.tampil_jika?.field" class="mfb-condition-row">
-                <el-select v-model="field.tampil_jika.operator" style="width: 48%">
-                    <el-option v-for="o in operatorOptions" :key="o.value" :value="o.value" :label="o.label" />
-                </el-select>
-                <el-input v-model="field.tampil_jika.nilai" placeholder="Nilai pemicu" style="width: 52%" />
-            </div>
-        </div>
-
-        <div class="mfb-inspector__group">
-            <label>Teks Bantuan / Keterangan</label>
-            <el-input v-model="field.bantuan" type="textarea" :rows="2" placeholder="Keterangan kecil di bawah field..." />
-        </div>
-
-        <!-- ── Khusus per tipe, mengikuti katalog ── -->
         <div v-if="punya('ph')" class="mfb-inspector__group">
             <label>Text Placeholder</label>
             <el-input v-model="field.ph" placeholder="Contoh: Masukkan nama lengkap..." />
@@ -237,24 +147,6 @@
             </div>
         </template>
 
-        <div v-if="punya('reset_anak')" class="mfb-inspector__group">
-            <label>Kosongkan Field Ini Saat Jawaban Berubah</label>
-            <el-select
-                :model-value="field.reset_anak || []"
-                multiple
-                collapse-tags
-                style="width: 100%"
-                placeholder="Tidak mengosongkan apa pun"
-                @change="(v) => (field.reset_anak = v.length ? v : undefined)"
-            >
-                <el-option v-for="f in fieldSesudahnya" :key="f.field_id || f.key" :value="f.key" :label="f.label || f.key" />
-            </el-select>
-            <small class="mfb-help">
-                Tanpa ini, mengganti jawaban induk meninggalkan jawaban anak yang sudah tidak cocok — dan jawaban basi
-                itu ikut terkirim.
-            </small>
-        </div>
-
         <div v-if="punya('prefill')" class="mfb-inspector__group">
             <label><i class="bi bi-magic"></i> Isi Otomatis Dari</label>
             <el-select
@@ -305,6 +197,125 @@
                 </div>
             </div>
         </template>
+
+        <!-- ── Tampilan: lebar dan kapan lebarnya berubah ── -->
+        <div class="mfb-inspector__sep"><span>Tampilan</span></div>
+
+        <div class="mfb-inspector__group">
+            <label>Lebar Presets Layout</label>
+            <div class="mfb-segmented">
+                <button
+                    v-for="opt in lebarOptions"
+                    :key="opt.value"
+                    type="button"
+                    class="mfb-segmented__item"
+                    :class="{ active: lebarAktif === opt.value }"
+                    @click="aturLebar(opt.value)"
+                >
+                    {{ opt.label }}
+                </button>
+            </div>
+            <div class="mfb-slider">
+                <span>33%</span>
+                <el-slider
+                    v-model="field.lebar_persen"
+                    :min="33"
+                    :max="100"
+                    :step="1"
+                    :format-tooltip="(v) => `${v}%`"
+                    @change="$emit('rapikan-lebar')"
+                />
+                <span>100%</span>
+            </div>
+        </div>
+
+        <div class="mfb-inspector__group">
+            <label><i class="bi bi-arrows-angle-expand"></i> Lebar Berubah Jika (Kondisional)</label>
+            <el-select
+                :model-value="field.lebar_jika?.field || ''"
+                style="width: 100%"
+                clearable
+                placeholder="Lebar selalu tetap"
+                @change="aturLebarSyarat"
+            >
+                <!-- Sengaja menyertakan field ini sendiri: pemakaian utamanya
+                     memang begitu — sebuah field menyusut ketika JAWABANNYA
+                     SENDIRI memunculkan field pendamping di sebelahnya. -->
+                <el-option v-for="f in semuaField" :key="f.field_id || f.key" :value="f.key" :label="f.label || f.key" />
+            </el-select>
+            <template v-if="field.lebar_jika?.field">
+                <div class="mfb-condition-row">
+                    <el-select v-model="field.lebar_jika.operator" style="width: 48%">
+                        <el-option v-for="o in operatorOptions" :key="o.value" :value="o.value" :label="o.label" />
+                    </el-select>
+                    <el-input v-model="field.lebar_jika.nilai" placeholder="Nilai pemicu" style="width: 52%" />
+                </div>
+                <div class="mfb-segmented" style="margin-top: 0.5rem">
+                    <button
+                        v-for="opt in lebarOptions"
+                        :key="opt.value"
+                        type="button"
+                        class="mfb-segmented__item"
+                        :class="{ active: field.lebar_jika.lebar_persen === opt.value }"
+                        @click="field.lebar_jika.lebar_persen = opt.value"
+                    >
+                        {{ opt.label }}
+                    </button>
+                </div>
+            </template>
+        </div>
+
+        <!-- ── Logika: hubungan antar field ── -->
+        <div class="mfb-inspector__sep"><span>Logika &amp; Kondisi</span></div>
+
+        <div class="mfb-inspector__group">
+            <label><i class="bi bi-diagram-3"></i> Logika Tampil Jika (Kondisional)</label>
+            <el-select
+                :model-value="field.tampil_jika?.field || ''"
+                style="width: 100%"
+                clearable
+                placeholder="Selalu Tampil (Tanpa Syarat)"
+                @change="aturTampilSyarat"
+            >
+                <el-option v-for="f in fieldSebelumnya" :key="f.field_id || f.key" :value="f.key" :label="f.label || f.key" />
+            </el-select>
+            <small class="mfb-help">
+                Hanya field yang letaknya sebelum field ini — syarat pada field di belakangnya tidak akan pernah
+                terpenuhi saat kandidat mengisi.
+            </small>
+            <div v-if="field.tampil_jika?.field" class="mfb-condition-row">
+                <el-select v-model="field.tampil_jika.operator" style="width: 48%">
+                    <el-option v-for="o in operatorOptions" :key="o.value" :value="o.value" :label="o.label" />
+                </el-select>
+                <el-input v-model="field.tampil_jika.nilai" placeholder="Nilai pemicu" style="width: 52%" />
+            </div>
+        </div>
+
+        <div v-if="punya('reset_anak')" class="mfb-inspector__group">
+            <label>Kosongkan Field Ini Saat Jawaban Berubah</label>
+            <el-select
+                :model-value="field.reset_anak || []"
+                multiple
+                collapse-tags
+                style="width: 100%"
+                placeholder="Tidak mengosongkan apa pun"
+                @change="(v) => (field.reset_anak = v.length ? v : undefined)"
+            >
+                <el-option v-for="f in fieldSesudahnya" :key="f.field_id || f.key" :value="f.key" :label="f.label || f.key" />
+            </el-select>
+            <small class="mfb-help">
+                Tanpa ini, mengganti jawaban induk meninggalkan jawaban anak yang sudah tidak cocok — dan jawaban basi
+                itu ikut terkirim.
+            </small>
+        </div>
+
+        <!-- ── Bantuan ── -->
+        <div class="mfb-inspector__sep"><span>Bantuan</span></div>
+
+        <div class="mfb-inspector__group">
+            <label>Teks Bantuan / Keterangan</label>
+            <el-input v-model="field.bantuan" type="textarea" :rows="2" placeholder="Keterangan kecil di bawah field..." />
+        </div>
 
         <button class="mfb-btn mfb-btn--danger mfb-btn--full" type="button" @click="$emit('hapus')">
             <i class="bi bi-trash"></i> Hapus Field Ini
@@ -516,6 +527,19 @@ export default {
     gap: 0.4rem;
     align-items: center;
     color: #0f172a;
+}
+
+/* Pemisah antar babak properti — panel disusun mengikuti alur membangun:
+   identitas → aturan → cara mengisi → tampilan → logika → bantuan. */
+.mfb-inspector__sep {
+    margin: 1.1rem 0 0.9rem;
+    padding-top: 0.8rem;
+    border-top: 1px dashed #e2e8f0;
+    font-size: 10.5px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    color: #94a3b8;
+    text-transform: uppercase;
 }
 
 .mfb-inspector__tag {
