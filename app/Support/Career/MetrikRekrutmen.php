@@ -22,9 +22,12 @@ class MetrikRekrutmen
 {
     /**
      * Derived table: satu baris per lamaran + UrutanDisplay (tahap yang
-     * mewakili) — mirror SQL dari PipelineProgress::tahapKini():
-     *  GUGUR/TALENT_POOL → tahap Hasil ybs (fallback tahap terakhir);
-     *  LULUS → tahap terakhir; lainnya → tahap BERJALAN (fallback pertama).
+     * mewakili) — mirror SQL dari PipelineProgress::tahapKini(). Aturannya
+     * diturunkan dari FLAG master (lihat HasilKeputusan), bukan daftar kode:
+     *  Flag_Lolos='Y' → tahap terakhir;
+     *  terminal lain  → tahap tempat keputusannya dicatat (Hasil = Status),
+     *                   fallback tahap terakhir;
+     *  selain itu     → tahap BERJALAN (fallback tahap pertama).
      * LEFT JOIN + COALESCE(...,1): lamaran tanpa tahap masuk kolom 1.
      *
      * $kolomTambahan menambah kolom `l.*` ke SELECT sekaligus ke GROUP BY —
@@ -62,13 +65,28 @@ class MetrikRekrutmen
 
     public static function sqlUrutanDisplay(string $whereLamaran, array $kolomTambahan = []): string
     {
-        $extra = $kolomTambahan ? ', ' . implode(', ', $kolomTambahan) : '';
+        $extra = $kolomTambahan ? ', '.implode(', ', $kolomTambahan) : '';
+
+        // Pembagiannya dari FLAG master, bukan daftar kode mati. Dulu CASE di
+        // sini hanya mengenal GUGUR/TALENT_POOL/LULUS, sehingga outcome lain
+        // (kandidat mundur, menolak penawaran) jatuh ke cabang ELSE dan —
+        // karena tak punya tahap BERJALAN — berakhir di MIN(lt.Urutan), yaitu
+        // tahap 1. Orang yang menolak penawaran di tahap akhir muncul di papan
+        // sebagai pelamar baru di Pendaftaran: kegagalan yang tidak menimbulkan
+        // satu galat pun, dan justru karena itu tidak pernah ketahuan.
+        //
+        // Cabang ELSE sengaja tetap berarti "masih berproses": status yang
+        // belum dikenal master (mis. DRAFT) harus berperilaku seperti dulu,
+        // bukan dilempar ke tahap terakhir.
+        $lolos = HasilKeputusan::sqlIn(HasilKeputusan::kodeLolos());
+        $tidakLolos = HasilKeputusan::sqlIn(HasilKeputusan::kodeTidakLolos());
 
         return "SELECT l.Id_Lamaran, l.Program_Id, l.Status{$extra},
-                       COALESCE(CASE l.Status
-                           WHEN 'GUGUR'       THEN COALESCE(MIN(CASE WHEN lt.Hasil = 'GUGUR' THEN lt.Urutan END), MAX(lt.Urutan))
-                           WHEN 'TALENT_POOL' THEN COALESCE(MIN(CASE WHEN lt.Hasil = 'TALENT_POOL' THEN lt.Urutan END), MAX(lt.Urutan))
-                           WHEN 'LULUS'       THEN MAX(lt.Urutan)
+                       COALESCE(CASE
+                           WHEN l.Status IN ({$lolos})      THEN MAX(lt.Urutan)
+                           WHEN l.Status IN ({$tidakLolos}) THEN COALESCE(
+                                    MIN(CASE WHEN lt.Hasil = l.Status THEN lt.Urutan END),
+                                    MAX(lt.Urutan))
                            ELSE COALESCE(MIN(CASE WHEN lt.Status = 'BERJALAN' THEN lt.Urutan END), MIN(lt.Urutan))
                        END, 1) AS UrutanDisplay
                 FROM N_WEB_CAREERS_Lamaran l
@@ -109,7 +127,7 @@ class MetrikRekrutmen
     {
         return "CASE WHEN {$alias}.Siap_Diputus = 'Y'
                      THEN DATEDIFF(day, COALESCE({$alias}.Rekomendasi_At, {$alias}.Updated_At, {$alias}.Created_At), GETDATE())
-                     ELSE " . self::sqlUmurTahap($alias) . ' END';
+                     ELSE ".self::sqlUmurTahap($alias).' END';
     }
 
     /**
@@ -137,7 +155,7 @@ class MetrikRekrutmen
      * Tahap yang Siap_Diputus = 'Y' TIDAK dikecualikan di sini — pemanggil yang
      * memutuskan, karena "siap diputus" punya keranjangnya sendiri.
      *
-     * @param  string  $lt   alias N_WEB_CAREERS_Lamaran_Tahap
+     * @param  string  $lt  alias N_WEB_CAREERS_Lamaran_Tahap
      * @param  string  $mtt  alias N_WEB_CAREERS_Master_Tipe_Tahap (LEFT JOIN via Kode)
      */
     public static function sqlGiliranAdmin(string $lt = 'lt', string $mtt = 'mtt'): string
