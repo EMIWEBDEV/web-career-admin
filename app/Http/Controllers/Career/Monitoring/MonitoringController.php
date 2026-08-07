@@ -10,6 +10,7 @@ use App\Support\Career\GcsBerkas;
 use App\Support\Career\HasilKeputusan;
 use App\Support\Career\MetrikRekrutmen;
 use App\Support\Career\PipelineProgress;
+use App\Support\Career\PipelineReadModel;
 use App\Support\CareerShell;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -521,7 +522,11 @@ class MonitoringController extends Controller
                 $atributPer[$lamaranId] = self::samakanKunciPendidikan($atr);
             }
 
-            $pelamar = $data['lamaran']->map(function ($l) use ($data, $maxUrutan, $atributPer) {
+            // Disiapkan SEKALI, bukan per pelamar: koleksinya sudah ter-cache
+            // statis, tapi ->all() tetap menyalin isinya tiap kali dipanggil.
+            $masterHasil = HasilKeputusan::semua()->all();
+
+            $pelamar = $data['lamaran']->map(function ($l) use ($data, $maxUrutan, $atributPer, $masterHasil) {
                 // Jejak seluruh tahap ikut dikirim: mode Full Process memakainya,
                 // dan datanya sudah ada di memori — tidak ada query tambahan.
                 $tahapList = collect($data['tahapPer']->get($l->Id_Lamaran, []));
@@ -546,6 +551,18 @@ class MonitoringController extends Controller
                     'posisi' => $l->Posisi ?: $l->Kategori,
                     'status' => $l->Status,
                     'badge' => PipelineProgress::badge($l, $st, $tAktif),
+                    // Keadaan operasional yang bisa dibaca MESIN — HOLD /
+                    // TERMINAL / PASCAPENERIMAAN / SIAP_DIPUTUS / MENUNGGU_* /
+                    // TINDAKAN_ADMIN / BERPROSES. `badge` di atas adalah kalimat
+                    // untuk manusia dan bunyinya berubah begitu master disunting;
+                    // penyaringan memakai yang ini supaya tidak perlu menebak
+                    // keadaan dari teks.
+                    'bucket' => PipelineReadModel::bucket(
+                        $l,
+                        $tahapList,
+                        $data['subPer']->get($tAktif->Id_Lamaran_Tahap ?? 0, []),
+                        $masterHasil,
+                    )['bucket'],
                     'kolomKode' => $kolomKode,
                     'kolomUrutan' => $kolomUrutan,
                     'tahapLabel' => $tk->Label ?? '—',
@@ -565,6 +582,9 @@ class MonitoringController extends Controller
 
             return ResponseHelper::success([
                 'checkpoint' => self::checkpoint(),
+                // Label, warna, dan sifat tiap outcome — papan memakainya untuk
+                // menyusun opsi filter dan mewarnai badge tanpa peta literal.
+                'masterHasil' => HasilKeputusan::peta(),
                 'program' => [
                     'id' => Hashids::encode($p->Id_Program),
                     'kode' => $p->Kode,
