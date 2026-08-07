@@ -5,36 +5,30 @@
  *   { layout: 'SATU_HALAMAN'|'BERTAHAP', langkah: [{ bagian: [{ field: [] }] }] }
  */
 
-const TIPE_VALID = new Set([
-    'text',
-    'textarea',
-    'number',
-    'date',
-    'select',
-    'radio',
-    'checkbox',
-    'file',
-    'phone',
-    'email',
-    'consent',
-    'prefill',
-    'referensi',
-    'currency',
-    'bulan',
-    'tahun',
-    // Foto wajah yang diambil LANGSUNG dari kamera, bukan diunggah dari galeri.
-    // Dipakai untuk verifikasi identitas: berkas hasil unggahan bisa berupa foto
-    // siapa saja, sedangkan tangkapan kamera memaksa orangnya hadir saat itu.
-    'foto',
-]);
+import { TIPE_VALID, bersihkanField, galatTipe } from './katalogField';
+
+// Daftar tipe hidup di katalog sekarang. Diekspor ulang dari sini supaya
+// pemakai lama tidak perlu tahu bahwa tempatnya pindah.
+export { TIPE_VALID };
+
+/**
+ * Konteks pemakaian formulir. Menentukan kunci isi-otomatis apa yang tersedia:
+ * `nik` hanya terisi di formulir pendaftaran, `kampus` hanya di formulir tahap.
+ */
+const KONTEKS_VALID = new Set(['PENDAFTARAN', 'TAHAP', 'KEDUANYA']);
 
 export function normalisasiSkema(skema) {
     const s = skema && typeof skema === 'object' ? skema : {};
     const layout = String(s.layout || 'SATU_HALAMAN').toUpperCase() === 'BERTAHAP' ? 'BERTAHAP' : 'SATU_HALAMAN';
     const langkah = Array.isArray(s.langkah) ? s.langkah : [];
+    const konteksMentah = String(s.konteks || '').toUpperCase();
 
     return {
         schema_version: Number(s.schema_version || 1),
+        // Skema lama tidak menyimpan konteks. KEDUANYA adalah default yang aman:
+        // ia hanya mengizinkan kunci isi-otomatis yang tersedia di kedua konteks,
+        // jadi formulir berjalan tidak mendadak jadi tidak sah.
+        konteks: KONTEKS_VALID.has(konteksMentah) ? konteksMentah : 'KEDUANYA',
         template: s.template || 'TEMPLATE_1',
         layout,
         langkah: langkah.map((L, i) => ({
@@ -67,19 +61,31 @@ function normalisasiField(field, langkahIndex = 0, bagianIndex = 0) {
     return (Array.isArray(field) ? field : []).map((F, fieldIndex) => {
         const tipe = TIPE_VALID.has(String(F.tipe || '').toLowerCase()) ? String(F.tipe).toLowerCase() : 'text';
         const key = slugKey(F.key || F.label || 'field');
+
+        // Dibersihkan LEBIH DULU, baru dilengkapi. Urutannya penting: properti
+        // sisa tipe lama harus gugur sebelum kita menambahkan yang wajib ada,
+        // supaya skema yang sudah terlanjur kotor ikut rapi saat dimuat — bukan
+        // hanya saat tipenya diubah di editor.
+        const bersih = bersihkanField({ ...F, tipe });
+
         return {
-            ...F,
+            ...bersih,
             field_id: String(F.field_id || F.id || fallbackFieldId(key, langkahIndex, bagianIndex, fieldIndex)),
             key,
             label: String(F.label || F.key || 'Pertanyaan').trim(),
             tipe,
             wajib: !!F.wajib,
-            penuh: !!F.penuh || F.lebar === 'full',
-            lebar_persen: normalisasiLebarPersen(F),
+            penuh: !!bersih.penuh || F.lebar === 'full',
+            lebar_persen: normalisasiLebarPersen(bersih, F),
             lebar_jika: normalisasiLebarJika(F.lebar_jika),
-            opsi: Array.isArray(F.opsi) ? F.opsi : [],
+            ...(bolehPunyaOpsi(tipe) ? { opsi: Array.isArray(bersih.opsi) ? bersih.opsi : [] } : {}),
         };
     });
+}
+
+/** Hanya tipe berdaftar-pilihan yang membawa `opsi`; sisanya tidak boleh punya. */
+function bolehPunyaOpsi(tipe) {
+    return ['select', 'radio', 'checkbox'].includes(tipe);
 }
 
 /**
@@ -125,11 +131,18 @@ function fallbackFieldId(key, langkahIndex, bagianIndex, fieldIndex) {
     return `fld_legacy_${langkahIndex + 1}_${bagianIndex + 1}_${fieldIndex + 1}_${slugKey(key)}`;
 }
 
-function normalisasiLebarPersen(F) {
-    if (F.penuh || F.lebar === 'full') return 100;
-    const dariPersen = Number(F.lebar_persen || F.width_percent || 0);
+/**
+ * @param {object} bersih field yang sudah disaring katalog
+ * @param {object} mentah field asli — satu-satunya sumber properti lebar LEGACY
+ *        (`lebar`, `width_percent`, `lebar_span`, `kolom`). Keempatnya sengaja
+ *        tidak masuk katalog: mereka hanya perlu dibaca sekali saat memuat skema
+ *        lama, lalu digantikan `lebar_persen` yang tersimpan sesudahnya.
+ */
+function normalisasiLebarPersen(bersih, mentah = bersih) {
+    if (bersih.penuh || mentah.lebar === 'full') return 100;
+    const dariPersen = Number(bersih.lebar_persen || mentah.width_percent || 0);
     if (dariPersen) return Math.min(100, Math.max(33, Math.round(dariPersen)));
-    const span = Number(F.lebar_span || F.kolom || 0);
+    const span = Number(mentah.lebar_span || mentah.kolom || 0);
     if (span >= 3) return 100;
     if (span === 2) return 67;
     return 33;
