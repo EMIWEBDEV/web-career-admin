@@ -9,7 +9,11 @@
         <!-- ── Bagian BERULANG: Pengalaman Kerja, Organisasi, Prestasi ──
              Jawabannya array objek, satu objek per baris. -->
         <template v-if="bagian.berulang">
-            <div v-for="(baris, i) in baris" :key="i" class="bg__baris">
+            <!-- Alias v-for TIDAK BOLEH bernama `baris`. Namanya dulu sama
+                 dengan computed penampungnya, jadi `baris.length` di dalam loop
+                 membaca panjang OBJEK satu baris — selalu undefined — dan
+                 tombol hapus di bawah tidak pernah terpasang sama sekali. -->
+            <div v-for="(isiBaris, i) in baris" :key="i" class="bg__baris">
                 <div class="bg__baris-head">
                     <span class="bg__baris-no">{{ i + 1 }}</span>
                     <!-- Baris terakhir sengaja tidak bisa dihapus: bagian berulang
@@ -27,13 +31,13 @@
                 </div>
                 <div class="bg__grid">
                     <FieldRenderer
-                        v-for="f in fieldTerlihat(baris)"
+                        v-for="f in fieldTerlihat(isiBaris)"
                         :key="f.key"
                         :field="f"
-                        :model-value="baris[f.key]"
+                        :model-value="isiBaris[f.key]"
                         :disabled="disabled"
                         :konteks="konteksOpsi"
-                        :jawaban-konteks="baris"
+                        :jawaban-konteks="isiBaris"
                         @update:model-value="(v) => ubahBaris(i, f.key, v)"
                         @berkas="(e) => $emit('berkas', { ...e, bagian: kunci, baris: i })"
                     />
