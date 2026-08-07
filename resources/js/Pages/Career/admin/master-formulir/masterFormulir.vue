@@ -209,6 +209,17 @@
                             <RefSelect type="talent" v-model="meta.kategori" placeholder="Lintas kategori" clearable />
                         </div>
                         <div class="mfb-meta-bar__item">
+                            <label>Konteks Penggunaan</label>
+                            <el-select v-model="schema.konteks" style="width: 100%">
+                                <el-option
+                                    v-for="k in konteksOptions"
+                                    :key="k.value"
+                                    :value="k.value"
+                                    :label="k.label"
+                                />
+                            </el-select>
+                        </div>
+                        <div class="mfb-meta-bar__item">
                             <label>Mode Layout</label>
                             <div class="mfb-segmented">
                                 <button
@@ -554,174 +565,76 @@
 
                         <!-- Right Panel Inspector -->
                         <aside class="mfb-inspector">
-                            <template v-if="fieldAktif">
+                            <PropertiField
+                                v-if="fieldAktif"
+                                :key="fieldAktif.field_id"
+                                :field="fieldAktif"
+                                :semua-field="semuaField"
+                                :key-terkunci="keyFieldTerkunci"
+                                :katalog-prefill="katalogPrefill"
+                                :kunci-prefill="kunciPrefillAktif"
+                                :operator-options="conditionOperators"
+                                :lebar-options="lebarCepatOptions"
+                                @ubah-tipe="ubahTipeField"
+                                @ubah-label="ubahLabelField"
+                                @rapikan-key="rapikanKeyField"
+                                @rapikan-lebar="rapikanLebarField"
+                                @hapus="hapusFieldAktif"
+                            />
+
+                            <template v-else-if="langkahAktif">
                                 <div class="mfb-inspector__head">
-                                    <h3><i class="bi bi-sliders"></i> Properti Field</h3>
-                                    <span class="mfb-inspector__tag">{{ fieldAktif.tipe }}</span>
+                                    <h3><i class="bi bi-layers-half"></i> Properti Langkah</h3>
                                 </div>
 
                                 <div class="mfb-inspector__group">
-                                    <label>Label Pertanyaan</label>
-                                    <el-input
-                                        v-model="fieldAktif.label"
-                                        placeholder="Label pertanyaan"
-                                        @input="ubahLabelField"
-                                    />
+                                    <label>Judul Langkah</label>
+                                    <el-input v-model="langkahAktif.judul" placeholder="mis. Data Pendaftaran" />
                                 </div>
 
                                 <div class="mfb-inspector__group">
-                                    <label>Unique Key Identifier</label>
-                                    <div class="mfb-key-input">
-                                        <el-input
-                                            v-model="fieldAktif.key"
-                                            :disabled="keyFieldTerkunci"
-                                            @blur="rapikanKeyField"
-                                        />
-                                        <span
-                                            v-if="keyFieldTerkunci"
-                                            class="mfb-lock-tag"
-                                            title="Key terkunci karena formulir sudah dipublish"
-                                        >
-                                            <i class="bi bi-lock-fill"></i> Terkunci
-                                        </span>
-                                    </div>
-                                    <small class="mfb-help">Kode unik pengenal kolom di database.</small>
+                                    <label>Kode Langkah</label>
+                                    <el-input v-model="langkahAktif.kode" placeholder="PENDAFTARAN" />
+                                    <small class="mfb-help">Pengenal langkah di skema. Ubah hanya bila benar-benar perlu.</small>
                                 </div>
 
                                 <div class="mfb-inspector__group">
-                                    <label>Tipe Input Field</label>
-                                    <el-select v-model="fieldAktif.tipe" style="width: 100%" @change="ubahTipeField">
-                                        <el-option
-                                            v-for="t in tipeField"
-                                            :key="t.value"
-                                            :value="t.value"
-                                            :label="t.label"
-                                        />
+                                    <label>Ikon Langkah</label>
+                                    <el-select v-model="langkahAktif.ikon" style="width: 100%" filterable>
+                                        <el-option v-for="i in ikonLangkahOptions" :key="i" :value="i" :label="i">
+                                            <i class="bi" :class="i"></i> <span class="fr__opsi">{{ i }}</span>
+                                        </el-option>
                                     </el-select>
                                 </div>
 
-                                <div class="mfb-inspector__checks">
-                                    <el-checkbox v-model="fieldAktif.wajib">Wajib Diisi (Required)</el-checkbox>
-                                    <el-checkbox v-model="fieldAktif.dapat_disaring"
-                                        >Dapat Disaring di Rekap</el-checkbox
-                                    >
-                                </div>
-
                                 <div class="mfb-inspector__group">
-                                    <label>Lebar Presets Layout</label>
-                                    <div class="mfb-segmented">
-                                        <button
-                                            v-for="opt in lebarCepatOptions"
-                                            :key="opt.value"
-                                            type="button"
-                                            class="mfb-segmented__item"
-                                            :class="{ active: lebarCepatAktif === opt.value }"
-                                            @click="aturLebarCepat(opt.value)"
-                                        >
-                                            {{ opt.label }}
-                                        </button>
-                                    </div>
-                                    <div class="mfb-slider">
-                                        <span>33%</span>
-                                        <el-slider
-                                            v-model="fieldAktif.lebar_persen"
-                                            :min="33"
-                                            :max="100"
-                                            :step="1"
-                                            :format-tooltip="(v) => `${v}%`"
-                                            @change="rapikanLebarField"
-                                        />
-                                        <span>100%</span>
-                                    </div>
-                                </div>
-
-                                <!-- Lebar bersyarat: lebar berubah mengikuti jawaban field lain -->
-                                <div class="mfb-inspector__group">
-                                    <label><i class="bi bi-arrows-angle-expand"></i> Lebar Berubah Jika (Kondisional)</label>
-                                    <el-select
-                                        :model-value="fieldAktif.lebar_jika?.field || ''"
-                                        style="width: 100%"
-                                        clearable
-                                        placeholder="Lebar selalu tetap"
-                                        @change="aturLebarSyarat"
-                                    >
-                                        <el-option
-                                            v-for="f in fieldAcuanLebarOptions"
-                                            :key="f.field_id || f.key"
-                                            :value="f.key"
-                                            :label="f.label || f.key"
-                                        />
-                                    </el-select>
-                                    <template v-if="fieldAktif.lebar_jika?.field">
-                                        <div class="mfb-condition-row">
-                                            <el-select v-model="fieldAktif.lebar_jika.operator" style="width: 48%">
-                                                <el-option
-                                                    v-for="o in conditionOperators"
-                                                    :key="o.value"
-                                                    :value="o.value"
-                                                    :label="o.label"
-                                                />
-                                            </el-select>
-                                            <el-input
-                                                v-model="fieldAktif.lebar_jika.nilai"
-                                                placeholder="Nilai pemicu"
-                                                style="width: 52%"
-                                            />
-                                        </div>
-                                        <div class="mfb-segmented" style="margin-top: 0.5rem">
-                                            <button
-                                                v-for="opt in lebarCepatOptions"
-                                                :key="opt.value"
-                                                type="button"
-                                                class="mfb-segmented__item"
-                                                :class="{ active: fieldAktif.lebar_jika.lebar_persen === opt.value }"
-                                                @click="fieldAktif.lebar_jika.lebar_persen = opt.value"
-                                            >
-                                                {{ opt.label }}
-                                            </button>
-                                        </div>
-                                        <small class="mfb-inspector__hint">
-                                            Saat syarat terpenuhi lebar jadi
-                                            <b>{{ fieldAktif.lebar_jika.lebar_persen }}%</b>; selain itu tetap
-                                            <b>{{ Number(fieldAktif.lebar_persen || 33) }}%</b>.
-                                        </small>
-                                    </template>
-                                </div>
-
-                                <div class="mfb-inspector__group">
-                                    <label>Text Placeholder</label>
-                                    <el-input v-model="fieldAktif.ph" placeholder="Contoh: Masukkan nama lengkap..." />
-                                </div>
-
-                                <div class="mfb-inspector__group">
-                                    <label>Teks Bantuan / Keterangan</label>
+                                    <label>Deskripsi Langkah</label>
                                     <el-input
-                                        v-model="fieldAktif.bantuan"
+                                        v-model="langkahAktif.deskripsi"
                                         type="textarea"
                                         :rows="2"
-                                        placeholder="Keterangan kecil di bawah field..."
+                                        placeholder="Keterangan singkat di bawah judul langkah..."
                                     />
                                 </div>
 
-                                <!-- Conditional Logic Rule -->
                                 <div class="mfb-inspector__group">
-                                    <label><i class="bi bi-diagram-3"></i> Logika Tampil Jika (Kondisional)</label>
+                                    <label>Langkah Tampil Jika (Kondisional)</label>
                                     <el-select
-                                        :model-value="fieldAktif.tampil_jika?.field || ''"
+                                        :model-value="langkahAktif.tampil_jika?.field || ''"
                                         style="width: 100%"
                                         clearable
-                                        placeholder="Selalu Tampil (Tanpa Syarat)"
-                                        @change="aturFieldSyarat"
+                                        placeholder="Selalu Tampil"
+                                        @change="aturLangkahSyarat"
                                     >
                                         <el-option
-                                            v-for="f in fieldAcuanOptions"
+                                            v-for="f in semuaField.filter((x) => x.key)"
                                             :key="f.field_id || f.key"
                                             :value="f.key"
                                             :label="f.label || f.key"
                                         />
                                     </el-select>
-                                    <div v-if="fieldAktif.tampil_jika?.field" class="mfb-condition-row">
-                                        <el-select v-model="fieldAktif.tampil_jika.operator" style="width: 48%">
+                                    <div v-if="langkahAktif.tampil_jika?.field" class="mfb-condition-row">
+                                        <el-select v-model="langkahAktif.tampil_jika.operator" style="width: 48%">
                                             <el-option
                                                 v-for="o in conditionOperators"
                                                 :key="o.value"
@@ -730,74 +643,12 @@
                                             />
                                         </el-select>
                                         <el-input
-                                            v-model="fieldAktif.tampil_jika.nilai"
+                                            v-model="langkahAktif.tampil_jika.nilai"
                                             placeholder="Nilai pemicu"
                                             style="width: 52%"
                                         />
                                     </div>
                                 </div>
-
-                                <!-- Specific Options for Select / Radio / Checkbox -->
-                                <template v-if="butuhOpsi(fieldAktif)">
-                                    <div class="mfb-inspector__group">
-                                        <label>Daftar Pilihan Opsi</label>
-                                        <div v-for="(_, i) in fieldAktif.opsi" :key="i" class="mfb-optrow">
-                                            <el-input v-model="fieldAktif.opsi[i]" placeholder="Nama opsi" />
-                                            <button
-                                                type="button"
-                                                title="Hapus opsi"
-                                                @click="fieldAktif.opsi.splice(i, 1)"
-                                            >
-                                                <i class="bi bi-x-lg"></i>
-                                            </button>
-                                        </div>
-                                        <button
-                                            class="mfb-mini"
-                                            type="button"
-                                            @click="fieldAktif.opsi.push('Opsi Baru')"
-                                        >
-                                            <i class="bi bi-plus"></i> Tambah Opsi Baru
-                                        </button>
-                                    </div>
-                                </template>
-
-                                <!-- File Upload Settings -->
-                                <template v-if="fieldAktif.tipe === 'file'">
-                                    <div class="mfb-inspector__group">
-                                        <label>Format Berkas Diterima (Accept)</label>
-                                        <el-input v-model="fieldAktif.accept" placeholder=".pdf,.jpg,.jpeg,.png" />
-                                    </div>
-                                    <div class="mfb-inspector__group">
-                                        <label>Batas Maksimal Ukuran (MB)</label>
-                                        <el-input-number
-                                            v-model="fieldAktif.maks_mb"
-                                            :min="1"
-                                            :max="20"
-                                            style="width: 100%"
-                                        />
-                                    </div>
-                                </template>
-
-                                <!-- Reference Field Settings -->
-                                <template v-if="fieldAktif.tipe === 'referensi'">
-                                    <div class="mfb-inspector__group">
-                                        <label>Sumber Master Data Referensi</label>
-                                        <el-select v-model="fieldAktif.sumber" style="width: 100%">
-                                            <el-option value="jenjang" label="Jenjang Pendidikan" />
-                                            <el-option value="jenis_institusi" label="Jenis Institusi" />
-                                            <el-option value="kampus" label="Nama Kampus / Perguruan Tinggi" />
-                                            <el-option value="prodi" label="Program Studi / Jurusan" />
-                                        </el-select>
-                                    </div>
-                                </template>
-
-                                <button
-                                    class="mfb-btn mfb-btn--danger mfb-btn--full"
-                                    type="button"
-                                    @click="hapusFieldAktif"
-                                >
-                                    <i class="bi bi-trash"></i> Hapus Field Ini
-                                </button>
                             </template>
 
                             <template v-else-if="sectionAktif">
@@ -807,6 +658,40 @@
                                 <p class="mfb-help">
                                     Atur pola layout kolom atau sisipkan blok template pertanyaan standar.
                                 </p>
+
+                                <div class="mfb-inspector__group">
+                                    <label>Judul Section</label>
+                                    <el-input v-model="sectionAktif.judul" placeholder="mis. Data Diri" />
+                                    <small class="mfb-help">Kosongkan bila judul langkah sudah cukup menjelaskan.</small>
+                                </div>
+
+                                <div class="mfb-inspector__group">
+                                    <label>Deskripsi Section</label>
+                                    <el-input
+                                        v-model="sectionAktif.deskripsi"
+                                        type="textarea"
+                                        :rows="2"
+                                        placeholder="Keterangan singkat di bawah judul section..."
+                                    />
+                                </div>
+
+                                <div class="mfb-inspector__group">
+                                    <el-checkbox v-model="sectionAktif.berulang">Section Berulang (Multi-Baris)</el-checkbox>
+                                    <small class="mfb-help">
+                                        Kandidat bisa menambah baris — mis. riwayat organisasi atau pengalaman kerja.
+                                        Jawabannya tersimpan sebagai daftar, bukan satu nilai.
+                                    </small>
+                                </div>
+
+                                <div v-if="sectionAktif.berulang" class="mfb-inspector__group">
+                                    <label>Maksimal Jumlah Baris</label>
+                                    <el-input-number
+                                        v-model="sectionAktif.maks_baris"
+                                        :min="1"
+                                        :max="20"
+                                        style="width: 100%"
+                                    />
+                                </div>
 
                                 <div class="mfb-inspector__group">
                                     <label>Preset Format Kolom</label>
@@ -1223,12 +1108,19 @@ import {
     slugKey,
     validasiSkema,
 } from '@career/formulir';
+import { KATALOG_FIELD, bersihkanField, galatTipe } from '@career/formulir/inti/katalogField';
+import PropertiField from './PropertiField.vue';
 
 const API = '/api/v1/master-formulir';
 const CFG = { headers: { Accept: 'application/json' } };
 
 export default {
-    components: { Head, RefSelect, AuditStamp, ConfirmModal, IconPicker, DynamicForm, draggable },
+    components: { Head, RefSelect, AuditStamp, ConfirmModal, IconPicker, DynamicForm, draggable, PropertiField },
+    props: {
+        // Diisi Inertia dari KatalogPrefill::untukEditor. Selama kosong,
+        // pemeriksaan kunci isi-otomatis tidak berjalan sama sekali.
+        katalogPrefill: { type: Array, default: () => [] },
+    },
     data() {
         return {
             list: [],
@@ -1267,20 +1159,25 @@ export default {
                 { label: 'Satu Halaman', value: 'SATU_HALAMAN' },
                 { label: 'Bertahap (Stepper)', value: 'BERTAHAP' },
             ],
-            tipeField: [
-                { value: 'text', label: 'Teks Ringkas' },
-                { value: 'textarea', label: 'Paragraf / Deskripsi' },
-                { value: 'number', label: 'Angka' },
-                { value: 'date', label: 'Tanggal' },
-                { value: 'select', label: 'Dropdown Pilihan' },
-                { value: 'radio', label: 'Radio Button' },
-                { value: 'checkbox', label: 'Checkbox' },
-                { value: 'file', label: 'Upload Berkas' },
-                { value: 'foto', label: 'Foto Verifikasi (Kamera)' },
-                { value: 'phone', label: 'Nomor Telepon' },
-                { value: 'email', label: 'Email' },
-                { value: 'consent', label: 'Persetujuan / Declaration' },
-                { value: 'referensi', label: 'Referensi Master Data' },
+            /**
+             * Menentukan kunci isi-otomatis yang tersedia. KEDUANYA hanya
+             * mengambil irisan: formulir yang dipakai di dua tempat tidak boleh
+             * memakai kunci yang di salah satunya selalu kosong.
+             */
+            konteksOptions: [
+                { value: 'KEDUANYA', label: 'Keduanya (aman untuk semua)' },
+                { value: 'PENDAFTARAN', label: 'Formulir Pendaftaran' },
+                { value: 'TAHAP', label: 'Formulir Tahap Seleksi' },
+            ],
+            ikonLangkahOptions: [
+                'bi-card-list',
+                'bi-person-vcard',
+                'bi-mortarboard',
+                'bi-briefcase',
+                'bi-file-earmark-text',
+                'bi-shield-check',
+                'bi-people',
+                'bi-clipboard-check',
             ],
             lebarCepatOptions: [
                 { label: '1/3', value: 33 },
@@ -1296,88 +1193,45 @@ export default {
                 { label: 'Termasuk dalam (ADA_DI)', value: 'ADA_DI' },
                 { label: 'Tidak termasuk (TIDAK_ADA_DI)', value: 'TIDAK_ADA_DI' },
             ],
-            fieldPalette: [
-                {
-                    value: 'text',
-                    label: 'Teks',
-                    icon: 'bi-input-cursor-text',
-                    field: { label: 'Pertanyaan Teks', tipe: 'text' },
-                },
-                {
-                    value: 'email',
-                    label: 'Email',
-                    icon: 'bi-envelope',
-                    field: { label: 'Alamat Email', tipe: 'email', ph: 'nama@contoh.com' },
-                },
-                {
-                    value: 'phone',
-                    label: 'Telepon',
-                    icon: 'bi-telephone',
-                    field: { label: 'Nomor Telepon', tipe: 'phone', ph: '08xxxxxxxxxx' },
-                },
-                {
-                    value: 'select',
-                    label: 'Pilihan',
-                    icon: 'bi-menu-button-wide',
-                    field: { label: 'Pilih Salah Satu', tipe: 'select', opsi: ['Opsi 1', 'Opsi 2'] },
-                },
-                {
-                    value: 'radio',
-                    label: 'Radio',
-                    icon: 'bi-record-circle',
-                    field: { label: 'Pilihan Radio', tipe: 'radio', opsi: ['Ya', 'Tidak'] },
-                },
-                {
-                    value: 'file',
-                    label: 'Upload',
-                    icon: 'bi-paperclip',
-                    field: {
-                        label: 'Upload Dokumen',
-                        tipe: 'file',
-                        accept: '.pdf,.jpg,.jpeg,.png',
-                        maks_mb: 5,
-                        lebar_persen: 100,
-                        penuh: true,
-                    },
-                },
-                {
-                    value: 'foto',
-                    label: 'Foto Kamera',
-                    icon: 'bi-person-bounding-box',
-                    field: {
-                        // Key-nya SENGAJA `foto_verifikasi`. Nilai itu sudah jadi
-                        // kesepakatan di seluruh sistem: LamaranService mencarinya
-                        // untuk lampiran email, dan halaman Pelamar serta Detail
-                        // Lamaran memakainya untuk memberi label "Foto verifikasi
-                        // identitas kandidat". Key lain tetap tersimpan, tapi
-                        // fotonya berhenti dikenali sebagai foto verifikasi.
+            /**
+             * Palette = jalan pintas, bukan daftar lengkap. Yang ditulis di sini
+             * hanya urutan tipe yang sering dipakai plus nilai bawaan yang khas
+             * pemakaiannya; label, ikon, dan pembersihan propertinya ikut katalog.
+             *
+             * `foto` membawa key bawaan `foto_verifikasi` — nilai itu sudah jadi
+             * kesepakatan seluruh sistem: LamaranService mencarinya untuk lampiran
+             * email, halaman Pelamar dan Detail Lamaran memakainya untuk label
+             * "foto verifikasi identitas kandidat". Key lain tetap tersimpan, tapi
+             * fotonya berhenti dikenali sebagai foto verifikasi.
+             */
+            paletteUrutan: [
+                ['text', 'Teks', { label: 'Pertanyaan Teks' }],
+                ['email', 'Email', { label: 'Alamat Email', ph: 'nama@contoh.com' }],
+                ['phone', 'Telepon', { label: 'Nomor Telepon', ph: '08xxxxxxxxxx' }],
+                ['number', 'Angka', { label: 'Pertanyaan Angka' }],
+                ['date', 'Tanggal', { label: 'Pilih Tanggal' }],
+                ['select', 'Pilihan', { label: 'Pilih Salah Satu' }],
+                ['radio', 'Radio', { label: 'Pilihan Radio' }],
+                ['checkbox', 'Checkbox', { label: 'Pilih Beberapa' }],
+                ['textarea', 'Paragraf', { label: 'Ceritakan Lebih Lanjut' }],
+                ['file', 'Upload', { label: 'Upload Dokumen', accept: '.pdf,.jpg,.jpeg,.png' }],
+                [
+                    'foto',
+                    'Foto Kamera',
+                    {
                         key: 'foto_verifikasi',
                         label: 'Foto Verifikasi Wajah',
-                        tipe: 'foto',
                         wajib: true,
                         bantuan: 'Ambil foto wajah langsung dari kamera perangkat Anda.',
-                        lebar_persen: 100,
-                        penuh: true,
                     },
-                },
-                {
-                    value: 'textarea',
-                    label: 'Paragraf',
-                    icon: 'bi-textarea-t',
-                    field: { label: 'Ceritakan Lebih Lanjut', tipe: 'textarea', lebar_persen: 67 },
-                },
-                {
-                    value: 'consent',
-                    label: 'Persetujuan',
-                    icon: 'bi-shield-check',
-                    field: {
-                        label: 'Saya menyatakan seluruh data yang diisi adalah benar',
-                        tipe: 'consent',
-                        wajib: true,
-                        lebar_persen: 100,
-                        penuh: true,
-                    },
-                },
+                ],
+                ['referensi', 'Referensi', { label: 'Pilih dari Master Data', sumber: 'jenjang' }],
+                ['prefill', 'Isi Otomatis', { label: 'Data dari Akun Anda' }],
+                [
+                    'consent',
+                    'Persetujuan',
+                    { label: 'Saya menyatakan seluruh data yang diisi adalah benar', wajib: true },
+                ],
             ],
             layoutPresetOptions: [
                 { value: 'THREE', label: '3 Kolom', help: 'Ringkas & padat', icon: 'bi-layout-three-columns' },
@@ -1493,17 +1347,47 @@ export default {
             if (!this.fieldAktif || !this.aktif?.published?.schema) return false;
             return this.fieldDipublish(this.fieldAktif);
         },
-        lebarCepatAktif() {
-            const v = Number(this.fieldAktif?.lebar_persen || 33);
-            if (v >= 95) return 100;
-            if (v >= 60) return 67;
-            if (v >= 45) return 50;
-            return 33;
+        fieldPalette() {
+            return this.paletteUrutan
+                .filter(([value]) => KATALOG_FIELD[value])
+                .map(([value, label, bawaan]) => ({
+                    value,
+                    label,
+                    icon: KATALOG_FIELD[value].ikon,
+                    // Lewat bersihkanField supaya nilai bawaan palette tidak bisa
+                    // menyelipkan properti yang bukan milik tipenya.
+                    field: bersihkanField({ ...bawaan, tipe: value }),
+                }));
+        },
+        /**
+         * Kunci isi-otomatis yang tersedia untuk konteks formulir ini.
+         * KEDUANYA hanya mengambil irisan: formulir yang dipakai di dua tempat
+         * tidak boleh memakai kunci yang di salah satunya selalu kosong.
+         */
+        kunciPrefillAktif() {
+            const konteks = this.schema.konteks || 'KEDUANYA';
+            const butuh = konteks === 'KEDUANYA' ? ['PENDAFTARAN', 'TAHAP'] : [konteks];
+            return (this.katalogPrefill || [])
+                .filter((k) => butuh.every((b) => k.konteks.includes(b)))
+                .map((k) => k.kunci);
         },
         sectionAktif() {
             const t = this.pilihTarget;
             if (!t || t.tipe !== 'section') return null;
             return this.schema.langkah?.[t.li]?.bagian?.[t.bi] || null;
+        },
+        /**
+         * Langkah yang sedang dipilih di kanvas.
+         *
+         * Kanvas sudah bisa memilih langkah sejak awal (pilihTarget.tipe ===
+         * 'step'), tapi inspector tidak punya cabangnya — jadi ikon, deskripsi,
+         * dan syarat tampil langkah tidak pernah bisa diisi walau ketiganya
+         * sudah dinormalisasi dan dirender.
+         */
+        langkahAktif() {
+            const t = this.pilihTarget;
+            if (!t || t.tipe !== 'step') return null;
+            return this.schema.langkah?.[t.index] || null;
         },
         semuaField() {
             const fields = [];
@@ -1521,17 +1405,6 @@ export default {
         fieldAcuanOptions() {
             const id = this.fieldAktif?.field_id;
             return this.semuaField.filter((f) => f.field_id !== id && f.key);
-        },
-        /**
-         * Acuan untuk lebar bersyarat SENGAJA menyertakan field itu sendiri.
-         *
-         * Berbeda dari `tampil_jika` yang melingkar kalau mengacu diri sendiri,
-         * pemakaian utama lebar bersyarat justru begitu: "Status Kemahasiswaan"
-         * menyusut jadi setengah baris ketika JAWABANNYA SENDIRI "Mahasiswa",
-         * memberi ruang bagi "Semester" yang baru muncul di sebelahnya.
-         */
-        fieldAcuanLebarOptions() {
-            return this.semuaField.filter((f) => f.key);
         },
         jumlahIssue() {
             return this.semuaField.reduce((jumlah, f) => jumlah + this.fieldIssues(f).length, 0);
@@ -1655,7 +1528,7 @@ export default {
             this.previewJawaban = jawabanAwal(this.schema, {});
         },
         async simpanDraft() {
-            const valid = validasiSkema(this.schema);
+            const valid = validasiSkema(this.schema, { kunciPrefill: this.kunciPrefillAktif });
             if (!valid.ok) return this.notice(valid.errors[0]);
             this.saving = true;
             try {
@@ -1667,7 +1540,13 @@ export default {
                     this.aktif.id = data.result?.id;
                 }
                 await this.load();
-                this.notice('Draft formulir berhasil tersimpan.');
+                // Peringatan tidak menggagalkan simpan, tapi harus terlihat —
+                // mis. field foto yang key-nya bukan `foto_verifikasi`.
+                this.notice(
+                    valid.peringatan.length
+                        ? `Draft tersimpan. Perhatikan: ${valid.peringatan[0]}`
+                        : 'Draft formulir berhasil tersimpan.',
+                );
             } catch (e) {
                 this.notice(e.response?.data?.message || 'Gagal menyimpan draft.');
             } finally {
@@ -1682,7 +1561,7 @@ export default {
             if (!force && this.aktif?.published?.schema) return (this.showCompare = true);
             if (!this.aktif?.id) await this.simpanDraft();
             if (!this.aktif?.id) return;
-            const valid = validasiSkema(this.schema);
+            const valid = validasiSkema(this.schema, { kunciPrefill: this.kunciPrefillAktif });
             if (!valid.ok) return this.notice(valid.errors[0]);
             this.saving = true;
             try {
@@ -1951,23 +1830,13 @@ export default {
             if (!this.fieldAktif) return;
             this.rapikanField(this.fieldAktif);
         },
-        aturFieldSyarat(key) {
-            if (!this.fieldAktif) return;
-            this.fieldAktif.tampil_jika = key ? { field: key, operator: '=', nilai: '' } : null;
-        },
-        /**
-         * Lebar bersyarat: lebar target diawali 50% karena pemakaian utamanya
-         * memberi ruang bagi satu field pendamping yang baru muncul di sebelahnya.
-         */
-        aturLebarSyarat(key) {
-            if (!this.fieldAktif) return;
-            this.fieldAktif.lebar_jika = key
-                ? { field: key, operator: '=', nilai: '', lebar_persen: 50 }
-                : null;
-        },
         aturSectionSyarat(key) {
             if (!this.sectionAktif) return;
             this.sectionAktif.tampil_jika = key ? { field: key, operator: '=', nilai: '' } : null;
+        },
+        aturLangkahSyarat(key) {
+            if (!this.langkahAktif) return;
+            this.langkahAktif.tampil_jika = key ? { field: key, operator: '=', nilai: '' } : null;
         },
         rapikanKeyField() {
             if (!this.fieldAktif || this.keyFieldTerkunci) return;
@@ -1976,18 +1845,20 @@ export default {
             this.fieldAktif.key = this.keyUnik(rapi, this.fieldAktif.field_id);
         },
         rapikanField(f) {
-            if (this.butuhOpsi(f) && !Array.isArray(f.opsi)) f.opsi = ['Ya', 'Tidak'];
-            if (f.tipe === 'file') {
-                f.accept = f.accept || '.pdf';
-                f.maks_mb = f.maks_mb || 5;
-                f.penuh = true;
-                f.lebar_persen = 100;
-            }
-        },
-        aturLebarCepat(v) {
-            if (!this.fieldAktif) return;
-            this.fieldAktif.lebar_persen = Number(v || 33);
-            this.rapikanLebarField();
+            // Dua arah: melengkapi bawaan tipe baru DAN membuang properti yang
+            // bukan miliknya. Yang kedua itu perbaikannya — sebelumnya properti
+            // sisa (opsi pada field yang sudah jadi teks, accept pada field yang
+            // sudah bukan berkas) menempel selamanya di Schema_Json.
+            //
+            // Objeknya disunting DI TEMPAT, bukan diganti, supaya `pilihTarget`
+            // yang menunjuk field ini tetap sahih.
+            const bersih = bersihkanField(f);
+            Object.keys(f).forEach((k) => {
+                if (!(k in bersih)) delete f[k];
+            });
+            Object.entries(bersih).forEach(([k, v]) => {
+                if (f[k] === undefined) f[k] = v;
+            });
         },
         rapikanLebarField() {
             if (!this.fieldAktif) return;
@@ -2033,17 +1904,38 @@ export default {
             this.resizeState = null;
             this.rapikanLebarField();
         },
-        butuhOpsi(f) {
-            return ['select', 'radio', 'checkbox'].includes(f?.tipe);
-        },
+        /**
+         * Penanda masalah di kanvas. Aturan per tipe diambil dari katalog;
+         * sisanya pemeriksaan lintas-field yang hanya bisa dilihat dari sini
+         * (key duplikat, rujukan ke field yang tidak ada).
+         */
         fieldIssues(field) {
             const issues = [];
             if (!field?.label?.trim()) issues.push('Label belum diisi');
             if (!field?.key?.trim()) issues.push('Key belum dibuat');
-            if (this.butuhOpsi(field) && (!Array.isArray(field.opsi) || field.opsi.filter(Boolean).length < 2))
-                issues.push('Minimal harus ada 2 opsi pilihan');
-            if (field.tipe === 'file' && !field.accept) issues.push('Format file upload belum diatur');
+
+            const gTipe = galatTipe(field);
+            if (gTipe) issues.push(gTipe);
+
             if (field.tampil_jika?.field === field.key) issues.push('Kondisi tidak boleh mengacu ke dirinya sendiri');
+
+            const keyAda = new Set(this.semuaField.map((f) => f.key).filter(Boolean));
+            [
+                field.beda_dengan,
+                ...(Array.isArray(field.reset_anak) ? field.reset_anak : []),
+                ...Object.values(field.bergantung || {}),
+                ...Object.values(field.saring || {}),
+                field.tampil_jika?.field,
+            ]
+                .filter(Boolean)
+                .forEach((k) => {
+                    if (!keyAda.has(k)) issues.push(`Menunjuk key "${k}" yang tidak ada`);
+                });
+
+            if (field.tipe === 'foto' && field.key !== 'foto_verifikasi') {
+                issues.push('Key sebaiknya "foto_verifikasi" agar dikenali sebagai foto verifikasi');
+            }
+
             const duplicate = this.semuaField.filter((f) => f !== field && f.key && f.key === field.key).length;
             if (duplicate) issues.push('Key identifier duplikat');
             return issues;

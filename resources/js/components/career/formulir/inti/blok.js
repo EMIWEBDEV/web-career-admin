@@ -57,6 +57,15 @@ export function blokPendidikan(opsi = {}) {
             // Nilainya Kode ('S1', 'SMK') — sama persis dengan opsi statis lama,
             // jadi syarat auto-gugur yang sudah berjalan tetap kena.
             dapat_disaring: true,
+            // Mengganti jenjang membatalkan seluruh rantai di bawahnya: daftar
+            // institusi, kampus, dan jurusan semuanya disaring oleh jenjang.
+            // Tanpa ini jawaban lama bertahan di layar, tidak lagi ada di daftar
+            // pilihannya, dan tetap ikut terkirim saat disimpan.
+            //
+            // CATATAN: `reset_anak` baru ditangani layout SatuHalaman. Formulir
+            // yang memakai layout Bertahap belum ikut mengosongkan anaknya —
+            // blok ini dipakai Form 1 yang satu halaman, jadi berlaku di sana.
+            reset_anak: ['jenis_institusi', 'nama_kampus', 'jurusan'],
         },
         {
             key: 'jenis_institusi',
@@ -68,6 +77,7 @@ export function blokPendidikan(opsi = {}) {
             bergantung: { jenjang: 'jenjang_pendidikan' },
             ph_terkunci: 'Pilih jenjang pendidikan dulu',
             dapat_disaring: true,
+            reset_anak: ['nama_kampus'],
         },
         {
             key: 'nama_kampus',

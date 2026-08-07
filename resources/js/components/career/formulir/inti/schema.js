@@ -5,36 +5,30 @@
  *   { layout: 'SATU_HALAMAN'|'BERTAHAP', langkah: [{ bagian: [{ field: [] }] }] }
  */
 
-const TIPE_VALID = new Set([
-    'text',
-    'textarea',
-    'number',
-    'date',
-    'select',
-    'radio',
-    'checkbox',
-    'file',
-    'phone',
-    'email',
-    'consent',
-    'prefill',
-    'referensi',
-    'currency',
-    'bulan',
-    'tahun',
-    // Foto wajah yang diambil LANGSUNG dari kamera, bukan diunggah dari galeri.
-    // Dipakai untuk verifikasi identitas: berkas hasil unggahan bisa berupa foto
-    // siapa saja, sedangkan tangkapan kamera memaksa orangnya hadir saat itu.
-    'foto',
-]);
+import { TIPE_VALID, bersihkanField, galatTipe } from './katalogField';
+
+// Daftar tipe hidup di katalog sekarang. Diekspor ulang dari sini supaya
+// pemakai lama tidak perlu tahu bahwa tempatnya pindah.
+export { TIPE_VALID };
+
+/**
+ * Konteks pemakaian formulir. Menentukan kunci isi-otomatis apa yang tersedia:
+ * `nik` hanya terisi di formulir pendaftaran, `kampus` hanya di formulir tahap.
+ */
+const KONTEKS_VALID = new Set(['PENDAFTARAN', 'TAHAP', 'KEDUANYA']);
 
 export function normalisasiSkema(skema) {
     const s = skema && typeof skema === 'object' ? skema : {};
     const layout = String(s.layout || 'SATU_HALAMAN').toUpperCase() === 'BERTAHAP' ? 'BERTAHAP' : 'SATU_HALAMAN';
     const langkah = Array.isArray(s.langkah) ? s.langkah : [];
+    const konteksMentah = String(s.konteks || '').toUpperCase();
 
     return {
         schema_version: Number(s.schema_version || 1),
+        // Skema lama tidak menyimpan konteks. KEDUANYA adalah default yang aman:
+        // ia hanya mengizinkan kunci isi-otomatis yang tersedia di kedua konteks,
+        // jadi formulir berjalan tidak mendadak jadi tidak sah.
+        konteks: KONTEKS_VALID.has(konteksMentah) ? konteksMentah : 'KEDUANYA',
         template: s.template || 'TEMPLATE_1',
         layout,
         langkah: langkah.map((L, i) => ({
@@ -67,19 +61,31 @@ function normalisasiField(field, langkahIndex = 0, bagianIndex = 0) {
     return (Array.isArray(field) ? field : []).map((F, fieldIndex) => {
         const tipe = TIPE_VALID.has(String(F.tipe || '').toLowerCase()) ? String(F.tipe).toLowerCase() : 'text';
         const key = slugKey(F.key || F.label || 'field');
+
+        // Dibersihkan LEBIH DULU, baru dilengkapi. Urutannya penting: properti
+        // sisa tipe lama harus gugur sebelum kita menambahkan yang wajib ada,
+        // supaya skema yang sudah terlanjur kotor ikut rapi saat dimuat — bukan
+        // hanya saat tipenya diubah di editor.
+        const bersih = bersihkanField({ ...F, tipe });
+
         return {
-            ...F,
+            ...bersih,
             field_id: String(F.field_id || F.id || fallbackFieldId(key, langkahIndex, bagianIndex, fieldIndex)),
             key,
             label: String(F.label || F.key || 'Pertanyaan').trim(),
             tipe,
             wajib: !!F.wajib,
-            penuh: !!F.penuh || F.lebar === 'full',
-            lebar_persen: normalisasiLebarPersen(F),
+            penuh: !!bersih.penuh || F.lebar === 'full',
+            lebar_persen: normalisasiLebarPersen(bersih, F),
             lebar_jika: normalisasiLebarJika(F.lebar_jika),
-            opsi: Array.isArray(F.opsi) ? F.opsi : [],
+            ...(bolehPunyaOpsi(tipe) ? { opsi: Array.isArray(bersih.opsi) ? bersih.opsi : [] } : {}),
         };
     });
+}
+
+/** Hanya tipe berdaftar-pilihan yang membawa `opsi`; sisanya tidak boleh punya. */
+function bolehPunyaOpsi(tipe) {
+    return ['select', 'radio', 'checkbox'].includes(tipe);
 }
 
 /**
@@ -125,11 +131,18 @@ function fallbackFieldId(key, langkahIndex, bagianIndex, fieldIndex) {
     return `fld_legacy_${langkahIndex + 1}_${bagianIndex + 1}_${fieldIndex + 1}_${slugKey(key)}`;
 }
 
-function normalisasiLebarPersen(F) {
-    if (F.penuh || F.lebar === 'full') return 100;
-    const dariPersen = Number(F.lebar_persen || F.width_percent || 0);
+/**
+ * @param {object} bersih field yang sudah disaring katalog
+ * @param {object} mentah field asli — satu-satunya sumber properti lebar LEGACY
+ *        (`lebar`, `width_percent`, `lebar_span`, `kolom`). Keempatnya sengaja
+ *        tidak masuk katalog: mereka hanya perlu dibaca sekali saat memuat skema
+ *        lama, lalu digantikan `lebar_persen` yang tersimpan sesudahnya.
+ */
+function normalisasiLebarPersen(bersih, mentah = bersih) {
+    if (bersih.penuh || mentah.lebar === 'full') return 100;
+    const dariPersen = Number(bersih.lebar_persen || mentah.width_percent || 0);
     if (dariPersen) return Math.min(100, Math.max(33, Math.round(dariPersen)));
-    const span = Number(F.lebar_span || F.kolom || 0);
+    const span = Number(mentah.lebar_span || mentah.kolom || 0);
     if (span >= 3) return 100;
     if (span === 2) return 67;
     return 33;
@@ -175,10 +188,31 @@ export function skemaKosong() {
     };
 }
 
-export function validasiSkema(skema) {
+/**
+ * Validasi skema sebelum disimpan/dipublish.
+ *
+ * @param {object} skema
+ * @param {object} [opsi]
+ * @param {string[]} [opsi.kunciPrefill] daftar kunci isi-otomatis yang tersedia
+ *        untuk konteks formulir ini. Bila tidak diberikan, pemeriksaan kunci
+ *        DILEWATI — skema bawaan di registry tidak tahu konteks pemakaiannya,
+ *        dan menolaknya di sana hanya akan memblokir uji tanpa alasan.
+ * @returns {{ ok: boolean, errors: string[], peringatan: string[], skema: object }}
+ */
+export function validasiSkema(skema, opsi = {}) {
     const s = normalisasiSkema(skema);
     const errors = [];
+    const peringatan = [];
     if (!s.langkah.length) errors.push('Minimal harus ada satu langkah.');
+
+    const posisi = new Map();
+    let urut = 0;
+    s.langkah.forEach((L) => L.bagian.forEach((B) => B.field.forEach((F) => {
+        if (F.key && !posisi.has(F.key)) posisi.set(F.key, urut);
+        urut++;
+    })));
+
+    const kunciPrefill = Array.isArray(opsi.kunciPrefill) ? new Set(opsi.kunciPrefill) : null;
 
     const keys = new Set();
     const ids = new Set();
@@ -195,15 +229,72 @@ export function validasiSkema(skema) {
                 if (!F.field_id) errors.push(`Field "${F.label}" belum punya ID sistem.`);
                 if (ids.has(F.field_id)) errors.push(`ID sistem field "${F.label}" terduplikasi.`);
                 ids.add(F.field_id);
-                if (['select', 'radio', 'checkbox'].includes(F.tipe) && !F.opsi.length) {
-                    errors.push(`Field "${F.label}" membutuhkan minimal satu opsi.`);
+
+                const gTipe = galatTipe(F);
+                if (gTipe) errors.push(`Field "${F.label}": ${gTipe}`);
+
+                errors.push(...galatRujukan(F, posisi));
+
+                if (kunciPrefill && F.prefill && !kunciPrefill.has(F.prefill)) {
+                    errors.push(
+                        `Field "${F.label}" mengisi otomatis dari "${F.prefill}", yang tidak tersedia untuk konteks formulir ini.`,
+                    );
                 }
-                if (F.tipe === 'file' && !F.accept) {
-                    errors.push(`Field "${F.label}" perlu aturan tipe file.`);
+
+                // Peringatan, bukan galat: formulirnya tetap sah. Yang hilang
+                // hanya pengenalannya sebagai foto verifikasi oleh LamaranService,
+                // halaman Pelamar, dan Detail Lamaran — ketiganya mencari key
+                // `foto_verifikasi` secara harfiah.
+                if (F.tipe === 'foto' && F.key !== 'foto_verifikasi') {
+                    peringatan.push(
+                        `Field "${F.label}" memakai key "${F.key}". Foto hanya dikenali sebagai foto verifikasi identitas bila key-nya "foto_verifikasi".`,
+                    );
                 }
             });
         });
     });
 
-    return { ok: errors.length === 0, errors, skema: s };
+    return { ok: errors.length === 0, errors, peringatan, skema: s };
+}
+
+/**
+ * Rujukan ke field lain: tampil_jika, beda_dengan, reset_anak, bergantung, saring.
+ *
+ * Dua kesalahan yang dijaring:
+ *
+ *   1. Menunjuk key yang tidak ada. Syaratnya diam-diam tidak pernah terpenuhi,
+ *      dan field-nya tidak pernah muncul — tanpa pesan galat apa pun.
+ *   2. `tampil_jika` menunjuk field yang letaknya SESUDAH field ini. Pada layout
+ *      bertahap acuannya berada di langkah yang belum dibuka saat field ini
+ *      dinilai, jadi syaratnya mustahil terpenuhi. `lebar_jika` sengaja TIDAK
+ *      ikut aturan ini: pemakaian utamanya justru mengacu dirinya sendiri —
+ *      sebuah field menyusut ketika jawabannya sendiri memunculkan field
+ *      pendamping di sebelahnya.
+ */
+function galatRujukan(F, posisi) {
+    const out = [];
+    const ada = (key, dari) => {
+        if (!key) return;
+        if (!posisi.has(key)) {
+            out.push(`Field "${F.label}" (${dari}) menunjuk key "${key}" yang tidak ada di formulir ini.`);
+        }
+    };
+
+    const acuan = F.tampil_jika?.field;
+    if (acuan) {
+        if (!posisi.has(acuan)) {
+            out.push(`Field "${F.label}" (tampil jika) menunjuk key "${acuan}" yang tidak ada di formulir ini.`);
+        } else if (posisi.get(acuan) >= posisi.get(F.key)) {
+            out.push(
+                `Field "${F.label}" bersyarat pada "${acuan}", yang letaknya sesudah field ini — syaratnya tidak akan pernah terpenuhi.`,
+            );
+        }
+    }
+
+    ada(F.beda_dengan, 'beda dengan');
+    (Array.isArray(F.reset_anak) ? F.reset_anak : []).forEach((k) => ada(k, 'reset anak'));
+    Object.values(F.bergantung || {}).forEach((k) => ada(k, 'bergantung'));
+    Object.values(F.saring || {}).forEach((k) => ada(k, 'saring'));
+
+    return out;
 }
