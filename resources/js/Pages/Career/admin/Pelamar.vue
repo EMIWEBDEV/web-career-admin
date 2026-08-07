@@ -1929,7 +1929,7 @@
             title="Cetak Laporan Kandidat"
             :subtitle="detailKandidat ? `${detailKandidat.pelamar} — ${detailKandidat.lamaranKode}` : ''"
             confirm-label="Buat & Unduh"
-            :busy="sibuk"
+            :busy="sibuk || laporanMuat"
             form-mode
             @confirm="konfirmLaporan"
             @cancel="laporanShow = false"
@@ -1963,7 +1963,21 @@
                 </div>
             </div>
 
-            <div v-if="laporanOpsi.length > 1" class="plw-fld">
+            <!-- DAFTAR FORMULIR MASIH DIAMBIL.
+                 Rangkanya ditampilkan, bukan ruang kosong: yang membuka modal
+                 ini harus tahu bahwa masih ADA yang akan muncul di bawah pilihan
+                 format — kalau tidak, ia menekan "Buat & Unduh" mengira sudah
+                 tidak ada yang perlu dipilih. -->
+            <div v-if="laporanMuat" class="plw-fld">
+                <label class="plw-fld__lbl">Formulir yang disertakan</label>
+                <div class="plw-load" style="justify-content: flex-start; padding: 0.35rem 0 0.6rem">
+                    <span class="plw-spin"></span> Memuat daftar formulir…
+                </div>
+                <div class="plw-rangka"></div>
+                <div class="plw-rangka plw-rangka--pendek"></div>
+            </div>
+
+            <div v-else-if="laporanOpsi.length > 1" class="plw-fld">
                 <label class="plw-fld__lbl">Formulir yang disertakan</label>
                 <label v-for="f in laporanOpsi" :key="f.id" class="plw-cek">
                     <input type="checkbox" :value="f.id" v-model="laporanFormulir" />
@@ -1980,7 +1994,7 @@
                     <span>Bawaannya <b>yang terbaru</b>. Centang keduanya bila perlu membandingkan jawaban lama dengan pembaruannya.</span>
                 </p>
             </div>
-            <p v-else-if="laporanOpsi.length === 1" class="plw-note is-info">
+            <p v-else-if="!laporanMuat && laporanOpsi.length === 1" class="plw-note is-info">
                 <i class="bi bi-info-circle-fill"></i>
                 <span>Kandidat ini punya satu formulir (<b>{{ laporanOpsi[0].label }}</b>) — langsung disertakan.</span>
             </p>
@@ -2402,6 +2416,11 @@ export default {
             laporanOpsi: [],
             laporanFormulir: [],
             laporanGagal: '',
+            // Daftar formulir diambil SESUDAH modal terbuka. Tanpa penanda ini
+            // modalnya terbuka dengan ruang kosong di bawah pilihan format,
+            // lalu daftar centangnya muncul tiba-tiba — dan yang sempat menekan
+            // "Buat & Unduh" lebih dulu mencetak tanpa pilihan yang ia kira ada.
+            laporanMuat: false,
             // Antrean unduhan yang sedang berjalan — ditampilkan di pojok kanan
             // bawah. Array, bukan satu objek: admin kerap mencetak beberapa
             // kandidat berturut-turut tanpa menunggu yang sebelumnya selesai.
@@ -3707,6 +3726,7 @@ export default {
             this.laporanGagal = '';
             this.laporanOpsi = [];
             this.laporanFormulir = [];
+            this.laporanMuat = true;
             this.laporanShow = true;
 
             try {
@@ -3717,6 +3737,11 @@ export default {
                 this.laporanFormulir = this.laporanOpsi.filter((f) => f.utama).map((f) => f.id);
             } catch (e) {
                 this.laporanGagal = e.response?.data?.message || 'Gagal memuat daftar formulir.';
+            } finally {
+                // `finally`, bukan di ujung `try`: bila permintaannya gagal,
+                // penanda yang tak pernah dimatikan membuat tombolnya terkunci
+                // selamanya dan modalnya hanya bisa ditutup.
+                this.laporanMuat = false;
             }
         },
         /**
@@ -4480,6 +4505,23 @@ export default {
 .plw-load { display: flex; align-items: center; justify-content: center; gap: 9px; color: #8b93a7; font-size: 13px; font-weight: 600; padding: 1rem 0; }
 .plw-spin { width: 18px; height: 18px; border-radius: 50%; border: 2.5px solid rgba(99, 102, 241, 0.18); border-top-color: #6366f1; animation: plwSpin 0.7s linear infinite; flex: 0 0 auto; }
 .plw-spin--lg { width: 30px; height: 30px; border-width: 3px; }
+
+/* Rangka baris yang sedang dimuat. Tingginya SAMA dengan baris centang
+   formulir yang akan menggantikannya, supaya modalnya tidak melonjak saat
+   datanya tiba. */
+.plw-rangka {
+    height: 46px;
+    border-radius: 10px;
+    margin-bottom: 8px;
+    background: linear-gradient(90deg, #eef1f6 25%, #f6f8fb 50%, #eef1f6 75%);
+    background-size: 240% 100%;
+    animation: plwRangka 1.3s ease-in-out infinite;
+}
+.plw-rangka--pendek { width: 72%; }
+@keyframes plwRangka {
+    0% { background-position: 130% 0; }
+    100% { background-position: -30% 0; }
+}
 @keyframes plwSpin { to { transform: rotate(360deg); } }
 
 .plw-prog { position: relative; appearance: none; cursor: pointer; text-align: left; font-family: inherit; width: 100%; padding: 14px 15px 14px 18px; border-radius: 16px; background: #fff; transition: all 0.18s; border: 1px solid #eef0f7; box-shadow: 0 2px 8px rgba(15, 23, 42, 0.03); display: flex; flex-direction: column; }
@@ -4728,17 +4770,21 @@ export default {
     background: #fff; border: 1px solid #e6e9f2; border-radius: 14px;
     box-shadow: 0 18px 44px rgba(15, 23, 42, .18); overflow: hidden;
 }
+/* Kepala panel MENGIKUTI EVO THEME, bukan navy pekat. Panelnya melayang di
+   atas papan yang seluruhnya terang; kepala gelap membuatnya terbaca seperti
+   jendela milik aplikasi lain yang kebetulan menumpang di pojok. */
 .plw-unduhan__head {
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
-    padding: 11px 13px; background: #1e293b; color: #fff;
+    padding: 11px 13px; background: var(--evo-panel, #fff); color: var(--evo-ink, #0f172a);
+    border-bottom: 1px solid var(--evo-line, #e2e8f0);
     font-size: 12.5px; font-weight: 700;
 }
-.plw-unduhan__head i { margin-right: 6px; }
+.plw-unduhan__head i { margin-right: 6px; color: var(--evo-indigo, #6366f1); }
 .plw-unduhan__x {
-    border: 0; background: transparent; color: #94a3b8; cursor: pointer;
+    border: 0; background: transparent; color: var(--evo-muted, #64748b); cursor: pointer;
     font-size: 12px; padding: 2px 4px; border-radius: 6px;
 }
-.plw-unduhan__x:hover { color: #fff; background: rgba(255, 255, 255, .12); }
+.plw-unduhan__x:hover { color: var(--evo-ink, #0f172a); background: var(--evo-bg, #f8fafc); }
 .plw-unduhan__list { max-height: 260px; overflow-y: auto; }
 .plw-unduhan__row { display: flex; align-items: center; gap: 11px; padding: 11px 13px; border-bottom: 1px solid #f1f4f9; }
 .plw-unduhan__row:last-child { border-bottom: 0; }

@@ -3,6 +3,7 @@
 namespace App\Jobs\Career;
 
 use App\Jobs\Career\Concerns\AntreanWebCareers;
+use App\Support\Career\KopKakiLaporan;
 use App\Support\Career\LaporanKandidat;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Bus\Queueable;
@@ -85,7 +86,12 @@ class WcLaporanKandidatJob implements ShouldQueue
         Log::channel('web_career')->info("[LAPORAN] #{$this->exportId} selesai ({$this->format}) — {$path}");
     }
 
-    /** Render PDF dari blade. Kertas A4 potret — laporan ini dicetak & diarsip. */
+    /**
+     * Render PDF dari blade. Kertas A4 potret — laporan ini dicetak & diarsip.
+     *
+     * Kop & kaki halaman TIDAK ada di dalam HTML, melainkan digambar ke kanvas
+     * sesudah dokumen tersusun — lihat KopKakiLaporan. Alasannya di sana.
+     */
     private function buatPdf(array $d): string
     {
         $pdf = Pdf::loadView('career.laporan.kandidat', [
@@ -97,6 +103,19 @@ class WcLaporanKandidatJob implements ShouldQueue
             ...$this->nadaHasil($d),
         ]);
 
+        $this->siapkan($pdf);
+
+        // Harus SESUDAH render: page_script menyusuri halaman yang sudah jadi,
+        // dan sebelum render belum ada satu halaman pun untuk disusuri.
+        $pdf->render();
+        KopKakiLaporan::pasang($pdf->getDomPDF(), $d['kandidat']['nama'] ?: '—', $d['kandidat']['kodeLamaran']);
+
+        return $pdf->output();
+    }
+
+    /** Setelan mesin cetak. */
+    private function siapkan(\Barryvdh\DomPDF\PDF $pdf): \Barryvdh\DomPDF\PDF
+    {
         $pdf->setPaper('a4', 'portrait');
         // isRemoteEnabled dibiarkan MATI: seluruh gambar sudah ditanam sebagai
         // data URI. Menyalakannya berarti dompdf boleh menembak URL apa pun
@@ -104,8 +123,18 @@ class WcLaporanKandidatJob implements ShouldQueue
         // kandidat.
         $pdf->setOption('isHtml5ParserEnabled', true);
         $pdf->setOption('defaultFont', 'DejaVu Sans');
+        // SUBSET FONTNYA — bawaan paketnya mati.
+        //
+        // Dokumen ini memakai dua rumpun huruf (DejaVu Sans untuk isi, DejaVu
+        // Sans Mono untuk label kecil, mengikuti rancangan). Tanpa subset,
+        // KEEMPAT berkas font ditanam utuh dan satu laporan satu kandidat jadi
+        // ~1,35 MB; dengan subset ~63 KB dan render dua kali lebih cepat.
+        // Berkasnya tersimpan permanen di GCS per kandidat, jadi selisih itu
+        // menumpuk. Keempat font tetap tertanam — hanya glif yang benar-benar
+        // dipakai yang ikut.
+        $pdf->setOption('isFontSubsettingEnabled', true);
 
-        return $pdf->output();
+        return $pdf;
     }
 
     /**
