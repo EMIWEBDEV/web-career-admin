@@ -687,7 +687,7 @@ class MasterAlurController extends Controller
                     // dihormati: menyembunyikan layar yang justru meminta berkas
                     // darinya adalah jalan buntu yang sama seperti di atas.
                     'Tampil_Kandidat' => (
-                        ($tipe[$t['tipe'] ?? '']->Flag_Jadwal_Privat ?? 'T') === 'Y'
+                        \App\Support\Career\JadwalPrivat::untuk($t['tipe'] ?? null)
                         && empty($t['unggahKandidat'])
                     ) ? 'T' : ((
                         ! empty($t['tampilKandidat'])

@@ -14,6 +14,7 @@ use App\Support\Career\AksesService;
 use App\Support\Career\AlurKolom;
 use App\Support\Career\GcsBerkas;
 use App\Support\Career\HtmlBersih;
+use App\Support\Career\JadwalPrivat;
 use App\Support\Career\KatalogPrefill;
 use App\Support\Career\LamaranService;
 use App\Support\Career\LamaranTargetValidator;
@@ -881,6 +882,16 @@ class LamaranController extends Controller
                 ] : null,
                 'ujian' => $ujian,
                 'tes' => $tes,
+                // Tahap ini memuat aktivitas yang jadwalnya INTERNAL (negosiasi).
+                //
+                // Dikirim sebagai boolean telanjang — tanpa nama, tanpa jumlah,
+                // tanpa jadwal. Layar hanya perlu tahu bahwa ada yang sedang
+                // ditangani tim supaya kalimatnya tidak berbunyi "belum ada
+                // jadwal" untuk sesuatu yang memang tidak akan pernah
+                // dijadwalkan untuk kandidat. Apa yang dikerjakan tim tetap
+                // tidak ikut keluar.
+                'adaJadwalInternal' => collect($subTesRows->get($t->Id_Lamaran_Tahap, []))
+                    ->contains(fn ($s) => JadwalPrivat::untuk($s->Tipe_Tahap_Kode ?? null)),
             ];
         })->values();
 
@@ -5460,7 +5471,7 @@ class LamaranController extends Controller
             // bukan diperbaiki diam-diam dengan cara yang merugikan kandidat.
             $tipeSub = self::masterTipeTahap()[$sub->Tipe_Tahap_Kode ?? ''] ?? null;
 
-            if (($tipeSub->Flag_Jadwal_Privat ?? 'T') === 'Y') {
+            if (JadwalPrivat::untuk($sub->Tipe_Tahap_Kode ?? null)) {
                 Log::channel('web_career')->info(
                     "[JADWAL] Undangan TIDAK dikirim untuk '{$sub->Label}' (lamaran {$sub->Kode}) — tipe berjadwal privat."
                 );

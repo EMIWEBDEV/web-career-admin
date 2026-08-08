@@ -2,6 +2,7 @@
 
 namespace Tests\Unit;
 
+use App\Support\Career\JadwalPrivat;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -24,22 +25,26 @@ class JadwalPrivatTest extends TestCase
     /**
      * Padanan penjaga di LamaranController::kirimUndanganJadwal().
      *
+     * Keputusan intinya — "tipe ini privat?" — memanggil KODE ASLINYA. Yang
+     * ditulis ulang cuma rangkanya, karena aslinya terkubur di metode privat
+     * yang menyentuh basis data.
+     *
      * Perhatikan `$tampilKandidat` TIDAK ikut menentukan. Lihat
      * test_aktivitas_tersembunyi_tetap_diundang() untuk alasannya.
      */
-    private function bolehDiundang(string $flagPrivat, string $tampilKandidat): bool
+    private function bolehDiundang(string $kodeTipe, string $tampilKandidat): bool
     {
-        return $flagPrivat !== 'Y';
+        return ! JadwalPrivat::untuk($kodeTipe);
     }
 
     /** Padanan perhitungan Tampil_Kandidat di MasterAlurController::simpanTahap(). */
     private function tampilKandidat(
-        string $flagPrivat,
+        string $kodeTipe,
         bool $dicentangAdmin,
         string $flagWajibTampil = 'T',
         bool $unggahKandidat = false,
     ): string {
-        if ($flagPrivat === 'Y' && ! $unggahKandidat) {
+        if (JadwalPrivat::untuk($kodeTipe) && ! $unggahKandidat) {
             return 'T';
         }
 
@@ -52,14 +57,14 @@ class JadwalPrivatTest extends TestCase
     {
         // Sekalipun barisnya terlanjur bertanda tampil — misalnya alur lama yang
         // belum disunting ulang — tipe privat menutupnya lebih dulu.
-        $this->assertFalse($this->bolehDiundang('Y', 'Y'));
-        $this->assertFalse($this->bolehDiundang('Y', 'T'));
+        $this->assertFalse($this->bolehDiundang('NEGOTIATION', 'Y'));
+        $this->assertFalse($this->bolehDiundang('NEGOTIATION', 'T'));
     }
 
     public function test_aktivitas_biasa_tetap_diundang(): void
     {
         // Perbaikan ini tidak boleh membungkam wawancara & MCU.
-        $this->assertTrue($this->bolehDiundang('T', 'Y'));
+        $this->assertTrue($this->bolehDiundang('INTERVIEW', 'Y'));
     }
 
     public function test_aktivitas_tersembunyi_tetap_diundang(): void
@@ -75,14 +80,14 @@ class JadwalPrivatTest extends TestCase
         // tahu sama sekali lalu dianggap mangkir.
         //
         // Yang didiamkan hanya yang MEMANG diniatkan diam (tipe privat).
-        $this->assertTrue($this->bolehDiundang('T', 'T'));
+        $this->assertTrue($this->bolehDiundang('MCU', 'T'));
     }
 
     // ── Visibilitas di portal ─────────────────────────────────────────────
 
     public function test_negosiasi_disembunyikan_walau_admin_mencentang_tampil(): void
     {
-        $this->assertSame('T', $this->tampilKandidat('Y', dicentangAdmin: true));
+        $this->assertSame('T', $this->tampilKandidat('NEGOTIATION', dicentangAdmin: true));
     }
 
     public function test_negosiasi_tetap_tampil_bila_meminta_unggahan_kandidat(): void
@@ -90,13 +95,13 @@ class JadwalPrivatTest extends TestCase
         // Menyembunyikan layar yang justru meminta berkas dari kandidat adalah
         // jalan buntu: ia diminta menyerahkan sesuatu lewat halaman yang tidak
         // pernah ada. Pengecualian ini sengaja menang atas privat.
-        $this->assertSame('Y', $this->tampilKandidat('Y', dicentangAdmin: false, unggahKandidat: true));
+        $this->assertSame('Y', $this->tampilKandidat('NEGOTIATION', dicentangAdmin: false, unggahKandidat: true));
     }
 
     public function test_tipe_biasa_tidak_ikut_berubah(): void
     {
-        $this->assertSame('Y', $this->tampilKandidat('T', dicentangAdmin: true));
-        $this->assertSame('T', $this->tampilKandidat('T', dicentangAdmin: false));
+        $this->assertSame('Y', $this->tampilKandidat('INTERVIEW', dicentangAdmin: true));
+        $this->assertSame('T', $this->tampilKandidat('INTERVIEW', dicentangAdmin: false));
     }
 
     public function test_flag_wajib_tampil_kini_benar_benar_menyala(): void
@@ -105,6 +110,6 @@ class JadwalPrivatTest extends TestCase
         // tipeSemua() tidak mengambil kolomnya, jadi `?? 'T'` selalu menang dan
         // tes online bisa tersimpan sebagai aktivitas tersembunyi — kandidat
         // tak pernah melihat tombol mengerjakannya.
-        $this->assertSame('Y', $this->tampilKandidat('T', dicentangAdmin: false, flagWajibTampil: 'Y'));
+        $this->assertSame('Y', $this->tampilKandidat('HCLEARN_TEST', dicentangAdmin: false, flagWajibTampil: 'Y'));
     }
 }

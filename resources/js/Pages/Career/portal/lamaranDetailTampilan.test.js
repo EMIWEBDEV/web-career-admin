@@ -106,23 +106,86 @@ describe('keadaanTahap — tahap yang seluruhnya dikerjakan tim', () => {
         expect(k.judul).not.toMatch(/sudah kamu selesaikan/i);
     });
 
-    it('memberi kabar menunggu yang menenangkan', () => {
+    it('hanya menyebut satu hal yang sudah pasti: tahap sebelumnya terlewati', () => {
         const k = C.keadaanTahap.call(ctxTahap(null));
 
-        expect(k.judul).toMatch(/ditangani tim rekrutmen/i);
+        expect(k.judul).toMatch(/melewati tahap sebelumnya/i);
         expect(k.pesan).toMatch(/tidak ada yang perlu kamu kerjakan/i);
     });
 
-    it('memakai Pesan_Kandidat dari master bila diisi', () => {
+    it('STATIS — tidak memakai Pesan_Kandidat dari master', () => {
+        // Milik negosiasi berbunyi "…membahas penawaran": memberi tahu bahwa ada
+        // penawaran sedang disiapkan, menerbitkan harapan atas sesuatu yang
+        // belum diputuskan. Justru kalimat itu yang harus dihindari.
         const dariMaster = 'Tim rekrutmen akan menghubungimu untuk membahas penawaran.';
 
-        expect(C.keadaanTahap.call(ctxTahap(dariMaster)).pesan).toBe(dariMaster);
+        expect(C.keadaanTahap.call(ctxTahap(dariMaster)).pesan).not.toBe(dariMaster);
     });
 
     it('tidak membocorkan apa yang sedang dikerjakan tim', () => {
         const k = C.keadaanTahap.call(ctxTahap(null));
 
         expect(`${k.judul} ${k.pesan}`).not.toMatch(/negosiasi|gaji|rapat|jadwal/i);
+    });
+
+    it('tidak menerbitkan harapan — tak ada janji kabar baik', () => {
+        const k = C.keadaanTahap.call(ctxTahap(null));
+
+        expect(`${k.judul} ${k.pesan}`).not.toMatch(/selamat|penawaran|menghubungi|kabar baik|segera/i);
+    });
+});
+
+describe('banner — tahap berjadwal internal (negosiasi)', () => {
+    const TETAP =
+        'Tim rekrutmen kami akan menghubungi Anda untuk menyampaikan informasi lebih lanjut terkait proses offering. ' +
+        'Mohon pastikan nomor telepon dan email Anda tetap aktif.';
+
+    /** Tahap Offering: negosiasi tersembunyi + surat penawaran terlihat. */
+    function ctxOffering({ hasilTampil = false, jadwalTampak = false } = {}) {
+        const surat = { id: 'ol', label: 'Offering Leter', selesai: false, jadwal: jadwalTampak ? { mulai: '2026-09-01 10:00' } : null };
+        const tahap = [
+            { urutan: 1, label: 'MCU', status: 'SELESAI', hasil: 'LULUS', tes: [] },
+            { urutan: 2, label: 'Offering', status: 'BERJALAN', adaJadwalInternal: true, hasilTampil, tes: [surat] },
+        ];
+        const c = konteks({ status: 'BERJALAN', statusNada: 'berjalan' }, tahap);
+        c.aktivitas = [surat];
+        c.totalTahap = 2;
+        // Jalur bawaan banner() ketika cabang internal TIDAK menyala.
+        c.pesanTahap = { teks: 'Kalimat bawaan tahap.' };
+        return c;
+    }
+
+    it('kalimatnya TETAP — negosiasi belum dijadwalkan', () => {
+        expect(C.banner.call(ctxOffering()).text).toBe(TETAP);
+    });
+
+    it('kalimatnya TETAP SAMA — negosiasi sudah dijadwalkan', () => {
+        // Jadwal negosiasi disaring di server, jadi payload kandidat tidak
+        // berubah sama sekali. Inilah yang membuat kalimatnya tidak bisa
+        // dibaca mundur: tidak ada yang bergerak untuk ditafsirkan.
+        expect(C.banner.call(ctxOffering()).text).toBe(TETAP);
+    });
+
+    it('TIDAK menjanjikan jadwal yang tak akan pernah dikirim', () => {
+        const b = C.banner.call(ctxOffering());
+
+        expect(b.text).not.toMatch(/menunggu jadwal|begitu jadwalnya|dikirim ke emailmu/i);
+    });
+
+    it('MENGALAH bila surat penawaran punya jadwal — kandidat harus datang', () => {
+        expect(C.banner.call(ctxOffering({ jadwalTampak: true })).text).not.toBe(TETAP);
+    });
+
+    it('MENGALAH begitu keputusan tahapnya terbit', () => {
+        expect(C.banner.call(ctxOffering({ hasilTampil: true })).text).not.toBe(TETAP);
+    });
+
+    it('tahap biasa tidak ikut memakai kalimat ini', () => {
+        const c = ctxOffering();
+        c.tahap[1].adaJadwalInternal = false;
+        c.tahapAktif = c.tahap[1];
+
+        expect(C.banner.call(c).text).not.toBe(TETAP);
     });
 });
 

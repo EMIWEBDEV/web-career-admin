@@ -1339,6 +1339,29 @@ const P = {
 const PESAN_UMUM =
     'Tidak ada yang perlu kamu kerjakan sekarang — tim rekrutmen akan mengabarimu lewat email dan halaman ini.';
 
+/**
+ * KALIMAT TETAP untuk tahap yang jadwalnya ditangani tim sendiri (negosiasi
+ * penawaran). Sengaja SATU kalimat untuk SEMUA keadaan tahap itu: belum
+ * dijadwalkan, sudah dijadwalkan, sedang berlangsung, atau baru selesai
+ * dirundingkan — kandidat membaca hal yang sama persis.
+ *
+ * KENAPA TIDAK MENGIKUTI KEADAAN
+ * Kalimat yang berubah adalah kalimat yang bisa dibaca mundur. Kandidat yang
+ * hari ini melihat "menunggu jadwal" lalu besok melihat kalimat lain tahu ada
+ * sesuatu yang bergerak — dan sejak itu ia menghitung hari. Justru itu yang
+ * ingin dihindari: perundingan angka bisa memakan waktu, dan diamnya bukan
+ * kabar buruk. Kalimat yang tidak bergerak tidak bisa ditafsirkan.
+ *
+ * KENAPA DI KODE, BUKAN Pesan_Kandidat DI MASTER
+ * Master boleh disunting siapa saja yang memegang halaman Master Tipe Tahap,
+ * dan satu suntingan yang bermaksud baik ("Selamat, penawaran sedang
+ * disiapkan!") mengembalikan persis masalah yang kalimat ini ada untuk
+ * mencegahnya. Ditaruh di sini, mengubahnya menuntut tinjauan kode.
+ */
+const PESAN_TAHAP_INTERNAL =
+    'Tim rekrutmen kami akan menghubungi Anda untuk menyampaikan informasi lebih lanjut terkait proses offering. ' +
+    'Mohon pastikan nomor telepon dan email Anda tetap aktif.';
+
 export default {
     components: { Head, Link, JadwalKartu, DynamicForm, UnggahAktivitas },
     props: {
@@ -1572,19 +1595,39 @@ export default {
             // pun di sini, dan mengatakan ia sudah selesai membuatnya menunggu
             // keputusan yang sebetulnya belum mulai dirundingkan.
             //
-            // Kalimatnya dari MASTER (Pesan_Kandidat tipe tahap), bukan ditulis
-            // di sini: tiap tipe punya cara menenangkan yang berbeda, dan
-            // mengubahnya tidak boleh menuntut rilis. Cadangan dipakai hanya
-            // bila masternya memang kosong — dan sengaja tidak menyebut apa yang
-            // sedang dikerjakan tim.
+            // KALIMATNYA STATIS, DAN SENGAJA TIDAK MENJANJIKAN APA-APA.
+            //
+            // Pesan_Kandidat dari master TIDAK dipakai di sini. Milik negosiasi
+            // berbunyi "Tim rekrutmen akan menghubungimu untuk membahas
+            // penawaran" — dan kalimat semacam itu justru yang harus dihindari:
+            // ia memberi tahu bahwa ada penawaran sedang disiapkan, menerbitkan
+            // harapan atas sesuatu yang belum diputuskan, lalu membuat tiap hari
+            // tanpa kabar terasa seperti penolakan. Padahal yang boleh diketahui
+            // kandidat cuma satu hal yang sudah pasti: ia melewati tahap
+            // sebelumnya, dan sekarang tidak ada yang perlu ia kerjakan.
+            //
+            // Tidak menyebut nama tahapnya, tidak menyebut apa yang dikerjakan
+            // tim, tidak menjanjikan kabar baik.
             if (!akt.length) {
                 return {
                     nada: 'tunggu',
                     ikon: 'bi-hourglass-split',
-                    judul: 'Tahap ini sedang ditangani tim rekrutmen',
-                    pesan:
-                        this.tahapAktif?.pesan ||
-                        'Tidak ada yang perlu kamu kerjakan di tahap ini. Tim rekrutmen akan menghubungimu begitu ada kabar berikutnya.',
+                    judul: 'Kamu sudah melewati tahap sebelumnya',
+                    pesan: this.tahapAktif?.adaJadwalInternal
+                        ? PESAN_TAHAP_INTERNAL
+                        : 'Tidak ada yang perlu kamu kerjakan saat ini. Perkembangan berikutnya muncul di halaman ini.',
+                };
+            }
+
+            // Kartu keadaan dan banner tidak boleh berselisih di satu layar:
+            // yang satu berkata "menunggu jadwal", yang lain kalimat tetap.
+            // Selama tahapnya ditangani tim, keduanya berbunyi sama.
+            if (this.tahapAktif?.adaJadwalInternal && !this.tahapAktif?.hasilTampil && !akt.some((x) => x.jadwal)) {
+                return {
+                    nada: 'tunggu',
+                    ikon: 'bi-hourglass-split',
+                    judul: 'Sedang ditangani tim rekrutmen',
+                    pesan: PESAN_TAHAP_INTERNAL,
                 };
             }
 
@@ -1739,6 +1782,30 @@ export default {
                 return { title: 'Lamaranmu sedang diproses', text: 'Pantau halaman ini untuk perkembangan seleksimu.' };
 
             const posisi = `Tahap ${cur.urutan} dari ${this.totalTahap}`;
+
+            // ══ TAHAP YANG JADWALNYA DITANGANI TIM SENDIRI (negosiasi) ══
+            //
+            // Didahulukan dari seluruh keadaan di bawahnya, dan sengaja TIDAK
+            // membedakan sudah/belum dijadwalkan — lihat PESAN_TAHAP_INTERNAL.
+            //
+            // Tanpa cabang ini kandidat jatuh ke kalimat bawaan "menunggu jadwal
+            // dari tim rekrutmen … begitu jadwalnya ditetapkan, rinciannya
+            // muncul di halaman ini dan dikirim ke emailmu" — janji yang tidak
+            // akan pernah ditepati, karena jadwal yang dimaksud memang sengaja
+            // tidak pernah dikirimkan kepadanya.
+            //
+            // DUA HAL MEMBATALKANNYA, dan dua-duanya berarti ada sesuatu yang
+            // NYATA untuk kandidat:
+            //   - keputusan tahapnya sudah terbit (hasilTampil) → layar berganti
+            //     ke kabar keputusan itu;
+            //   - ada aktivitas TERLIHAT yang sudah punya jadwal — mis. surat
+            //     penawaran yang dijadwalkan untuk diserahkan. Ia memang harus
+            //     datang, jadi jadwalnya tidak boleh tertutup kalimat ini.
+            const adaJadwalTampak = (this.aktivitas || []).some((x) => x.jadwal);
+
+            if (cur.adaJadwalInternal && !cur.hasilTampil && !adaJadwalTampak) {
+                return { title: `${posisi} · ${cur.label}`, text: PESAN_TAHAP_INTERNAL };
+            }
 
             // Ada yang harus DIKERJAKAN kandidat → itu yang disebut lebih dulu.
             if (this.tugas && (this.komponen || this.tugas.schema)) {
