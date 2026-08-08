@@ -13,7 +13,13 @@
             <div v-if="show" class="wca-modal-mask wca" @click.self="tolakTutup">
                 <div
                     class="wca-modal"
-                    :class="{ 'wca-modal--lg': lg, 'wca-modal--xl': xl, 'is-busy': busy, 'is-nudge': nudge }"
+                    :class="{
+                        'wca-modal--lg': lg,
+                        'wca-modal--xl': xl,
+                        'wca-modal--full': full || xxl,
+                        'is-busy': busy,
+                        'is-nudge': nudge
+                    }"
                     role="dialog" aria-modal="true" :aria-busy="busy"
                 >
                     <!-- Garis progres tipis di puncak modal: penanda proses berjalan
@@ -68,6 +74,8 @@ const props = defineProps({
     icon: { type: String, default: 'bi-window-stack' },
     lg: { type: Boolean, default: false },
     xl: { type: Boolean, default: false },
+    full: { type: Boolean, default: false },
+    xxl: { type: Boolean, default: false },
     saveLabel: { type: String, default: 'Simpan Data' },
     saveDisabled: { type: Boolean, default: false },
     cancelLabel: { type: String, default: 'Batal' },

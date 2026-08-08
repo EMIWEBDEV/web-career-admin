@@ -67,6 +67,10 @@ Route::prefix('api/v1/karir')
         Route::get('/dashboard/kalender', [DashboardController::class, 'kalender'])->name('dashboard.kalender');
         Route::get('/dashboard/kalender/tes/{id}/peserta', [DashboardController::class, 'pesertaKalender'])->name('dashboard.kalender.peserta');
         Route::get('/dashboard/khas', [DashboardController::class, 'khas'])->name('dashboard.khas');
+        // Satu keranjang antrean, satu halaman — cari & paginasi dikerjakan
+        // server supaya kotak cari menjangkau seluruh antrean, bukan hanya
+        // baris yang kebetulan ikut terkirim di /ringkas.
+        Route::get('/dashboard/antrean', [DashboardController::class, 'antrean'])->name('dashboard.antrean');
 
         // Worklist admin: daftar program (panel kiri) + kanban seleksi (panel kanan) & ketuk palu.
         Route::get('/lamaran/worklist/program', [LamaranController::class, 'worklistProgram'])->name('lamaran.worklist.program')->middleware('career.permission:pelamarPage,VIEW');

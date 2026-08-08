@@ -226,7 +226,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import axios from 'axios'
 import BerkasLightbox from './BerkasLightbox.vue'
 import KeadaanPanel from './KeadaanPanel.vue'
-import { formatTanggal, formatUkuran, jenisPratinjau, labelStatusTes, tesBermakna } from './monitoringHelpers'
+import { formatTanggal, formatUkuran, jenisPratinjau, labelOutcome, labelStatusTes, tesBermakna, toneOutcome } from './monitoringHelpers'
 import { useLapisEsc } from '../../../../composables/useLapisEsc'
 
 const props = defineProps({
@@ -242,6 +242,7 @@ const emit = defineEmits(['close'])
 const CFG = { headers: { Accept: 'application/json' } }
 const loading = ref(false)
 const error = ref(false)
+const masterHasil = ref({})
 const tahap = ref({})
 const keputusan = ref(null)
 const berkasHasil = ref([])
@@ -270,20 +271,19 @@ const belumDimulai = computed(
     () => !tahap.value.sudahDijalani || keputusan.value?.status === 'MENUNGGU',
 )
 
+// Label & warna keputusan dari master. Versi lama hanya mengenal tiga kode,
+// sehingga keputusan "mengundurkan diri" di tahap ini terbaca "Sedang berjalan".
 const labelHasil = computed(() => {
     const k = keputusan.value
     if (!k) return ''
     if (k.hasil === 'LULUS') return 'Lulus tahap'
-    if (k.hasil === 'GUGUR') return 'Gugur di tahap ini'
-    if (k.hasil === 'TALENT_POOL') return 'Masuk Talent Pool'
+    if (k.hasil) return labelOutcome(k.hasil, masterHasil.value)
     return k.status === 'BERJALAN' ? 'Sedang berjalan' : 'Menunggu'
 })
 const badgeHasil = computed(() => {
     const k = keputusan.value
     if (!k) return 'wca-b--slate'
-    if (k.hasil === 'LULUS') return 'wca-b--green'
-    if (k.hasil === 'GUGUR') return 'wca-b--red'
-    if (k.hasil === 'TALENT_POOL') return 'wca-b--sky'
+    if (k.hasil) return toneOutcome(k.hasil, masterHasil.value)
     return k.status === 'BERJALAN' ? 'wca-b--indigo' : 'wca-b--slate'
 })
 
@@ -297,10 +297,8 @@ function badgeTes(x) {
 }
 
 function badgeVerdict(v) {
-    if (v === 'LULUS' || v === 'LOLOS') return 'wca-b--green'
-    if (v === 'GUGUR') return 'wca-b--red'
-    if (v === 'TALENT_POOL') return 'wca-b--sky'
-    return 'wca-b--slate'
+    if (v === 'LOLOS') return 'wca-b--green'
+    return masterHasil.value?.[v] ? toneOutcome(v, masterHasil.value) : 'wca-b--slate'
 }
 
 function ikonBerkas(b) {
@@ -308,7 +306,20 @@ function ikonBerkas(b) {
     return j === 'gambar' ? 'bi-file-earmark-image' : j === 'pdf' ? 'bi-file-earmark-pdf' : 'bi-file-earmark'
 }
 
+/**
+ * Penanda urutan permintaan — lihat alasan yang sama di StageDetailPanel.
+ *
+ * Di sini akibatnya lebih tajam: drawer ini menampilkan berkas, jawaban
+ * formulir, dan keputusan MILIK SATU ORANG di satu tahap. Berpindah cepat
+ * antar sel matriks membuat dua permintaan berjalan bersamaan, dan balasan
+ * yang datang terlambat menaruh dokumen kandidat lain di bawah nama yang
+ * sedang terbuka. Kekeliruan seperti itu tidak terlihat sebagai galat —
+ * halamannya rapi, terisi, dan salah orang.
+ */
+let permintaanKe = 0
+
 async function fetchDetail() {
+    const token = ++permintaanKe
     loading.value = true
     error.value = false
     isianTerbuka.value = false // pindah tahap → daftar isian kembali terlipat
@@ -316,7 +327,9 @@ async function fetchDetail() {
         const { data } = await axios.get(
             `/api/v1/karir/monitoring/pelamar/${props.lamaranId}/tahap/${props.urutan}`, CFG,
         )
+        if (token !== permintaanKe) return
         const r = data.result || {}
+        masterHasil.value = r.masterHasil || {}
         tahap.value = r.tahap || {}
         keputusan.value = r.keputusan || null
         berkasHasil.value = r.berkasHasil || []
@@ -326,9 +339,10 @@ async function fetchDetail() {
         jejak.value = r.jejak || []
         rencana.value = r.rencana || null
     } catch (e) {
+        if (token !== permintaanKe) return
         error.value = true
     } finally {
-        loading.value = false
+        if (token === permintaanKe) loading.value = false
     }
 }
 

@@ -110,7 +110,7 @@
 import { ref, watch, onMounted } from 'vue'
 import axios from 'axios'
 import { initials } from '../careerAdmin'
-import { formatTanggal, labelStatusTes, tesBermakna } from './monitoringHelpers'
+import { formatTanggal, labelOutcome, labelStatusTes, tesBermakna, toneOutcome } from './monitoringHelpers'
 import KeadaanPanel from './KeadaanPanel.vue'
 
 const props = defineProps({
@@ -125,38 +125,57 @@ const loading = ref(false)
 const error = ref(false)
 const d = ref(null)
 
+/**
+ * Penanda urutan permintaan. Drawer ini berganti isi tiap kali admin memilih
+ * pelamar lain; bila balasan pelamar sebelumnya tiba belakangan, perjalanan
+ * orang lama tergambar di bawah nama orang baru — dan tidak ada tanda apa pun
+ * bahwa yang terbaca bukan miliknya.
+ */
+let permintaanKe = 0
+
 async function fetchDetail() {
+    const token = ++permintaanKe
     loading.value = true
     error.value = false
     try {
         const { data } = await axios.get(`/api/v1/karir/monitoring/pelamar/${props.lamaranId}`, CFG)
+        if (token !== permintaanKe) return
         d.value = data.result || null
     } catch (e) {
+        if (token !== permintaanKe) return
         error.value = true
     } finally {
-        loading.value = false
+        if (token === permintaanKe) loading.value = false
     }
 }
 
+/**
+ * Peta outcome dari server. Semua fungsi di bawah dulu memakai peta literal
+ * {LULUS, GUGUR, TALENT_POOL} dengan fallback ke indigo — warna yang dipakai
+ * untuk "berjalan". Akibatnya setiap outcome baru tampil sebagai kode mentah
+ * berwarna aktif, persis kebalikan dari keadaan orangnya.
+ */
+const mh = () => d.value?.masterHasil ?? {}
+
 function stepState(t) {
-    if (t.hasil === 'LULUS') return 'done'
-    if (t.hasil === 'GUGUR') return 'failed'
-    if (t.hasil === 'TALENT_POOL') return 'talent'
+    const b = mh()[t.hasil]?.bucket
+    if (b === 'lulus') return 'done'
+    if (b === 'gugur') return 'failed'
+    if (b === 'talent') return 'talent'
+    if (b === 'keluar') return 'keluar'
     if (t.status === 'BERJALAN') return 'current'
     return 'pending'
 }
 
 function hasilLabel(t) {
-    if (t.hasil === 'LULUS') return 'Lulus'
-    if (t.hasil === 'GUGUR') return 'Gugur'
-    if (t.hasil === 'TALENT_POOL') return 'Talent Pool'
+    if (t.hasil) return labelOutcome(t.hasil, mh())
     if (t.status === 'BERJALAN') return t.siapDiputus ? 'Siap Diputus' : 'Berjalan'
     return 'Menunggu'
 }
 
 function hasilBadge(t) {
     const s = stepState(t)
-    return { done: 'wca-b--green', failed: 'wca-b--red', talent: 'wca-b--sky', current: t.siapDiputus ? 'wca-b--amber' : 'wca-b--indigo', pending: 'wca-b--slate' }[s]
+    return { done: 'wca-b--green', failed: 'wca-b--red', talent: 'wca-b--sky', keluar: 'wca-b--violet', current: t.siapDiputus ? 'wca-b--amber' : 'wca-b--indigo', pending: 'wca-b--slate' }[s]
 }
 
 function testBadge(x) {
@@ -169,18 +188,21 @@ function testBadge(x) {
 }
 
 function verdictBadge(v) {
-    if (v === 'LULUS' || v === 'LOLOS') return 'wca-b--green'
-    if (v === 'GUGUR') return 'wca-b--red'
-    if (v === 'TALENT_POOL') return 'wca-b--sky'
-    return 'wca-b--slate'
+    if (v === 'LOLOS') return 'wca-b--green'
+    return mh()[v] ? toneOutcome(v, mh()) : 'wca-b--slate'
 }
 
 function statusKelas(s) {
-    return { LULUS: 'wca-b--green', GUGUR: 'wca-b--red', TALENT_POOL: 'wca-b--sky' }[s] || 'wca-b--indigo'
+    if (s === 'BERJALAN') return 'wca-b--indigo'
+    return mh()[s] ? toneOutcome(s, mh()) : 'wca-b--indigo'
 }
 
 function statusTeks(s) {
-    return { LULUS: 'Diterima', GUGUR: 'Tidak Lolos', TALENT_POOL: 'Talent Pool', BERJALAN: 'Berjalan' }[s] || s
+    if (s === 'BERJALAN') return 'Berjalan'
+    // LULUS tetap dibaca "Diterima" agar sebunyi dengan badge di papan; master
+    // menamainya "Lolos", yang di layar ini terbaca sebagai lolos satu tahap.
+    if (s === 'LULUS') return 'Diterima'
+    return labelOutcome(s, mh())
 }
 
 // Drawer dipakai ulang untuk orang lain tanpa remount → muat ulang saat id ganti.
@@ -215,6 +237,7 @@ defineExpose({ refresh: fetchDetail })
 .wcm-step.st-current .wcm-step__dot { background: #f59e0b; box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.25); animation: wcmPulse 2s infinite; }
 .wcm-step.st-failed .wcm-step__dot { background: #ef4444; box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2); }
 .wcm-step.st-talent .wcm-step__dot { background: #0ea5e9; box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.2); }
+.wcm-step.st-keluar .wcm-step__dot { background: #8b5cf6; box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.2); }
 @keyframes wcmPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.25); } }
 
 .wcm-step__body { flex: 1; min-width: 0; padding-bottom: 18px; }

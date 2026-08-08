@@ -45,6 +45,7 @@
                     <span v-if="ringkas.lulus" class="wcm-ch is-green"><i class="bi bi-check-circle"></i> {{ ringkas.lulus }} diterima</span>
                     <span v-if="ringkas.gugur" class="wcm-ch is-red"><i class="bi bi-x-circle"></i> {{ ringkas.gugur }} tidak lolos</span>
                     <span v-if="ringkas.talent" class="wcm-ch is-sky"><i class="bi bi-droplet"></i> {{ ringkas.talent }} talent pool</span>
+                    <span v-if="ringkas.keluar" class="wcm-ch is-violet"><i class="bi bi-box-arrow-left"></i> {{ ringkas.keluar }} keluar</span>
                     <span class="wcm-sl__hint"><i class="bi bi-hand-index"></i> {{ petunjuk }}</span>
 
                     <!-- Pengalih mode. Penyaring TIDAK direset saat berpindah:
@@ -79,7 +80,7 @@
 
                 <FilterPapan v-if="!loading && !error" :nilai="filter" :pelamar="pelamar"
                     :filter-atribut="filterAtribut" :jumlah-tampil="pelamarTerfilter.length"
-                    :jumlah-total="pelamar.length" :ada-filter="adaFilter"
+                    :jumlah-total="pelamar.length" :ada-filter="adaFilter" :master-hasil="masterHasil"
                     @ubah="filter[$event.key] = $event.val" @reset="resetFilter" />
 
                 <!-- PAPAN -->
@@ -95,7 +96,7 @@
                         ket="Program ini belum punya tahapan, jadi papan proses tidak bisa dibentuk. Atur alurnya lebih dulu di Master Alur." />
 
                     <FullProcessGrid v-else-if="mode === 'FULL'" :kolom="kolom" :pelamar="pelamarTerfilter"
-                        :orang-terbuka="orangTerbuka"
+                        :orang-terbuka="orangTerbuka" :master-hasil="masterHasil"
                         @open-person="bukaOrang" @open-stage="bukaTahap" @open-cell="bukaSel" />
 
                     <div v-else class="wcm-board">
@@ -195,6 +196,7 @@ const program = ref({})
 const kolom = ref([])
 const pelamar = ref([])
 const filterAtribut = ref([])
+const masterHasil = ref({})
 const orangTerbuka = ref(props.fokusLamaranId)
 const tahapTerbuka = ref(null)
 const tahapOrang = ref(null) // urutan tahap yang dibuka DI DALAM detail orang
@@ -246,7 +248,12 @@ const pelamarTerfilter = computed(() => {
 
     return pelamar.value.filter((o) => {
         if (cari && ![o.nama, o.kode].some((v) => (v || '').toLowerCase().includes(cari))) return false
-        if (f.status && o.status !== f.status) return false
+        // DITAHAN bukan status lamaran melainkan keadaan tahap aktif, jadi
+        // disaring lewat bucket mesin — bukan dengan mencocokkan bunyi badge,
+        // yang berubah begitu master disunting.
+        if (f.status === 'DITAHAN') {
+            if (o.bucket !== 'HOLD') return false
+        } else if (f.status && o.status !== f.status) return false
         if (f.posisi && o.posisi !== f.posisi) return false
         if (f.kondisi && !cocokKondisi(o, f.kondisi)) return false
         // Nilai isian dibandingkan sebagai teks — angka dari JSON bisa datang
@@ -275,13 +282,16 @@ const namaOrangTerbuka = computed(
     () => pelamar.value.find((o) => o.id === orangTerbuka.value)?.nama ?? '',
 )
 
+// Bucket diambil dari master (kunci 'lulus'/'gugur'/'talent'/'keluar'), bukan
+// rantai if berisi kode mati. Versi lama diam-diam melewatkan setiap outcome
+// di luar tiga kode itu: orang yang mundur tidak terhitung di chip mana pun,
+// padahal tetap ada di papan.
 const ringkas = computed(() => {
-    const r = { berjalan: 0, lulus: 0, gugur: 0, talent: 0, siap: 0, nunggu: 0 }
+    const r = { berjalan: 0, lulus: 0, gugur: 0, talent: 0, keluar: 0, siap: 0, nunggu: 0 }
     pelamarTerfilter.value.forEach((o) => {
-        if (o.status === 'BERJALAN') r.berjalan++
-        else if (o.status === 'LULUS') r.lulus++
-        else if (o.status === 'GUGUR') r.gugur++
-        else if (o.status === 'TALENT_POOL') r.talent++
+        const b = masterHasil.value?.[o.status]?.bucket
+        if (b && b in r) r[b]++
+        else if (o.status === 'BERJALAN') r.berjalan++
         if (o.siapDiputus) r.siap++
         if (o.nungguSistem) r.nunggu++
     })
@@ -324,6 +334,7 @@ async function fetchPapan() {
         kolom.value = r.kolom || []
         pelamar.value = r.pelamar || []
         filterAtribut.value = r.filterAtribut || []
+        masterHasil.value = r.masterHasil || {}
     } catch (e) {
         if (!pelamar.value.length) error.value = true
     } finally {
@@ -445,6 +456,7 @@ defineExpose({ refresh: fetchPapan })
 .wcm-ch.is-green { color: #047857; background: rgba(16, 185, 129, 0.14); }
 .wcm-ch.is-red { color: #be123c; background: rgba(244, 63, 94, 0.12); }
 .wcm-ch.is-sky { color: #0369a1; background: rgba(14, 165, 233, 0.13); }
+.wcm-ch.is-violet { color: #6d28d9; background: rgba(139, 92, 246, 0.14); }
 .wcm-sl__hint { display: inline-flex; align-items: center; gap: 6px; font-size: 0.70rem; color: #94a3b8; font-weight: 500; }
 
 /* Kursi per posisi — sebaris chip yang bisa dipindai cepat. */

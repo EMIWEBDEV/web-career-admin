@@ -11,18 +11,22 @@
     <div v-else class="fn">
         <!-- Kepala: pemilih alur, cakupan, dan penyempitan terbesar -->
         <div class="fn-atas">
-            <div v-if="funnel.length > 1" class="wcd-seg fn-alur">
-                <button v-for="(f, i) in funnel" :key="f.alurId" type="button"
-                    :class="{ 'is-on': idx === i }" :title="f.programNama.join(', ')"
-                    @click="idx = i">
-                    <span>{{ f.alur }}</span> <em>{{ angka(f.pelamar) }}</em>
-                </button>
+            <!-- Pemilih Alur Seleksi: Selalu menggunakan Dropdown Select yang modern dan konsisten -->
+            <div v-if="funnel.length > 1" class="fn-select-wrap">
+                <i class="bi bi-funnel-fill fn-select-ic"></i>
+                <select id="fn-select-alur" v-model="idx" class="fn-select-input">
+                    <option v-for="(f, i) in funnel" :key="f.alurId" :value="i">
+                        {{ f.alur }} ({{ f.program }} program · {{ angka(f.pelamar) }} pelamar)
+                    </option>
+                </select>
             </div>
 
-            <span class="fn-cakup" :title="aktif.programNama.join(', ')">
+            <button type="button" class="fn-cakup-btn" @click="lihatProgram = true"
+                title="Klik untuk melihat rincian nama program yang masuk alur ini">
                 <i class="bi bi-diagram-2-fill"></i>
-                {{ aktif.program }} program · <b>{{ angka(aktif.pelamar) }}</b> pelamar
-            </span>
+                <span><b>{{ aktif.program }}</b> program · <b>{{ angka(aktif.pelamar) }}</b> pelamar</span>
+                <i class="bi bi-info-circle-fill fn-cakup-info"></i>
+            </button>
 
             <span v-if="aktif.penyempitan" class="fn-sempit"
                 :title="`${angka(aktif.penyempitan.hilang)} kandidat berhenti di titik ini`">
@@ -37,37 +41,78 @@
             </span>
         </div>
 
+        <!-- Modal Rincian Program dalam Alur -->
+        <AdminModal
+            :show="lihatProgram"
+            title="Daftar Program Alur Seleksi"
+            :subtitle="`Alur: ${aktif.alur} · Total ${aktif.program} Program`"
+            icon="bi-diagram-2-fill"
+            @close="lihatProgram = false"
+        >
+            <div class="fn-program-modal-list">
+                <div v-for="(pNama, pIdx) in (aktif.programNama || [])" :key="pIdx" class="fn-program-chip">
+                    <span class="fn-program-chip__num">{{ pIdx + 1 }}</span>
+                    <i class="bi bi-journal-check"></i>
+                    <span>{{ pNama }}</span>
+                </div>
+            </div>
+            <template #footer>
+                <button type="button" class="wca-btn wca-btn--ghost" @click="lihatProgram = false">
+                    <i class="bi bi-x-lg"></i> Tutup
+                </button>
+            </template>
+        </AdminModal>
+
         <!-- Daftar tahap: satu baris per tahap. -->
         <ul class="fn-list">
             <li v-for="t in aktif.tahap" :key="t.urutan">
-                <button type="button" class="fn-row" :class="{ 'is-sempit': sorot(t), 'is-buka': buka.has(t.urutan) }"
-                    :aria-expanded="buka.has(t.urutan)" @click="alih(t.urutan)">
+                <div class="fn-row" :class="{ 'is-sempit': sorot(t), 'is-buka': buka.has(t.urutan) }">
                     <span class="fn-ur">{{ t.urutan }}</span>
 
-                    <span class="fn-lbl" :title="t.label">
-                        {{ t.label }}
-                        <i v-if="t.provider === 'THIRD_PARTY'" class="bi bi-box-arrow-up-right"
-                            title="Tahap oleh penyedia tes pihak ketiga"></i>
-                    </span>
-
-                    <span class="fn-rel" :title="tooltip(t)">
-                        <span class="fn-bar" :style="{ width: lebar(t) + '%' }">
-                            <span class="fn-bar__lanjut" :style="{ width: persenLanjut(t) + '%' }"></span>
+                    <div class="fn-info">
+                        <span class="fn-lbl" :title="t.label">
+                            {{ t.label }}
+                            <i v-if="t.provider === 'THIRD_PARTY'" class="bi bi-box-arrow-up-right"
+                                title="Tahap oleh penyedia tes pihak ketiga"></i>
                         </span>
-                    </span>
+                        <span class="fn-sub">
+                            {{ persenDariAwal(t) }}% dari total melamar
+                        </span>
+                    </div>
 
-                    <span class="fn-capai">{{ angka(t.capai) }}</span>
+                    <div class="fn-rel" :title="tooltip(t)">
+                        <div class="fn-bar" :style="{ width: lebar(t) + '%' }">
+                            <div class="fn-bar__lanjut" :style="{ width: persenLanjut(t) + '%' }"></div>
+                        </div>
+                    </div>
 
-                    <span class="fn-konv">
-                        <span v-if="t.konversi !== null" class="wcd-lb" :style="nadaKonversi(t)">
+                    <div class="fn-angka-col">
+                        <span class="fn-capai"><b>{{ angka(t.capai) }}</b> <small>kandidat</small></span>
+                        <span v-if="t.konversi !== null" class="wcd-lb fn-badge-konv" :style="nadaKonversi(t)">
                             <i class="bi" :class="sorot(t) ? 'bi-arrow-down-right' : 'bi-arrow-right-short'"></i>
-                            {{ t.konversi }}%
+                            {{ t.konversi }}% Lolos
                         </span>
-                        <span v-else class="fn-konv__nol">awal</span>
-                    </span>
+                        <span v-else class="fn-konv__nol">Tahap Awal</span>
+                    </div>
 
-                    <i class="bi fn-chev" :class="buka.has(t.urutan) ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
-                </button>
+                    <div class="fn-mini-pills">
+                        <span v-if="t.lanjut" class="fn-pill is-lanjut" title="Lanjut ke tahap berikutnya">
+                            <i class="bi bi-check-circle-fill"></i> {{ angka(t.lanjut) }}
+                        </span>
+                        <span v-if="t.diSini" class="fn-pill is-proses" title="Sedang dalam proses di sini">
+                            <i class="bi bi-clock-fill"></i> {{ angka(t.diSini) }}
+                        </span>
+                        <span v-if="t.gugur" class="fn-pill is-gugur" title="Gugur di tahap ini">
+                            <i class="bi bi-x-circle-fill"></i> {{ angka(t.gugur) }}
+                        </span>
+                    </div>
+
+                    <button type="button" class="fn-chev-btn" :aria-expanded="buka.has(t.urutan)"
+                        :title="buka.has(t.urutan) ? 'Tutup rincian' : 'Lihat rincian detail'"
+                        @click="alih(t.urutan)">
+                        <i class="bi" :class="buka.has(t.urutan) ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
+                    </button>
+                </div>
 
                 <!-- Rincian baris (dilipat) -->
                 <div v-show="buka.has(t.urutan)" class="fn-rinci">
@@ -121,11 +166,13 @@
 import { ref, computed } from 'vue';
 import { angka, STATUS, INK } from '../dashboardHelpers';
 import KeadaanPanel from '../../monitoring/KeadaanPanel.vue';
+import AdminModal from '@career/AdminModal.vue';
 
 const props = defineProps({ funnel: { type: Array, default: () => [] } });
 
 const idx = ref(0);
 const buka = ref(new Set());
+const lihatProgram = ref(false);
 
 const aktif = computed(() => props.funnel[idx.value] || props.funnel[0] || { tahap: [], programNama: [] });
 
@@ -137,6 +184,11 @@ function lebar(t) {
 function persenLanjut(t) {
     if (!t.capai) return 0;
     return Math.round((t.lanjut / t.capai) * 100);
+}
+
+function persenDariAwal(t) {
+    const pert = aktif.value.tahap[0]?.capai || 1;
+    return Math.round((t.capai / pert) * 100);
 }
 
 function tooltip(t) {
@@ -181,9 +233,100 @@ function nadaKonversi(t) {
 .fn-alur { flex-wrap: wrap; }
 .fn-alur em { font-style: normal; opacity: 0.7; }
 
-.fn-cakup { font-size: 0.78rem; color: #64748b; white-space: nowrap; font-weight: 600; }
-.fn-cakup .bi { color: #6366f1; margin-right: 4px; }
-.fn-cakup b { color: #0f172a; font-weight: 800; }
+/* DROPDOWN SELECT UNTUK BANYAK ALUR (>4) */
+.fn-select-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    min-width: 260px;
+}
+.fn-select-ic {
+    position: absolute;
+    left: 12px;
+    color: #6366f1;
+    font-size: 0.85rem;
+    pointer-events: none;
+}
+.fn-select-input {
+    width: 100%;
+    padding: 7px 32px 7px 34px;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 12px;
+    background: #ffffff;
+    color: #0f172a;
+    font: inherit;
+    font-size: 0.78rem;
+    font-weight: 800;
+    cursor: pointer;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+    transition: all 0.15s ease;
+}
+.fn-select-input:focus {
+    outline: 0;
+    border-color: #6366f1;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+}
+
+.fn-cakup-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 12px;
+    background: #ffffff;
+    font: inherit;
+    font-size: 0.78rem;
+    color: #475569;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+    transition: all 0.15s ease;
+}
+.fn-cakup-btn:hover {
+    border-color: #6366f1;
+    color: #4338ca;
+    background: #eef2ff;
+}
+.fn-cakup-btn .bi { color: #6366f1; }
+.fn-cakup-btn b { color: #0f172a; font-weight: 800; }
+.fn-cakup-info { font-size: 0.72rem; color: #94a3b8; margin-left: 2px; }
+
+/* MODAL DAFTAR PROGRAM */
+.fn-program-modal-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 4px 0;
+}
+
+.fn-program-chip {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    background: #f8fafc;
+    border: 1.5px solid #e2e8f0;
+    font-size: 0.82rem;
+    font-weight: 800;
+    color: #0f172a;
+}
+.fn-program-chip .bi { color: #6366f1; font-size: 1rem; }
+
+.fn-program-chip__num {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    background: #eef2ff;
+    color: #4f46e5;
+    font-size: 0.7rem;
+    font-weight: 900;
+    line-height: 1 !important;
+}
 
 .fn-sempit {
     display: inline-flex;
@@ -216,22 +359,20 @@ function nadaKonversi(t) {
 .fn-swatch.is-henti { background: #c7d2fe; margin-left: 8px; }
 
 /* ══════════ BARIS TAHAP ══════════ */
-.fn-list { list-style: none; margin: 0; padding: 0; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; background: #fff; }
+.fn-list { list-style: none; margin: 0; padding: 0; border: 1.5px solid #e2e8f0; border-radius: 16px; overflow: hidden; background: #fff; }
 .fn-list > li + li { border-top: 1px solid #f1f5f9; }
 
 .fn-row {
     display: grid;
-    grid-template-columns: 24px minmax(110px, 1.2fr) minmax(100px, 2fr) 52px 68px 16px;
+    grid-template-columns: 24px minmax(130px, 1.2fr) minmax(120px, 2fr) minmax(110px, auto) auto 28px;
     align-items: center;
-    gap: 12px;
+    gap: 14px;
     width: 100%;
-    padding: 10px 16px;
-    border: 0;
+    padding: 12px 18px;
     border-left: 4px solid transparent;
     background: transparent;
     font: inherit;
     text-align: left;
-    cursor: pointer;
     transition: background 0.16s ease;
 }
 .fn-row:hover { background: #f8fafc; }
@@ -239,18 +380,27 @@ function nadaKonversi(t) {
 .fn-row.is-sempit { border-left-color: #ea580c; background: #fffdfb; }
 
 .fn-ur {
-    display: grid;
-    place-items: center;
-    width: 22px;
-    height: 22px;
-    border-radius: 7px;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 24px;
+    height: 24px;
+    border-radius: 8px;
     background: #eef2ff;
     color: #4f46e5;
-    font-size: 0.72rem;
+    font-size: 0.75rem;
     font-weight: 900;
+    line-height: 1 !important;
+    text-align: center;
+}
+
+.fn-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
 }
 .fn-lbl {
-    font-size: 0.8rem;
+    font-size: 0.82rem;
     font-weight: 800;
     color: #0f172a;
     overflow: hidden;
@@ -258,34 +408,102 @@ function nadaKonversi(t) {
     white-space: nowrap;
 }
 .fn-lbl .bi { font-size: 11px; color: #94a3b8; margin-left: 4px; }
+.fn-sub {
+    font-size: 0.7rem;
+    color: #64748b;
+    font-weight: 600;
+    margin-top: 2px;
+}
 
-.fn-rel { display: block; height: 10px; border-radius: 999px; background: #f1f5f9; overflow: hidden; }
+.fn-rel { display: block; height: 12px; border-radius: 999px; background: #f1f5f9; overflow: hidden; padding: 1px; }
+.fn-bar-bg { width: 100%; height: 100%; border-radius: 999px; }
 .fn-bar {
     display: block;
     height: 100%;
-    border-radius: 0 6px 6px 0;
+    border-radius: 999px;
     background: #c7d2fe;
     transition: width 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .fn-bar__lanjut {
     display: block;
     height: 100%;
-    border-radius: 0 6px 6px 0;
+    border-radius: 999px;
     background: linear-gradient(90deg, #6366f1, #4f46e5);
     transition: width 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .is-sempit .fn-bar { background: #fed7aa; }
 
-.fn-capai { font-size: 0.82rem; font-weight: 900; color: #0f172a; text-align: right; }
-.fn-konv { display: flex; justify-content: flex-end; }
-.fn-konv__nol { font-size: 0.72rem; color: #cbd5e1; font-weight: 700; }
-.fn-chev { font-size: 12px; color: #94a3b8; }
+.fn-angka-col {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 3px;
+}
+.fn-capai {
+    font-size: 0.84rem;
+    color: #475569;
+    font-weight: 600;
+}
+.fn-capai b {
+    color: #0f172a;
+    font-size: 0.95rem;
+    font-weight: 900;
+}
+.fn-capai small {
+    font-size: 0.7rem;
+    color: #64748b;
+}
+
+.fn-badge-konv {
+    font-size: 0.68rem;
+    font-weight: 800;
+    padding: 2px 7px;
+    border-radius: 6px;
+}
+.fn-konv__nol { font-size: 0.68rem; color: #94a3b8; font-weight: 700; }
+
+.fn-mini-pills {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-wrap: wrap;
+}
+.fn-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 7px;
+    border-radius: 6px;
+    font-size: 0.68rem;
+    font-weight: 800;
+}
+.fn-pill.is-lanjut { background: #ecfdf5; color: #047857; }
+.fn-pill.is-proses { background: #f0f9ff; color: #0369a1; }
+.fn-pill.is-gugur { background: #fef2f2; color: #b91c1c; }
+
+.fn-chev-btn {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 26px;
+    height: 26px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: #ffffff;
+    color: #64748b;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.fn-chev-btn:hover {
+    background: #f1f5f9;
+    color: #0f172a;
+}
 
 .fn-rinci {
     display: flex;
     flex-wrap: wrap;
     gap: 8px 18px;
-    padding: 8px 16px 14px 52px;
+    padding: 10px 18px 14px 56px;
     background: #f8fafc;
     border-top: 1px dashed #e2e8f0;
     font-size: 0.76rem;
@@ -304,14 +522,12 @@ function nadaKonversi(t) {
     padding: 6px 0;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 768px) {
     .fn-row {
-        grid-template-columns: 24px 1fr 48px 60px 14px;
-        row-gap: 6px;
-        padding: 10px 12px;
+        grid-template-columns: 24px 1fr auto 26px;
+        row-gap: 8px;
     }
-    .fn-lbl { grid-column: 2 / -1; }
-    .fn-rel { grid-column: 2; }
-    .fn-rinci { padding-left: 16px; }
+    .fn-rel { grid-column: 1 / -1; }
+    .fn-mini-pills { display: none; }
 }
 </style>

@@ -206,299 +206,286 @@
         </Transition>
 
         <!-- ══════════════ MODAL FULLSCREEN KALENDER OPERASIONAL ══════════════ -->
-        <Teleport to="body">
-            <div v-if="fokus" class="wcc-modal" role="dialog" aria-modal="true" aria-label="Kalender operasional">
-                <div class="wcc-modal__panel">
-                    <!-- HEADER MODAL -->
-                    <header class="wcc-modal__head" :style="{ '--wcc-accent': accent }">
-                        <div class="wcc-modal__title-group">
-                            <span class="wcc-modal__logo"><i class="bi bi-calendar2-week-fill"></i></span>
-                            <div class="wcd-modal-title-text">
-                                <h2>Kalender Operasional Command Center</h2>
-                                <p>{{ categoryLabel }} · Live Operational View</p>
-                            </div>
-                        </div>
-
-                        <div class="wcc-modal__head-actions">
-                            <span class="wcc-modal__tag"><i class="bi bi-broadcast"></i> Live Command Mode</span>
-                            <button type="button" class="wcc-icon-btn" aria-label="Tutup kalender" @click="tutupFokus">
-                                <i class="bi bi-x-lg"></i>
-                            </button>
-                        </div>
-                    </header>
-
-                    <!-- KPI METRICS STRIP -->
-                    <div class="wcc-modal__stats-bar">
-                        <div class="wcc-modal__kpi-item">
-                            <span class="wcc-modal__kpi-icon tone-blue"><i class="bi bi-sun-fill"></i></span>
-                            <div>
-                                <b>{{ summary.hariIni || 0 }}</b>
-                                <span>Hari Ini</span>
-                            </div>
-                        </div>
-                        <div class="wcc-modal__kpi-item" :class="{ danger: summary.perluPerhatian }">
-                            <span class="wcc-modal__kpi-icon tone-orange"><i class="bi bi-exclamation-triangle-fill"></i></span>
-                            <div>
-                                <b>{{ summary.perluPerhatian || 0 }}</b>
-                                <span>Perlu Perhatian</span>
-                            </div>
-                        </div>
-                        <div class="wcc-modal__kpi-item" :class="{ danger: summary.bentrok }">
-                            <span class="wcc-modal__kpi-icon tone-red"><i class="bi bi-intersect"></i></span>
-                            <div>
-                                <b>{{ summary.bentrok || 0 }}</b>
-                                <span>Sesi Bentrok</span>
-                            </div>
-                        </div>
-                        <div class="wcc-modal__kpi-item">
-                            <span class="wcc-modal__kpi-icon tone-violet"><i class="bi bi-hourglass-bottom"></i></span>
-                            <div>
-                                <b>{{ deadlineSingkat }}</b>
-                                <span>Deadline Terdekat</span>
-                            </div>
-                        </div>
+        <AdminModal
+            :show="fokus"
+            title="Kalender Operasional Command Center"
+            :subtitle="`${categoryLabel} · Live Operational View`"
+            icon="bi-calendar2-week-fill"
+            full
+            @close="tutupFokus"
+        >
+            <!-- KPI METRICS STRIP -->
+            <div class="wcc-modal__stats-bar">
+                <div class="wcc-modal__kpi-item">
+                    <span class="wcc-modal__kpi-icon tone-blue"><i class="bi bi-sun-fill"></i></span>
+                    <div>
+                        <b>{{ summary.hariIni || 0 }}</b>
+                        <span>Hari Ini</span>
                     </div>
-
-                    <!-- CONTROL TOOLBAR: CLEAR CRISP FLEX ROW -->
-                    <div class="wcc-modal__toolbar">
-                        <div class="wcc-modal__toolbar-left">
-                            <!-- SEARCH BAR WITH CRISP BORDER -->
-                            <label class="wcc-search">
-                                <i class="bi bi-search"></i>
-                                <input v-model="filter.cari" type="search" placeholder="Cari agenda, program, deskripsi…">
-                                <button v-if="filter.cari" type="button" class="wcc-search-clear" @click="filter.cari = ''">
-                                    <i class="bi bi-x-circle-fill"></i>
-                                </button>
-                            </label>
-
-                            <!-- TYPE FILTER BUTTONS -->
-                            <div class="wcc-type-filter" role="group" aria-label="Filter jenis agenda">
-                                <button v-for="option in filterJenis" :key="option.value" type="button"
-                                    :class="{ active: filter.jenis === option.value }" @click="filter.jenis = option.value">
-                                    <i class="bi" :class="option.icon"></i>{{ option.label }}
-                                </button>
-                            </div>
-
-                            <!-- PROGRAM SELECT DROPDOWN -->
-                            <div class="wcc-program-filter-wrap">
-                                <select v-model="filter.program" class="wcc-select">
-                                    <option value="">Semua Program</option>
-                                    <option v-for="program in programOptions" :key="program" :value="program">{{ program }}</option>
-                                </select>
-                                <i class="bi bi-chevron-down wcc-select-icon"></i>
-                            </div>
-                        </div>
-
-                        <div class="wcc-modal__toolbar-right">
-                            <!-- VIEW SWITCHER BUTTONS -->
-                            <div class="wcc-view-switcher" role="group" aria-label="Tampilan kalender">
-                                <button type="button" :class="{ active: viewModalAktif === 'dayGridMonth' }" title="Tampilan Bulan" @click="gantiTampilanModal('dayGridMonth')">
-                                    <i class="bi bi-calendar3"></i> Bulan
-                                </button>
-                                <button type="button" :class="{ active: viewModalAktif === 'timeGridWeek' }" title="Tampilan Minggu" @click="gantiTampilanModal('timeGridWeek')">
-                                    <i class="bi bi-calendar-week"></i> Minggu
-                                </button>
-                                <button type="button" :class="{ active: viewModalAktif === 'timeGridDay' }" title="Tampilan Hari" @click="gantiTampilanModal('timeGridDay')">
-                                    <i class="bi bi-calendar-day"></i> Hari
-                                </button>
-                                <button type="button" :class="{ active: viewModalAktif === 'listWeek' }" title="Tampilan Daftar" @click="gantiTampilanModal('listWeek')">
-                                    <i class="bi bi-list-task"></i> Daftar
-                                </button>
-                            </div>
-
-                            <!-- PRESET CHIPS & RESET -->
-                            <div class="wcc-preset-bar">
-                                <button type="button" class="wcc-preset-chip" :class="{ active: filter.mode === 'PERLU' }" @click="setFilterMode('PERLU')">
-                                    <i class="bi bi-exclamation-triangle-fill"></i> Perhatian
-                                </button>
-                                <button type="button" class="wcc-preset-chip danger" :class="{ active: filter.mode === 'BENTROK' }" @click="setFilterMode('BENTROK')">
-                                    <i class="bi bi-intersect"></i> Bentrok
-                                </button>
-                                <button v-if="isFilterAktif" type="button" class="wcc-reset-btn" title="Reset filter" @click="resetSemuaFilter">
-                                    <i class="bi bi-arrow-counterclockwise"></i>
-                                </button>
-                            </div>
-                        </div>
+                </div>
+                <div class="wcc-modal__kpi-item" :class="{ danger: summary.perluPerhatian }">
+                    <span class="wcc-modal__kpi-icon tone-orange"><i class="bi bi-exclamation-triangle-fill"></i></span>
+                    <div>
+                        <b>{{ summary.perluPerhatian || 0 }}</b>
+                        <span>Perlu Perhatian</span>
                     </div>
-
-                    <div v-if="fokusGalat" class="wcc-inline-error" role="alert">
-                        <i class="bi bi-exclamation-circle-fill"></i>{{ fokusGalat }}
+                </div>
+                <div class="wcc-modal__kpi-item" :class="{ danger: summary.bentrok }">
+                    <span class="wcc-modal__kpi-icon tone-red"><i class="bi bi-intersect"></i></span>
+                    <div>
+                        <b>{{ summary.bentrok || 0 }}</b>
+                        <span>Sesi Bentrok</span>
                     </div>
-
-                    <!-- FULLCALENDAR MAIN WRAPPER -->
-                    <div class="wcc-calendar-wrap" :class="{ loading: fokusMemuat }">
-                        <FullCalendar ref="fullCalendar" :options="calendarOptions" />
+                </div>
+                <div class="wcc-modal__kpi-item">
+                    <span class="wcc-modal__kpi-icon tone-violet"><i class="bi bi-hourglass-bottom"></i></span>
+                    <div>
+                        <b>{{ deadlineSingkat }}</b>
+                        <span>Deadline Terdekat</span>
                     </div>
-
-                    <!-- INTERACTIVE LEGEND FOOTER -->
-                    <footer class="wcc-legend">
-                        <div class="wcc-legend__items">
-                            <span class="wcc-legend__label">Legenda Agenda:</span>
-                            <button v-for="(item, key) in JENIS_KALENDER" :key="key" type="button"
-                                class="wcc-legend__item" :class="{ active: filter.jenis === key }"
-                                @click="filter.jenis = filter.jenis === key ? 'SEMUA' : key">
-                                <i :style="{ background: item.warna }"></i>{{ item.label }}
-                                <span v-if="filter.jenis === key" class="wcc-legend__check"><i class="bi bi-check"></i></span>
-                            </button>
-                            <button type="button" class="wcc-legend__item risk" :class="{ active: filter.mode === 'BENTROK' || filter.mode === 'PERLU' }"
-                                @click="setFilterMode('BENTROK')">
-                                <i class="risk"></i>Bentrok / Perhatian
-                            </button>
-                        </div>
-                        <em class="wcc-legend__tip">
-                            <i class="bi bi-info-circle"></i> Klik agenda untuk melihat detail peserta &amp; tindakan cepat.
-                        </em>
-                    </footer>
                 </div>
             </div>
 
-            <!-- ══════════════ DRAWER DETAIL AGENDA ══════════════ -->
-            <div v-if="detail" class="wcc-drawer-layer" role="presentation" @mousedown.self="tutupDetail">
-                <aside class="wcc-drawer" role="dialog" aria-modal="true" aria-label="Detail agenda">
-                    <header :style="{ '--detail-color': jenis(detail).warna }">
-                        <span class="wcc-detail-icon"><i class="bi" :class="jenis(detail).ikon"></i></span>
-                        <div>
-                            <small>{{ jenis(detail).label }}</small>
-                            <h2>{{ detail.judul }}</h2>
-                        </div>
-                        <button type="button" aria-label="Tutup detail" @click="tutupDetail"><i class="bi bi-x-lg"></i></button>
-                    </header>
+            <!-- CONTROL TOOLBAR: CLEAR CRISP FLEX ROW -->
+            <div class="wcc-modal__toolbar">
+                <div class="wcc-modal__toolbar-left">
+                    <!-- SEARCH BAR WITH CRISP BORDER -->
+                    <label class="wcc-search">
+                        <i class="bi bi-search"></i>
+                        <input v-model="filter.cari" type="search" placeholder="Cari agenda, program, deskripsi…">
+                        <button v-if="filter.cari" type="button" class="wcc-search-clear" @click="filter.cari = ''">
+                            <i class="bi bi-x-circle-fill"></i>
+                        </button>
+                    </label>
 
-                    <div class="wcc-drawer__body">
-                        <div v-if="detail.konflik" class="wcc-alertbox">
-                            <i class="bi bi-intersect"></i>
-                            <div>
-                                <b>Jadwal Berbenturan Detected</b>
-                                <span>Terdapat jadwal lain pada program yang sama di rentang waktu bersamaan.</span>
-                            </div>
-                        </div>
-
-                        <dl class="wcc-detail-list">
-                            <div>
-                                <dt><i class="bi bi-building"></i> Program</dt>
-                                <dd><b>{{ detail.program }}</b></dd>
-                            </div>
-                            <div>
-                                <dt><i class="bi bi-clock"></i> Waktu</dt>
-                                <dd>{{ formatRentang(detail) }}</dd>
-                            </div>
-                            <div v-if="detail.ket">
-                                <dt><i class="bi bi-tag"></i> Keterangan</dt>
-                                <dd>{{ detail.ket }}</dd>
-                            </div>
-                            <div v-if="detail.status">
-                                <dt><i class="bi bi-activity"></i> Status Sesi</dt>
-                                <dd><span class="wcc-status-tag">{{ detail.status }}</span></dd>
-                            </div>
-                        </dl>
-
-                        <!-- PROGRES PESERTA & KESIAPAN -->
-                        <section v-if="detail.kesiapan || detail.jumlahPeserta" class="wcc-readiness">
-                            <div class="wcc-readiness__head">
-                                <span>Kesiapan Sesi &amp; Peserta</span>
-                                <b :style="{ color: kesiapan(detail).warna }">
-                                    <i class="bi" :class="kesiapan(detail).ikon"></i> {{ kesiapan(detail).label }}
-                                </b>
-                            </div>
-
-                            <!-- Progress Bar Visual -->
-                            <div v-if="detail.jumlahPeserta" class="wcc-progress-bar">
-                                <div class="wcc-progress-bar__track">
-                                    <div class="wcc-progress-bar__fill ok" :style="{ width: hitungPersentasePeserta(detail) + '%' }"></div>
-                                </div>
-                                <div class="wcc-progress-bar__meta">
-                                    <span>Tingkat Kesiapan</span>
-                                    <b>{{ hitungPersentasePeserta(detail) }}% Terkirim</b>
-                                </div>
-                            </div>
-
-                            <div class="wcc-participants">
-                                <div class="wcc-part-card">
-                                    <b>{{ detail.jumlahPeserta || 0 }}</b>
-                                    <span>Total Peserta</span>
-                                </div>
-                                <div class="wcc-part-card ok">
-                                    <b>{{ detail.pesertaTerkirim || 0 }}</b>
-                                    <span>Terkirim</span>
-                                </div>
-                                <div class="wcc-part-card wait">
-                                    <b>{{ detail.pesertaMenunggu || 0 }}</b>
-                                    <span>Menunggu</span>
-                                </div>
-                                <div class="wcc-part-card fail">
-                                    <b>{{ detail.pesertaGagal || 0 }}</b>
-                                    <span>Gagal</span>
-                                </div>
-                            </div>
-                        </section>
-
-                        <!-- TIMELINE SIAPA SAJA YANG TERJADWAL — dimuat lazy saat event diklik. -->
-                        <section v-if="detail.jenis === 'TES'" class="wcc-people-timeline">
-                            <div class="wcc-people-timeline__head">
-                                <div>
-                                    <span>Timeline peserta terjadwal</span>
-                                    <b>Siapa saja yang ada di sesi ini</b>
-                                </div>
-                                <em v-if="Array.isArray(detail.peserta)">{{ detail.peserta.length }} orang</em>
-                            </div>
-
-                            <div v-if="detailMemuat" class="wcc-people-loading" aria-live="polite">
-                                <span class="wcc-loader"></span>
-                                <div><b>Memuat peserta…</b><small>Mengambil status terbaru kandidat.</small></div>
-                            </div>
-                            <div v-else-if="detailGalat" class="wcc-people-error" role="alert">
-                                <i class="bi bi-wifi-off"></i>
-                                <div><b>Peserta belum berhasil dimuat</b><small>{{ detailGalat }}</small></div>
-                                <button type="button" @click="bukaDetail(detail, true)">Coba lagi</button>
-                            </div>
-                            <div v-else-if="detail.peserta?.length" class="wcc-people-list">
-                                <article v-for="(peserta, index) in detail.peserta" :key="peserta.kode || `${peserta.nama}-${index}`" class="wcc-person">
-                                    <div class="wcc-person__rail">
-                                        <span>{{ inisialPeserta(peserta.nama) }}</span>
-                                        <i v-if="index < detail.peserta.length - 1"></i>
-                                    </div>
-                                    <div class="wcc-person__main">
-                                        <div class="wcc-person__identity">
-                                            <div><b>{{ peserta.nama }}</b><small>{{ peserta.posisi || 'Posisi belum dicatat' }}</small></div>
-                                            <span class="wcc-person__status" :class="statusPeserta(peserta).kelas">
-                                                <i class="bi" :class="statusPeserta(peserta).ikon"></i>{{ statusPeserta(peserta).label }}
-                                            </span>
-                                        </div>
-                                        <div class="wcc-person__meta">
-                                            <span v-if="peserta.kode"><i class="bi bi-person-vcard"></i>{{ peserta.kode }}</span>
-                                            <span><i class="bi bi-send"></i>{{ labelStatus(peserta.statusKirim) }}</span>
-                                            <span><i class="bi bi-activity"></i>{{ labelStatus(peserta.statusPengerjaan) }}</span>
-                                        </div>
-                                    </div>
-                                </article>
-                            </div>
-                            <div v-else class="wcc-people-empty">
-                                <i class="bi bi-people"></i>
-                                <div><b>Belum ada peserta di sesi ini</b><small>Peserta akan muncul setelah ditambahkan melalui Penjadwalan.</small></div>
-                            </div>
-                        </section>
+                    <!-- TYPE FILTER BUTTONS -->
+                    <div class="wcc-type-filter" role="group" aria-label="Filter jenis agenda">
+                        <button v-for="option in filterJenis" :key="option.value" type="button"
+                            :class="{ active: filter.jenis === option.value }" @click="filter.jenis = option.value">
+                            <i class="bi" :class="option.icon"></i>{{ option.label }}
+                        </button>
                     </div>
 
-                    <footer>
-                        <div class="wcc-drawer__actions">
-                            <button type="button" class="wcc-copy-btn" @click="salinEvent(detail)">
-                                <i class="bi bi-clipboard-check"></i> Salin Ringkasan
-                            </button>
-                            <a v-if="detail.sourceUrl" class="wcc-source-btn" :href="detail.sourceUrl">
-                                <i class="bi bi-box-arrow-up-right"></i> Buka di {{ sumberLabel(detail) }}
-                            </a>
-                        </div>
-                        <p v-if="!detail.sourceUrl"><i class="bi bi-shield-lock"></i> Detail bersifat baca saja sesuai hak akses Anda.</p>
-                    </footer>
-                </aside>
+                    <!-- PROGRAM SELECT DROPDOWN -->
+                    <div class="wcc-program-filter-wrap">
+                        <select v-model="filter.program" class="wcc-select">
+                            <option value="">Semua Program</option>
+                            <option v-for="program in programOptions" :key="program" :value="program">{{ program }}</option>
+                        </select>
+                        <i class="bi bi-chevron-down wcc-select-icon"></i>
+                    </div>
+                </div>
+
+                <div class="wcc-modal__toolbar-right">
+                    <!-- VIEW SWITCHER BUTTONS -->
+                    <div class="wcc-view-switcher" role="group" aria-label="Tampilan kalender">
+                        <button type="button" :class="{ active: viewModalAktif === 'dayGridMonth' }" title="Tampilan Bulan" @click="gantiTampilanModal('dayGridMonth')">
+                            <i class="bi bi-calendar3"></i> Bulan
+                        </button>
+                        <button type="button" :class="{ active: viewModalAktif === 'timeGridWeek' }" title="Tampilan Minggu" @click="gantiTampilanModal('timeGridWeek')">
+                            <i class="bi bi-calendar-week"></i> Minggu
+                        </button>
+                        <button type="button" :class="{ active: viewModalAktif === 'timeGridDay' }" title="Tampilan Hari" @click="gantiTampilanModal('timeGridDay')">
+                            <i class="bi bi-calendar-day"></i> Hari
+                        </button>
+                        <button type="button" :class="{ active: viewModalAktif === 'listWeek' }" title="Tampilan Daftar" @click="gantiTampilanModal('listWeek')">
+                            <i class="bi bi-list-task"></i> Daftar
+                        </button>
+                    </div>
+
+                    <!-- PRESET CHIPS & RESET -->
+                    <div class="wcc-preset-bar">
+                        <button type="button" class="wcc-preset-chip" :class="{ active: filter.mode === 'PERLU' }" @click="setFilterMode('PERLU')">
+                            <i class="bi bi-exclamation-triangle-fill"></i> Perhatian
+                        </button>
+                        <button type="button" class="wcc-preset-chip danger" :class="{ active: filter.mode === 'BENTROK' }" @click="setFilterMode('BENTROK')">
+                            <i class="bi bi-intersect"></i> Bentrok
+                        </button>
+                        <button v-if="isFilterAktif" type="button" class="wcc-reset-btn" title="Reset filter" @click="resetSemuaFilter">
+                            <i class="bi bi-arrow-counterclockwise"></i>
+                        </button>
+                    </div>
+                </div>
             </div>
-        </Teleport>
+
+            <div v-if="fokusGalat" class="wcc-inline-error" role="alert">
+                <i class="bi bi-exclamation-circle-fill"></i>{{ fokusGalat }}
+            </div>
+
+            <!-- FULLCALENDAR MAIN WRAPPER -->
+            <div class="wcc-calendar-wrap" :class="{ loading: fokusMemuat }">
+                <FullCalendar ref="fullCalendar" :options="calendarOptions" />
+            </div>
+
+            <template #footer>
+                <div class="wcc-legend" style="width: 100%; padding: 0; background: none; border: none;">
+                    <div class="wcc-legend__items">
+                        <span class="wcc-legend__label">Legenda Agenda:</span>
+                        <button v-for="(item, key) in JENIS_KALENDER" :key="key" type="button"
+                            class="wcc-legend__item" :class="{ active: filter.jenis === key }"
+                            @click="filter.jenis = filter.jenis === key ? 'SEMUA' : key">
+                            <i :style="{ background: item.warna }"></i>{{ item.label }}
+                            <span v-if="filter.jenis === key" class="wcc-legend__check"><i class="bi bi-check"></i></span>
+                        </button>
+                        <button type="button" class="wcc-legend__item risk" :class="{ active: filter.mode === 'BENTROK' || filter.mode === 'PERLU' }"
+                            @click="setFilterMode('BENTROK')">
+                            <i class="risk"></i>Bentrok / Perhatian
+                        </button>
+                    </div>
+                    <em class="wcc-legend__tip">
+                        <i class="bi bi-info-circle"></i> Klik agenda untuk melihat detail peserta &amp; tindakan cepat.
+                    </em>
+                </div>
+            </template>
+        </AdminModal>
+
+        <!-- ══════════════ MODAL DETAIL AGENDA ══════════════ -->
+        <AdminModal
+            :show="!!detail"
+            :title="detail?.judul || 'Detail Agenda Operasional'"
+            :subtitle="`${jenis(detail || {}).label || 'Agenda'} · ${detail?.program || ''}`"
+            :icon="jenis(detail || {}).ikon || 'bi-calendar-event'"
+            lg
+            @close="tutupDetail"
+        >
+            <div v-if="detail" class="wcc-drawer__body" style="padding: 0;">
+                <div v-if="detail.konflik" class="wcc-alertbox">
+                    <i class="bi bi-intersect"></i>
+                    <div>
+                        <b>Jadwal Berbenturan Detected</b>
+                        <span>Terdapat jadwal lain pada program yang sama di rentang waktu bersamaan.</span>
+                    </div>
+                </div>
+
+                <dl class="wcc-detail-list">
+                    <div>
+                        <dt><i class="bi bi-building"></i> Program</dt>
+                        <dd><b>{{ detail.program }}</b></dd>
+                    </div>
+                    <div>
+                        <dt><i class="bi bi-clock"></i> Waktu</dt>
+                        <dd>{{ formatRentang(detail) }}</dd>
+                    </div>
+                    <div v-if="detail.ket">
+                        <dt><i class="bi bi-tag"></i> Keterangan</dt>
+                        <dd>{{ detail.ket }}</dd>
+                    </div>
+                    <div v-if="detail.status">
+                        <dt><i class="bi bi-activity"></i> Status Sesi</dt>
+                        <dd><span class="wcc-status-tag">{{ detail.status }}</span></dd>
+                    </div>
+                </dl>
+
+                <!-- PROGRES PESERTA & KESIAPAN -->
+                <section v-if="detail.kesiapan || detail.jumlahPeserta" class="wcc-readiness">
+                    <div class="wcc-readiness__head">
+                        <span>Kesiapan Sesi &amp; Peserta</span>
+                        <b :style="{ color: kesiapan(detail).warna }">
+                            <i class="bi" :class="kesiapan(detail).ikon"></i> {{ kesiapan(detail).label }}
+                        </b>
+                    </div>
+
+                    <!-- Progress Bar Visual -->
+                    <div v-if="detail.jumlahPeserta" class="wcc-progress-bar">
+                        <div class="wcc-progress-bar__track">
+                            <div class="wcc-progress-bar__fill ok" :style="{ width: hitungPersentasePeserta(detail) + '%' }"></div>
+                        </div>
+                        <div class="wcc-progress-bar__meta">
+                            <span>Tingkat Kesiapan</span>
+                            <b>{{ hitungPersentasePeserta(detail) }}% Terkirim</b>
+                        </div>
+                    </div>
+
+                    <div class="wcc-participants">
+                        <div class="wcc-part-card">
+                            <b>{{ detail.jumlahPeserta || 0 }}</b>
+                            <span>Total Peserta</span>
+                        </div>
+                        <div class="wcc-part-card ok">
+                            <b>{{ detail.pesertaTerkirim || 0 }}</b>
+                            <span>Terkirim</span>
+                        </div>
+                        <div class="wcc-part-card wait">
+                            <b>{{ detail.pesertaMenunggu || 0 }}</b>
+                            <span>Menunggu</span>
+                        </div>
+                        <div class="wcc-part-card fail">
+                            <b>{{ detail.pesertaGagal || 0 }}</b>
+                            <span>Gagal</span>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- TIMELINE SIAPA SAJA YANG TERJADWAL -->
+                <section v-if="detail.jenis === 'TES'" class="wcc-people-timeline">
+                    <div class="wcc-people-timeline__head">
+                        <div>
+                            <span>Timeline peserta terjadwal</span>
+                            <b>Siapa saja yang ada di sesi ini</b>
+                        </div>
+                        <em v-if="Array.isArray(detail.peserta)">{{ detail.peserta.length }} orang</em>
+                    </div>
+
+                    <div v-if="detailMemuat" class="wcc-people-loading" aria-live="polite">
+                        <span class="wcc-loader"></span>
+                        <div><b>Memuat peserta…</b><small>Mengambil status terbaru kandidat.</small></div>
+                    </div>
+                    <div v-else-if="detailGalat" class="wcc-people-error" role="alert">
+                        <i class="bi bi-wifi-off"></i>
+                        <div><b>Peserta belum berhasil dimuat</b><small>{{ detailGalat }}</small></div>
+                        <button type="button" class="wcc-hero-btn wcc-hero-btn--ghost" @click="bukaDetail(detail, true)">Coba lagi</button>
+                    </div>
+                    <div v-else-if="detail.peserta?.length" class="wcc-people-list">
+                        <article v-for="(peserta, index) in detail.peserta" :key="peserta.kode || `${peserta.nama}-${index}`" class="wcc-person">
+                            <div class="wcc-person__rail">
+                                <span>{{ inisialPeserta(peserta.nama) }}</span>
+                                <i v-if="index < detail.peserta.length - 1"></i>
+                            </div>
+                            <div class="wcc-person__main">
+                                <div class="wcc-person__identity">
+                                    <div><b>{{ peserta.nama }}</b><small>{{ peserta.posisi || 'Posisi belum dicatat' }}</small></div>
+                                    <span class="wcc-person__status" :class="statusPeserta(peserta).kelas">
+                                        <i class="bi" :class="statusPeserta(peserta).ikon"></i>{{ statusPeserta(peserta).label }}
+                                    </span>
+                                </div>
+                                <div class="wcc-person__meta">
+                                    <span v-if="peserta.kode"><i class="bi bi-person-vcard"></i>{{ peserta.kode }}</span>
+                                    <span><i class="bi bi-send"></i>{{ labelStatus(peserta.statusKirim) }}</span>
+                                    <span><i class="bi bi-activity"></i>{{ labelStatus(peserta.statusPengerjaan) }}</span>
+                                </div>
+                            </div>
+                        </article>
+                    </div>
+                    <div v-else class="wcc-people-empty">
+                        <i class="bi bi-people"></i>
+                        <div><b>Belum ada peserta di sesi ini</b><small>Peserta akan muncul setelah ditambahkan melalui Penjadwalan.</small></div>
+                    </div>
+                </section>
+            </div>
+
+            <template #footer>
+                <div class="wcc-drawer__actions" style="width: 100%; display: flex; align-items: center; justify-content: space-between;">
+                    <div style="display: flex; gap: 8px;">
+                        <button type="button" class="wca-btn wca-btn--ghost" @click="salinEvent(detail)">
+                            <i class="bi bi-clipboard-check"></i> Salin Ringkasan
+                        </button>
+                        <a v-if="detail?.sourceUrl" class="wca-btn wca-btn--dark" :href="detail.sourceUrl">
+                            <i class="bi bi-box-arrow-up-right"></i> Buka di {{ sumberLabel(detail) }}
+                        </a>
+                    </div>
+                    <button type="button" class="wca-btn wca-btn--ghost" @click="tutupDetail">
+                        <i class="bi bi-x-lg"></i> Tutup
+                    </button>
+                </div>
+            </template>
+        </AdminModal>
     </div>
 </template>
 
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import axios from 'axios';
+import AdminModal from '@career/AdminModal.vue';
 import FullCalendar from '@fullcalendar/vue3';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import interactionPlugin from '@fullcalendar/interaction';
@@ -983,16 +970,19 @@ onUnmounted(() => {
 
 .wcc-hero h3 {
     margin: 0;
-    font-size: 1.15rem;
+    font-size: 1.25rem;
     font-weight: 900;
     letter-spacing: -0.02em;
+    color: #ffffff !important;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
 }
 
 .wcc-hero p {
     margin: 6px 0 0;
-    font-size: 0.78rem;
-    line-height: 1.4;
-    opacity: 0.88;
+    font-size: 0.8rem;
+    line-height: 1.45;
+    color: rgba(255, 255, 255, 0.95) !important;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
     max-width: 620px;
 }
 
@@ -1119,14 +1109,30 @@ onUnmounted(() => {
 }
 
 .wcc-signal__icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
     width: 38px;
     height: 38px;
     flex-shrink: 0;
     border-radius: 12px;
     font-size: 1.1rem;
+    line-height: 1 !important;
+}
+.wcc-signal__icon i {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 1em !important;
+    height: 1em !important;
+    line-height: 1 !important;
+    margin: 0 !important;
+}
+.wcc-signal__icon i::before {
+    vertical-align: 0 !important;
+    display: block !important;
+    line-height: 1 !important;
+    margin: 0 !important;
 }
 .tone-blue { color: #0284c7; background: #e0f2fe; }
 .tone-orange { color: #ea580c; background: #ffedd5; }
@@ -1201,8 +1207,12 @@ onUnmounted(() => {
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    padding: 0 4px 6px;
-    border-bottom: 1.5px solid #edf2f7;
+    padding: 10px 14px;
+    background: linear-gradient(135deg, #1e1b4b 0%, #312e81 60%, #4338ca 100%);
+    border-radius: 12px;
+    color: #ffffff;
+    margin-bottom: 8px;
+    box-shadow: 0 4px 15px rgba(30, 27, 75, 0.2);
 }
 
 .wcc-nav-title {
@@ -1212,18 +1222,18 @@ onUnmounted(() => {
 }
 .wcc-nav-title i {
     font-size: 1.15rem;
-    color: var(--wcc-accent);
+    color: #a5b4fc;
 }
 .wcc-nav-title b {
     display: block;
     font-size: 0.86rem;
     font-weight: 900;
-    color: var(--ink);
+    color: #ffffff !important;
 }
 .wcc-nav-title small {
     display: block;
     font-size: 0.66rem;
-    color: #64748b;
+    color: rgba(255, 255, 255, 0.85);
 }
 
 .wcc-nav-controls {
@@ -1373,14 +1383,19 @@ onUnmounted(() => {
     align-items: center;
     justify-content: space-between;
     gap: 12px;
+    padding: 10px 14px;
+    background: linear-gradient(135deg, #1e1b4b 0%, #312e81 60%, #4338ca 100%);
+    border-radius: 12px;
+    color: #ffffff;
     margin-bottom: 10px;
+    box-shadow: 0 4px 15px rgba(30, 27, 75, 0.2);
 }
 
 .wcc-agenda__title span {
     display: block;
     font-size: 0.64rem;
     font-weight: 800;
-    color: #94a3b8;
+    color: rgba(255, 255, 255, 0.85);
     text-transform: uppercase;
     letter-spacing: 0.06em;
 }
@@ -1388,7 +1403,7 @@ onUnmounted(() => {
     display: block;
     font-size: 0.88rem;
     font-weight: 900;
-    color: var(--ink);
+    color: #ffffff !important;
 }
 
 .wcc-agenda__tools {
@@ -1810,14 +1825,31 @@ onUnmounted(() => {
 }
 
 .wcc-modal__kpi-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
     width: 38px;
     height: 38px;
     border-radius: 10px;
     font-size: 1.1rem;
+    line-height: 1 !important;
+    text-align: center;
     flex-shrink: 0;
+}
+.wcc-modal__kpi-icon i {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 1em !important;
+    height: 1em !important;
+    line-height: 1 !important;
+    margin: 0 !important;
+}
+.wcc-modal__kpi-icon i::before {
+    vertical-align: 0 !important;
+    display: block !important;
+    line-height: 1 !important;
+    margin: 0 !important;
 }
 
 .wcc-modal__kpi-item b {
@@ -2079,10 +2111,11 @@ onUnmounted(() => {
     align-items: center !important;
     justify-content: space-between !important;
     margin-bottom: 14px !important;
-    padding: 8px 14px !important;
-    background: #f8fafc !important;
-    border: 1.5px solid #cbd5e1 !important;
+    padding: 10px 18px !important;
+    background: linear-gradient(135deg, #1e1b4b 0%, #312e81 60%, #4338ca 100%) !important;
+    border: 1px solid rgba(255, 255, 255, 0.2) !important;
     border-radius: 14px !important;
+    box-shadow: 0 4px 18px rgba(30, 27, 75, 0.25) !important;
 }
 .wcc-calendar-wrap :deep(.fc-toolbar-chunk:first-child) {
     display: flex !important;
@@ -2090,36 +2123,78 @@ onUnmounted(() => {
     gap: 6px !important;
 }
 .wcc-calendar-wrap :deep(.fc-toolbar-title) {
-    font-size: 1.08rem !important;
+    font-size: 1.1rem !important;
     font-weight: 900 !important;
-    color: #0f172a !important;
+    color: #ffffff !important;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3) !important;
 }
 .wcc-calendar-wrap :deep(.fc-button) {
-    font-size: 0.72rem !important;
+    font-size: 0.74rem !important;
     font-weight: 800 !important;
     text-transform: none !important;
     border-radius: 9px !important;
     padding: 6px 12px !important;
-    border: 1.5px solid #cbd5e1 !important;
-    background: #ffffff !important;
-    color: #1e293b !important;
-    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05) !important;
+    border: 1px solid rgba(255, 255, 255, 0.25) !important;
+    background: rgba(255, 255, 255, 0.15) !important;
+    color: #ffffff !important;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1) !important;
     transition: all 0.15s ease !important;
 }
-.wcc-calendar-wrap :deep(.fc-button-primary:not(:disabled).fc-button-active),
-.wcc-calendar-wrap :deep(.fc-button-primary:not(:disabled):hover) {
-    background: var(--wcc-accent) !important;
-    border-color: var(--wcc-accent) !important;
+.wcc-calendar-wrap :deep(.fc-button:hover:not(:disabled)) {
+    background: rgba(255, 255, 255, 0.3) !important;
     color: #ffffff !important;
+    border-color: #ffffff !important;
+}
+.wcc-calendar-wrap :deep(.fc-button-primary:not(:disabled).fc-button-active) {
+    background: #ffffff !important;
+    border-color: #ffffff !important;
+    color: #312e81 !important;
+    font-weight: 900 !important;
 }
 
-/* ALL-DAY EVENT PILLS (TOP ROW) */
-.wcc-calendar-wrap :deep(.fc-daygrid-event) {
+/* HEADER HARI FULLCALENDAR (SENIN, SELASA, DST.) - TEKS DIBUAT WARNA PUTIH BENING */
+.wcc-calendar-wrap :deep(.fc-col-header) {
+    background: linear-gradient(135deg, #1e1b4b 0%, #312e81 60%, #4338ca 100%) !important;
+    border-radius: 10px 10px 0 0 !important;
+    overflow: hidden !important;
+}
+.wcc-calendar-wrap :deep(th.fc-col-header-cell) {
+    background: transparent !important;
+    border-color: rgba(255, 255, 255, 0.15) !important;
+    padding: 9px 0 !important;
+}
+.wcc-calendar-wrap :deep(.fc-col-header-cell-cushion),
+.wcc-calendar-wrap :deep(.fc-col-header-cell a) {
+    color: #ffffff !important;
+    font-weight: 900 !important;
+    font-size: 0.76rem !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.05em !important;
+    text-decoration: none !important;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3) !important;
+}
+
+/* ALL-DAY EVENT PILLS & DAYGRID CARDS */
+.wcc-calendar-wrap :deep(.fc-daygrid-event),
+.wcc-calendar-wrap :deep(.fc-h-event) {
     border-radius: 6px !important;
     padding: 3px 8px !important;
     font-weight: 800 !important;
     font-size: 0.72rem !important;
+    background: color-mix(in srgb, var(--fc-event-bg-color, var(--wcc-accent)) 16%, #f8fafc) !important;
+    border: 1px solid color-mix(in srgb, var(--fc-event-bg-color, var(--wcc-accent)) 35%, transparent) !important;
+    border-left: 4px solid var(--fc-event-border-color, var(--wcc-accent)) !important;
+    color: #0f172a !important;
     box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08) !important;
+}
+
+.wcc-calendar-wrap :deep(.fc-event-title-container),
+.wcc-calendar-wrap :deep(.fc-event-title),
+.wcc-calendar-wrap :deep(.fc-event-main),
+.wcc-calendar-wrap :deep(.fc-event-time),
+.wcc-calendar-wrap :deep(.fc-daygrid-dot-event) {
+    color: #0f172a !important;
+    font-weight: 800 !important;
 }
 
 /* TIMED EVENT CARDS (TRANSLUCENT & CRISP BORDER) */

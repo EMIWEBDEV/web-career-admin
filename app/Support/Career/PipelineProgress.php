@@ -17,14 +17,18 @@ use Illuminate\Support\Collection;
 class PipelineProgress
 {
     /**
-     * Tahap yang MEWAKILI lamaran pada papan/funnel:
-     *  - BERJALAN → tahap yang sedang berjalan (cadangan: tahap pertama)
-     *  - LULUS    → tahap terakhir
-     *  - selesai lainnya → tahap yang MEMBAWA verdict penutupnya
+     * Tahap yang MEWAKILI lamaran pada papan/funnel — cerminan PHP dari
+     * MetrikRekrutmen::sqlUrutanDisplay(). Keduanya WAJIB sepakat: papan
+     * memakai yang ini, funnel memakai yang SQL. Aturannya dari FLAG master
+     * (lihat HasilKeputusan), bukan daftar kode:
+     *  - Flag_Lolos='Y' → tahap terakhir
+     *  - terminal lain  → tahap tempat keputusannya dicatat (Hasil = Status),
+     *                     fallback tahap terakhir
+     *  - lainnya        → tahap yang sedang BERJALAN (fallback tahap pertama)
      *
      * ══ KENAPA TIDAK DIDAFTAR SATU-SATU LAGI ══
      *
-     * Dulu hanya GUGUR dan TALENT_POOL yang punya cabang sendiri di sini, dan
+     * Dulu hanya GUGUR/TALENT_POOL/LULUS yang punya cabang sendiri di sini, dan
      * segala status lain jatuh ke baris terakhir:
      *
      *     $tahapList->firstWhere('Status', 'BERJALAN') ?? $tahapList->first()
@@ -36,27 +40,28 @@ class PipelineProgress
      *
      * Daftar status penutup itu hidup di MASTER (Master_Hasil_Keputusan) dan
      * boleh bertambah; menuliskannya lagi di sini berarti tiap sebab penutupan
-     * baru mengulang bug yang sama, diam-diam. Maka yang dicari sekarang adalah
-     * tahap yang HASIL-nya sama dengan status lamarannya — aturan yang sudah
-     * dipakai GUGUR & TALENT_POOL, tinggal digeneralkan.
+     * baru mengulang bug yang sama, diam-diam. Maka yang menentukan sekarang
+     * adalah FLAG-nya, dan tahap yang dicari adalah yang HASIL-nya sama dengan
+     * status lamarannya.
      *
-     * LULUS tetap dikecualikan: ia bukan hanya status akhir lamaran, melainkan
-     * verdict SETIAP tahap yang dilewati — mencarinya dengan firstWhere() akan
-     * berhenti di tahap pertama yang lulus, bukan di ujung perjalanannya.
+     * Flag_Lolos='Y' tetap dikecualikan: kode itu bukan hanya status akhir
+     * lamaran, melainkan verdict SETIAP tahap yang dilewati — mencarinya dengan
+     * firstWhere() akan berhenti di tahap pertama yang lulus, bukan di ujung
+     * perjalanannya.
      */
     public static function tahapKini(object $l, Collection $tahapList): ?object
     {
-        if ($l->Status === 'BERJALAN') {
-            return $tahapList->firstWhere('Status', 'BERJALAN') ?? $tahapList->first();
+        $def = HasilKeputusan::semua()->get($l->Status);
+
+        if ($def) {
+            if (($def->Flag_Lolos ?? 'T') === 'Y') {
+                return $tahapList->last();
+            }
+
+            return $tahapList->firstWhere('Hasil', $l->Status) ?? $tahapList->last();
         }
 
-        if ($l->Status === 'LULUS') {
-            return $tahapList->last();
-        }
-
-        return $tahapList->firstWhere('Hasil', $l->Status)
-            ?? $tahapList->firstWhere('Status', 'BERJALAN')
-            ?? $tahapList->last();
+        return $tahapList->firstWhere('Status', 'BERJALAN') ?? $tahapList->first();
     }
 
     /**
@@ -67,27 +72,6 @@ class PipelineProgress
      * tahap aktif" — Worklist dan Monitoring kehilangan jejaknya persis di
      * titik paling penting (kandidat sudah DITERIMA, tapi belum ONBOARD).
      */
-    /**
-     * Nama tampilan satu status penutup yang datangnya DARI KANDIDAT, dari
-     * Master Hasil Keputusan — atau null bila statusnya bukan itu.
-     *
-     * Kelas ini read-only dan tidak menyentuh database di jalur panasnya, jadi
-     * masternya dibaca sekali lalu disimpan: badge() dipanggil sekali per
-     * kandidat, dan satu papan bisa berisi ratusan.
-     */
-    private static function namaKeputusan(?string $status): ?string
-    {
-        static $peta = null;
-
-        $peta ??= \Illuminate\Support\Facades\DB::table('N_WEB_CAREERS_Master_Hasil_Keputusan')
-            ->where('Flag_Aktif', 'Y')
-            ->where('Flag_Oleh_Kandidat', 'Y')
-            ->pluck('Nama', 'Kode')
-            ->all();
-
-        return $status ? ($peta[$status] ?? null) : null;
-    }
-
     public static function tahapAktif(object $l, Collection $tahapList): ?object
     {
         if ($l->Status === 'BERJALAN') {
@@ -165,13 +149,13 @@ class PipelineProgress
             if ($gagal) {
                 $hasilData = 'GAGAL';
                 $nama = implode(', ', array_map(fn ($s) => $s->Label ?? 'tes', $gagal));
-                $ringkasHasil = 'Data menyatakan TIDAK LULUS pada: ' . $nama . '.';
+                $ringkasHasil = 'Data menyatakan TIDAK LULUS pada: '.$nama.'.';
             } elseif ($lulus && $semuaFinal) {
                 $hasilData = 'LULUS';
                 $ringkasHasil = 'Seluruh tes penentu sudah selesai dan LULUS — tinggal dikonfirmasi.';
             } elseif ($lulus) {
                 $hasilData = 'SEBAGIAN';
-                $ringkasHasil = 'Sebagian tes penentu sudah lulus; ' . $belumTercatat . ' aktivitas lagi menunggu hasil.';
+                $ringkasHasil = 'Sebagian tes penentu sudah lulus; '.$belumTercatat.' aktivitas lagi menunggu hasil.';
             }
         }
 
@@ -221,27 +205,28 @@ class PipelineProgress
     /** Badge "lampu lalu lintas" kartu/baris pelamar. */
     public static function badge(object $l, array $state, ?object $tAktif): array
     {
-        if ($l->Status === 'GUGUR') {
-            return ['tone' => 'gugur', 'teks' => 'Tidak Lolos'];
+        // Outcome terminal dibaca dari master: teksnya nama resmi keputusan,
+        // tone-nya bucket funnel yang sama dengan yang dipakai papan. Dulu di
+        // sini hanya ada GUGUR dan TALENT_POOL, sehingga kandidat yang mundur
+        // atau menolak penawaran lolos sampai ke baris terakhir method ini dan
+        // dilabeli "Berjalan" — persis kebalikan dari keadaannya.
+        //
+        // LULUS sengaja TIDAK ikut di sini: ia punya dua bunyi (Diterima vs
+        // Proses Administrasi) yang bergantung pada ada tidaknya tahap aktif.
+        $def = HasilKeputusan::semua()->get($l->Status);
+        if ($def && ($def->Flag_Lolos ?? 'T') !== 'Y' && empty($state['ditahan'])) {
+            return [
+                'tone' => HasilKeputusan::bucket($l->Status) ?? 'gugur',
+                'teks' => $def->Nama ?? $l->Status,
+            ];
         }
-        if ($l->Status === 'TALENT_POOL') {
-            return ['tone' => 'talent', 'teks' => 'Talent Pool'];
-        }
-        // KANDIDAT YANG PERGI SENDIRI. Tanpa cabang ini, lamaran yang sudah
-        // ditutup karena menolak penawaran / mengundurkan diri jatuh sampai ke
-        // baris terakhir dan berlencana "Berjalan" — papan menyatakan orang
-        // yang sudah pamit masih dalam proses. Namanya diambil dari MASTER,
-        // bukan diterjemahkan di sini, supaya sebutan di kartu, tombol, dan
-        // laporan tetap satu kata yang sama.
-        if ($nama = self::namaKeputusan($l->Status)) {
-            return ['tone' => 'mundur', 'teks' => $nama];
-        }
+
         // DITAHAN mendahului LULUS/pasca-penerimaan — keputusan produk: HOLD
         // selalu menang. Kandidat yang sudah diterima tapi tahap administratifnya
         // (kontrak, onboarding) sedang ditahan tetap tampil "Ditahan", bukan
         // "Proses Administrasi" — sampai penahanannya dilepas.
         if (! empty($state['ditahan'])) {
-            return ['tone' => 'hold', 'teks' => $state['holdNama'] ? 'Ditahan — ' . $state['holdNama'] : 'Ditahan'];
+            return ['tone' => 'hold', 'teks' => $state['holdNama'] ? 'Ditahan — '.$state['holdNama'] : 'Ditahan'];
         }
         if ($l->Status === 'LULUS') {
             // DITERIMA tidak selalu berarti TUNTAS SELURUH TAHAP. Bila masih

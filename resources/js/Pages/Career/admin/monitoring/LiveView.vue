@@ -75,6 +75,18 @@
                     <div class="wca-kpi-card__sub">Masuk talent pool</div>
                 </div>
 
+                <!-- Diakhiri KANDIDAT, bukan oleh kita. Dipisah dari "Tidak
+                     Lolos" karena menuntut tindak lanjut yang berbeda: yang satu
+                     soal kualifikasi, yang satu soal daya saing tawaran. -->
+                <div class="wca-kpi-card wca-kpi-card--slate">
+                    <div class="wca-kpi-card__top">
+                        <span class="wca-kpi-card__icon"><i class="bi bi-box-arrow-left"></i></span>
+                        <span class="wca-kpi-card__label">Keluar</span>
+                    </div>
+                    <div class="wca-kpi-card__value text-purple">{{ kpi.keluar }}</div>
+                    <div class="wca-kpi-card__sub">Mundur / menolak penawaran</div>
+                </div>
+
                 <div class="wca-kpi-card wca-kpi-card--slate">
                     <div class="wca-kpi-card__top">
                         <span class="wca-kpi-card__icon"><i class="bi bi-pause-circle-fill"></i></span>
@@ -163,8 +175,11 @@ function hasilProgram(p) {
         (a, t) => ({
             aktif: a.aktif + t.aktif, lulus: a.lulus + t.lulus,
             gugur: a.gugur + t.gugur, talent: a.talent + t.talent,
+            // Tanpa ini, KPI header menjumlah lebih kecil daripada total
+            // pelamar dan tidak ada yang bisa menjelaskan selisihnya.
+            keluar: a.keluar + (t.keluar ?? 0),
         }),
-        { aktif: 0, lulus: 0, gugur: 0, talent: 0 },
+        { aktif: 0, lulus: 0, gugur: 0, talent: 0, keluar: 0 },
     )
 }
 
@@ -230,12 +245,13 @@ const kpi = computed(() =>
             lulus: a.lulus + h.lulus,
             gugur: a.gugur + h.gugur,
             talentPool: a.talentPool + h.talent,
+            keluar: a.keluar + h.keluar,
             siapDiputus: a.siapDiputus + (s.siapDiputus ?? 0),
             menungguTes: a.menungguTes + (s.menungguTes ?? 0),
             ditahan: a.ditahan + (p.ditahan ?? 0),
             pascaPenerimaan: a.pascaPenerimaan + (p.pascaPenerimaan ?? 0),
         }
-    }, { aktif: 0, lulus: 0, gugur: 0, talentPool: 0, siapDiputus: 0, menungguTes: 0, ditahan: 0, pascaPenerimaan: 0 }),
+    }, { aktif: 0, lulus: 0, gugur: 0, talentPool: 0, keluar: 0, siapDiputus: 0, menungguTes: 0, ditahan: 0, pascaPenerimaan: 0 }),
 )
 
 /** Panel atensi ikut menyempit mengikuti program yang sedang ditampilkan. */
