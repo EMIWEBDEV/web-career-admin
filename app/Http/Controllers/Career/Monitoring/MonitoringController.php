@@ -1347,6 +1347,33 @@ class MonitoringController extends Controller
 
         $out = [];
         foreach ($arr as $k => $v) {
+            $label = self::labelDariKey((string) $k);
+
+            // BAGIAN BERULANG — riwayat kerja, organisasi, sertifikasi, kenalan.
+            // Formulir mengirimnya sebagai LIST BERISI OBJEK, dan array_is_list()
+            // bernilai TRUE untuk bentuk itu, sehingga dulu ia jatuh ke implode()
+            // di bawah lalu melempar "Array to string conversion".
+            //
+            // Yang rusak bukan cuma barisnya sendiri: seluruh tahapPelamar()
+            // tertangkap catch(\Throwable) dan membalas 500 "Gagal memuat detail
+            // tahap", jadi admin tidak bisa membuka detail tahap MANA PUN milik
+            // pelamar yang formulirnya memakai bagian berulang.
+            //
+            // Tiap entri dipecah jadi barisnya sendiri, bukan di-JSON-kan, karena
+            // laci ini dibaca manusia — "Riwayat Kerja #2" terbaca sebagai
+            // riwayat, sedangkan gumpalan JSON hanya memindahkan kegagalan dari
+            // layar error ke layar yang tak bisa dibaca.
+            if (is_array($v) && array_is_list($v) && array_filter($v, 'is_array')) {
+                foreach ($v as $i => $entri) {
+                    $out[] = [
+                        'label' => $label.' #'.($i + 1),
+                        'nilai' => is_array($entri) ? self::ringkasEntri($entri) : $entri,
+                    ];
+                }
+
+                continue;
+            }
+
             if (is_array($v) && array_is_list($v) === false) {
                 $v = json_encode($v, JSON_UNESCAPED_UNICODE);
             } elseif (is_array($v)) {
@@ -1354,10 +1381,36 @@ class MonitoringController extends Controller
             } elseif (is_bool($v)) {
                 $v = $v ? 'Ya' : 'Tidak';
             }
-            $out[] = ['label' => self::labelDariKey((string) $k), 'nilai' => $v === '' ? null : $v];
+            $out[] = ['label' => $label, 'nilai' => $v === '' ? null : $v];
         }
 
         return $out;
+    }
+
+    /**
+     * Satu entri bagian berulang → "Label: nilai, Label: nilai".
+     *
+     * Kolom kosong dilewati supaya baris yang cuma terisi separuh tidak penuh
+     * label menggantung tanpa isi. Entri yang SELURUHNYA kosong menghasilkan
+     * null — barisnya tetap dilaporkan dan tampil "—", karena "pelamar membuka
+     * satu baris lalu membiarkannya" itu informasi, bukan alasan menyembunyikan.
+     */
+    private static function ringkasEntri(array $entri): ?string
+    {
+        $bagian = [];
+        foreach ($entri as $k => $v) {
+            if (is_array($v)) {
+                $v = json_encode($v, JSON_UNESCAPED_UNICODE);
+            } elseif (is_bool($v)) {
+                $v = $v ? 'Ya' : 'Tidak';
+            }
+            if ($v === null || $v === '') {
+                continue;
+            }
+            $bagian[] = self::labelDariKey((string) $k).': '.$v;
+        }
+
+        return $bagian ? implode(', ', $bagian) : null;
     }
 
     /** Summary_Json hasil CAT → daftar {label, nilai} bila bentuknya dikenali. */
