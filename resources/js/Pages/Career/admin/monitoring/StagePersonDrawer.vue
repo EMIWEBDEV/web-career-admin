@@ -226,7 +226,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import axios from 'axios'
 import BerkasLightbox from './BerkasLightbox.vue'
 import KeadaanPanel from './KeadaanPanel.vue'
-import { formatTanggal, formatUkuran, jenisPratinjau, labelStatusTes, tesBermakna } from './monitoringHelpers'
+import { formatTanggal, formatUkuran, jenisPratinjau, labelOutcome, labelStatusTes, tesBermakna, toneOutcome } from './monitoringHelpers'
 import { useLapisEsc } from '../../../../composables/useLapisEsc'
 
 const props = defineProps({
@@ -242,6 +242,7 @@ const emit = defineEmits(['close'])
 const CFG = { headers: { Accept: 'application/json' } }
 const loading = ref(false)
 const error = ref(false)
+const masterHasil = ref({})
 const tahap = ref({})
 const keputusan = ref(null)
 const berkasHasil = ref([])
@@ -270,20 +271,19 @@ const belumDimulai = computed(
     () => !tahap.value.sudahDijalani || keputusan.value?.status === 'MENUNGGU',
 )
 
+// Label & warna keputusan dari master. Versi lama hanya mengenal tiga kode,
+// sehingga keputusan "mengundurkan diri" di tahap ini terbaca "Sedang berjalan".
 const labelHasil = computed(() => {
     const k = keputusan.value
     if (!k) return ''
     if (k.hasil === 'LULUS') return 'Lulus tahap'
-    if (k.hasil === 'GUGUR') return 'Gugur di tahap ini'
-    if (k.hasil === 'TALENT_POOL') return 'Masuk Talent Pool'
+    if (k.hasil) return labelOutcome(k.hasil, masterHasil.value)
     return k.status === 'BERJALAN' ? 'Sedang berjalan' : 'Menunggu'
 })
 const badgeHasil = computed(() => {
     const k = keputusan.value
     if (!k) return 'wca-b--slate'
-    if (k.hasil === 'LULUS') return 'wca-b--green'
-    if (k.hasil === 'GUGUR') return 'wca-b--red'
-    if (k.hasil === 'TALENT_POOL') return 'wca-b--sky'
+    if (k.hasil) return toneOutcome(k.hasil, masterHasil.value)
     return k.status === 'BERJALAN' ? 'wca-b--indigo' : 'wca-b--slate'
 })
 
@@ -297,10 +297,8 @@ function badgeTes(x) {
 }
 
 function badgeVerdict(v) {
-    if (v === 'LULUS' || v === 'LOLOS') return 'wca-b--green'
-    if (v === 'GUGUR') return 'wca-b--red'
-    if (v === 'TALENT_POOL') return 'wca-b--sky'
-    return 'wca-b--slate'
+    if (v === 'LOLOS') return 'wca-b--green'
+    return masterHasil.value?.[v] ? toneOutcome(v, masterHasil.value) : 'wca-b--slate'
 }
 
 function ikonBerkas(b) {
@@ -317,6 +315,7 @@ async function fetchDetail() {
             `/api/v1/karir/monitoring/pelamar/${props.lamaranId}/tahap/${props.urutan}`, CFG,
         )
         const r = data.result || {}
+        masterHasil.value = r.masterHasil || {}
         tahap.value = r.tahap || {}
         keputusan.value = r.keputusan || null
         berkasHasil.value = r.berkasHasil || []

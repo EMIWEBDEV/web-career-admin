@@ -24,6 +24,13 @@ export function toneClass(tone) {
         gugur: 'wca-b--red',
         talent: 'wca-b--sky',
         lolos: 'wca-b--green',
+        // HasilKeputusan::bucket() mengembalikan 'lulus', sedangkan badge lama
+        // memakai 'lolos'. Keduanya didaftarkan: satu kunci yang tak terdaftar
+        // membuat toneClass jatuh diam-diam ke abu-abu.
+        lulus: 'wca-b--green',
+        // Keluar atas kehendak kandidat: bukan kegagalan dia (merah), bukan
+        // pula proses berjalan (indigo).
+        keluar: 'wca-b--violet',
         perlu: 'wca-b--amber',
         nunggu: 'wca-b--slate',
         skor: 'wca-b--indigo',
@@ -32,6 +39,41 @@ export function toneClass(tone) {
         pascaPenerimaan: 'wca-b--green',
     }
     return map[tone] || 'wca-b--slate'
+}
+
+/**
+ * Nama resmi keputusan dari master; kode mentah hanya bila master bungkam.
+ * Dipakai menggantikan peta literal {LULUS, GUGUR, TALENT_POOL} yang dulu
+ * tersebar di beberapa komponen — peta itu membuat setiap outcome baru tampil
+ * sebagai kode mentah berwarna "berjalan".
+ */
+export function labelOutcome(kode, masterHasil) {
+    if (!kode) return '—'
+    return masterHasil?.[kode]?.nama || kode
+}
+
+/** Kelas badge sebuah outcome, diturunkan dari bucket master. */
+export function toneOutcome(kode, masterHasil) {
+    return toneClass(masterHasil?.[kode]?.bucket)
+}
+
+/** Warna hex dari master — untuk titik/ikon, bukan kelas badge. */
+export function warnaOutcome(kode, masterHasil) {
+    return masterHasil?.[kode]?.warna || null
+}
+
+/**
+ * Opsi filter status papan, dibangun dari master supaya kode yang HR tambahkan
+ * besok ikut bisa disaring tanpa menyentuh berkas ini. BERJALAN dan DITAHAN
+ * bukan outcome — keduanya keadaan proses — jadi ditambahkan manual.
+ */
+export function opsiStatus(masterHasil) {
+    const dariMaster = Object.entries(masterHasil || {}).map(([val, m]) => ({ val, label: m.nama }))
+    return [
+        { val: 'BERJALAN', label: 'Berjalan' },
+        { val: 'DITAHAN', label: 'Ditahan' },
+        ...dariMaster,
+    ]
 }
 
 /** Label bucket panel Perlu Perhatian. */

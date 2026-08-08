@@ -72,6 +72,7 @@
                 <span v-if="hasil.lulus" class="wcm-chip-stat is-green"><b>{{ hasil.lulus }}</b> Diterima</span>
                 <span v-if="hasil.gugur" class="wcm-chip-stat is-red"><b>{{ hasil.gugur }}</b> Tidak Lolos</span>
                 <span v-if="hasil.talent" class="wcm-chip-stat is-sky"><b>{{ hasil.talent }}</b> Pool</span>
+                <span v-if="hasil.keluar" class="wcm-chip-stat is-violet"><b>{{ hasil.keluar }}</b> Keluar</span>
             </template>
             <template v-else>
                 <span class="wcm-chip-stat is-indigo"><i class="bi bi-lightning-charge-fill"></i> <b>{{ sehat.aktif }}</b> Aktif</span>
@@ -117,8 +118,14 @@ const maxAktif = computed(() => Math.max(1, ...props.program.tahap.map((t) => t.
 /** Hasil akhir program (dijumlahkan dari funnel) — dipakai saat proses tuntas. */
 const hasil = computed(() =>
     props.program.tahap.reduce(
-        (a, t) => ({ lulus: a.lulus + t.lulus, gugur: a.gugur + t.gugur, talent: a.talent + t.talent }),
-        { lulus: 0, gugur: 0, talent: 0 },
+        (a, t) => ({
+            lulus: a.lulus + t.lulus, gugur: a.gugur + t.gugur, talent: a.talent + t.talent,
+            // Program yang sudah tuntas menampilkan rincian hasilnya di sini.
+            // Tanpa `keluar`, kandidat yang mundur lenyap dari ringkasan akhir
+            // program — justru di layar yang paling sering dijadikan laporan.
+            keluar: a.keluar + (t.keluar ?? 0),
+        }),
+        { lulus: 0, gugur: 0, talent: 0, keluar: 0 },
     ),
 );
 
@@ -388,6 +395,7 @@ const funnelTitle = computed(() =>
 .wcm-chip-stat.is-green { background: #ecfdf5; color: #047857; }
 .wcm-chip-stat.is-red { background: #fff1f2; color: #be123c; }
 .wcm-chip-stat.is-sky { background: #f0f9ff; color: #0369a1; }
+.wcm-chip-stat.is-violet { background: #f5f3ff; color: #6d28d9; }
 .wcm-chip-stat b { font-weight: 800; font-size: 0.80rem; }
 
 .wcm-tile__right-actions { margin-left: auto; display: flex; align-items: center; gap: 6px; }

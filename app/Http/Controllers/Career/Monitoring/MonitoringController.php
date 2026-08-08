@@ -7,8 +7,10 @@ use App\Http\Controllers\Career\Lamaran\LamaranController;
 use App\Http\Controllers\Controller;
 use App\Support\Career\AlurKolom;
 use App\Support\Career\GcsBerkas;
+use App\Support\Career\HasilKeputusan;
 use App\Support\Career\MetrikRekrutmen;
 use App\Support\Career\PipelineProgress;
+use App\Support\Career\PipelineReadModel;
 use App\Support\CareerShell;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -109,13 +111,25 @@ class MonitoringController extends Controller
                 $penempatan = collect();
                 if ($programIds) {
                     $in = implode(',', $programIds);
-                    $penempatan = DB::table(DB::raw('(' . MetrikRekrutmen::sqlUrutanDisplayBerkode("l.Program_Id IN ({$in})") . ') d'))
+                    // Bucket diturunkan dari FLAG master, bukan daftar kode mati.
+                    // `keluar` dipisah dari `gugur` karena artinya berlawanan:
+                    // bukan kita yang menolak dia. Menyatukannya membuat funnel
+                    // melaporkan "gagal di penawaran" untuk penawaran yang justru
+                    // kalah bersaing — dua kesimpulan yang menuntut tindakan
+                    // sama sekali berbeda.
+                    $sqlGugur = HasilKeputusan::sqlIn(HasilKeputusan::kodeGugur());
+                    $sqlTalent = HasilKeputusan::sqlIn(HasilKeputusan::kodeTalent());
+                    $sqlKeluar = HasilKeputusan::sqlIn(HasilKeputusan::kodeKeluar());
+                    $sqlLulus = HasilKeputusan::sqlIn(HasilKeputusan::kodeLolos());
+
+                    $penempatan = DB::table(DB::raw('('.MetrikRekrutmen::sqlUrutanDisplayBerkode("l.Program_Id IN ({$in})").') d'))
                         ->groupBy('d.Program_Id', 'd.UrutanDisplay', 'd.KodeDisplay')
                         ->select('d.Program_Id', 'd.UrutanDisplay', 'd.KodeDisplay',
                             DB::raw("SUM(CASE WHEN d.Status = 'BERJALAN' THEN 1 ELSE 0 END) as aktif"),
-                            DB::raw("SUM(CASE WHEN d.Status = 'GUGUR' THEN 1 ELSE 0 END) as gugur"),
-                            DB::raw("SUM(CASE WHEN d.Status = 'LULUS' THEN 1 ELSE 0 END) as lulus"),
-                            DB::raw("SUM(CASE WHEN d.Status = 'TALENT_POOL' THEN 1 ELSE 0 END) as talent"))
+                            DB::raw("SUM(CASE WHEN d.Status IN ({$sqlGugur}) THEN 1 ELSE 0 END) as gugur"),
+                            DB::raw("SUM(CASE WHEN d.Status IN ({$sqlLulus}) THEN 1 ELSE 0 END) as lulus"),
+                            DB::raw("SUM(CASE WHEN d.Status IN ({$sqlTalent}) THEN 1 ELSE 0 END) as talent"),
+                            DB::raw("SUM(CASE WHEN d.Status IN ({$sqlKeluar}) THEN 1 ELSE 0 END) as keluar"))
                         ->get()
                         ->groupBy('Program_Id');
                 }
@@ -168,13 +182,18 @@ class MonitoringController extends Controller
                         ->count('l.Id_Lamaran')
                     : 0;
 
-                // 5) Kuota per program (MPP posisi) + kursi terisi (LULUS).
+                // 5) Kuota per program (MPP posisi) + kursi terisi.
+                //    "Terisi" = outcome yang MEMOTONG KUOTA menurut master
+                //    (Flag_Potong_Kuota), bukan proksi Status='LULUS'. Keduanya
+                //    kebetulan sama hari ini, tapi begitu HR menandai outcome
+                //    lain sebagai pemotong kuota, proksi itu diam-diam salah.
                 $kuotaPer = $programIds
                     ? DB::table('N_WEB_CAREERS_Program_Posisi')->whereIn('Program_Id', $programIds)
                         ->groupBy('Program_Id')->select('Program_Id', DB::raw('SUM(Kuota) as J'))->pluck('J', 'Program_Id')
                     : collect();
                 $terisiPer = $programIds
-                    ? DB::table('N_WEB_CAREERS_Lamaran')->whereIn('Program_Id', $programIds)->where('Status', 'LULUS')
+                    ? DB::table('N_WEB_CAREERS_Lamaran')->whereIn('Program_Id', $programIds)
+                        ->whereIn('Status', HasilKeputusan::kodePotongKuota())
                         ->groupBy('Program_Id')->select('Program_Id', DB::raw('COUNT(*) as J'))->pluck('J', 'Program_Id')
                     : collect();
 
@@ -244,6 +263,7 @@ class MonitoringController extends Controller
                         'gugur' => (int) ($c->gugur ?? 0),
                         'lulus' => (int) ($c->lulus ?? 0),
                         'talent' => (int) ($c->talent ?? 0),
+                        'keluar' => (int) ($c->keluar ?? 0),
                     ];
                 })->values();
 
@@ -252,7 +272,10 @@ class MonitoringController extends Controller
                 // "menumpang kolom terakhir" — yang membuat tahap akhir tampak
                 // lebih ramai daripada kenyataannya, tepat di angka yang paling
                 // sering dilaporkan ke atas. Sekarang dipisah dan disebut.
-                $sisa = ['aktif' => 0, 'gugur' => 0, 'lulus' => 0, 'talent' => 0];
+                // Kunci di sini menentukan apa yang ikut terjumlah: loop di
+                // bawah menyalin PER KUNCI, jadi bucket yang lupa didaftarkan
+                // akan lenyap tanpa jejak dari kolom "di luar alur".
+                $sisa = ['aktif' => 0, 'gugur' => 0, 'lulus' => 0, 'talent' => 0, 'keluar' => 0];
                 foreach ($counts as $c) {
                     if (isset($dipakai[spl_object_id($c)])) {
                         continue;
@@ -273,10 +296,11 @@ class MonitoringController extends Controller
                         'gugur' => $sisa['gugur'],
                         'lulus' => $sisa['lulus'],
                         'talent' => $sisa['talent'],
+                        'keluar' => $sisa['keluar'],
                     ]);
                 }
 
-                $total = $counts->reduce(fn ($sum, $c) => $sum + (int) $c->aktif + (int) $c->gugur + (int) $c->lulus + (int) $c->talent, 0);
+                $total = $counts->reduce(fn ($sum, $c) => $sum + (int) $c->aktif + (int) $c->gugur + (int) $c->lulus + (int) $c->talent + (int) $c->keluar, 0);
 
                 return [
                     'id' => Hashids::encode($p->Id_Program),
@@ -314,6 +338,12 @@ class MonitoringController extends Controller
                 'lulus' => (int) ($data['kpiStatus']['LULUS'] ?? 0),
                 'gugur' => (int) ($data['kpiStatus']['GUGUR'] ?? 0),
                 'talentPool' => (int) ($data['kpiStatus']['TALENT_POOL'] ?? 0),
+                // Dijumlahkan dari kode master ber-Flag_Oleh_Kandidat='Y'.
+                // Sebelum ini mereka masuk totalPelamar tapi tidak masuk kartu
+                // KPI mana pun — hilang dari ringkasan yang paling sering
+                // dilaporkan ke atas.
+                'keluar' => (int) collect(HasilKeputusan::kodeKeluar())
+                    ->sum(fn ($k) => (int) ($data['kpiStatus'][$k] ?? 0)),
                 'siapDiputus' => (int) ($data['kpiTahap']->siap ?? 0),
                 'menungguTes' => (int) ($data['kpiTahap']->nunggu ?? 0),
                 'ditahan' => (int) $data['kpiHold'],
@@ -338,6 +368,9 @@ class MonitoringController extends Controller
                 'kpi' => $kpi,
                 'perhatian' => $perhatian,
                 'programs' => $programsOut,
+                // Label, warna, dan sifat tiap outcome — supaya layar tidak
+                // menyimpan peta literal yang basi begitu master disunting.
+                'masterHasil' => HasilKeputusan::peta(),
                 'meta' => [
                     'macetHari' => $data['macetHari'],
                     'sorotHari' => (int) config('career_monitoring.siap_diputus_sorot_hari'),
@@ -345,7 +378,7 @@ class MonitoringController extends Controller
                 ],
             ], 'Data monitoring dimuat');
         } catch (\Throwable $e) {
-            Log::channel('web_career')->error('Gagal memuat monitoring live: ' . $e->getMessage());
+            Log::channel('web_career')->error('Gagal memuat monitoring live: '.$e->getMessage());
 
             return ResponseHelper::error('Gagal memuat data monitoring', 500);
         }
@@ -431,7 +464,9 @@ class MonitoringController extends Controller
                     ->get(['Lamaran_Id', 'Jawaban_Json']);
 
                 $kuota = (int) DB::table('N_WEB_CAREERS_Program_Posisi')->where('Program_Id', $programId)->sum('Kuota');
-                $terisi = (int) DB::table('N_WEB_CAREERS_Lamaran')->where('Program_Id', $programId)->where('Status', 'LULUS')->count();
+                // Kursi terisi = outcome yang memotong kuota menurut master.
+                $terisi = (int) DB::table('N_WEB_CAREERS_Lamaran')->where('Program_Id', $programId)
+                    ->whereIn('Status', HasilKeputusan::kodePotongKuota())->count();
 
                 // RINCIAN PER POSISI. Satu program (terutama MT) bisa menaungi
                 // banyak posisi dengan kuota masing-masing; angka gabungan di
@@ -446,8 +481,8 @@ class MonitoringController extends Controller
                     ->where('Program_Id', $programId)
                     ->whereNotNull('Program_Posisi_Id')
                     ->groupBy('Program_Posisi_Id')
-                    ->selectRaw("Program_Posisi_Id,
-                                 SUM(CASE WHEN Status = 'LULUS' THEN 1 ELSE 0 END) as lulus,
+                    ->selectRaw('Program_Posisi_Id,
+                                 SUM(CASE WHEN Status IN ('.HasilKeputusan::sqlIn(HasilKeputusan::kodePotongKuota()).") THEN 1 ELSE 0 END) as lulus,
                                  SUM(CASE WHEN Status = 'BERJALAN' THEN 1 ELSE 0 END) as berjalan,
                                  COUNT(*) as total")
                     ->get()
@@ -487,7 +522,11 @@ class MonitoringController extends Controller
                 $atributPer[$lamaranId] = self::samakanKunciPendidikan($atr);
             }
 
-            $pelamar = $data['lamaran']->map(function ($l) use ($data, $maxUrutan, $atributPer) {
+            // Disiapkan SEKALI, bukan per pelamar: koleksinya sudah ter-cache
+            // statis, tapi ->all() tetap menyalin isinya tiap kali dipanggil.
+            $masterHasil = HasilKeputusan::semua()->all();
+
+            $pelamar = $data['lamaran']->map(function ($l) use ($data, $maxUrutan, $atributPer, $masterHasil) {
                 // Jejak seluruh tahap ikut dikirim: mode Full Process memakainya,
                 // dan datanya sudah ada di memori — tidak ada query tambahan.
                 $tahapList = collect($data['tahapPer']->get($l->Id_Lamaran, []));
@@ -512,6 +551,18 @@ class MonitoringController extends Controller
                     'posisi' => $l->Posisi ?: $l->Kategori,
                     'status' => $l->Status,
                     'badge' => PipelineProgress::badge($l, $st, $tAktif),
+                    // Keadaan operasional yang bisa dibaca MESIN — HOLD /
+                    // TERMINAL / PASCAPENERIMAAN / SIAP_DIPUTUS / MENUNGGU_* /
+                    // TINDAKAN_ADMIN / BERPROSES. `badge` di atas adalah kalimat
+                    // untuk manusia dan bunyinya berubah begitu master disunting;
+                    // penyaringan memakai yang ini supaya tidak perlu menebak
+                    // keadaan dari teks.
+                    'bucket' => PipelineReadModel::bucket(
+                        $l,
+                        $tahapList,
+                        $data['subPer']->get($tAktif->Id_Lamaran_Tahap ?? 0, []),
+                        $masterHasil,
+                    )['bucket'],
                     'kolomKode' => $kolomKode,
                     'kolomUrutan' => $kolomUrutan,
                     'tahapLabel' => $tk->Label ?? '—',
@@ -531,6 +582,9 @@ class MonitoringController extends Controller
 
             return ResponseHelper::success([
                 'checkpoint' => self::checkpoint(),
+                // Label, warna, dan sifat tiap outcome — papan memakainya untuk
+                // menyusun opsi filter dan mewarnai badge tanpa peta literal.
+                'masterHasil' => HasilKeputusan::peta(),
                 'program' => [
                     'id' => Hashids::encode($p->Id_Program),
                     'kode' => $p->Kode,
@@ -573,7 +627,7 @@ class MonitoringController extends Controller
                 'filterAtribut' => self::filterDariAtribut($atributPer),
             ], 'Papan program dimuat');
         } catch (\Throwable $e) {
-            Log::channel('web_career')->error("Gagal memuat papan program {$id}: " . $e->getMessage());
+            Log::channel('web_career')->error("Gagal memuat papan program {$id}: ".$e->getMessage());
 
             return ResponseHelper::error('Gagal memuat papan program', 500);
         }
@@ -622,6 +676,14 @@ class MonitoringController extends Controller
                 //    `ditahan` dibandingkan langsung ke 'Y' (bukan <> 'Y'), jadi
                 //    TIDAK butuh COALESCE: NULL = 'Y' sudah otomatis false, yang
                 //    memang berarti "bukan ditahan".
+                // Di sini yang diuji lt.Hasil — keputusan pada TAHAP INI —
+                // bukan l.Status (nasib akhir lamaran). Bucket-nya tetap
+                // diturunkan dari flag master, sama seperti funnel.
+                $sqlLulus = HasilKeputusan::sqlIn(HasilKeputusan::kodeLolos());
+                $sqlGugur = HasilKeputusan::sqlIn(HasilKeputusan::kodeGugur());
+                $sqlTalent = HasilKeputusan::sqlIn(HasilKeputusan::kodeTalent());
+                $sqlKeluar = HasilKeputusan::sqlIn(HasilKeputusan::kodeKeluar());
+
                 $stats = DB::table('N_WEB_CAREERS_Lamaran_Tahap as lt')
                     ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'lt.Lamaran_Id')
                     ->where('l.Program_Id', $programId)->where($sempit)
@@ -629,15 +691,30 @@ class MonitoringController extends Controller
                                  SUM(CASE WHEN lt.Status = 'BERJALAN' AND {$bukanDitahan} THEN 1 ELSE 0 END) as aktif,
                                  SUM(CASE WHEN lt.Status = 'BERJALAN' AND lt.Hold_Flag = 'Y' THEN 1 ELSE 0 END) as ditahan,
                                  SUM(CASE WHEN lt.Status = 'MENUNGGU' THEN 1 ELSE 0 END) as menunggu,
-                                 SUM(CASE WHEN lt.Hasil = 'LULUS' THEN 1 ELSE 0 END) as lulus,
-                                 SUM(CASE WHEN lt.Hasil = 'GUGUR' THEN 1 ELSE 0 END) as gugur,
-                                 SUM(CASE WHEN lt.Hasil = 'TALENT_POOL' THEN 1 ELSE 0 END) as talent,
+                                 SUM(CASE WHEN lt.Hasil IN ({$sqlLulus}) THEN 1 ELSE 0 END) as lulus,
+                                 SUM(CASE WHEN lt.Hasil IN ({$sqlGugur}) THEN 1 ELSE 0 END) as gugur,
+                                 SUM(CASE WHEN lt.Hasil IN ({$sqlTalent}) THEN 1 ELSE 0 END) as talent,
+                                 SUM(CASE WHEN lt.Hasil IN ({$sqlKeluar}) THEN 1 ELSE 0 END) as keluar,
                                  SUM(CASE WHEN lt.Status = 'BERJALAN' AND {$bukanDitahan} AND lt.Siap_Diputus = 'Y' THEN 1 ELSE 0 END) as siapDiputus,
                                  SUM(CASE WHEN lt.Status = 'BERJALAN' AND {$bukanDitahan} AND {$agingSql} > {$macetHari} THEN 1 ELSE 0 END) as macet,
                                  AVG(CASE WHEN lt.Status = 'BERJALAN' THEN {$agingSql} * 1.0 END) as avgAging,
                                  MAX(CASE WHEN lt.Status = 'BERJALAN' THEN {$agingSql} END) as maxAging,
                                  AVG(CASE WHEN lt.Skor IS NOT NULL THEN lt.Skor END) as avgSkor")
                     ->first();
+
+                // 1b) Rincian bucket Keluar per kode. Papan hanya menampilkan
+                //     angka gabungan; panel inilah yang menjawab "keluar karena
+                //     apa" — mengundurkan diri dan menolak penawaran menuntut
+                //     tindak lanjut yang berbeda.
+                $rincianKeluar = HasilKeputusan::kodeKeluar()
+                    ? DB::table('N_WEB_CAREERS_Lamaran_Tahap as lt')
+                        ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'lt.Lamaran_Id')
+                        ->where('l.Program_Id', $programId)->where($sempit)
+                        ->whereIn('lt.Hasil', HasilKeputusan::kodeKeluar())
+                        ->groupBy('lt.Hasil')
+                        ->selectRaw('lt.Hasil as kode, COUNT(*) as jml')
+                        ->get()
+                    : collect();
 
                 // 2) Rapor sub-tes agregat per jenis tes pada tahap ini.
                 $subtes = DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes as tt')
@@ -698,7 +775,7 @@ class MonitoringController extends Controller
                         ->get()->keyBy('Penjadwalan_Tahap_Id')
                     : collect();
 
-                return compact('stats', 'subtes', 'belumSubmit', 'jadwal', 'pesertaPer');
+                return compact('stats', 'rincianKeluar', 'subtes', 'belumSubmit', 'jadwal', 'pesertaPer');
             });
 
             $s = $data['stats'];
@@ -713,15 +790,28 @@ class MonitoringController extends Controller
                     'lulus' => (int) ($s->lulus ?? 0),
                     'gugur' => (int) ($s->gugur ?? 0),
                     'talent' => (int) ($s->talent ?? 0),
+                    'keluar' => (int) ($s->keluar ?? 0),
                     'siapDiputus' => (int) ($s->siapDiputus ?? 0),
                     'macet' => (int) ($s->macet ?? 0),
                     'avgAging' => $s && $s->avgAging !== null ? round((float) $s->avgAging, 1) : null,
                     'maxAging' => $s && $s->maxAging !== null ? (int) $s->maxAging : null,
                     'avgSkor' => $s && $s->avgSkor !== null ? round((float) $s->avgSkor, 1) : null,
+                    // `keluar` SENGAJA di luar penyebut: konversi mengukur
+                    // seberapa sering KITA meloloskan, dan kandidat yang mundur
+                    // sendiri tidak pernah kita nilai. Memasukkannya akan
+                    // menurunkan angka konversi karena keputusan orang lain.
                     'konversi' => ($s && ($s->lulus + $s->gugur) > 0)
                         ? round($s->lulus * 100 / ($s->lulus + $s->gugur))
                         : null,
                 ],
+                // Rincian "keluar karena apa" — mundur dan menolak penawaran
+                // menuntut tindak lanjut yang berbeda.
+                'rincianKeluar' => $data['rincianKeluar']->map(fn ($r) => [
+                    'kode' => $r->kode,
+                    'nama' => HasilKeputusan::peta()[$r->kode]['nama'] ?? $r->kode,
+                    'warna' => HasilKeputusan::peta()[$r->kode]['warna'] ?? null,
+                    'jml' => (int) $r->jml,
+                ])->values(),
                 'subtes' => $data['subtes']->map(fn ($t) => [
                     'label' => $t->Label,
                     'peran' => $t->Peran,
@@ -766,7 +856,7 @@ class MonitoringController extends Controller
                 'meta' => ['macetHari' => $macetHari],
             ], 'Detail tahap dimuat');
         } catch (\Throwable $e) {
-            Log::channel('web_career')->error("Gagal memuat detail tahap {$urutan} program {$id}: " . $e->getMessage());
+            Log::channel('web_career')->error("Gagal memuat detail tahap {$urutan} program {$id}: ".$e->getMessage());
 
             return ResponseHelper::error('Gagal memuat detail tahap', 500);
         }
@@ -879,6 +969,10 @@ class MonitoringController extends Controller
                     'waktuSelesai' => self::fmt($l->Waktu_Selesai),
                     'mulaiDariUrutan' => $l->Mulai_Dari_Urutan ? (int) $l->Mulai_Dari_Urutan : null,
                 ],
+                // Peta outcome ikut dikirim: drawer ini memuat datanya sendiri,
+                // jadi ia butuh label & warna keputusan tanpa bergantung pada
+                // komponen induk yang membukanya.
+                'masterHasil' => HasilKeputusan::peta(),
                 'tahap' => $tahapOut,
                 'jejak' => $data['jejak']->map(fn ($j) => [
                     'verdict' => $j->Verdict,
@@ -905,7 +999,7 @@ class MonitoringController extends Controller
                 ] : null,
             ], 'Detail pelamar dimuat');
         } catch (\Throwable $e) {
-            Log::channel('web_career')->error("Gagal memuat detail monitoring {$id}: " . $e->getMessage());
+            Log::channel('web_career')->error("Gagal memuat detail monitoring {$id}: ".$e->getMessage());
 
             return ResponseHelper::error('Gagal memuat detail pelamar', 500);
         }
@@ -1033,6 +1127,9 @@ class MonitoringController extends Controller
 
             return ResponseHelper::success([
                 'checkpoint' => self::checkpoint(),
+                // Drawer ini memuat datanya sendiri, jadi label & warna
+                // keputusan ikut dikirim — bukan diwarisi dari komponen induk.
+                'masterHasil' => HasilKeputusan::peta(),
                 'pelamar' => [
                     'id' => Hashids::encode($l->Id_Lamaran),
                     'nama' => $l->Pelamar ?: $l->Created_By,
@@ -1167,7 +1264,7 @@ class MonitoringController extends Controller
                 ] : null,
             ], 'Detail tahap pelamar dimuat');
         } catch (\Throwable $e) {
-            Log::channel('web_career')->error("Gagal memuat tahap {$urutan} lamaran {$id}: " . $e->getMessage());
+            Log::channel('web_career')->error("Gagal memuat tahap {$urutan} lamaran {$id}: ".$e->getMessage());
 
             return ResponseHelper::error('Gagal memuat detail tahap', 500);
         }
@@ -1224,11 +1321,11 @@ class MonitoringController extends Controller
                 return redirect()->away($gcs->temporaryUrl($b->Path_File, now()->addMinutes(15)));
             }
         } catch (\Throwable $e) {
-            Log::channel('web_career')->warning("Signed URL berkas {$jenis} gagal: " . $e->getMessage());
+            Log::channel('web_career')->warning("Signed URL berkas {$jenis} gagal: ".$e->getMessage());
         }
 
         // Fallback lokal (data lama / dev tanpa GCS) — pola sama dengan worklist.
-        foreach ([storage_path('app/' . $b->Path_File), public_path($b->Path_File), $b->Path_File] as $kandidat) {
+        foreach ([storage_path('app/'.$b->Path_File), public_path($b->Path_File), $b->Path_File] as $kandidat) {
             if ($kandidat && is_file($kandidat)) {
                 return response()->file($kandidat, ['Content-Type' => $b->Mime ?: 'application/octet-stream']);
             }
@@ -1250,6 +1347,33 @@ class MonitoringController extends Controller
 
         $out = [];
         foreach ($arr as $k => $v) {
+            $label = self::labelDariKey((string) $k);
+
+            // BAGIAN BERULANG — riwayat kerja, organisasi, sertifikasi, kenalan.
+            // Formulir mengirimnya sebagai LIST BERISI OBJEK, dan array_is_list()
+            // bernilai TRUE untuk bentuk itu, sehingga dulu ia jatuh ke implode()
+            // di bawah lalu melempar "Array to string conversion".
+            //
+            // Yang rusak bukan cuma barisnya sendiri: seluruh tahapPelamar()
+            // tertangkap catch(\Throwable) dan membalas 500 "Gagal memuat detail
+            // tahap", jadi admin tidak bisa membuka detail tahap MANA PUN milik
+            // pelamar yang formulirnya memakai bagian berulang.
+            //
+            // Tiap entri dipecah jadi barisnya sendiri, bukan di-JSON-kan, karena
+            // laci ini dibaca manusia — "Riwayat Kerja #2" terbaca sebagai
+            // riwayat, sedangkan gumpalan JSON hanya memindahkan kegagalan dari
+            // layar error ke layar yang tak bisa dibaca.
+            if (is_array($v) && array_is_list($v) && array_filter($v, 'is_array')) {
+                foreach ($v as $i => $entri) {
+                    $out[] = [
+                        'label' => $label.' #'.($i + 1),
+                        'nilai' => is_array($entri) ? self::ringkasEntri($entri) : $entri,
+                    ];
+                }
+
+                continue;
+            }
+
             if (is_array($v) && array_is_list($v) === false) {
                 $v = json_encode($v, JSON_UNESCAPED_UNICODE);
             } elseif (is_array($v)) {
@@ -1257,10 +1381,36 @@ class MonitoringController extends Controller
             } elseif (is_bool($v)) {
                 $v = $v ? 'Ya' : 'Tidak';
             }
-            $out[] = ['label' => self::labelDariKey((string) $k), 'nilai' => $v === '' ? null : $v];
+            $out[] = ['label' => $label, 'nilai' => $v === '' ? null : $v];
         }
 
         return $out;
+    }
+
+    /**
+     * Satu entri bagian berulang → "Label: nilai, Label: nilai".
+     *
+     * Kolom kosong dilewati supaya baris yang cuma terisi separuh tidak penuh
+     * label menggantung tanpa isi. Entri yang SELURUHNYA kosong menghasilkan
+     * null — barisnya tetap dilaporkan dan tampil "—", karena "pelamar membuka
+     * satu baris lalu membiarkannya" itu informasi, bukan alasan menyembunyikan.
+     */
+    private static function ringkasEntri(array $entri): ?string
+    {
+        $bagian = [];
+        foreach ($entri as $k => $v) {
+            if (is_array($v)) {
+                $v = json_encode($v, JSON_UNESCAPED_UNICODE);
+            } elseif (is_bool($v)) {
+                $v = $v ? 'Ya' : 'Tidak';
+            }
+            if ($v === null || $v === '') {
+                continue;
+            }
+            $bagian[] = self::labelDariKey((string) $k).': '.$v;
+        }
+
+        return $bagian ? implode(', ', $bagian) : null;
     }
 
     /** Summary_Json hasil CAT → daftar {label, nilai} bila bentuknya dikenali. */
@@ -1552,7 +1702,7 @@ class MonitoringController extends Controller
      * durasinya null: lebih baik kosong daripada angka karangan.
      *
      * @param  \Illuminate\Support\Collection  $tahapList  tahap milik lamaran ini, urut
-     * @param  \Illuminate\Support\Collection  $kolom      tahap alur (acuan kolom papan)
+     * @param  \Illuminate\Support\Collection  $kolom  tahap alur (acuan kolom papan)
      */
     private static function jejakTahap(object $l, $tahapList, $kolom): array
     {
@@ -1580,6 +1730,7 @@ class MonitoringController extends Controller
                     'hari' => null, 'skor' => null, 'siapDiputus' => false,
                     'mulai' => null, 'selesai' => null, 'catatan' => null,
                 ];
+
                 continue;
             }
 

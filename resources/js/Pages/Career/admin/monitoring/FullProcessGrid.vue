@@ -103,6 +103,7 @@ const props = defineProps({
     kolom: { type: Array, default: () => [] },
     pelamar: { type: Array, default: () => [] },   // sudah difilter oleh papan
     orangTerbuka: { type: String, default: null },
+    masterHasil: { type: Object, default: () => ({}) },
 })
 defineEmits(['open-person', 'open-stage', 'open-cell'])
 
@@ -128,12 +129,23 @@ const LEGENDA = [
     { k: 'TIDAK_DIJALANI', t: 'Tidak dijalani' },
 ]
 
-const GRUP = [
+/**
+ * Kelompok baris. Dulu daftar ini mati berisi empat status, dan pengelompokan
+ * memakai filter(o.status === g.status) — artinya siapa pun yang statusnya di
+ * luar keempatnya TIDAK MASUK kelompok mana pun dan hilang sama sekali dari
+ * layar Full Process. Kandidat yang mengundurkan diri lenyap tanpa jejak.
+ *
+ * Sekarang: empat kelompok dasar tetap, sisanya diturunkan dari master, dan
+ * ada jaring pengaman "Status lain" supaya tidak ada satu baris pun yang bisa
+ * jatuh di antara celah.
+ */
+const GRUP_DASAR = [
     { status: 'BERJALAN', judul: 'Masih berproses', ikon: 'bi-play-circle' },
     { status: 'LULUS', judul: 'Diterima', ikon: 'bi-check-circle' },
     { status: 'TALENT_POOL', judul: 'Talent pool', ikon: 'bi-droplet' },
     { status: 'GUGUR', judul: 'Tidak lolos', ikon: 'bi-x-circle' },
 ]
+const STATUS_LAIN = '__LAIN__'
 
 /** Berapa baris yang sudah dibuka per kelompok. */
 const batas = ref({})
@@ -158,13 +170,25 @@ function urutkan(a, b) {
     return (b.kolomUrutan || 0) - (a.kolomUrutan || 0)
 }
 
-const grup = computed(() =>
-    GRUP.map((g) => {
-        const orang = props.pelamar.filter((o) => o.status === g.status).sort(urutkan)
+const grup = computed(() => {
+    const sudah = new Set(GRUP_DASAR.map((g) => g.status))
+    const tambahan = Object.entries(props.masterHasil || {})
+        .filter(([kode]) => !sudah.has(kode))
+        .map(([kode, m]) => ({ status: kode, judul: m.nama, ikon: m.ikon || 'bi-box-arrow-left' }))
+
+    const daftar = [...GRUP_DASAR, ...tambahan]
+    const dikenal = new Set(daftar.map((g) => g.status))
+    const sisa = props.pelamar.filter((o) => !dikenal.has(o.status))
+    if (sisa.length) {
+        daftar.push({ status: STATUS_LAIN, judul: 'Status lain', ikon: 'bi-question-circle' })
+    }
+
+    return daftar.map((g) => {
+        const orang = (g.status === STATUS_LAIN ? sisa : props.pelamar.filter((o) => o.status === g.status)).sort(urutkan)
 
         return { ...g, orang, tampil: orang.slice(0, batas.value[g.status] || HALAMAN) }
-    }),
-)
+    })
+})
 
 function tambah(status) {
     batas.value = { ...batas.value, [status]: (batas.value[status] || HALAMAN) + HALAMAN }
