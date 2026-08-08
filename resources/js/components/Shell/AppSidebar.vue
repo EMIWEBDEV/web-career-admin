@@ -16,16 +16,29 @@
         </button>
         <div style="height: 16px"></div>
 
-        <a class="evs-rail__btn" :class="{ 'is-active': homeLink.isActive }" :href="homeLink.url || '#'" :title="homeLink.title || 'Dashboard'" @click="visit($event, homeLink.url)">
+        <!-- SOROTAN RAIL MENGIKUTI HALAMAN, BUKAN AKORDEON.
+             `homeLink.hasActive` ikut menyala saat salah satu dashboard di
+             dalam collapse-nya yang dibuka, bukan cuma beranda persis. -->
+        <a class="evs-rail__btn" :class="{ 'is-active': homeLink.hasActive ?? homeLink.isActive }" :href="homeLink.url || '#'" :title="homeLink.title || 'Dashboard'" @click="visit($event, homeLink.url)">
             <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5L12 3l9 7.5" /><path d="M5 9.5V21h14V9.5" /></svg>
         </a>
 
+        <!-- Dulu: `m.id === openModule`. openModule adalah keadaan AKORDEON,
+             dan syncFromNav() selalu mengisinya dengan modul aktif ATAU modul
+             pertama — dengan satu modul saja (CAREER), syaratnya SELALU benar.
+             Tombol modul karena itu menyala permanen, dan di halaman beranda ia
+             menyala BERSAMA tombol Dashboard: rail tampak "aktif semua" dan
+             tidak menunjuk apa pun.
+
+             Sekarang dibaca dari halaman: modul menyala hanya bila ada itemnya
+             yang sedang dibuka (activeGroupId terisi). Beranda dan modul jadi
+             saling meniadakan, sebab item beranda memang bukan anggota grup. -->
         <button
             v-for="m in modules"
             :key="m.id"
             type="button"
             class="evs-rail__btn"
-            :class="{ 'is-active': m.id === openModule }"
+            :class="{ 'is-active': !!m.activeGroupId }"
             :title="m.label || m.name"
             @click="railModule(m.id)"
         >
@@ -63,7 +76,14 @@
 
         <!-- Nav scroll -->
         <div class="evs-sb__scroll">
-            <a class="evs-sb__home" :href="homeLink.url || '#'" @click="visit($event, homeLink.url)">
+            <!-- SATU DASHBOARD → TAUTAN TUNGGAL, seperti sebelumnya. Collapse
+                 berisi satu baris hanya menambah satu klik tanpa memberi
+                 pilihan apa pun. -->
+            <a
+                v-if="!dashboardLain.length"
+                class="evs-sb__home" :class="{ 'is-active': homeLink.isActive }"
+                :href="homeLink.url || '#'" @click="visit($event, homeLink.url)"
+            >
                 <span class="evs-sb__homeico">
                     <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5L12 3l9 7.5" /><path d="M5 9.5V21h14V9.5" /></svg>
                 </span>
@@ -72,6 +92,38 @@
                     <span class="evs-sb__homesub">{{ homeLink.subtitle || 'Halaman Utama' }}</span>
                 </span>
             </a>
+
+            <!-- LEBIH DARI SATU DASHBOARD → kepala yang bisa dibuka.
+                 Kepalanya TETAP menuju beranda saat ditekan; yang membuka
+                 hanya tanda panahnya. Kalau seluruh kepala dijadikan tombol
+                 buka-tutup, Dashboard Utama kehilangan satu-satunya jalan
+                 menuju dirinya sendiri. -->
+            <div v-else class="evs-sb__homewrap" :class="{ 'is-active': homeLink.hasActive }">
+                <div class="evs-sb__home evs-sb__home--grp" :class="{ 'is-active': homeLink.isActive }">
+                    <a class="evs-sb__homelink" :href="homeLink.url || '#'" @click="visit($event, homeLink.url)">
+                        <span class="evs-sb__homeico">
+                            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5L12 3l9 7.5" /><path d="M5 9.5V21h14V9.5" /></svg>
+                        </span>
+                        <span style="min-width: 0">
+                            <span class="evs-sb__hometitle">{{ homeLink.title || 'Dashboard' }}</span>
+                            <span class="evs-sb__homesub">{{ dashboardLain.length + 1 }} dashboard</span>
+                        </span>
+                    </a>
+                    <button
+                        type="button" class="evs-sb__homechev" :class="{ 'is-open': dashboardBuka }"
+                        :aria-expanded="dashboardBuka" title="Tampilkan dashboard lain"
+                        @click="dashboardBuka = !dashboardBuka"
+                    >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 9l6 6 6-6" /></svg>
+                    </button>
+                </div>
+                <div class="evs-grp__body" :class="{ 'is-open': dashboardBuka }" :style="dashboardBuka ? { maxHeight: dashboardLain.length * 46 + 8 + 'px' } : {}">
+                    <a v-for="it in dashboardLain" :key="it.id" class="evs-item" :class="{ 'is-active': it.isActive }" :href="it.url" @click="visit($event, it.url)">
+                        <span class="evs-item__dot" :class="{ 'is-active': it.isActive }"></span>
+                        <span class="evs-item__txt">{{ it.title }}</span>
+                    </a>
+                </div>
+            </div>
 
             <div class="evs-sb__label">MODUL</div>
 
@@ -173,13 +225,30 @@ const expanded = computed(() => (shell.state.isMobile ? shell.state.mobileSideba
 const openModule = ref(null);
 const openGroups = reactive({});
 
+/**
+ * Dashboard SELAIN beranda yang boleh dilihat akun ini.
+ *
+ * Datang dari server (LayoutShell): anggota grup yang memuat URL beranda.
+ * Kosong pada akun yang cuma punya satu dashboard — dan di situ sidebar
+ * menggambar tautan tunggal, bukan collapse berisi satu baris.
+ */
+const dashboardLain = computed(() => homeLink.value?.items || []);
+// Terbuka sendiri saat yang sedang dibuka memang salah satu dashboard di
+// dalamnya; kalau tidak, ia mulai tertutup supaya menu utama tidak terdorong.
+const dashboardBuka = ref(false);
+
 function syncFromNav() {
     const aktif = modules.value.find((m) => m.isActive) || modules.value[0] || null;
     openModule.value = aktif ? aktif.id : null;
     Object.keys(openGroups).forEach((k) => delete openGroups[k]);
     if (aktif && aktif.activeGroupId) openGroups[aktif.activeGroupId] = true;
+    // Hanya bila anaknya yang aktif — bukan berandanya sendiri. Membuka
+    // collapse saat Dashboard Utama dibuka justru menyembunyikan bahwa
+    // halaman yang aktif adalah kepalanya, bukan salah satu anaknya.
+    dashboardBuka.value = dashboardLain.value.some((it) => it.isActive);
 }
 watch(modules, syncFromNav, { immediate: true, deep: true });
+watch(dashboardLain, syncFromNav, { deep: true });
 
 function toggleModule(id) {
     openModule.value = openModule.value === id ? null : id;
@@ -519,6 +588,70 @@ function groupIcon(g) {
     display: block;
     font-size: 11px;
     color: #94a3b8;
+}
+/* HALAMAN BERANDA SEDANG DIBUKA. Dulu tidak ada aturannya sama sekali: baris
+   Dashboard di sidebar terbuka tidak pernah menyala, padahal tombol kembarnya
+   di rail menyala — dua penanda untuk satu halaman yang saling bertentangan. */
+.evs-sb__home.is-active {
+    background: #eef2ff;
+}
+.evs-sb__home.is-active .evs-sb__homeico {
+    background: #6366f1;
+    color: #fff;
+}
+.evs-sb__home.is-active .evs-sb__hometitle {
+    color: #3730a3;
+}
+
+/* ── Beranda sebagai KEPALA COLLAPSE (≥2 dashboard) ── */
+.evs-sb__homewrap {
+    border-radius: 13px;
+}
+/* Kepalanya dibelah dua: tautan menuju beranda + tombol buka-tutup sendiri.
+   Keduanya harus terpisah — kalau seluruh kepala jadi tombol collapse,
+   Dashboard Utama tidak punya jalan menuju dirinya sendiri. */
+.evs-sb__home--grp {
+    gap: 0;
+    padding: 0;
+}
+.evs-sb__homelink {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+    min-width: 0;
+    padding: 11px 12px;
+    border-radius: 13px;
+    text-decoration: none;
+}
+.evs-sb__home--grp:hover {
+    background: transparent;
+}
+.evs-sb__homelink:hover {
+    background: #f4f5fb;
+}
+.evs-sb__homechev {
+    appearance: none;
+    border: 0;
+    background: none;
+    cursor: pointer;
+    flex: 0 0 auto;
+    width: 32px;
+    height: 32px;
+    margin-right: 6px;
+    border-radius: 9px;
+    display: grid;
+    place-items: center;
+    color: #aab2c5;
+    transition: transform 0.2s ease, background 0.16s, color 0.16s;
+}
+.evs-sb__homechev:hover {
+    background: #eef0f7;
+    color: #6366f1;
+}
+.evs-sb__homechev.is-open {
+    transform: rotate(180deg);
+    color: #6366f1;
 }
 .evs-sb__label {
     font-size: 10px;

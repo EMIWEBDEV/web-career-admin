@@ -169,12 +169,109 @@ class ReferensiController extends Controller
         $this->cocokkan($q, ['Nama'], $cari);
         $this->urutkanKemiripan($q, 'Nama', $cari);
 
+        $rows = $this->rapikanKembar($this->jalankan($q), $batas);
+        $this->lengkapiNegara($rows);
+
         return array_map(fn ($r) => [
             'nilai' => $r->Nama,
             'label' => $r->Nama,
             'ket' => $this->lokasi($r),
             'bendera' => $this->benderaKode($r->Negara_Kode),
-        ], $this->rapikanKembar($this->jalankan($q), $batas));
+        ], $rows);
+    }
+
+    /**
+     * Isi negara yang kosong dari KEMBARAN kampus yang sama di jenis institusi lain.
+     *
+     * KENAPA PERLU, padahal sudah ada rapikanKembar().
+     * Dua impor bertemu di tabel ini. Daftar `world` membawa negara lengkap tapi
+     * seluruhnya terdaftar sebagai "Universitas" — 10.057 baris, tanpa satu pun
+     * pengecualian. Daftar PDDIKTI luar negeri tidak membawa negara sama sekali
+     * (3.497 baris, kolomnya cuma berbunyi "Luar Negeri") tapi tersebar ke semua
+     * jenis: Institut, Sekolah Tinggi, Politeknik, Akademi.
+     *
+     * Akibatnya "Ashikaga Institute of Technology" tercatat dua kali: satu di
+     * bawah Universitas dengan bendera Jepang, satu di bawah Institut tanpa
+     * negara apa pun. Begitu kandidat memilih jenis institusi "Institut",
+     * penyaring membuang kembaran yang berbendera itu sebelum rapikanKembar()
+     * sempat melihatnya — sehingga SELURUH kampus luar negeri di jenis selain
+     * Universitas tampil bergambar bola dunia. Bukan kerusakan tampilan;
+     * pasangannya memang tidak pernah ikut terambil.
+     *
+     * CARA KERJA. Namanya dicari ulang di baris yang PUNYA kode negara. Ini
+     * bukan menebak negara dari nama — institusinya memang sudah tercatat di
+     * tabel yang sama, hanya di baris lain. Nama yang menghasilkan LEBIH DARI
+     * SATU negara ("American University" ada di Amerika dan Bosnia, "City
+     * University" di tiga negara) sengaja dibiarkan tanpa bendera: bendera yang
+     * salah lebih menyesatkan daripada tidak ada bendera.
+     *
+     * BIAYANYA satu query tambahan, dan hanya bila memang ada baris tanpa
+     * negara. Kampus Indonesia — mayoritas pemakaian — sudah berkode 'ID'
+     * sehingga tidak pernah menyentuh jalur ini.
+     */
+    private function lengkapiNegara(array $rows): void
+    {
+        $dicari = [];
+        foreach ($rows as $r) {
+            if ($this->benderaKode($r->Negara_Kode) !== null) {
+                continue;
+            }
+            // Dikunci nama ternormalkan supaya "Institute Of" dan "Institute of"
+            // tidak dicari dua kali, tapi yang dikirim ke SQL tetap nama aslinya
+            // (perbandingan SQL Server sendiri sudah abai huruf besar-kecil).
+            $dicari[$this->kunciNama($r->Nama)] = $r->Nama;
+        }
+
+        if (! $dicari) {
+            return;
+        }
+
+        $temuan = [];
+        foreach (array_chunk(array_values($dicari), 200) as $bagian) {
+            $baris = DB::table('N_WEB_CAREERS_Master_Kampus')
+                ->where('Flag_Aktif', 'Y')
+                ->whereNotNull('Negara_Kode')
+                ->where('Negara_Kode', '<>', '')
+                ->whereIn('Nama', $bagian)
+                ->distinct()
+                ->get(['Nama', 'Negara', 'Negara_Kode']);
+
+            foreach ($baris as $b) {
+                $kode = $this->benderaKode($b->Negara_Kode);
+                if ($kode === null) {
+                    continue;
+                }
+                $temuan[$this->kunciNama($b->Nama)][$kode] = $b->Negara;
+            }
+        }
+
+        foreach ($rows as $r) {
+            if ($this->benderaKode($r->Negara_Kode) !== null) {
+                continue;
+            }
+
+            $calon = $temuan[$this->kunciNama($r->Nama)] ?? null;
+            if (! $calon || count($calon) !== 1) {
+                continue; // tidak ketemu, atau namanya dipakai beberapa negara
+            }
+
+            $kode = array_key_first($calon);
+            // Baris ini menyatakan dirinya di LUAR negeri; kembaran yang
+            // menunjuk Indonesia berarti keduanya bukan institusi yang sama.
+            // Percaya pada pertentangan itu sama saja mengarang.
+            if ($kode === 'id' && $r->Negara === 'Luar Negeri') {
+                continue;
+            }
+
+            $r->Negara_Kode = $kode;
+            $r->Negara = reset($calon) ?: $r->Negara;
+        }
+    }
+
+    /** Nama kampus yang disamakan bentuknya untuk dibandingkan. */
+    private function kunciNama(?string $nama): string
+    {
+        return mb_strtolower(preg_replace('/\s+/', ' ', trim((string) $nama)));
     }
 
     /**
@@ -193,19 +290,42 @@ class ReferensiController extends Controller
      * Karena LIMIT bekerja di SQL sebelum penyaringan ini, pemanggil mengambil
      * lebih banyak baris lalu memotongnya di sini — kalau tidak, satu halaman
      * penuh pasangan kembar menyusut jadi setengah.
+     *
+     * NAMA SAJA TIDAK CUKUP jadi penanda kembar. Ada 59 nama yang dipakai
+     * institusi BERBEDA di negara berbeda — "American University" ada di
+     * Amerika dan Bosnia, "City University" di tiga negara, "Deakin University"
+     * punya baris Australia dan Indonesia. Menyatukannya menurut nama membuang
+     * 71 kampus yang sungguh-sungguh ada, dan lulusan American University
+     * Washington cuma disodori bendera Bosnia. Karena itu yang disatukan adalah
+     * nama + negara; baris tanpa negara baru dibuang bila kembaran BERNEGARA-nya
+     * memang muncul — di situlah ia terbukti salinan, bukan kampus lain.
      */
     private function rapikanKembar(array $rows, int $batas): array
     {
         $terbaik = [];
+        $bernegara = [];
+
         foreach ($rows as $r) {
-            $kunci = mb_strtolower(preg_replace('/\s+/', ' ', trim($r->Nama)));
-            $lama = $terbaik[$kunci] ?? null;
-            if (! $lama || (! $lama->Negara_Kode && $r->Negara_Kode)) {
-                $terbaik[$kunci] = $r;
+            $nama = $this->kunciNama($r->Nama);
+            $kode = $this->benderaKode($r->Negara_Kode);
+            if ($kode !== null) {
+                $bernegara[$nama] = true;
             }
+
+            // Baris tanpa negara berbagi satu slot: berapa pun salinannya,
+            // sebagai pilihan ia cuma satu.
+            $terbaik[$nama . '|' . ($kode ?? '')] ??= $r;
         }
 
-        return array_slice(array_values($terbaik), 0, $batas);
+        $hasil = [];
+        foreach ($terbaik as $r) {
+            if ($this->benderaKode($r->Negara_Kode) === null && isset($bernegara[$this->kunciNama($r->Nama)])) {
+                continue;
+            }
+            $hasil[] = $r;
+        }
+
+        return array_slice($hasil, 0, $batas);
     }
 
     /**

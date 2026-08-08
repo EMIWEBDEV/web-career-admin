@@ -1642,11 +1642,16 @@ onUnmounted(() => {
 .wcc-empty small { font-size: 0.68rem; color: #94a3b8; margin-top: 2px; }
 
 /* TOAST NOTIFIKASI */
+/* Lapis toast bersama — lihat --wca-z-toast di evo-theme.css. 2200 dulu sama
+   tinggi dengan lapisan tertinggi command center ini, jadi urutannya bergantung
+   pada siapa yang tergambar belakangan. */
 .wcc-toast {
     position: fixed;
     bottom: 24px;
     right: 24px;
-    z-index: 2200;
+    max-width: min(520px, calc(100vw - 48px));
+    line-height: 1.5;
+    z-index: var(--wca-z-toast, 100000);
     display: flex;
     align-items: center;
     gap: 9px;
@@ -2554,5 +2559,18 @@ onUnmounted(() => {
 
 @media (prefers-reduced-motion: reduce) {
     .wcc-loader, .wcc-drawer, .wcc-spin { animation: none; }
+}
+
+/* PONSEL — toast sudut melebar penuh. Pada 360px, lebar sudut hanya menyisakan
+   ruang teks selebar dua kata dan pesan panjang terpotong jadi banyak baris
+   sempit. Lihat --wca-z-toast di evo-theme.css untuk lapisannya. */
+@media (max-width: 560px) {
+    .wcc-toast {
+        left: 12px;
+        right: 12px;
+        max-width: none;
+        align-items: flex-start;
+    }
+    .wcc-toast .bi { flex: none; margin-top: 1px; }
 }
 </style>

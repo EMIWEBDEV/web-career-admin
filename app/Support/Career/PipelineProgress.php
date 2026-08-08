@@ -26,9 +26,28 @@ class PipelineProgress
      *                     fallback tahap terakhir
      *  - lainnya        → tahap yang sedang BERJALAN (fallback tahap pertama)
      *
-     * Dulu hanya GUGUR/TALENT_POOL/LULUS yang dikenali; outcome lain jatuh ke
-     * baris terakhir dan berhenti di tahap PERTAMA, karena kandidat terminal
-     * tak punya tahap BERJALAN.
+     * ══ KENAPA TIDAK DIDAFTAR SATU-SATU LAGI ══
+     *
+     * Dulu hanya GUGUR/TALENT_POOL/LULUS yang punya cabang sendiri di sini, dan
+     * segala status lain jatuh ke baris terakhir:
+     *
+     *     $tahapList->firstWhere('Status', 'BERJALAN') ?? $tahapList->first()
+     *
+     * Pada lamaran yang SUDAH DITUTUP tidak ada satu pun tahap BERJALAN, jadi
+     * yang terpakai cadangannya: TAHAP PERTAMA. Kandidat yang menolak penawaran
+     * di tahap 7 muncul di kolom "Seleksi Administrasi" — kolom yang ia lewati
+     * berminggu-minggu sebelumnya — dan papan berbunyi seolah ia baru mendaftar.
+     *
+     * Daftar status penutup itu hidup di MASTER (Master_Hasil_Keputusan) dan
+     * boleh bertambah; menuliskannya lagi di sini berarti tiap sebab penutupan
+     * baru mengulang bug yang sama, diam-diam. Maka yang menentukan sekarang
+     * adalah FLAG-nya, dan tahap yang dicari adalah yang HASIL-nya sama dengan
+     * status lamarannya.
+     *
+     * Flag_Lolos='Y' tetap dikecualikan: kode itu bukan hanya status akhir
+     * lamaran, melainkan verdict SETIAP tahap yang dilewati — mencarinya dengan
+     * firstWhere() akan berhenti di tahap pertama yang lulus, bukan di ujung
+     * perjalanannya.
      */
     public static function tahapKini(object $l, Collection $tahapList): ?object
     {

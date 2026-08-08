@@ -736,6 +736,17 @@ function pilihBerkas(uf) {
 .fr :deep(.el-radio__label),
 .fr :deep(.el-checkbox__label) { padding-left: .5rem; font-size: 13px; font-weight: 600; }
 
+/* Aksen kotak centang & radio disamakan dengan aksen renderer ini.
+   Tema menyetel --el-color-primary ke #4f46e5, sedangkan cincin fokus, ikon,
+   dan bingkai chip saat terpilih semuanya memakai --primary (#6366f1). Dua
+   indigo yang beda tipis lalu berdiri bersebelahan DI DALAM satu chip —
+   bingkainya satu warna, kotak centang di dalamnya warna lain — dan yang
+   terbaca bukan "dua nuansa", melainkan salah satu warnanya salah. */
+.fr :deep(.el-checkbox__input.is-checked .el-checkbox__inner),
+.fr :deep(.el-radio__input.is-checked .el-radio__inner) { background-color: var(--primary) !important; border-color: var(--primary) !important; }
+.fr :deep(.el-checkbox__input.is-focus .el-checkbox__inner),
+.fr :deep(.el-radio__input.is-focus .el-radio__inner) { border-color: var(--primary) !important; }
+
 /* -- Unggah berkas: dropzone ringkas saat KOSONG --------------------------- */
 .fr__drop { display: block; width: 100%; }
 .fr__drop :deep(.el-upload) { display: block; width: 100%; }
@@ -791,19 +802,65 @@ function pilihBerkas(uf) {
 .fr--foto .fr__bantuan,
 .fr--foto .fr__galat { text-align: center; justify-content: center; }
 
-.fr__consent { white-space: normal; height: auto; align-items: flex-start; }
+.fr__consent {
+    --el-checkbox-checked-bg-color: var(--primary);
+    --el-checkbox-checked-input-border-color: var(--primary);
+    --el-checkbox-input-border-color-hover: var(--primary);
+    --el-checkbox-checked-text-color: var(--dark);
+    white-space: normal;
+    height: auto;
+}
 
 /* -- Kartu persetujuan: teks pernyataan panjang lebih nyaman dibaca dalam
    kotak sendiri daripada tercampur sebagai "field" biasa, dan berubah warna
    begitu dicentang supaya jelas mana yang sudah disetujui. */
 .fr--consent {
     grid-column: 1 / -1; padding: .9rem 1.05rem; border: 1.5px solid rgba(11, 16, 51, .12);
-    border-radius: 14px; background: #f8fafc; transition: border-color .15s ease, background .15s ease;
+    border-radius: 14px; background: var(--evo-bg); transition: border-color .15s ease, background .15s ease;
 }
-.fr--consent-aktif { border-color: #6366f1; background: rgba(99, 102, 241, .06); }
-.fr--consent .fr__lbl { font-size: 12.5px; font-weight: 700; color: #475569; margin-bottom: .55rem; line-height: 1.55; }
-.fr__consent-ico { color: #6366f1; font-size: 13px; }
-.fr--consent :deep(.el-checkbox__label) { white-space: normal; line-height: 1.5; font-size: 13px; font-weight: 600; color: #1e293b; padding-left: .6rem; }
+.fr--consent-aktif { border-color: var(--primary); background: rgba(99, 102, 241, .06); }
+.fr--consent .fr__lbl { font-size: 12.5px; font-weight: 700; color: var(--evo-slate); margin-bottom: .55rem; line-height: 1.55; }
+.fr__consent-ico { color: var(--primary); font-size: 13px; }
+
+/* Baris pernyataan. Aturan chip di atas dibuat untuk opsi Ya/Tidak yang pendek
+   dan sebaris: tinggi tetap 40px, lebar minimum, dan padding HORIZONTAL saja.
+   Dipakai pada kalimat yang membungkus, akibatnya terlihat jelas — teksnya
+   menempel ke tepi atas-bawah, dan kotak centangnya menggantung di atas baris
+   pertama. Bingkainya sendiri juga mubazir: kartu di luar sudah berbingkai dan
+   sudah berganti warna saat dicentang, jadi yang terlihat kandidat cuma kotak
+   di dalam kotak. Di sini bingkainya dilepas dan kotak centang duduk seimbang
+   di tengah kalimat, sehingga kartunya jadi satu blok utuh. */
+.fr--consent :deep(.el-checkbox) {
+    display: flex; align-items: center; width: 100%;
+    min-height: 0; min-width: 0; padding: 0;
+    border: 0; background: none; white-space: normal;
+}
+/* Keadaan tercentang diwakili KARTUNYA (fr--consent-aktif). Tanpa baris ini
+   aturan `.el-checkbox.is-checked` di atas menang spesifisitas dan mengecat
+   ulang latar barisnya, jadi kotak-dalam-kotak yang baru dilepas muncul lagi
+   — justru pada saat kandidat mencentangnya. */
+.fr--consent :deep(.el-checkbox.is-checked),
+.fr--consent :deep(.el-checkbox:hover) { border-color: transparent; background: none; }
+.fr--consent :deep(.el-checkbox__input) { flex: none; }
+.fr--consent :deep(.el-checkbox__label),
+/* Element Plus mewarnai label yang tercentang dengan warna primernya, dan
+   aturannya menang spesifisitas atas baris di atas. Untuk opsi pendek itu
+   wajar, tapi di sini yang ikut berubah warna adalah SATU PARAGRAF pernyataan
+   — teks yang justru paling perlu tetap terbaca tenang setelah disetujui. */
+.fr--consent :deep(.el-checkbox__input.is-checked + .el-checkbox__label) {
+    white-space: normal; line-height: 1.6; font-size: 13px; font-weight: 600; color: var(--dark); padding-left: .65rem;
+}
+.fr--consent :deep(.el-checkbox__input.is-checked .el-checkbox__inner),
+.fr__consent :deep(.el-checkbox__input.is-checked .el-checkbox__inner) {
+    background-color: var(--primary) !important;
+    border-color: var(--primary) !important;
+}
+.fr--consent :deep(.el-checkbox__input.is-focus .el-checkbox__inner),
+.fr--consent :deep(.el-checkbox__input:hover .el-checkbox__inner),
+.fr__consent :deep(.el-checkbox__input.is-focus .el-checkbox__inner),
+.fr__consent :deep(.el-checkbox__input:hover .el-checkbox__inner) {
+    border-color: var(--primary) !important;
+}
 
 /* Opsi referensi: nama di kiri, keterangan (kota / gelar) menepi ke kanan. */
 .fr__opsi { float: left; }

@@ -89,7 +89,11 @@ class AksesService
             ->orderBy('pa.Urutan_Menu')
             ->select(
                 'pa.Id_Page_Access', 'pa.Jenis_Page', 'pa.Urutan_Menu', 'a.Nama_Aksi',
-                'm.Nama_Menu', 'm.Nama_Header', 'm.Sub_Header', 'm.Icon_Menu', 'm.Url_Menu', 'm.Urutan'
+                'm.Nama_Menu', 'm.Nama_Header', 'm.Sub_Header', 'm.Icon_Menu', 'm.Url_Menu', 'm.Urutan',
+                // Timpaan per akun dari penyusun menu (/hak-akses/susun/{user}).
+                // NULL = ikut master, jadi menu yang belum pernah disusun tetap
+                // otomatis mengikuti perubahan Master Menu.
+                'pa.Nama_Header_Custom', 'pa.Sub_Header_Custom', 'pa.Nama_Menu_Custom', 'pa.Icon_Menu_Custom'
             )
             ->get();
 
@@ -104,10 +108,10 @@ class AksesService
                 $permissions[$page][] = $r->Nama_Aksi;
             }
             $label[$page] ??= [
-                'nama_menu' => $r->Nama_Menu,
-                'nama_header' => $r->Nama_Header,
-                'sub_header' => $r->Sub_Header,
-                'icon' => $r->Icon_Menu,
+                'nama_menu' => $r->Nama_Menu_Custom ?: $r->Nama_Menu,
+                'nama_header' => $r->Nama_Header_Custom ?: $r->Nama_Header,
+                'sub_header' => $r->Sub_Header_Custom ?: $r->Sub_Header,
+                'icon' => $r->Icon_Menu_Custom ?: $r->Icon_Menu,
                 'url' => $r->Url_Menu,
                 'urutan' => (int) ($r->Urutan_Menu ?: $r->Urutan ?: 0),
             ];

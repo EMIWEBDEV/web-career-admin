@@ -813,7 +813,17 @@ h6,
     transition-delay: var(--d, 0ms);
     will-change: opacity, transform;
 }
-.wc-reveal.is-in {
+/* PENANDA "SUDAH MUNCUL" MEMAKAI ATRIBUT, BUKAN KELAS.
+   Kelas `is-in` dipasang IntersectionObserver lewat classList, di luar
+   sepengetahuan Vue. Begitu elemen yang sama punya :class dinamis (mis. kartu
+   FAMILY yang dapat is-dimmed/is-highlighted saat huruf diklik), Vue menimpa
+   className elemen itu seutuhnya saat merender ulang — `is-in` ikut terhapus,
+   kartunya balik ke opacity 0, dan karena observernya sudah unobserve, ia tidak
+   pernah muncul lagi sampai halaman dimuat ulang. Atribut data- tidak ikut
+   ditimpa patch kelas Vue, jadi penandanya bertahan.
+   `.is-in` tetap dikenali supaya penanda lama tidak mendadak berhenti bekerja. */
+.wc-reveal.is-in,
+.wc-reveal[data-in] {
     opacity: 1;
     transform: none;
 }
@@ -2410,12 +2420,15 @@ h6,
 }
 
 /* ═══════════ TOAST + TOTOP ═══════════ */
+/* Kembaran .wca-toast untuk halaman publik/portal. Ikut dinaikkan: portal pun
+   punya modal (lamar, unggah berkas) yang menutupi jawabannya. Lihat catatan
+   lengkap di --wca-z-toast. */
 .wc-toast {
     position: fixed;
     bottom: 1.5rem;
     left: 50%;
     transform: translateX(-50%);
-    z-index: 70;
+    z-index: var(--wca-z-toast, 100000);
     display: inline-flex;
     align-items: center;
     gap: 0.55rem;
@@ -5022,12 +5035,34 @@ h6,
 }
 
 /* ── TOAST ── */
+/* ═══════════════ LAPIS TOAST — DI ATAS SEGALANYA ═══════════════
+   Toast transaksi ("Data tersimpan", "Gagal menyimpan") HARUS terbaca dalam
+   keadaan apa pun, sebab ia satu-satunya jawaban atas tombol yang barusan
+   ditekan. Yang paling sering: modal masih terbuka saat jawabannya datang.
+
+   Dulu .wca-toast berada di z-index 80 sementara .wca-modal-mask di 1200 —
+   toast tergambar DI BAWAH modal, dan karena modal memakai backdrop-filter
+   blur(7px), ia bukan sekadar tertutup melainkan ikut diburamkan. Admin
+   menekan Simpan, tidak melihat apa pun, lalu menekannya lagi.
+
+   --wca-z-toast sengaja di atas SELURUH lapisan yang ada di aplikasi ini
+   (modal 1200, drawer 1300, lightbox 1500, command center 2200, pemilih ikon
+   99999). Angkanya satu, dipakai bersama, dan didefinisikan di sini supaya
+   halaman baru tidak menebak-nebak lagi.
+
+   CATATAN: nilainya tetap berlaku hanya selama tidak ada leluhur toast yang
+   membuat stacking context (transform / filter / contain). Pembungkus .wca
+   sengaja bersih dari ketiganya. */
+:root {
+    --wca-z-toast: 100000;
+}
+
 .wca-toast {
     position: fixed;
     bottom: 1.5rem;
     left: 50%;
     transform: translateX(-50%);
-    z-index: 80;
+    z-index: var(--wca-z-toast);
     display: inline-flex;
     align-items: center;
     gap: 0.55rem;
@@ -5053,6 +5088,39 @@ h6,
 .wca-toast-leave-to {
     opacity: 0;
     transform: translateX(-50%) translateY(1rem);
+}
+
+/* PONSEL — toast melebar, bukan menyempit jadi satu kolom kata.
+   `inline-flex` + max-width membuat pesan panjang ("Waktu berakhir harus
+   setelah waktu mulai.") terpotong pada layar sempit; di sini ia diberi
+   seluruh lebar layar dikurangi tepi, dan teksnya boleh turun baris.
+   Diangkat sedikit dari dasar layar supaya tidak tertimpa tombol
+   melayang (FAB) dan bilah aksi massal yang duduk di 70–90. */
+@media (max-width: 560px) {
+    .wca-toast,
+    .wc-toast {
+        left: 12px;
+        right: 12px;
+        bottom: 84px;
+        transform: none;
+        max-width: none;
+        display: flex;
+        align-items: flex-start;
+        line-height: 1.45;
+    }
+    /* Animasinya ikut menyesuaikan: tanpa ini toast melompat ke tengah saat
+       masuk/keluar, sebab transform bawaannya masih memakai translateX(-50%). */
+    .wca-toast-enter-from,
+    .wca-toast-leave-to,
+    .wc-toast-enter-from,
+    .wc-toast-leave-to {
+        transform: translateY(1rem);
+    }
+    .wca-toast i,
+    .wc-toast i {
+        flex: none;
+        margin-top: 1px;
+    }
 }
 
 /* ── RESPONSIVE ── */
@@ -9641,6 +9709,9 @@ h6,
     transition:
         border-color 0.15s ease,
         background 0.15s ease;
+    --el-checkbox-checked-bg-color: var(--primary, #6366f1);
+    --el-checkbox-checked-input-border-color: var(--primary, #6366f1);
+    --el-checkbox-input-border-color-hover: var(--primary, #6366f1);
 }
 .el-checkbox.wca-chk:hover {
     border-color: rgba(99, 102, 241, 0.35);
@@ -9648,6 +9719,14 @@ h6,
 .el-checkbox.wca-chk.is-checked {
     border-color: rgba(99, 102, 241, 0.45);
     background: rgba(99, 102, 241, 0.06);
+}
+.el-checkbox.wca-chk .el-checkbox__input.is-checked .el-checkbox__inner {
+    background-color: var(--primary, #6366f1) !important;
+    border-color: var(--primary, #6366f1) !important;
+}
+.el-checkbox.wca-chk .el-checkbox__input.is-focus .el-checkbox__inner,
+.el-checkbox.wca-chk .el-checkbox__input:hover .el-checkbox__inner {
+    border-color: var(--primary, #6366f1) !important;
 }
 .el-checkbox.wca-chk .el-checkbox__input {
     margin-top: 0.1rem;

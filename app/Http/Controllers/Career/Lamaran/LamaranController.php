@@ -13,6 +13,7 @@ use App\Jobs\Career\WcLaporanKandidatJob;
 use App\Support\Career\AlurKolom;
 use App\Support\Career\GcsBerkas;
 use App\Support\Career\HtmlBersih;
+use App\Support\Career\KatalogPrefill;
 use App\Support\Career\LamaranService;
 use App\Support\Career\LamaranTargetValidator;
 use App\Support\Career\PipelineProgress;
@@ -964,7 +965,7 @@ class LamaranController extends Controller
 
         $akun = DB::table('N_WEB_CAREERS_Users')
             ->where('Id_Users', $userId)
-            ->first(['Nama', 'Email', 'No_Hp']);
+            ->first(['Nama', 'Email', 'No_Hp', 'NIK']);
 
         return Inertia::render('Career/portal/LamaranDetail', CareerShell::props('/kandidat/portal', 'Detail Lamaran', [
             'lamaran' => [
@@ -1005,20 +1006,25 @@ class LamaranController extends Controller
             // kandidat sudah memilihnya dari Master Kampus saat melamar, jadi
             // formulir tahap berikutnya cukup menampilkannya kembali (terkunci)
             // alih-alih menanyakan ulang dan berisiko dapat dua jawaban berbeda.
-            'profil' => [
+            // Kampus & tahun lulus DITARIK DARI JAWABAN FORMULIR PENDAFTARAN
+            // lamaran ini — bukan dari tabel akun. Keduanya sudah dijawab
+            // kandidat saat melamar; menanyakannya lagi di formulir tahap
+            // berikutnya membuka peluang dua jawaban berbeda untuk orang
+            // yang sama, dan tim tidak punya cara tahu mana yang benar.
+            //
+            // Disaring lewat KatalogPrefill: kunci yang ditawarkan ke admin dan
+            // kunci yang dikirim ke sini berasal dari satu daftar.
+            'profil' => KatalogPrefill::saring(KatalogPrefill::TAHAP, [
                 'nama' => $akun->Nama ?? session('career_auth.nama'),
                 'email' => $akun->Email ?? session('career_auth.email'),
                 'hp' => $akun->No_Hp ?? session('career_auth.hp'),
-                // Kampus & tahun lulus DITARIK DARI JAWABAN FORMULIR PENDAFTARAN
-                // lamaran ini — bukan dari tabel akun. Keduanya sudah dijawab
-                // kandidat saat melamar; menanyakannya lagi di formulir tahap
-                // berikutnya membuka peluang dua jawaban berbeda untuk orang
-                // yang sama, dan tim tidak punya cara tahu mana yang benar.
+                'nik' => $akun->NIK ?? null,
+                'posisi' => $lamaran->Posisi ?? null,
                 ...array_intersect_key(
                     LamaranService::dataKandidatEmail($realId),
-                    array_flip(['kampus', 'tahunLulus']),
+                    array_flip(['kampus', 'tahunLulus', 'tglLahir', 'jkel', 'jurusan', 'jenjang', 'ipk', 'statusStudi', 'semester']),
                 ),
-            ],
+            ]),
         ]));
     }
 
@@ -1080,7 +1086,7 @@ class LamaranController extends Controller
                     $b = $berkas->firstWhere('field', $k);
                     // Satu aturan untuk seluruh bentuk jawaban — termasuk field
                     // berulang yang dulu menjatuhkan halaman ini. Lihat nilaiIsian().
-                    $isi = self::nilaiIsian($v);
+                    $isi = self::nilaiIsian($v, 0, self::pencariBerkas($berkas));
 
                     return [
                         'key' => $k,
@@ -1091,6 +1097,7 @@ class LamaranController extends Controller
                             'field' => $b['field'],
                             'nama' => $b['nama'],
                             'url' => $b['url'],
+                            'ext' => $b['ext'],
                             'isImage' => $b['isImage'],
                             'isPdf' => $b['isPdf'],
                         ] : null,
@@ -1126,11 +1133,52 @@ class LamaranController extends Controller
      * yang satu diperbaiki, yang lain tertinggal, dan selisihnya baru ketahuan
      * saat ada yang membandingkan dua layar itu berdampingan.
      *
+     * ══ BERKAS DI DALAM BARIS BERULANG ══
+     *
+     * Satu sub-isian bisa berupa UNGGAHAN, bukan teks — `sert_file` pada
+     * riwayat sertifikasi yang paling sering. Yang tersimpan di Jawaban_Json
+     * cuma NAMA berkasnya ("LMR-9XWXPWWC-menyala-bosku-18.pdf"), sedangkan
+     * berkas sungguhannya hidup di N_WEB_CAREERS_Formulir_Berkas dengan
+     * Field_Key sub-isian itu.
+     *
+     * Tanpa `$cariBerkas`, nama itu tampil sebagai teks mati: peninjau melihat
+     * ada sertifikat tapi tidak bisa membukanya, dan berkasnya terlempar ke
+     * daftar terpisah yang berjudul nama file — persis masalah yang sudah
+     * diperbaiki untuk KTP/CV di tingkat atas, tapi masih tersisa satu tingkat
+     * di dalam.
+     *
+     * @param  ?\Closure  $cariBerkas  fn(string $kunci): ?array — berkas untuk
+     *         satu sub-isian, atau null bila sub-isian itu memang teks biasa.
      * @return array{nilai: string, baris: array} `baris` hanya terisi untuk
      *         field berulang, supaya layar bisa menampilkannya sebagai daftar
      *         alih-alih satu paragraf panjang.
      */
-    private static function nilaiIsian(mixed $v, int $dalam = 0): array
+    /**
+     * Pencari berkas per kunci isian, dipakai nilaiIsian() untuk sub-isian
+     * berulang.
+     *
+     * Hanya bentuk RINGKAS yang dikembalikan — yang benar-benar dipakai layar
+     * untuk menggambar tombol "Lihat Berkas". Ukuran & status verifikasi tidak
+     * ikut: keduanya milik daftar berkas utuh, dan mengulangnya di tiap baris
+     * riwayat cuma menggandakan muatan tanpa ada yang membacanya.
+     */
+    private static function pencariBerkas(\Illuminate\Support\Collection $berkas): \Closure
+    {
+        return static function (string $kunci) use ($berkas): ?array {
+            $b = $berkas->firstWhere('field', $kunci);
+
+            return $b ? [
+                'field' => $b['field'],
+                'nama' => $b['nama'],
+                'url' => $b['url'],
+                'ext' => $b['ext'],
+                'isImage' => $b['isImage'],
+                'isPdf' => $b['isPdf'],
+            ] : null;
+        };
+    }
+
+    private static function nilaiIsian(mixed $v, int $dalam = 0, ?\Closure $cariBerkas = null): array
     {
         if ($v === null) {
             return ['nilai' => '', 'baris' => []];
@@ -1212,6 +1260,11 @@ class LamaranController extends Controller
                 $pasangan[] = [
                     'label' => ucwords(str_replace(['_', '-'], ' ', $nama)),
                     'nilai' => $t,
+                    // Sub-isian yang ternyata UNGGAHAN dibawa berikut url-nya.
+                    // Kuncinya dicari APA ADANYA (`sert_file`), bukan yang sudah
+                    // dipangkas awalan — Field_Key di tabel berkas menyimpan
+                    // bentuk penuhnya.
+                    'berkas' => $cariBerkas ? $cariBerkas((string) $k) : null,
                 ];
             }
 
@@ -1913,6 +1966,8 @@ class LamaranController extends Controller
             'Total_Soal' => 'nullable|integer',
             'Ambang_Batas_Nilai' => 'nullable|numeric',
             'Status_Pengerjaan' => 'nullable|string|max:30',
+            // DUA PERISTIWA LEWAT SATU PINTU — lihat cabang di bawah.
+            'Jenis_Event' => 'nullable|string|max:40',
         ]);
 
         // PENCOCOKAN LEWAT PENGENAL YANG KITA KIRIM.
@@ -1942,6 +1997,42 @@ class LamaranController extends Controller
             Log::channel('web_career')->warning("[HASIL-UJIAN] peserta tak dikenal untuk pengenal {$ref}.");
 
             return ResponseHelper::error('Peserta penjadwalan tidak ditemukan.', 404);
+        }
+
+        // ── "SELESAI MENGERJAKAN" — DATANG LEBIH DULU, TANPA VERDICT ────────
+        //
+        // CAT mengirim ini tepat saat peserta menekan kirim, sebelum skoring
+        // berjalan. Verdict-nya menyusul lewat panggilan kedua.
+        //
+        // Kenapa perlu dua panggilan: skoring bisa memakan waktu, gagal, atau
+        // tertahan di antrean — dan selama itu portal kandidat tidak tahu tesnya
+        // sudah dikerjakan, lalu menyuguhkan tombol "Mulai Tes Sekarang" untuk
+        // ujian yang baru saja ia selesaikan. Kandidat menekannya dan menemukan
+        // dirinya di ruang ujian yang sudah tertutup. Yang menentukan tombol itu
+        // bukan hasilnya, melainkan sudah-atau-belum ia mengerjakan — jadi dua
+        // hal itu dipisah.
+        //
+        // MESIN KEPUTUSAN TIDAK DIJALANKAN di sini. Payload ini tidak membawa
+        // kelulusan, dan prosesHasilUjian() membaca ketiadaan verdict sebagai
+        // GUGUR — satu panggilan ini akan menggugurkan setiap peserta yang baru
+        // selesai mengerjakan.
+        if (strtoupper((string) ($data['Jenis_Event'] ?? '')) === 'SELESAI_MENGERJAKAN') {
+            // HANYA status pengerjaan. Flag_Selesai & Status_Kelulusan sengaja
+            // tidak disentuh: keduanya milik verdict, dan mengisinya di sini
+            // membuat peserta tampak sudah dinilai padahal skoringnya belum
+            // tentu berhasil.
+            DB::table('N_WEB_CAREERS_Penjadwalan_Peserta')
+                ->where('Id_Penjadwalan_Peserta', $peserta->Id_Penjadwalan_Peserta)
+                ->update([
+                    'Status_Pengerjaan' => 'selesai',
+                    'Updated_At' => now(),
+                ]);
+
+            Log::channel('web_career')->info(
+                "[HASIL-UJIAN] peserta #{$peserta->Id_Penjadwalan_Peserta} SELESAI MENGERJAKAN — menunggu verdict."
+            );
+
+            return ResponseHelper::success(['diproses' => true], 'Status pengerjaan diperbarui.');
         }
 
         $hasil = $this->prosesHasilUjian($peserta, $data, 'CALLBACK');
@@ -5783,7 +5874,7 @@ class LamaranController extends Controller
                     $b = $berkas->firstWhere('field', $k);
                     // Aturan yang SAMA PERSIS dengan layar kandidat — satu
                     // sumber, bukan dua salinan. Lihat nilaiIsian().
-                    $isi = self::nilaiIsian($v);
+                    $isi = self::nilaiIsian($v, 0, self::pencariBerkas($berkas));
 
                     return [
                         'key' => $k,
