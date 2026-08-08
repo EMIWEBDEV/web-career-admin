@@ -1553,6 +1553,14 @@ export default {
         tesDitunggu() {
             if (!this.pulangTes) return null;
 
+            // Tahap sudah bergerak sejak kandidat berangkat ujian → jejaknya
+            // bercerita tentang tahap yang sudah lewat. Diperiksa lebih dulu
+            // daripada pencocokan id: tes tahap BERIKUTNYA tidak boleh terpungut
+            // hanya karena kebetulan ia satu-satunya tes daring yang tersisa.
+            if (this.pulangTes.tahap && this.tahapAktif?.id && this.pulangTes.tahap !== this.tahapAktif.id) {
+                return null;
+            }
+
             const t = (this.aktivitas || []).find((x) => x.id === this.pulangTes.id);
 
             // Aktivitasnya tak lagi ada di tahap aktif = tahapnya sudah bergerak.
@@ -2456,7 +2464,13 @@ export default {
         },
         tandaiPergiTes(t) {
             try {
-                sessionStorage.setItem(this.kunciPergiTes(), JSON.stringify({ id: t.id, at: Date.now() }));
+                // `tahap` ikut dicatat: jejak ini hanya sah selama kandidat masih
+                // berdiri di tahap yang sama. Lihat bacaPergiTes().
+                sessionStorage.setItem(this.kunciPergiTes(), JSON.stringify({
+                    id: t.id,
+                    tahap: this.tahapAktif?.id || null,
+                    at: Date.now(),
+                }));
             } catch (e) {
                 // Mode privat / storage penuh — fitur sambutan hilang, tapi
                 // membuka tesnya TIDAK BOLEH ikut gagal karenanya.
@@ -2466,6 +2480,20 @@ export default {
             try {
                 const isi = JSON.parse(sessionStorage.getItem(this.kunciPergiTes()) || 'null');
                 if (!isi || !isi.id) return null;
+
+                // TAHAPNYA SUDAH BERGERAK — jejaknya hangus.
+                //
+                // Jejak lama hanya bercerita tentang tes di tahap yang sudah
+                // lewat. Dibiarkan hidup, ia bisa tersambung ke tes tahap
+                // BERIKUTNYA yang belum tersentuh sama sekali, dan kandidat
+                // disambut "jawabanmu sudah terkirim" untuk tes yang bahkan
+                // belum ia buka. Jejak dibuang, bukan sekadar diabaikan, supaya
+                // pemuatan berikutnya tidak mengulang pemeriksaan yang sama.
+                if (isi.tahap && this.tahapAktif?.id && isi.tahap !== this.tahapAktif.id) {
+                    this.lupakanPergiTes();
+
+                    return null;
+                }
 
                 // Jejak basi dibuang. Batasnya longgar (12 jam) karena satu sesi
                 // tes bisa berjam-jam, tapi tetap ada supaya tab yang dibiarkan
@@ -2503,19 +2531,47 @@ export default {
          * bila jawabannya cuma satu: tepat satu tes daring yang belum selesai.
          * Bila ada dua, menebak berarti bisa menyembunyikan tes yang justru
          * masih harus dikerjakan — itu lebih buruk daripada tidak menyambut.
+         *
+         * ══ PENANDANYA HABIS SEKALI PAKAI ══
+         *
+         * `?dari=tes` berarti "aku BARU SAJA keluar dari ruang ujian" — sebuah
+         * peristiwa, bukan keadaan. Dulu ia dibiarkan menempel di alamat, dan
+         * itulah sumber laporan "tes tahap 5 disambut 'jawabanmu sudah
+         * terkirim' padahal belum dikerjakan":
+         *
+         *   1. kandidat selesai tes tahap 3, CAT memulangkannya ke ?dari=tes
+         *   2. halaman memantau hasil dengan router.reload() — yang MEMBAWA
+         *      SERTA seluruh query, termasuk penanda ini
+         *   3. hasil masuk, tahap bergerak ke 5 yang juga punya satu tes daring
+         *   4. penanda yang sama terbaca lagi, syarat "tepat satu tes daring
+         *      belum selesai" kini dipenuhi oleh tes tahap 5 — dan tes yang
+         *      belum tersentuh itu disambut sebagai sudah dikerjakan.
+         *
+         * Karena itu penandanya dicabut dari alamat begitu dibaca. Dibaca sekali,
+         * habis sekali; reload, tombol Kembali, dan tautan yang tersimpan di
+         * riwayat peramban tidak bisa membangkitkannya lagi.
          */
         tebakPulangDariAlamat() {
             try {
-                if (new URLSearchParams(window.location.search).get('dari') !== 'tes') {
+                const alamat = new URL(window.location.href);
+                if (alamat.searchParams.get('dari') !== 'tes') {
                     return null;
                 }
+
+                // replaceState, bukan push: mencabut penanda tidak boleh
+                // menambah langkah baru di riwayat peramban — tombol Kembali
+                // kandidat harus tetap membawanya ke tempat asalnya.
+                alamat.searchParams.delete('dari');
+                window.history.replaceState(window.history.state, '', alamat.pathname + alamat.search + alamat.hash);
             } catch (e) {
                 return null;
             }
 
             const daring = (this.aktivitas || []).filter((x) => x.ujian && !x.selesai && !this.sudahSelesai(x));
 
-            return daring.length === 1 ? { id: daring[0].id, at: Date.now() } : null;
+            return daring.length === 1
+                ? { id: daring[0].id, tahap: this.tahapAktif?.id || null, at: Date.now() }
+                : null;
         },
 
         /**
