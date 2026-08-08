@@ -84,6 +84,48 @@ describe('banner — yang lama tidak ikut berubah', () => {
     });
 });
 
+describe('keadaanTahap — tahap yang seluruhnya dikerjakan tim', () => {
+    // Negosiasi penawaran: dijadwalkan tim untuk dirinya sendiri, jadwalnya
+    // tidak diumumkan, jadi kandidat tidak melihat satu pun aktivitas di sini.
+    const tahapNego = (pesan) => [
+        { urutan: 1, label: 'Wawancara', status: 'SELESAI', hasil: 'LULUS', tes: [] },
+        { urutan: 2, label: 'Negosiasi Penawaran', status: 'BERJALAN', pesan, tes: [] },
+    ];
+
+    function ctxTahap(pesan) {
+        const tahap = tahapNego(pesan);
+        const c = konteks({ status: 'BERJALAN', statusNada: 'berjalan' }, tahap);
+        c.aktivitas = [];
+        c.tesDitunggu = null;
+        return c;
+    }
+
+    it('TIDAK berkata "sudah kamu selesaikan" untuk tahap yang tak ia kerjakan', () => {
+        const k = C.keadaanTahap.call(ctxTahap(null));
+
+        expect(k.judul).not.toMatch(/sudah kamu selesaikan/i);
+    });
+
+    it('memberi kabar menunggu yang menenangkan', () => {
+        const k = C.keadaanTahap.call(ctxTahap(null));
+
+        expect(k.judul).toMatch(/ditangani tim rekrutmen/i);
+        expect(k.pesan).toMatch(/tidak ada yang perlu kamu kerjakan/i);
+    });
+
+    it('memakai Pesan_Kandidat dari master bila diisi', () => {
+        const dariMaster = 'Tim rekrutmen akan menghubungimu untuk membahas penawaran.';
+
+        expect(C.keadaanTahap.call(ctxTahap(dariMaster)).pesan).toBe(dariMaster);
+    });
+
+    it('tidak membocorkan apa yang sedang dikerjakan tim', () => {
+        const k = C.keadaanTahap.call(ctxTahap(null));
+
+        expect(`${k.judul} ${k.pesan}`).not.toMatch(/negosiasi|gaji|rapat|jadwal/i);
+    });
+});
+
 describe('waterfall tanpa tanggal', () => {
     const tahap = [
         { urutan: 1, label: 'Seleksi Berkas', status: 'SELESAI', hasil: 'LULUS' },

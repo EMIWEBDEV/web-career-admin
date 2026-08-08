@@ -1561,6 +1561,33 @@ export default {
                 };
             }
 
+            // TAHAP YANG SELURUH ISINYA DIKERJAKAN TIM — kandidat tidak punya
+            // satu pun aktivitas yang terlihat di sini. Negosiasi penawaran
+            // begitu: dijadwalkan tim untuk dirinya sendiri, dan jadwalnya
+            // sengaja tidak diumumkan.
+            //
+            // Dibedakan dari cabang di bawahnya, yang berbunyi "seluruh
+            // rangkaian tahap ini sudah KAMU selesaikan". Untuk tahap semacam
+            // ini kalimat itu keliru dua kali: kandidat tidak menyelesaikan apa
+            // pun di sini, dan mengatakan ia sudah selesai membuatnya menunggu
+            // keputusan yang sebetulnya belum mulai dirundingkan.
+            //
+            // Kalimatnya dari MASTER (Pesan_Kandidat tipe tahap), bukan ditulis
+            // di sini: tiap tipe punya cara menenangkan yang berbeda, dan
+            // mengubahnya tidak boleh menuntut rilis. Cadangan dipakai hanya
+            // bila masternya memang kosong — dan sengaja tidak menyebut apa yang
+            // sedang dikerjakan tim.
+            if (!akt.length) {
+                return {
+                    nada: 'tunggu',
+                    ikon: 'bi-hourglass-split',
+                    judul: 'Tahap ini sedang ditangani tim rekrutmen',
+                    pesan:
+                        this.tahapAktif?.pesan ||
+                        'Tidak ada yang perlu kamu kerjakan di tahap ini. Tim rekrutmen akan menghubungimu begitu ada kabar berikutnya.',
+                };
+            }
+
             if (!belum.length) {
                 return {
                     nada: 'proses',

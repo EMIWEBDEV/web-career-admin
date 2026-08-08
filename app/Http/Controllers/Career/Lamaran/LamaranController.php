@@ -5437,29 +5437,43 @@ class LamaranController extends Controller
 
             // ══ JADWAL YANG TIDAK DIUMUMKAN ══
             //
-            // Aktivitas yang sengaja disembunyikan dari portal TIDAK BOLEH
-            // mengumumkan dirinya lewat email. Dua jalur ini dulu tidak saling
-            // tahu: penyaring Tampil_Kandidat menutup portal, sementara undangan
-            // tetap terkirim — jadi cek referensi dan negosiasi gaji yang
-            // sengaja dirahasiakan justru mendarat di kotak masuk kandidat.
-            // Penyembunyian yang bocor di pintu sebelah bukan penyembunyian.
+            // HANYA tipe yang ditandai privat di master. Negosiasi dijadwalkan
+            // tim untuk dirinya sendiri: undangan "Negosiasi Penawaran, Selasa
+            // 10.00" memberitahu kandidat bahwa angkanya sedang dirundingkan,
+            // dan sejak saat itu tiap hari tanpa kabar terbaca sebagai penolakan
+            // yang tertunda. Yang perlu ia terima adalah HASILNYA.
             //
-            // Negosiasi memang begitu perlakuannya: ia dijadwalkan tim untuk
-            // dirinya sendiri. Undangan "Negosiasi Penawaran, Selasa 10.00"
-            // memberitahu kandidat bahwa angkanya sedang dirundingkan, dan sejak
-            // saat itu tiap hari tanpa kabar terbaca sebagai penolakan yang
-            // tertunda. Yang perlu ia terima adalah HASILNYA, bukan jadwal rapat
-            // tentang dirinya.
+            // ⚠ SENGAJA TIDAK memakai Tampil_Kandidat sebagai syarat.
+            //
+            // Menggodanya jelas: aktivitas yang disembunyikan dari portal tapi
+            // tetap mengirim undangan terlihat seperti kebocoran yang perlu
+            // ditutup. Tapi menutupnya justru membuat keadaannya lebih buruk.
+            // Aktivitas yang disembunyikan DAN dijadwalkan hampir selalu salah
+            // setelan, bukan rahasia — MCU yang tersembunyi, misalnya. Kandidat
+            // tetap harus datang ke pemeriksaan itu, dan email adalah SATU-
+            // SATUNYA kabar yang tersisa untuknya karena portalnya sudah
+            // ditutup. Membungkam email berarti ia tidak diberi tahu sama sekali
+            // lalu dianggap mangkir.
+            //
+            // Jadi diamnya hanya untuk yang MEMANG diniatkan diam. Sisanya tetap
+            // diundang, dan salah setelannya dicatat supaya terlihat orang —
+            // bukan diperbaiki diam-diam dengan cara yang merugikan kandidat.
             $tipeSub = self::masterTipeTahap()[$sub->Tipe_Tahap_Kode ?? ''] ?? null;
-            $privat = ($tipeSub->Flag_Jadwal_Privat ?? 'T') === 'Y';
 
-            if ($privat || ($sub->Tampil_Kandidat ?? 'Y') !== 'Y') {
+            if (($tipeSub->Flag_Jadwal_Privat ?? 'T') === 'Y') {
                 Log::channel('web_career')->info(
-                    "[JADWAL] Undangan TIDAK dikirim untuk aktivitas '{$sub->Label}' (lamaran {$sub->Kode}) — "
-                    . ($privat ? 'tipe berjadwal privat.' : 'aktivitas internal.')
+                    "[JADWAL] Undangan TIDAK dikirim untuk '{$sub->Label}' (lamaran {$sub->Kode}) — tipe berjadwal privat."
                 );
 
                 return 'privat';
+            }
+
+            if (($sub->Tampil_Kandidat ?? 'Y') !== 'Y') {
+                Log::channel('web_career')->warning(
+                    "[JADWAL] Aktivitas '{$sub->Label}' (lamaran {$sub->Kode}) DISEMBUNYIKAN dari portal tetapi "
+                    . 'dijadwalkan — undangan tetap dikirim supaya kandidat tidak kehilangan satu-satunya kabar. '
+                    . 'Periksa setelan alurnya: kemungkinan besar aktivitas ini seharusnya tampil.'
+                );
             }
 
             // TEMPATNYA ikut, bukan hanya patokan yang diketik rekruter.

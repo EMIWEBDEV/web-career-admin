@@ -21,10 +21,15 @@ use PHPUnit\Framework\TestCase;
  */
 class JadwalPrivatTest extends TestCase
 {
-    /** Padanan penjaga di LamaranController::kirimUndanganJadwal(). */
+    /**
+     * Padanan penjaga di LamaranController::kirimUndanganJadwal().
+     *
+     * Perhatikan `$tampilKandidat` TIDAK ikut menentukan. Lihat
+     * test_aktivitas_tersembunyi_tetap_diundang() untuk alasannya.
+     */
     private function bolehDiundang(string $flagPrivat, string $tampilKandidat): bool
     {
-        return $flagPrivat !== 'Y' && $tampilKandidat === 'Y';
+        return $flagPrivat !== 'Y';
     }
 
     /** Padanan perhitungan Tampil_Kandidat di MasterAlurController::simpanTahap(). */
@@ -51,18 +56,26 @@ class JadwalPrivatTest extends TestCase
         $this->assertFalse($this->bolehDiundang('Y', 'T'));
     }
 
-    public function test_aktivitas_internal_tidak_diundang_walau_tipenya_biasa(): void
-    {
-        // Cek referensi & background check: disembunyikan admin lewat alur.
-        // Dulu tetap terkirim — dan undangannya mengumumkan bahwa referensinya
-        // sedang dihubungi.
-        $this->assertFalse($this->bolehDiundang('T', 'T'));
-    }
-
     public function test_aktivitas_biasa_tetap_diundang(): void
     {
         // Perbaikan ini tidak boleh membungkam wawancara & MCU.
         $this->assertTrue($this->bolehDiundang('T', 'Y'));
+    }
+
+    public function test_aktivitas_tersembunyi_tetap_diundang(): void
+    {
+        // PENJAGA ARAH — jangan "dirapikan" jadi false.
+        //
+        // Aktivitas yang disembunyikan dari portal tapi tetap mengirim undangan
+        // terlihat seperti kebocoran. Membungkamnya justru lebih merugikan:
+        // aktivitas tersembunyi YANG DIJADWALKAN hampir selalu salah setelan,
+        // bukan rahasia — MCU tersembunyi, misalnya. Kandidat tetap harus datang
+        // ke pemeriksaan itu, dan emailnya adalah satu-satunya kabar yang
+        // tersisa karena portalnya sudah tertutup. Dibungkam, ia tidak diberi
+        // tahu sama sekali lalu dianggap mangkir.
+        //
+        // Yang didiamkan hanya yang MEMANG diniatkan diam (tipe privat).
+        $this->assertTrue($this->bolehDiundang('T', 'T'));
     }
 
     // ── Visibilitas di portal ─────────────────────────────────────────────
