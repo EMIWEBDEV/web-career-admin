@@ -131,7 +131,7 @@
                     <KeadaanPanel v-if="zona.ringkas.keadaan === 'memuat' && !zona.ringkas.data" keadaan="memuat" />
                     <KeadaanPanel v-else-if="zona.ringkas.keadaan === 'galat'" keadaan="galat"
                         :ket="zona.ringkas.pesan" @ulang="muatRingkas()" />
-                    <AntreanAksi v-else-if="zona.ringkas.data" :aksi="zona.ringkas.data.aksi" :ambang="ambang" />
+                    <AntreanAksi v-else-if="zona.ringkas.data" :aksi="zona.ringkas.data.aksi" :ambang="ambang" :kategori="kategori" />
                 </div>
             </section>
 

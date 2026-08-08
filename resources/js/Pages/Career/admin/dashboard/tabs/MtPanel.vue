@@ -53,6 +53,38 @@
                 :style="{ background: w, color: selTinta(w) }">{{ rentang(i) }}</span>
         </div>
 
+        <!-- Toolbar Filter & Pencarian Posisi MT -->
+        <div class="mt-toolbar">
+            <div class="mt-search">
+                <i class="bi bi-search"></i>
+                <input v-model="cari" type="text" placeholder="Cari posisi MT, program, departemen..." />
+                <button v-if="cari" type="button" class="mt-search-clear" @click="cari = ''">
+                    <i class="bi bi-x-circle-fill"></i>
+                </button>
+            </div>
+
+            <div class="mt-filter-pills">
+                <button type="button" class="mt-pill-btn" :class="{ 'is-on': filterMinat === 'SEMUA' }" @click="filterMinat = 'SEMUA'">
+                    Semua Posisi ({{ khas.matriks.length }})
+                </button>
+                <button type="button" class="mt-pill-btn is-sepi" :class="{ 'is-on': filterMinat === 'SEPI' }" @click="filterMinat = 'SEPI'">
+                    <i class="bi bi-person-dash-fill"></i> Sepi Pelamar ({{ sepi.length }})
+                </button>
+                <button type="button" class="mt-pill-btn is-ramai" :class="{ 'is-on': filterMinat === 'RAMAI' }" @click="filterMinat = 'RAMAI'">
+                    <i class="bi bi-fire"></i> High Demand (≥5×)
+                </button>
+            </div>
+
+            <div class="mt-per-hal">
+                <span>Tampil:</span>
+                <button v-for="opt in [8, 15, 30, 0]" :key="opt" type="button"
+                    class="mt-per-hal__btn" :class="{ 'is-on': perHal === opt }"
+                    @click="perHal = opt">
+                    {{ opt === 0 ? 'Semua' : opt }}
+                </button>
+            </div>
+        </div>
+
         <!-- Matriks. Kolom pertama LEKAT saat digulir mendatar -->
         <div class="wcd-tw mt-tw">
             <table class="wcd-tbl mt-tbl">
@@ -72,7 +104,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    <tr v-for="(m, i) in matriksUrut" :key="i">
+                    <tr v-for="(m, i) in barisPaginated" :key="i">
                         <td class="mt-lekat wcd-tbl__utama">
                             <strong class="mt-posisi-title">{{ m.posisi }}</strong>
                             <span class="wcd-tbl__sub">
@@ -95,8 +127,29 @@
                         </td>
                         <td class="wcd-num"><b class="mt-val-bold">{{ m.skor ? desimal(m.skor.rata, 2) : '—' }}</b></td>
                     </tr>
+                    <tr v-if="!barisTersaring.length">
+                        <td :colspan="5 + (khas.tahap?.length || 0)" class="mt-empty-td">
+                            Tidak ada posisi MT yang cocok dengan filter atau pencarian "{{ cari }}".
+                        </td>
+                    </tr>
                 </tbody>
             </table>
+        </div>
+
+        <!-- Bar Paginasi -->
+        <div v-if="barisTersaring.length && (totalHal > 1 || perHal > 0)" class="mt-paginasi">
+            <span class="mt-paginasi__info">
+                Menampilkan <b>{{ perHal === 0 ? 1 : ((hal - 1) * perHal) + 1 }} - {{ perHal === 0 ? barisTersaring.length : Math.min(hal * perHal, barisTersaring.length) }}</b> dari <b>{{ barisTersaring.length }}</b> posisi MT
+            </span>
+            <div v-if="totalHal > 1" class="mt-paginasi__nav">
+                <button type="button" class="mt-paginasi__btn" :disabled="hal <= 1" @click="hal--">
+                    <i class="bi bi-chevron-left"></i> Sebelum
+                </button>
+                <span class="mt-paginasi__page">{{ hal }} / {{ totalHal }}</span>
+                <button type="button" class="mt-paginasi__btn" :disabled="hal >= totalHal" @click="hal++">
+                    Lanjut <i class="bi bi-chevron-right"></i>
+                </button>
+            </div>
         </div>
 
         <p class="mt-nota">
@@ -106,11 +159,16 @@
 </template>
 
 <script setup>
-import { computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { angka, desimal, RAMP, selRamp, selTinta, STATUS } from '../dashboardHelpers';
 import KeadaanPanel from '../../monitoring/KeadaanPanel.vue';
 
 const props = defineProps({ khas: { type: Object, required: true } });
+
+const cari = ref('');
+const filterMinat = ref('SEMUA');
+const hal = ref(1);
+const perHal = ref(8); // Default 8 posisi MT per halaman
 
 const totalKuota = computed(() => props.khas.matriks.reduce((n, m) => n + (m.kuota || 0), 0));
 const totalPelamar = computed(() => props.khas.matriks.reduce((n, m) => n + (m.pelamar || 0), 0));
@@ -127,6 +185,43 @@ const matriksUrut = computed(() => [...props.khas.matriks].sort((a, b) => {
     if (sa !== sb) return sb - sa;
     return (b.pelamar || 0) - (a.pelamar || 0);
 }));
+
+const barisTersaring = computed(() => {
+    let list = matriksUrut.value;
+
+    if (filterMinat.value === 'SEPI') {
+        list = list.filter((m) => m.rasio !== null && m.rasio < 1);
+    } else if (filterMinat.value === 'RAMAI') {
+        list = list.filter((m) => m.rasio !== null && m.rasio >= 5);
+    }
+
+    if (cari.value.trim()) {
+        const q = cari.value.toLowerCase().trim();
+        list = list.filter((m) => {
+            const pos = (m.posisi || '').toLowerCase();
+            const prog = (m.program || '').toLowerCase();
+            const dep = (m.departemen || '').toLowerCase();
+            return pos.includes(q) || prog.includes(q) || dep.includes(q);
+        });
+    }
+
+    return list;
+});
+
+watch([cari, filterMinat, perHal], () => {
+    hal.value = 1;
+});
+
+const totalHal = computed(() => {
+    if (perHal.value === 0) return 1;
+    return Math.max(1, Math.ceil(barisTersaring.value.length / perHal.value));
+});
+
+const barisPaginated = computed(() => {
+    if (perHal.value === 0) return barisTersaring.value;
+    const start = (hal.value - 1) * perHal.value;
+    return barisTersaring.value.slice(start, start + perHal.value);
+});
 
 function gayaSel(nilai) {
     const w = selRamp(nilai, maksSel.value);
@@ -211,6 +306,152 @@ function nadaRasio(m) {
     box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
 }
 .mt-legend__sel.is-nol { background: #ffffff; color: #94a3b8; border: 1px solid #cbd5e1; }
+
+/* ══════════ TOOLBAR FILTER & SEARCH ══════════ */
+.mt-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+
+.mt-search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 10px;
+    background: #ffffff;
+    flex: 1;
+    max-width: 320px;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+}
+.mt-search i { color: #94a3b8; font-size: 0.85rem; }
+.mt-search input {
+    width: 100%;
+    border: 0;
+    outline: 0;
+    font: inherit;
+    font-size: 0.76rem;
+    font-weight: 700;
+    color: #0f172a;
+    background: transparent;
+}
+.mt-search-clear {
+    border: 0;
+    background: transparent;
+    color: #cbd5e1;
+    cursor: pointer;
+    padding: 0;
+}
+.mt-search-clear:hover { color: #ef4444; }
+
+.mt-filter-pills {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.mt-pill-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 12px;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 999px;
+    background: #ffffff;
+    color: #475569;
+    font: inherit;
+    font-size: 0.74rem;
+    font-weight: 800;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.mt-pill-btn:hover { background: #f8fafc; border-color: #cbd5e1; }
+.mt-pill-btn.is-on { background: #4f46e5; border-color: #4f46e5; color: #ffffff; }
+
+.mt-pill-btn.is-sepi.is-on { background: #dc2626; border-color: #dc2626; color: #ffffff; }
+.mt-pill-btn.is-ramai.is-on { background: #10b981; border-color: #10b981; color: #ffffff; }
+
+.mt-per-hal {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: #64748b;
+    margin-left: auto;
+}
+.mt-per-hal__btn {
+    padding: 4px 9px;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 8px;
+    background: #ffffff;
+    color: #334155;
+    font: inherit;
+    font-size: 0.7rem;
+    font-weight: 800;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.mt-per-hal__btn.is-on {
+    background: #4f46e5;
+    border-color: #4f46e5;
+    color: #ffffff;
+}
+
+.mt-empty-td { text-align: center; color: #64748b; padding: 28px 14px !important; font-size: 0.8rem; font-weight: 700; }
+
+.mt-paginasi {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 10px;
+    padding: 8px 14px;
+    background: #f8fafc;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 10px;
+    font-size: 0.74rem;
+    color: #475569;
+}
+.mt-paginasi__info b { color: #0f172a; font-weight: 800; }
+.mt-paginasi__nav {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.mt-paginasi__btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 8px;
+    background: #ffffff;
+    color: #1e293b;
+    font: inherit;
+    font-size: 0.72rem;
+    font-weight: 800;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.mt-paginasi__btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+.mt-paginasi__btn:hover:not(:disabled) {
+    border-color: #4f46e5;
+    color: #4f46e5;
+}
+.mt-paginasi__page {
+    font-weight: 800;
+    color: #0f172a;
+}
 
 /* ══════════ METRICS TABLE CONTAINER (wcd-tw mt-tw) ══════════ */
 .wcd-tw.mt-tw {

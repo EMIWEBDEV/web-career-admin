@@ -13,40 +13,80 @@
             teks="Belum ada kemitraan terdaftar"
             ket="Kemitraan dikelola di menu Master Kemitraan / MoU." />
 
-        <div v-else class="wcd-grid wcd-grid--2">
-            <div v-for="(m, i) in kemitraanUrut" :key="i" class="mg-mou" :class="{ 'is-habis': habis(m), 'is-segera': segera(m) }">
-                <div class="mg-mou__hd">
-                    <strong>{{ m.mitra }}</strong>
-                    <span v-if="m.jenis" class="wcd-lb">{{ m.jenis }}</span>
+        <div v-else class="mg-section-wrap">
+            <!-- Toolbar Kemitraan -->
+            <div class="mg-toolbar">
+                <div class="mg-search">
+                    <i class="bi bi-search"></i>
+                    <input v-model="cariKemitraan" type="text" placeholder="Cari mitra, kampus, kota..." />
+                    <button v-if="cariKemitraan" type="button" class="mg-search-clear" @click="cariKemitraan = ''">
+                        <i class="bi bi-x-circle-fill"></i>
+                    </button>
                 </div>
-                <p class="mg-mou__kampus">
-                    <i class="bi bi-building"></i>
-                    {{ m.kampus || 'Kampus belum ditautkan' }}<template v-if="m.kota"> · {{ m.kota }}</template>
-                </p>
+                <div class="mg-per-hal">
+                    <span>Tampil:</span>
+                    <button v-for="opt in [4, 8, 16, 0]" :key="opt" type="button"
+                        class="mg-per-hal__btn" :class="{ 'is-on': perHalKemitraan === opt }"
+                        @click="perHalKemitraan = opt">
+                        {{ opt === 0 ? 'Semua' : opt }}
+                    </button>
+                </div>
+            </div>
 
-                <div class="mg-mou__kuota">
-                    <div class="wcd-meter">
-                        <span :style="{ width: pct(m) + '%', background: m.terisi >= m.kuota && m.kuota ? STATUS.good.warna : 'linear-gradient(90deg, #10b981, #059669)' }"></span>
+            <div v-if="kemitraanPaginated.length" class="wcd-grid wcd-grid--2">
+                <div v-for="(m, i) in kemitraanPaginated" :key="i" class="mg-mou" :class="{ 'is-habis': habis(m), 'is-segera': segera(m) }">
+                    <div class="mg-mou__hd">
+                        <strong>{{ m.mitra }}</strong>
+                        <span v-if="m.jenis" class="wcd-lb">{{ m.jenis }}</span>
                     </div>
-                    <span><b>{{ angka(m.terisi) }}</b> / {{ angka(m.kuota) }} kuota</span>
-                </div>
+                    <p class="mg-mou__kampus">
+                        <i class="bi bi-building"></i>
+                        {{ m.kampus || 'Kampus belum ditautkan' }}<template v-if="m.kota"> · {{ m.kota }}</template>
+                    </p>
 
-                <div class="mg-mou__ft">
-                    <span class="wcd-lb" :style="nadaMasa(m)">
-                        <i class="bi" :class="ikonMasa(m)"></i>
-                        <template v-if="m.sisaHari === null">Tanpa tanggal akhir</template>
-                        <template v-else-if="m.sisaHari < 0">Berakhir {{ Math.abs(m.sisaHari) }} hari lalu</template>
-                        <template v-else-if="m.sisaHari === 0">Berakhir hari ini</template>
-                        <template v-else>{{ m.sisaHari }} hari lagi</template>
-                    </span>
-                    <span class="mg-mou__tgl">{{ tanggal(m.mulai) }} – {{ m.selesai ? tanggal(m.selesai) : '∞' }}</span>
-                    <span v-if="m.status" class="wcd-lb">{{ m.status }}</span>
-                </div>
+                    <div class="mg-mou__kuota">
+                        <div class="wcd-meter">
+                            <span :style="{ width: pct(m) + '%', background: m.terisi >= m.kuota && m.kuota ? STATUS.good.warna : 'linear-gradient(90deg, #10b981, #059669)' }"></span>
+                        </div>
+                        <span><b>{{ angka(m.terisi) }}</b> / {{ angka(m.kuota) }} kuota</span>
+                    </div>
 
-                <p v-if="segera(m) && m.terisi < m.kuota" class="mg-mou__ingat">
-                    <i class="bi" :class="STATUS.serious.ikon"></i>
-                    Masih {{ angka(m.kuota - m.terisi) }} kuota belum dipakai dan masa berlakunya hampir habis.
-                </p>
+                    <div class="mg-mou__ft">
+                        <span class="wcd-lb" :style="nadaMasa(m)">
+                            <i class="bi" :class="ikonMasa(m)"></i>
+                            <template v-if="m.sisaHari === null">Tanpa tanggal akhir</template>
+                            <template v-else-if="m.sisaHari < 0">Berakhir {{ Math.abs(m.sisaHari) }} hari lalu</template>
+                            <template v-else-if="m.sisaHari === 0">Berakhir hari ini</template>
+                            <template v-else>{{ m.sisaHari }} hari lagi</template>
+                        </span>
+                        <span class="mg-mou__tgl">{{ tanggal(m.mulai) }} – {{ m.selesai ? tanggal(m.selesai) : '∞' }}</span>
+                        <span v-if="m.status" class="wcd-lb">{{ m.status }}</span>
+                    </div>
+
+                    <p v-if="segera(m) && m.terisi < m.kuota" class="mg-mou__ingat">
+                        <i class="bi" :class="STATUS.serious.ikon"></i>
+                        Masih {{ angka(m.kuota - m.terisi) }} kuota belum dipakai dan masa berlakunya hampir habis.
+                    </p>
+                </div>
+            </div>
+            <KeadaanPanel v-else-if="cariKemitraan" keadaan="kosong" rapat
+                teks="Kemitraan tidak ditemukan"
+                ket="Coba ubah kata kunci pencarian." />
+
+            <!-- Paginasi Kemitraan -->
+            <div v-if="kemitraanTersaring.length && (totalHalKemitraan > 1 || perHalKemitraan > 0)" class="mg-paginasi">
+                <span class="mg-paginasi__info">
+                    Menampilkan <b>{{ perHalKemitraan === 0 ? 1 : ((halKemitraan - 1) * perHalKemitraan) + 1 }} - {{ perHalKemitraan === 0 ? kemitraanTersaring.length : Math.min(halKemitraan * perHalKemitraan, kemitraanTersaring.length) }}</b> dari <b>{{ kemitraanTersaring.length }}</b> mitra
+                </span>
+                <div v-if="totalHalKemitraan > 1" class="mg-paginasi__nav">
+                    <button type="button" class="mg-paginasi__btn" :disabled="halKemitraan <= 1" @click="halKemitraan--">
+                        <i class="bi bi-chevron-left"></i> Sebelum
+                    </button>
+                    <span class="mg-paginasi__page">{{ halKemitraan }} / {{ totalHalKemitraan }}</span>
+                    <button type="button" class="mg-paginasi__btn" :disabled="halKemitraan >= totalHalKemitraan" @click="halKemitraan++">
+                        Lanjut <i class="bi bi-chevron-right"></i>
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -60,7 +100,7 @@
             teks="Belum ada batch magang"
             ket="Batch dibuat di dalam program di menu Program Kegiatan." />
 
-        <div v-else class="wcd-tw">
+        <div v-else class="wcd-tw mg-tw">
             <table class="wcd-tbl">
                 <thead>
                     <tr><th>Batch</th><th>Program</th><th class="wcd-num">Terisi</th><th>Progres</th><th>Status</th></tr>
@@ -138,12 +178,16 @@
 </template>
 
 <script setup>
-import { computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { angka, desimal, tanggal, persen, STATUS } from '../dashboardHelpers';
 import DaftarBatang from '../panels/DaftarBatang.vue';
 import KeadaanPanel from '../../monitoring/KeadaanPanel.vue';
 
 const props = defineProps({ khas: { type: Object, required: true } });
+
+const cariKemitraan = ref('');
+const halKemitraan = ref(1);
+const perHalKemitraan = ref(4);
 
 const pct = (x) => (x.kuota ? Math.min(100, persen(x.terisi, x.kuota)) : 0);
 const habis = (m) => m.sisaHari !== null && m.sisaHari < 0;
@@ -154,6 +198,33 @@ const kemitraanUrut = computed(() => [...props.khas.kemitraan].sort((a, b) => {
     const sb = b.sisaHari === null ? 99999 : b.sisaHari;
     return sa - sb;
 }));
+
+const kemitraanTersaring = computed(() => {
+    let list = kemitraanUrut.value;
+    if (!cariKemitraan.value.trim()) return list;
+    const q = cariKemitraan.value.toLowerCase().trim();
+    return list.filter((m) => {
+        const mitra = (m.mitra || '').toLowerCase();
+        const kampus = (m.kampus || '').toLowerCase();
+        const kota = (m.kota || '').toLowerCase();
+        return mitra.includes(q) || kampus.includes(q) || kota.includes(q);
+    });
+});
+
+watch([cariKemitraan, perHalKemitraan], () => {
+    halKemitraan.value = 1;
+});
+
+const totalHalKemitraan = computed(() => {
+    if (perHalKemitraan.value === 0) return 1;
+    return Math.max(1, Math.ceil(kemitraanTersaring.value.length / perHalKemitraan.value));
+});
+
+const kemitraanPaginated = computed(() => {
+    if (perHalKemitraan.value === 0) return kemitraanTersaring.value;
+    const start = (halKemitraan.value - 1) * perHalKemitraan.value;
+    return kemitraanTersaring.value.slice(start, start + perHalKemitraan.value);
+});
 
 function nadaMasa(m) {
     if (habis(m)) return { background: '#f1f5f9', color: '#64748b' };
@@ -229,4 +300,120 @@ function ikonMasa(m) {
 .mg-prog { display: flex; align-items: center; gap: 10px; min-width: 130px; }
 .mg-prog span { font-size: 0.76rem; font-weight: 800; color: #475569; }
 .mg-ipk { margin-top: 16px; }
+
+/* ══════════ TOOLBAR FILTER & SEARCH ══════════ */
+.mg-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+
+.mg-search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 10px;
+    background: #ffffff;
+    flex: 1;
+    max-width: 320px;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+}
+.mg-search i { color: #94a3b8; font-size: 0.85rem; }
+.mg-search input {
+    width: 100%;
+    border: 0;
+    outline: 0;
+    font: inherit;
+    font-size: 0.76rem;
+    font-weight: 700;
+    color: #0f172a;
+    background: transparent;
+}
+.mg-search-clear {
+    border: 0;
+    background: transparent;
+    color: #cbd5e1;
+    cursor: pointer;
+    padding: 0;
+}
+.mg-search-clear:hover { color: #ef4444; }
+
+.mg-per-hal {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: #64748b;
+    margin-left: auto;
+}
+.mg-per-hal__btn {
+    padding: 4px 9px;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 8px;
+    background: #ffffff;
+    color: #334155;
+    font: inherit;
+    font-size: 0.7rem;
+    font-weight: 800;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.mg-per-hal__btn.is-on {
+    background: #10b981;
+    border-color: #10b981;
+    color: #ffffff;
+}
+
+.mg-paginasi {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 10px;
+    padding: 8px 14px;
+    background: #f8fafc;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 10px;
+    font-size: 0.74rem;
+    color: #475569;
+}
+.mg-paginasi__info b { color: #0f172a; font-weight: 800; }
+.mg-paginasi__nav {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.mg-paginasi__btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 8px;
+    background: #ffffff;
+    color: #1e293b;
+    font: inherit;
+    font-size: 0.72rem;
+    font-weight: 800;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.mg-paginasi__btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+.mg-paginasi__btn:hover:not(:disabled) {
+    border-color: #10b981;
+    color: #10b981;
+}
+.mg-paginasi__page {
+    font-weight: 800;
+    color: #0f172a;
+}
 </style>
