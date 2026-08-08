@@ -3651,38 +3651,168 @@ class LamaranController extends Controller
             'catatanHtml' => 'nullable|string',
         ]);
 
-        $tahap = DB::table('N_WEB_CAREERS_Lamaran_Tahap')->where('Id_Lamaran_Tahap', $realId)->first();
-        if (! $tahap) {
-            return ResponseHelper::error('Tahap tidak ditemukan.', 404);
-        }
-        if ($tahap->Status === 'SELESAI') {
-            return ResponseHelper::error('Tahap ini sudah diputus — tidak bisa ditahan lagi.', 409);
-        }
+        $r = $this->terapkanHold(
+            (int) $realId,
+            (bool) $data['hold'],
+            $data['alasanKode'] ?? null,
+            $data['catatanHtml'] ?? null,
+            $data['catatan'] ?? null,
+        );
+
+        return $r['ok']
+            ? ResponseHelper::success(array_key_exists('outcome', $r) ? ['outcome' => $r['outcome']] : null, $r['pesan'])
+            : ResponseHelper::error($r['pesan'], $r['status']);
+    }
+
+    /**
+     * PATCH /api/v1/karir/lamaran/tahap/hold-massal — TAHAN / LEPAS BANYAK.
+     *
+     * ══ KENAPA PER KANDIDAT, BUKAN SATU ALASAN UNTUK SEMUA ══
+     *
+     * Penahanan massal lahir dari satu peristiwa ("MPP belum turun"), tapi
+     * tidak selalu berakhir begitu: dalam satu angkatan bisa ada tiga orang
+     * tertahan kuota, dua menunggu user department, dan satu menunggu kandidat
+     * itu sendiri menjawab. Memaksakan satu alasan membuat lima dari enam
+     * penahanan itu tercatat SALAH — dan justru laporan "kenapa lowongan ini
+     * lama terisi" yang jadi korbannya.
+     *
+     * Karena itu tiap item membawa alasan & keterangannya sendiri. Layar boleh
+     * menawarkan mode seragam sebagai jalan cepat, tapi yang dikirim ke sini
+     * tetap daftar per kandidat — server tidak perlu tahu mode mana yang
+     * dipakai admin, dan tidak ada aturan kedua yang harus dijaga tetap sama.
+     *
+     * ══ SATU GAGAL TIDAK MEMBATALKAN SISANYA ══
+     *
+     * Tiap item punya transaksinya sendiri. Membungkus semuanya dalam satu
+     * transaksi berarti satu kandidat yang tahapnya kebetulan sudah diputus
+     * rekan sebelah membatalkan 19 penahanan yang sudah benar — dan admin
+     * harus mengulang seluruh pemilihan tanpa tahu yang mana penyebabnya.
+     * Yang gagal dilaporkan satu per satu berikut sebabnya.
+     */
+    public function holdMassal(Request $request)
+    {
+        $data = $request->validate([
+            'hold' => 'required|boolean',
+            // Batas 200 mengikuti penjadwalan massal — satu angkatan rekrutmen
+            // tidak pernah sebesar itu, dan batasnya menjaga permintaan tunggal
+            // tidak berubah jadi pekerjaan menit-menitan.
+            'item' => 'required|array|min:1|max:200',
+            'item.*.tahapId' => 'required|string|max:64',
+            'item.*.alasanKode' => 'nullable|string|max:40',
+            'item.*.catatan' => 'nullable|string',
+            'item.*.catatanHtml' => 'nullable|string',
+        ]);
 
         $menahan = (bool) $data['hold'];
-        [$html, $ringkas] = self::catatanKaya($data['catatanHtml'] ?? null, $data['catatan'] ?? null);
+        $berhasil = [];
+        $gagal = [];
+
+        foreach ($data['item'] as $it) {
+            $realId = Hashids::decode($it['tahapId'])[0] ?? null;
+            if (! $realId) {
+                $gagal[] = ['tahapId' => $it['tahapId'], 'nama' => null, 'pesan' => 'Tahap tidak valid.'];
+                continue;
+            }
+
+            $r = $this->terapkanHold(
+                (int) $realId,
+                $menahan,
+                $it['alasanKode'] ?? null,
+                $it['catatanHtml'] ?? null,
+                $it['catatan'] ?? null,
+            );
+
+            // Nama kandidat ikut dibawa supaya laporan kegagalan menyebut ORANG,
+            // bukan nomor tahap yang tidak dikenali siapa pun di layar.
+            $nama = DB::table('N_WEB_CAREERS_Lamaran_Tahap as t')
+                ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 't.Lamaran_Id')
+                ->join('N_WEB_CAREERS_Users as u', 'u.Id_Users', '=', 'l.Id_Users')
+                ->where('t.Id_Lamaran_Tahap', $realId)
+                ->value('u.Nama');
+
+            if ($r['ok']) {
+                $berhasil[] = ['tahapId' => $it['tahapId'], 'nama' => $nama, 'outcome' => $r['outcome'] ?? null];
+            } else {
+                $gagal[] = ['tahapId' => $it['tahapId'], 'nama' => $nama, 'pesan' => $r['pesan']];
+            }
+        }
+
+        $kata = $menahan ? 'ditahan' : 'dilanjutkan';
+        Log::channel('web_career')->info(sprintf(
+            '[HOLD MASSAL] %s: %d berhasil, %d gagal, oleh %s.',
+            $menahan ? 'TAHAN' : 'LEPAS', count($berhasil), count($gagal), session('career_auth.nama', 'ADMIN')
+        ));
+
+        // Seluruhnya gagal dibalas 422: dari sisi admin tidak ada yang terjadi,
+        // dan membalasnya 200 membuat layar menampilkan keberhasilan palsu.
+        //
+        // Dibentuk langsung, bukan lewat ResponseHelper::error() — helper itu
+        // hanya membawa pesan, sedangkan layar perlu tahu SIAPA saja yang
+        // dilewati dan kenapa. Tanpa daftarnya, admin cuma dapat satu kalimat
+        // untuk dua puluh kandidat.
+        if (! $berhasil) {
+            return response()->json([
+                'success' => false,
+                'status' => 422,
+                'message' => 'Tidak ada kandidat yang berhasil ' . $kata . '. ' . ($gagal[0]['pesan'] ?? ''),
+                'result' => ['berhasil' => [], 'gagal' => $gagal],
+            ], 422);
+        }
+
+        $pesan = count($gagal) === 0
+            ? count($berhasil) . ' kandidat ' . $kata . '.'
+            : count($berhasil) . ' kandidat ' . $kata . ', ' . count($gagal) . ' dilewati.';
+
+        return ResponseHelper::success(['berhasil' => $berhasil, 'gagal' => $gagal], $pesan);
+    }
+
+    /**
+     * Terapkan penahanan / pelepasan pada SATU tahap.
+     *
+     * Inti aturannya dipusatkan di sini karena dipakai DUA pintu: penahanan
+     * satuan dari drawer kandidat, dan penahanan massal dari papan. Dua salinan
+     * aturan pasti berselisih — yang satu diperbaiki, yang lain tertinggal,
+     * dan selisihnya baru ketahuan saat ada yang membandingkan hasil keduanya.
+     *
+     * @return array{ok: bool, pesan: string, status: int, outcome?: string|null}
+     */
+    private function terapkanHold(int $realId, bool $menahan, ?string $alasanKode, ?string $catatanHtml, ?string $catatan): array
+    {
+        $gagal = fn (string $pesan, int $status) => ['ok' => false, 'pesan' => $pesan, 'status' => $status];
+
+        $tahap = DB::table('N_WEB_CAREERS_Lamaran_Tahap')->where('Id_Lamaran_Tahap', $realId)->first();
+        if (! $tahap) {
+            return $gagal('Tahap tidak ditemukan.', 404);
+        }
+        if ($tahap->Status === 'SELESAI') {
+            return $gagal('Tahap ini sudah diputus — tidak bisa ditahan lagi.', 409);
+        }
+
+        [$html, $ringkas] = self::catatanKaya($catatanHtml, $catatan);
         $now = now();
         $nama = session('career_auth.nama', 'ADMIN');
         $adminId = session('career_auth.id');
 
         if ($menahan) {
             if (($tahap->Hold_Flag ?? 'T') === 'Y') {
-                return ResponseHelper::error('Kandidat ini sudah ditahan.', 409);
+                return $gagal('Kandidat ini sudah ditahan.', 409);
             }
 
-            $alasan = self::masterAlasanHold()->get((string) ($data['alasanKode'] ?? ''));
+            $alasan = self::masterAlasanHold()->get((string) ($alasanKode ?? ''));
             if (! $alasan) {
-                return ResponseHelper::error('Pilih alasan penahanan.', 422);
+                return $gagal('Pilih alasan penahanan.', 422);
             }
             // Alasan ber-Butuh_Catatan wajib dijelaskan. "Lainnya" tanpa
             // keterangan tidak menjelaskan apa pun saat ditinjau berbulan-bulan
             // kemudian — sama saja tidak memilih alasan.
             if (($alasan->Butuh_Catatan ?? 'T') === 'Y' && trim((string) $ringkas) === '') {
-                return ResponseHelper::error("Alasan \"{$alasan->Nama}\" menuntut keterangan tambahan.", 422);
+                return $gagal("Alasan \"{$alasan->Nama}\" menuntut keterangan tambahan.", 422);
             }
         } elseif (($tahap->Hold_Flag ?? 'T') !== 'Y') {
-            return ResponseHelper::error('Kandidat ini tidak sedang ditahan.', 409);
+            return $gagal('Kandidat ini tidak sedang ditahan.', 409);
         }
+
+        $data = ['alasanKode' => $alasanKode];
 
         DB::transaction(function () use ($realId, $tahap, $menahan, $data, $html, $ringkas, $now, $nama, $adminId) {
             DB::table('N_WEB_CAREERS_Lamaran_Tahap')->where('Id_Lamaran_Tahap', $realId)->update($menahan ? [
@@ -3745,13 +3875,19 @@ class LamaranController extends Controller
                 $this->kirimEmailHasilTahap((int) $tahap->Lamaran_Id, $outcome === 'LANJUT');
             }
 
-            return ResponseHelper::success(
-                ['outcome' => $outcome],
-                'Penahanan dilepas — proses bisa dilanjutkan.'
-            );
+            return [
+                'ok' => true,
+                'status' => 200,
+                'outcome' => $outcome,
+                'pesan' => 'Penahanan dilepas — proses bisa dilanjutkan.',
+            ];
         }
 
-        return ResponseHelper::success(null, 'Kandidat ditahan. Tidak ada pemberitahuan yang dikirim.');
+        return [
+            'ok' => true,
+            'status' => 200,
+            'pesan' => 'Kandidat ditahan. Tidak ada pemberitahuan yang dikirim.',
+        ];
     }
 
     /**

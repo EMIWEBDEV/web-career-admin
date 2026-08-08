@@ -79,6 +79,11 @@ Route::prefix('api/v1/karir')
         // dan tanpa mengirim pemberitahuan apa pun kepadanya. Izinnya EDIT,
         // bukan APPROVE: menahan bukan memutuskan nasib siapa pun.
         Route::patch('/lamaran/tahap/{id}/hold', [LamaranController::class, 'hold'])->name('lamaran.hold')->middleware('career.permission:pelamarPage,EDIT');
+        // TAHAN / LEPAS BANYAK sekaligus. Didaftarkan SEBELUM rute ber-{id} di
+        // atas tidak perlu — polanya berbeda ruas ('hold-massal' vs '{id}/hold'),
+        // jadi tidak ada yang saling menelan. Izinnya sama persis dengan hold
+        // satuan: yang berubah jumlahnya, bukan wewenangnya.
+        Route::patch('/lamaran/tahap/hold-massal', [LamaranController::class, 'holdMassal'])->name('lamaran.hold.massal')->middleware('career.permission:pelamarPage,EDIT');
         // Escape hatch multi-tes: tandai sub-tes tidak hadir → mesin evaluasi ulang.
         Route::patch('/lamaran/sub-tes/{id}/tidak-hadir', [LamaranController::class, 'subTesTidakHadir'])->name('lamaran.subtes.tidakhadir')->middleware('career.permission:pelamarPage,EDIT');
         // Catat hasil sub-tes MANUAL (wawancara/FGD di tahap campuran) → mesin yang sama.

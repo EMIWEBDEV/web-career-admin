@@ -143,6 +143,37 @@ export function labelField(kode) {
     return peta;
 }
 
+/**
+ * Peta `key → tipe` seluruh field sebuah formulir — pasangan dari labelField().
+ *
+ * KENAPA PERLU
+ * Yang tersimpan di database cuma kunci→jawaban, tanpa keterangan bentuknya.
+ * Nominal gaji karena itu tampil di layar peninjau sebagai `9500000`: angka
+ * telanjang yang harus dihitung digitnya sendiri untuk tahu ini sembilan juta
+ * atau sembilan puluh juta. Dengan peta ini layar tahu field mana yang uang,
+ * lalu menampilkannya sebagai "Rp 9.500.000" — sama seperti yang dilihat
+ * kandidat saat mengetiknya.
+ */
+export function tipeField(kode) {
+    const peta = {};
+    const skema = FORMULIR[kode]?.skema;
+    if (!skema) {
+        return peta;
+    }
+
+    (skema.langkah || []).forEach((L) => {
+        (L.bagian || []).forEach((B) => {
+            (B.field || []).forEach((f) => {
+                if (f.key && f.tipe) {
+                    peta[f.key] = f.tipe;
+                }
+            });
+        });
+    });
+
+    return peta;
+}
+
 /** Daftar untuk dropdown admin. */
 export function daftarFormulir() {
     return Object.entries(FORMULIR).map(([kode, f]) => ({
