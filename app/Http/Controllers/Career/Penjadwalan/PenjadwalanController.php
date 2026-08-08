@@ -6,6 +6,7 @@ use App\Helpers\ResponseHelper;
 use App\Http\Controllers\Controller;
 use App\Jobs\Career\WcPenjadwalanJob;
 use App\Services\WebCareers\HclClient;
+use App\Support\Career\AksesService;
 use App\Support\CareerShell;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -41,6 +42,9 @@ use Vinkla\Hashids\Facades\Hashids;
  */
 class PenjadwalanController extends Controller
 {
+    /** Kunci halaman — dipakai middleware DAN penyaring kategori. */
+    private const PAGE = 'penjadwalanPage';
+
     public function __construct(private HclClient $hcl)
     {
     }
@@ -54,13 +58,17 @@ class PenjadwalanController extends Controller
     public function opsi()
     {
         try {
-            $talent = DB::table('N_WEB_CAREERS_Master_Talent_Acquisition')
-                ->where('Flag_Aktif', 'Y')
-                ->orderBy('Id_Master_Talent_Acquisition')
-                ->get(['Kode as kode', 'Nama as nama']);
+            // Tab HANYA kategori yang dipegang pengguna ini. Dulu seluruh isi
+            // master dikirim, sehingga admin yang dijatah satu kategori tetap
+            // melihat tiga tab — dan dua di antaranya selalu kosong.
+            $talent = AksesService::tabKategori(self::PAGE);
 
+            // Programnya ikut disaring. Tanpa ini tab boleh disembunyikan, tapi
+            // dropdown program masih memuat program kategori lain — dan sekali
+            // terpilih, kandidatnya bisa dijadwalkan tes.
             $program = DB::table('N_WEB_CAREERS_Program as p')
                 ->leftJoin('N_WEB_CAREERS_Master_Alur as a', 'a.Kode', '=', 'p.Alur_Kode')
+                ->tap(fn ($qb) => AksesService::saringKategori($qb, self::PAGE, 'p.Kategori'))
                 ->orderBy('p.Nama')
                 ->get([
                     'p.Id_Program as id', 'p.Kode as kode', 'p.Nama as nama', 'p.Kategori as kategori',

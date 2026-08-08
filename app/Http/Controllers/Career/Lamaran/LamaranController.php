@@ -10,6 +10,7 @@ use App\Jobs\Career\WcBiodataHrisJob;
 use App\Jobs\Career\WcJadwalEmailJob;
 use App\Jobs\Career\WcApplyFormJob;
 use App\Jobs\Career\WcLaporanKandidatJob;
+use App\Support\Career\AksesService;
 use App\Support\Career\AlurKolom;
 use App\Support\Career\GcsBerkas;
 use App\Support\Career\HtmlBersih;
@@ -38,6 +39,9 @@ use Vinkla\Hashids\Facades\Hashids;
  */
 class LamaranController extends Controller
 {
+    /** Kunci halaman worklist — dipakai middleware DAN penyaring kategori. */
+    private const PAGE = 'pelamarPage';
+
     public function __construct(
         private LamaranService $svc,
         private LamaranTargetValidator $targetValidator,
@@ -2456,12 +2460,10 @@ class LamaranController extends Controller
     /** Tab filter jenis = Master Talent Acquisition aktif. */
     private function talentTabs(): array
     {
-        return DB::table('N_WEB_CAREERS_Master_Talent_Acquisition')
-            ->where('Flag_Aktif', 'Y')
-            ->orderBy('Id_Master_Talent_Acquisition')
-            ->get(['Kode', 'Nama'])
-            ->map(fn ($r) => ['kode' => $r->Kode, 'label' => $r->Nama])
-            ->all();
+        // Hanya kategori yang memang boleh dibuka pengguna ini. Chip untuk
+        // kategori yang tak ia pegang bukan sekadar mubazir — ia menjanjikan
+        // isi yang, begitu ditekan, tidak pernah ada.
+        return AksesService::tabKategori(self::PAGE);
     }
 
     /**
@@ -2475,9 +2477,19 @@ class LamaranController extends Controller
             ->leftJoin('N_WEB_CAREERS_Master_Alur as a', 'a.Kode', '=', 'p.Alur_Kode')
             ->where('p.Status', 'BERJALAN');
 
+        // BATAS KATEGORI — dipasang di kueri, bukan cuma di chip.
+        // Chip hanya rupa; `?jenis=` tetap bisa dikarang sendiri, dan tanpa baris
+        // ini admin yang dijatah satu kategori tetap bisa menarik daftar program
+        // kategori lain — berikut seluruh pelamarnya lewat panel kanan.
+        AksesService::saringKategori($base, self::PAGE, 'p.Kategori');
+
         if ($q !== '') {
             $base->where('p.Nama', 'like', "%{$q}%");
         }
+        // Yang diminta disaring dulu terhadap izin: di luar jatahnya, permintaan
+        // itu jatuh kembali ke "semua yang boleh", bukan jadi daftar kosong yang
+        // membingungkan.
+        $jenis = AksesService::kategoriDiminta(self::PAGE, $jenis);
         if ($jenis !== '') {
             $base->where('p.Kategori', $jenis);
         }
@@ -2541,6 +2553,20 @@ class LamaranController extends Controller
     {
         $program = DB::table('N_WEB_CAREERS_Program')->where('Id_Program', $programId)->first();
         if (! $program) {
+            return ['program' => null, 'kolom' => [], 'pelamar' => []];
+        }
+
+        // Menyaring daftar di panel kiri saja belum menutup apa pun: id program
+        // ada di URL, dan panel kanan inilah yang memuat seluruh pelamar berikut
+        // nilai serta keputusannya. Program di luar jatah kategori dijawab sama
+        // seperti program yang tidak ada — tidak membocorkan bahwa ia ada.
+        $izin = AksesService::kategoriDiizinkan(self::PAGE);
+        if ($izin && ! in_array($program->Kategori, $izin, true)) {
+            Log::channel('web_career')->warning(
+                "Akses ditolak: user #" . session('career_auth.id') . " membuka program {$program->Kode} "
+                . "(kategori {$program->Kategori}) di luar jatahnya."
+            );
+
             return ['program' => null, 'kolom' => [], 'pelamar' => []];
         }
 

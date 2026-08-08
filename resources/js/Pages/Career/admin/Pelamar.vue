@@ -17,7 +17,13 @@
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>
                     <input v-model="q" type="text" placeholder="Cari program..." @input="cariDebounce" />
                 </div>
-                <div class="plw-chips">
+                <!-- CHIP KATEGORI — isinya mengikuti hak akses, bukan seluruh master.
+                     "Semua" hanya berarti bila memang ADA yang bisa dipilih: pada
+                     admin yang dijatah satu kategori, "Semua" dan chip kategorinya
+                     menyaring himpunan yang sama persis, jadi dua tombol untuk satu
+                     hasil — dan yang menekannya mengira ada isi lain yang belum
+                     terlihat. Satu kategori: seluruh baris chip disembunyikan. -->
+                <div v-if="talent.length > 1" class="plw-chips">
                     <button type="button" class="plw-chip" :class="{ 'is-on': jenis === '' }" @click="setJenis('')">Semua</button>
                     <button v-for="t in talent" :key="t.kode" type="button" class="plw-chip" :class="{ 'is-on': jenis === t.kode }" @click="setJenis(t.kode)">{{ t.label }}</button>
                 </div>
