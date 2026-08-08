@@ -208,47 +208,40 @@
         </div>
 
         <!-- ══════════════ MODAL DETAIL AGENDA ══════════════ -->
-        <Teleport to="body">
-            <div v-if="detailModal" class="ag-modal-backdrop" @click.self="detailModal = null">
-                <div class="ag-modal-card" :style="{ '--tone': JENIS[detailModal.jenis]?.warna }">
-                    <div class="ag-modal-card__header">
-                        <div class="ag-modal-tag">
-                            <i class="bi" :class="JENIS[detailModal.jenis]?.ikon"></i>
-                            <span>{{ JENIS[detailModal.jenis]?.label }}</span>
-                        </div>
-                        <button type="button" class="ag-modal-close" @click="detailModal = null">
-                            <i class="bi bi-x-lg"></i>
-                        </button>
-                    </div>
+        <AdminModal
+            :show="!!detailModal"
+            :title="detailModal?.judul || 'Detail Agenda Operasional'"
+            :subtitle="detailModal?.program ? `Program: ${detailModal.program}` : 'Informasi jadwal & agenda operasional'"
+            :icon="JENIS[detailModal?.jenis]?.ikon || 'bi-calendar-event'"
+            lg
+            @close="detailModal = null"
+        >
+            <div v-if="detailModal" class="ag-modal-body" style="padding: 0;">
+                <div class="ag-modal-row">
+                    <span class="ag-modal-label"><i class="bi bi-calendar-event"></i> Tanggal &amp; Waktu</span>
+                    <span class="ag-modal-val">{{ tanggal(detailModal.mulai) }} · {{ jamAtauRentang(detailModal) }}</span>
+                </div>
 
-                    <h3 class="ag-modal-title">{{ detailModal.judul }}</h3>
+                <div v-if="detailModal.program" class="ag-modal-row">
+                    <span class="ag-modal-label"><i class="bi bi-folder2"></i> Program</span>
+                    <span class="ag-modal-val">{{ detailModal.program }}</span>
+                </div>
 
-                    <div class="ag-modal-body">
-                        <div class="ag-modal-row">
-                            <span class="ag-modal-label"><i class="bi bi-calendar-event"></i> Tanggal & Waktu</span>
-                            <span class="ag-modal-val">{{ tanggal(detailModal.mulai) }} · {{ jamAtauRentang(detailModal) }}</span>
-                        </div>
-
-                        <div v-if="detailModal.program" class="ag-modal-row">
-                            <span class="ag-modal-label"><i class="bi bi-folder2"></i> Program</span>
-                            <span class="ag-modal-val">{{ detailModal.program }}</span>
-                        </div>
-
-                        <div v-if="detailModal.ket" class="ag-modal-row">
-                            <span class="ag-modal-label"><i class="bi bi-text-paragraph"></i> Catatan</span>
-                            <span class="ag-modal-val">{{ detailModal.ket }}</span>
-                        </div>
-                    </div>
-
-                    <div class="ag-modal-footer">
-                        <a v-if="detailModal.jenis === 'TES'" href="/karir/penjadwalan" class="ag-modal-action-btn">
-                            <i class="bi bi-pencil-square"></i> Kelola Penjadwalan Tes
-                        </a>
-                        <button type="button" class="ag-modal-sec-btn" @click="detailModal = null">Tutup</button>
-                    </div>
+                <div v-if="detailModal.ket" class="ag-modal-row">
+                    <span class="ag-modal-label"><i class="bi bi-text-paragraph"></i> Catatan</span>
+                    <span class="ag-modal-val">{{ detailModal.ket }}</span>
                 </div>
             </div>
-        </Teleport>
+
+            <template #footer>
+                <button type="button" class="wca-btn wca-btn--ghost" @click="detailModal = null">
+                    <i class="bi bi-x-lg"></i> Tutup
+                </button>
+                <a v-if="detailModal?.jenis === 'TES'" href="/karir/penjadwalan" class="wca-btn wca-btn--dark">
+                    <i class="bi bi-box-arrow-up-right"></i> Kelola Penjadwalan Tes
+                </a>
+            </template>
+        </AdminModal>
     </div>
 </template>
 
@@ -256,6 +249,7 @@
 import { ref, computed } from 'vue';
 import { tanggal } from '../dashboardHelpers';
 import KeadaanPanel from '../../monitoring/KeadaanPanel.vue';
+import AdminModal from '@career/AdminModal.vue';
 
 const props = defineProps({
     agenda: { type: Array, default: () => [] }
@@ -595,13 +589,18 @@ function jamAtauRentang(a) {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    padding: 10px 16px;
+    background: linear-gradient(135deg, #1e1b4b 0%, #312e81 60%, #4f46e5 100%);
+    border-radius: 12px;
+    color: #ffffff;
     margin-bottom: 14px;
+    box-shadow: 0 4px 15px rgba(30, 27, 75, 0.2);
 }
 
 .ag-grid-title {
     font-size: 0.84rem;
-    font-weight: 800;
-    color: #0f172a;
+    font-weight: 900;
+    color: #ffffff !important;
     display: flex;
     align-items: center;
     gap: 7px;
@@ -609,7 +608,7 @@ function jamAtauRentang(a) {
 
 .ag-grid-sub {
     font-size: 0.72rem;
-    color: #64748b;
+    color: rgba(255, 255, 255, 0.85) !important;
 }
 
 .ag-calendar-days {

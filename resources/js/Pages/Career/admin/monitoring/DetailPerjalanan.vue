@@ -125,16 +125,27 @@ const loading = ref(false)
 const error = ref(false)
 const d = ref(null)
 
+/**
+ * Penanda urutan permintaan. Drawer ini berganti isi tiap kali admin memilih
+ * pelamar lain; bila balasan pelamar sebelumnya tiba belakangan, perjalanan
+ * orang lama tergambar di bawah nama orang baru — dan tidak ada tanda apa pun
+ * bahwa yang terbaca bukan miliknya.
+ */
+let permintaanKe = 0
+
 async function fetchDetail() {
+    const token = ++permintaanKe
     loading.value = true
     error.value = false
     try {
         const { data } = await axios.get(`/api/v1/karir/monitoring/pelamar/${props.lamaranId}`, CFG)
+        if (token !== permintaanKe) return
         d.value = data.result || null
     } catch (e) {
+        if (token !== permintaanKe) return
         error.value = true
     } finally {
-        loading.value = false
+        if (token === permintaanKe) loading.value = false
     }
 }
 

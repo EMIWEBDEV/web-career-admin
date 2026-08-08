@@ -306,7 +306,20 @@ function ikonBerkas(b) {
     return j === 'gambar' ? 'bi-file-earmark-image' : j === 'pdf' ? 'bi-file-earmark-pdf' : 'bi-file-earmark'
 }
 
+/**
+ * Penanda urutan permintaan — lihat alasan yang sama di StageDetailPanel.
+ *
+ * Di sini akibatnya lebih tajam: drawer ini menampilkan berkas, jawaban
+ * formulir, dan keputusan MILIK SATU ORANG di satu tahap. Berpindah cepat
+ * antar sel matriks membuat dua permintaan berjalan bersamaan, dan balasan
+ * yang datang terlambat menaruh dokumen kandidat lain di bawah nama yang
+ * sedang terbuka. Kekeliruan seperti itu tidak terlihat sebagai galat —
+ * halamannya rapi, terisi, dan salah orang.
+ */
+let permintaanKe = 0
+
 async function fetchDetail() {
+    const token = ++permintaanKe
     loading.value = true
     error.value = false
     isianTerbuka.value = false // pindah tahap → daftar isian kembali terlipat
@@ -314,6 +327,7 @@ async function fetchDetail() {
         const { data } = await axios.get(
             `/api/v1/karir/monitoring/pelamar/${props.lamaranId}/tahap/${props.urutan}`, CFG,
         )
+        if (token !== permintaanKe) return
         const r = data.result || {}
         masterHasil.value = r.masterHasil || {}
         tahap.value = r.tahap || {}
@@ -325,9 +339,10 @@ async function fetchDetail() {
         jejak.value = r.jejak || []
         rencana.value = r.rencana || null
     } catch (e) {
+        if (token !== permintaanKe) return
         error.value = true
     } finally {
-        loading.value = false
+        if (token === permintaanKe) loading.value = false
     }
 }
 

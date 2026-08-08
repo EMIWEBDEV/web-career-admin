@@ -173,7 +173,21 @@ const orangUrut = computed(() =>
     [...props.orang].sort((a, b) => (b.agingHari ?? -1) - (a.agingHari ?? -1)),
 )
 
+/**
+ * Penanda urutan permintaan.
+ *
+ * Panel ini dimuat ulang tiap kali admin mengklik kolom lain, dan balasan
+ * tidak dijamin tiba berurutan: klik kolom 2 lalu cepat pindah ke kolom 5
+ * membuat dua permintaan berjalan bersamaan, dan bila balasan kolom 2 tiba
+ * belakangan ia menimpa isi kolom 5. Judul panel dibaca dari props (tetap
+ * "Tahap 05") sedangkan isinya dari balasan — jadi yang terlihat adalah
+ * angka tahap lain di bawah judul yang benar, tanpa satu pun tanda bahwa
+ * itu keliru. Balasan yang bukan milik permintaan terakhir dibuang.
+ */
+let permintaanKe = 0
+
 async function fetchDetail() {
+    const token = ++permintaanKe
     loading.value = true
     error.value = false
     try {
@@ -186,6 +200,7 @@ async function fetchDetail() {
             `/api/v1/karir/monitoring/program/${props.programId}/tahap/${props.kolom.urutan}/detail`,
             { ...CFG, params: props.kolom.kode ? { kode: props.kolom.kode } : {} },
         )
+        if (token !== permintaanKe) return
         const r = data.result || {}
         stats.value = r.stats || {}
         rincianKeluar.value = r.rincianKeluar || []
@@ -194,9 +209,10 @@ async function fetchDetail() {
         jadwal.value = r.jadwal || []
         meta.value = r.meta || meta.value
     } catch (e) {
+        if (token !== permintaanKe) return
         error.value = true
     } finally {
-        loading.value = false
+        if (token === permintaanKe) loading.value = false
     }
 }
 

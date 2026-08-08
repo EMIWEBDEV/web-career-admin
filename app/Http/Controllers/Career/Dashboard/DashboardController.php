@@ -66,6 +66,34 @@ class DashboardController extends Controller
     /** Batas baris tiap keranjang antrean aksi (jumlah sebenarnya tetap dilaporkan). */
     private const AKSI_MAKS = 25;
 
+    /** Batas atas baris per halaman yang boleh diminta layar. */
+    private const AKSI_PER_HAL_MAKS = 50;
+
+    /** Penggolong keranjang — dipakai untuk hitung total per jenis. */
+    private const JENIS_SQL = "CASE WHEN lt.Siap_Diputus = 'Y' THEN 'SIAP_DIPUTUS'
+                                    WHEN lt.Provider = 'THIRD_PARTY' THEN 'MENUNGGU_TES'
+                                    ELSE 'MACET' END";
+
+    /**
+     * Syarat SATU keranjang, sebagai WHERE — bukan hasil pemilahan di PHP.
+     *
+     * Dulu ketiganya diambil lewat satu kueri ber-limit lalu dipilah menurut
+     * Jenis. Yang terjadi saat data bertambah: kalau baris terlama kebetulan
+     * didominasi satu jenis, keranjang lain pulang KOSONG padahal totalnya
+     * ratusan — dan layar menampilkan "0" di sebelah lencana "200". Dengan
+     * WHERE per keranjang, tiap keranjang punya limit sendiri dan tak pernah
+     * kehabisan jatah gara-gara tetangganya.
+     *
+     * Negasinya ditulis NULL-safe: `lt.Siap_Diputus <> 'Y'` telanjang membuang
+     * baris ber-NULL (NULL <> 'Y' = NULL), padahal di CASE di atas baris itu
+     * justru jatuh ke keranjang berikutnya.
+     */
+    private const SYARAT_KERANJANG = [
+        'keputusan' => "lt.Siap_Diputus = 'Y'",
+        'menungguTes' => "(lt.Siap_Diputus IS NULL OR lt.Siap_Diputus <> 'Y') AND lt.Provider = 'THIRD_PARTY'",
+        'macet' => "(lt.Siap_Diputus IS NULL OR lt.Siap_Diputus <> 'Y') AND (lt.Provider IS NULL OR lt.Provider <> 'THIRD_PARTY')",
+    ];
+
     /**
      * Kata kerja per tipe tahap untuk keranjang "Menunggu Tindakan Kamu".
      *
@@ -255,72 +283,25 @@ class DashboardController extends Controller
             'macet' => $kosong, 'menungguTes' => $kosong,
             'tutupSegera' => $kosong, 'gagalLamar' => $kosong, 'pascaPenerimaan' => $kosong];
 
-        $umur = MetrikRekrutmen::sqlUmurTahap('lt');
-        $aging = MetrikRekrutmen::sqlAging('lt');
-        $macetHari = MetrikRekrutmen::macetHari();
-        $giliran = MetrikRekrutmen::sqlGiliranAdmin('lt', 'mtt');
-
         if ($ids) {
             $hasil['tindakanAdmin'] = $this->tindakanAdmin($kategori, $ids);
 
-            // Satu kueri untuk tiga keranjang berikutnya; pemilahan per Jenis
-            // dilakukan di PHP agar DB tidak dipanggil tiga kali untuk hal sama.
-            //
-            // MENUNGGU_TES kini berarti "sudah dijadwalkan, tinggal menunggu
-            // penyedia" — bukan lagi sekadar Provider = THIRD_PARTY. Yang belum
-            // dijadwalkan sama sekali dikeluarkan oleh NOT(giliran) di bawah dan
-            // masuk keranjang tindakanAdmin, karena itu justru pekerjaan admin,
-            // bukan hal yang di luar kendalinya. Sebelum ini keduanya tercampur
-            // di bawah label "di luar kendali admin" — dan yang belum
-            // terjadwal tidak pernah ada yang mengerjakan.
-            $jenisSql = "CASE WHEN lt.Siap_Diputus = 'Y' THEN 'SIAP_DIPUTUS'
-                              WHEN lt.Provider = 'THIRD_PARTY' THEN 'MENUNGGU_TES'
-                              ELSE 'MACET' END";
-
-            $dasar = fn () => DB::table('N_WEB_CAREERS_Lamaran_Tahap as lt')
-                ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'lt.Lamaran_Id')
-                ->leftJoin('N_WEB_CAREERS_Master_Tipe_Tahap as mtt', 'mtt.Kode', '=', 'lt.Tipe_Tahap_Kode')
-                ->where('lt.Status', 'BERJALAN')->where('l.Status', 'BERJALAN')
-                ->whereIn('l.Program_Id', $ids)
-                // NULL-safe: `lt.Hold_Flag <> 'Y'` telanjang membuat baris
-                // ber-Hold_Flag NULL ikut terkecualikan (NULL <> 'Y' = NULL).
-                ->whereRaw(MetrikRekrutmen::sqlBukanDitahan('lt'))
-                // Sudah diklaim keranjang tindakanAdmin (yang tidak memakai
-                // ambang umur, jadi selalu superset dari irisan ini).
-                ->whereRaw("(lt.Siap_Diputus = 'Y' OR NOT {$giliran})")
-                ->whereRaw("(lt.Siap_Diputus = 'Y' OR {$umur} > ?)", [$macetHari]);
-
-            // Jumlah SEBENARNYA per keranjang (tanpa limit) — dasar label "N dari M".
-            $totalPer = $dasar()->groupByRaw($jenisSql)
-                ->selectRaw("{$jenisSql} as Jenis, COUNT(*) as J")
+            // Total SEBENARNYA ketiga keranjang sekaligus — satu kueri, tanpa
+            // limit. Inilah dasar label "N dari M", jadi ia harus dihitung
+            // terpisah dari baris yang dikirim.
+            $totalPer = $this->dasarAntrean($ids)
+                ->groupByRaw(self::JENIS_SQL)
+                ->selectRaw(self::JENIS_SQL . ' as Jenis, COUNT(*) as J')
                 ->pluck('J', 'Jenis');
 
-            $baris = $dasar()
-                ->leftJoin('N_WEB_CAREERS_Users as u', 'u.Id_Users', '=', 'l.Id_Users')
-                ->leftJoin('N_WEB_CAREERS_Program as p', 'p.Id_Program', '=', 'l.Program_Id')
-                ->leftJoin('N_WEB_CAREERS_Program_Posisi as pos', 'pos.Id_Program_Posisi', '=', 'l.Program_Posisi_Id')
-                ->selectRaw("l.Id_Lamaran, l.Program_Id, u.Nama as Pelamar, l.Created_By as FallbackNama,
-                             p.Nama as ProgramNama, pos.Posisi as PosisiNama,
-                             lt.Urutan as TahapUrutan, lt.Label as TahapLabel,
-                             {$jenisSql} as Jenis, {$aging} as AgingHari")
-                ->orderByDesc(DB::raw($aging))
-                ->limit(self::AKSI_MAKS * 3)
-                ->get();
-
-            $peta = ['SIAP_DIPUTUS' => 'keputusan', 'MACET' => 'macet', 'MENUNGGU_TES' => 'menungguTes'];
-            foreach ($peta as $jenis => $kunci) {
-                $isi = $baris->where('Jenis', $jenis)->take(self::AKSI_MAKS)->values();
+            // Halaman pertama tiap keranjang, MASING-MASING dengan limitnya
+            // sendiri. Lihat SYARAT_KERANJANG untuk alasan kenapa ini tidak
+            // lagi satu kueri yang dipilah belakangan.
+            $peta = ['keputusan' => 'SIAP_DIPUTUS', 'macet' => 'MACET', 'menungguTes' => 'MENUNGGU_TES'];
+            foreach ($peta as $kunci => $jenis) {
                 $hasil[$kunci] = [
                     'total' => (int) ($totalPer[$jenis] ?? 0),
-                    'baris' => $isi->map(fn ($r) => [
-                        'id' => Hashids::encode((int) $r->Id_Lamaran),
-                        'nama' => $r->Pelamar ?: ($r->FallbackNama ?: 'Tanpa nama'),
-                        'program' => $r->ProgramNama,
-                        'posisi' => $r->PosisiNama,
-                        'tahap' => trim(($r->TahapUrutan ? $r->TahapUrutan . '. ' : '') . ($r->TahapLabel ?: '—')),
-                        'umurHari' => max(0, (int) $r->AgingHari),
-                        'tautan' => $this->tautanWorklist($kategori, $r->ProgramNama),
-                    ])->all(),
+                    'baris' => $this->barisKeranjang($kategori, $ids, $kunci, '', 1, self::AKSI_MAKS),
                 ];
             }
         }
@@ -356,42 +337,15 @@ class DashboardController extends Controller
     private function tindakanAdmin(string $kategori, array $ids): array
     {
         $umur = MetrikRekrutmen::sqlUmurTahap('lt');
-        $giliran = MetrikRekrutmen::sqlGiliranAdmin('lt', 'mtt');
-
-        $dasar = fn () => DB::table('N_WEB_CAREERS_Lamaran_Tahap as lt')
-            ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'lt.Lamaran_Id')
-            ->leftJoin('N_WEB_CAREERS_Master_Tipe_Tahap as mtt', 'mtt.Kode', '=', 'lt.Tipe_Tahap_Kode')
-            ->where('lt.Status', 'BERJALAN')->where('l.Status', 'BERJALAN')
-            ->whereIn('l.Program_Id', $ids)
-            // NULL-safe: `lt.Hold_Flag <> 'Y'` telanjang membuat baris
-            // ber-Hold_Flag NULL ikut terkecualikan (NULL <> 'Y' = NULL).
-            ->whereRaw(MetrikRekrutmen::sqlBukanDitahan('lt'))
-            // Siap diputus punya keranjangnya sendiri — di sana palunya yang
-            // ditunggu, bukan pekerjaan yang belum dikerjakan.
-            ->where('lt.Siap_Diputus', '<>', 'Y')
-            ->whereRaw($giliran);
 
         // Ringkasan per jenis pekerjaan (tanpa limit) — ini yang jadi daftar
         // "apa saja yang perlu dilakukan" begitu penanda diklik.
-        $ringkas = $dasar()
+        $ringkas = $this->dasarTindakan($ids)
             ->groupBy('lt.Tipe_Tahap_Kode', 'mtt.Nama', 'mtt.Ikon', 'mtt.Perilaku_Kode')
             ->selectRaw("lt.Tipe_Tahap_Kode as Kode, mtt.Nama as TipeNama, mtt.Ikon as Ikon,
                          mtt.Perilaku_Kode as Perilaku, COUNT(*) as J,
                          MAX({$umur}) as TerlamaHari")
             ->orderByDesc('J')
-            ->get();
-
-        $baris = $dasar()
-            ->leftJoin('N_WEB_CAREERS_Users as u', 'u.Id_Users', '=', 'l.Id_Users')
-            ->leftJoin('N_WEB_CAREERS_Program as p', 'p.Id_Program', '=', 'l.Program_Id')
-            ->leftJoin('N_WEB_CAREERS_Program_Posisi as pos', 'pos.Id_Program_Posisi', '=', 'l.Program_Posisi_Id')
-            ->selectRaw("l.Id_Lamaran, u.Nama as Pelamar, l.Created_By as FallbackNama,
-                         p.Nama as ProgramNama, pos.Posisi as PosisiNama,
-                         lt.Urutan as TahapUrutan, lt.Label as TahapLabel,
-                         lt.Tipe_Tahap_Kode as Kode, mtt.Perilaku_Kode as Perilaku,
-                         lt.Penjadwalan_Tahap_Id as JadwalId, {$umur} as UmurHari")
-            ->orderByDesc(DB::raw($umur))
-            ->limit(self::AKSI_MAKS)
             ->get();
 
         return [
@@ -404,18 +358,201 @@ class DashboardController extends Controller
                 'jumlah' => (int) $r->J,
                 'terlamaHari' => max(0, (int) $r->TerlamaHari),
             ])->all(),
-            'baris' => $baris->map(fn ($r) => [
+            // Halaman pertama saja; sisanya diambil layar lewat endpoint
+            // antrean() begitu admin mencari atau berpindah halaman.
+            'baris' => $this->barisKeranjang($kategori, $ids, 'tindakanAdmin', '', 1, self::AKSI_MAKS),
+        ];
+    }
+
+    // ═════════════════ ANTREAN AKSI — CARI & HALAMAN DI SERVER ═════════════════
+
+    /**
+     * GET /api/v1/karir/dashboard/antrean?kategori=..&keranjang=..&cari=..&hal=..&perHal=..
+     *
+     * Satu keranjang, satu halaman. Sebelum ini layar menerima 25 baris teratas
+     * lalu menyaring dan memaginasinya sendiri — artinya kotak cari hanya
+     * menjangkau 25 orang itu. Begitu antreannya melewati 25, mengetik nama
+     * kandidat yang jelas-jelas ada akan pulang "tidak ditemukan", dan tidak ada
+     * apa pun di layar yang memberitahu bahwa yang dicari memang tak pernah
+     * ikut terkirim. Pencarian yang diam-diam meleset lebih berbahaya daripada
+     * daftar yang jujur terpotong.
+     */
+    public function antrean(Request $request)
+    {
+        [$kategori, $galat] = $this->kategoriDiminta($request);
+        if ($galat) {
+            return $galat;
+        }
+
+        $keranjang = (string) $request->query('keranjang', '');
+        if (! isset(self::SYARAT_KERANJANG[$keranjang]) && $keranjang !== 'tindakanAdmin') {
+            return ResponseHelper::error('Keranjang antrean tidak dikenal.', 422);
+        }
+
+        try {
+            $cari = trim((string) $request->query('cari', ''));
+            $kode = trim((string) $request->query('kode', ''));
+            $hal = max(1, (int) $request->query('hal', 1));
+            $perHal = min(self::AKSI_PER_HAL_MAKS, max(1, (int) $request->query('perHal', 10)));
+
+            $ids = $this->programs($kategori)->pluck('Id_Program')->map(fn ($v) => (int) $v)->all();
+
+            $total = $ids ? $this->hitungKeranjang($ids, $keranjang, $cari, $kode) : 0;
+            $baris = $ids ? $this->barisKeranjang($kategori, $ids, $keranjang, $cari, $hal, $perHal, $kode) : [];
+
+            return ResponseHelper::success([
+                'keranjang' => $keranjang,
+                'baris' => $baris,
+                'total' => $total,
+                'hal' => $hal,
+                'perHal' => $perHal,
+                'totalHal' => (int) max(1, ceil($total / $perHal)),
+            ], 'Antrean aksi');
+        } catch (\Throwable $e) {
+            return $this->gagal('antrean', $kategori, $e);
+        }
+    }
+
+    /**
+     * Kueri dasar tiga keranjang seleksi (keputusan / macet / menungguTes).
+     *
+     * MENUNGGU_TES berarti "sudah dijadwalkan, tinggal menunggu penyedia" —
+     * bukan sekadar Provider = THIRD_PARTY. Yang belum dijadwalkan sama sekali
+     * dibuang oleh NOT(giliran) dan masuk keranjang tindakanAdmin, karena itu
+     * justru pekerjaan admin, bukan hal di luar kendalinya.
+     */
+    private function dasarAntrean(array $ids)
+    {
+        $umur = MetrikRekrutmen::sqlUmurTahap('lt');
+        $giliran = MetrikRekrutmen::sqlGiliranAdmin('lt', 'mtt');
+
+        return DB::table('N_WEB_CAREERS_Lamaran_Tahap as lt')
+            ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'lt.Lamaran_Id')
+            ->leftJoin('N_WEB_CAREERS_Master_Tipe_Tahap as mtt', 'mtt.Kode', '=', 'lt.Tipe_Tahap_Kode')
+            ->where('lt.Status', 'BERJALAN')->where('l.Status', 'BERJALAN')
+            ->whereIn('l.Program_Id', $ids)
+            // NULL-safe: `lt.Hold_Flag <> 'Y'` telanjang membuat baris
+            // ber-Hold_Flag NULL ikut terkecualikan (NULL <> 'Y' = NULL).
+            ->whereRaw(MetrikRekrutmen::sqlBukanDitahan('lt'))
+            // Sudah diklaim keranjang tindakanAdmin (yang tidak memakai ambang
+            // umur, jadi selalu superset dari irisan ini).
+            ->whereRaw("(lt.Siap_Diputus = 'Y' OR NOT {$giliran})")
+            ->whereRaw("(lt.Siap_Diputus = 'Y' OR {$umur} > ?)", [MetrikRekrutmen::macetHari()]);
+    }
+
+    /** Kueri dasar keranjang "Menunggu Tindakan Kamu" — tanpa ambang umur. */
+    private function dasarTindakan(array $ids)
+    {
+        return DB::table('N_WEB_CAREERS_Lamaran_Tahap as lt')
+            ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'lt.Lamaran_Id')
+            ->leftJoin('N_WEB_CAREERS_Master_Tipe_Tahap as mtt', 'mtt.Kode', '=', 'lt.Tipe_Tahap_Kode')
+            ->where('lt.Status', 'BERJALAN')->where('l.Status', 'BERJALAN')
+            ->whereIn('l.Program_Id', $ids)
+            ->whereRaw(MetrikRekrutmen::sqlBukanDitahan('lt'))
+            // Siap diputus punya keranjangnya sendiri — di sana palunya yang
+            // ditunggu, bukan pekerjaan yang belum dikerjakan.
+            ->where('lt.Siap_Diputus', '<>', 'Y')
+            ->whereRaw(MetrikRekrutmen::sqlGiliranAdmin('lt', 'mtt'));
+    }
+
+    /**
+     * Satu keranjang, sudah ber-JOIN tampilan dan tersaring kata kunci.
+     *
+     * Pencariannya menyentuh kolom yang sama dengan yang dibaca admin di layar
+     * (nama, program, posisi, label tahap) supaya hasil di server dan yang
+     * dilihat mata tidak berbeda aturan.
+     */
+    private function kueriKeranjang(array $ids, string $keranjang, string $cari = '', string $kode = '')
+    {
+        $q = $keranjang === 'tindakanAdmin'
+            ? $this->dasarTindakan($ids)
+            : $this->dasarAntrean($ids)->whereRaw('(' . self::SYARAT_KERANJANG[$keranjang] . ')');
+
+        // Penyaring jenis pekerjaan pada keranjang tindakan. Ikut ke server
+        // karena kalau disaring di layar, yang tersaring cuma satu halaman —
+        // dan jumlah pada chip jenisnya jadi tidak cocok dengan isi tabelnya.
+        if ($kode !== '' && $keranjang === 'tindakanAdmin') {
+            $kode === 'LAIN'
+                ? $q->whereNull('lt.Tipe_Tahap_Kode')
+                : $q->where('lt.Tipe_Tahap_Kode', $kode);
+        }
+
+        $q->leftJoin('N_WEB_CAREERS_Users as u', 'u.Id_Users', '=', 'l.Id_Users')
+            ->leftJoin('N_WEB_CAREERS_Program as p', 'p.Id_Program', '=', 'l.Program_Id')
+            ->leftJoin('N_WEB_CAREERS_Program_Posisi as pos', 'pos.Id_Program_Posisi', '=', 'l.Program_Posisi_Id');
+
+        if ($cari !== '') {
+            // Wildcard milik LIKE dinetralkan lebih dulu. Tanpa ini, admin yang
+            // mengetik "%" mendapat SELURUH antrean seolah itu hasil pencarian.
+            // Kurung siku diganti duluan — ia yang jadi alat kabur di T-SQL.
+            $pola = '%' . str_replace(['[', '%', '_'], ['[[]', '[%]', '[_]'], $cari) . '%';
+
+            $q->where(function ($w) use ($pola) {
+                $w->where('u.Nama', 'like', $pola)
+                    ->orWhere('l.Created_By', 'like', $pola)
+                    ->orWhere('p.Nama', 'like', $pola)
+                    ->orWhere('pos.Posisi', 'like', $pola)
+                    ->orWhere('lt.Label', 'like', $pola);
+            });
+        }
+
+        return $q;
+    }
+
+    /** Jumlah baris satu keranjang SETELAH pencarian — dasar jumlah halaman. */
+    private function hitungKeranjang(array $ids, string $keranjang, string $cari = '', string $kode = ''): int
+    {
+        return (int) $this->kueriKeranjang($ids, $keranjang, $cari, $kode)->count();
+    }
+
+    /**
+     * Satu halaman baris siap tampil.
+     *
+     * Diurut menurun umur, DENGAN pemecah seri kunci utama. Tanpa pemecah seri,
+     * baris berumur sama boleh muncul dalam urutan berbeda tiap kueri — dan
+     * pada paginasi OFFSET/FETCH itu berarti satu orang bisa terlihat dua kali
+     * di dua halaman sementara orang lain tak pernah muncul sama sekali.
+     */
+    private function barisKeranjang(string $kategori, array $ids, string $keranjang, string $cari, int $hal, int $perHal, string $kode = ''): array
+    {
+        $tindakan = $keranjang === 'tindakanAdmin';
+        $urut = $tindakan ? MetrikRekrutmen::sqlUmurTahap('lt') : MetrikRekrutmen::sqlAging('lt');
+
+        $pilih = "l.Id_Lamaran, u.Nama as Pelamar, l.Created_By as FallbackNama,
+                  p.Nama as ProgramNama, pos.Posisi as PosisiNama,
+                  lt.Urutan as TahapUrutan, lt.Label as TahapLabel, {$urut} as UmurHari";
+
+        if ($tindakan) {
+            $pilih .= ', lt.Tipe_Tahap_Kode as Kode, mtt.Perilaku_Kode as Perilaku, lt.Penjadwalan_Tahap_Id as JadwalId';
+        }
+
+        $baris = $this->kueriKeranjang($ids, $keranjang, $cari, $kode)
+            ->selectRaw($pilih)
+            ->orderByDesc(DB::raw($urut))
+            ->orderByDesc('lt.Id_Lamaran_Tahap')
+            ->forPage($hal, $perHal)
+            ->get();
+
+        return $baris->map(function ($r) use ($kategori, $tindakan) {
+            $baris = [
                 'id' => Hashids::encode((int) $r->Id_Lamaran),
                 'nama' => $r->Pelamar ?: ($r->FallbackNama ?: 'Tanpa nama'),
                 'program' => $r->ProgramNama,
                 'posisi' => $r->PosisiNama,
                 'tahap' => trim(($r->TahapUrutan ? $r->TahapUrutan . '. ' : '') . ($r->TahapLabel ?: '—')),
-                'kode' => $r->Kode ?: 'LAIN',
-                'aksi' => self::AKSI_TIPE[$r->Kode] ?? 'Tindak lanjuti',
                 'umurHari' => max(0, (int) $r->UmurHari),
-                'tautan' => $this->tautanTindakan($kategori, $r),
-            ])->all(),
-        ];
+            ];
+
+            if ($tindakan) {
+                $baris['kode'] = $r->Kode ?: 'LAIN';
+                $baris['aksi'] = self::AKSI_TIPE[$r->Kode] ?? 'Tindak lanjuti';
+                $baris['tautan'] = $this->tautanTindakan($kategori, $r);
+            } else {
+                $baris['tautan'] = $this->tautanWorklist($kategori, $r->ProgramNama);
+            }
+
+            return $baris;
+        })->all();
     }
 
     /**
@@ -1017,7 +1154,8 @@ class DashboardController extends Controller
             $tahapKeluar = [];
             $sempitTerbesar = null;
             $sebelumnya = null;
-            foreach ($kolom as $t) {
+            $daftarKolom = $kolom->values();
+            foreach ($daftarKolom as $i => $t) {
                 $u = (int) $t->Urutan;
                 $c = $per[$u] ?? ['aktif' => 0, 'gugur' => 0, 'lulus' => 0, 'talent' => 0];
                 $konversi = null;
@@ -1032,6 +1170,25 @@ class DashboardController extends Controller
                         ];
                     }
                 }
+
+                // "Lanjut" = mereka yang sudah MELEWATI tahap ini, yaitu semua
+                // yang mencapai tahap sesudahnya. Tahap terakhir tidak punya
+                // sesudahnya, jadi 0 — bukan null; nol di sana adalah fakta,
+                // bukan data yang belum ada.
+                $berikut = $daftarKolom[$i + 1] ?? null;
+                $lanjut = $berikut ? ($capai[(int) $berikut->Urutan] ?? 0) : 0;
+
+                // NAMA KUNCI HARUS SAMA DENGAN YANG DIBACA LAYAR.
+                //
+                // Sebelum ini controller mengirim aktif/lulus sementara panel
+                // membaca diSini/diterima/lanjut, dan `lanjut` tak pernah
+                // dihitung sama sekali. Tidak ada yang menyalak: helper angka()
+                // memulangkan "—" untuk undefined, jadi rincian tahap tampil
+                // "Lanjut: — · Di tahap ini: — · Diterima: —" di sebelah "26
+                // kandidat" — terbaca seperti data yang belum masuk, padahal
+                // hanya namanya yang tidak bertemu.
+                //
+                // Identitasnya: capai = diSini + lanjut + diterima + gugur + talent.
                 $tahapKeluar[] = [
                     'urutan' => $u,
                     'label' => $t->Label ?: ('Tahap ' . $u),
@@ -1039,7 +1196,12 @@ class DashboardController extends Controller
                     'provider' => $t->Provider,
                     'capai' => $capai[$u] ?? 0,
                     'konversi' => $konversi,
-                ] + $c;
+                    'lanjut' => $lanjut,
+                    'diSini' => $c['aktif'],
+                    'diterima' => $c['lulus'],
+                    'gugur' => $c['gugur'],
+                    'talent' => $c['talent'],
+                ];
                 $sebelumnya = $u;
             }
 

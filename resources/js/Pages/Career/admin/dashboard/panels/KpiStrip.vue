@@ -114,8 +114,28 @@ const kartu = computed(() => {
 <style scoped>
 .wcd-kpi-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-    gap: 14px;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 16px;
+}
+
+@media (max-width: 1200px) {
+    .wcd-kpi-grid {
+        grid-template-columns: repeat(5, 1fr);
+        gap: 12px;
+    }
+}
+
+@media (max-width: 1023px) {
+    .wcd-kpi-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+@media (max-width: 640px) {
+    .wcd-kpi-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+    }
 }
 
 .wcd-kpi-card {
@@ -124,15 +144,17 @@ const kartu = computed(() => {
     flex-direction: column;
     padding: 16px 18px;
     background: #ffffff;
-    border: 1px solid rgba(226, 232, 240, 0.9);
+    border: 1px solid #e2e8f0;
+    border-top: 3.5px solid var(--tone, #6366f1);
     border-radius: 16px;
     text-align: left;
     text-decoration: none;
     font: inherit;
-    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
     box-shadow: 0 2px 8px -2px rgba(15, 23, 42, 0.04);
     overflow: hidden;
     cursor: default;
+    height: 100%;
 }
 
 .wcd-kpi-card.is-clickable {
@@ -140,9 +162,10 @@ const kartu = computed(() => {
 }
 
 .wcd-kpi-card.is-clickable:hover {
-    transform: translateY(-4px);
+    transform: translateY(-3px);
     border-color: color-mix(in srgb, var(--tone, #6366f1) 45%, transparent);
-    box-shadow: 0 12px 28px -6px color-mix(in srgb, var(--tone, #6366f1) 18%, transparent);
+    border-top-color: var(--tone, #6366f1);
+    box-shadow: 0 12px 28px -6px color-mix(in srgb, var(--tone, #6366f1) 22%, transparent);
 }
 
 .wcd-kpi-card__glow {
@@ -151,7 +174,7 @@ const kartu = computed(() => {
     right: 0;
     width: 90px;
     height: 90px;
-    background: radial-gradient(circle at top right, color-mix(in srgb, var(--tone, #6366f1) 12%, transparent) 0%, transparent 70%);
+    background: radial-gradient(circle at top right, color-mix(in srgb, var(--tone, #6366f1) 14%, transparent) 0%, transparent 70%);
     pointer-events: none;
 }
 
@@ -163,15 +186,36 @@ const kartu = computed(() => {
 }
 
 .wcd-kpi-card__ic {
-    display: grid;
-    place-items: center;
-    width: 34px;
-    height: 34px;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 36px;
+    height: 36px;
     border-radius: 10px;
-    font-size: 16px;
+    font-size: 1.1rem;
     color: var(--tone, #6366f1);
-    background: color-mix(in srgb, var(--tone, #6366f1) 12%, #fff);
-    border: 1px solid color-mix(in srgb, var(--tone, #6366f1) 20%, transparent);
+    background: color-mix(in srgb, var(--tone, #6366f1) 12%, #ffffff);
+    border: 1px solid color-mix(in srgb, var(--tone, #6366f1) 24%, transparent);
+    flex-shrink: 0;
+    line-height: 1 !important;
+    text-align: center;
+}
+
+.wcd-kpi-card__ic i {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 1em !important;
+    height: 1em !important;
+    line-height: 1 !important;
+    margin: 0 !important;
+}
+
+.wcd-kpi-card__ic i::before {
+    vertical-align: 0 !important;
+    display: block !important;
+    line-height: 1 !important;
+    margin: 0 !important;
 }
 
 .wcd-kpi-card__delta {
@@ -200,26 +244,27 @@ const kartu = computed(() => {
 }
 
 .wcd-kpi-card__num {
-    font-size: 1.65rem;
+    font-size: 1.75rem;
     font-weight: 900;
-    line-height: 1;
+    line-height: 1.1;
     letter-spacing: -0.02em;
     color: #0f172a;
-    margin-bottom: 6px;
+    margin-bottom: 4px;
 }
 
 .wcd-kpi-card__lbl {
-    font-size: 0.8rem;
+    font-size: 0.82rem;
     font-weight: 800;
-    color: #334155;
+    color: #1e293b;
     line-height: 1.3;
 }
 
 .wcd-kpi-card__ket {
     margin-top: 4px;
-    font-size: 0.71rem;
+    font-size: 0.72rem;
     color: #64748b;
     font-weight: 500;
+    line-height: 1.25;
 }
 
 .wcd-kpi-card__arrow {

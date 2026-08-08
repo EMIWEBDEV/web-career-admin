@@ -5203,6 +5203,12 @@ h6,
 .wca-modal--xl {
     width: min(1080px, 100%);
 }
+.wca-modal--full,
+.wca-modal--xxl {
+    width: min(1480px, 96vw);
+    height: min(92vh, 920px);
+    max-height: 94vh;
+}
 @keyframes wcaPop {
     from {
         transform: translateY(14px) scale(0.98);
@@ -6771,11 +6777,20 @@ h6,
     border-radius: 16px;
     display: grid;
     place-items: center;
+    align-items: center;
+    justify-content: center;
     font-size: 1.35rem;
     color: #fff;
     background: linear-gradient(135deg, #8b5cf6, #6366f1);
     border: none;
     box-shadow: 0 12px 28px rgba(99, 102, 241, 0.36);
+}
+.wca-modal__icon i {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    margin: 0 auto;
 }
 .wca-modal__titles {
     position: relative;
