@@ -238,6 +238,76 @@ class MasterAlurController extends Controller
     }
 
     /**
+     * SELURUH tipe beserta perilakunya — termasuk yang sudah dinonaktifkan.
+     *
+     * Dipakai untuk MENJALANKAN tahap, bukan untuk menawarkan pilihan. Perilaku
+     * sebuah tipe tidak berubah hanya karena ia berhenti ditawarkan: tahap
+     * bertipe DOCUMENT tetap tahap berbasis berkas. Dulu peta ini hanya berisi
+     * tipe aktif, sehingga tahap yang tipenya sudah dipensiunkan diam-diam
+     * jatuh ke perilaku bawaan — Flag_Upload_Hasil-nya hilang dan kotak unggah
+     * hasilnya lenyap begitu alurnya disimpan ulang, tanpa satu pun galat.
+     *
+     * Kolomnya SENGAJA sama persis dengan tipeAktif(). Flag_Wajib_Tampil
+     * memang dibaca di simpanTahap() tapi tidak pernah ikut terambil — jadi
+     * gerbang "ujian online tak boleh disembunyikan" belum pernah menyala.
+     * Menambahkannya di sini akan memperbaikinya sekaligus mengubah hasil
+     * penyimpanan SETIAP alur, jauh di luar perkara duplikat; perbaikan itu
+     * pantas berdiri sendiri, bukan menumpang perubahan ini.
+     */
+    /**
+     * SELURUH KOLOM, bukan daftar pilih.
+     *
+     * Daftar kolom yang ditulis manual di sini sudah diam-diam membuang penanda
+     * yang justru dipakai beberapa baris di bawahnya: `Flag_Wajib_Tampil` dibaca
+     * saat menghitung Tampil_Kandidat, tetapi tidak pernah ikut terambil —
+     * sehingga `?? 'T'` dengan patuh menghasilkan "tidak wajib tampil" untuk
+     * SEMUA tipe, dan penjaganya tidak pernah sekali pun menyala. Akibatnya tes
+     * online bisa tersimpan sebagai aktivitas tersembunyi: kandidat tidak pernah
+     * melihat tombol mengerjakannya, dan tak ada galat apa pun yang memberitahu.
+     *
+     * Masternya belasan baris; mengambil semua kolomnya tidak lebih mahal, dan
+     * menutup kelas kekeliruan yang tak terlihat sampai ada yang bertanya kenapa
+     * setelannya "tidak berfungsi". Sama persis alasannya dengan
+     * LamaranController::masterTipeTahap().
+     */
+    private function tipeSemua()
+    {
+        return DB::table('N_WEB_CAREERS_Master_Tipe_Tahap')
+            ->get()
+            ->keyBy('Kode');
+    }
+
+    /**
+     * Tipe yang BOLEH tersimpan: yang aktif, ditambah yang sudah terpakai alur
+     * mana pun walau kini nonaktif.
+     *
+     * Sepola dengan batasUnggahSah(). Menonaktifkan sebuah tipe berarti "jangan
+     * ditawarkan lagi", bukan "alur yang sudah memakainya haram disentuh".
+     * Tanpa ini, menyunting — apalagi menduplikat — alur lama ditolak dengan
+     * "The selected stages.7.tipe is invalid": pesan yang tidak menyebut tahap
+     * mana, tidak menyebut tipe apa, dan tidak bisa diperbaiki dari layar
+     * karena pilihannya memang sudah tidak ada di daftar.
+     *
+     * Yang menyempit cukup pilihan BARU — daftar di layar tetap berisi tipe
+     * aktif saja.
+     *
+     * @return string[]
+     */
+    private function tipeSah(): array
+    {
+        $aktif = DB::table('N_WEB_CAREERS_Master_Tipe_Tahap')->where('Flag_Aktif', 'Y')->pluck('Kode');
+
+        $terpakai = DB::table('N_WEB_CAREERS_Master_Alur_Tahap')
+            ->whereNotNull('Tipe_Tahap_Kode')->distinct()->pluck('Tipe_Tahap_Kode')
+            ->merge(
+                DB::table('N_WEB_CAREERS_Master_Alur_Tahap_Tes')
+                    ->whereNotNull('Tipe_Tahap_Kode')->distinct()->pluck('Tipe_Tahap_Kode')
+            );
+
+        return $aktif->merge($terpakai)->map(fn ($v) => (string) $v)->unique()->values()->all();
+    }
+
+    /**
      * Formulir sudah bisa dirender ke kandidat? Form lama lewat Komponen_Kode,
      * form dinamis lewat versi PUBLISHED di Master_Formulir_Versi. Dipakai
      * gerbang simpanTahap supaya tahap tidak bisa menempel formulir yang masih
@@ -264,7 +334,9 @@ class MasterAlurController extends Controller
     {
         $kodeModeAktif = array_keys($this->modeAktif());
         $kodeKeputusan = $this->modeKeputusanAktif();
-        $kodeTipe = $this->tipeAktif()->keys()->all();
+        // Aktif + yang sudah terpakai — lihat tipeSah(). Alur lama tetap bisa
+        // disunting & diduplikat walau salah satu tipenya sudah dipensiunkan.
+        $kodeTipe = $this->tipeSah();
 
         return [
             'nama' => 'required|string|max:120',
@@ -373,7 +445,10 @@ class MasterAlurController extends Controller
 
         // Seluruh perilaku tipe dibaca dari master — tak ada kode tipe yang
         // ditulis di sini, jadi tipe baru cukup ditambah lewat Master Tipe Tahap.
-        $tipe = $this->tipeAktif();
+        // Peta ini sengaja memuat tipe NONAKTIF juga: yang dijalankan di sini
+        // adalah tahap yang sudah ada, dan perilakunya tidak boleh berubah
+        // hanya karena tipenya berhenti ditawarkan. Lihat tipeSemua().
+        $tipe = $this->tipeSemua();
         $adalahCat = fn (?string $kode) => ($tipe[$kode]->Perilaku_Kode ?? 'MANUAL') === 'CAT';
 
         // Peta mode -> butuhJeda: jeda hari hanya disimpan untuk mode ber-flag.
@@ -602,11 +677,23 @@ class MasterAlurController extends Controller
                     // Penandanya dari MASTER TIPE TAHAP (Flag_Wajib_Tampil),
                     // bukan perbandingan provider di sini — tipe baru yang
                     // menuntut tindakan kandidat cukup dinyalakan lewat master.
+                    //
+                    // JADWAL PRIVAT MENUTUPNYA — kecuali kandidat memang diminta
+                    // mengunggah sesuatu di situ. Negosiasi gaji dijadwalkan tim
+                    // untuk dirinya sendiri; memunculkannya di portal berarti
+                    // memberitahu kandidat bahwa angkanya sedang dirundingkan,
+                    // lalu membuatnya membaca tiap hari tanpa kabar sebagai
+                    // penolakan yang tertunda. Pengecualian unggahan tetap
+                    // dihormati: menyembunyikan layar yang justru meminta berkas
+                    // darinya adalah jalan buntu yang sama seperti di atas.
                     'Tampil_Kandidat' => (
+                        ($tipe[$t['tipe'] ?? '']->Flag_Jadwal_Privat ?? 'T') === 'Y'
+                        && empty($t['unggahKandidat'])
+                    ) ? 'T' : ((
                         ! empty($t['tampilKandidat'])
                         || ($tipe[$t['tipe'] ?? '']->Flag_Wajib_Tampil ?? 'T') === 'Y'
                         || ! empty($t['unggahKandidat'])
-                    ) ? 'Y' : 'T',
+                    ) ? 'Y' : 'T'),
                     // ── MODE PENILAIAN ─────────────────────────────────────
                     // Hanya berarti untuk aktivitas yang HASILNYA DICATAT TIM.
                     // Ujian online nilainya datang dari HCLearn — menyetel mode

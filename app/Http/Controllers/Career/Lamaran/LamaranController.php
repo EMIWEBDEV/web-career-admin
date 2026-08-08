@@ -4951,11 +4951,21 @@ class LamaranController extends Controller
 
         $this->terapkanJadwal((int) $realId, $data, $data['mulai'], $data['selesai'] ?? null);
 
-        $terkirim = $this->kirimUndanganJadwal((int) $realId, (int) $sub->Lamaran_Id);
+        $undangan = $this->kirimUndanganJadwal((int) $realId, (int) $sub->Lamaran_Id);
+
+        // Tiga keadaan, tiga kalimat. "Privat" bukan kegagalan: menyuruh admin
+        // memeriksa log untuk sesuatu yang berjalan sebagaimana mestinya hanya
+        // mengajarinya mengabaikan peringatan.
+        $pesan = [
+            'terkirim' => 'Jadwal disimpan dan undangan dikirim ke kandidat.',
+            'privat' => 'Jadwal disimpan. ' . ($tipeSub->Nama ?? 'Aktivitas ini')
+                . ' bersifat internal — kandidat tidak menerima undangan dan tidak melihatnya di portal.',
+            'gagal' => 'Jadwal disimpan. Undangan email gagal dikirim — periksa log.',
+        ][$undangan];
 
         return ResponseHelper::success(
-            ['emailTerkirim' => $terkirim],
-            $terkirim ? 'Jadwal disimpan dan undangan dikirim ke kandidat.' : 'Jadwal disimpan. Undangan email gagal dikirim — periksa log.',
+            ['emailTerkirim' => $undangan === 'terkirim', 'undangan' => $undangan],
+            $pesan,
         );
     }
 
@@ -5361,12 +5371,13 @@ class LamaranController extends Controller
                 $selesai?->format('Y-m-d H:i:s'),
             );
 
-            $terkirim = $this->kirimUndanganJadwal((int) $sub->Id_Lamaran_Tahap_Tes, (int) $sub->Lamaran_Id);
+            $undangan = $this->kirimUndanganJadwal((int) $sub->Id_Lamaran_Tahap_Tes, (int) $sub->Lamaran_Id);
 
             $berhasil[] = [
                 'nama' => $nama,
                 'mulai' => $mulai->format('Y-m-d H:i'),
-                'emailTerkirim' => $terkirim,
+                'emailTerkirim' => $undangan === 'terkirim',
+                'undangan' => $undangan,
             ];
             $urutanSesi++;
         }
@@ -5375,11 +5386,18 @@ class LamaranController extends Controller
             '[JADWAL-MASSAL] ' . count($berhasil) . ' berhasil, ' . count($gagal) . ' gagal — oleh ' . session('career_auth.nama', 'ADMIN')
         );
 
+        // Kalimatnya mengikuti apa yang BENAR-BENAR terjadi. "Diundang lewat
+        // email" untuk aktivitas privat adalah laporan yang keliru, dan admin
+        // yang mempercayainya akan menunggu balasan kandidat yang tak pernah
+        // diberi tahu.
+        $adaPrivat = collect($berhasil)->contains('undangan', 'privat');
+        $kabar = $adaPrivat ? 'dijadwalkan (internal — kandidat tidak diberi tahu)' : 'dijadwalkan dan diundang lewat email';
+
         return ResponseHelper::success(
             ['berhasil' => $berhasil, 'gagal' => $gagal],
             count($gagal)
                 ? count($berhasil) . ' kandidat dijadwalkan, ' . count($gagal) . ' dilewati — periksa rinciannya.'
-                : count($berhasil) . ' kandidat dijadwalkan dan diundang lewat email.',
+                : count($berhasil) . ' kandidat ' . $kabar . '.',
         );
     }
 
@@ -5389,8 +5407,17 @@ class LamaranController extends Controller
      * Kegagalan email TIDAK membatalkan jadwalnya: jadwal sudah tersimpan dan
      * terlihat di portal kandidat, jadi menggagalkan seluruh operasi hanya
      * karena SMTP sedang bermasalah justru merugikan.
+     *
+     * Mengembalikan TIGA keadaan, bukan ya/tidak: 'terkirim', 'gagal', dan
+     * 'privat'. "Tidak dikirim karena memang tidak boleh" harus terbaca berbeda
+     * dari "gagal dikirim" — kalau disamakan, layar memberi tahu admin bahwa
+     * emailnya bermasalah dan menyuruhnya memeriksa log setiap kali ia
+     * menjadwalkan negosiasi, untuk sesuatu yang berjalan persis sebagaimana
+     * mestinya.
+     *
+     * @return 'terkirim'|'gagal'|'privat'
      */
-    private function kirimUndanganJadwal(int $subTesId, int $lamaranId): bool
+    private function kirimUndanganJadwal(int $subTesId, int $lamaranId): string
     {
         try {
             $sub = DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes as t')
@@ -5405,7 +5432,34 @@ class LamaranController extends Controller
                 ->first();
 
             if (! $sub || ! $sub->Email) {
-                return false;
+                return 'gagal';
+            }
+
+            // ══ JADWAL YANG TIDAK DIUMUMKAN ══
+            //
+            // Aktivitas yang sengaja disembunyikan dari portal TIDAK BOLEH
+            // mengumumkan dirinya lewat email. Dua jalur ini dulu tidak saling
+            // tahu: penyaring Tampil_Kandidat menutup portal, sementara undangan
+            // tetap terkirim — jadi cek referensi dan negosiasi gaji yang
+            // sengaja dirahasiakan justru mendarat di kotak masuk kandidat.
+            // Penyembunyian yang bocor di pintu sebelah bukan penyembunyian.
+            //
+            // Negosiasi memang begitu perlakuannya: ia dijadwalkan tim untuk
+            // dirinya sendiri. Undangan "Negosiasi Penawaran, Selasa 10.00"
+            // memberitahu kandidat bahwa angkanya sedang dirundingkan, dan sejak
+            // saat itu tiap hari tanpa kabar terbaca sebagai penolakan yang
+            // tertunda. Yang perlu ia terima adalah HASILNYA, bukan jadwal rapat
+            // tentang dirinya.
+            $tipeSub = self::masterTipeTahap()[$sub->Tipe_Tahap_Kode ?? ''] ?? null;
+            $privat = ($tipeSub->Flag_Jadwal_Privat ?? 'T') === 'Y';
+
+            if ($privat || ($sub->Tampil_Kandidat ?? 'Y') !== 'Y') {
+                Log::channel('web_career')->info(
+                    "[JADWAL] Undangan TIDAK dikirim untuk aktivitas '{$sub->Label}' (lamaran {$sub->Kode}) — "
+                    . ($privat ? 'tipe berjadwal privat.' : 'aktivitas internal.')
+                );
+
+                return 'privat';
             }
 
             // TEMPATNYA ikut, bukan hanya patokan yang diketik rekruter.
@@ -5444,11 +5498,11 @@ class LamaranController extends Controller
                 ->where('Id_Lamaran_Tahap_Tes', $subTesId)
                 ->update(['Jadwal_Email_At' => now()]);
 
-            return true;
+            return 'terkirim';
         } catch (\Throwable $e) {
             Log::channel('web_career')->error('[JADWAL] undangan gagal diantrekan: ' . $e->getMessage());
 
-            return false;
+            return 'gagal';
         }
     }
 

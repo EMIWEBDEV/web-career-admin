@@ -80,44 +80,13 @@
                     <i class="bi bi-megaphone-fill"></i><span>{{ mt.catatanKegiatan }}</span>
                 </div>
 
-                <!-- JENDELA PENDAFTARAN — kartu selebar halaman, sejajar Jadwal
-                     Kegiatan & Tahapan Seleksi di bawahnya. Jadwal Kegiatan
-                     TIDAK lagi berdampingan di sini (lihat catatan di sana),
-                     jadi tidak ada lagi wrapper grid dua kolom: satu kartu di
-                     dalam grid 1fr 1fr justru terpotong jadi separuh lebar. -->
-                <article class="mtd-card">
-                    <h3><i class="bi bi-calendar2-check-fill"></i> Jendela Pendaftaran</h3>
-
-                    <div class="mtd-win__lead" :class="jendela.kelas">
-                        <span>Status Pendaftaran</span>
-                        <strong>{{ jendela.utama }}</strong>
-                        <span>{{ jendela.sub }}</span>
-                    </div>
-
-                    <div v-if="jendela.persen !== null" class="mtd-win__rail">
-                        <div class="mtd-win__track">
-                            <span class="mtd-win__fill" :style="{ width: jendela.persen + '%' }"></span>
-                            <span class="mtd-win__now" :style="{ left: jendela.persen + '%' }"></span>
-                        </div>
-                    </div>
-
-                    <!-- Dua ujung jendela: dibuka di kiri, ditutup di kanan —
-                         sejajar dengan kedua ujung rel di atasnya. -->
-                    <div class="mtd-win__ends">
-                        <div>
-                            <small><i class="bi bi-play-circle-fill"></i> Dibuka</small>
-                            <b>{{ formatDateTime(mt.tanggalBuka) }}</b>
-                        </div>
-                        <div class="is-end">
-                            <small><i class="bi bi-stop-circle-fill"></i> Ditutup</small>
-                            <b>{{ mt.tanggalTutup ? formatDateTime(mt.tanggalTutup) : 'Tanpa batas waktu' }}</b>
-                        </div>
-                    </div>
-
-                    <div v-if="mt.tanggalPengumuman" class="mtd-win__extra">
-                        <span><i class="bi bi-megaphone-fill"></i> Pengumuman Hasil: <b>{{ formatDate(mt.tanggalPengumuman) }}</b></span>
-                    </div>
-                </article>
+                <!-- JENDELA PENDAFTARAN DIHAPUS.
+                     Isinya mengulang apa yang sudah tertulis di hero: sisa hari
+                     ("100 hari lagi") dan status pendaftaran sudah tampil di
+                     baris meta paling atas halaman. Satu kartu selebar layar
+                     hanya untuk mengatakannya kedua kali mendorong Tahapan
+                     Seleksi — yang benar-benar dicari pelamar — turun jauh ke
+                     bawah lipatan. -->
 
                 <!-- KRITERIA & KAMPUS SASARAN -->
                 <div class="mtd-subcards">
@@ -367,7 +336,7 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from
 import CareerLayout from './Layouts/CareerLayout.vue';
 import LowonganCard from './components/LowonganCard.vue';
 import CtaSection from './sections/CtaSection.vue';
-import { daysLeft, deadlineLabel, formatDate, formatDateTime, goToSection, observeReveal, stageTypeLabel, statusLabel } from './careerData';
+import { daysLeft, deadlineLabel, formatDate, goToSection, observeReveal, stageTypeLabel, statusLabel } from './careerData';
 
 defineOptions({ layout: null });
 
@@ -390,38 +359,8 @@ function waktuMs(s) {
     return Number.isNaN(t) ? null : t;
 }
 
-/**
- * Yang ingin diketahui pelamar bukan "tanggalnya berapa" tapi "masih sempat
- * tidak". `persen` = seberapa jauh jendela pendaftaran sudah berjalan; null
- * bila tak bisa dihitung (evergreen atau tanggal tak lengkap) sehingga relnya
- * tidak digambar sama sekali — lebih baik hilang daripada memajang bar palsu.
- */
-const jendela = computed(() => {
-    const m = mt.value;
-    const buka = waktuMs(m.tanggalBuka);
-    const tutup = waktuMs(m.tanggalTutup);
-    const kini = Date.now();
-
-    if (!tutup) {
-        return { utama: 'Dibuka terus', sub: 'Belum ada tanggal penutupan', kelas: 'is-buka', persen: null };
-    }
-    if (kini > tutup) {
-        return { utama: 'Sudah ditutup', sub: 'Pendaftaran periode ini telah berakhir', kelas: 'is-tutup', persen: 100 };
-    }
-    if (buka && kini < buka) {
-        return { utama: 'Segera dibuka', sub: `Mulai ${formatDateTime(m.tanggalBuka)}`, kelas: 'is-nanti', persen: 0 };
-    }
-
-    const sisa = daysLeft(m.tanggalTutup);
-    const persen = buka && tutup > buka ? Math.min(100, Math.max(0, ((kini - buka) / (tutup - buka)) * 100)) : null;
-
-    return {
-        utama: sisa <= 0 ? 'Ditutup hari ini' : `${sisa} hari lagi`,
-        sub: 'sebelum pendaftaran ditutup',
-        kelas: sisa <= 7 ? 'is-mepet' : 'is-buka',
-        persen,
-    };
-});
+// `jendela` ikut dibuang bersama kartunya — status & sisa hari pendaftaran
+// kini hanya dihitung sekali, oleh deadlineLabel()/daysLeft() di hero.
 
 // ── Jadwal kegiatan ────────────────────────────────────────────────────────
 const BULAN_PENDEK = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
