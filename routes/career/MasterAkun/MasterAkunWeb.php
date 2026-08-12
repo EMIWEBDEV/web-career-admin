@@ -13,5 +13,8 @@ Route::prefix('api/v1')->name('career.api.master-akun.')->group(function () {
     Route::post('/master-akun', [MasterAkunController::class, 'store'])->name('store')->middleware('career.permission:masterAkunPage,CREATE');
     Route::put('/master-akun/{id}', [MasterAkunController::class, 'update'])->name('update')->middleware('career.permission:masterAkunPage,EDIT');
     Route::patch('/master-akun/{id}/toggle', [MasterAkunController::class, 'toggle'])->name('toggle')->middleware('career.permission:masterAkunPage,EDIT');
+    // Kirim ULANG tautan verifikasi email. Izinnya EDIT, bukan CREATE: yang
+    // dilakukan adalah membetulkan akun yang sudah ada, bukan membuat yang baru.
+    Route::patch('/master-akun/{id}/kirim-verifikasi', [MasterAkunController::class, 'kirimVerifikasi'])->name('kirim-verifikasi')->middleware('career.permission:masterAkunPage,EDIT');
     Route::delete('/master-akun/{id}', [MasterAkunController::class, 'destroy'])->name('destroy')->middleware('career.permission:masterAkunPage,DELETE');
 });

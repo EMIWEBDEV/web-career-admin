@@ -6,6 +6,7 @@ use App\Helpers\ResponseHelper;
 use App\Http\Controllers\Controller;
 use App\Jobs\Career\WcPenjadwalanJob;
 use App\Services\WebCareers\HclClient;
+use App\Support\Career\AksesService;
 use App\Support\CareerShell;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -41,6 +42,9 @@ use Vinkla\Hashids\Facades\Hashids;
  */
 class PenjadwalanController extends Controller
 {
+    /** Kunci halaman — dipakai middleware DAN penyaring kategori. */
+    private const PAGE = 'penjadwalanPage';
+
     public function __construct(private HclClient $hcl)
     {
     }
@@ -54,13 +58,17 @@ class PenjadwalanController extends Controller
     public function opsi()
     {
         try {
-            $talent = DB::table('N_WEB_CAREERS_Master_Talent_Acquisition')
-                ->where('Flag_Aktif', 'Y')
-                ->orderBy('Id_Master_Talent_Acquisition')
-                ->get(['Kode as kode', 'Nama as nama']);
+            // Tab HANYA kategori yang dipegang pengguna ini. Dulu seluruh isi
+            // master dikirim, sehingga admin yang dijatah satu kategori tetap
+            // melihat tiga tab — dan dua di antaranya selalu kosong.
+            $talent = AksesService::tabKategori(self::PAGE);
 
+            // Programnya ikut disaring. Tanpa ini tab boleh disembunyikan, tapi
+            // dropdown program masih memuat program kategori lain — dan sekali
+            // terpilih, kandidatnya bisa dijadwalkan tes.
             $program = DB::table('N_WEB_CAREERS_Program as p')
                 ->leftJoin('N_WEB_CAREERS_Master_Alur as a', 'a.Kode', '=', 'p.Alur_Kode')
+                ->tap(fn ($qb) => AksesService::saringKategori($qb, self::PAGE, 'p.Kategori'))
                 ->orderBy('p.Nama')
                 ->get([
                     'p.Id_Program as id', 'p.Kode as kode', 'p.Nama as nama', 'p.Kategori as kategori',
@@ -978,13 +986,46 @@ class PenjadwalanController extends Controller
         // penjadwalan. Yang menggagalkan hanya bila barisnya KETEMU tapi
         // pemiliknya orang lain (kasus id peserta terulang setelah reset).
         $shortSemua = collect($detail)->pluck('Short_Token')->filter()->unique()->values()->all();
-        $tokenCat = $shortSemua
-            ? DB::table('HRIS_KANDIDAT_Ujian_Token')
-                ->whereIn('Short_Token', $shortSemua)
-                ->where('Sumber_Aplikasi', 'WEB_CAREERS')
-                ->get(['Id_Ujian_Token', 'Short_Token', 'Id_Calon_Karyawan'])
-                ->keyBy('Short_Token')
-            : collect();
+
+        // TABEL INI MILIK CAT, DAN KUERINYA JALAN DI KONEKSI KITA.
+        //
+        // `DB::table()` tanpa ->connection() jatuh ke koneksi default, yaitu
+        // database Web Careers. Selama CAT berjalan lokal, tabelnya kebetulan
+        // sedatabase dan pemeriksaan ini lolos. Begitu CAT punya databasenya
+        // sendiri — dan di production memang begitu — yang muncul adalah
+        // "Invalid object name", atau "Invalid column name" bila masih tersisa
+        // salinan lama tanpa kolom Sumber_Aplikasi.
+        //
+        // Dulu lemparannya tidak ditangkap siapa pun, sehingga membatalkan
+        // SELURUH penyerapan balasan. Itu kerugian yang jauh lebih besar
+        // daripada kelihatannya: pada titik ini CAT SUDAH menerbitkan tokennya.
+        // Yang gagal cuma pencatatan balik — tapi peserta ditandai gagal,
+        // Short_Token tak pernah tersimpan, dan karena penyaring percobaan ulang
+        // justru `whereNull('Short_Token')`, setiap ulangan mengirim orang yang
+        // sama ke CAT lagi. Tokennya beranak, yang lama jadi yatim.
+        //
+        // Kegagalannya kini turun pangkat jadi "pemeriksaan dilewati", persis
+        // seperti yang dijanjikan catatan di atas. Yang hilang hanya jaring
+        // pengaman tambahan, dan itu sudah tidak menanggung beban yang sama:
+        // sejak pengenal peserta diambil dari SEQUENCE — yang tidak pernah
+        // mundur walau tabel di-reset — tabrakan id yang dulu dijaga di sini
+        // sudah tercegah di hulu, bukan ditangkap di hilir.
+        $tokenCat = collect();
+
+        if ($shortSemua) {
+            try {
+                $tokenCat = DB::table('HRIS_KANDIDAT_Ujian_Token')
+                    ->whereIn('Short_Token', $shortSemua)
+                    ->where('Sumber_Aplikasi', 'WEB_CAREERS')
+                    ->get(['Id_Ujian_Token', 'Short_Token', 'Id_Calon_Karyawan'])
+                    ->keyBy('Short_Token');
+            } catch (\Throwable $e) {
+                Log::channel('web_career')->warning(
+                    '[PENJADWALAN] pemeriksaan kepemilikan token dilewati — tabel token CAT '
+                    . 'tidak terjangkau dari database ini: ' . $e->getMessage()
+                );
+            }
+        }
 
         // Satu sesi ujian hanya boleh dipegang SATU peserta. Kalau CAT membalas
         // token yang sama untuk dua orang, keduanya akan mengerjakan sesi yang

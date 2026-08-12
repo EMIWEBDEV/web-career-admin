@@ -80,44 +80,13 @@
                     <i class="bi bi-megaphone-fill"></i><span>{{ mt.catatanKegiatan }}</span>
                 </div>
 
-                <!-- JENDELA PENDAFTARAN — kartu selebar halaman, sejajar Jadwal
-                     Kegiatan & Tahapan Seleksi di bawahnya. Jadwal Kegiatan
-                     TIDAK lagi berdampingan di sini (lihat catatan di sana),
-                     jadi tidak ada lagi wrapper grid dua kolom: satu kartu di
-                     dalam grid 1fr 1fr justru terpotong jadi separuh lebar. -->
-                <article class="mtd-card">
-                    <h3><i class="bi bi-calendar2-check-fill"></i> Jendela Pendaftaran</h3>
-
-                    <div class="mtd-win__lead" :class="jendela.kelas">
-                        <span>Status Pendaftaran</span>
-                        <strong>{{ jendela.utama }}</strong>
-                        <span>{{ jendela.sub }}</span>
-                    </div>
-
-                    <div v-if="jendela.persen !== null" class="mtd-win__rail">
-                        <div class="mtd-win__track">
-                            <span class="mtd-win__fill" :style="{ width: jendela.persen + '%' }"></span>
-                            <span class="mtd-win__now" :style="{ left: jendela.persen + '%' }"></span>
-                        </div>
-                    </div>
-
-                    <!-- Dua ujung jendela: dibuka di kiri, ditutup di kanan —
-                         sejajar dengan kedua ujung rel di atasnya. -->
-                    <div class="mtd-win__ends">
-                        <div>
-                            <small><i class="bi bi-play-circle-fill"></i> Dibuka</small>
-                            <b>{{ formatDateTime(mt.tanggalBuka) }}</b>
-                        </div>
-                        <div class="is-end">
-                            <small><i class="bi bi-stop-circle-fill"></i> Ditutup</small>
-                            <b>{{ mt.tanggalTutup ? formatDateTime(mt.tanggalTutup) : 'Tanpa batas waktu' }}</b>
-                        </div>
-                    </div>
-
-                    <div v-if="mt.tanggalPengumuman" class="mtd-win__extra">
-                        <span><i class="bi bi-megaphone-fill"></i> Pengumuman Hasil: <b>{{ formatDate(mt.tanggalPengumuman) }}</b></span>
-                    </div>
-                </article>
+                <!-- JENDELA PENDAFTARAN DIHAPUS.
+                     Isinya mengulang apa yang sudah tertulis di hero: sisa hari
+                     ("100 hari lagi") dan status pendaftaran sudah tampil di
+                     baris meta paling atas halaman. Satu kartu selebar layar
+                     hanya untuk mengatakannya kedua kali mendorong Tahapan
+                     Seleksi — yang benar-benar dicari pelamar — turun jauh ke
+                     bawah lipatan. -->
 
                 <!-- KRITERIA & KAMPUS SASARAN -->
                 <div class="mtd-subcards">
@@ -367,7 +336,7 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from
 import CareerLayout from './Layouts/CareerLayout.vue';
 import LowonganCard from './components/LowonganCard.vue';
 import CtaSection from './sections/CtaSection.vue';
-import { daysLeft, deadlineLabel, formatDate, formatDateTime, goToSection, observeReveal, stageTypeLabel, statusLabel } from './careerData';
+import { daysLeft, deadlineLabel, formatDate, goToSection, observeReveal, stageTypeLabel, statusLabel } from './careerData';
 
 defineOptions({ layout: null });
 
@@ -382,46 +351,16 @@ const hasMt = computed(() => props.hasMt);
 const offices = computed(() => props.offices || []);
 const posisi = computed(() => mt.value.posisi || []);
 
-// ── Jendela pendaftaran ────────────────────────────────────────────────────
+// ── Bantu tanggal ──────────────────────────────────────────────────────────
+// Dulu bagian ini milik kartu Jendela Pendaftaran. Kartunya sudah dihapus —
+// status & sisa hari kini hanya dihitung sekali oleh deadlineLabel()/daysLeft()
+// di hero — tapi waktuMs() tetap dipakai penyusun Jadwal Kegiatan di bawah.
 /** 'Y-m-d H:i' / 'Y-m-d' → epoch ms. Spasi diganti 'T' agar Safari ikut baca. */
 function waktuMs(s) {
     if (!s) return null;
     const t = Date.parse(String(s).replace(' ', 'T'));
     return Number.isNaN(t) ? null : t;
 }
-
-/**
- * Yang ingin diketahui pelamar bukan "tanggalnya berapa" tapi "masih sempat
- * tidak". `persen` = seberapa jauh jendela pendaftaran sudah berjalan; null
- * bila tak bisa dihitung (evergreen atau tanggal tak lengkap) sehingga relnya
- * tidak digambar sama sekali — lebih baik hilang daripada memajang bar palsu.
- */
-const jendela = computed(() => {
-    const m = mt.value;
-    const buka = waktuMs(m.tanggalBuka);
-    const tutup = waktuMs(m.tanggalTutup);
-    const kini = Date.now();
-
-    if (!tutup) {
-        return { utama: 'Dibuka terus', sub: 'Belum ada tanggal penutupan', kelas: 'is-buka', persen: null };
-    }
-    if (kini > tutup) {
-        return { utama: 'Sudah ditutup', sub: 'Pendaftaran periode ini telah berakhir', kelas: 'is-tutup', persen: 100 };
-    }
-    if (buka && kini < buka) {
-        return { utama: 'Segera dibuka', sub: `Mulai ${formatDateTime(m.tanggalBuka)}`, kelas: 'is-nanti', persen: 0 };
-    }
-
-    const sisa = daysLeft(m.tanggalTutup);
-    const persen = buka && tutup > buka ? Math.min(100, Math.max(0, ((kini - buka) / (tutup - buka)) * 100)) : null;
-
-    return {
-        utama: sisa <= 0 ? 'Ditutup hari ini' : `${sisa} hari lagi`,
-        sub: 'sebelum pendaftaran ditutup',
-        kelas: sisa <= 7 ? 'is-mepet' : 'is-buka',
-        persen,
-    };
-});
 
 // ── Jadwal kegiatan ────────────────────────────────────────────────────────
 const BULAN_PENDEK = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
@@ -956,8 +895,9 @@ onUnmounted(() => revealObs?.disconnect());
 }
 
 /* ── Jadwal Kegiatan: sorotan "apa yang relevan sekarang" ──
-   Bahasa visual disamakan dengan kartu Jendela Pendaftaran (gradasi ungu,
-   chip kanan) supaya keduanya terbaca sebagai satu keluarga komponen. */
+   Gradasi ungu + chip kanan. Bahasa visual ini dulu dipinjam dari kartu
+   Jendela Pendaftaran yang kini sudah dihapus; dipertahankan karena kartu
+   Tahapan Seleksi memakai keluarga yang sama. */
 .mtd-jw__next {
     display: flex;
     align-items: center;
@@ -1157,131 +1097,6 @@ onUnmounted(() => revealObs?.disconnect());
     margin-top: 3px;
 }
 
-/* ── Jendela pendaftaran ── */
-.mtd-win__lead {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: 14px 16px;
-    border-radius: 15px;
-    border: 1px solid rgba(99, 102, 241, 0.2);
-    background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(99, 102, 241, 0.05));
-}
-.mtd-win__lead strong {
-    font-size: 1.35rem;
-    font-weight: 800;
-    letter-spacing: -0.02em;
-    line-height: 1.1;
-    color: #4338ca;
-}
-.mtd-win__lead span {
-    font-size: 12px;
-    font-weight: 600;
-    color: #64748b;
-}
-.mtd-win__lead.is-mepet {
-    border-color: rgba(225, 29, 72, 0.28);
-    background: linear-gradient(135deg, rgba(251, 113, 133, 0.14), rgba(225, 29, 72, 0.05));
-}
-.mtd-win__lead.is-mepet strong {
-    color: #be123c;
-}
-.mtd-win__lead.is-tutup {
-    border-color: #e6e9f3;
-    background: #f8fafc;
-}
-.mtd-win__lead.is-tutup strong {
-    color: #64748b;
-}
-.mtd-win__lead.is-nanti strong {
-    color: #b45309;
-}
-
-.mtd-win__rail {
-    margin-top: 16px;
-}
-.mtd-win__track {
-    position: relative;
-    height: 8px;
-    border-radius: 99px;
-    background: #e9ecf7;
-}
-.mtd-win__fill {
-    position: absolute;
-    inset: 0 auto 0 0;
-    border-radius: 99px;
-    background: linear-gradient(90deg, #a78bfa, #6366f1);
-    transition: width 0.6s ease;
-}
-/* Penanda "sekarang" duduk tepat di ujung bagian yang sudah berjalan. */
-.mtd-win__now {
-    position: absolute;
-    top: 50%;
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    background: #fff;
-    border: 3px solid #6366f1;
-    transform: translate(-50%, -50%);
-    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4);
-    transition: left 0.6s ease;
-}
-
-.mtd-win__ends {
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    margin-top: 12px;
-}
-.mtd-win__ends > div {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    min-width: 0;
-}
-.mtd-win__ends .is-end {
-    text-align: right;
-}
-.mtd-win__ends small {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    font-size: 10.5px;
-    font-weight: 800;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: #94a3b8;
-}
-.mtd-win__ends .is-end small {
-    justify-content: flex-end;
-}
-.mtd-win__ends b {
-    font-size: 12.5px;
-    font-weight: 800;
-    color: #0f172a;
-}
-
-.mtd-win__extra {
-    display: grid;
-    gap: 6px;
-    margin-top: 14px;
-    padding-top: 12px;
-    border-top: 1px solid #f1f2f9;
-}
-.mtd-win__extra span {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 12px;
-    color: #64748b;
-}
-.mtd-win__extra .bi {
-    color: #6366f1;
-}
-.mtd-win__extra b {
-    color: #0f172a;
-    font-weight: 800;
-}
 
 /* ── Jadwal kegiatan — kartu "tiket" berkelompok per bulan ──
    Sengaja TIDAK dibuat seperti Tahapan Seleksi (badge nomor + urutan) meski

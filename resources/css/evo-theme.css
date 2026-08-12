@@ -2208,6 +2208,10 @@ h6,
     display: flex;
     gap: 0.4rem;
 }
+.wc-apply__note a {
+    color: #6366f1;
+    text-decoration: underline;
+}
 
 /* ═══════════ FOOTER ═══════════ */
 /* Footer terang, elegan, selaras evo theme (indigo/cyan/gold) */

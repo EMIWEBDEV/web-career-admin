@@ -10,9 +10,11 @@ use App\Jobs\Career\WcBiodataHrisJob;
 use App\Jobs\Career\WcJadwalEmailJob;
 use App\Jobs\Career\WcApplyFormJob;
 use App\Jobs\Career\WcLaporanKandidatJob;
+use App\Support\Career\AksesService;
 use App\Support\Career\AlurKolom;
 use App\Support\Career\GcsBerkas;
 use App\Support\Career\HtmlBersih;
+use App\Support\Career\JadwalPrivat;
 use App\Support\Career\KatalogPrefill;
 use App\Support\Career\LamaranService;
 use App\Support\Career\LamaranTargetValidator;
@@ -38,6 +40,9 @@ use Vinkla\Hashids\Facades\Hashids;
  */
 class LamaranController extends Controller
 {
+    /** Kunci halaman worklist — dipakai middleware DAN penyaring kategori. */
+    private const PAGE = 'pelamarPage';
+
     public function __construct(
         private LamaranService $svc,
         private LamaranTargetValidator $targetValidator,
@@ -877,6 +882,16 @@ class LamaranController extends Controller
                 ] : null,
                 'ujian' => $ujian,
                 'tes' => $tes,
+                // Tahap ini memuat aktivitas yang jadwalnya INTERNAL (negosiasi).
+                //
+                // Dikirim sebagai boolean telanjang — tanpa nama, tanpa jumlah,
+                // tanpa jadwal. Layar hanya perlu tahu bahwa ada yang sedang
+                // ditangani tim supaya kalimatnya tidak berbunyi "belum ada
+                // jadwal" untuk sesuatu yang memang tidak akan pernah
+                // dijadwalkan untuk kandidat. Apa yang dikerjakan tim tetap
+                // tidak ikut keluar.
+                'adaJadwalInternal' => collect($subTesRows->get($t->Id_Lamaran_Tahap, []))
+                    ->contains(fn ($s) => JadwalPrivat::untuk($s->Tipe_Tahap_Kode ?? null)),
             ];
         })->values();
 
@@ -1164,17 +1179,62 @@ class LamaranController extends Controller
      */
     private static function pencariBerkas(\Illuminate\Support\Collection $berkas): \Closure
     {
-        return static function (string $kunci) use ($berkas): ?array {
-            $b = $berkas->firstWhere('field', $kunci);
+        // Berkas yang SUDAH diambil baris sebelumnya, dikunci per URL (unik per
+        // baris tabel berkas). Inilah yang menjamin dua baris riwayat tidak
+        // pernah menunjuk dokumen yang sama.
+        $dipakai = [];
 
-            return $b ? [
+        return static function (string $kunci, string $nilai = '') use ($berkas, &$dipakai): ?array {
+            $b = null;
+
+            // ── 1. COCOKKAN NAMA BERKASNYA ──────────────────────────────────
+            //
+            // Untuk baris berulang, inilah satu-satunya pencocokan yang benar.
+            // Jawaban_Json menyimpan NAMA berkas tiap baris ("sertifikat-
+            // haccp.pdf"), dan nama itu yang membedakan baris ke-2 dari ke-1 —
+            // sub-kuncinya sendiri identik di semua baris.
+            if ($nilai !== '') {
+                $b = $berkas->first(
+                    fn ($x) => $x['field'] === $kunci && $x['nama'] === $nilai && empty($dipakai[$x['url']])
+                );
+            }
+
+            // ── TIDAK ADA CADANGAN, DAN ITU DISENGAJA ───────────────────────
+            //
+            // Baris yang menyebut nama berkas tapi berkasnya tidak ditemukan
+            // dibiarkan KOSONG, bukan dicarikan pengganti. Kasus nyatanya:
+            //
+            //   baris 1 menyebut  LMR-QTCGFST2-frans-bachtiar-1.pdf  (hilang)
+            //   baris 2 menyebut  spesifikasi512mb-...pdf            (ada)
+            //
+            // Percobaan pertama perbaikan ini memakai cadangan "ambil berkas
+            // pertama yang belum terpakai". Akibatnya baris 1 gagal mencocokkan
+            // nama lalu menyambar satu-satunya berkas tersisa — milik baris 2 —
+            // dan saat giliran baris 2 tiba berkasnya sudah habis. Dokumen yang
+            // benar menempel pada sertifikat yang salah, DAN sertifikat yang
+            // benar kehilangan dokumennya: dua kekeliruan dari satu tebakan.
+            //
+            // Kosong membuat peninjau bertanya. Dokumen yang salah tidak akan
+            // pernah dipertanyakan siapa pun.
+            //
+            // Aman untuk data lama: seluruh pengisian yang ada (diperiksa 6 dari
+            // 6 pada 12 Agustus 2026) menyimpan nama yang cocok persis dengan
+            // Nama_Asli, sebab keduanya ditulis oleh proses unggah yang sama.
+
+            if (! $b) {
+                return null;
+            }
+
+            $dipakai[$b['url']] = true;
+
+            return [
                 'field' => $b['field'],
                 'nama' => $b['nama'],
                 'url' => $b['url'],
                 'ext' => $b['ext'],
                 'isImage' => $b['isImage'],
                 'isPdf' => $b['isPdf'],
-            ] : null;
+            ];
         };
     }
 
@@ -1264,7 +1324,12 @@ class LamaranController extends Controller
                     // Kuncinya dicari APA ADANYA (`sert_file`), bukan yang sudah
                     // dipangkas awalan — Field_Key di tabel berkas menyimpan
                     // bentuk penuhnya.
-                    'berkas' => $cariBerkas ? $cariBerkas((string) $k) : null,
+                    // NILAINYA IKUT DIKIRIM, dan itu yang membedakan baris satu
+                    // dari baris lainnya: `$k` identik di seluruh baris riwayat
+                    // (`sert_file` lagi dan lagi), sedangkan `$t` memuat NAMA
+                    // berkas milik baris ini. Tanpa argumen kedua, tiap baris
+                    // menerima berkas yang sama — lihat pencariBerkas().
+                    'berkas' => $cariBerkas ? $cariBerkas((string) $k, $t) : null,
                 ];
             }
 
@@ -2456,12 +2521,10 @@ class LamaranController extends Controller
     /** Tab filter jenis = Master Talent Acquisition aktif. */
     private function talentTabs(): array
     {
-        return DB::table('N_WEB_CAREERS_Master_Talent_Acquisition')
-            ->where('Flag_Aktif', 'Y')
-            ->orderBy('Id_Master_Talent_Acquisition')
-            ->get(['Kode', 'Nama'])
-            ->map(fn ($r) => ['kode' => $r->Kode, 'label' => $r->Nama])
-            ->all();
+        // Hanya kategori yang memang boleh dibuka pengguna ini. Chip untuk
+        // kategori yang tak ia pegang bukan sekadar mubazir — ia menjanjikan
+        // isi yang, begitu ditekan, tidak pernah ada.
+        return AksesService::tabKategori(self::PAGE);
     }
 
     /**
@@ -2475,9 +2538,19 @@ class LamaranController extends Controller
             ->leftJoin('N_WEB_CAREERS_Master_Alur as a', 'a.Kode', '=', 'p.Alur_Kode')
             ->where('p.Status', 'BERJALAN');
 
+        // BATAS KATEGORI — dipasang di kueri, bukan cuma di chip.
+        // Chip hanya rupa; `?jenis=` tetap bisa dikarang sendiri, dan tanpa baris
+        // ini admin yang dijatah satu kategori tetap bisa menarik daftar program
+        // kategori lain — berikut seluruh pelamarnya lewat panel kanan.
+        AksesService::saringKategori($base, self::PAGE, 'p.Kategori');
+
         if ($q !== '') {
             $base->where('p.Nama', 'like', "%{$q}%");
         }
+        // Yang diminta disaring dulu terhadap izin: di luar jatahnya, permintaan
+        // itu jatuh kembali ke "semua yang boleh", bukan jadi daftar kosong yang
+        // membingungkan.
+        $jenis = AksesService::kategoriDiminta(self::PAGE, $jenis);
         if ($jenis !== '') {
             $base->where('p.Kategori', $jenis);
         }
@@ -2541,6 +2614,20 @@ class LamaranController extends Controller
     {
         $program = DB::table('N_WEB_CAREERS_Program')->where('Id_Program', $programId)->first();
         if (! $program) {
+            return ['program' => null, 'kolom' => [], 'pelamar' => []];
+        }
+
+        // Menyaring daftar di panel kiri saja belum menutup apa pun: id program
+        // ada di URL, dan panel kanan inilah yang memuat seluruh pelamar berikut
+        // nilai serta keputusannya. Program di luar jatah kategori dijawab sama
+        // seperti program yang tidak ada — tidak membocorkan bahwa ia ada.
+        $izin = AksesService::kategoriDiizinkan(self::PAGE);
+        if ($izin && ! in_array($program->Kategori, $izin, true)) {
+            Log::channel('web_career')->warning(
+                "Akses ditolak: user #" . session('career_auth.id') . " membuka program {$program->Kode} "
+                . "(kategori {$program->Kategori}) di luar jatahnya."
+            );
+
             return ['program' => null, 'kolom' => [], 'pelamar' => []];
         }
 
@@ -4925,11 +5012,21 @@ class LamaranController extends Controller
 
         $this->terapkanJadwal((int) $realId, $data, $data['mulai'], $data['selesai'] ?? null);
 
-        $terkirim = $this->kirimUndanganJadwal((int) $realId, (int) $sub->Lamaran_Id);
+        $undangan = $this->kirimUndanganJadwal((int) $realId, (int) $sub->Lamaran_Id);
+
+        // Tiga keadaan, tiga kalimat. "Privat" bukan kegagalan: menyuruh admin
+        // memeriksa log untuk sesuatu yang berjalan sebagaimana mestinya hanya
+        // mengajarinya mengabaikan peringatan.
+        $pesan = [
+            'terkirim' => 'Jadwal disimpan dan undangan dikirim ke kandidat.',
+            'privat' => 'Jadwal disimpan. ' . ($tipeSub->Nama ?? 'Aktivitas ini')
+                . ' bersifat internal — kandidat tidak menerima undangan dan tidak melihatnya di portal.',
+            'gagal' => 'Jadwal disimpan. Undangan email gagal dikirim — periksa log.',
+        ][$undangan];
 
         return ResponseHelper::success(
-            ['emailTerkirim' => $terkirim],
-            $terkirim ? 'Jadwal disimpan dan undangan dikirim ke kandidat.' : 'Jadwal disimpan. Undangan email gagal dikirim — periksa log.',
+            ['emailTerkirim' => $undangan === 'terkirim', 'undangan' => $undangan],
+            $pesan,
         );
     }
 
@@ -5335,12 +5432,13 @@ class LamaranController extends Controller
                 $selesai?->format('Y-m-d H:i:s'),
             );
 
-            $terkirim = $this->kirimUndanganJadwal((int) $sub->Id_Lamaran_Tahap_Tes, (int) $sub->Lamaran_Id);
+            $undangan = $this->kirimUndanganJadwal((int) $sub->Id_Lamaran_Tahap_Tes, (int) $sub->Lamaran_Id);
 
             $berhasil[] = [
                 'nama' => $nama,
                 'mulai' => $mulai->format('Y-m-d H:i'),
-                'emailTerkirim' => $terkirim,
+                'emailTerkirim' => $undangan === 'terkirim',
+                'undangan' => $undangan,
             ];
             $urutanSesi++;
         }
@@ -5349,11 +5447,18 @@ class LamaranController extends Controller
             '[JADWAL-MASSAL] ' . count($berhasil) . ' berhasil, ' . count($gagal) . ' gagal — oleh ' . session('career_auth.nama', 'ADMIN')
         );
 
+        // Kalimatnya mengikuti apa yang BENAR-BENAR terjadi. "Diundang lewat
+        // email" untuk aktivitas privat adalah laporan yang keliru, dan admin
+        // yang mempercayainya akan menunggu balasan kandidat yang tak pernah
+        // diberi tahu.
+        $adaPrivat = collect($berhasil)->contains('undangan', 'privat');
+        $kabar = $adaPrivat ? 'dijadwalkan (internal — kandidat tidak diberi tahu)' : 'dijadwalkan dan diundang lewat email';
+
         return ResponseHelper::success(
             ['berhasil' => $berhasil, 'gagal' => $gagal],
             count($gagal)
                 ? count($berhasil) . ' kandidat dijadwalkan, ' . count($gagal) . ' dilewati — periksa rinciannya.'
-                : count($berhasil) . ' kandidat dijadwalkan dan diundang lewat email.',
+                : count($berhasil) . ' kandidat ' . $kabar . '.',
         );
     }
 
@@ -5363,8 +5468,17 @@ class LamaranController extends Controller
      * Kegagalan email TIDAK membatalkan jadwalnya: jadwal sudah tersimpan dan
      * terlihat di portal kandidat, jadi menggagalkan seluruh operasi hanya
      * karena SMTP sedang bermasalah justru merugikan.
+     *
+     * Mengembalikan TIGA keadaan, bukan ya/tidak: 'terkirim', 'gagal', dan
+     * 'privat'. "Tidak dikirim karena memang tidak boleh" harus terbaca berbeda
+     * dari "gagal dikirim" — kalau disamakan, layar memberi tahu admin bahwa
+     * emailnya bermasalah dan menyuruhnya memeriksa log setiap kali ia
+     * menjadwalkan negosiasi, untuk sesuatu yang berjalan persis sebagaimana
+     * mestinya.
+     *
+     * @return 'terkirim'|'gagal'|'privat'
      */
-    private function kirimUndanganJadwal(int $subTesId, int $lamaranId): bool
+    private function kirimUndanganJadwal(int $subTesId, int $lamaranId): string
     {
         try {
             $sub = DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes as t')
@@ -5379,7 +5493,48 @@ class LamaranController extends Controller
                 ->first();
 
             if (! $sub || ! $sub->Email) {
-                return false;
+                return 'gagal';
+            }
+
+            // ══ JADWAL YANG TIDAK DIUMUMKAN ══
+            //
+            // HANYA tipe yang ditandai privat di master. Negosiasi dijadwalkan
+            // tim untuk dirinya sendiri: undangan "Negosiasi Penawaran, Selasa
+            // 10.00" memberitahu kandidat bahwa angkanya sedang dirundingkan,
+            // dan sejak saat itu tiap hari tanpa kabar terbaca sebagai penolakan
+            // yang tertunda. Yang perlu ia terima adalah HASILNYA.
+            //
+            // ⚠ SENGAJA TIDAK memakai Tampil_Kandidat sebagai syarat.
+            //
+            // Menggodanya jelas: aktivitas yang disembunyikan dari portal tapi
+            // tetap mengirim undangan terlihat seperti kebocoran yang perlu
+            // ditutup. Tapi menutupnya justru membuat keadaannya lebih buruk.
+            // Aktivitas yang disembunyikan DAN dijadwalkan hampir selalu salah
+            // setelan, bukan rahasia — MCU yang tersembunyi, misalnya. Kandidat
+            // tetap harus datang ke pemeriksaan itu, dan email adalah SATU-
+            // SATUNYA kabar yang tersisa untuknya karena portalnya sudah
+            // ditutup. Membungkam email berarti ia tidak diberi tahu sama sekali
+            // lalu dianggap mangkir.
+            //
+            // Jadi diamnya hanya untuk yang MEMANG diniatkan diam. Sisanya tetap
+            // diundang, dan salah setelannya dicatat supaya terlihat orang —
+            // bukan diperbaiki diam-diam dengan cara yang merugikan kandidat.
+            $tipeSub = self::masterTipeTahap()[$sub->Tipe_Tahap_Kode ?? ''] ?? null;
+
+            if (JadwalPrivat::untuk($sub->Tipe_Tahap_Kode ?? null)) {
+                Log::channel('web_career')->info(
+                    "[JADWAL] Undangan TIDAK dikirim untuk '{$sub->Label}' (lamaran {$sub->Kode}) — tipe berjadwal privat."
+                );
+
+                return 'privat';
+            }
+
+            if (($sub->Tampil_Kandidat ?? 'Y') !== 'Y') {
+                Log::channel('web_career')->warning(
+                    "[JADWAL] Aktivitas '{$sub->Label}' (lamaran {$sub->Kode}) DISEMBUNYIKAN dari portal tetapi "
+                    . 'dijadwalkan — undangan tetap dikirim supaya kandidat tidak kehilangan satu-satunya kabar. '
+                    . 'Periksa setelan alurnya: kemungkinan besar aktivitas ini seharusnya tampil.'
+                );
             }
 
             // TEMPATNYA ikut, bukan hanya patokan yang diketik rekruter.
@@ -5418,11 +5573,11 @@ class LamaranController extends Controller
                 ->where('Id_Lamaran_Tahap_Tes', $subTesId)
                 ->update(['Jadwal_Email_At' => now()]);
 
-            return true;
+            return 'terkirim';
         } catch (\Throwable $e) {
             Log::channel('web_career')->error('[JADWAL] undangan gagal diantrekan: ' . $e->getMessage());
 
-            return false;
+            return 'gagal';
         }
     }
 

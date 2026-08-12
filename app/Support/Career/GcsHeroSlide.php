@@ -40,8 +40,26 @@ class GcsHeroSlide
         $ext = $this->normalkanExt($ext);
         $path = "career/hero/{$id}/{$slot}-" . Str::lower(Str::random(8)) . ".{$ext}";
 
-        if (! Storage::disk(self::DISK)->put($path, $konten)) {
-            throw new \RuntimeException('Gagal mengunggah berkas ke GCS.');
+        // DITULIS LEWAT getDriver(), BUKAN Storage::put().
+        //
+        // Storage::put() menelan penyebabnya: disk 'gcs' tidak menyetel
+        // 'throw', jadi kegagalan apa pun — kredensial tidak terbaca, bucket
+        // salah, service account tanpa izin — sama-sama kembali sebagai
+        // `false`. Yang sampai ke layar cuma "Gagal mengunggah berkas ke GCS",
+        // kalimat yang tidak membedakan salah ketik nama bucket dari izin IAM
+        // yang belum diberikan, sehingga tiap kejadian menuntut menebak.
+        //
+        // getDriver() memakai Flysystem langsung dan MELEMPAR pesan aslinya.
+        try {
+            Storage::disk(self::DISK)->getDriver()->write($path, $konten);
+        } catch (\Throwable $e) {
+            throw new \RuntimeException(
+                'Gagal mengunggah berkas ke GCS (bucket "'
+                . config('filesystems.disks.' . self::DISK . '.bucket') . '", path "' . $path . '"): '
+                . $e->getMessage(),
+                0,
+                $e
+            );
         }
 
         return $path;

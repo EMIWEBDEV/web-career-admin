@@ -17,7 +17,13 @@
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>
                     <input v-model="q" type="text" placeholder="Cari program..." @input="cariDebounce" />
                 </div>
-                <div class="plw-chips">
+                <!-- CHIP KATEGORI — isinya mengikuti hak akses, bukan seluruh master.
+                     "Semua" hanya berarti bila memang ADA yang bisa dipilih: pada
+                     admin yang dijatah satu kategori, "Semua" dan chip kategorinya
+                     menyaring himpunan yang sama persis, jadi dua tombol untuk satu
+                     hasil — dan yang menekannya mengira ada isi lain yang belum
+                     terlihat. Satu kategori: seluruh baris chip disembunyikan. -->
+                <div v-if="talent.length > 1" class="plw-chips">
                     <button type="button" class="plw-chip" :class="{ 'is-on': jenis === '' }" @click="setJenis('')">Semua</button>
                     <button v-for="t in talent" :key="t.kode" type="button" class="plw-chip" :class="{ 'is-on': jenis === t.kode }" @click="setJenis(t.kode)">{{ t.label }}</button>
                 </div>
@@ -1121,6 +1127,24 @@
                             menuntut izin <b>APPROVE</b> pada menu <b>Worklist Pelamar</b>.
                             Menandai kehadiran, mencatat hasil, menahan, dan menjadwalkan tetap bisa Anda lakukan.
                             <span>Minta penambahan izinnya di <b>Manajemen Hak Akses</b>.</span>
+                        </div>
+                    </div>
+
+                    <!-- MASTER KOSONG BUKAN "TIDAK BERWENANG", DAN BUKAN PULA DIAM.
+                         Seluruh tombol di bawah lahir dari Master Hasil Keputusan.
+                         Ketika masternya belum terisi di sebuah lingkungan, deretan
+                         tombolnya cuma lenyap tanpa sepatah kata — yang tertinggal
+                         hanya "Tahan Dulu", dan admin membaca itu sebagai aplikasi
+                         rusak, bukan sebagai data yang belum disiapkan. Satu kalimat
+                         di sini memangkas penelusuran dari berjam-jam jadi sedetik. -->
+                    <div v-else-if="!hasilKeputusan.length" class="plw-nomaster">
+                        <i class="bi bi-database-exclamation"></i>
+                        <div>
+                            <b>Master Hasil Keputusan masih kosong di lingkungan ini.</b>
+                            Tombol <b>Loloskan</b>, <b>Tidak Lolos</b>, dan <b>Talent Pool</b> seluruhnya dibangun
+                            dari master tersebut — selama tabelnya belum terisi, tidak ada satu pun keputusan
+                            yang bisa diketuk. Menahan dan menjadwalkan tetap berjalan.
+                            <span>Jalankan seed <b>N_WEB_CAREERS_Master_Hasil_Keputusan</b> pada basis data lingkungan ini.</span>
                         </div>
                     </div>
 
@@ -5622,6 +5646,19 @@ export default {
 .plw-nogate .bi { flex: none; margin-top: 1px; font-size: 14px; color: #2563eb; }
 .plw-nogate b { color: #1e3a8a; }
 .plw-nogate span { display: block; margin-top: 3px; color: #3b82f6; }
+
+/* Keterangan "master kosong" — kuning peringatan, bukan biru keterangan:
+   berbeda dari batas wewenang, keadaan ini MEMANG perlu dibereskan, dan
+   yang membereskannya bukan admin yang sedang menatap layar ini. */
+.plw-nomaster {
+    display: flex; gap: 10px; align-items: flex-start; margin-bottom: 10px;
+    padding: 11px 13px; border-radius: 12px;
+    background: #fffbeb; border: 1px solid #fde68a;
+    font-size: 12px; line-height: 1.55; color: #92400e;
+}
+.plw-nomaster .bi { flex: none; margin-top: 1px; font-size: 14px; color: #d97706; }
+.plw-nomaster b { color: #78350f; }
+.plw-nomaster span { display: block; margin-top: 3px; color: #b45309; }
 .plw-btn-hold:hover:not(:disabled) { border-color: #94a3b8; color: #475569; background: #f8fafc; }
 .plw-btn-hold:disabled { opacity: 0.5; cursor: not-allowed; }
 

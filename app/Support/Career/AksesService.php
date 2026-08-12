@@ -322,4 +322,50 @@ class AksesService
 
         return $izin ? $query->whereIn($kolom, $izin) : $query;
     }
+
+    /**
+     * TAB/CHIP KATEGORI yang boleh dilihat pengguna pada sebuah halaman.
+     *
+     * KENAPA DI SINI, BUKAN DI TIAP CONTROLLER
+     * Pola "ambil master talent → saring pakai kategoriDiizinkan()" sudah tersalin
+     * di beberapa halaman, dan yang belum menyalinnya menampilkan SELURUH kategori
+     * kepada admin yang cuma dijatah satu. Akibatnya admin MT melihat chip
+     * "Rekrutmen", menekannya, lalu mendapat daftar kosong — atau lebih buruk,
+     * mendapat isinya karena daftarnya sendiri juga lupa disaring. Satu salinan
+     * yang benar lebih murah daripada mengejar salinan yang tertinggal.
+     *
+     * @return array<int, array{kode:string, label:string, nama:string}>
+     */
+    public static function tabKategori(string $jenisPage): array
+    {
+        $izin = self::kategoriDiizinkan($jenisPage);   // null = tidak dibatasi
+
+        return DB::table('N_WEB_CAREERS_Master_Talent_Acquisition')
+            ->where('Flag_Aktif', 'Y')
+            ->when($izin, fn ($q) => $q->whereIn('Kode', $izin))
+            ->orderBy('Id_Master_Talent_Acquisition')
+            ->get(['Kode', 'Nama'])
+            ->map(fn ($r) => ['kode' => $r->Kode, 'label' => $r->Nama, 'nama' => $r->Nama])
+            ->all();
+    }
+
+    /**
+     * Saring pilihan kategori yang DIMINTA agar tak melampaui izin.
+     *
+     * Chip di layar hanya rupa; permintaannya tetap bisa dikarang sendiri
+     * (`?jenis=REKRUTMEN`). Kategori yang tidak diizinkan dikembalikan sebagai
+     * string kosong = "semua yang boleh", bukan ditolak dengan galat: yang
+     * mengetiknya bukan penyerang, umumnya cuma tautan lama atau tab tersimpan.
+     */
+    public static function kategoriDiminta(string $jenisPage, ?string $diminta): string
+    {
+        $diminta = trim((string) $diminta);
+        if ($diminta === '') {
+            return '';
+        }
+
+        $izin = self::kategoriDiizinkan($jenisPage);
+
+        return ($izin === null || in_array($diminta, $izin, true)) ? $diminta : '';
+    }
 }

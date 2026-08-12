@@ -888,22 +888,15 @@
                             <span><i style="background: #cbd5e1"></i> Menunggu</span>
                         </div>
                     </div>
+                    <!-- SUMBU TANGGAL DIHAPUS.
+                         Sebagian besar tanggal di sini bukan tanggal: tahap yang
+                         belum terjadwal diberi perkiraan tiga hari per tahap oleh
+                         kode ini sendiri, lalu ditumpuk berurutan. Ditandai "±",
+                         tapi tanda itu tidak menahan apa pun — yang dibaca
+                         kandidat tetap tanggal, dan tanggal di layar perusahaan
+                         terbaca sebagai janji. Waterfall-nya tetap: yang menyusun
+                         batangnya sekarang URUTAN tahap, bukan kalender. -->
                     <div class="ld-wf__body">
-                        <!-- Sumbu tanggal (ruler) -->
-                        <div class="ld-wf__axis">
-                            <div class="ld-wf__axisside">Tahap</div>
-                            <div class="ld-wf__axistrack">
-                                <span
-                                    v-for="(tk, i) in gantt.ticks"
-                                    :key="i"
-                                    class="ld-wf__tick"
-                                    :class="{ 'is-last': i === gantt.ticks.length - 1 }"
-                                    :style="{ left: tk.left + '%' }"
-                                    >{{ tk.label }}</span
-                                >
-                            </div>
-                        </div>
-
                         <div v-for="(w, i) in gantt.rows" :key="i" class="ld-wf__row">
                             <div class="ld-wf__side">
                                 <span class="ld-wf__node" :class="'is-' + w.state">
@@ -942,38 +935,20 @@
                                         {{ w.name }}
                                     </div>
                                     <div class="ld-wf__st" :style="{ color: w.stColor }">{{ w.statusLabel }}</div>
-                                    <div class="ld-wf__date" :class="{ 'is-est': w.est }">
-                                        <svg
-                                            width="12"
-                                            height="12"
-                                            viewBox="0 0 24 24"
-                                            fill="none"
-                                            stroke="currentColor"
-                                            stroke-width="2"
-                                            stroke-linecap="round"
-                                            stroke-linejoin="round"
-                                        >
-                                            <rect x="3" y="4" width="18" height="18" rx="2" />
-                                            <path d="M3 10h18M8 2v4M16 2v4" />
-                                        </svg>
-                                        {{ w.dateText }}
-                                    </div>
                                 </div>
                             </div>
                             <div class="ld-wf__track">
                                 <span
-                                    v-for="(tk, gi) in gantt.ticks"
+                                    v-for="gi in gantt.kolom"
                                     :key="gi"
                                     class="ld-wf__grid"
-                                    :style="{ left: tk.left + '%' }"
+                                    :style="{ left: ((gi - 1) / gantt.kolom) * 100 + '%' }"
                                 ></span>
                                 <span
                                     class="ld-wf__bar"
                                     :class="{ 'is-glow': w.glow, 'is-empty': w.state === 'todo' }"
                                     :style="{ marginLeft: w.left + '%', width: w.width + '%', background: w.bg }"
-                                >
-                                    <span class="ld-wf__barlabel">{{ w.barLabel }}</span>
-                                </span>
+                                ></span>
                             </div>
                         </div>
                     </div>
@@ -1364,6 +1339,29 @@ const P = {
 const PESAN_UMUM =
     'Tidak ada yang perlu kamu kerjakan sekarang — tim rekrutmen akan mengabarimu lewat email dan halaman ini.';
 
+/**
+ * KALIMAT TETAP untuk tahap yang jadwalnya ditangani tim sendiri (negosiasi
+ * penawaran). Sengaja SATU kalimat untuk SEMUA keadaan tahap itu: belum
+ * dijadwalkan, sudah dijadwalkan, sedang berlangsung, atau baru selesai
+ * dirundingkan — kandidat membaca hal yang sama persis.
+ *
+ * KENAPA TIDAK MENGIKUTI KEADAAN
+ * Kalimat yang berubah adalah kalimat yang bisa dibaca mundur. Kandidat yang
+ * hari ini melihat "menunggu jadwal" lalu besok melihat kalimat lain tahu ada
+ * sesuatu yang bergerak — dan sejak itu ia menghitung hari. Justru itu yang
+ * ingin dihindari: perundingan angka bisa memakan waktu, dan diamnya bukan
+ * kabar buruk. Kalimat yang tidak bergerak tidak bisa ditafsirkan.
+ *
+ * KENAPA DI KODE, BUKAN Pesan_Kandidat DI MASTER
+ * Master boleh disunting siapa saja yang memegang halaman Master Tipe Tahap,
+ * dan satu suntingan yang bermaksud baik ("Selamat, penawaran sedang
+ * disiapkan!") mengembalikan persis masalah yang kalimat ini ada untuk
+ * mencegahnya. Ditaruh di sini, mengubahnya menuntut tinjauan kode.
+ */
+const PESAN_TAHAP_INTERNAL =
+    'Tim rekrutmen kami akan menghubungi Anda untuk menyampaikan informasi lebih lanjut terkait proses offering. ' +
+    'Mohon pastikan nomor telepon dan email Anda tetap aktif.';
+
 export default {
     components: { Head, Link, JadwalKartu, DynamicForm, UnggahAktivitas },
     props: {
@@ -1553,6 +1551,14 @@ export default {
         tesDitunggu() {
             if (!this.pulangTes) return null;
 
+            // Tahap sudah bergerak sejak kandidat berangkat ujian → jejaknya
+            // bercerita tentang tahap yang sudah lewat. Diperiksa lebih dulu
+            // daripada pencocokan id: tes tahap BERIKUTNYA tidak boleh terpungut
+            // hanya karena kebetulan ia satu-satunya tes daring yang tersisa.
+            if (this.pulangTes.tahap && this.tahapAktif?.id && this.pulangTes.tahap !== this.tahapAktif.id) {
+                return null;
+            }
+
             const t = (this.aktivitas || []).find((x) => x.id === this.pulangTes.id);
 
             // Aktivitasnya tak lagi ada di tahap aktif = tahapnya sudah bergerak.
@@ -1575,6 +1581,53 @@ export default {
                     ikon: 'bi-send-check-fill',
                     judul: 'Jawaban tesmu sudah terkirim',
                     pesan: 'Terima kasih sudah menyelesaikan tes. Hasilnya sedang diterima sistem — halaman ini memperbarui dirinya sendiri, jadi tidak perlu kamu muat ulang.',
+                };
+            }
+
+            // TAHAP YANG SELURUH ISINYA DIKERJAKAN TIM — kandidat tidak punya
+            // satu pun aktivitas yang terlihat di sini. Negosiasi penawaran
+            // begitu: dijadwalkan tim untuk dirinya sendiri, dan jadwalnya
+            // sengaja tidak diumumkan.
+            //
+            // Dibedakan dari cabang di bawahnya, yang berbunyi "seluruh
+            // rangkaian tahap ini sudah KAMU selesaikan". Untuk tahap semacam
+            // ini kalimat itu keliru dua kali: kandidat tidak menyelesaikan apa
+            // pun di sini, dan mengatakan ia sudah selesai membuatnya menunggu
+            // keputusan yang sebetulnya belum mulai dirundingkan.
+            //
+            // KALIMATNYA STATIS, DAN SENGAJA TIDAK MENJANJIKAN APA-APA.
+            //
+            // Pesan_Kandidat dari master TIDAK dipakai di sini. Milik negosiasi
+            // berbunyi "Tim rekrutmen akan menghubungimu untuk membahas
+            // penawaran" — dan kalimat semacam itu justru yang harus dihindari:
+            // ia memberi tahu bahwa ada penawaran sedang disiapkan, menerbitkan
+            // harapan atas sesuatu yang belum diputuskan, lalu membuat tiap hari
+            // tanpa kabar terasa seperti penolakan. Padahal yang boleh diketahui
+            // kandidat cuma satu hal yang sudah pasti: ia melewati tahap
+            // sebelumnya, dan sekarang tidak ada yang perlu ia kerjakan.
+            //
+            // Tidak menyebut nama tahapnya, tidak menyebut apa yang dikerjakan
+            // tim, tidak menjanjikan kabar baik.
+            if (!akt.length) {
+                return {
+                    nada: 'tunggu',
+                    ikon: 'bi-hourglass-split',
+                    judul: 'Kamu sudah melewati tahap sebelumnya',
+                    pesan: this.tahapAktif?.adaJadwalInternal
+                        ? PESAN_TAHAP_INTERNAL
+                        : 'Tidak ada yang perlu kamu kerjakan saat ini. Perkembangan berikutnya muncul di halaman ini.',
+                };
+            }
+
+            // Kartu keadaan dan banner tidak boleh berselisih di satu layar:
+            // yang satu berkata "menunggu jadwal", yang lain kalimat tetap.
+            // Selama tahapnya ditangani tim, keduanya berbunyi sama.
+            if (this.tahapAktif?.adaJadwalInternal && !this.tahapAktif?.hasilTampil && !akt.some((x) => x.jadwal)) {
+                return {
+                    nada: 'tunggu',
+                    ikon: 'bi-hourglass-split',
+                    judul: 'Sedang ditangani tim rekrutmen',
+                    pesan: PESAN_TAHAP_INTERNAL,
                 };
             }
 
@@ -1697,11 +1750,62 @@ export default {
                         'Terima kasih atas partisipasimu. Jangan menyerah — banyak peluang lain menantimu.',
                 };
 
+            // TALENT POOL — dua kabar sekaligus, dan keduanya harus terdengar:
+            // TIDAK LOLOS di lowongan ini, TAPI datanya disimpan untuk kesempatan
+            // berikutnya. Dulu keadaan ini tidak punya cabang sama sekali, jadi
+            // ia jatuh ke cadangan di bawah dan kandidat yang lamarannya sudah
+            // DITUTUP dibalas "Lamaranmu sedang diproses" — menyuruhnya menunggu
+            // kabar yang tidak akan pernah datang. Catatan yang ditulis tim ikut
+            // hilang bersamanya, padahal justru di sinilah ia paling berarti:
+            // ia menerangkan kenapa disimpan, bukan sekadar kenapa berhenti.
+            if (this.stKey === 'menunggu')
+                return {
+                    title: 'Belum lolos di posisi ini — datamu kami simpan',
+                    text:
+                        this.lamaran.alasanGugur ||
+                        'Kamu belum lolos untuk posisi ini, tetapi profilmu kami simpan di Talent Pool. Kami menghubungimu lebih dulu begitu ada posisi yang cocok.',
+                };
+
+            // Ditutup oleh KANDIDAT sendiri (mengundurkan diri / menolak
+            // penawaran). Judulnya diambil dari master supaya kalimatnya persis
+            // sama dengan yang tercatat, dan tidak berbunyi seperti penolakan.
+            if (this.stKey === 'netral')
+                return {
+                    title: this.lamaran.statusLabel || 'Proses seleksi dihentikan',
+                    text:
+                        this.lamaran.alasanGugur ||
+                        'Proses seleksimu untuk posisi ini sudah ditutup. Kamu tetap bisa melamar lowongan lain di EVO Group.',
+                };
+
             const cur = this.tahapAktif;
             if (!cur)
                 return { title: 'Lamaranmu sedang diproses', text: 'Pantau halaman ini untuk perkembangan seleksimu.' };
 
             const posisi = `Tahap ${cur.urutan} dari ${this.totalTahap}`;
+
+            // ══ TAHAP YANG JADWALNYA DITANGANI TIM SENDIRI (negosiasi) ══
+            //
+            // Didahulukan dari seluruh keadaan di bawahnya, dan sengaja TIDAK
+            // membedakan sudah/belum dijadwalkan — lihat PESAN_TAHAP_INTERNAL.
+            //
+            // Tanpa cabang ini kandidat jatuh ke kalimat bawaan "menunggu jadwal
+            // dari tim rekrutmen … begitu jadwalnya ditetapkan, rinciannya
+            // muncul di halaman ini dan dikirim ke emailmu" — janji yang tidak
+            // akan pernah ditepati, karena jadwal yang dimaksud memang sengaja
+            // tidak pernah dikirimkan kepadanya.
+            //
+            // DUA HAL MEMBATALKANNYA, dan dua-duanya berarti ada sesuatu yang
+            // NYATA untuk kandidat:
+            //   - keputusan tahapnya sudah terbit (hasilTampil) → layar berganti
+            //     ke kabar keputusan itu;
+            //   - ada aktivitas TERLIHAT yang sudah punya jadwal — mis. surat
+            //     penawaran yang dijadwalkan untuk diserahkan. Ia memang harus
+            //     datang, jadi jadwalnya tidak boleh tertutup kalimat ini.
+            const adaJadwalTampak = (this.aktivitas || []).some((x) => x.jadwal);
+
+            if (cur.adaJadwalInternal && !cur.hasilTampil && !adaJadwalTampak) {
+                return { title: `${posisi} · ${cur.label}`, text: PESAN_TAHAP_INTERNAL };
+            }
 
             // Ada yang harus DIKERJAKAN kandidat → itu yang disebut lebih dulu.
             if (this.tugas && (this.komponen || this.tugas.schema)) {
@@ -1950,19 +2054,25 @@ export default {
                 };
             });
         },
-        // GANTT alur seleksi berbasis TANGGAL NYATA + estimasi cascade untuk tahap
-        // yang belum terjadwal. Menghasilkan baris (batang proporsional ke tanggal)
-        // + ticks (sumbu tanggal). Anchor: tanggal melamar.
+        /**
+         * WATERFALL alur seleksi — bertingkat menurut URUTAN TAHAP, bukan tanggal.
+         *
+         * KENAPA BUKAN TANGGAL LAGI
+         * Bentuk sebelumnya adalah gantt sungguhan: batangnya diletakkan menurut
+         * tanggal nyata, dan tahap yang belum terjadwal — yaitu hampir seluruh
+         * sisa alur — diberi perkiraan tiga hari per tahap oleh kode ini sendiri,
+         * lalu ditumpuk berurutan dari tanggal melamar. Perkiraan itu ditandai
+         * "±", tapi tanda sekecil itu tidak menahan apa pun: yang dibaca kandidat
+         * tetap sebuah tanggal, dan tanggal yang dipampang perusahaan terbaca
+         * sebagai janji. Kandidat lalu menunggu sampai tanggal itu, lalu merasa
+         * dilupakan ketika tak ada yang terjadi — padahal tak seorang pun pernah
+         * menjanjikannya.
+         *
+         * Yang benar-benar dijawab bagan ini cuma "aku di sebelah mana", dan itu
+         * dijawab urutan tahap tanpa perlu satu tanggal pun. Bentuk air terjunnya
+         * tetap: tiap tahap bergeser satu langkah ke kanan dari tahap sebelumnya.
+         */
         gantt() {
-            const DAY = 86400000,
-                DEF = 3,
-                GAP = 1;
-            const parse = (v) => {
-                if (!v) return null;
-                const d = new Date(String(v).replace(' ', 'T'));
-                return Number.isNaN(d.getTime()) ? null : d.getTime();
-            };
-            const applyMs = parse(this.lamaran.waktuLamar) || Date.now();
             const bgOf = (s) =>
                 s === 'done'
                     ? 'linear-gradient(90deg,#8b5cf6,#6366f1)'
@@ -1974,49 +2084,32 @@ export default {
             const stColorOf = (s) =>
                 s === 'done' ? '#6366f1' : s === 'current' ? '#b45309' : s === 'fail' ? '#dc2626' : '#94a3b8';
 
-            let cursor = applyMs;
-            const rows = this.tahap.map((t) => {
+            const n = this.tahap.length;
+            if (!n) return { rows: [], kolom: 0 };
+
+            // Satu tahap = satu kolom. Batangnya sengaja SELALU lebih lebar dari
+            // satu kolom (dua kolom, dipotong di ujung) supaya tiap baris tetap
+            // bertindih dengan tetangganya — itulah yang membuatnya terbaca
+            // sebagai air terjun yang mengalir, bukan tangga yang terputus-putus.
+            const lebarKolom = 100 / n;
+            const rows = this.tahap.map((t, i) => {
                 const state = this.tlState(t);
-                const rg = this.tglTahap(t);
-                let start = parse(rg.start),
-                    end = parse(rg.end),
-                    est = false;
-                if (start === null && end === null) {
-                    est = true;
-                    start = cursor;
-                    end = start + DEF * DAY;
-                } else if (start === null) {
-                    start = end - DEF * DAY;
-                } else if (end === null) {
-                    end = start + DEF * DAY;
-                }
-                if (est && start < cursor) {
-                    start = cursor;
-                    end = start + DEF * DAY;
-                }
-                cursor = Math.max(cursor, end) + GAP * DAY;
-                return { urutan: t.urutan, name: t.label, statusLabel: this.stepStatus(t), state, start, end, est };
-            });
-            if (!rows.length) return { rows: [], ticks: [] };
+                const left = +(i * lebarKolom).toFixed(2);
 
-            const min = Math.min(...rows.map((r) => r.start));
-            const max = Math.max(...rows.map((r) => r.end));
-            const span = Math.max(DAY, max - min);
-            rows.forEach((r) => {
-                r.left = +(((r.start - min) / span) * 100).toFixed(2);
-                r.width = Math.max(6, +(((r.end - r.start) / span) * 100).toFixed(2));
-                r.bg = bgOf(r.state);
-                r.stColor = stColorOf(r.state);
-                r.glow = r.state === 'current';
-                r.dateText = (r.est ? '± ' : '') + this.fmtRangeMs(r.start, r.end);
-                r.barLabel = this.fmtMs(r.end, true);
+                return {
+                    urutan: t.urutan,
+                    name: t.label,
+                    statusLabel: this.stepStatus(t),
+                    state,
+                    left,
+                    width: +Math.min(lebarKolom * 2, 100 - left).toFixed(2),
+                    bg: bgOf(state),
+                    stColor: stColorOf(state),
+                    glow: state === 'current',
+                };
             });
 
-            const N = 4;
-            const ticks = [];
-            for (let i = 0; i <= N; i++)
-                ticks.push({ left: (i / N) * 100, label: this.fmtMs(min + (span * i) / N, true) });
-            return { rows, ticks };
+            return { rows, kolom: n };
         },
     },
     watch: {
@@ -2202,11 +2295,6 @@ export default {
             if (t.status === 'BERJALAN') return { background: 'rgba(245,158,11,.14)', color: '#b45309' };
             return { background: '#eef0f7', color: '#94a3b8' };
         },
-        // ── Rentang tanggal tahap (jendela ujian bila tes, else waktu tahap) ──
-        tglTahap(t) {
-            const u = t.ujian || {};
-            return { start: u.waktuMulai || t.waktuMulai || null, end: u.waktuSelesai || t.waktuSelesai || null };
-        },
         fmtD(iso, short) {
             if (!iso) return '';
             const d = new Date(String(iso).replace(' ', 'T'));
@@ -2215,19 +2303,6 @@ export default {
                 'id-ID',
                 short ? { day: '2-digit', month: 'short' } : { day: '2-digit', month: 'short', year: 'numeric' },
             );
-        },
-        fmtMs(ms, short) {
-            const d = new Date(ms);
-            if (Number.isNaN(d.getTime())) return '';
-            return d.toLocaleDateString(
-                'id-ID',
-                short ? { day: '2-digit', month: 'short' } : { day: '2-digit', month: 'short', year: 'numeric' },
-            );
-        },
-        fmtRangeMs(a, b) {
-            const da = this.fmtMs(a),
-                db = this.fmtMs(b);
-            return da === db ? da : `${this.fmtMs(a, true)} – ${db}`;
         },
         ukuran(b) {
             if (!b) return '';
@@ -2456,7 +2531,13 @@ export default {
         },
         tandaiPergiTes(t) {
             try {
-                sessionStorage.setItem(this.kunciPergiTes(), JSON.stringify({ id: t.id, at: Date.now() }));
+                // `tahap` ikut dicatat: jejak ini hanya sah selama kandidat masih
+                // berdiri di tahap yang sama. Lihat bacaPergiTes().
+                sessionStorage.setItem(this.kunciPergiTes(), JSON.stringify({
+                    id: t.id,
+                    tahap: this.tahapAktif?.id || null,
+                    at: Date.now(),
+                }));
             } catch (e) {
                 // Mode privat / storage penuh — fitur sambutan hilang, tapi
                 // membuka tesnya TIDAK BOLEH ikut gagal karenanya.
@@ -2466,6 +2547,20 @@ export default {
             try {
                 const isi = JSON.parse(sessionStorage.getItem(this.kunciPergiTes()) || 'null');
                 if (!isi || !isi.id) return null;
+
+                // TAHAPNYA SUDAH BERGERAK — jejaknya hangus.
+                //
+                // Jejak lama hanya bercerita tentang tes di tahap yang sudah
+                // lewat. Dibiarkan hidup, ia bisa tersambung ke tes tahap
+                // BERIKUTNYA yang belum tersentuh sama sekali, dan kandidat
+                // disambut "jawabanmu sudah terkirim" untuk tes yang bahkan
+                // belum ia buka. Jejak dibuang, bukan sekadar diabaikan, supaya
+                // pemuatan berikutnya tidak mengulang pemeriksaan yang sama.
+                if (isi.tahap && this.tahapAktif?.id && isi.tahap !== this.tahapAktif.id) {
+                    this.lupakanPergiTes();
+
+                    return null;
+                }
 
                 // Jejak basi dibuang. Batasnya longgar (12 jam) karena satu sesi
                 // tes bisa berjam-jam, tapi tetap ada supaya tab yang dibiarkan
@@ -2503,19 +2598,47 @@ export default {
          * bila jawabannya cuma satu: tepat satu tes daring yang belum selesai.
          * Bila ada dua, menebak berarti bisa menyembunyikan tes yang justru
          * masih harus dikerjakan — itu lebih buruk daripada tidak menyambut.
+         *
+         * ══ PENANDANYA HABIS SEKALI PAKAI ══
+         *
+         * `?dari=tes` berarti "aku BARU SAJA keluar dari ruang ujian" — sebuah
+         * peristiwa, bukan keadaan. Dulu ia dibiarkan menempel di alamat, dan
+         * itulah sumber laporan "tes tahap 5 disambut 'jawabanmu sudah
+         * terkirim' padahal belum dikerjakan":
+         *
+         *   1. kandidat selesai tes tahap 3, CAT memulangkannya ke ?dari=tes
+         *   2. halaman memantau hasil dengan router.reload() — yang MEMBAWA
+         *      SERTA seluruh query, termasuk penanda ini
+         *   3. hasil masuk, tahap bergerak ke 5 yang juga punya satu tes daring
+         *   4. penanda yang sama terbaca lagi, syarat "tepat satu tes daring
+         *      belum selesai" kini dipenuhi oleh tes tahap 5 — dan tes yang
+         *      belum tersentuh itu disambut sebagai sudah dikerjakan.
+         *
+         * Karena itu penandanya dicabut dari alamat begitu dibaca. Dibaca sekali,
+         * habis sekali; reload, tombol Kembali, dan tautan yang tersimpan di
+         * riwayat peramban tidak bisa membangkitkannya lagi.
          */
         tebakPulangDariAlamat() {
             try {
-                if (new URLSearchParams(window.location.search).get('dari') !== 'tes') {
+                const alamat = new URL(window.location.href);
+                if (alamat.searchParams.get('dari') !== 'tes') {
                     return null;
                 }
+
+                // replaceState, bukan push: mencabut penanda tidak boleh
+                // menambah langkah baru di riwayat peramban — tombol Kembali
+                // kandidat harus tetap membawanya ke tempat asalnya.
+                alamat.searchParams.delete('dari');
+                window.history.replaceState(window.history.state, '', alamat.pathname + alamat.search + alamat.hash);
             } catch (e) {
                 return null;
             }
 
             const daring = (this.aktivitas || []).filter((x) => x.ujian && !x.selesai && !this.sudahSelesai(x));
 
-            return daring.length === 1 ? { id: daring[0].id, at: Date.now() } : null;
+            return daring.length === 1
+                ? { id: daring[0].id, tahap: this.tahapAktif?.id || null, at: Date.now() }
+                : null;
         },
 
         /**
@@ -4093,42 +4216,11 @@ export default {
     flex-direction: column;
     gap: 12px;
 }
-.ld-wf__row,
-.ld-wf__axis {
+.ld-wf__row {
     display: grid;
     grid-template-columns: 220px 1fr;
     gap: 16px;
     align-items: center;
-}
-/* Sumbu tanggal (ruler) */
-.ld-wf__axis {
-    margin-bottom: 2px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid #eef0f7;
-}
-.ld-wf__axisside {
-    font-size: 10px;
-    font-weight: 800;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: #aab2c5;
-}
-.ld-wf__axistrack {
-    position: relative;
-    height: 16px;
-}
-.ld-wf__tick {
-    position: absolute;
-    top: 0;
-    transform: translateX(-50%);
-    font-size: 10.5px;
-    font-weight: 800;
-    color: #94a3b8;
-    white-space: nowrap;
-    font-variant-numeric: tabular-nums;
-}
-.ld-wf__tick.is-last {
-    transform: translateX(-100%);
 }
 .ld-wf__side {
     display: flex;
@@ -4177,28 +4269,11 @@ export default {
     font-weight: 700;
     margin-top: 1px;
 }
-.ld-wf__date {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    margin-top: 4px;
-    font-size: 11px;
-    font-weight: 700;
-    color: #64748b;
-    font-variant-numeric: tabular-nums;
-}
-.ld-wf__date.is-est {
-    color: #a2a9ba;
-    font-style: italic;
-}
-.ld-wf__date svg {
-    flex: 0 0 auto;
-}
 .ld-wf__track {
     position: relative;
     height: 32px;
 }
-/* Garis vertikal ruler (continuous) selaras tick tanggal */
+/* Garis pemisah antar kolom tahap — pembagi yang rata, bukan penanda tanggal. */
 .ld-wf__grid {
     position: absolute;
     top: -6px;
@@ -4223,19 +4298,6 @@ export default {
 }
 .ld-wf__bar.is-empty {
     box-shadow: none;
-}
-.ld-wf__bar.is-empty .ld-wf__barlabel {
-    color: #94a3b8;
-    text-shadow: none;
-}
-.ld-wf__barlabel {
-    font-size: 10.5px;
-    font-weight: 800;
-    color: #fff;
-    white-space: nowrap;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
-    font-variant-numeric: tabular-nums;
-    letter-spacing: 0.02em;
 }
 .ld-wf__bar.is-glow {
     box-shadow: 0 6px 18px rgba(245, 158, 11, 0.4);
@@ -4844,8 +4906,7 @@ export default {
         grid-template-columns: 1fr;
         gap: 8px;
     }
-    .ld-wf__track,
-    .ld-wf__axis {
+    .ld-wf__track {
         display: none;
     }
 }

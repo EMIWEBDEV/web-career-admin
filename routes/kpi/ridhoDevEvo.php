@@ -243,6 +243,13 @@ Route::prefix('api/v1/referensi')
 Route::post('/api/v1/webhook/hclearn-hasil', [LamaranController::class, 'hasilUjianCallback'])
     ->name('career.webhook.hclearn-hasil');
 
+// ── MASTER KOLOM SINKRON BIODATA, dibaca CAT (server-to-server, TANPA login) ──
+// Guard sama: header X-WC-Secret. CAT memeriksa kolom biodata masuk terhadap
+// master ini; masternya cuma ada di database Web Careers, jadi tanpa endpoint
+// ini kueri CAT selalu kosong dan SETIAP kolom ditolak "belum terdaftar".
+Route::get('/api/v1/webhook/master-sinkron-hris', [\App\Http\Controllers\Career\Integrasi\SinkronHrisController::class, 'index'])
+    ->name('career.webhook.master-sinkron-hris');
+
 // ── API Lamaran kandidat (login saja, TANPA gerbang peran admin) ──
 // Dipisah dari api/v1/karir yang khusus admin, supaya kandidat bisa melamar
 // & mengirim formulir tanpa dianggap admin.

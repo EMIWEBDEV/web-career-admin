@@ -80,6 +80,11 @@
                     <div class="pkg-row__act" @click.stop>
                         <el-switch :model-value="a.status === 'AKTIF'" @change="(v) => setStatus(a, v)" />
                         <button class="pkg-ibtn" title="Ubah" @click="openEdit(a)"><i class="bi bi-pencil"></i></button>
+                        <!-- DUPLIKAT — menyusun ulang alur 8 tahap dari nol untuk
+                             angkatan berikutnya adalah pekerjaan setengah jam yang
+                             hasilnya nyaris sama persis, dan satu setelan yang
+                             terlewat tidak menimbulkan galat apa pun. -->
+                        <button class="pkg-ibtn" :title="`Duplikat alur &quot;${a.nama}&quot;`" @click="openDuplicate(a)"><i class="bi bi-files"></i></button>
                         <button class="pkg-ibtn pkg-ibtn--danger" title="Hapus" @click="askRemove(a)"><i class="bi bi-trash"></i></button>
                     </div>
                 </div>
@@ -146,8 +151,22 @@
             <div v-if="!loading && !list.length" class="pkg-empty"><i class="bi bi-signpost-split"></i> {{ adaFilter ? 'Tidak ada alur yang cocok dengan filter.' : 'Belum ada alur.' }}</div>
         </div>
 
-        <!-- Modal buat/ubah alur — builder tahapan -->
-        <AdminModal :busy="saving" :show="show" :title="editingId ? 'Ubah Alur Seleksi' : 'Buat Alur Seleksi'" subtitle="Identitas alur & susunan tahapan." icon="bi-signpost-split" lg :save-label="editingId ? 'Perbarui' : 'Simpan Alur'" @close="show = false" @save="save">
+        <!-- Modal buat/ubah/duplikat alur — builder tahapan -->
+        <AdminModal :busy="saving" :show="show" :title="judulModal" subtitle="Identitas alur & susunan tahapan." icon="bi-signpost-split" lg :save-label="labelSimpan" @close="tutupModal" @save="save">
+            <!-- Asal salinan DIKATAKAN, bukan disimpulkan dari nama yang
+                 kebetulan berakhiran "(Salinan)". Setelah beberapa suntingan,
+                 layar ini tidak lagi terbedakan dari modal Ubah — dan menekan
+                 Simpan sambil mengira sedang memperbarui alur lama justru
+                 melahirkan alur kembar yang keduanya terpakai. -->
+            <div v-if="duplikatDari" class="alr-dupnote">
+                <i class="bi bi-files"></i>
+                <div>
+                    <b>Salinan dari “{{ duplikatDari }}”.</b>
+                    Seluruh tahap &amp; aktivitasnya sudah disalin ke bawah — silakan ubah, tambah, atau hapus seperlunya.
+                    Menyimpan akan membuat <b>alur baru</b>; alur asalnya tidak tersentuh.
+                </div>
+            </div>
+
             <div class="wca-fsection">
                 <div class="wca-fsection__label"><i class="bi bi-signpost-split"></i> Detail Alur</div>
                 <div class="wca-form">
@@ -187,6 +206,17 @@
                                      tak berlaku lagi (mis. jadi ujian online) — selaraskan
                                      saat itu juga, jangan biarkan ketahuan saat menyimpan. -->
                                 <RefSelect type="tipe" v-model="s.tipe" placeholder="Pilih tipe" @update:model-value="samakanMode(s)" />
+                                <!-- Tipe yang sudah dipensiunkan tidak ada di daftar
+                                     pilihan, jadi kotaknya tampak KOSONG padahal
+                                     tahapnya punya tipe. Tanpa keterangan ini admin
+                                     mengira tipenya belum diisi, memilih yang baru,
+                                     dan diam-diam mengubah perilaku tahap yang
+                                     sebenarnya cuma ingin ia salin. -->
+                                <small v-if="tipeUsang(s.tipe)" class="alr-usang">
+                                    <i class="bi bi-exclamation-triangle-fill"></i>
+                                    Tipe <b>{{ s.tipe }}</b> sudah dinonaktifkan di Master Tipe Tahap, jadi tak muncul di daftar.
+                                    Biarkan kosong bila ingin mempertahankannya — memilih tipe lain akan mengubah perilaku tahap ini.
+                                </small>
                             </div>
                         </div>
                         <div v-if="butuhFormulir(s)" class="wca-frow">
@@ -625,6 +655,11 @@ export default {
             open: null,
             show: false,
             editingId: null,
+            // DUPLIKAT — nama alur SUMBER saat modal dibuka lewat tombol Duplikat.
+            // Disimpan namanya (bukan id-nya) supaya tak tergoda dipakai sebagai
+            // rujukan: salinan berdiri sendiri sejak detik pertama, tidak terikat
+            // apa pun ke asalnya. Nilainya cuma untuk dibaca manusia di layar.
+            duplikatDari: null,
             // Filter Panel — semua nilai dikirim ke backend saat berubah.
             filters: { q: '', kategori: null, status: null, rentang: null },
             sheetOpen: false,
@@ -682,6 +717,17 @@ export default {
         this.loadTipeTahap();
     },
     computed: {
+        // Tiga keadaan modal, bukan dua. Duplikat memang MEMBUAT alur baru,
+        // tapi menyebutnya "Buat Alur Seleksi" saat layarnya sudah penuh isi
+        // salinan membuat orang mengira ia sedang menyunting yang lama.
+        judulModal() {
+            if (this.editingId) return 'Ubah Alur Seleksi';
+            return this.duplikatDari ? 'Duplikat Alur Seleksi' : 'Buat Alur Seleksi';
+        },
+        labelSimpan() {
+            if (this.editingId) return 'Perbarui';
+            return this.duplikatDari ? 'Simpan Salinan' : 'Simpan Alur';
+        },
         // Peta Kode Mode -> objek mode, untuk render label/ikon/catatan di daftar.
         modeMap() {
             const map = {};
@@ -700,6 +746,12 @@ export default {
 
         /** Info satu tipe dari master (bukan daftar kode yang ditulis di sini). */
         infoTipe(kode) { return this.tipeTahap.find((t) => t.value === kode) || null; },
+        /**
+         * Tahap ini memakai tipe yang sudah dinonaktifkan? (punya nilai, tapi
+         * tak ada di daftar pilihan). Dijaga agar tidak berteriak sebelum
+         * daftar tipenya selesai dimuat — saat itu SEMUA tipe tampak usang.
+         */
+        tipeUsang(kode) { return !!kode && this.tipeTahap.length > 0 && !this.infoTipe(kode); },
         namaTipe(kode) { return this.infoTipe(kode)?.label || kode || '—'; },
 
         /**
@@ -1085,13 +1137,32 @@ export default {
             this.filters = { q: '', kategori: null, status: null, rentang: null };
             this.load();
         },
+        /**
+         * Bersihkan penanda duplikat saat modal ditutup. Tanpa ini, membuka
+         * "Alur Baru" sesudah membatalkan sebuah duplikat akan tetap memakai
+         * judul "Duplikat Alur Seleksi" — layar yang berbohong tentang apa
+         * yang sedang dikerjakan.
+         */
+        tutupModal() {
+            this.show = false;
+            this.duplikatDari = null;
+        },
         openCreate() {
             this.editingId = null;
-            this.form = { nama: '', kategori: '', deskripsi: '', stages: [], talentPoolMulai: 0 };
+            this.duplikatDari = null;
+            this.form = { nama: '', kategori: '', deskripsi: '', stages: [], talentPoolMulai: 0, tuntasTahap: 0 };
             this.show = true;
         },
-        openEdit(a) {
-            this.editingId = a.id;
+        /**
+         * Bentuk isi modal dari satu baris alur — dipakai Ubah DAN Duplikat.
+         *
+         * Sengaja satu fungsi untuk keduanya. Kalau pemetaannya disalin, tiap
+         * field baru harus diingat dua kali; yang terlupa pada salinan tidak
+         * memunculkan galat apa pun — ia cuma hilang diam-diam dari alur hasil
+         * duplikat, dan baru ketahuan saat satu angkatan sudah berjalan dengan
+         * setelan yang berbeda dari yang disalin.
+         */
+        formDariAlur(a) {
             const stages = (a.stages || []).map((s) => ({
                 label: s.label,
                 tipe: s.tipe,
@@ -1144,7 +1215,7 @@ export default {
             // DITERIMA, jadi membiarkannya lolos lagi hanya memperpanjang
             // kesalahan yang sudah berjalan.
             const idxTuntas = stages.findIndex((s) => s.tuntas);
-            this.form = {
+            return {
                 nama: a.nama,
                 kategori: a.kategori,
                 deskripsi: a.deskripsi || '',
@@ -1152,7 +1223,57 @@ export default {
                 talentPoolMulai: idx >= 0 ? idx + 1 : 0,
                 tuntasTahap: idxTuntas >= 0 ? idxTuntas + 1 : 0,
             };
+        },
+        openEdit(a) {
+            this.editingId = a.id;
+            this.duplikatDari = null;
+            this.form = this.formDariAlur(a);
             this.show = true;
+        },
+        /**
+         * DUPLIKAT — buka modal BUAT dengan seluruh isi alur sumber sudah
+         * terpasang: identitas, semua tahap, semua aktivitas, sampai titik
+         * tuntas & cut-off Talent Pool. Semuanya tetap bisa disunting, ditambah,
+         * atau dihapus sebelum disimpan.
+         *
+         * Tidak ada endpoint "duplicate" di server, dan itu disengaja. Alur
+         * hasil duplikat lahir lewat store() yang sama dengan alur baru mana
+         * pun, jadi seluruh gerbangnya ikut berlaku: wajib satu titik tuntas,
+         * formulir yang belum publish ditolak, mode keputusan diperbaiki.
+         * Endpoint penyalin sendiri akan menempuh jalur lain yang lambat laun
+         * berbeda aturannya — dan salinan yang lolos gerbang bisa langsung
+         * dipakai satu angkatan sebelum ada yang sadar.
+         */
+        openDuplicate(a) {
+            this.editingId = null;
+            this.duplikatDari = a.nama;
+            this.form = this.formDariAlur(a);
+            this.form.nama = this.namaSalinan(a.nama);
+            this.show = true;
+        },
+        /**
+         * Usulkan nama salinan yang belum terpakai: "X (Salinan)", lalu
+         * "X (Salinan 2)", dan seterusnya.
+         *
+         * Nama dibedakan sejak awal karena dua alur bernama sama di daftar
+         * penjadwalan tidak bisa dibedakan sama sekali — dan yang salah pilih
+         * baru ketahuan setelah kandidat masuk ke alur yang keliru.
+         */
+        namaSalinan(nama) {
+            const dasar = String(nama || 'Alur').trim();
+            const dipakai = new Set(this.list.map((x) => (x.nama || '').trim().toLowerCase()));
+            let calon = `${dasar} (Salinan)`;
+            for (let n = 2; dipakai.has(calon.toLowerCase()) && n < 100; n += 1) {
+                calon = `${dasar} (Salinan ${n})`;
+            }
+            // Kolom Nama dibatasi 120 karakter di server; potong dari nama dasar
+            // supaya penanda "(Salinan)" tidak ikut terpangkas dan salinannya
+            // berakhir bernama persis sama dengan sumbernya.
+            if (calon.length > 120) {
+                const sufiks = calon.slice(dasar.length);
+                calon = dasar.slice(0, 120 - sufiks.length).trim() + sufiks;
+            }
+            return calon;
         },
         /** Tahap ke-i (0-based) termasuk cut-off Talent Pool? (dari titik mulai sampai akhir). */
         tahapTalentPool(i) { return this.form.talentPoolMulai > 0 && (i + 1) >= this.form.talentPoolMulai; },
@@ -1255,9 +1376,11 @@ export default {
                     this.notice('Alur diperbarui.');
                 } else {
                     await axios.post(API, payload, CFG);
-                    this.notice('Alur ditambahkan.');
+                    this.notice(this.duplikatDari
+                        ? `Salinan dibuat — "${this.form.nama}". Alur "${this.duplikatDari}" tidak berubah.`
+                        : 'Alur ditambahkan.');
                 }
-                this.show = false;
+                this.tutupModal();
                 await this.load();
             } catch (e) {
                 this.notice(e.response?.data?.message || 'Gagal menyimpan.');
@@ -1328,6 +1451,22 @@ export default {
 }
 .alr-meta { margin-bottom: .8rem; }
 .alr-empty-stage { color: #94a3b8; font-size: 13px; }
+
+/* Pemberitahuan asal salinan di puncak modal Duplikat. Nada amber, bukan
+   indigo seperti blok informasi lain: ini bukan keterangan yang boleh
+   terlewat dibaca — ia satu-satunya tanda bahwa Simpan akan MELAHIRKAN alur
+   baru, bukan memperbarui yang sedang tampak isinya. */
+.alr-dupnote { display: flex; align-items: flex-start; gap: .55rem; margin: 0 0 1rem; padding: .7rem .85rem; border-radius: 12px; border: 1px solid rgba(217, 119, 6, .28); background: linear-gradient(180deg, rgba(245, 158, 11, .09), rgba(245, 158, 11, .04)); font-size: 12px; line-height: 1.6; color: #78350f; }
+.alr-dupnote > i { flex: none; margin-top: .1rem; font-size: 14px; color: #b45309; }
+.alr-dupnote b { font-weight: 800; }
+
+/* Keterangan tipe tahap yang sudah dipensiunkan — muncul tepat di bawah
+   kotak pilihannya, bukan sebagai ringkasan di puncak modal: pada alur 9
+   tahap, peringatan yang jauh dari tempatnya menyuruh orang mencari sendiri
+   tahap mana yang dimaksud. */
+.alr-usang { display: flex; align-items: flex-start; gap: .35rem; margin-top: .35rem; font-size: .72rem; line-height: 1.5; font-weight: 600; color: #b45309; }
+.alr-usang > i { flex: none; margin-top: .15rem; }
+.alr-usang b { font-weight: 800; }
 
 /* Blok "cara tahap menyimpulkan" — diletakkan SETELAH daftar tes karena ia
    adalah kesimpulan atas tes-tes tersebut. Diberi nada indigo agar terbaca

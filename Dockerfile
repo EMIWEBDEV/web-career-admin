@@ -72,6 +72,27 @@ COPY . .
 
 COPY --from=node-builder /app/public/build ./public/build
 
+# DIREKTORI KERJA LARAVEL DIBUAT DI SINI, BUKAN DIANDALKAN DARI GIT.
+#
+# `config/view.php` menghitung lokasi cache Blade dengan realpath(), dan
+# realpath() mengembalikan FALSE untuk direktori yang tidak ada. Bila
+# storage/framework/views tidak ikut ke dalam image, `view:compiled` menjadi
+# false dan `php artisan view:clear` gagal dengan "View path not found" —
+# menjatuhkan seluruh build, seperti yang terjadi.
+#
+# Git tidak bisa menyimpan direktori kosong, jadi keberadaannya bergantung pada
+# berkas penanda yang mudah sekali ikut tersapu aturan .gitignore atau
+# .dockerignore. Membuatnya di sini memutus ketergantungan itu: build tidak lagi
+# bisa dijatuhkan oleh satu baris ignore yang ditambahkan berbulan-bulan lalu.
+RUN mkdir -p \
+        storage/framework/views \
+        storage/framework/cache/data \
+        storage/framework/sessions \
+        storage/framework/testing \
+        storage/logs \
+        storage/app/public \
+        bootstrap/cache
+
 RUN cp .env.example .env \
     && php artisan key:generate --ansi \
     && php artisan config:clear \

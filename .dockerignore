@@ -20,9 +20,13 @@ table_query.sql
 /storage/*.key
 !/storage/.gitignore
 
-/storage/logs/*.log
-/bootstrap/cache/*.php  # <-- TAMBAHKAN BARIS INI
-!/storage/.gitignore
+# .dockerignore TIDAK mengenal komentar di ujung baris — seluruh baris dibaca
+# sebagai pola. Baris ini dulu berbunyi:
+#     /bootstrap/cache/*.php  # <-- TAMBAHKAN BARIS INI
+# sehingga yang dicari Docker adalah berkas bernama persis begitu, dan cache
+# konfigurasi dari mesin lokal tetap bisa ikut terbawa ke dalam image — berikut
+# kredensial basis data lokal yang sempat ter-cache di dalamnya.
+/bootstrap/cache/*.php
 
 # Deployment and Docker specific
 /deploy/docker-compose.yml
@@ -70,3 +74,5 @@ table_structure.sql
 .gitignore
 docs/
 .claude
+.CHANGESQLENV
+.CHANGEZIP

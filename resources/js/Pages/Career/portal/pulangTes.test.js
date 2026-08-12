@@ -1,0 +1,149 @@
+// @vitest-environment jsdom
+/**
+ * REGRESI — sambutan "Jawaban tesmu sudah terkirim" bocor ke tahap berikutnya.
+ *
+ * Laporan aslinya: alur dengan tes daring di tahap 3 DAN tahap 5. Begitu tahap 3
+ * selesai dan kandidat sampai di tahap 5, tes tahap 5 yang belum tersentuh
+ * disambut sebagai sudah dikerjakan — kartu tesnya tertutup keterangan biru, dan
+ * kandidat mengira tak ada lagi yang perlu ia kerjakan.
+ *
+ * Dua jalan yang membocorkannya, dua-duanya diuji di sini:
+ *   1. penanda `?dari=tes` yang menempel di alamat dan ikut terbawa
+ *      router.reload() saat halaman memantau hasil;
+ *   2. jejak sessionStorage tahap sebelumnya yang belum hangus.
+ *
+ * Diuji lewat definisi Options API-nya langsung (methods/computed dipanggil
+ * dengan `this` buatan) supaya tidak perlu merakit seluruh halaman beserta
+ * seluruh dependensinya.
+ */
+import { describe, expect, it, beforeEach } from 'vitest';
+import Komponen from './LamaranDetail.vue';
+
+const M = Komponen.methods;
+const C = Komponen.computed;
+
+/** `this` seadanya — hanya yang benar-benar disentuh fungsi yang diuji. */
+function konteks({ tahapId, aktivitas, pulangTes = null }) {
+    return {
+        lamaran: { id: 'LMR1' },
+        tahapAktif: { id: tahapId },
+        aktivitas,
+        pulangTes,
+        sudahSelesai: (t) => !!t.selesai,
+        lupakanPergiTes: M.lupakanPergiTes,
+        hentikanPantauHasil() { /* tak ada timer di uji ini */ },
+        kunciPergiTes: M.kunciPergiTes,
+    };
+}
+
+const TES_TAHAP_3 = [{ id: 'akt3', ujian: { bisaAkses: true }, selesai: false }];
+const TES_TAHAP_5 = [{ id: 'akt5', ujian: { bisaAkses: true }, selesai: false }];
+
+beforeEach(() => {
+    sessionStorage.clear();
+    window.history.replaceState({}, '', '/kandidat/lamaran/LMR1');
+});
+
+describe('penanda ?dari=tes', () => {
+    it('menyambut kepulangan pada pemuatan pertama', () => {
+        window.history.replaceState({}, '', '/kandidat/lamaran/LMR1?dari=tes');
+        const ctx = konteks({ tahapId: 'th3', aktivitas: TES_TAHAP_3 });
+
+        expect(M.tebakPulangDariAlamat.call(ctx)).toMatchObject({ id: 'akt3', tahap: 'th3' });
+    });
+
+    it('HABIS SEKALI PAKAI — dicabut dari alamat begitu dibaca', () => {
+        window.history.replaceState({}, '', '/kandidat/lamaran/LMR1?dari=tes');
+        const ctx = konteks({ tahapId: 'th3', aktivitas: TES_TAHAP_3 });
+
+        M.tebakPulangDariAlamat.call(ctx);
+
+        expect(window.location.search).toBe('');
+        // Pembacaan kedua (router.reload / tombol Kembali) tidak menyambut lagi.
+        expect(M.tebakPulangDariAlamat.call(ctx)).toBeNull();
+    });
+
+    it('BUG ASLI: tidak lagi menyambut tes tahap 5 setelah pulang dari tahap 3', () => {
+        window.history.replaceState({}, '', '/kandidat/lamaran/LMR1?dari=tes');
+
+        // Tahap 3: kandidat memang baru pulang ujian.
+        M.tebakPulangDariAlamat.call(konteks({ tahapId: 'th3', aktivitas: TES_TAHAP_3 }));
+
+        // Hasil masuk, tahap bergerak ke 5 yang juga punya tepat satu tes daring.
+        // Dulu penanda yang sama terbaca lagi di sini dan memungut 'akt5'.
+        const ditahap5 = M.tebakPulangDariAlamat.call(konteks({ tahapId: 'th5', aktivitas: TES_TAHAP_5 }));
+
+        expect(ditahap5).toBeNull();
+    });
+
+    it('tetap diam bila ada lebih dari satu tes daring belum selesai', () => {
+        window.history.replaceState({}, '', '/kandidat/lamaran/LMR1?dari=tes');
+        const ctx = konteks({
+            tahapId: 'th3',
+            aktivitas: [
+                { id: 'a', ujian: {}, selesai: false },
+                { id: 'b', ujian: {}, selesai: false },
+            ],
+        });
+
+        expect(M.tebakPulangDariAlamat.call(ctx)).toBeNull();
+    });
+});
+
+describe('jejak sessionStorage', () => {
+    it('sah selama masih di tahap yang sama', () => {
+        const ctx = konteks({ tahapId: 'th3', aktivitas: TES_TAHAP_3 });
+        M.tandaiPergiTes.call(ctx, TES_TAHAP_3[0]);
+
+        expect(M.bacaPergiTes.call(ctx)).toMatchObject({ id: 'akt3', tahap: 'th3' });
+    });
+
+    it('HANGUS begitu tahapnya bergerak — dan dibuang, bukan cuma diabaikan', () => {
+        M.tandaiPergiTes.call(konteks({ tahapId: 'th3', aktivitas: TES_TAHAP_3 }), TES_TAHAP_3[0]);
+
+        const ditahap5 = konteks({ tahapId: 'th5', aktivitas: TES_TAHAP_5 });
+        expect(M.bacaPergiTes.call(ditahap5)).toBeNull();
+        expect(sessionStorage.getItem('wc_tes_pergi_LMR1')).toBeNull();
+    });
+
+    it('jejak lebih tua dari 12 jam dibuang', () => {
+        sessionStorage.setItem(
+            'wc_tes_pergi_LMR1',
+            JSON.stringify({ id: 'akt3', tahap: 'th3', at: Date.now() - 13 * 60 * 60 * 1000 }),
+        );
+
+        expect(M.bacaPergiTes.call(konteks({ tahapId: 'th3', aktivitas: TES_TAHAP_3 }))).toBeNull();
+    });
+});
+
+describe('tesDitunggu', () => {
+    it('menunggu hasil selama tesnya belum tercatat selesai', () => {
+        const ctx = konteks({
+            tahapId: 'th3',
+            aktivitas: TES_TAHAP_3,
+            pulangTes: { id: 'akt3', tahap: 'th3', at: Date.now() },
+        });
+
+        expect(C.tesDitunggu.call(ctx)).toMatchObject({ id: 'akt3' });
+    });
+
+    it('berhenti menunggu begitu hasilnya masuk', () => {
+        const ctx = konteks({
+            tahapId: 'th3',
+            aktivitas: [{ id: 'akt3', ujian: {}, selesai: true }],
+            pulangTes: { id: 'akt3', tahap: 'th3', at: Date.now() },
+        });
+
+        expect(C.tesDitunggu.call(ctx)).toBeNull();
+    });
+
+    it('BUG ASLI: jejak tahap 3 tidak boleh menyambut tes tahap 5', () => {
+        const ctx = konteks({
+            tahapId: 'th5',
+            aktivitas: TES_TAHAP_5,
+            pulangTes: { id: 'akt3', tahap: 'th3', at: Date.now() },
+        });
+
+        expect(C.tesDitunggu.call(ctx)).toBeNull();
+    });
+});

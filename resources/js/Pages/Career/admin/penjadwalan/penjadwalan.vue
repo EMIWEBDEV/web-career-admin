@@ -30,8 +30,10 @@
                     <p>Susun sesi tes online untuk kandidat — pilih program, paket tes, jendela waktu, lalu kirim token akses secara otomatis.</p>
                 </div>
 
-                <!-- Tab kategori: dari Master Talent Acquisition, bukan hardcode -->
-                <div class="pjd-tabs">
+                <!-- Tab kategori: dari Master Talent Acquisition YANG DIIZINKAN untuk
+                     pengguna ini, bukan seluruh master. Satu kategori = tak ada yang
+                     bisa dipindah, jadi bilah tabnya tidak perlu ada sama sekali. -->
+                <div v-if="opsi.talent.length > 1" class="pjd-tabs">
                     <button
                         v-for="t in opsi.talent"
                         :key="t.kode"
