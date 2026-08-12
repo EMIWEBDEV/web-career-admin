@@ -215,7 +215,11 @@ class FormulirDrafController extends Controller
 
         foreach (($schema['langkah'] ?? []) as $langkah) {
             foreach (($langkah['bagian'] ?? []) as $b) {
-                if (($b['key'] ?? null) !== $bagian) {
+                // Dicocokkan lewat BerkasBaris::kunciBagian(), bukan `key`
+                // mentah: bagian tanpa `key` adalah bentuk yang sah, dan
+                // browser menurunkan kuncinya dari judul. Mencocokkan `key`
+                // saja akan menolak unggahan yang benar-benar sah.
+                if (BerkasBaris::kunciBagian($b) !== $bagian) {
                     continue;
                 }
 

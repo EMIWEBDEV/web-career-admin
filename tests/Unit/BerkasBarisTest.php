@@ -81,6 +81,31 @@ class BerkasBarisTest extends TestCase
         $this->assertSame([], BerkasBaris::daftar('bukan json'));
     }
 
+    public function test_kunci_bagian_memakai_key_bila_ada(): void
+    {
+        $this->assertSame(
+            'riwayat_sertifikasi',
+            BerkasBaris::kunciBagian(['key' => 'riwayat_sertifikasi', 'judul' => 'Riwayat Sertifikasi']),
+        );
+    }
+
+    /**
+     * Editor tidak pernah membuat kunci bagian otomatis (schema.js menyimpan
+     * `key: B.key || ''`), jadi bentuk ini SAH dan browser menurunkan kuncinya
+     * dari judul. Server wajib sampai ke kunci yang sama.
+     */
+    public function test_kunci_bagian_diturunkan_dari_judul_bila_key_kosong(): void
+    {
+        $this->assertSame(
+            'riwayat_sertifikasi_pelatihan',
+            BerkasBaris::kunciBagian(['key' => '', 'judul' => 'Riwayat Sertifikasi / Pelatihan']),
+        );
+        $this->assertSame(
+            'daftar_kenalan_di_evo_group',
+            BerkasBaris::kunciBagian(['judul' => 'Daftar Kenalan di EVO Group']),
+        );
+    }
+
     public function test_cocok_membandingkan_triplet_utuh(): void
     {
         $entri = ['bagian' => 'riwayat_sertifikasi', 'baris' => 1, 'field' => 'sert_file'];

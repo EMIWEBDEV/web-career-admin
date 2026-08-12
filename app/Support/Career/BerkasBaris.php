@@ -58,6 +58,29 @@ class BerkasBaris
         ]);
     }
 
+    /**
+     * Kunci sebuah BAGIAN, persis seperti yang dihitung browser.
+     *
+     * Cerminan dari kunciBagian() di inti/aturan.js. Editor tidak pernah
+     * membuat kunci bagian otomatis — schema.js menyimpan `key: B.key || ''` —
+     * jadi bagian berulang tanpa `key` adalah bentuk yang SAH dan benar-benar
+     * bisa tersimpan. Untuk bagian semacam itu browser menurunkan kuncinya dari
+     * judul, dan server WAJIB sampai pada kunci yang sama; kalau tidak, gerbang
+     * pemeriksaan akan menolak unggahan yang sah dan mematikan formulir itu
+     * sepenuhnya.
+     */
+    public static function kunciBagian(array $bagian): string
+    {
+        $key = (string) ($bagian['key'] ?? '');
+        if ($key !== '') {
+            return $key;
+        }
+
+        $judul = (string) ($bagian['judul'] ?? 'bagian');
+
+        return trim(preg_replace('/[^a-z0-9]+/', '_', mb_strtolower($judul)) ?: '', '_');
+    }
+
     /** Apakah satu entri daftar berkas adalah triplet yang dicari. */
     public static function cocok(array $entri, ?string $bagian, ?int $baris, string $field): bool
     {

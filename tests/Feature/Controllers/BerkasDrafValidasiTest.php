@@ -102,4 +102,51 @@ class BerkasDrafValidasiTest extends TestCase
     {
         $this->assertNull(FormulirDrafController::periksaBaris(null, 'riwayat_sertifikasi', 99, 'sert_file'));
     }
+
+    /**
+     * Bagian TANPA `key`.
+     *
+     * schema.js:48 menyimpan `key: B.key || ''` — editor tidak pernah membuat
+     * kunci bagian otomatis, jadi bagian berulang tanpa key adalah bentuk yang
+     * sah dan bisa tersimpan. Browser menurunkan kuncinya dari judul
+     * (aturan.js:114). Kalau pemeriksaan di sini hanya mencocokkan `key`,
+     * gerbang ini akan MENOLAK unggahan yang benar-benar sah dan mematikan
+     * formulir itu sepenuhnya.
+     */
+    private function skemaTanpaKey(): array
+    {
+        return ['langkah' => [[
+            'bagian' => [[
+                'judul' => 'Riwayat Sertifikasi / Pelatihan',
+                'berulang' => true,
+                'maks_baris' => 3,
+                'field' => [['key' => 'sert_file', 'tipe' => 'file']],
+            ]],
+        ]]];
+    }
+
+    public function test_bagian_tanpa_key_dikenali_dari_judulnya(): void
+    {
+        $this->assertNull(
+            FormulirDrafController::periksaBaris(
+                $this->skemaTanpaKey(),
+                'riwayat_sertifikasi_pelatihan',
+                1,
+                'sert_file',
+            ),
+        );
+    }
+
+    public function test_bagian_tanpa_key_tetap_menegakkan_maks_baris(): void
+    {
+        $this->assertSame(
+            'Riwayat Sertifikasi / Pelatihan hanya menerima 3 baris.',
+            FormulirDrafController::periksaBaris(
+                $this->skemaTanpaKey(),
+                'riwayat_sertifikasi_pelatihan',
+                3,
+                'sert_file',
+            ),
+        );
+    }
 }
