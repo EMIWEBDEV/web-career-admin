@@ -443,12 +443,35 @@ class FormulirDrafController extends Controller
                 continue;
             }
 
+            $bagian = $b['bagian'] ?? null;
+            $idx = $b['baris'] ?? null;
+
+            // BARIS YATIM: kandidat mengunggah lalu menghapus barisnya sebelum
+            // mengirim. Mengesahkannya membuat laporan memuat sertifikat yang
+            // barisnya sudah tidak ada di jawaban mana pun.
+            if ($bagian !== null && $idx !== null) {
+                $barisJawaban = $jawaban[$bagian] ?? null;
+                if (! is_array($barisJawaban) || ! array_key_exists($idx, $barisJawaban)) {
+                    continue;
+                }
+            }
+
             $urutan++;
 
             // Idempoten: kirim ulang untuk pengisian yang sama tidak menggandakan.
+            //
+            // Penjaganya memakai TRIPLET. Versi sebelumnya hanya (pengisian,
+            // field) — dan karena tiap baris berulang memakai field yang sama
+            // persis, dua sertifikat berikutnya dianggap duplikat lalu dibuang.
+            // Itulah yang membuat pengisian 61 mencatat tiga nama berkas tapi
+            // hanya menyimpan satu.
             $sudah = DB::table('N_WEB_CAREERS_Formulir_Berkas')
                 ->where('Formulir_Pengisian_Id', $pengisianId)
                 ->where('Field_Key', $b['field'])
+                ->when($bagian === null, fn ($q) => $q->whereNull('Bagian_Key'))
+                ->when($bagian !== null, fn ($q) => $q->where('Bagian_Key', $bagian))
+                ->when($idx === null, fn ($q) => $q->whereNull('Baris_Index'))
+                ->when($idx !== null, fn ($q) => $q->where('Baris_Index', $idx))
                 ->exists();
 
             if ($sudah) {
@@ -460,6 +483,8 @@ class FormulirDrafController extends Controller
             DB::table('N_WEB_CAREERS_Formulir_Berkas')->insert([
                 'Formulir_Pengisian_Id' => $pengisianId,
                 'Id_Users' => $userId,
+                'Bagian_Key' => $bagian,
+                'Baris_Index' => $idx,
                 'Field_Key' => $b['field'],
                 'Urutan' => $urutan,
                 'Nama_Asli' => $b['nama'] ?? ('berkas.' . $ext),
