@@ -2,6 +2,7 @@
 
 namespace App\Support\Career;
 
+use App\Support\Career\BerkasBaris;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -280,7 +281,9 @@ class LaporanKandidat
                         // disimpan sebagai array of objek. Barisnya dipertahankan
                         // supaya bisa dicetak sebagai kartu bernomor, bukan satu
                         // paragraf panjang bertitik koma.
-                        'baris' => self::baris($v, $label),
+                        // $k ADALAH kunci bagian berulangnya — itulah yang
+                        // dicocokkan ke Bagian_Key di tabel berkas.
+                        'baris' => self::baris($v, $label, $berkasIni, $lamaranId, (string) $k),
                         // Isian berupa berkas dicetak sebagai ADA/TIDAK, bukan
                         // nama file — nama berkas tidak berarti apa pun di
                         // atas kertas, dan berkasnya sendiri tidak ikut tercetak.
@@ -309,7 +312,14 @@ class LaporanKandidat
                     // Tanpa ini tabel dokumen berbunyi "Dok Kk", "Dok Ktp" —
                     // singkatan internal yang tak pernah dilihat kandidat,
                     // sementara pertanyaannya di layar berbunyi "Kartu Keluarga".
-                    'label' => $label[$b->Field_Key] ?? ucwords(str_replace(['_', '-'], ' ', (string) $b->Field_Key)),
+                    //
+                    // Bernomor bila berkas itu milik satu baris bagian berulang,
+                    // supaya tiga sertifikat tidak tercetak sebagai tiga baris
+                    // berjudul sama persis.
+                    'label' => BerkasBaris::label(
+                        $label[$b->Field_Key] ?? ucwords(str_replace(['_', '-'], ' ', (string) $b->Field_Key)),
+                        $b->Baris_Index !== null ? (int) $b->Baris_Index : null,
+                    ),
                     'nama' => $b->Nama_Asli,
                     'status' => $b->Status_Verifikasi,
                     // Bisa diklik langsung dari dalam PDF — lihat tautanBerkas().
@@ -480,14 +490,22 @@ class LaporanKandidat
      *
      * @return ?list<list<array{label:string,nilai:string}>>
      */
-    private static function baris(mixed $v, array $label): ?array
-    {
+    private static function baris(
+        mixed $v,
+        array $label,
+        ?\Illuminate\Support\Collection $berkas = null,
+        ?int $lamaranId = null,
+        ?string $bagian = null,
+    ): ?array {
         if (! is_array($v) || ! $v || ! array_is_list($v)) {
             return null;
         }
 
         $baris = [];
-        foreach ($v as $r) {
+        // Indeks MENTAH, bukan posisi tampil: baris yang seluruh isinya kosong
+        // tidak ikut dicetak, jadi keduanya bisa berbeda — dan yang dicocokkan
+        // ke Baris_Index adalah yang mentah.
+        foreach (array_values($v) as $ri => $r) {
             if (! is_array($r) || array_is_list($r)) {
                 return null;
             }
@@ -498,9 +516,31 @@ class LaporanKandidat
                 if ($teks === '') {
                     continue;
                 }
+
+                // Sub-isian yang ternyata BERKAS dicetak sebagai tautan yang
+                // bisa diklik dari dalam PDF, bukan nama berkas sebagai teks
+                // mati. Dicocokkan lewat posisi barisnya; berkas lama yang
+                // Baris_Index-nya null jatuh ke pencocokan nama.
+                $tautan = null;
+                if ($berkas && $lamaranId !== null) {
+                    $b = $berkas->first(
+                        fn ($x) => $x->Bagian_Key === $bagian
+                            && $x->Baris_Index !== null
+                            && (int) $x->Baris_Index === $ri
+                            && $x->Field_Key === (string) $k
+                    ) ?? $berkas->first(
+                        fn ($x) => $x->Field_Key === (string) $k && $x->Nama_Asli === $teks
+                    );
+
+                    if ($b) {
+                        $tautan = self::tautanBerkas($lamaranId, (int) $b->Id_Formulir_Berkas);
+                    }
+                }
+
                 $isi[] = [
                     'label' => $label[$k] ?? ucwords(str_replace(['_', '-'], ' ', (string) $k)),
                     'nilai' => $teks,
+                    'tautan' => $tautan,
                 ];
             }
 

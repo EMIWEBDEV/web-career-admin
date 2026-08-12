@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Career\Lamaran;
 
 use App\Http\Controllers\Controller;
+use App\Support\Career\BerkasBaris;
 use App\Support\Career\GcsBerkas;
 use App\Support\Career\FormulirSchema;
 use App\Helpers\ResponseHelper;
@@ -53,7 +54,8 @@ class FormulirDrafController extends Controller
             ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 't.Lamaran_Id')
             ->where('t.Id_Lamaran_Tahap', $realId)
             ->where('l.Id_Users', $userId)
-            ->select('t.Id_Lamaran_Tahap', 't.Lamaran_Id', 't.Formulir_Kode', 't.Status', 't.Formulir_Pengisian_Id')
+            ->select('t.Id_Lamaran_Tahap', 't.Lamaran_Id', 't.Formulir_Kode', 't.Formulir_Versi',
+                't.Status', 't.Formulir_Pengisian_Id')
             ->first();
     }
 
@@ -82,13 +84,23 @@ class FormulirDrafController extends Controller
         // Berkas dikembalikan sebagai metadata + URL endpoint kita sendiri.
         // Path GCS-nya sengaja TIDAK ikut keluar: browser tidak butuh, dan
         // membocorkannya memberi petunjuk susunan bucket tanpa guna.
-        $berkas = collect(json_decode($d->Berkas_Json ?: '{}', true) ?: [])
-            ->map(fn ($b, $field) => [
-                'field' => $field,
+        $berkas = collect(BerkasBaris::daftar($d->Berkas_Json ?? null))
+            ->map(fn ($b) => [
+                'bagian' => $b['bagian'] ?? null,
+                'baris' => $b['baris'] ?? null,
+                'field' => $b['field'] ?? null,
                 'nama' => $b['nama'] ?? null,
                 'ukuran' => (int) ($b['ukuran'] ?? 0),
                 'mime' => $b['mime'] ?? null,
-                'url' => route('career.portal.draf.berkas', ['id' => $id, 'field' => $field]),
+                // bagian/baris ikut sebagai query string, BUKAN segmen rute:
+                // tautan pratinjau yang sudah beredar di draf lama tidak
+                // membawa keduanya, dan harus tetap sah.
+                'url' => route('career.portal.draf.berkas', array_filter([
+                    'id' => $id,
+                    'field' => $b['field'] ?? null,
+                    'bagian' => $b['bagian'] ?? null,
+                    'baris' => $b['baris'] ?? null,
+                ], fn ($v) => $v !== null)),
             ])
             ->values();
 
@@ -176,6 +188,69 @@ class FormulirDrafController extends Controller
      * browser: dengan begini ukuran, tipe, dan kepemilikan diperiksa sebelum
      * satu byte pun mendarat di bucket.
      */
+    /**
+     * Periksa triplet (bagian, baris, field) terhadap SKEMA YANG DIBEKUKAN.
+     *
+     * Sebelum ini `field` diterima sebagai string bebas dan `maks_baris` hanya
+     * ditegakkan di browser (BagianRenderer.vue:48). Selama satu field berarti
+     * satu berkas, longgarnya tidak terasa; begitu tiap baris bisa membawa
+     * berkas 5 MB, endpoint ini bisa dibanjiri tanpa batas.
+     *
+     * Skema yang tidak terbaca TIDAK menolak apa pun. Formulir lama dibuat
+     * sebelum mekanisme pembekuan versi ada, dan menolak unggahan karena
+     * skemanya tak ketemu berarti menghukum kandidat atas riwayat kode kita.
+     *
+     * @return string|null pesan galat, atau null bila sah
+     */
+    public static function periksaBaris(?array $schema, ?string $bagian, ?int $baris, string $field): ?string
+    {
+        // Tanpa bagian/baris = berkas biasa di luar bagian berulang.
+        if ($bagian === null || $baris === null) {
+            return null;
+        }
+
+        if (! $schema) {
+            return null;
+        }
+
+        foreach (($schema['langkah'] ?? []) as $langkah) {
+            foreach (($langkah['bagian'] ?? []) as $b) {
+                // Dicocokkan lewat BerkasBaris::kunciBagian(), bukan `key`
+                // mentah: bagian tanpa `key` adalah bentuk yang sah, dan
+                // browser menurunkan kuncinya dari judul. Mencocokkan `key`
+                // saja akan menolak unggahan yang benar-benar sah.
+                if (BerkasBaris::kunciBagian($b) !== $bagian) {
+                    continue;
+                }
+
+                if (empty($b['berulang'])) {
+                    return "Bagian \"{$bagian}\" tidak menerima baris berulang.";
+                }
+
+                $maks = (int) ($b['maks_baris'] ?? 5);
+                if ($baris < 0 || $baris >= $maks) {
+                    $judul = $b['judul'] ?? $bagian;
+
+                    return "{$judul} hanya menerima {$maks} baris.";
+                }
+
+                foreach (($b['field'] ?? []) as $f) {
+                    if (($f['key'] ?? null) !== $field) {
+                        continue;
+                    }
+
+                    return ($f['tipe'] ?? null) === 'file'
+                        ? null
+                        : "Field \"{$field}\" bukan field berkas.";
+                }
+
+                return "Field \"{$field}\" tidak ada di bagian \"{$bagian}\".";
+            }
+        }
+
+        return "Bagian \"{$bagian}\" tidak ada di formulir ini.";
+    }
+
     public function unggahBerkas(Request $request, string $id)
     {
         $tahap = $this->tahapMilikSaya($id);
@@ -195,8 +270,24 @@ class FormulirDrafController extends Controller
 
         $data = $request->validate([
             'field' => 'required|string|max:60',
+            'bagian' => 'nullable|string|max:60',
+            'baris' => 'nullable|integer|min:0|max:99',
             'berkas' => 'required|file|max:5120|mimes:pdf,jpg,jpeg,png',
         ]);
+
+        $bagian = $data['bagian'] ?? null;
+        $barisIdx = isset($data['baris']) ? (int) $data['baris'] : null;
+
+        // Ditegakkan terhadap skema yang DIBEKUKAN saat tahap dibuat — jalan yang
+        // sama dengan yang dipakai saat merender formulirnya.
+        $skema = FormulirSchema::byKodeDanVersi(
+            $tahap->Formulir_Kode,
+            $tahap->Formulir_Versi !== null ? (int) $tahap->Formulir_Versi : null,
+        )['schema'] ?? null;
+
+        if ($galat = self::periksaBaris($skema, $bagian, $barisIdx, $data['field'])) {
+            return ResponseHelper::error($galat, 422);
+        }
 
         $userId = (int) session('career_auth.id');
         $file = $request->file('berkas');
@@ -244,7 +335,13 @@ class FormulirDrafController extends Controller
             // tahap punya aturan sendiri (Sertifikat sampai 5 MB, PNG diterima),
             // dan sudah diperiksa oleh validate() di atas. Memanggilnya di sini
             // justru akan menolak berkas yang jelas-jelas dijanjikan boleh.
-            $path = $gcs->unggah($folder, $data['field'], $ext, $konten);
+            // Berkas berulang WAJIB lewat unggahBaris(): path deterministik
+            // membuat baris kedua menimpa yang pertama di bucket. Berkas biasa
+            // tetap deterministik supaya unggah ulang menimpa versi lamanya
+            // alih-alih menumpuk sampah.
+            $path = ($data['bagian'] ?? null) !== null && ($data['baris'] ?? null) !== null
+                ? $gcs->unggahBaris($folder, $data['field'], $ext, $konten)
+                : $gcs->unggah($folder, $data['field'], $ext, $konten);
             unset($konten);
         } catch (\Throwable $e) {
             // Jejak LENGKAP. Pesan "Path cannot be empty" saja tidak menyebut
@@ -275,6 +372,9 @@ class FormulirDrafController extends Controller
         }
 
         $meta = [
+            'bagian' => $bagian,
+            'baris' => $barisIdx,
+            'field' => $data['field'],
             'nama' => $file->getClientOriginalName(),
             'path' => $path,
             'ukuran' => $file->getSize(),
@@ -286,14 +386,27 @@ class FormulirDrafController extends Controller
         $kunci = ['Lamaran_Tahap_Id' => $tahap->Id_Lamaran_Tahap, 'Id_Users' => $userId];
         $baris = DB::table('N_WEB_CAREERS_Formulir_Draf')->where($kunci)->first();
 
-        $semua = json_decode($baris->Berkas_Json ?? '{}', true) ?: [];
-        $lama = $semua[$data['field']]['path'] ?? null;
-        $semua[$data['field']] = $meta;
+        // DAFTAR, bukan peta berkunci field. Peta hanya sanggup memuat satu entri
+        // per field, dan itulah yang meruntuhkan tiga sertifikat jadi satu.
+        $semua = BerkasBaris::daftar($baris->Berkas_Json ?? null);
+
+        // Yang diganti HANYA entri dengan triplet yang sama persis. Versi
+        // sebelumnya membuang semua entri sefield — termasuk milik baris lain.
+        $lama = null;
+        $sisa = [];
+        foreach ($semua as $e) {
+            if (BerkasBaris::cocok($e, $meta['bagian'], $meta['baris'], $meta['field'])) {
+                $lama = $e['path'] ?? null;
+                continue;
+            }
+            $sisa[] = $e;
+        }
+        $sisa[] = $meta;
 
         DB::table('N_WEB_CAREERS_Formulir_Draf')->updateOrInsert($kunci, [
             'Lamaran_Id' => $tahap->Lamaran_Id,
             'Formulir_Kode' => $tahap->Formulir_Kode,
-            'Berkas_Json' => json_encode($semua, JSON_UNESCAPED_UNICODE),
+            'Berkas_Json' => json_encode(array_values($sisa), JSON_UNESCAPED_UNICODE),
             'Updated_At' => now(),
             'Updated_By' => session('career_auth.nama'),
             'Updated_By_Id' => $userId,
@@ -302,8 +415,9 @@ class FormulirDrafController extends Controller
             'Created_By_Id' => $baris->Created_By_Id ?? $userId,
         ]);
 
-        // Berkas lama untuk field yang sama dibuang — draf hanya menyimpan versi
-        // terakhir, dan menyisakannya berarti bucket menumpuk sampah diam-diam.
+        // Berkas lama untuk TRIPLET yang sama dibuang — draf hanya menyimpan
+        // versi terakhir tiap baris, dan menyisakannya berarti bucket menumpuk
+        // sampah diam-diam. Baris lain di bagian yang sama tidak tersentuh.
         if ($lama && $lama !== $path) {
             try {
                 Storage::disk(GcsBerkas::DISK)->delete($lama);
@@ -322,13 +436,80 @@ class FormulirDrafController extends Controller
     }
 
     /**
+     * DELETE /lamaran/tahap/{id}/draf/berkas — buang berkas SATU BARIS.
+     *
+     * Dipanggil saat kandidat menghapus baris di bagian berulang. Dua hal
+     * dikerjakan sekaligus dan sengaja tidak dipisah: entri barisnya dibuang
+     * (berikut objeknya di GCS, yang tanpa ini menetap di bucket selamanya),
+     * lalu indeks entri di atasnya diturunkan satu.
+     *
+     * Penggeseran hidup HANYA di sini. Menghitungnya ulang di sisi Vue berarti
+     * dua sumber kebenaran untuk satu urutan — dan yang satu pasti menyimpang.
+     */
+    public function hapusBerkas(Request $request, string $id)
+    {
+        $tahap = $this->tahapMilikSaya($id);
+        if (! $tahap) {
+            return ResponseHelper::error('Tahap tidak ditemukan.', 404);
+        }
+
+        $data = $request->validate([
+            'bagian' => 'required|string|max:60',
+            'baris' => 'required|integer|min:0|max:99',
+        ]);
+
+        $userId = (int) session('career_auth.id');
+        $kunci = ['Lamaran_Tahap_Id' => $tahap->Id_Lamaran_Tahap, 'Id_Users' => $userId];
+
+        $baris = DB::table('N_WEB_CAREERS_Formulir_Draf')->where($kunci)->first();
+        if (! $baris) {
+            return ResponseHelper::success([], 'Tidak ada berkas yang perlu dibuang.');
+        }
+
+        $semua = BerkasBaris::daftar($baris->Berkas_Json ?? null);
+        $bagian = $data['bagian'];
+        $idx = (int) $data['baris'];
+
+        // Path yang akan yatim dicatat SEBELUM digeser — sesudahnya entri itu
+        // sudah tidak ada dan objeknya tidak akan pernah ketemu lagi.
+        $buang = [];
+        foreach ($semua as $e) {
+            if (($e['bagian'] ?? null) === $bagian && ($e['baris'] ?? null) === $idx && ! empty($e['path'])) {
+                $buang[] = $e['path'];
+            }
+        }
+
+        $sisa = BerkasBaris::geser($semua, $bagian, $idx);
+
+        DB::table('N_WEB_CAREERS_Formulir_Draf')->where($kunci)->update([
+            'Berkas_Json' => json_encode(array_values($sisa), JSON_UNESCAPED_UNICODE),
+            'Updated_At' => now(),
+            'Updated_By' => session('career_auth.nama'),
+            'Updated_By_Id' => $userId,
+        ]);
+
+        // Best-effort, persis seperti pembersihan berkas lama di unggahBerkas():
+        // gagal menyapu satu objek tidak pantas menggagalkan penghapusan baris
+        // yang di basis data sudah tuntas.
+        foreach ($buang as $p) {
+            try {
+                Storage::disk(GcsBerkas::DISK)->delete($p);
+            } catch (\Throwable $e) {
+                Log::channel('web_career')->warning('[DRAF] berkas baris gagal dihapus: ' . $e->getMessage());
+            }
+        }
+
+        return ResponseHelper::success(['dibuang' => count($buang)], 'Berkas baris dibuang.');
+    }
+
+    /**
      * GET /api/v1/lamaran/tahap/{id}/draf/berkas/{field} — pratinjau berkas draf.
      *
      * Menerbitkan signed URL GCS berumur 15 menit lalu mengalihkan ke sana.
      * Tautannya tidak pernah disimpan di mana pun dan kedaluwarsa sendiri, jadi
      * kalaupun tersalin ke luar, umurnya pendek.
      */
-    public function berkas(string $id, string $field)
+    public function berkas(Request $request, string $id, string $field)
     {
         $tahap = $this->tahapMilikSaya($id);
         if (! $tahap) {
@@ -340,7 +521,21 @@ class FormulirDrafController extends Controller
             ->where('Id_Users', (int) session('career_auth.id'))
             ->value('Berkas_Json');
 
-        $path = (json_decode($d ?: '{}', true) ?: [])[$field]['path'] ?? null;
+        // Tautan lama tidak membawa bagian/baris dan itu SAH — artinya berkas
+        // biasa di luar bagian berulang. Rute yang sudah beredar di draf lama
+        // karena itu tidak patah.
+        $bagian = $request->query('bagian');
+        $barisQ = $request->query('baris');
+        $baris = ($barisQ === null || $barisQ === '') ? null : (int) $barisQ;
+
+        $path = null;
+        foreach (BerkasBaris::daftar($d) as $b) {
+            if (BerkasBaris::cocok($b, $bagian, $baris, $field)) {
+                $path = $b['path'] ?? null;
+                break;
+            }
+        }
+
         if (! $path) {
             abort(404);
         }
@@ -373,7 +568,7 @@ class FormulirDrafController extends Controller
      *
      * @return int jumlah berkas yang berhasil dicatat
      */
-    public static function jadikanPermanen(int $tahapId, int $userId, int $pengisianId): int
+    public static function jadikanPermanen(int $tahapId, int $userId, int $pengisianId, array $jawaban = []): int
     {
         $draf = DB::table('N_WEB_CAREERS_Formulir_Draf')
             ->where('Lamaran_Tahap_Id', $tahapId)
@@ -384,7 +579,9 @@ class FormulirDrafController extends Controller
             return 0;
         }
 
-        $semua = json_decode($draf->Berkas_Json ?: '{}', true) ?: [];
+        // Menerima dua bentuk: daftar baru, dan peta berkunci field milik draf
+        // yang dibuat sebelum berkas baris berulang ada.
+        $semua = BerkasBaris::daftar($draf->Berkas_Json ?? null);
         if (! $semua) {
             return 0;
         }
@@ -394,17 +591,40 @@ class FormulirDrafController extends Controller
         $urutan = 0;
         $jumlah = 0;
 
-        foreach ($semua as $field => $b) {
-            if (empty($b['path'])) {
+        foreach ($semua as $b) {
+            if (empty($b['path']) || empty($b['field'])) {
                 continue;
+            }
+
+            $bagian = $b['bagian'] ?? null;
+            $idx = $b['baris'] ?? null;
+
+            // BARIS YATIM: kandidat mengunggah lalu menghapus barisnya sebelum
+            // mengirim. Mengesahkannya membuat laporan memuat sertifikat yang
+            // barisnya sudah tidak ada di jawaban mana pun.
+            if ($bagian !== null && $idx !== null) {
+                $barisJawaban = $jawaban[$bagian] ?? null;
+                if (! is_array($barisJawaban) || ! array_key_exists($idx, $barisJawaban)) {
+                    continue;
+                }
             }
 
             $urutan++;
 
             // Idempoten: kirim ulang untuk pengisian yang sama tidak menggandakan.
+            //
+            // Penjaganya memakai TRIPLET. Versi sebelumnya hanya (pengisian,
+            // field) — dan karena tiap baris berulang memakai field yang sama
+            // persis, dua sertifikat berikutnya dianggap duplikat lalu dibuang.
+            // Itulah yang membuat pengisian 61 mencatat tiga nama berkas tapi
+            // hanya menyimpan satu.
             $sudah = DB::table('N_WEB_CAREERS_Formulir_Berkas')
                 ->where('Formulir_Pengisian_Id', $pengisianId)
-                ->where('Field_Key', $field)
+                ->where('Field_Key', $b['field'])
+                ->when($bagian === null, fn ($q) => $q->whereNull('Bagian_Key'))
+                ->when($bagian !== null, fn ($q) => $q->where('Bagian_Key', $bagian))
+                ->when($idx === null, fn ($q) => $q->whereNull('Baris_Index'))
+                ->when($idx !== null, fn ($q) => $q->where('Baris_Index', $idx))
                 ->exists();
 
             if ($sudah) {
@@ -416,7 +636,9 @@ class FormulirDrafController extends Controller
             DB::table('N_WEB_CAREERS_Formulir_Berkas')->insert([
                 'Formulir_Pengisian_Id' => $pengisianId,
                 'Id_Users' => $userId,
-                'Field_Key' => $field,
+                'Bagian_Key' => $bagian,
+                'Baris_Index' => $idx,
+                'Field_Key' => $b['field'],
                 'Urutan' => $urutan,
                 'Nama_Asli' => $b['nama'] ?? ('berkas.' . $ext),
                 'Path_File' => $b['path'],

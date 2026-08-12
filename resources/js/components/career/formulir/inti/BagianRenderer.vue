@@ -34,6 +34,8 @@
                         v-for="f in fieldTerlihat(isiBaris)"
                         :key="f.key"
                         :field="f"
+                        :bagian="kunci"
+                        :baris="i"
                         :model-value="isiBaris[f.key]"
                         :disabled="disabled"
                         :konteks="konteksOpsi"
@@ -87,7 +89,7 @@ const props = defineProps({
     konteksOpsi: { type: Object, default: () => ({}) },
 });
 
-const emit = defineEmits(['ubah', 'ubah-baris', 'berkas']);
+const emit = defineEmits(['ubah', 'ubah-baris', 'berkas', 'hapus-baris']);
 
 const kunci = computed(() => kunciBagian(props.bagian));
 const baris = computed(() => props.jawaban[kunci.value] || []);
@@ -109,8 +111,16 @@ function tambahBaris() {
     emit('ubah', kunci.value, [...baris.value, barisKosong(props.bagian)]);
 }
 
+/**
+ * Baris dibuang dari jawaban, DAN berkasnya diberitahukan ke induk.
+ *
+ * Tanpa pancaran kedua, objek berkas baris itu menetap di bucket selamanya dan
+ * indeks berkas di atasnya tidak pernah turun — sertifikat lalu menempel ke
+ * baris yang salah.
+ */
 function hapusBaris(i) {
     emit('ubah', kunci.value, baris.value.filter((_, j) => j !== i));
+    emit('hapus-baris', kunci.value, i);
 }
 </script>
 
