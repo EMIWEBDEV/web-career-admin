@@ -345,11 +345,17 @@
 import { computed, ref, watch } from 'vue';
 import { ambilOpsi, benderaDiingat, tunda } from './referensi';
 import { syaratTerpenuhi } from './aturan';
+import { kunciBerkas } from './berkasBaris';
 import TeleponNegara from '@career/TeleponNegara.vue';
 import AmbilFoto from './AmbilFoto.vue';
 
 const props = defineProps({
     field: { type: Object, required: true },
+    // Posisi field ini bila ia berada di dalam bagian BERULANG. Keduanya null
+    // untuk bagian biasa. Tanpa ini sebuah field tidak tahu ia baris ke berapa,
+    // dan tiga baris akan mencari berkas draf dengan kunci yang sama persis.
+    bagian: { type: String, default: null },
+    baris: { type: Number, default: null },
     modelValue: { type: [String, Number, Boolean, Array, Object, null], default: null },
     disabled: { type: Boolean, default: false },
     galat: { type: String, default: '' },
@@ -373,7 +379,9 @@ const pratinjauGambar = ref(false);
 // Berkas draf yang sudah tersimpan di server, dititipkan lewat `konteks`.
 // Dipakai setelah halaman dimuat ulang: URL objek lokal ikut hilang bersama
 // komponennya, jadi tanpa ini berkas yang sudah ada tampak tak bisa dibuka.
-const drafBerkas = computed(() => props.konteks?.berkasDraf?.[props.field.key] || null);
+const drafBerkas = computed(
+    () => props.konteks?.berkasDraf?.[kunciBerkas(props.bagian, props.baris, props.field.key)] || null,
+);
 const urlPratinjau = computed(() => pratinjau.value || drafBerkas.value?.url || '');
 const gambarPratinjau = computed(
     () => pratinjauGambar.value || String(drafBerkas.value?.mime || '').startsWith('image/'),
