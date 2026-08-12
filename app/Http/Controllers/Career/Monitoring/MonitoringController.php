@@ -6,6 +6,7 @@ use App\Helpers\ResponseHelper;
 use App\Http\Controllers\Career\Lamaran\LamaranController;
 use App\Http\Controllers\Controller;
 use App\Support\Career\AlurKolom;
+use App\Support\Career\BerkasBaris;
 use App\Support\Career\GcsBerkas;
 use App\Support\Career\HasilKeputusan;
 use App\Support\Career\MetrikRekrutmen;
@@ -1183,7 +1184,13 @@ class MonitoringController extends Controller
                     'waktuKirim' => self::fmt($data['pengisian']->Waktu_Kirim),
                     'jawaban' => self::uraikanJawaban($data['pengisian']->Jawaban_Json),
                     'dokumen' => $data['dokumen']->map(fn ($b) => [
-                        'field' => self::labelDariKey($b->Field_Key),
+                        // Bernomor bila berkas ini milik satu baris bagian
+                        // berulang — tanpa itu tiga sertifikat tampil sebagai
+                        // tiga entri berjudul sama persis.
+                        'field' => BerkasBaris::label(
+                            self::labelDariKey($b->Field_Key),
+                            $b->Baris_Index !== null ? (int) $b->Baris_Index : null,
+                        ),
                         'nama' => $b->Nama_Asli,
                         'ext' => $b->Ekstensi,
                         'ukuran' => (int) $b->Ukuran_Byte,

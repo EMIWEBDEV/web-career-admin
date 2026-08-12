@@ -884,7 +884,18 @@
                                     @foreach ($baris as $i => $kol)
                                         <div @if ($i) style="margin-top: 8px" @endif>
                                             <div class="lbl">{{ $kol['label'] }}</div>
-                                            <div class="v pth">{{ $kol['nilai'] }}</div>
+                                            {{-- Sub-isian yang berupa BERKAS
+                                                 dicetak sebagai tautan yang bisa
+                                                 diklik dari dalam PDF. Nama berkas
+                                                 sebagai teks mati tidak berarti
+                                                 apa pun bagi pembaca dokumen. --}}
+                                            <div class="v pth">
+                                                @if (! empty($kol['tautan']))
+                                                    <a href="{{ $kol['tautan'] }}">{{ $kol['nilai'] }}</a>
+                                                @else
+                                                    {{ $kol['nilai'] }}
+                                                @endif
+                                            </div>
                                         </div>
                                     @endforeach
                                 </td>
