@@ -213,6 +213,10 @@ Route::prefix('kandidat')
         Route::post('/lamaran/tahap/{id}/draf', [FormulirDrafController::class, 'simpan'])->name('draf.simpan');
         Route::post('/lamaran/tahap/{id}/draf/berkas', [FormulirDrafController::class, 'unggahBerkas'])->name('draf.berkas.unggah');
         Route::get('/lamaran/tahap/{id}/draf/berkas/{field}', [FormulirDrafController::class, 'berkas'])->name('draf.berkas');
+        // Dipanggil saat kandidat menghapus SATU BARIS bagian berulang. Tanpa
+        // ini berkas baris itu menetap di bucket selamanya, dan indeks berkas
+        // di atasnya tidak pernah turun.
+        Route::delete('/lamaran/tahap/{id}/draf/berkas', [FormulirDrafController::class, 'hapusBerkas'])->name('draf.berkas.hapus');
 
         // JAWABAN KANDIDAT ATAS PENAWARAN — DICABUT.
         //

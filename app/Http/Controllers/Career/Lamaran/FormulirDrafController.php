@@ -432,6 +432,73 @@ class FormulirDrafController extends Controller
     }
 
     /**
+     * DELETE /lamaran/tahap/{id}/draf/berkas — buang berkas SATU BARIS.
+     *
+     * Dipanggil saat kandidat menghapus baris di bagian berulang. Dua hal
+     * dikerjakan sekaligus dan sengaja tidak dipisah: entri barisnya dibuang
+     * (berikut objeknya di GCS, yang tanpa ini menetap di bucket selamanya),
+     * lalu indeks entri di atasnya diturunkan satu.
+     *
+     * Penggeseran hidup HANYA di sini. Menghitungnya ulang di sisi Vue berarti
+     * dua sumber kebenaran untuk satu urutan — dan yang satu pasti menyimpang.
+     */
+    public function hapusBerkas(Request $request, string $id)
+    {
+        $tahap = $this->tahapMilikSaya($id);
+        if (! $tahap) {
+            return ResponseHelper::error('Tahap tidak ditemukan.', 404);
+        }
+
+        $data = $request->validate([
+            'bagian' => 'required|string|max:60',
+            'baris' => 'required|integer|min:0|max:99',
+        ]);
+
+        $userId = (int) session('career_auth.id');
+        $kunci = ['Lamaran_Tahap_Id' => $tahap->Id_Lamaran_Tahap, 'Id_Users' => $userId];
+
+        $baris = DB::table('N_WEB_CAREERS_Formulir_Draf')->where($kunci)->first();
+        if (! $baris) {
+            return ResponseHelper::success([], 'Tidak ada berkas yang perlu dibuang.');
+        }
+
+        $semua = BerkasBaris::daftar($baris->Berkas_Json ?? null);
+        $bagian = $data['bagian'];
+        $idx = (int) $data['baris'];
+
+        // Path yang akan yatim dicatat SEBELUM digeser — sesudahnya entri itu
+        // sudah tidak ada dan objeknya tidak akan pernah ketemu lagi.
+        $buang = [];
+        foreach ($semua as $e) {
+            if (($e['bagian'] ?? null) === $bagian && ($e['baris'] ?? null) === $idx && ! empty($e['path'])) {
+                $buang[] = $e['path'];
+            }
+        }
+
+        $sisa = BerkasBaris::geser($semua, $bagian, $idx);
+
+        DB::table('N_WEB_CAREERS_Formulir_Draf')->where($kunci)->update([
+            'Berkas_Json' => json_encode(array_values($sisa), JSON_UNESCAPED_UNICODE),
+            'Updated_At' => now(),
+            'Updated_By' => session('career_auth.nama'),
+            'Updated_By_Id' => $userId,
+        ]);
+
+        // Best-effort, persis seperti pembersihan berkas lama di unggahBerkas():
+        // gagal menyapu satu objek tidak pantas menggagalkan penghapusan baris
+        // yang di basis data sudah tuntas.
+        foreach ($buang as $p) {
+            try {
+                Storage::disk(GcsBerkas::DISK)->delete($p);
+            } catch (\Throwable $e) {
+                Log::channel('web_career')->warning('[DRAF] berkas baris gagal dihapus: ' . $e->getMessage());
+            }
+        }
+
+        return ResponseHelper::success(['dibuang' => count($buang)], 'Berkas baris dibuang.');
+    }
+
+    /**
      * GET /api/v1/lamaran/tahap/{id}/draf/berkas/{field} — pratinjau berkas draf.
      *
      * Menerbitkan signed URL GCS berumur 15 menit lalu mengalihkan ke sana.
