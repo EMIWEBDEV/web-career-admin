@@ -120,8 +120,18 @@
                              lowongan yang lewat tanggal tutup sudah tidak sampai
                              ke halaman ini (disaring visibleLowongan di backend). -->
                         <button type="button" class="wc-btn wc-btn--primary wc-btn--full" @click="goApply(job)">
-                            <i class="bi bi-send-fill"></i> Lamar Sekarang
+                            <i :class="loggedIn ? 'bi bi-send-fill' : 'bi bi-box-arrow-in-right'"></i>
+                            {{ loggedIn ? 'Lamar Sekarang' : 'Masuk untuk Melamar' }}
                         </button>
+                        <!-- Tamu diberi tahu SEBELUM menekan tombol; dulu ia
+                             mendarat di formulir lengkap yang tidak pernah bisa
+                             terkirim karena lamaran butuh pemilik akun. -->
+                        <p v-if="!loggedIn" class="wc-apply__note">
+                            <i class="bi bi-info-circle"></i>
+                            Melamar butuh akun. Belum punya?
+                            <Link :href="registerUrl">Daftar dulu</Link
+                            >, gratis dan sekali saja.
+                        </p>
                     </div>
                 </aside>
             </div>
@@ -134,6 +144,7 @@ import { Head, Link } from '@inertiajs/vue3';
 import { computed, nextTick, onMounted, onUnmounted } from 'vue';
 import CareerLayout from './Layouts/CareerLayout.vue';
 import {
+    applyUrl,
     daysLeft,
     deadlineLabel,
     formatDateTime,
@@ -143,6 +154,7 @@ import {
     mtUrl,
     observeReveal,
     stageTypeLabel,
+    sudahLogin,
     typeClass,
 } from './careerData';
 
@@ -157,6 +169,11 @@ const props = defineProps({
 const job = computed(() => props.lowongan || {});
 const hasMt = computed(() => props.hasMt);
 const offices = computed(() => props.offices || []);
+
+const loggedIn = computed(() => sudahLogin());
+// Daftar pun membawa tujuan: sesudah akun jadi, kandidat kembali ke lowongan
+// ini, bukan terdampar di portal kosong.
+const registerUrl = computed(() => '/register?redirect=' + encodeURIComponent(applyUrl(job.value)));
 
 let revealObs = null;
 onMounted(() => nextTick(() => (revealObs = observeReveal())));

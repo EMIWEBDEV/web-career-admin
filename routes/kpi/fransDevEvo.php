@@ -24,7 +24,15 @@ Route::get('/karir/landing-page/mt/{id}', [CareerLandingController::class, 'show
 Route::get('/karir/tim', [CareerLandingController::class, 'semuaTim'])->name('career.tim.semua');
 Route::get('/karir/tim/{slug}', [CareerLandingController::class, 'showTim'])->name('career.tim.detail');
 
-Route::get('/karir/apply/{id}', [CareerLandingController::class, 'apply'])->name('career.apply');
+// MELAMAR WAJIB LOGIN. Formulir ini menulis lamaran atas nama satu akun —
+// tanpa sesi, isiannya tidak punya pemilik dan prefill/kelayakan/status
+// "sudah melamar" semuanya kosong, jadi tamu melihat formulir yang terlihat
+// jalan tapi tidak pernah bisa terkirim. career.auth memulangkan tamu ke
+// halaman masuk SAMBIL membawa `?redirect=` ke sini, sehingga sesudah masuk
+// mereka mendarat kembali di formulir lowongan yang tadi diklik.
+Route::get('/karir/apply/{id}', [CareerLandingController::class, 'apply'])
+    ->middleware('career.auth')
+    ->name('career.apply');
 
 Route::get('/karir/login', [CareerLandingController::class, 'login'])->name('career.login');
 Route::get('/karir/register', [CareerLandingController::class, 'register'])->name('career.register');

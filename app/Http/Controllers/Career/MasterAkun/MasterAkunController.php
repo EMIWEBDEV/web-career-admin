@@ -10,6 +10,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Vinkla\Hashids\Facades\Hashids;
 
@@ -19,6 +20,9 @@ use Vinkla\Hashids\Facades\Hashids;
  */
 class MasterAkunController extends Controller
 {
+    /** Umur tautan verifikasi. Disamakan dengan AuthController::VERIF_BERLAKU_MENIT. */
+    private const VERIF_BERLAKU_MENIT = 30;
+
     public function index()
     {
         return Inertia::render('Career/admin/master-akun/masterAkun', CareerShell::props('/master-akun', 'Master Akun'));
@@ -43,6 +47,19 @@ class MasterAkunController extends Controller
                     'mulai_berlaku' => $r->Mulai_Berlaku,
                     'valid_until' => $r->Valid_Until,
                     'last_login_at' => $r->Last_Login_At ?? null,
+                    // ── KEADAAN VERIFIKASI EMAIL ────────────────────────────
+                    //
+                    // `verifSentAt` bukan sekadar hiasan: kolom itu HANYA ditulis
+                    // setelah Mail::send benar-benar berhasil (WcSyncEmailJob).
+                    // Jadi `verifAttempt > 0` dengan `verifSentAt` kosong berarti
+                    // "sudah dicoba sekian kali, tidak satu pun pernah keluar" —
+                    // keadaan yang selama ini hanya terbaca di log job, dan tidak
+                    // pernah sampai ke orang yang bisa menindaklanjutinya.
+                    'emailVerified' => ($r->Flag_Email_Verified ?? 'T') === 'Y',
+                    'emailVerifiedAt' => $r->Email_Verified_At ?? null,
+                    'verifSentAt' => $r->Email_Verif_Sent_At ?? null,
+                    'verifExpiredAt' => $r->Email_Verif_Expired_At ?? null,
+                    'verifAttempt' => (int) ($r->Email_Verif_Attempt ?? 0),
                     'createdBy' => $r->Pembuat ?: $r->Created_By,
                     'createdAt' => $r->Created_At,
                 ])
@@ -177,6 +194,100 @@ class MasterAkunController extends Controller
 
             return ResponseHelper::error('Gagal mengubah status', 500);
         }
+    }
+
+    /**
+     * PATCH master-akun/{id}/kirim-verifikasi — kirim ULANG tautan verifikasi.
+     *
+     * ══ KENAPA DIKIRIM LANGSUNG, BUKAN LEWAT ANTREAN ══
+     *
+     * Registrasi memakai antrean, dan itu benar: kandidat tidak boleh menunggu
+     * SMTP yang lambat, dan kegagalannya tidak boleh menggagalkan pendaftaran.
+     * Tapi konsekuensinya, alasan gagalnya hanya mendarat di log job — dan
+     * akun seperti yang memicu pintu ini justru mencatat `Email_Verif_Attempt`
+     * sampai enam kali dengan `Email_Verif_Sent_At` yang tak pernah terisi:
+     * enam kali dicoba, tidak sekali pun keluar, tanpa sepatah kata pun sampai
+     * ke orang yang bisa membetulkannya.
+     *
+     * Di sini keadaannya terbalik. Yang menekan tombol adalah admin yang SEDANG
+     * menyelidiki kegagalan itu; ia sanggup menunggu dua detik, dan yang paling
+     * ia butuhkan justru kalimat galat aslinya — "Connection could not be
+     * established", "535 Authentication failed" — bukan "sedang diproses".
+     * Karena itu `dispatchSync`: job yang sama, logika yang sama, tapi
+     * lemparannya sampai ke layar alih-alih tenggelam di log.
+     *
+     * TANPA THROTTLE, berbeda dari kirim-ulang publik yang menahan 2 menit.
+     * Penahanan itu mencegah penyalahgunaan oleh orang asing; di sini ia justru
+     * menghalangi satu-satunya orang yang sedang berusaha memperbaiki keadaan.
+     */
+    public function kirimVerifikasi($id)
+    {
+        $realId = Hashids::decode($id)[0] ?? null;
+        $row = DB::table('N_WEB_CAREERS_Users')->where('Id_Users', $realId)->first();
+
+        if (! $row) {
+            return ResponseHelper::error('Akun tidak ditemukan.', 404);
+        }
+
+        if (($row->Flag_Email_Verified ?? 'T') === 'Y') {
+            return ResponseHelper::error('Email akun ini sudah terverifikasi.', 422);
+        }
+
+        $adminNama = session('career_auth.nama', 'ADMIN');
+        $adminId = session('career_auth.id');
+
+        // Token BARU tiap kali dikirim. Yang lama ikut hangus begitu barisnya
+        // ditimpa — tautan basi di kotak masuk tidak boleh tetap berlaku.
+        $token = Str::random(64);
+        $now = Carbon::now();
+
+        try {
+            DB::table('N_WEB_CAREERS_Users')->where('Id_Users', $realId)->update([
+                'Email_Verif_Token' => hash('sha256', $token),
+                'Email_Verif_Expired_At' => $now->copy()->addMinutes(self::VERIF_BERLAKU_MENIT),
+                'Email_Verif_Attempt' => DB::raw('ISNULL(Email_Verif_Attempt, 0) + 1'),
+                'Updated_At' => $now, 'Updated_By' => $adminNama, 'Updated_By_Id' => $adminId,
+            ]);
+
+            // Job yang sama dengan jalur registrasi — termasuk penulisan
+            // Email_Verif_Sent_At setelah SMTP benar-benar menerima.
+            \App\Jobs\Career\WcSyncEmailJob::dispatchSync(
+                \App\Jobs\Career\WcSyncEmailJob::JENIS_VERIFIKASI,
+                (int) $realId,
+                ['token' => $token],
+            );
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->error(
+                "[VERIF-ULANG] gagal ke {$row->Email} (akun #{$realId}, oleh {$adminNama}): " . $e->getMessage()
+            );
+
+            // Kalimat galat ASLI diteruskan apa adanya. Menggantinya dengan
+            // "terjadi kesalahan" menghapus satu-satunya petunjuk yang dipunyai
+            // admin, dan ia tidak punya akses ke log server.
+            return ResponseHelper::error('Email gagal dikirim: ' . $e->getMessage(), 502);
+        }
+
+        // Dibaca ULANG, bukan diasumsikan: job sengaja berhenti diam-diam pada
+        // beberapa keadaan (akun keburu terverifikasi, token kosong). Bila
+        // kolomnya tidak bergerak, emailnya memang tidak keluar — dan itu harus
+        // dikatakan, bukan dirayakan sebagai keberhasilan.
+        $sesudah = DB::table('N_WEB_CAREERS_Users')->where('Id_Users', $realId)->value('Email_Verif_Sent_At');
+
+        if (! $sesudah || Carbon::parse($sesudah)->lt($now)) {
+            Log::channel('web_career')->warning("[VERIF-ULANG] akun #{$realId} ({$row->Email}) — job selesai tanpa mengirim.");
+
+            return ResponseHelper::error(
+                'Pengiriman tidak jadi dijalankan. Periksa log server: kemungkinan akun sudah terverifikasi di sela permintaan, atau konfigurasi email belum lengkap.',
+                502
+            );
+        }
+
+        Log::channel('web_career')->info("[VERIF-ULANG] terkirim ke {$row->Email} (akun #{$realId}, oleh {$adminNama}).");
+
+        return ResponseHelper::success(
+            ['verifSentAt' => $sesudah, 'berlakuMenit' => self::VERIF_BERLAKU_MENIT],
+            "Tautan verifikasi terkirim ke {$row->Email}. Berlaku " . self::VERIF_BERLAKU_MENIT . ' menit.'
+        );
     }
 
     public function destroy($id)

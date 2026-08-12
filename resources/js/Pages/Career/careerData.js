@@ -3,7 +3,7 @@
 // Modul portabel: seluruh fitur Web Career ada di folder `Pages/Career/`.
 // Pindahkan folder ini (+ route & controller Career) untuk memindahkan modul.
 // ══════════════════════════════════════════════════════════════════
-import { router } from '@inertiajs/vue3';
+import { router, usePage } from '@inertiajs/vue3';
 
 export const CAREER_HOME = '/'; // halaman utama (landing) — route root
 export const CAREER_LANDING = '/karir/landing-page'; // basis sub-route detail (lowongan/mt)
@@ -181,10 +181,37 @@ export function goHome() {
     }
 }
 
+/**
+ * Status login kandidat, dari sesi SERVER (prop Inertia `careerAuth`) —
+ * bukan sessionStorage, yang isinya bisa dikarang dari devtools.
+ * Dipakai hanya untuk memilih tampilan; gerbang sebenarnya ada di middleware
+ * `career.auth` pada route /karir/apply/{id}.
+ */
+export function sudahLogin() {
+    const auth = usePage()?.props?.careerAuth;
+    return !!(auth && auth.id);
+}
+
+export function applyUrl(card) {
+    // Menerima objek kartu ATAU id langsung.
+    const id = card && typeof card === 'object' ? card.id : card;
+    return `/karir/apply/${id || 'RC-2026-001'}`;
+}
+
 export function goApply(card) {
     // Formulir pendaftaran memakai DESAIN WIZARD di ApplyForm
     // (Data Diri → Pendidikan → Verifikasi foto → Finalisasi). Route:
-    // /karir/apply/{id}. Menerima objek kartu ATAU id langsung.
-    const id = card && typeof card === 'object' ? card.id : card;
-    router.visit(id ? `/karir/apply/${id}` : '/karir/apply/RC-2026-001');
+    // /karir/apply/{id}.
+    //
+    // BELUM LOGIN → jangan kirim ke formulir. Route apply dijaga `career.auth`,
+    // jadi tamu memang akan dipulangkan, tapi memulangkannya dari sini membuat
+    // perjalanannya jujur: satu langkah ke halaman masuk, dengan `?redirect=`
+    // menunjuk balik ke lowongan yang barusan diklik — bukan berkedip lewat
+    // formulir yang sebenarnya tidak pernah boleh dia buka.
+    const tujuan = applyUrl(card);
+    if (!sudahLogin()) {
+        router.visit('/login?redirect=' + encodeURIComponent(tujuan));
+        return;
+    }
+    router.visit(tujuan);
 }

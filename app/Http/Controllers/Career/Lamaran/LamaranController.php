@@ -1179,17 +1179,62 @@ class LamaranController extends Controller
      */
     private static function pencariBerkas(\Illuminate\Support\Collection $berkas): \Closure
     {
-        return static function (string $kunci) use ($berkas): ?array {
-            $b = $berkas->firstWhere('field', $kunci);
+        // Berkas yang SUDAH diambil baris sebelumnya, dikunci per URL (unik per
+        // baris tabel berkas). Inilah yang menjamin dua baris riwayat tidak
+        // pernah menunjuk dokumen yang sama.
+        $dipakai = [];
 
-            return $b ? [
+        return static function (string $kunci, string $nilai = '') use ($berkas, &$dipakai): ?array {
+            $b = null;
+
+            // ── 1. COCOKKAN NAMA BERKASNYA ──────────────────────────────────
+            //
+            // Untuk baris berulang, inilah satu-satunya pencocokan yang benar.
+            // Jawaban_Json menyimpan NAMA berkas tiap baris ("sertifikat-
+            // haccp.pdf"), dan nama itu yang membedakan baris ke-2 dari ke-1 —
+            // sub-kuncinya sendiri identik di semua baris.
+            if ($nilai !== '') {
+                $b = $berkas->first(
+                    fn ($x) => $x['field'] === $kunci && $x['nama'] === $nilai && empty($dipakai[$x['url']])
+                );
+            }
+
+            // ── TIDAK ADA CADANGAN, DAN ITU DISENGAJA ───────────────────────
+            //
+            // Baris yang menyebut nama berkas tapi berkasnya tidak ditemukan
+            // dibiarkan KOSONG, bukan dicarikan pengganti. Kasus nyatanya:
+            //
+            //   baris 1 menyebut  LMR-QTCGFST2-frans-bachtiar-1.pdf  (hilang)
+            //   baris 2 menyebut  spesifikasi512mb-...pdf            (ada)
+            //
+            // Percobaan pertama perbaikan ini memakai cadangan "ambil berkas
+            // pertama yang belum terpakai". Akibatnya baris 1 gagal mencocokkan
+            // nama lalu menyambar satu-satunya berkas tersisa — milik baris 2 —
+            // dan saat giliran baris 2 tiba berkasnya sudah habis. Dokumen yang
+            // benar menempel pada sertifikat yang salah, DAN sertifikat yang
+            // benar kehilangan dokumennya: dua kekeliruan dari satu tebakan.
+            //
+            // Kosong membuat peninjau bertanya. Dokumen yang salah tidak akan
+            // pernah dipertanyakan siapa pun.
+            //
+            // Aman untuk data lama: seluruh pengisian yang ada (diperiksa 6 dari
+            // 6 pada 12 Agustus 2026) menyimpan nama yang cocok persis dengan
+            // Nama_Asli, sebab keduanya ditulis oleh proses unggah yang sama.
+
+            if (! $b) {
+                return null;
+            }
+
+            $dipakai[$b['url']] = true;
+
+            return [
                 'field' => $b['field'],
                 'nama' => $b['nama'],
                 'url' => $b['url'],
                 'ext' => $b['ext'],
                 'isImage' => $b['isImage'],
                 'isPdf' => $b['isPdf'],
-            ] : null;
+            ];
         };
     }
 
@@ -1279,7 +1324,12 @@ class LamaranController extends Controller
                     // Kuncinya dicari APA ADANYA (`sert_file`), bukan yang sudah
                     // dipangkas awalan — Field_Key di tabel berkas menyimpan
                     // bentuk penuhnya.
-                    'berkas' => $cariBerkas ? $cariBerkas((string) $k) : null,
+                    // NILAINYA IKUT DIKIRIM, dan itu yang membedakan baris satu
+                    // dari baris lainnya: `$k` identik di seluruh baris riwayat
+                    // (`sert_file` lagi dan lagi), sedangkan `$t` memuat NAMA
+                    // berkas milik baris ini. Tanpa argumen kedua, tiap baris
+                    // menerima berkas yang sama — lihat pencariBerkas().
+                    'berkas' => $cariBerkas ? $cariBerkas((string) $k, $t) : null,
                 ];
             }
 

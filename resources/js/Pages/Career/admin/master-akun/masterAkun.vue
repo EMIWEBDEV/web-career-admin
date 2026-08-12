@@ -33,12 +33,27 @@
             <div class="wca-search2"><i class="bi bi-search"></i><input v-model="q" type="text" placeholder="Cari nama / email…" /></div>
         </div>
 
+        <!-- KEGAGALAN KIRIM TIDAK LEWAT TOAST.
+             Kalimat galat SMTP panjang, dan justru itulah isinya yang berguna —
+             "535 Authentication failed" menuntut tindakan yang sama sekali
+             berbeda dari "Connection timed out". Toast tiga detik menghapusnya
+             sebelum sempat dibaca, apalagi disalin ke tim infrastruktur. -->
+        <div v-if="verifGagal" class="akun-alert">
+            <i class="bi bi-exclamation-triangle-fill"></i>
+            <div>
+                <b>Gagal mengirim verifikasi ke {{ verifGagal.email }}</b>
+                <p>{{ verifGagal.pesan }}</p>
+                <span>Akun tetap tidak terverifikasi. Salin pesan ini bila perlu dilaporkan — pesan yang sama tersimpan di log server.</span>
+            </div>
+            <button class="akun-alert__x" title="Tutup" @click="verifGagal = null"><i class="bi bi-x-lg"></i></button>
+        </div>
+
         <div class="wca-card">
             <div v-loading="loading" class="wca-card__body--flush">
                 <div class="wca-tablewrap">
                     <table class="wca-table">
                         <thead>
-                            <tr><th>Nama / Email</th><th>Peran</th><th>Klasifikasi</th><th>Masa Berlaku</th><th>Status</th><th>Login Terakhir</th><th></th></tr>
+                            <tr><th>Nama / Email</th><th>Peran</th><th>Verifikasi Email</th><th>Klasifikasi</th><th>Masa Berlaku</th><th>Status</th><th>Login Terakhir</th><th></th></tr>
                         </thead>
                         <tbody>
                             <tr v-for="a in filtered" :key="a.id">
@@ -49,6 +64,29 @@
                                     </div>
                                 </td>
                                 <td><span class="wca-badge" :class="roleBadge(a.role)">{{ roleLabel(a.role) }}</span></td>
+                                <!-- VERIFIKASI EMAIL — keadaan DAN sebabnya, bukan cuma lencana.
+                                     Yang paling menolong bukan kata "belum", melainkan riwayat di
+                                     bawahnya: "6x dicoba, tak pernah terkirim" langsung menunjuk ke
+                                     SMTP, sementara "terkirim 13:55" menunjuk ke kotak masuk
+                                     kandidat. Dua kesimpulan itu menuntut tindakan yang berbeda. -->
+                                <td>
+                                    <div class="akun-verif">
+                                        <span v-if="a.emailVerified" class="wca-badge wca-b--emerald" :title="a.emailVerifiedAt ? 'Terverifikasi ' + fmtDateTime(a.emailVerifiedAt) : ''">
+                                            <i class="bi bi-patch-check-fill"></i> Terverifikasi
+                                        </span>
+                                        <template v-else>
+                                            <span class="wca-badge" :class="a.verifAttempt && !a.verifSentAt ? 'wca-b--rose' : 'wca-b--amber'">
+                                                <i class="bi" :class="a.verifAttempt && !a.verifSentAt ? 'bi-exclamation-octagon-fill' : 'bi-hourglass-split'"></i>
+                                                {{ a.verifAttempt && !a.verifSentAt ? 'Email tak terkirim' : 'Belum verifikasi' }}
+                                            </span>
+                                            <small class="akun-verif__note">{{ catatanVerif(a) }}</small>
+                                            <button class="akun-verif__btn" :disabled="kirimId === a.id" @click="kirimVerifikasi(a)">
+                                                <i class="bi" :class="kirimId === a.id ? 'bi-arrow-repeat akun-spin' : 'bi-envelope-arrow-up'"></i>
+                                                {{ kirimId === a.id ? 'Mengirim…' : 'Kirim Ulang' }}
+                                            </button>
+                                        </template>
+                                    </div>
+                                </td>
                                 <td>{{ a.klasifikasi || '—' }}</td>
                                 <td>
                                     <span v-if="!a.valid_until" class="wca-badge wca-b--slate">Permanen</span>
@@ -68,7 +106,7 @@
                                     </div>
                                 </td>
                             </tr>
-                            <tr v-if="!filtered.length"><td colspan="7"><div class="wca-empty"><i class="bi bi-person-x"></i><h4>Belum ada {{ tab === 'pengguna' ? 'pengguna' : 'admin' }}</h4></div></td></tr>
+                            <tr v-if="!filtered.length"><td colspan="8"><div class="wca-empty"><i class="bi bi-person-x"></i><h4>Belum ada {{ tab === 'pengguna' ? 'pengguna' : 'admin' }}</h4></div></td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -146,6 +184,8 @@ export default {
             delShow: false,
             delTarget: null,
             deleting: false,
+            kirimId: null,
+            verifGagal: null,
             toast: '',
             tm: null,
         };
@@ -245,6 +285,40 @@ export default {
                 this.notice(e.response?.data?.message || 'Gagal mengubah status.');
             }
         },
+        /**
+         * Riwayat verifikasi dalam satu kalimat.
+         *
+         * `verifSentAt` HANYA terisi setelah SMTP benar-benar menerima emailnya
+         * (WcSyncEmailJob). Jadi percobaan yang tercatat tanpa waktu kirim
+         * berarti tak satu pun pernah keluar — dan itu masalah server, bukan
+         * kandidat yang lupa membuka kotak masuknya. Membedakan keduanya di
+         * sini menghemat penyelidikan yang selama ini harus lewat log.
+         */
+        catatanVerif(a) {
+            if (a.verifSentAt) {
+                const n = a.verifAttempt > 1 ? ` · ${a.verifAttempt}x dikirim` : '';
+                return `Terkirim ${this.fmtDateTime(a.verifSentAt)}${n} — menunggu kandidat membuka tautannya.`;
+            }
+            if (a.verifAttempt > 0) {
+                return `${a.verifAttempt}x dicoba, tidak pernah berhasil terkirim. Periksa pengaturan email server.`;
+            }
+            return 'Belum pernah dikirimi tautan verifikasi.';
+        },
+        async kirimVerifikasi(a) {
+            if (this.kirimId) return;
+            this.kirimId = a.id;
+            this.verifGagal = null;
+            try {
+                const res = await axios.patch(`${API}/${a.id}/kirim-verifikasi`, {}, CFG);
+                this.notice(res.data.message || 'Tautan verifikasi terkirim.');
+                await this.load();
+            } catch (e) {
+                // Pesan server diteruskan apa adanya — di situlah sebabnya.
+                this.verifGagal = { email: a.email, pesan: e.response?.data?.message || 'Tidak ada balasan dari server.' };
+            } finally {
+                this.kirimId = null;
+            }
+        },
         askRemove(a) { this.delTarget = a; this.delShow = true; },
         async confirmDelete() {
             if (this.deleting || !this.delTarget) return;
@@ -287,6 +361,39 @@ export default {
 .akun-status__lbl { font-size: 12px; font-weight: 700; }
 .akun-status__lbl.is-on { color: #059669; }
 .akun-status__lbl.is-off { color: #94a3b8; }
+
+/* ── Verifikasi email ─────────────────────────────────────────────────────── */
+.akun-verif { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; min-width: 210px; }
+.akun-verif__note { color: #7c81a3; font-size: 11.5px; line-height: 1.45; max-width: 260px; }
+.akun-verif__btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border: 1px solid #c7d2fe; border-radius: 8px;
+    background: #eef2ff; color: #4338ca;
+    font: 700 11.5px 'Plus Jakarta Sans', system-ui, sans-serif; cursor: pointer;
+}
+.akun-verif__btn:hover:not(:disabled) { background: #e0e7ff; border-color: #a5b4fc; }
+.akun-verif__btn:disabled { opacity: .6; cursor: progress; }
+.akun-spin { display: inline-block; animation: akun-rot 0.9s linear infinite; }
+@keyframes akun-rot { to { transform: rotate(360deg); } }
+
+/* Merah galat — di sini memang ada yang rusak, berbeda dari "menunggu". */
+.akun-alert {
+    display: flex; gap: 11px; align-items: flex-start; margin-bottom: 1rem;
+    padding: 12px 14px; border-radius: 12px;
+    background: #fef2f2; border: 1px solid #fecaca; color: #991b1b;
+}
+.akun-alert > .bi { flex: none; margin-top: 2px; font-size: 15px; color: #dc2626; }
+.akun-alert > div { flex: 1; min-width: 0; font-size: 12.5px; line-height: 1.55; }
+.akun-alert p {
+    margin: 3px 0; padding: 7px 9px; border-radius: 8px;
+    background: rgba(255, 255, 255, .7); color: #7f1d1d;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px;
+    /* Pesan SMTP bisa sangat panjang dan tanpa spasi — dipatahkan supaya tetap
+       terbaca utuh, bukan memaksa seluruh halaman menggeser ke samping. */
+    overflow-wrap: anywhere; white-space: pre-wrap;
+}
+.akun-alert span { display: block; color: #b91c1c; font-size: 11.5px; }
+.akun-alert__x { flex: none; border: 0; background: transparent; color: #b91c1c; cursor: pointer; font-size: 13px; padding: 2px; }
 @media (max-width: 640px) {
     .wca-segtab { width: 100%; }
     .wca-segtab__btn { flex: 1; justify-content: center; padding: 9px 10px; font-size: 12.5px; }

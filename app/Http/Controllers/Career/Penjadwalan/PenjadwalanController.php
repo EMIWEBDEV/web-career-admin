@@ -986,13 +986,46 @@ class PenjadwalanController extends Controller
         // penjadwalan. Yang menggagalkan hanya bila barisnya KETEMU tapi
         // pemiliknya orang lain (kasus id peserta terulang setelah reset).
         $shortSemua = collect($detail)->pluck('Short_Token')->filter()->unique()->values()->all();
-        $tokenCat = $shortSemua
-            ? DB::table('HRIS_KANDIDAT_Ujian_Token')
-                ->whereIn('Short_Token', $shortSemua)
-                ->where('Sumber_Aplikasi', 'WEB_CAREERS')
-                ->get(['Id_Ujian_Token', 'Short_Token', 'Id_Calon_Karyawan'])
-                ->keyBy('Short_Token')
-            : collect();
+
+        // TABEL INI MILIK CAT, DAN KUERINYA JALAN DI KONEKSI KITA.
+        //
+        // `DB::table()` tanpa ->connection() jatuh ke koneksi default, yaitu
+        // database Web Careers. Selama CAT berjalan lokal, tabelnya kebetulan
+        // sedatabase dan pemeriksaan ini lolos. Begitu CAT punya databasenya
+        // sendiri — dan di production memang begitu — yang muncul adalah
+        // "Invalid object name", atau "Invalid column name" bila masih tersisa
+        // salinan lama tanpa kolom Sumber_Aplikasi.
+        //
+        // Dulu lemparannya tidak ditangkap siapa pun, sehingga membatalkan
+        // SELURUH penyerapan balasan. Itu kerugian yang jauh lebih besar
+        // daripada kelihatannya: pada titik ini CAT SUDAH menerbitkan tokennya.
+        // Yang gagal cuma pencatatan balik — tapi peserta ditandai gagal,
+        // Short_Token tak pernah tersimpan, dan karena penyaring percobaan ulang
+        // justru `whereNull('Short_Token')`, setiap ulangan mengirim orang yang
+        // sama ke CAT lagi. Tokennya beranak, yang lama jadi yatim.
+        //
+        // Kegagalannya kini turun pangkat jadi "pemeriksaan dilewati", persis
+        // seperti yang dijanjikan catatan di atas. Yang hilang hanya jaring
+        // pengaman tambahan, dan itu sudah tidak menanggung beban yang sama:
+        // sejak pengenal peserta diambil dari SEQUENCE — yang tidak pernah
+        // mundur walau tabel di-reset — tabrakan id yang dulu dijaga di sini
+        // sudah tercegah di hulu, bukan ditangkap di hilir.
+        $tokenCat = collect();
+
+        if ($shortSemua) {
+            try {
+                $tokenCat = DB::table('HRIS_KANDIDAT_Ujian_Token')
+                    ->whereIn('Short_Token', $shortSemua)
+                    ->where('Sumber_Aplikasi', 'WEB_CAREERS')
+                    ->get(['Id_Ujian_Token', 'Short_Token', 'Id_Calon_Karyawan'])
+                    ->keyBy('Short_Token');
+            } catch (\Throwable $e) {
+                Log::channel('web_career')->warning(
+                    '[PENJADWALAN] pemeriksaan kepemilikan token dilewati — tabel token CAT '
+                    . 'tidak terjangkau dari database ini: ' . $e->getMessage()
+                );
+            }
+        }
 
         // Satu sesi ujian hanya boleh dipegang SATU peserta. Kalau CAT membalas
         // token yang sama untuk dua orang, keduanya akan mengerjakan sesi yang

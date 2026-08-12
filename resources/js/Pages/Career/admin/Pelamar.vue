@@ -1130,6 +1130,24 @@
                         </div>
                     </div>
 
+                    <!-- MASTER KOSONG BUKAN "TIDAK BERWENANG", DAN BUKAN PULA DIAM.
+                         Seluruh tombol di bawah lahir dari Master Hasil Keputusan.
+                         Ketika masternya belum terisi di sebuah lingkungan, deretan
+                         tombolnya cuma lenyap tanpa sepatah kata — yang tertinggal
+                         hanya "Tahan Dulu", dan admin membaca itu sebagai aplikasi
+                         rusak, bukan sebagai data yang belum disiapkan. Satu kalimat
+                         di sini memangkas penelusuran dari berjam-jam jadi sedetik. -->
+                    <div v-else-if="!hasilKeputusan.length" class="plw-nomaster">
+                        <i class="bi bi-database-exclamation"></i>
+                        <div>
+                            <b>Master Hasil Keputusan masih kosong di lingkungan ini.</b>
+                            Tombol <b>Loloskan</b>, <b>Tidak Lolos</b>, dan <b>Talent Pool</b> seluruhnya dibangun
+                            dari master tersebut — selama tabelnya belum terisi, tidak ada satu pun keputusan
+                            yang bisa diketuk. Menahan dan menjadwalkan tetap berjalan.
+                            <span>Jalankan seed <b>N_WEB_CAREERS_Master_Hasil_Keputusan</b> pada basis data lingkungan ini.</span>
+                        </div>
+                    </div>
+
                     <div class="plw-actions" :class="{ 'is-three': putusanPerusahaan.length > 2 }">
                         <button
                             v-for="h in putusanPerusahaan" :key="h.kode"
@@ -5628,6 +5646,19 @@ export default {
 .plw-nogate .bi { flex: none; margin-top: 1px; font-size: 14px; color: #2563eb; }
 .plw-nogate b { color: #1e3a8a; }
 .plw-nogate span { display: block; margin-top: 3px; color: #3b82f6; }
+
+/* Keterangan "master kosong" — kuning peringatan, bukan biru keterangan:
+   berbeda dari batas wewenang, keadaan ini MEMANG perlu dibereskan, dan
+   yang membereskannya bukan admin yang sedang menatap layar ini. */
+.plw-nomaster {
+    display: flex; gap: 10px; align-items: flex-start; margin-bottom: 10px;
+    padding: 11px 13px; border-radius: 12px;
+    background: #fffbeb; border: 1px solid #fde68a;
+    font-size: 12px; line-height: 1.55; color: #92400e;
+}
+.plw-nomaster .bi { flex: none; margin-top: 1px; font-size: 14px; color: #d97706; }
+.plw-nomaster b { color: #78350f; }
+.plw-nomaster span { display: block; margin-top: 3px; color: #b45309; }
 .plw-btn-hold:hover:not(:disabled) { border-color: #94a3b8; color: #475569; background: #f8fafc; }
 .plw-btn-hold:disabled { opacity: 0.5; cursor: not-allowed; }
 

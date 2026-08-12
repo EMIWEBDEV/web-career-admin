@@ -351,16 +351,16 @@ const hasMt = computed(() => props.hasMt);
 const offices = computed(() => props.offices || []);
 const posisi = computed(() => mt.value.posisi || []);
 
-// ── Jendela pendaftaran ────────────────────────────────────────────────────
+// ── Bantu tanggal ──────────────────────────────────────────────────────────
+// Dulu bagian ini milik kartu Jendela Pendaftaran. Kartunya sudah dihapus —
+// status & sisa hari kini hanya dihitung sekali oleh deadlineLabel()/daysLeft()
+// di hero — tapi waktuMs() tetap dipakai penyusun Jadwal Kegiatan di bawah.
 /** 'Y-m-d H:i' / 'Y-m-d' → epoch ms. Spasi diganti 'T' agar Safari ikut baca. */
 function waktuMs(s) {
     if (!s) return null;
     const t = Date.parse(String(s).replace(' ', 'T'));
     return Number.isNaN(t) ? null : t;
 }
-
-// `jendela` ikut dibuang bersama kartunya — status & sisa hari pendaftaran
-// kini hanya dihitung sekali, oleh deadlineLabel()/daysLeft() di hero.
 
 // ── Jadwal kegiatan ────────────────────────────────────────────────────────
 const BULAN_PENDEK = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
@@ -895,8 +895,9 @@ onUnmounted(() => revealObs?.disconnect());
 }
 
 /* ── Jadwal Kegiatan: sorotan "apa yang relevan sekarang" ──
-   Bahasa visual disamakan dengan kartu Jendela Pendaftaran (gradasi ungu,
-   chip kanan) supaya keduanya terbaca sebagai satu keluarga komponen. */
+   Gradasi ungu + chip kanan. Bahasa visual ini dulu dipinjam dari kartu
+   Jendela Pendaftaran yang kini sudah dihapus; dipertahankan karena kartu
+   Tahapan Seleksi memakai keluarga yang sama. */
 .mtd-jw__next {
     display: flex;
     align-items: center;
@@ -1096,131 +1097,6 @@ onUnmounted(() => revealObs?.disconnect());
     margin-top: 3px;
 }
 
-/* ── Jendela pendaftaran ── */
-.mtd-win__lead {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: 14px 16px;
-    border-radius: 15px;
-    border: 1px solid rgba(99, 102, 241, 0.2);
-    background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(99, 102, 241, 0.05));
-}
-.mtd-win__lead strong {
-    font-size: 1.35rem;
-    font-weight: 800;
-    letter-spacing: -0.02em;
-    line-height: 1.1;
-    color: #4338ca;
-}
-.mtd-win__lead span {
-    font-size: 12px;
-    font-weight: 600;
-    color: #64748b;
-}
-.mtd-win__lead.is-mepet {
-    border-color: rgba(225, 29, 72, 0.28);
-    background: linear-gradient(135deg, rgba(251, 113, 133, 0.14), rgba(225, 29, 72, 0.05));
-}
-.mtd-win__lead.is-mepet strong {
-    color: #be123c;
-}
-.mtd-win__lead.is-tutup {
-    border-color: #e6e9f3;
-    background: #f8fafc;
-}
-.mtd-win__lead.is-tutup strong {
-    color: #64748b;
-}
-.mtd-win__lead.is-nanti strong {
-    color: #b45309;
-}
-
-.mtd-win__rail {
-    margin-top: 16px;
-}
-.mtd-win__track {
-    position: relative;
-    height: 8px;
-    border-radius: 99px;
-    background: #e9ecf7;
-}
-.mtd-win__fill {
-    position: absolute;
-    inset: 0 auto 0 0;
-    border-radius: 99px;
-    background: linear-gradient(90deg, #a78bfa, #6366f1);
-    transition: width 0.6s ease;
-}
-/* Penanda "sekarang" duduk tepat di ujung bagian yang sudah berjalan. */
-.mtd-win__now {
-    position: absolute;
-    top: 50%;
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    background: #fff;
-    border: 3px solid #6366f1;
-    transform: translate(-50%, -50%);
-    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4);
-    transition: left 0.6s ease;
-}
-
-.mtd-win__ends {
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    margin-top: 12px;
-}
-.mtd-win__ends > div {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    min-width: 0;
-}
-.mtd-win__ends .is-end {
-    text-align: right;
-}
-.mtd-win__ends small {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    font-size: 10.5px;
-    font-weight: 800;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: #94a3b8;
-}
-.mtd-win__ends .is-end small {
-    justify-content: flex-end;
-}
-.mtd-win__ends b {
-    font-size: 12.5px;
-    font-weight: 800;
-    color: #0f172a;
-}
-
-.mtd-win__extra {
-    display: grid;
-    gap: 6px;
-    margin-top: 14px;
-    padding-top: 12px;
-    border-top: 1px solid #f1f2f9;
-}
-.mtd-win__extra span {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 12px;
-    color: #64748b;
-}
-.mtd-win__extra .bi {
-    color: #6366f1;
-}
-.mtd-win__extra b {
-    color: #0f172a;
-    font-weight: 800;
-}
 
 /* ── Jadwal kegiatan — kartu "tiket" berkelompok per bulan ──
    Sengaja TIDAK dibuat seperti Tahapan Seleksi (badge nomor + urutan) meski

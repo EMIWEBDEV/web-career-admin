@@ -120,6 +120,12 @@ export default {
             if (params.get('registered') === '1') {
                 this.flashNotice('info', 'Akun development berhasil dibuat dan email sudah otomatis terverifikasi. Silakan masuk.');
             }
+            // Dipulangkan dari formulir lamaran (langsung ketik URL /karir/apply
+            // atau sesinya habis) — katakan alasannya. Tanpa ini halaman masuk
+            // muncul tanpa sebab dan terbaca seperti aplikasi yang error.
+            else if (this.redirectTarget && this.redirectTarget.startsWith('/karir/apply')) {
+                this.flashNotice('info', 'Masuk dulu untuk melamar lowongan ini. Setelah masuk kamu langsung dibawa ke formulirnya.');
+            }
         } catch (e) { /* noop */ }
         if (this.isLogin) this.renderTurnstile();
     },
