@@ -54,7 +54,8 @@ class FormulirDrafController extends Controller
             ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 't.Lamaran_Id')
             ->where('t.Id_Lamaran_Tahap', $realId)
             ->where('l.Id_Users', $userId)
-            ->select('t.Id_Lamaran_Tahap', 't.Lamaran_Id', 't.Formulir_Kode', 't.Status', 't.Formulir_Pengisian_Id')
+            ->select('t.Id_Lamaran_Tahap', 't.Lamaran_Id', 't.Formulir_Kode', 't.Formulir_Versi',
+                't.Status', 't.Formulir_Pengisian_Id')
             ->first();
     }
 
@@ -187,6 +188,65 @@ class FormulirDrafController extends Controller
      * browser: dengan begini ukuran, tipe, dan kepemilikan diperiksa sebelum
      * satu byte pun mendarat di bucket.
      */
+    /**
+     * Periksa triplet (bagian, baris, field) terhadap SKEMA YANG DIBEKUKAN.
+     *
+     * Sebelum ini `field` diterima sebagai string bebas dan `maks_baris` hanya
+     * ditegakkan di browser (BagianRenderer.vue:48). Selama satu field berarti
+     * satu berkas, longgarnya tidak terasa; begitu tiap baris bisa membawa
+     * berkas 5 MB, endpoint ini bisa dibanjiri tanpa batas.
+     *
+     * Skema yang tidak terbaca TIDAK menolak apa pun. Formulir lama dibuat
+     * sebelum mekanisme pembekuan versi ada, dan menolak unggahan karena
+     * skemanya tak ketemu berarti menghukum kandidat atas riwayat kode kita.
+     *
+     * @return string|null pesan galat, atau null bila sah
+     */
+    public static function periksaBaris(?array $schema, ?string $bagian, ?int $baris, string $field): ?string
+    {
+        // Tanpa bagian/baris = berkas biasa di luar bagian berulang.
+        if ($bagian === null || $baris === null) {
+            return null;
+        }
+
+        if (! $schema) {
+            return null;
+        }
+
+        foreach (($schema['langkah'] ?? []) as $langkah) {
+            foreach (($langkah['bagian'] ?? []) as $b) {
+                if (($b['key'] ?? null) !== $bagian) {
+                    continue;
+                }
+
+                if (empty($b['berulang'])) {
+                    return "Bagian \"{$bagian}\" tidak menerima baris berulang.";
+                }
+
+                $maks = (int) ($b['maks_baris'] ?? 5);
+                if ($baris < 0 || $baris >= $maks) {
+                    $judul = $b['judul'] ?? $bagian;
+
+                    return "{$judul} hanya menerima {$maks} baris.";
+                }
+
+                foreach (($b['field'] ?? []) as $f) {
+                    if (($f['key'] ?? null) !== $field) {
+                        continue;
+                    }
+
+                    return ($f['tipe'] ?? null) === 'file'
+                        ? null
+                        : "Field \"{$field}\" bukan field berkas.";
+                }
+
+                return "Field \"{$field}\" tidak ada di bagian \"{$bagian}\".";
+            }
+        }
+
+        return "Bagian \"{$bagian}\" tidak ada di formulir ini.";
+    }
+
     public function unggahBerkas(Request $request, string $id)
     {
         $tahap = $this->tahapMilikSaya($id);
@@ -206,8 +266,24 @@ class FormulirDrafController extends Controller
 
         $data = $request->validate([
             'field' => 'required|string|max:60',
+            'bagian' => 'nullable|string|max:60',
+            'baris' => 'nullable|integer|min:0|max:99',
             'berkas' => 'required|file|max:5120|mimes:pdf,jpg,jpeg,png',
         ]);
+
+        $bagian = $data['bagian'] ?? null;
+        $barisIdx = isset($data['baris']) ? (int) $data['baris'] : null;
+
+        // Ditegakkan terhadap skema yang DIBEKUKAN saat tahap dibuat — jalan yang
+        // sama dengan yang dipakai saat merender formulirnya.
+        $skema = FormulirSchema::byKodeDanVersi(
+            $tahap->Formulir_Kode,
+            $tahap->Formulir_Versi !== null ? (int) $tahap->Formulir_Versi : null,
+        )['schema'] ?? null;
+
+        if ($galat = self::periksaBaris($skema, $bagian, $barisIdx, $data['field'])) {
+            return ResponseHelper::error($galat, 422);
+        }
 
         $userId = (int) session('career_auth.id');
         $file = $request->file('berkas');
@@ -292,8 +368,8 @@ class FormulirDrafController extends Controller
         }
 
         $meta = [
-            'bagian' => null,
-            'baris' => null,
+            'bagian' => $bagian,
+            'baris' => $barisIdx,
             'field' => $data['field'],
             'nama' => $file->getClientOriginalName(),
             'path' => $path,
