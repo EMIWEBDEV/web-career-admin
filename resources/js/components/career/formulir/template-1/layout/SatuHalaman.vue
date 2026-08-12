@@ -35,6 +35,7 @@
                 @ubah="setNilai"
                 @ubah-baris="setNilaiBaris"
                 @berkas="(e) => $emit('berkas', e)"
+                @hapus-baris="(b, i) => $emit('hapus-baris', b, i)"
             />
         </div>
 
@@ -68,7 +69,7 @@ const props = defineProps({
     labelKirim: { type: String, default: 'Kirim Formulir' },
 });
 
-const emit = defineEmits(['update:modelValue', 'kirim', 'berkas']);
+const emit = defineEmits(['update:modelValue', 'kirim', 'berkas', 'hapus-baris']);
 
 const langkah = computed(() => props.skema?.langkah || []);
 const jawaban = computed(() => props.modelValue);

@@ -120,6 +120,7 @@
                 @ubah="setNilai"
                 @ubah-baris="setNilaiBaris"
                 @berkas="(e) => $emit('berkas', e)"
+                @hapus-baris="(b, i) => $emit('hapus-baris', b, i)"
             />
 
             <div v-if="galat.length" class="t2__galat">
@@ -180,7 +181,7 @@ const props = defineProps({
     langkahAwal: { type: Number, default: 0 },
 });
 
-const emit = defineEmits(['update:modelValue', 'kirim', 'berkas', 'pindah-langkah']);
+const emit = defineEmits(['update:modelValue', 'kirim', 'berkas', 'hapus-baris', 'pindah-langkah']);
 
 const langkah = computed(() => props.skema?.langkah || []);
 const jawaban = computed(() => props.modelValue);

@@ -686,6 +686,7 @@
                             label-kirim="Kirim &amp; Lanjutkan"
                             @kirim="kirim"
                             @berkas="onBerkas"
+                            @hapus-baris="onHapusBaris"
                             @pindah-langkah="simpanDraf"
                         />
                         <component
@@ -698,6 +699,7 @@
                             label-kirim="Kirim &amp; Lanjutkan"
                             @kirim="kirim"
                             @berkas="onBerkas"
+                            @hapus-baris="onHapusBaris"
                             @pindah-langkah="simpanDraf"
                         />
                     </div>
@@ -1278,6 +1280,7 @@ import axios from 'axios';
 import { Head, Link, router } from '@inertiajs/vue3';
 import { FORMULIR, komponenFormulir, skemaFormulir, jawabanAwal } from '@career/formulir';
 import DynamicForm from '@career/formulir/DynamicForm.vue';
+import { kunciBerkas } from '@career/formulir/inti/berkasBaris';
 import JadwalKartu from '@career/JadwalKartu.vue';
 import UnggahAktivitas from '@career/UnggahAktivitas.vue';
 
@@ -2716,26 +2719,57 @@ export default {
                 this.notice(e.galat, true);
                 return;
             }
+            // Kunci KOMPOSIT. Sebelumnya `e.bagian` dan `e.baris` dibuang di sini
+            // padahal BagianRenderer sudah mengirimnya — dan itulah lapis pertama
+            // yang membuat sertifikat baris kedua menimpa yang pertama, sejak di
+            // memori tab sebelum satu byte pun naik ke server.
+            const kunci = kunciBerkas(e.bagian, e.baris, e.field.key);
+
             // Pakai lightbox yang SAMA dengan pratinjau berkas lain di halaman
             // ini, supaya kandidat tidak menemui dua gaya pratinjau berbeda.
             if (e.lihat) {
                 this.lbLoading = true;
                 this.lbError = false;
-                this.lightbox = { ...e.lihat, field: e.field.key, pdf: !e.lihat.gambar };
+                this.lightbox = { ...e.lihat, field: kunci, pdf: !e.lihat.gambar };
                 return;
             }
             // Dihapus di kartu pratinjau -> berkasnya harus ikut dibuang dari
             // kumpulan yang akan dikirim, bukan hanya hilang dari layar.
             if (e.hapus) {
-                delete this.berkas[e.field.key];
-                delete this.berkasDraf[e.field.key];
+                delete this.berkas[kunci];
+                delete this.berkasDraf[kunci];
                 this.notice('Berkas dihapus.');
                 return;
             }
             if (e.file) {
-                this.berkas[e.field.key] = e.file;
-                this.unggahDraf(e.field.key, e.file);
+                this.berkas[kunci] = e.file;
+                this.unggahDraf(kunci, e.file, e.field.key, e.bagian, e.baris);
             }
+        },
+        /**
+         * Baris berulang dihapus -> berkasnya ikut dibuang di server, dan indeks
+         * berkas di atasnya digeser turun.
+         *
+         * Penggeserannya SENGAJA dikerjakan server, lalu daftarnya ditarik ulang.
+         * Menghitungnya di sini berarti dua sumber kebenaran untuk satu urutan.
+         */
+        async onHapusBaris(bagian, baris) {
+            // Salinan lokal ikut dibuang lebih dulu supaya kartu berkasnya tidak
+            // sempat berkedip dengan isi baris yang sudah tidak ada.
+            const awalan = `${bagian}[`;
+            Object.keys(this.berkas)
+                .filter((k) => k.startsWith(awalan))
+                .forEach((k) => delete this.berkas[k]);
+
+            if (!this.tugas) return;
+            try {
+                await axios.delete(`/kandidat/lamaran/tahap/${this.tugas.tahapId}/draf/berkas`, {
+                    data: { bagian, baris },
+                });
+            } catch (e) {
+                this.notice('Berkas baris gagal dibuang di server. Muat ulang halaman bila tautannya kacau.', true);
+            }
+            await this.muatBerkasDraf();
         },
         async kirim(nilai) {
             if (this.mengirim || !this.tugas) return;
@@ -2768,7 +2802,9 @@ export default {
                 if (d) {
                     this.jawaban = { ...this.jawaban, ...(d.jawaban || {}) };
                     this.langkahAwal = d.langkah || 0;
-                    this.berkasDraf = Object.fromEntries((d.berkas || []).map((b) => [b.field, b]));
+                    this.berkasDraf = Object.fromEntries(
+                        (d.berkas || []).map((b) => [kunciBerkas(b.bagian, b.baris, b.field), b]),
+                    );
                     this.buangBerkasBasi();
                     if (d.disimpanAt) this.notice('Melanjutkan isian yang tersimpan sebelumnya.');
                 }
@@ -2786,16 +2822,22 @@ export default {
          * harus memilih ulang semuanya — dan pratinjaunya tidak bisa dibuka
          * karena tidak ada apa pun di server untuk ditandatangani URL-nya.
          */
-        async unggahDraf(key, file) {
+        async unggahDraf(kunci, file, field, bagian = null, baris = null) {
             if (!this.tugas) return;
             const fd = new FormData();
-            fd.append('field', key);
+            fd.append('field', field);
+            // Dikirim hanya bila memang berkas baris berulang — endpoint
+            // memperlakukan ketiadaannya sebagai berkas biasa.
+            if (bagian !== null && bagian !== undefined && baris !== null && baris !== undefined) {
+                fd.append('bagian', bagian);
+                fd.append('baris', String(baris));
+            }
             fd.append('berkas', file);
             try {
                 const { data } = await axios.post(`/kandidat/lamaran/tahap/${this.tugas.tahapId}/draf/berkas`, fd);
                 const r = data?.result;
                 if (r?.url) {
-                    this.berkasDraf = { ...this.berkasDraf, [key]: r };
+                    this.berkasDraf = { ...this.berkasDraf, [kunci]: r };
                 } else {
                     // Server menerima berkasnya tapi tidak mengembalikan URL.
                     // Tarik ulang daftarnya daripada membiarkan kartu tanpa tautan.
@@ -2818,18 +2860,46 @@ export default {
         buangBerkasBasi() {
             if (!this.tugas) return;
             const skema = this.skemaTugas;
-            const fieldBerkas = (skema?.langkah || [])
-                .flatMap((L) => L.bagian || [])
-                .flatMap((B) => B.field || [])
-                .filter((x) => x.tipe === 'file');
+            const bagianSemua = (skema?.langkah || []).flatMap((L) => L.bagian || []);
 
-            const basi = fieldBerkas.filter(
-                (x) => this.jawaban[x.key] && !this.berkasDraf[x.key] && !this.berkas[x.key],
-            );
+            // Satu daftar sasaran berisi field biasa DAN field di dalam baris
+            // berulang. Versi sebelumnya meratakan semua bagian lalu memeriksa
+            // jawaban[key] — untuk field di dalam bagian berulang kunci itu tidak
+            // pernah ada, jadi berkas basi di sana tak pernah ketahuan.
+            const sasaran = [];
+            bagianSemua.forEach((B) => {
+                const fieldBerkas = (B.field || []).filter((x) => x.tipe === 'file');
+                if (!fieldBerkas.length) return;
+
+                if (!B.berulang) {
+                    fieldBerkas.forEach((x) => sasaran.push({ field: x.key, bagian: null, baris: null }));
+                    return;
+                }
+
+                const kunciB = B.key || '';
+                const daftar = this.jawaban[kunciB];
+                if (!Array.isArray(daftar)) return;
+
+                daftar.forEach((_, i) => {
+                    fieldBerkas.forEach((x) => sasaran.push({ field: x.key, bagian: kunciB, baris: i }));
+                });
+            });
+
+            const nilai = (s) =>
+                s.bagian === null ? this.jawaban[s.field] : (this.jawaban[s.bagian]?.[s.baris] || {})[s.field];
+
+            const basi = sasaran.filter((s) => {
+                const k = kunciBerkas(s.bagian, s.baris, s.field);
+                return nilai(s) && !this.berkasDraf[k] && !this.berkas[k];
+            });
             if (!basi.length) return;
 
-            basi.forEach((x) => {
-                this.jawaban[x.key] = '';
+            basi.forEach((s) => {
+                if (s.bagian === null) {
+                    this.jawaban[s.field] = '';
+                } else {
+                    this.jawaban[s.bagian][s.baris][s.field] = '';
+                }
             });
             this.notice(`${basi.length} berkas perlu diunggah ulang — salinannya tidak ditemukan di server.`, true);
         },
@@ -2839,7 +2909,9 @@ export default {
             try {
                 const { data } = await axios.get(`/kandidat/lamaran/tahap/${this.tugas.tahapId}/draf`);
                 const b = data?.result?.draf?.berkas || [];
-                this.berkasDraf = Object.fromEntries(b.map((x) => [x.field, x]));
+                this.berkasDraf = Object.fromEntries(
+                    b.map((x) => [kunciBerkas(x.bagian, x.baris, x.field), x]),
+                );
             } catch (e) {
                 // Tidak fatal: kartu berkas cukup kehilangan tautannya.
             }

@@ -10,6 +10,7 @@
         :langkah-awal="langkahAwal"
         @kirim="(v) => $emit('kirim', v)"
         @berkas="(e) => $emit('berkas', e)"
+        @hapus-baris="(b, i) => $emit('hapus-baris', b, i)"
         @pindah-langkah="(i) => $emit('pindah-langkah', i)"
     />
     <SatuHalaman
@@ -23,6 +24,7 @@
         :konteks="konteks"
         @kirim="(v) => $emit('kirim', v)"
         @berkas="(e) => $emit('berkas', e)"
+        @hapus-baris="(b, i) => $emit('hapus-baris', b, i)"
     />
 </template>
 
@@ -43,7 +45,7 @@ const props = defineProps({
     langkahAwal: { type: Number, default: 0 },
 });
 
-const emit = defineEmits(['update:modelValue', 'kirim', 'berkas', 'pindah-langkah']);
+const emit = defineEmits(['update:modelValue', 'kirim', 'berkas', 'hapus-baris', 'pindah-langkah']);
 
 const jawaban = computed({
     get: () => props.modelValue,
