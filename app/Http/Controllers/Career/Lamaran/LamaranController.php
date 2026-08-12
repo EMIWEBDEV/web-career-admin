@@ -1070,6 +1070,11 @@ class LamaranController extends Controller
 
                 return [
                     'field' => $b->Field_Key,
+                    // Posisi baris dibawa apa adanya supaya pencocokan berkas ke
+                    // kartu baris tidak perlu menebak dari nama berkasnya.
+                    'bagian' => $b->Bagian_Key,
+                    'baris' => $b->Baris_Index !== null ? (int) $b->Baris_Index : null,
+                    'nomor' => $b->Baris_Index !== null ? ((int) $b->Baris_Index) + 1 : null,
                     'nama' => $b->Nama_Asli,
                     'url' => url($urlBerkasPrefix . Hashids::encode($b->Id_Formulir_Berkas)),
                     'ext' => $ext,
@@ -1101,7 +1106,10 @@ class LamaranController extends Controller
                     $b = $berkas->firstWhere('field', $k);
                     // Satu aturan untuk seluruh bentuk jawaban — termasuk field
                     // berulang yang dulu menjatuhkan halaman ini. Lihat nilaiIsian().
-                    $isi = self::nilaiIsian($v, 0, self::pencariBerkas($berkas));
+                    // $k di sini ADALAH kunci bagian berulangnya (mis.
+                    // "riwayat_sertifikasi") — itulah yang dicocokkan ke
+                    // Bagian_Key di tabel berkas.
+                    $isi = self::nilaiIsian($v, 0, self::pencariBerkas($berkas, $k));
 
                     return [
                         'key' => $k,
@@ -1177,23 +1185,39 @@ class LamaranController extends Controller
      * ikut: keduanya milik daftar berkas utuh, dan mengulangnya di tiap baris
      * riwayat cuma menggandakan muatan tanpa ada yang membacanya.
      */
-    private static function pencariBerkas(\Illuminate\Support\Collection $berkas): \Closure
+    private static function pencariBerkas(\Illuminate\Support\Collection $berkas, ?string $bagian = null): \Closure
     {
         // Berkas yang SUDAH diambil baris sebelumnya, dikunci per URL (unik per
         // baris tabel berkas). Inilah yang menjamin dua baris riwayat tidak
         // pernah menunjuk dokumen yang sama.
         $dipakai = [];
 
-        return static function (string $kunci, string $nilai = '') use ($berkas, &$dipakai): ?array {
+        return static function (string $kunci, string $nilai = '', ?int $baris = null) use ($berkas, $bagian, &$dipakai): ?array {
             $b = null;
+
+            // ── 0. COCOKKAN POSISI BARISNYA ─────────────────────────────────
+            //
+            // Yang paling tegas, dan satu-satunya yang tahan terhadap dua baris
+            // yang mengunggah berkas BERNAMA SAMA. Hanya berlaku untuk baris
+            // yang tercatat sejak kolom Bagian_Key/Baris_Index ada; berkas lama
+            // bernilai null di keduanya dan jatuh ke pencocokan nama di bawah.
+            if ($bagian !== null && $baris !== null) {
+                $b = $berkas->first(
+                    fn ($x) => ($x['bagian'] ?? null) === $bagian
+                        && ($x['baris'] ?? null) === $baris
+                        && $x['field'] === $kunci
+                        && empty($dipakai[$x['url']])
+                );
+            }
 
             // ── 1. COCOKKAN NAMA BERKASNYA ──────────────────────────────────
             //
-            // Untuk baris berulang, inilah satu-satunya pencocokan yang benar.
-            // Jawaban_Json menyimpan NAMA berkas tiap baris ("sertifikat-
-            // haccp.pdf"), dan nama itu yang membedakan baris ke-2 dari ke-1 —
-            // sub-kuncinya sendiri identik di semua baris.
-            if ($nilai !== '') {
+            // Untuk baris berulang yang tercatat SEBELUM kolom posisi ada,
+            // inilah satu-satunya pencocokan yang benar. Jawaban_Json menyimpan
+            // NAMA berkas tiap baris ("sertifikat-haccp.pdf"), dan nama itu yang
+            // membedakan baris ke-2 dari ke-1 — sub-kuncinya sendiri identik di
+            // semua baris.
+            if (! $b && $nilai !== '') {
                 $b = $berkas->first(
                     fn ($x) => $x['field'] === $kunci && $x['nama'] === $nilai && empty($dipakai[$x['url']])
                 );
@@ -1287,7 +1311,10 @@ class LamaranController extends Controller
 
         // ── BERULANG: satu objek per baris ───────────────────────────────────
         $baris = [];
-        foreach ($v as $row) {
+        // Indeks MENTAH dari Jawaban_Json, bukan posisi tampil. Baris yang
+        // seluruh isinya kosong tidak ikut ditampilkan, jadi keduanya bisa
+        // berbeda — dan yang dicocokkan ke Baris_Index adalah yang mentah.
+        foreach (array_values($v) as $ri => $row) {
             if ($row instanceof \stdClass) {
                 $row = (array) $row;
             }
@@ -1329,7 +1356,7 @@ class LamaranController extends Controller
                     // (`sert_file` lagi dan lagi), sedangkan `$t` memuat NAMA
                     // berkas milik baris ini. Tanpa argumen kedua, tiap baris
                     // menerima berkas yang sama — lihat pencariBerkas().
-                    'berkas' => $cariBerkas ? $cariBerkas((string) $k, $t) : null,
+                    'berkas' => $cariBerkas ? $cariBerkas((string) $k, $t, $ri) : null,
                 ];
             }
 
@@ -6134,6 +6161,11 @@ class LamaranController extends Controller
 
                 return [
                     'field' => $b->Field_Key,
+                    // Posisi baris dibawa apa adanya supaya pencocokan berkas ke
+                    // kartu baris tidak perlu menebak dari nama berkasnya.
+                    'bagian' => $b->Bagian_Key,
+                    'baris' => $b->Baris_Index !== null ? (int) $b->Baris_Index : null,
+                    'nomor' => $b->Baris_Index !== null ? ((int) $b->Baris_Index) + 1 : null,
                     'nama' => $b->Nama_Asli,
                     'url' => url('/api/v1/karir/lamaran/berkas/file/' . Hashids::encode($b->Id_Formulir_Berkas)),
                     'ext' => $ext,
@@ -6165,7 +6197,10 @@ class LamaranController extends Controller
                     $b = $berkas->firstWhere('field', $k);
                     // Aturan yang SAMA PERSIS dengan layar kandidat — satu
                     // sumber, bukan dua salinan. Lihat nilaiIsian().
-                    $isi = self::nilaiIsian($v, 0, self::pencariBerkas($berkas));
+                    // $k di sini ADALAH kunci bagian berulangnya (mis.
+                    // "riwayat_sertifikasi") — itulah yang dicocokkan ke
+                    // Bagian_Key di tabel berkas.
+                    $isi = self::nilaiIsian($v, 0, self::pencariBerkas($berkas, $k));
 
                     return [
                         'key' => $k,

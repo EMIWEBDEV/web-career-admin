@@ -1085,7 +1085,12 @@
                                 </div>
                                 <div v-if="f.berkas.length" class="ld-docs">
                                     <div class="ld-docs__label">DOKUMEN &amp; VERIFIKASI</div>
-                                    <div v-for="b in f.berkas" :key="b.field" class="ld-doc">
+                                    <!-- Kunci dari URL berkas (unik per baris
+                                         tabel), bukan field: tiga sertifikat
+                                         memakai field yang sama persis, dan tiga
+                                         elemen berbagi satu kunci membuat Vue
+                                         salah memasangkan DOM-nya. -->
+                                    <div v-for="b in f.berkas" :key="b.url" class="ld-doc">
                                         <span class="ld-doc__ico" :class="b.isImage ? 'is-img' : 'is-pdf'">
                                             <svg
                                                 v-if="b.isImage"
@@ -1120,6 +1125,11 @@
                                         <div style="flex: 1; min-width: 0">
                                             <div class="ld-doc__toprow">
                                                 <span class="ld-doc__name">{{ b.nama }}</span>
+                                                <!-- Tanpa nomor, tiga sertifikat
+                                                     tampil sebagai tiga baris yang
+                                                     hanya bisa dibedakan dari nama
+                                                     berkasnya. -->
+                                                <span v-if="b.nomor" class="ld-doc__no">#{{ b.nomor }}</span>
                                                 <span class="ld-doc__ext">{{ (b.ext || '').toUpperCase() }}</span>
                                             </div>
                                             <div class="ld-doc__desc">
@@ -4607,6 +4617,7 @@ export default {
 .ld-doc__ico.is-pdf { background: rgba(239, 68, 68, 0.1); }
 .ld-doc__toprow { display: flex; align-items: center; gap: 8px; }
 .ld-doc__name { font-size: 13.5px; font-weight: 800; color: #1e293b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ld-doc__no { flex: none; font-size: 11px; font-weight: 700; color: #7c3aed; }
 .ld-doc__ext { font-size: 9px; font-weight: 800; letter-spacing: 0.06em; color: #8b93a7; background: #eef0f7; border-radius: 5px; padding: 2px 6px; flex: 0 0 auto; }
 .ld-doc__desc { font-size: 11.5px; color: #8b93a7; margin-top: 2px; line-height: 1.4; }
 .ld-doc__eye { appearance: none; border: 1px solid #d9def0; background: #fff; width: 38px; height: 38px; border-radius: 11px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #6366f1; flex: 0 0 auto; transition: all 0.16s; }
