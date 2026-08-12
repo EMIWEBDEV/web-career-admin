@@ -255,7 +255,13 @@ class FormulirDrafController extends Controller
             // tahap punya aturan sendiri (Sertifikat sampai 5 MB, PNG diterima),
             // dan sudah diperiksa oleh validate() di atas. Memanggilnya di sini
             // justru akan menolak berkas yang jelas-jelas dijanjikan boleh.
-            $path = $gcs->unggah($folder, $data['field'], $ext, $konten);
+            // Berkas berulang WAJIB lewat unggahBaris(): path deterministik
+            // membuat baris kedua menimpa yang pertama di bucket. Berkas biasa
+            // tetap deterministik supaya unggah ulang menimpa versi lamanya
+            // alih-alih menumpuk sampah.
+            $path = ($data['bagian'] ?? null) !== null && ($data['baris'] ?? null) !== null
+                ? $gcs->unggahBaris($folder, $data['field'], $ext, $konten)
+                : $gcs->unggah($folder, $data['field'], $ext, $konten);
             unset($konten);
         } catch (\Throwable $e) {
             // Jejak LENGKAP. Pesan "Path cannot be empty" saja tidak menyebut

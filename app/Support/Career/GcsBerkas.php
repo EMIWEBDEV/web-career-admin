@@ -93,6 +93,33 @@ class GcsBerkas
     }
 
     /**
+     * Unggah berkas milik SATU BARIS bagian berulang.
+     *
+     * Berbeda dari unggah(), namanya membawa pembeda ACAK. Determinisme
+     * unggah() benar untuk berkas biasa — satu field, satu berkas, unggah ulang
+     * memang seharusnya menimpa. Di bagian berulang, tiga baris memakai nama
+     * field yang sama persis, sehingga path deterministik membuat sertifikat
+     * kedua menimpa yang pertama di bucket TANPA JEJAK. Persis jebakan yang
+     * sudah didokumentasikan di unggahGambarCatatan() di bawah.
+     *
+     * @return string path GCS bila sukses
+     *
+     * @throws \RuntimeException bila gagal unggah
+     */
+    public function unggahBaris(string $folderKandidat, string $namaBerkas, string $ext, string $konten): string
+    {
+        $slug = $this->slug($namaBerkas);
+        $ext = $this->normalkanExt($ext);
+        $path = "{$folderKandidat}/{$slug}/{$slug}-" . Str::lower(Str::random(10)) . ".{$ext}";
+
+        if (! Storage::disk(self::DISK)->put($path, $konten)) {
+            throw new \RuntimeException("Gagal mengunggah berkas {$namaBerkas} ke GCS.");
+        }
+
+        return $path;
+    }
+
+    /**
      * Folder gambar yang DITANAM DI DALAM CATATAN penilaian.
      *
      * Akarnya sendiri (`catatan-gambar/`), bukan menumpang hasil-tahap/: berkas
