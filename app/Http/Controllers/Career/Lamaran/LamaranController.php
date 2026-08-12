@@ -2358,7 +2358,7 @@ class LamaranController extends Controller
                     ->value('Formulir_Pengisian_Id');
 
                 if ($pengisianId) {
-                    FormulirDrafController::jadikanPermanen((int) $realId, $userId, $pengisianId);
+                    FormulirDrafController::jadikanPermanen((int) $realId, $userId, $pengisianId, $data['jawaban']);
                 }
 
                 FormulirDrafController::bersihkan((int) $realId, $userId, hapusBerkas: false);
