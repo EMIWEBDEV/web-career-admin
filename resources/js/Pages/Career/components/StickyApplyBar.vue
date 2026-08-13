@@ -10,7 +10,7 @@
                     <span class="wc-sticky-bar__pulse"></span>
                     <div class="wc-sticky-bar__copy">
                         <strong>
-                            <span class="wc-sticky-bar__txt--lg">Siap Naik Level Bersama EVO Group?</span>
+                            <span class="wc-sticky-bar__txt--lg">Siap melamar?</span>
                             <span class="wc-sticky-bar__txt--sm">Siap melamar?</span>
                         </strong>
                         <small>Temukan peran yang sesuai dengan potensi dirimu hari ini.</small>
@@ -48,7 +48,7 @@ import { Link } from '@inertiajs/vue3';
 import { goToSection } from '../careerData';
 
 defineProps({
-    hasMt: { type: Boolean, default: false }
+    hasMt: { type: Boolean, default: false },
 });
 
 const KUNCI_TUTUP = 'wcStickyBarDismissed';
@@ -61,12 +61,20 @@ const visible = computed(() => lewatiAwal.value && !dekatBawah.value && !ditutup
 
 function bacaPenutupan() {
     // Hanya berlaku untuk sesi ini — kunjungan berikutnya bar muncul lagi.
-    try { return sessionStorage.getItem(KUNCI_TUTUP) === '1'; } catch { return false; }
+    try {
+        return sessionStorage.getItem(KUNCI_TUTUP) === '1';
+    } catch {
+        return false;
+    }
 }
 
 function dismiss() {
     ditutup.value = true;
-    try { sessionStorage.setItem(KUNCI_TUTUP, '1'); } catch { /* mode privat: cukup untuk halaman ini */ }
+    try {
+        sessionStorage.setItem(KUNCI_TUTUP, '1');
+    } catch {
+        /* mode privat: cukup untuk halaman ini */
+    }
 }
 
 function checkScroll() {
@@ -116,7 +124,9 @@ onUnmounted(() => {
     border: 1px solid rgba(99, 102, 241, 0.22);
     backdrop-filter: blur(20px) saturate(1.4);
     -webkit-backdrop-filter: blur(20px) saturate(1.4);
-    box-shadow: 0 20px 50px rgba(99, 102, 241, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    box-shadow:
+        0 20px 50px rgba(99, 102, 241, 0.14),
+        inset 0 1px 0 rgba(255, 255, 255, 0.9);
     color: #0f172a;
 }
 .wc-sticky-bar__info {
@@ -134,8 +144,15 @@ onUnmounted(() => {
     animation: wcPulseGlow 2s ease-in-out infinite;
 }
 @keyframes wcPulseGlow {
-    0%, 100% { transform: scale(1); opacity: 1; }
-    50% { transform: scale(1.2); opacity: 0.7; }
+    0%,
+    100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+    50% {
+        transform: scale(1.2);
+        opacity: 0.7;
+    }
 }
 .wc-sticky-bar__info strong {
     display: block;
@@ -167,7 +184,10 @@ onUnmounted(() => {
     text-decoration: none;
     border: none;
     cursor: pointer;
-    transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+    transition:
+        transform 0.18s ease,
+        box-shadow 0.18s ease,
+        background 0.18s ease;
 }
 .wc-sticky-bar__btn--primary {
     background: linear-gradient(135deg, #8b5cf6, #6366f1);
@@ -203,7 +223,9 @@ onUnmounted(() => {
     color: #64748b;
     font-size: 0.66rem;
     cursor: pointer;
-    transition: background 0.18s ease, color 0.18s ease;
+    transition:
+        background 0.18s ease,
+        color 0.18s ease;
 }
 .wc-sticky-bar__close:hover {
     background: rgba(99, 102, 241, 0.12);
@@ -221,8 +243,10 @@ onUnmounted(() => {
     transform: translate(-50%, 20px);
 }
 
-/* ═══ MOBILE — satu baris ringkas: status → aksi utama → MT (ikon) → tutup ═══ */
-@media (max-width: 768px) {
+/* ═══ MOBILE — satu baris ringkas: status → aksi utama → MT (ikon) → tutup ═══
+   Ponsel mendarat ikut dihitung mobile: lebarnya bisa >768px tapi tingginya
+   hanya ~400px, dan bar versi desktop memakan terlalu banyak dari itu. */
+@media (max-width: 768px), (orientation: landscape) and (max-height: 560px) {
     .wc-sticky-bar {
         bottom: calc(0.7rem + env(safe-area-inset-bottom, 0px));
         width: calc(100vw - 1.5rem);

@@ -519,7 +519,10 @@ onUnmounted(() => {
 .wc-tim__card {
     position: relative;
     flex: 0 0 clamp(17.5rem, 30vw, 22.5rem);
-    height: 25rem;
+    /* Batas svh: saat layar dirotasi (tinggi ~400px) kartu 25rem lebih tinggi
+       dari viewport dan nama tim/tombol nav ikut terdorong keluar layar. */
+    height: min(25rem, 68svh);
+    min-height: 15rem;
     perspective: 1000px;
     cursor: pointer;
     user-select: none;

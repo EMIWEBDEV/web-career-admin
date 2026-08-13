@@ -268,14 +268,28 @@
             </div>
 
             <!-- ═══ PROGRES SELEKSI ═══ -->
-            <div class="ld-prog">
-                <div class="ld-prog__head">
-                    <span class="ld-seclabel">PROGRES SELEKSI</span>
-                    <span style="font-size: 13px; font-weight: 800; color: #4f46e5"
-                        >Tahap {{ posisiSekarang }} dari {{ totalTahap }} · {{ persen }}%</span
-                    >
-                </div>
-                <div class="ld-prog__bar"><div :style="{ width: persen + '%' }"></div></div>
+            <!-- <details>, bukan accordion buatan sendiri: buka-tutup, keyboard,
+                 dan Ctrl+F sudah ditangani browser. Ringkasan tetap membawa bar
+                 progres + "Tahap X dari Y" sehingga status terbaca tanpa dibuka. -->
+            <details class="ld-prog" :open="!kompak">
+                <summary class="ld-prog__sum">
+                    <span class="ld-prog__head">
+                        <span class="ld-seclabel">PROGRES SELEKSI</span>
+                        <span class="ld-prog__count">
+                            Tahap {{ posisiSekarang }} dari {{ totalTahap }} · {{ persen }}%
+                            <svg class="ld-prog__chev" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+                        </span>
+                    </span>
+                    <span class="ld-prog__bar"><span :style="{ width: persen + '%' }"></span></span>
+                    <!-- Nama tahap berjalan ikut di ringkasan — sama dengan kartu
+                         di halaman Lamaran Saya. Disembunyikan saat stepper dibuka
+                         karena tahap yang sama sudah ditandai di dalamnya. -->
+                    <span v-if="tahapRingkas" class="ld-prog__now" :class="'is-' + tahapRingkas.st">
+                        <span class="ld-prog__now-dot"></span>
+                        <span class="ld-prog__now-lbl">{{ tahapRingkas.teks }}</span>
+                        <strong>{{ tahapRingkas.name }}</strong>
+                    </span>
+                </summary>
                 <div class="ld-steps">
                     <div v-for="(s, i) in heroSteps" :key="i" class="ld-step">
                         <div v-if="i > 0" class="ld-step__line" :style="{ background: s.line }"></div>
@@ -310,7 +324,7 @@
                         <div class="ld-step__lbl" :style="{ color: s.lbl }">{{ s.name }}</div>
                     </div>
                 </div>
-            </div>
+            </details>
 
             <div class="ld-mainc">
                 <!-- ══ TAHAP AKTIF — SATU KARTU, SATU BLOK PER AKTIVITAS ══
@@ -1384,6 +1398,10 @@ export default {
     data() {
         return {
             ST,
+            // Stepper baru dilipat jadi dropdown di layar sempit; di tablet ke
+            // atas ruangnya cukup, jadi dibiarkan terbuka seperti semula.
+            kompak: false,
+            mqKompak: null,
             jawaban: {},
             berkas: {},
             // Langkah wizard yang dipulihkan dari draf server. Dipakai sebagai
@@ -2105,6 +2123,22 @@ export default {
             });
         },
         /**
+         * Tahap yang sedang dijalani — untuk ringkasan progres, supaya terbaca
+         * tanpa membuka stepper. Kata pengantarnya mengikuti keadaan: yang
+         * berhenti di suatu tahap bukan sedang "berjalan" di sana.
+         */
+        tahapRingkas() {
+            const steps = this.heroSteps;
+            if (!steps.length) return null;
+            const jalan = steps.find((s) => s.st === 'current');
+            if (jalan) return { ...jalan, teks: 'Sedang berjalan:' };
+            const gagal = steps.find((s) => s.st === 'fail');
+            if (gagal) return { ...gagal, teks: 'Berhenti di:' };
+            const selesai = [...steps].reverse().find((s) => s.st === 'done');
+            if (selesai) return { ...selesai, teks: 'Tahap terakhir:' };
+            return { ...steps[0], teks: 'Tahap berikutnya:' };
+        },
+        /**
          * WATERFALL alur seleksi — bertingkat menurut URUTAN TAHAP, bukan tanggal.
          *
          * KENAPA BUKAN TANGGAL LAGI
@@ -2174,6 +2208,9 @@ export default {
         },
     },
     mounted() {
+        this.mqKompak = window.matchMedia('(max-width: 767.98px)');
+        this.syncKompak();
+        this.mqKompak.addEventListener('change', this.syncKompak);
         this.muatBerkasTes();
         if (this.tugas) {
             this.jawaban = jawabanAwal(this.skemaTugas, this.profil);
@@ -2185,12 +2222,16 @@ export default {
         this.sambutPulangTes();
     },
     beforeUnmount() {
+        this.mqKompak?.removeEventListener('change', this.syncKompak);
         if (this.jam) clearInterval(this.jam);
         if (this.tm) clearTimeout(this.tm);
         if (this.timerPindah) clearInterval(this.timerPindah);
         this.hentikanPantauHasil();
     },
     methods: {
+        syncKompak() {
+            this.kompak = !!this.mqKompak?.matches;
+        },
         katLabel(k) {
             return { REKRUTMEN: 'Rekrutmen', MT: 'Management Trainee', INTERNSHIP: 'Internship' }[k] || k || '—';
         },
@@ -3049,6 +3090,10 @@ export default {
     font-family: 'JetBrains Mono', 'Courier New', monospace;
     font-weight: 700;
     color: #8b93a7;
+    /* Kode lamaran tidak boleh patah di tengah (LMR-
+TQVA5K0T) — ia dibaca
+       & disalin sebagai satu satuan. */
+    white-space: nowrap;
 }
 .ld-seclabel {
     font-size: 12px;
@@ -3073,12 +3118,15 @@ export default {
 
 /* overflow-x: clip mengeklip blob horizontal TANPA menjadikan .ld scroll
    container (hidden akan memaksa overflow-y:auto → scrollbar ganda). */
+/* Lihat catatan sama di LamaranSaya.vue: margin bawah negatif + min-height
+   tebakan membuat halaman menjulur keluar gradasi .app-shell (pita putih di
+   bawah), dan blob dekoratif bottom: -160px ikut lolos kalau hanya sumbu X
+   yang di-clip. */
 .ld {
     position: relative;
-    margin: -1rem;
+    margin: -1rem -1rem 0;
     padding: 26px 30px 44px;
-    min-height: calc(100vh - 68px);
-    overflow-x: clip;
+    overflow: clip;
 }
 .ld-blob {
     position: absolute;
@@ -3287,6 +3335,80 @@ export default {
     padding: 16px 20px;
     box-shadow: 0 6px 20px rgba(15, 23, 42, 0.04);
 }
+/* Segitiga bawaan <summary> diganti chevron sendiri agar sebaris dengan teks. */
+.ld-prog__sum {
+    cursor: pointer;
+    list-style: none;
+}
+.ld-prog__sum::-webkit-details-marker {
+    display: none;
+}
+.ld-prog__sum:focus-visible {
+    outline: 2px solid #6366f1;
+    outline-offset: 3px;
+    border-radius: 10px;
+}
+.ld-prog__count {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 800;
+    color: #4f46e5;
+}
+.ld-prog__chev {
+    transition: transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.ld-prog[open] .ld-prog__chev {
+    transform: rotate(180deg);
+}
+.ld-prog[open] .ld-steps {
+    margin-top: 16px;
+}
+/* Baris "sedang berjalan" — mubazir begitu stepper dibuka. */
+.ld-prog[open] .ld-prog__now {
+    display: none;
+}
+.ld-prog__now {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-top: 11px;
+    font-size: 12.5px;
+    line-height: 1.35;
+    color: #64748b;
+    flex-wrap: wrap;
+}
+.ld-prog__now strong {
+    font-weight: 800;
+    color: #1e293b;
+}
+.ld-prog__now-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex: none;
+    background: #f59e0b;
+    box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.18);
+}
+.ld-prog__now.is-fail .ld-prog__now-dot {
+    background: #ef4444;
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.16);
+}
+.ld-prog__now.is-fail strong {
+    color: #dc2626;
+}
+.ld-prog__now.is-done .ld-prog__now-dot {
+    background: #10b981;
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.16);
+}
+.ld-prog__now.is-todo .ld-prog__now-dot {
+    background: #94a3b8;
+    box-shadow: none;
+}
+.ld-prog__now-lbl {
+    flex: none;
+}
 .ld-prog__head {
     display: flex;
     align-items: center;
@@ -3299,13 +3421,15 @@ export default {
     letter-spacing: 0.1em;
 }
 .ld-prog__bar {
+    display: block;
     height: 7px;
     border-radius: 99px;
     background: #eef0f7;
     overflow: hidden;
-    margin-bottom: 16px;
 }
-.ld-prog__bar div {
+/* Anak <span> (bukan div): isi <summary> harus phrasing content agar HTML-nya sah. */
+.ld-prog__bar > * {
+    display: block;
     height: 100%;
     border-radius: 99px;
     background: linear-gradient(90deg, #8b5cf6, #6366f1);
@@ -5191,6 +5315,69 @@ export default {
         display: none;
     }
 }
+@media (max-width: 760px) {
+    /* STEPPER: mendatar → menurun. 120px per tahap berarti pada 7 tahap sebagian
+       besar isinya tersembunyi di balik gulir samping yang tak terlihat —
+       padahal ini ringkasan utama halaman. Menurun: semua terbaca sekaligus. */
+    .ld-steps {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 15px;
+        overflow-x: visible;
+        padding-bottom: 0;
+    }
+    .ld-step {
+        flex: 0 0 auto;
+        flex-direction: row;
+        align-items: center;
+        gap: 12px;
+        width: 100%;
+    }
+    .ld-step__line {
+        top: auto;
+        bottom: calc(100% + 1px);
+        left: 13.5px;
+        width: 3px;
+        height: 15px;
+    }
+    .ld-step__node {
+        flex: 0 0 auto;
+    }
+    .ld-step__lbl {
+        margin-top: 0;
+        padding: 0;
+        text-align: left;
+        font-size: 12.5px;
+    }
+    /* Aksen kartu: pita kiri → garis atas, hanya di layar sempit (kartu paling
+       panjang di sana, dan pita setinggi kartu terbaca seperti salah render). */
+    .ld-hero__bar {
+        right: 0;
+        bottom: auto;
+        width: auto;
+        height: 4px;
+        background: linear-gradient(90deg, #8b5cf6, #6366f1);
+    }
+    .ld-hero__in {
+        padding-left: 20px;
+    }
+}
+/* Tablet ke atas: stepper bukan dropdown — selalu terbuka & tak bisa dilipat. */
+@media (min-width: 768px) {
+    .ld-prog__sum {
+        cursor: default;
+        pointer-events: none;
+    }
+    .ld-prog__chev {
+        display: none;
+    }
+    .ld-prog__bar {
+        margin-bottom: 16px;
+    }
+    .ld-prog[open] .ld-steps {
+        margin-top: 0;
+    }
+}
 @media (max-width: 640px) {
     .ld {
         padding: 20px 16px 40px;
@@ -5202,6 +5389,9 @@ export default {
     }
     .ld-hero__in {
         padding: 18px;
+    }
+    .ld-prog {
+        padding: 14px 16px;
     }
     /* Kartu jadwal & hasil menempel lebih rapat ke tepi layar sempit —
        margin 20px membuat isinya tinggal separuh lebar di ponsel. */
