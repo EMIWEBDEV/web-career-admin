@@ -108,18 +108,14 @@
                         </div>
                     </div>
 
-                    <!-- BARIS PENYARING — tab keadaan + select.
-                         Lowongan dulu tampil sebagai kartu besar sebaris: pada
-                         program dengan 8 lowongan, kartunya sendiri memakan satu
-                         layar penuh sebelum papan kanban-nya kelihatan. Sebagai
-                         select ia menempati satu baris, dan pencariannya jauh
-                         lebih cepat daripada memindai kartu satu per satu. -->
-                    <!-- SATU BARIS: keadaan di kiri, penyaring di ujung kanan.
-                         Sebelumnya penyaring bertumpuk vertikal dan mendorong
-                         papan kanban turun sampai hampir keluar layar — padahal
-                         papan itulah isi halamannya. -->
-                    <div class="plw-filterbar">
-                        <div class="plw-tabs">
+                    <!-- ═══ TAB KEADAAN ═══
+                         Baris sendiri, di atas penyaring. Ia menjawab pertanyaan
+                         yang berbeda: tab memilih POPULASI (siapa yang sedang
+                         dilihat), penyaring di bawahnya mempersempit populasi itu.
+                         Mencampur keduanya dalam satu baris — bentuk lamanya —
+                         membuat orang mengira "Tidak Lolos" adalah salah satu
+                         nilai penyaring, lalu mencarinya di dalam dropdown. -->
+                    <div class="plw-tabs">
                             <!-- SEMUA lebih dulu, dan inilah bawaannya.
                                  Tab-tab sesudahnya menyempitkan, bukan
                                  mengungkap: dengan "Berjalan" sebagai bawaan,
@@ -168,13 +164,48 @@
                                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="M16 17l5-5-5-5M21 12H9" /></svg>
                                 Mengundurkan Diri <span class="plw-tab__badge">{{ jmlMundur }}</span>
                             </button>
-                        </div>
+                    </div>
 
-                        <div class="plw-filters">
-                            <el-input v-model="cariKandidat" clearable placeholder="Cari nama / kode" class="plw-filter plw-filter--cari">
+                    <!-- ═══ PENYARING — SATU KARTU, SELURUHNYA ELEMENT PLUS ═══
+                         Semua pemilih bisa DICARI SAMBIL MENGETIK (`filterable`).
+                         Bukan hiasan: satu program bisa menampung ratusan kampus
+                         dan puluhan lowongan, dan dropdown sepanjang itu tanpa
+                         kotak cari memaksa admin menggulung mencari satu baris.
+
+                         Isi tiap pilihan datang dari data yang BENAR-BENAR ada di
+                         papan — kampus dari jawaban formulir kandidat program ini,
+                         tahap dari alur yang mereka jalani. Tidak ada pilihan yang
+                         menghasilkan nol baris, dan tidak ada kandidat yang
+                         kampusnya tak bisa dipilih. -->
+                    <div class="plw-toolbar">
+                        <div class="plw-fgrid">
+                            <el-input v-model="cariKandidat" clearable class="plw-f plw-f--cari" placeholder="Cari nama, kode, posisi, atau kampus">
                                 <template #prefix><i class="bi bi-search"></i></template>
                             </el-input>
-                            <el-select v-if="(detail.posisi || []).length" v-model="posisiPilih" filterable clearable placeholder="Semua lowongan" class="plw-filter">
+                            <el-select v-model="tahapPilih" filterable clearable class="plw-f" placeholder="Tahap — semua">
+                                <el-option v-for="(c, i) in kolomTampil" :key="kunciKolom(c)" :value="kunciKolom(c)" :label="c.label">
+                                    <div class="plw-lopt">
+                                        <b>{{ String(i + 1).padStart(2, '0') }} · {{ c.label }}</b>
+                                        <small>{{ jumlahTahap(c) }} kandidat</small>
+                                    </div>
+                                </el-option>
+                            </el-select>
+                            <!-- KAMPUS — daftarnya MENGIKUTI yang terdaftar, bukan
+                                 Master Kampus. Master itu berisi 328 ribu baris
+                                 hasil impor Dapodik/PDDIKTI; menawarkannya utuh di
+                                 sini berarti 99,9% pilihannya menghasilkan papan
+                                 kosong, dan yang mencari kampus kandidatnya
+                                 sendiri justru tenggelam di antara ratusan ribu
+                                 nama yang tak seorang pun melamar dari sana. -->
+                            <el-select v-model="kampusPilih" filterable clearable class="plw-f" placeholder="Kampus — semua">
+                                <el-option v-for="k in kampusOpsi" :key="k.nama" :value="k.nama" :label="k.nama">
+                                    <div class="plw-lopt">
+                                        <b>{{ k.nama }}</b>
+                                        <small>{{ k.jumlah }} kandidat</small>
+                                    </div>
+                                </el-option>
+                            </el-select>
+                            <el-select v-if="(detail.posisi || []).length" v-model="posisiPilih" filterable clearable class="plw-f" placeholder="Lowongan — semua">
                                 <el-option
                                     v-for="p in detail.posisi" :key="p.id" :value="p.id"
                                     :label="`${p.posisi}${p.level ? ' · ' + p.level : ''}`"
@@ -187,22 +218,68 @@
                             </el-select>
                             <!-- KEADAAN menjawab "mana yang menunggu SAYA?" —
                                  tanpa ini admin memindai lencana kartu satu per satu. -->
-                            <el-select v-model="keadaanPilih" clearable placeholder="Semua keadaan" class="plw-filter">
+                            <el-select v-model="keadaanPilih" filterable clearable class="plw-f" placeholder="Keadaan — semua">
                                 <el-option value="PERLU" label="Perlu keputusan saya" />
                                 <el-option value="NUNGGU" label="Menunggu hasil tes" />
                                 <el-option value="JADWAL" label="Belum dijadwalkan" />
+                                <el-option value="TERJADWAL" label="Sudah dijadwalkan" />
                                 <el-option value="HOLD" label="Sedang ditahan" />
                             </el-select>
-                            <button v-if="adaFilter" type="button" class="plw-filter__reset" title="Bersihkan penyaring" @click="bersihkanFilter">
-                                <i class="bi bi-x-lg"></i>
+                            <!-- RENTANG TANGGAL MELAMAR. Satu kontrol, bukan dua
+                                 kotak terpisah: "dari" yang lebih baru daripada
+                                 "sampai" adalah rentang kosong, dan pemilih rentang
+                                 menutup kemungkinan itu sejak awal. -->
+                            <el-date-picker
+                                v-model="rangeTanggal"
+                                type="daterange" unlink-panels
+                                class="plw-f plw-f--tgl"
+                                start-placeholder="Melamar dari" end-placeholder="s/d"
+                                range-separator="→"
+                                value-format="YYYY-MM-DD" format="DD MMM YYYY"
+                            />
+                        </div>
+
+                        <!-- CHIP PENYARING AKTIF. Penyaring yang menyala di dalam
+                             dropdown tidak terbaca sekilas — dan papan yang tiba-tiba
+                             berisi tiga orang lalu terbaca sebagai data yang hilang,
+                             bukan sebagai saringan yang sedang bekerja. -->
+                        <div v-if="chipFilter.length" class="plw-chiprow">
+                            <span v-for="ch in chipFilter" :key="ch.key" class="plw-fchip">
+                                <span class="plw-fchip__k">{{ ch.jenis }}</span>
+                                <span class="plw-ell">{{ ch.label }}</span>
+                                <button type="button" title="Copot penyaring ini" @click="copotChip(ch.key)"><i class="bi bi-x-lg"></i></button>
+                            </span>
+                            <button type="button" class="plw-fclear" @click="bersihkanFilter">Bersihkan semua</button>
+                        </div>
+                    </div>
+
+                    <!-- ═══ MODE TAMPILAN — KANBAN / LIST ═══
+                         Dua cara membaca populasi yang sama. Kanban menjawab "di
+                         mana orang menumpuk"; list menjawab "siapa saja, dan apa
+                         isinya" — termasuk kampus & tanggal melamar yang tak muat
+                         di kartu kanban. -->
+                    <div class="plw-moderow">
+                        <div class="plw-modes">
+                            <button
+                                type="button" class="plw-mode" :class="{ 'is-on': mode === 'kanban' }"
+                                title="Tampilan papan kanban" @click="mode = 'kanban'"
+                            >
+                                <i class="bi bi-kanban-fill"></i><span>Kanban</span>
+                            </button>
+                            <button
+                                type="button" class="plw-mode" :class="{ 'is-on': mode === 'list' }"
+                                title="Tampilan daftar" @click="mode = 'list'"
+                            >
+                                <i class="bi bi-list-ul"></i><span>List</span>
                             </button>
                         </div>
+                        <div class="plw-hasil">{{ teksHasil }}</div>
                     </div>
 
                     <div v-if="loadingDetail" class="plw-load" style="padding: 3rem 0"><span class="plw-spin"></span> Memuat papan seleksi…</div>
 
                     <!-- KANBAN -->
-                    <div v-else class="plw-kanban" :class="{ 'is-gugur': statusTab === 'GUGUR', 'is-mundur': statusTab === 'MUNDUR' }">
+                    <div v-else-if="mode === 'kanban'" class="plw-kanban" :class="{ 'is-gugur': statusTab === 'GUGUR', 'is-mundur': statusTab === 'MUNDUR' }">
                         <div v-for="(col, i) in kolomTampil" :key="col.kode || col.label" class="plw-col" :class="{ 'is-lawas': col.alurLain }">
                             <div class="plw-col__head">
                                 <span class="plw-col__num" :class="{ 'is-hot': kartuKolom(col).length > 0 }">{{ String(i + 1).padStart(2, '0') }}</span>
@@ -405,26 +482,163 @@
                             </div>
                         </div>
                     </div>
+
+                    <!-- ═══ MODE LIST ═══
+                         Satu baris per kandidat, berkolom tetap. Yang tak muat di
+                         kartu kanban justru muncul di sini — kampus dan tanggal
+                         melamar — sebab keduanya baru berguna ketika kandidat
+                         dibandingkan berjajar, bukan saat dilihat satu per satu.
+
+                         Di layar sempit tiap baris melipat jadi kartu (lihat CSS):
+                         tabel tujuh kolom pada 390px hanya menghasilkan tulisan
+                         setinggi satu huruf, dan menggeser mendatar untuk membaca
+                         nama orang bukan cara siapa pun bekerja. -->
+                    <div v-else-if="barisList.length" class="plw-list">
+                        <div class="plw-list__head">
+                            <span>KANDIDAT</span>
+                            <span>POSISI</span>
+                            <span>TAHAP</span>
+                            <span>KAMPUS</span>
+                            <span>KEADAAN</span>
+                            <span>MELAMAR</span>
+                            <span style="text-align: right">AKSI</span>
+                        </div>
+                        <div
+                            v-for="r in barisList" :key="r.id"
+                            class="plw-lrow" :class="{ 'is-hold': !!r.hold }"
+                            role="button" tabindex="0"
+                            @click="bukaKandidat(r)"
+                            @keyup.enter="bukaKandidat(r)"
+                        >
+                            <span class="plw-lcell plw-lcell--who">
+                                <span class="plw-card__avatar" :style="{ background: avatarBg(r) }">{{ inisial(r.pelamar) }}</span>
+                                <span style="min-width: 0">
+                                    <span class="plw-lname">{{ r.pelamar }}</span>
+                                    <span class="plw-lcode">{{ r.lamaranKode }}</span>
+                                </span>
+                            </span>
+                            <span class="plw-lcell" data-k="Posisi">
+                                <span class="plw-ell" :title="r.posisi">{{ r.posisi || '—' }}</span>
+                            </span>
+                            <span class="plw-lcell" data-k="Tahap">
+                                <span class="plw-lpill" :title="r.tahap">{{ r.tahap || '—' }}</span>
+                            </span>
+                            <span class="plw-lcell" data-k="Kampus">
+                                <span class="plw-ell" :title="r.kampus || 'Kampus belum terisi di formulir'">{{ r.kampus || '—' }}</span>
+                            </span>
+                            <span class="plw-lcell" data-k="Keadaan">
+                                <span class="plw-card__chip" :class="'tone-' + r.badge.tone" style="margin-top: 0">{{ r.badge.teks }}</span>
+                            </span>
+                            <span class="plw-lcell" data-k="Melamar">
+                                <span v-if="r.waktuLamar" class="plw-ltgl" :title="'Melamar ' + tglId(r.waktuLamar)">
+                                    {{ tglId(r.waktuLamar) }}<small>{{ umurHari(r.waktuLamar) }}</small>
+                                </span>
+                                <span v-else>—</span>
+                            </span>
+                            <span class="plw-lcell plw-lcell--act">
+                                <button
+                                    v-if="r.tahapId && r.statusLamaran === 'BERJALAN'"
+                                    type="button" class="plw-card__hold" :class="{ 'is-on': !!r.hold }"
+                                    :title="r.hold ? 'Sedang ditahan — klik untuk melanjutkan' : 'Tahan kandidat ini (tanpa email ke kandidat)'"
+                                    @click.stop="askHold(!r.hold, r)"
+                                >
+                                    <i class="bi" :class="r.hold ? 'bi-play-fill' : 'bi-pause-fill'"></i>
+                                </button>
+                                <button type="button" class="plw-ldetail" @click.stop="bukaKandidat(r)">Detail</button>
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- TIDAK ADA YANG COCOK. Dibedakan dari "program ini memang
+                         belum punya pelamar": yang pertama diperbaiki dengan
+                         mencopot saringan, yang kedua tidak bisa diperbaiki
+                         siapa pun — dan menyamakan keduanya membuat admin
+                         mencari-cari tombol yang tak akan menolongnya. -->
+                    <div v-else class="plw-kosong">
+                        <span class="plw-kosong__ico"><i class="bi bi-search"></i></span>
+                        <div class="plw-kosong__judul">{{ chipFilter.length ? 'Tidak ada kandidat yang cocok' : 'Belum ada kandidat' }}</div>
+                        <div class="plw-kosong__sub">
+                            {{ chipFilter.length
+                                ? 'Tidak ada yang memenuhi saringan ini. Copot salah satunya untuk melebarkan hasil.'
+                                : 'Tab ini masih kosong untuk program tersebut.' }}
+                        </div>
+                        <button v-if="chipFilter.length" type="button" class="plw-kosong__btn" @click="bersihkanFilter">Bersihkan saringan</button>
+                    </div>
+
+                    <!-- PAGINASI — hanya mode list. Kanban tidak dipaginasi:
+                         kolomnya sudah membagi populasi, dan memotongnya lagi per
+                         halaman berarti tumpukan yang terbaca di layar bukan
+                         tumpukan yang sebenarnya. -->
+                    <div v-if="mode === 'list' && totalList > 0" class="plw-pagerbar">
+                        <div class="plw-pagerbar__info">Halaman {{ halamanList }} dari {{ totalHalamanList }} · {{ totalList }} kandidat</div>
+                        <div class="plw-pagerbar__nav">
+                            <button type="button" :disabled="halamanList <= 1" title="Sebelumnya" @click="listPage = halamanList - 1">
+                                <i class="bi bi-chevron-left"></i>
+                            </button>
+                            <button
+                                v-for="(n, i) in nomorHalaman" :key="i"
+                                type="button" class="plw-pnum"
+                                :class="{ 'is-on': n === halamanList, 'is-gap': n === '…' }"
+                                :disabled="n === '…'"
+                                @click="n !== '…' && (listPage = n)"
+                            >{{ n }}</button>
+                            <button type="button" :disabled="halamanList >= totalHalamanList" title="Berikutnya" @click="listPage = halamanList + 1">
+                                <i class="bi bi-chevron-right"></i>
+                            </button>
+                        </div>
+                        <div class="plw-pagerbar__per">
+                            Per halaman
+                            <el-select v-model="listPer" class="plw-perpage">
+                                <el-option v-for="n in [10, 20, 50, 100]" :key="n" :value="n" :label="String(n)" />
+                            </el-select>
+                        </div>
+                    </div>
                 </template>
                 <div v-else class="plw-empty" style="padding: 4rem 0">Pilih program di panel kiri untuk melihat papan seleksi.</div>
             </div>
         </main>
 
-        <!-- ═══ DRAWER DETAIL KANDIDAT ═══ -->
-        <div class="plw-overlay" :class="{ 'is-on': !!detailKandidat }" @click="tutupKandidat"></div>
-        <section class="plw-drawer" :class="{ 'is-on': !!detailKandidat }" aria-label="Detail pelamar">
+        <!-- ═══ MODAL DETAIL KANDIDAT ═══
+             Dulu sebuah drawer selebar 560px yang merayap dari kanan. Bentuk itu
+             benar untuk "mengintip sambil papan tetap terlihat" — tapi bukan
+             itu yang terjadi di sini: begitu drawer terbuka, seluruh pekerjaan
+             pindah ke dalamnya (rapor tes, berkas, keputusan), dan 560px terlalu
+             sempit untuk semuanya. Kisi biodata jadi satu kolom, tombol
+             keputusan terpotong per kata, dan riwayat kerja digulung berkali-kali.
+
+             Sekarang: modal EVO ber-ukuran XL, isinya dibagi TIGA TAB. Tab
+             memisahkan tiga pekerjaan yang memang tidak dilakukan bersamaan —
+             menilai hasil tes, memeriksa berkas, dan melihat posisi kandidat di
+             alur — sehingga masing-masing dapat lebar penuh. -->
+        <AdminModal
+            :show="!!detailKandidat"
+            size="xl"
+            icon="bi-person-vcard-fill"
+            :title="detailKandidat ? detailKandidat.pelamar : ''"
+            :subtitle="detailKandidat ? `${detailKandidat.posisi} · ${detailKandidat.lamaranKode}` : ''"
+            foot-note=""
+            foot-blok
+            @close="tutupKandidat"
+        >
             <template v-if="detailKandidat">
-                <div class="plw-drawer__head">
-                    <div class="plw-drawer__headrow">
-                        <div class="plw-drawer__avatar" :style="{ background: avatarBg(detailKandidat) }">{{ inisial(detailKandidat.pelamar) }}</div>
+                <!-- HERO — identitas, konteks lowongan, kontak, dan tab.
+                     Menempel di puncak isi (position: sticky) supaya nama orang
+                     yang sedang diputuskan tidak pernah tergulung keluar layar. -->
+                <div class="plw-hero">
+                    <div class="plw-hero__row">
+                        <div class="plw-hero__avatar" :style="{ background: avatarBg(detailKandidat) }">{{ inisial(detailKandidat.pelamar) }}</div>
                         <div style="flex: 1; min-width: 0">
+                            <div class="plw-hero__tags">
+                                <span class="plw-drawer__tag" :class="detailKandidat.kategori === 'MT' ? 'is-mt' : 'is-rek'">{{ katLabel(detailKandidat.kategori) }}</span>
+                                <span class="plw-card__chip" :class="'tone-' + detailKandidat.badge.tone" style="margin-top: 0">{{ detailKandidat.badge.teks }}</span>
+                            </div>
                             <!-- Nama RESMI dari formulir. Nama akun disebut di
                                  bawahnya HANYA bila berbeda: rekruter perlu tahu
                                  akun mana yang akan menerima surelnya, dan
                                  menyembunyikannya membuat "SUPRIADI MAMI PERI"
                                  di layar ini tak bisa dicocokkan dengan
                                  "SUPRIADI" di kotak masuk. -->
-                            <div class="plw-drawer__name">{{ detailKandidat.pelamar }}</div>
+                            <div class="plw-hero__name">{{ detailKandidat.pelamar }}</div>
                             <div v-if="namaAkunBeda(detailKandidat)" class="plw-drawer__akun">
                                 <i class="bi bi-person-badge"></i> Nama akun: {{ detailKandidat.pelamarAkun }}
                             </div>
@@ -435,29 +649,36 @@
                                 <span v-if="detailKandidat.departemen"><i class="bi bi-diagram-3"></i> {{ detailKandidat.departemen }}</span>
                                 <span v-if="detailKandidat.lokasi"><i class="bi bi-geo-alt"></i> {{ detailKandidat.lokasi }}</span>
                                 <span v-if="detailKandidat.level"><i class="bi bi-bar-chart-steps"></i> {{ detailKandidat.level }}</span>
+                                <span v-if="detailKandidat.kampus"><i class="bi bi-mortarboard-fill"></i> {{ detailKandidat.kampus }}</span>
                                 <span v-if="detailKandidat.mppRef" class="is-mpp">{{ detailKandidat.mppRef }}</span>
                                 <span v-if="detailKandidat.waktuLamar"><i class="bi bi-clock-history"></i> {{ tglId(detailKandidat.waktuLamar) }} · {{ umurHari(detailKandidat.waktuLamar) }}</span>
                                 <a v-if="detailKandidat.email" :href="`mailto:${detailKandidat.email}`" class="is-link"><i class="bi bi-envelope"></i> {{ detailKandidat.email }}</a>
                                 <a v-if="detailKandidat.hp" :href="`https://wa.me/${String(detailKandidat.hp).replace(/\D/g, '')}`" target="_blank" rel="noopener" class="is-link"><i class="bi bi-whatsapp"></i> {{ detailKandidat.hp }}</a>
                             </div>
                         </div>
-                        <div style="display: flex; align-items: center; gap: 9px; flex: 0 0 auto">
-                            <span class="plw-drawer__tag" :class="detailKandidat.kategori === 'MT' ? 'is-mt' : 'is-rek'">{{ katLabel(detailKandidat.kategori) }}</span>
-                            <!-- CETAK LAPORAN — tersedia untuk SETIAP kandidat di
-                                 papan, apa pun tahap & statusnya. Laporan paling
-                                 sering justru diminta untuk yang sudah selesai
-                                 (arsip keputusan), bukan yang sedang berjalan. -->
-                            <button type="button" class="plw-drawer__cetak" title="Cetak laporan kandidat (PDF)" @click="askLaporan">
-                                <i class="bi bi-printer-fill"></i> Cetak
-                            </button>
-                            <button type="button" class="plw-drawer__close" @click="tutupKandidat">
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
-                            </button>
-                        </div>
+                        <!-- CETAK LAPORAN — tersedia untuk SETIAP kandidat di
+                             papan, apa pun tahap & statusnya. Laporan paling
+                             sering justru diminta untuk yang sudah selesai
+                             (arsip keputusan), bukan yang sedang berjalan. -->
+                        <button type="button" class="plw-drawer__cetak" title="Cetak laporan kandidat (PDF)" @click="askLaporan">
+                            <i class="bi bi-printer-fill"></i> Cetak
+                        </button>
+                    </div>
+
+                    <div class="plw-mtabs" role="tablist">
+                        <button
+                            v-for="t in tabDetail" :key="t.key"
+                            type="button" class="plw-mtab" :class="{ 'is-on': tabAktif === t.key }"
+                            role="tab" :aria-selected="tabAktif === t.key"
+                            @click="tabAktif = t.key"
+                        >
+                            <i class="bi" :class="t.ikon"></i><span>{{ t.label }}</span>
+                            <span v-if="t.jumlah" class="plw-mtab__n">{{ t.jumlah }}</span>
+                        </button>
                     </div>
                 </div>
 
-                <div class="plw-drawer__body">
+                <div v-show="tabAktif === 'rapor'" class="plw-tabpane">
                     <!-- Info tahap -->
                     <div class="plw-infocard">
                         <div class="plw-infogrid">
@@ -834,8 +1055,10 @@
                             </div>
                         </div>
                     </div>
+                </div>
 
-                    <!-- Berkas & Biodata -->
+                <!-- TAB: BERKAS & BIODATA -->
+                <div v-show="tabAktif === 'berkas'" class="plw-tabpane">
                     <div>
                         <div class="plw-secrow">
                             <div class="plw-sectitle">
@@ -921,10 +1144,11 @@
                                                     :aria-expanded="!riwayatTutup(f.no, j.key)"
                                                     @click="toggleRiwayat(f.no, j.key)"
                                                 >
-                                                    <span class="plw-tl__n">{{ j.baris.length }}</span>
+                                                    <span class="plw-tl__ico"><i class="bi" :class="ikonRiwayat(j)"></i></span>
                                                     <span class="plw-tl__cap">
                                                         {{ riwayatTutup(f.no, j.key) ? 'Tampilkan' : 'Sembunyikan' }} rincian
                                                     </span>
+                                                    <span class="plw-tl__n">{{ j.baris.length }}</span>
                                                     <svg
                                                         class="plw-tl__chev" :class="{ 'is-up': !riwayatTutup(f.no, j.key) }"
                                                         width="15" height="15" viewBox="0 0 24 24" fill="none"
@@ -941,29 +1165,22 @@
                                                                      Yang pertama dinaikkan jadi judul kartu:
                                                                      pada riwayat kerja/organisasi kolom
                                                                      pertama selalu "nama tempatnya", dan
-                                                                     itulah yang dicari mata lebih dulu. -->
+                                                                     itulah yang dicari mata lebih dulu.
+
+                                                                     Sub-isian BERKAS tidak ikut kisi ini:
+                                                                     ia turun ke jalur lampiran di dasar
+                                                                     kartu (lihat di bawah), sebab satu baris
+                                                                     bisa membawa beberapa lembar sekaligus
+                                                                     dan sel kisi tak muat memuat daftar. -->
                                                                 <div v-if="adaRingkas(j.baris, row)" class="plw-tl__grid">
                                                                     <template v-for="(p, pi) in row" :key="'r' + pi">
                                                                         <div
-                                                                            v-if="!selUraian(j.baris, p, pi)"
+                                                                            v-if="!selUraian(j.baris, p, pi) && !berkasSel(p).length"
                                                                             class="plw-tl__cell"
-                                                                            :class="{ 'is-lead': pi === 0 && !p.berkas }"
+                                                                            :class="{ 'is-lead': pi === 0 }"
                                                                         >
                                                                             <span v-if="p.label" class="plw-tl__k">{{ p.label }}</span>
-                                                                            <!-- Sub-isian BERKAS (sert_file) dibuka di
-                                                                                 tempat, persis seperti KTP/CV di atas.
-                                                                                 Dulu ia cuma nama berkas sebagai teks,
-                                                                                 dan dokumennya harus dicari di daftar
-                                                                                 terpisah di bawah. -->
-                                                                            <button
-                                                                                v-if="p.berkas" type="button" class="plw-lihat"
-                                                                                :title="p.berkas.nama" @click="bukaDok(p.berkas)"
-                                                                            >
-                                                                                <i class="bi" :class="p.berkas.isImage ? 'bi-file-earmark-image-fill' : 'bi-file-earmark-pdf-fill'"></i>
-                                                                                Lihat Berkas
-                                                                                <span class="plw-lihat__ext">{{ (p.berkas.ext || '').toUpperCase() }}</span>
-                                                                            </button>
-                                                                            <span v-else class="plw-tl__v" :class="{ 'is-rp': selRupiah(p) }">{{ nilaiTampil(p) }}</span>
+                                                                            <span class="plw-tl__v" :class="{ 'is-rp': selRupiah(p) }">{{ nilaiTampil(p) }}</span>
                                                                         </div>
                                                                     </template>
                                                                 </div>
@@ -977,6 +1194,38 @@
                                                                     <div v-if="selUraian(j.baris, p, pi)" class="plw-tl__note">
                                                                         <span v-if="p.label" class="plw-tl__k">{{ p.label }}</span>
                                                                         <UraianLipat :teks="String(p.nilai ?? '')" :baris="4" />
+                                                                    </div>
+                                                                </template>
+
+                                                                <!-- LAMPIRAN BARIS INI — BISA LEBIH DARI SATU.
+                                                                     Satu sertifikat kerap datang berlembar:
+                                                                     piagamnya, transkrip nilainya, surat
+                                                                     keterangannya. Bentuk lama hanya sanggup
+                                                                     menggambar SATU tombol per sub-isian,
+                                                                     jadi lembar kedua dan seterusnya masuk ke
+                                                                     basis data lalu tak pernah muncul di layar
+                                                                     mana pun — tanpa galat, tanpa jejak.
+                                                                     Sekarang seluruhnya berjajar di jalurnya
+                                                                     sendiri, bernomor, di dasar kartu. -->
+                                                                <template v-for="(p, pi) in row" :key="'b' + pi">
+                                                                    <div v-if="berkasSel(p).length" class="plw-tl__berkas">
+                                                                        <div class="plw-tl__berkashead">
+                                                                            <i class="bi bi-paperclip"></i>
+                                                                            <span>{{ p.label || 'Lampiran' }}</span>
+                                                                            <span class="plw-tl__berkasn">{{ berkasSel(p).length }}</span>
+                                                                        </div>
+                                                                        <button
+                                                                            v-for="(b, bi) in berkasSel(p)" :key="bi"
+                                                                            type="button" class="plw-tl__file"
+                                                                            :title="b.nama" @click="bukaDok(b)"
+                                                                        >
+                                                                            <span class="plw-tl__fileico">
+                                                                                <i class="bi" :class="b.isImage ? 'bi-file-earmark-image-fill' : 'bi-file-earmark-pdf-fill'"></i>
+                                                                            </span>
+                                                                            <span class="plw-tl__filenama">{{ b.nama }}</span>
+                                                                            <span class="plw-tl__fileext">{{ (b.ext || '').toUpperCase() }}</span>
+                                                                            <span class="plw-tl__filego">Lihat</span>
+                                                                        </button>
                                                                     </div>
                                                                 </template>
                                                             </div>
@@ -1017,15 +1266,45 @@
                             </div>
                         </div>
                     </div>
-
                 </div>
 
-                <!-- FOOTER AKSI — menempel di dasar drawer, tidak ikut menggulung.
-                     Keputusan adalah alasan drawer ini dibuka; kalau tombolnya ikut
-                     hanyut ke bawah, admin harus menggulung dulu setiap kali. Indikator
-                     kuota ikut pindah supaya alasan tombol Loloskan hilang/mati tetap
-                     terbaca di sebelah tombolnya. -->
-                <div v-if="detailKandidat.butuhKeputusan" class="plw-foot">
+                <!-- ═══ TAB: ALUR SELEKSI ═══
+                     Seluruh tahap program dalam satu linimasa, dengan posisi
+                     kandidat ini di dalamnya. Dulu informasi ini hanya ada
+                     sebagai deretan segmen kecil ("3 / 6") di kartu info —
+                     angka yang tak memberi tahu tahap apa yang sudah dilewati,
+                     apa yang sedang berjalan, dan apa yang masih menunggu. -->
+                <div v-show="tabAktif === 'alur'" class="plw-tabpane">
+                    <div class="plw-alur">
+                        <div class="plw-alur__head">
+                            <span class="plw-alur__lbl">PROGRES SELEKSI</span>
+                            <span class="plw-alur__pos">Tahap {{ detailKandidat.urutan }} dari {{ detailKandidat.totalTahap }}</span>
+                        </div>
+                        <div class="plw-alur__bar"><div :style="{ width: persenAlur + '%' }"></div></div>
+
+                        <ol class="plw-alur__line">
+                            <li v-for="s in alurKandidat" :key="s.kunci" class="plw-alur__item" :class="'is-' + s.keadaan">
+                                <span class="plw-alur__node"><span></span></span>
+                                <div class="plw-alur__isi">
+                                    <div style="min-width: 0">
+                                        <div class="plw-alur__nama">{{ s.nomor }}. {{ s.label }}</div>
+                                        <div class="plw-alur__ket">{{ s.catatan }}</div>
+                                    </div>
+                                    <span class="plw-alur__tag">{{ s.tag }}</span>
+                                </div>
+                            </li>
+                        </ol>
+                    </div>
+                </div>
+            </template>
+
+            <!-- FOOTER AKSI — menempel di kaki modal, tidak ikut menggulung.
+                 Keputusan adalah alasan jendela ini dibuka; kalau tombolnya ikut
+                 hanyut ke bawah, admin harus menggulung dulu setiap kali. Indikator
+                 kuota ikut pindah supaya alasan tombol Loloskan hilang/mati tetap
+                 terbaca di sebelah tombolnya. -->
+            <template #footer>
+                <div v-if="detailKandidat && detailKandidat.butuhKeputusan" class="plw-foot">
                     <!-- JAWABAN KANDIDAT atas penawaran. Ditaruh di atas tombol
                          karena inilah yang menentukan tombol mana yang benar:
                          diamnya kandidat dan persetujuannya menuntut tindakan
@@ -1220,8 +1499,16 @@
                         </div>
                     </div>
                 </div>
+                <!-- Kandidat yang tahapnya sudah diputus (lulus, gugur, mundur)
+                     tidak punya satu pun tombol keputusan — jendelanya murni
+                     arsip. Tanpa tombol tutup di kaki, satu-satunya jalan keluar
+                     adalah tombol X di pojok, dan itu jauh dari tempat mata
+                     berhenti membaca. -->
+                <button v-else type="button" class="wca-btn wca-btn--ghost" @click="tutupKandidat">
+                    <i class="bi bi-x-lg"></i> Tutup
+                </button>
             </template>
-        </section>
+        </AdminModal>
 
         <!-- ═══ LIGHTBOX BERKAS GAMBAR ═══ -->
         <div class="plw-lb" :class="{ 'is-on': !!lightbox }" @click="lightbox = null">
@@ -2882,6 +3169,7 @@
 <script>
 import axios from 'axios';
 import { Head, router } from '@inertiajs/vue3';
+import AdminModal from '@career/AdminModal.vue';
 import BerkasAktivitas from '@career/BerkasAktivitas.vue';
 import ConfirmModal from '@career/ConfirmModal.vue';
 import EditorQuill from '@career/EditorQuill.vue';
@@ -2936,7 +3224,7 @@ export default {
     // "Extraneous non-props attributes" berhenti — atribut itu memang tidak
     // dipakai sebagai atribut HTML di sini.
     inheritAttrs: false,
-    components: { Head, BerkasAktivitas, ConfirmModal, EditorQuill, KontenAman, UraianLipat },
+    components: { Head, AdminModal, BerkasAktivitas, ConfirmModal, EditorQuill, KontenAman, UraianLipat },
     props: {
         talent: { type: Array, default: () => [] },
         programAwal: { type: Object, default: () => ({ data: [], page: 1, totalPage: 1, total: 0 }) },
@@ -2984,6 +3272,9 @@ export default {
             // dan yang mundur di tahap akhir tampak seolah hilang begitu saja.
             statusTab: 'SEMUA',
             detailKandidat: null,
+            // Tab modal detail: 'rapor' | 'berkas' | 'alur'. Selalu kembali ke
+            // 'rapor' setiap kandidat dibuka — lihat bukaKandidat().
+            tabAktif: 'rapor',
             profil: { lamaran: null, formulir: [] },
             loadingProfil: false,
             berkasHasil: [],
@@ -3116,9 +3407,22 @@ export default {
             pmBaris: [],            // [{ id, tahapId, pelamar, posisi, tahap, hasil, catatan }]
             // Kandidat yang sedang ditahan/dilepas dari KARTU (bukan drawer).
             holdTarget: null,
+            // ── MODE TAMPILAN ───────────────────────────────────────────────
+            // Disimpan di perangkat, bukan di server: pilihan ini soal kebiasaan
+            // membaca, dan admin yang bekerja dari daftar tidak ingin kembali ke
+            // papan setiap kali halaman dimuat ulang.
+            mode: localStorage.getItem('plw.mode') === 'list' ? 'list' : 'kanban',
             // ── PENYARING PAPAN ─────────────────────────────────────────────
             cariKandidat: '',
             keadaanPilih: '',
+            tahapPilih: '',
+            kampusPilih: '',
+            // [mulai, selesai] dalam 'YYYY-MM-DD', atau null saat kosong —
+            // bentuk yang dipakai el-date-picker bertipe daterange.
+            rangeTanggal: null,
+            // ── PAGINASI MODE LIST ──────────────────────────────────────────
+            listPage: 1,
+            listPer: 20,
             // ── PILIH BANYAK & JADWAL MASSAL ────────────────────────────────
             // Kunci kolom yang sedang dalam mode pilih — HANYA SATU kolom pada
             // satu waktu. Penjadwalan massal selalu menyangkut satu tahap, jadi
@@ -3178,8 +3482,8 @@ export default {
         // diam-diam: penghitungnya bilang "12 terpilih" sementara hanya 3 yang
         // terlihat, dan penjadwalan massal mengundang sembilan orang yang tidak
         // sedang dilihat siapa pun.
-        statusTab() { this.terpilih = []; },
-        posisiPilih() { this.terpilih = []; },
+        statusTab() { this.terpilih = []; this.listPage = 1; },
+        posisiPilih() { this.terpilih = []; this.listPage = 1; },
         /**
          * Ganti aktivitas → lokasi yang sudah dipilih DIBATALKAN.
          *
@@ -3193,12 +3497,32 @@ export default {
             this.massalLokasiNama = '';
             this.massalLokasiAlamat = '';
         },
-        keadaanPilih() { this.terpilih = []; },
+        keadaanPilih() { this.terpilih = []; this.listPage = 1; },
         // Ganti program = papan yang sama sekali lain. Penyaring kolom milik
         // program lama tidak boleh ikut, karena kunci kolomnya bisa kebetulan
         // sama (dua alur sama-sama punya tahap "Psikotes") dan kolom yang baru
         // dibuka akan langsung tersaring tanpa ada yang menyalakannya.
-        selectedId() { this.tutupPilihKolom(); this.filterKolom = {}; this.filterBuka = ''; },
+        //
+        // Penyaring TAHAP & KAMPUS ikut dikosongkan: keduanya menyebut nilai
+        // milik program lama, dan yang tersisa di kotaknya akan menyaring papan
+        // baru sampai kosong tanpa satu pun petunjuk kenapa.
+        selectedId() {
+            this.tutupPilihKolom();
+            this.filterKolom = {};
+            this.filterBuka = '';
+            this.tahapPilih = '';
+            this.kampusPilih = '';
+            this.listPage = 1;
+        },
+        mode(v) { localStorage.setItem('plw.mode', v); },
+        /* Saringan berubah → kembali ke halaman satu. Tanpa ini, menyaring dari
+           halaman 7 mendarat di halaman yang sudah tidak ada isinya, dan daftar
+           terbaca kosong padahal hasilnya ada. */
+        cariKandidat() { this.listPage = 1; },
+        tahapPilih() { this.listPage = 1; this.terpilih = []; },
+        kampusPilih() { this.listPage = 1; this.terpilih = []; },
+        rangeTanggal() { this.listPage = 1; this.terpilih = []; },
+        listPer() { this.listPage = 1; },
     },
     computed: {
         /**
@@ -3238,9 +3562,22 @@ export default {
                 // Penyaring lowongan berlaku untuk SEMUA tab, supaya angka
                 // "berjalan" dan "tidak lolos" satu lowongan bisa dibandingkan.
                 .filter((r) => !this.posisiPilih || r.posisiId === this.posisiPilih)
+                // TAHAP — dicocokkan lewat KUNCI KOLOM, bukan nomor urut. Alasan
+                // yang sama dengan penempatan kartu di kartuKolom(): nomor urut
+                // berhenti benar begitu alur disunting atau program dialihkan.
+                .filter((r) => !this.tahapPilih || this.kunciBaris(r) === this.tahapPilih)
+                .filter((r) => !this.kampusPilih || (r.kampus || '') === this.kampusPilih)
+                // RENTANG TANGGAL MELAMAR. Batas akhirnya mencakup SELURUH hari
+                // yang dipilih: memakai tengah malam membuat orang yang melamar
+                // pukul 09.00 pada tanggal akhir jatuh di luar rentangnya sendiri.
+                .filter((r) => this.dalamRentang(r.waktuLamar))
+                // Cari menjangkau posisi & kampus juga — keduanya yang paling
+                // sering diketik orang saat mencari "anak Unsri di QC".
                 .filter((r) => !q
                     || (r.pelamar || '').toLowerCase().includes(q)
-                    || (r.lamaranKode || '').toLowerCase().includes(q))
+                    || (r.lamaranKode || '').toLowerCase().includes(q)
+                    || (r.posisi || '').toLowerCase().includes(q)
+                    || (r.kampus || '').toLowerCase().includes(q))
                 .filter((r) => {
                     // Keadaan menjawab "mana yang menunggu SAYA?" — pertanyaan
                     // yang tanpa ini dijawab dengan memindai lencana kartu satu
@@ -3252,6 +3589,9 @@ export default {
                         // Punya aktivitas yang menuntut jadwal tapi belum ada
                         // jadwalnya — inilah antrean kerja penjadwalan massal.
                         case 'JADWAL': return (r.tests || []).some((t) => t.butuhJadwal && !t.jadwal);
+                        // Sudah punya jadwal yang belum lewat — antrean "siapa
+                        // yang harus ditandai hadir hari ini".
+                        case 'TERJADWAL': return (r.tests || []).some((t) => !!t.jadwal && !t.selesai);
                         default: return true;
                     }
                 });
@@ -3266,7 +3606,164 @@ export default {
         jmlGugur() { return (this.detail.pelamar || []).filter((r) => r.statusLamaran === 'GUGUR' || r.statusLamaran === 'TALENT_POOL').length; },
         jmlHold() { return (this.detail.pelamar || []).filter((r) => !!r.hold).length; },
         jmlMundur() { return (this.detail.pelamar || []).filter((r) => this.statusMundur.has(r.statusLamaran)).length; },
-        adaFilter() { return !!(this.posisiPilih || this.keadaanPilih || this.cariKandidat.trim()); },
+        adaFilter() { return this.chipFilter.length > 0; },
+
+        /* ── PENYARING: PILIHAN & RINGKASANNYA ─────────────────────────────── */
+        /**
+         * Kampus yang BENAR-BENAR ada di program ini, berikut jumlah pelamarnya.
+         *
+         * Dihitung dari seluruh pelamar program — bukan dari `pelamarTampil` —
+         * supaya daftarnya tidak menyusut mengikuti saringan yang sedang
+         * berjalan. Dropdown yang isinya ikut menciut membuat pilihan yang baru
+         * saja terlihat lenyap begitu satu penyaring lain dinyalakan, dan tak
+         * ada cara menebak ke mana perginya.
+         */
+        kampusOpsi() {
+            const peta = new Map();
+            for (const r of this.detail.pelamar || []) {
+                const nama = (r.kampus || '').trim();
+                if (!nama) continue;
+                peta.set(nama, (peta.get(nama) || 0) + 1);
+            }
+
+            return [...peta.entries()]
+                .map(([nama, jumlah]) => ({ nama, jumlah }))
+                .sort((a, b) => b.jumlah - a.jumlah || a.nama.localeCompare(b.nama));
+        },
+        /** Penyaring yang sedang menyala — sumber chip DAN tombol bersihkan. */
+        chipFilter() {
+            const out = [];
+            const cari = this.cariKandidat.trim();
+            if (cari) out.push({ key: 'cari', jenis: 'Cari', label: cari });
+            if (this.tahapPilih) {
+                const c = this.kolomTampil.find((x) => this.kunciKolom(x) === this.tahapPilih);
+                out.push({ key: 'tahap', jenis: 'Tahap', label: c?.label || this.tahapPilih });
+            }
+            if (this.kampusPilih) out.push({ key: 'kampus', jenis: 'Kampus', label: this.kampusPilih });
+            if (this.posisiPilih) {
+                const p = (this.detail.posisi || []).find((x) => x.id === this.posisiPilih);
+                out.push({ key: 'posisi', jenis: 'Lowongan', label: p?.posisi || 'Terpilih' });
+            }
+            if (this.keadaanPilih) {
+                const teks = {
+                    PERLU: 'Perlu keputusan saya',
+                    NUNGGU: 'Menunggu hasil tes',
+                    JADWAL: 'Belum dijadwalkan',
+                    TERJADWAL: 'Sudah dijadwalkan',
+                    HOLD: 'Sedang ditahan',
+                };
+                out.push({ key: 'keadaan', jenis: 'Keadaan', label: teks[this.keadaanPilih] || this.keadaanPilih });
+            }
+            if (this.rentangAktif) {
+                const [a, b] = this.rangeTanggal;
+                out.push({ key: 'tanggal', jenis: 'Melamar', label: `${this.tglSingkat(a)} → ${this.tglSingkat(b)}` });
+            }
+
+            return out;
+        },
+        /** Rentang tanggal benar-benar terisi (el-date-picker mengosongkan jadi null). */
+        rentangAktif() {
+            return Array.isArray(this.rangeTanggal) && !!this.rangeTanggal[0] && !!this.rangeTanggal[1];
+        },
+
+        /* ── MODE LIST: PAGINASI ───────────────────────────────────────────── */
+        /**
+         * Urutan daftar: TERLAMA MENUNGGU DULU — sama dengan bawaan kolom kanban.
+         * Dua tampilan atas populasi yang sama tidak boleh mengurutkan berbeda;
+         * kalau berbeda, "yang paling atas" berarti dua hal tergantung tombol
+         * mana yang terakhir ditekan.
+         */
+        barisTerurut() {
+            const waktu = (r) => new Date(String(r.waktuLamar || '').replace(' ', 'T')).getTime() || 0;
+
+            return [...this.pelamarTampil].sort((a, b) => waktu(a) - waktu(b));
+        },
+        totalList() { return this.barisTerurut.length; },
+        totalHalamanList() { return Math.max(1, Math.ceil(this.totalList / this.listPer)); },
+        /** Halaman yang benar-benar dipakai — dijepit agar tak melewati batas. */
+        halamanList() { return Math.min(Math.max(1, this.listPage), this.totalHalamanList); },
+        barisList() {
+            const awal = (this.halamanList - 1) * this.listPer;
+
+            return this.barisTerurut.slice(awal, awal + this.listPer);
+        },
+        /** Nomor halaman dengan elipsis — 1 … 4 5 6 … 12. */
+        nomorHalaman() {
+            const total = this.totalHalamanList;
+            const kini = this.halamanList;
+            const out = [];
+            for (let n = 1; n <= total; n++) {
+                if (n === 1 || n === total || Math.abs(n - kini) <= 1) {
+                    out.push(n);
+                } else if (out[out.length - 1] !== '…') {
+                    out.push('…');
+                }
+            }
+
+            return out;
+        },
+        teksHasil() {
+            if (!this.totalList) return 'Tidak ada kandidat';
+            if (this.mode === 'kanban') return `${this.totalList} kandidat di papan`;
+            const awal = (this.halamanList - 1) * this.listPer;
+
+            return `Menampilkan ${awal + 1}–${Math.min(awal + this.listPer, this.totalList)} dari ${this.totalList}`;
+        },
+
+        /* ── MODAL DETAIL: TAB & ALUR ──────────────────────────────────────── */
+        /** Definisi tab modal detail berikut penghitungnya. */
+        tabDetail() {
+            return [
+                { key: 'rapor', label: 'Rapor Tes', ikon: 'bi-clipboard2-check-fill', jumlah: (this.detailKandidat?.tests || []).length },
+                { key: 'berkas', label: 'Berkas & Biodata', ikon: 'bi-folder2-open', jumlah: (this.profil.formulir || []).length },
+                { key: 'alur', label: 'Alur Seleksi', ikon: 'bi-diagram-2-fill', jumlah: 0 },
+            ];
+        },
+        /**
+         * Linimasa tahap program dengan posisi kandidat ini.
+         *
+         * Kolomnya dari papan (`kolomTampil`) — alur yang BENAR-BENAR dipakai
+         * kandidat, bukan alur yang sekarang menempel di program. Perbandingan
+         * memakai nomor urut karena itulah yang dibawa kandidat pada `urutan`;
+         * kolom cadangan "alur lama" tidak punya urutan dan jatuh ke akhir.
+         */
+        alurKandidat() {
+            const d = this.detailKandidat;
+            if (!d) return [];
+            const kini = Number(d.urutan) || 0;
+            const tutup = d.statusLamaran !== 'BERJALAN';
+            const lulusPenuh = d.statusLamaran === 'LULUS';
+
+            return this.kolomTampil.map((c, i) => {
+                const no = Number(c.urutan) || i + 1;
+                let keadaan = 'nanti';
+                if (lulusPenuh || no < kini) keadaan = 'lewat';
+                else if (no === kini) keadaan = tutup ? 'tutup' : 'kini';
+
+                const teks = {
+                    lewat: { tag: 'Selesai', catatan: 'Sudah dilewati' },
+                    kini: { tag: 'Berlangsung', catatan: d.hold ? 'Sedang ditahan' : 'Sedang berjalan' },
+                    tutup: { tag: this.statusLabel(d.statusLamaran), catatan: 'Perjalanan berakhir di tahap ini' },
+                    nanti: { tag: 'Menunggu', catatan: 'Belum dimulai' },
+                }[keadaan];
+
+                return {
+                    kunci: this.kunciKolom(c),
+                    nomor: String(no).padStart(2, '0'),
+                    label: c.label,
+                    keadaan,
+                    tag: teks.tag,
+                    catatan: teks.catatan,
+                };
+            });
+        },
+        persenAlur() {
+            const d = this.detailKandidat;
+            if (!d?.totalTahap) return 0;
+            if (d.statusLamaran === 'LULUS') return 100;
+
+            return Math.min(100, Math.round(((Number(d.urutan) || 1) - 0.5) / d.totalTahap * 100));
+        },
 
         /* ── PILIH BANYAK & JADWAL MASSAL ──────────────────────────────────── */
         /** Kandidat terpilih yang masih ADA di papan (penyaring bisa berubah). */
@@ -4314,6 +4811,11 @@ export default {
         /* ── Drawer ── */
         async bukaKandidat(r) {
             this.detailKandidat = r;
+            // Selalu kembali ke Rapor Tes. Tab terakhir yang dibuka milik
+            // KANDIDAT SEBELUMNYA; membawanya ke kandidat berikutnya berarti
+            // jendela terbuka di "Berkas & Biodata" yang masih memuat, dan
+            // alasan orang ini dibuka — hasil tesnya — justru tak terlihat.
+            this.tabAktif = 'rapor';
             this.openForm = 0;
             this.profil = { lamaran: null, formulir: [] };
             this.berkasHasil = [];
@@ -5146,6 +5648,70 @@ export default {
             this.posisiPilih = '';
             this.keadaanPilih = '';
             this.cariKandidat = '';
+            this.tahapPilih = '';
+            this.kampusPilih = '';
+            this.rangeTanggal = null;
+            this.listPage = 1;
+        },
+        /** Copot SATU penyaring dari chip-nya. Kuncinya sama dengan chipFilter. */
+        copotChip(key) {
+            const aksi = {
+                cari: () => { this.cariKandidat = ''; },
+                tahap: () => { this.tahapPilih = ''; },
+                kampus: () => { this.kampusPilih = ''; },
+                posisi: () => { this.posisiPilih = ''; },
+                keadaan: () => { this.keadaanPilih = ''; },
+                tanggal: () => { this.rangeTanggal = null; },
+            };
+            aksi[key]?.();
+            this.listPage = 1;
+        },
+        /**
+         * Kunci kolom tempat SATU kandidat berdiri.
+         *
+         * Cerminan aturan penempatan di kartuKolom(): kode tahap lebih dulu,
+         * nomor urut hanya sebagai cadangan untuk muatan lama. Ditulis sekali di
+         * sini supaya penyaring "Tahap" dan papan kanban mustahil berselisih
+         * soal kandidat ini ada di kolom mana.
+         */
+        kunciBaris(r) {
+            const col = this.kolomTampil.find((c) => (
+                r.kolomKode != null && c.kode != null
+                    ? r.kolomKode === c.kode
+                    : r.kolomUrutan === c.urutan
+            ));
+
+            return col ? this.kunciKolom(col) : '';
+        },
+        /** Jumlah kandidat pada satu kolom — dipakai label pilihan "Tahap". */
+        jumlahTahap(col) {
+            const k = this.kunciKolom(col);
+
+            return (this.detail.pelamar || []).filter((r) => this.kunciBaris(r) === k).length;
+        },
+        /**
+         * Waktu melamar berada di dalam rentang yang dipilih?
+         *
+         * Batas akhirnya mencakup seluruh hari terakhir. Membandingkan langsung
+         * dengan tengah malam membuat orang yang melamar pukul 09.00 pada tanggal
+         * penutup jatuh DI LUAR rentang yang justru dipilih untuk memuatnya —
+         * kesalahan yang tak terlihat sampai seseorang menghitung ulang manual.
+         */
+        dalamRentang(waktu) {
+            if (!this.rentangAktif) return true;
+            const t = new Date(String(waktu || '').replace(' ', 'T')).getTime();
+            if (!t) return false;
+            const [a, b] = this.rangeTanggal;
+
+            return t >= new Date(`${a}T00:00:00`).getTime() && t <= new Date(`${b}T23:59:59.999`).getTime();
+        },
+        /** '2026-08-11' → '11 Agu 2026'. Dipakai label chip rentang. */
+        tglSingkat(iso) {
+            const d = new Date(`${iso}T00:00:00`);
+
+            return Number.isNaN(d.getTime())
+                ? iso
+                : d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
         },
         /** Kunci stabil sebuah kolom — dipakai menandai kolom mana yang aktif. */
         kunciKolom(col) { return col.kode || col.label || String(col.urutan || ''); },
@@ -5685,7 +6251,7 @@ export default {
 .plw-btn-reload { appearance: none; cursor: pointer; border: 1px solid #e6e9f3; background: #fff; width: 42px; height: 42px; border-radius: 13px; display: flex; align-items: center; justify-content: center; color: #64748b; transition: all 0.3s; }
 .plw-btn-reload:hover { color: #4f46e5; transform: rotate(90deg); }
 
-.plw-tabs { display: flex; gap: 10px; margin-bottom: 18px; flex-wrap: wrap; }
+.plw-tabs { display: flex; gap: 9px; margin-bottom: 13px; flex-wrap: wrap; }
 .plw-tab { appearance: none; cursor: pointer; font-family: inherit; font-size: 13.5px; font-weight: 800; display: inline-flex; align-items: center; gap: 9px; padding: 11px 18px; border-radius: 14px; transition: all 0.18s; background: #fff; color: #64748b; border: 1px solid #e6e9f3; }
 .plw-tab.is-run { background: linear-gradient(135deg, #8b5cf6, #6366f1); color: #fff; border-color: transparent; box-shadow: 0 10px 24px rgba(99, 102, 241, 0.28); }
 .plw-tab.is-rej { background: linear-gradient(135deg, #f87171, #ef4444); color: #fff; border-color: transparent; box-shadow: 0 10px 24px rgba(239, 68, 68, 0.26); }
@@ -5773,22 +6339,75 @@ export default {
    sengaja bukan merah "Tidak Lolos". */
 .plw-card__chip.tone-mundur { background: rgba(124, 58, 237, 0.13); color: #6d28d9; }
 
-/* ═══ BARIS PENYARING — tab di kiri, penyaring merapat ke ujung kanan ═══ */
-.plw-filterbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
-.plw-filters { display: flex; align-items: center; gap: 7px; flex-wrap: nowrap; margin-left: auto; }
-.plw-filter { width: 168px; }
-.plw-filter--cari { width: 196px; }
-@media (max-width: 1100px) {
-    .plw-filters { flex-wrap: wrap; width: 100%; margin-left: 0; }
-    .plw-filter, .plw-filter--cari { width: calc(50% - 4px); }
-}
-/* Ikon saja: tombol berteks "Bersihkan" berebut tempat dengan tiga penyaring
-   di sebelahnya dan mendorongnya turun ke baris kedua. */
-.plw-filter__reset { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid #e2e8f0; background: #fff; color: #94a3b8; font-size: 11px; border-radius: 8px; cursor: pointer; }
-.plw-filter__reset:hover { border-color: #fca5a5; color: #dc2626; background: #fef2f2; }
+/* ═══ KARTU PENYARING ═══
+   Kisi, bukan baris mengalir. Penyaring yang lebarnya mengikuti isi membuat
+   posisinya berpindah-pindah antar program (nama lowongan panjang menggeser
+   sisanya), dan otot ingatan "kampus ada di kotak ketiga" tidak pernah
+   terbentuk. Kisi menjaga tiap penyaring di tempat yang sama. */
+.plw-toolbar { background: #fff; border: 1px solid #e7e3fb; border-radius: 16px; box-shadow: 0 6px 18px rgba(99, 102, 241, 0.06); margin-bottom: 14px; }
+.plw-fgrid { display: grid; grid-template-columns: 1.6fr 1fr 1.2fr 1.2fr 1fr 1.3fr; gap: 9px; padding: 13px 14px; align-items: center; }
+.plw-f { width: 100%; min-width: 0; }
+.plw-f--tgl { width: 100% !important; }
 .plw-lopt { display: flex; flex-direction: column; line-height: 1.35; padding: 2px 0; }
 .plw-lopt b { font-size: 12.5px; color: #1e293b; }
 .plw-lopt small { font-size: 11px; color: #94a3b8; }
+
+/* Chip penyaring aktif */
+.plw-chiprow { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; padding: 0 14px 13px; }
+.plw-fchip { display: inline-flex; align-items: center; gap: 7px; max-width: 100%; padding: 5px 6px 5px 11px; border-radius: 9px; background: #eef2ff; border: 1px solid #c7d2fe; font-size: 11.5px; font-weight: 700; color: #3730a3; }
+.plw-fchip__k { opacity: 0.65; flex: 0 0 auto; }
+.plw-fchip button { appearance: none; border: none; background: transparent; cursor: pointer; color: #4f46e5; display: flex; padding: 1px; font-size: 10px; flex: 0 0 auto; }
+.plw-fchip button:hover { color: #dc2626; }
+.plw-fclear { appearance: none; border: none; background: transparent; cursor: pointer; font-family: inherit; font-size: 11.5px; font-weight: 700; color: #64748b; padding: 5px 6px; text-decoration: underline; text-underline-offset: 2px; }
+.plw-fclear:hover { color: #dc2626; }
+
+/* ═══ PEMILIH MODE TAMPILAN ═══ */
+.plw-moderow { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 0 2px 13px; }
+.plw-modes { display: inline-flex; align-items: center; gap: 3px; padding: 4px; border-radius: 13px; background: #fff; border: 1px solid #e7e3fb; box-shadow: 0 6px 18px rgba(99, 102, 241, 0.06); }
+.plw-mode { appearance: none; border: none; cursor: pointer; font-family: inherit; font-size: 12.5px; font-weight: 800; display: inline-flex; align-items: center; gap: 7px; padding: 8px 14px; border-radius: 10px; background: transparent; color: #94a3b8; transition: all 0.16s; }
+.plw-mode:hover { color: #4f46e5; }
+.plw-mode.is-on { background: linear-gradient(135deg, #8b5cf6, #6366f1); color: #fff; box-shadow: 0 6px 16px rgba(99, 102, 241, 0.28); }
+.plw-hasil { font-size: 12.5px; color: #64748b; }
+
+/* ═══ MODE LIST ═══ */
+.plw-list { background: #fff; border: 1px solid #e7e3fb; border-radius: 16px; box-shadow: 0 6px 18px rgba(99, 102, 241, 0.06); overflow: hidden; }
+.plw-list__head,
+.plw-lrow { display: grid; grid-template-columns: 1.9fr 1.4fr 1.3fr 1.5fr 1.1fr 1fr 92px; gap: 12px; align-items: center; }
+.plw-list__head { padding: 12px 16px; background: #f8fafc; border-bottom: 1px solid #eef0f7; font-size: 9.5px; font-weight: 800; letter-spacing: 0.12em; color: #94a3b8; }
+.plw-lrow { padding: 12px 16px; border-bottom: 1px solid #f4f5fb; cursor: pointer; transition: background 0.14s; animation: plwCardIn 0.3s ease both; }
+.plw-lrow:last-child { border-bottom: none; }
+.plw-lrow:hover { background: #fbfbfe; }
+.plw-lrow.is-hold { background: #fffdf6; }
+.plw-lrow.is-hold:hover { background: #fffaeb; }
+.plw-lcell { min-width: 0; font-size: 12.5px; color: #475569; display: flex; align-items: center; gap: 8px; }
+.plw-lcell--who { gap: 10px; }
+.plw-lcell--act { justify-content: flex-end; gap: 6px; }
+.plw-lname { display: block; font-size: 13px; font-weight: 800; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.plw-lcode { display: block; font-size: 10.5px; font-family: 'JetBrains Mono', monospace; color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.plw-lpill { display: inline-block; max-width: 100%; font-size: 10.5px; font-weight: 700; padding: 4px 10px; border-radius: 8px; background: #f4f2ff; border: 1px solid #e7e3fb; color: #6d28d9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.plw-ltgl { display: flex; flex-direction: column; line-height: 1.3; min-width: 0; }
+.plw-ltgl small { font-size: 10.5px; color: #94a3b8; }
+.plw-ldetail { appearance: none; cursor: pointer; font-family: inherit; font-size: 11.5px; font-weight: 800; color: #4f46e5; background: #fff; border: 1px solid #d9def0; padding: 6px 12px; border-radius: 9px; flex: 0 0 auto; transition: all 0.16s; }
+.plw-ldetail:hover { border-color: #a5b4fc; background: #eef2ff; }
+
+/* ═══ KEADAAN KOSONG ═══ */
+.plw-kosong { padding: 46px 24px; text-align: center; background: #fff; border: 1px dashed #d9def0; border-radius: 16px; }
+.plw-kosong__ico { width: 54px; height: 54px; border-radius: 15px; margin: 0 auto; display: flex; align-items: center; justify-content: center; background: #f1f5f9; color: #cbd5e1; font-size: 22px; }
+.plw-kosong__judul { font-size: 15px; font-weight: 800; color: #1e293b; margin-top: 14px; }
+.plw-kosong__sub { font-size: 12.5px; color: #64748b; margin-top: 6px; }
+.plw-kosong__btn { appearance: none; border: none; cursor: pointer; font-family: inherit; margin-top: 16px; font-size: 13px; font-weight: 800; color: #fff; padding: 11px 20px; border-radius: 12px; background: linear-gradient(135deg, #8b5cf6, #6366f1); box-shadow: 0 10px 22px rgba(99, 102, 241, 0.28); }
+
+/* ═══ PAGINASI MODE LIST ═══ */
+.plw-pagerbar { display: flex; align-items: center; justify-content: space-between; gap: 13px; flex-wrap: wrap; margin-top: 14px; padding: 11px 16px; background: #fff; border: 1px solid #e7e3fb; border-radius: 16px; box-shadow: 0 6px 18px rgba(99, 102, 241, 0.06); }
+.plw-pagerbar__info { font-size: 12px; color: #64748b; min-width: 0; }
+.plw-pagerbar__nav { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; justify-content: center; }
+.plw-pagerbar__nav > button { appearance: none; cursor: pointer; min-width: 32px; height: 32px; padding: 0 9px; border-radius: 9px; border: 1px solid #e2e8f0; background: #fff; color: #475569; font-family: inherit; font-size: 12.5px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; transition: all 0.16s; }
+.plw-pagerbar__nav > button:hover:not(:disabled) { border-color: #a5b4fc; color: #4f46e5; }
+.plw-pagerbar__nav > button:disabled { color: #cbd5e1; cursor: not-allowed; }
+.plw-pnum.is-on { border-color: transparent; background: linear-gradient(135deg, #8b5cf6, #6366f1); color: #fff; }
+.plw-pnum.is-gap { border-color: transparent; background: transparent; color: #cbd5e1; cursor: default; }
+.plw-pagerbar__per { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #64748b; }
+.plw-perpage { width: 84px; }
 .plw-tab.is-hold { background: rgba(100, 116, 139, 0.14); color: #475569; border-color: rgba(100, 116, 139, 0.3); }
 
 /* ═══ IKON AKSI DI KEPALA KOLOM (saring & pilih-banyak) ═══ */
@@ -5976,18 +6595,60 @@ export default {
 .plw-test__gembok b { color: #334155; }
 .plw-test__tag.is-internal { background: rgba(100, 116, 139, 0.14); color: #475569; }
 
-/* ═══ DRAWER ═══ */
-.plw-overlay { position: fixed; inset: 0; z-index: 1055; background: rgba(15, 23, 42, 0.42); backdrop-filter: blur(2px); transition: opacity 0.32s; opacity: 0; pointer-events: none; }
-.plw-overlay.is-on { opacity: 1; pointer-events: auto; }
-/* Kolom flex 3 baris: kepala & footer tetap, hanya body yang menggulung.
-   Dulu SELURUH drawer yang menggulung, jadi tombol keputusan ikut hanyut. */
-.plw-drawer { position: fixed; top: 0; right: 0; bottom: 0; z-index: 1056; width: 560px; max-width: 100%; display: flex; flex-direction: column; background: #f6f7fb; box-shadow: -30px 0 80px rgba(15, 23, 42, 0.2); overflow: hidden; transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1); transform: translateX(104%); }
-.plw-drawer.is-on { transform: translateX(0); }
-.plw-drawer__head { position: relative; flex: 0 0 auto; z-index: 5; background: linear-gradient(180deg, #ffffff, #fbfbfe); border-bottom: 1px solid #eef0f7; padding: 18px 22px; }
-.plw-drawer__headrow { display: flex; align-items: flex-start; gap: 14px; }
-.plw-drawer__avatar { width: 52px; height: 52px; border-radius: 15px; color: #fff; font-size: 17px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex: 0 0 auto; box-shadow: 0 10px 24px rgba(99, 102, 241, 0.28); }
-.plw-drawer__name { font-size: 19px; font-weight: 800; color: #0f172a; letter-spacing: -0.015em; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.plw-drawer__meta { font-size: 12.5px; color: #7c869a; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* ═══ MODAL DETAIL — HERO & TAB ═══
+   Hero menempel di puncak isi yang menggulung. Nama orang yang sedang
+   diputuskan tidak boleh hilang dari layar: rapor tes bisa sepanjang enam
+   aktivitas, dan siapa pun yang menggulung sampai dasar lalu menekan
+   "Tidak Lolos" berhak tahu ia sedang menggugurkan siapa. */
+.plw-hero { position: sticky; top: -20px; z-index: 4; margin: -20px -20px 16px; padding: 18px 20px 0; background: linear-gradient(135deg, #f4f2ff 0%, #eef2ff 52%, #eaf1ff 100%); border-bottom: 1px solid #e4e7f5; }
+.plw-hero__row { display: flex; align-items: flex-start; gap: 14px; flex-wrap: wrap; }
+.plw-hero__avatar { width: 54px; height: 54px; border-radius: 16px; color: #fff; font-size: 17px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex: 0 0 auto; box-shadow: 0 10px 24px rgba(99, 102, 241, 0.28); }
+.plw-hero__tags { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-bottom: 7px; }
+.plw-hero__name { font-size: 20px; font-weight: 800; color: #1e1b4b; letter-spacing: -0.02em; line-height: 1.2; text-wrap: pretty; }
+
+/* Tab modal — nada sama dengan pemilih mode di papan, jadi keduanya terbaca
+   sebagai "pemilih tampilan", bukan sebagai tombol tindakan. */
+.plw-mtabs { display: flex; gap: 6px; margin-top: 14px; overflow-x: auto; padding-bottom: 12px; }
+.plw-mtab { appearance: none; border: 1px solid rgba(255, 255, 255, 0.85); cursor: pointer; font-family: inherit; display: inline-flex; align-items: center; gap: 7px; padding: 9px 14px; border-radius: 11px; font-size: 12.5px; font-weight: 800; white-space: nowrap; background: rgba(255, 255, 255, 0.62); color: #5b5486; transition: all 0.16s; }
+.plw-mtab:hover { background: #fff; }
+.plw-mtab.is-on { border-color: transparent; background: linear-gradient(135deg, #8b5cf6, #6366f1); color: #fff; box-shadow: 0 8px 20px rgba(99, 102, 241, 0.28); }
+.plw-mtab__n { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; font-size: 10px; background: rgba(99, 102, 241, 0.14); color: #4338ca; }
+.plw-mtab.is-on .plw-mtab__n { background: rgba(255, 255, 255, 0.26); color: #fff; }
+.plw-tabpane { display: flex; flex-direction: column; gap: 18px; }
+
+/* ═══ TAB ALUR SELEKSI ═══ */
+.plw-alur { background: #fff; border: 1px solid #eef0f7; border-radius: 18px; padding: 18px 20px; }
+.plw-alur__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.plw-alur__lbl { font-size: 11px; font-weight: 800; letter-spacing: 0.12em; color: #8b93a7; }
+.plw-alur__pos { font-size: 13px; font-weight: 800; color: #4f46e5; }
+.plw-alur__bar { height: 8px; border-radius: 99px; background: #eef0f7; overflow: hidden; margin-bottom: 20px; }
+.plw-alur__bar > div { height: 100%; border-radius: 99px; background: linear-gradient(90deg, #8b5cf6, #6366f1); transition: width 0.5s; }
+.plw-alur__line { list-style: none; margin: 0; padding: 0 0 0 30px; position: relative; display: flex; flex-direction: column; gap: 14px; }
+.plw-alur__line::before { content: ''; position: absolute; left: 13px; top: 8px; bottom: 8px; width: 2px; background: #eef0f7; }
+.plw-alur__item { position: relative; }
+.plw-alur__node { position: absolute; left: -30px; top: 0; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: #fff; border: 3px solid #cbd2e0; }
+.plw-alur__node > span { width: 9px; height: 9px; border-radius: 50%; background: #cbd2e0; display: block; }
+.plw-alur__item.is-lewat .plw-alur__node { border-color: #10b981; }
+.plw-alur__item.is-lewat .plw-alur__node > span { background: #10b981; }
+.plw-alur__item.is-kini .plw-alur__node { border-color: #f59e0b; animation: plwPulse 2.2s infinite; }
+.plw-alur__item.is-kini .plw-alur__node > span { background: #f59e0b; }
+.plw-alur__item.is-tutup .plw-alur__node { border-color: #ef4444; }
+.plw-alur__item.is-tutup .plw-alur__node > span { background: #ef4444; }
+@keyframes plwPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.5); }
+    70% { box-shadow: 0 0 0 7px rgba(245, 158, 11, 0); }
+}
+.plw-alur__isi { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.plw-alur__nama { font-size: 13.5px; font-weight: 800; color: #94a3b8; }
+.plw-alur__item.is-lewat .plw-alur__nama, .plw-alur__item.is-kini .plw-alur__nama, .plw-alur__item.is-tutup .plw-alur__nama { color: #1e293b; }
+.plw-alur__ket { font-size: 11.5px; color: #8792a6; margin-top: 2px; }
+.plw-alur__tag { flex: 0 0 auto; font-size: 10.5px; font-weight: 800; padding: 4px 9px; border-radius: 999px; white-space: nowrap; background: #eef0f7; color: #94a3b8; }
+.plw-alur__item.is-lewat .plw-alur__tag { background: rgba(16, 185, 129, 0.12); color: #059669; }
+.plw-alur__item.is-kini .plw-alur__tag { background: rgba(245, 158, 11, 0.14); color: #b45309; }
+.plw-alur__item.is-tutup .plw-alur__tag { background: rgba(239, 68, 68, 0.12); color: #dc2626; }
+
+.plw-drawer__akun { display: inline-flex; align-items: center; gap: 5px; margin-top: 3px; font-size: 11px; font-weight: 600; color: #64748b; background: rgba(255, 255, 255, 0.72); border-radius: 7px; padding: 2px 8px; }
+.plw-drawer__meta { font-size: 12.5px; color: #6b6597; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .plw-drawer__akun { display: inline-flex; align-items: center; gap: 5px; margin-top: 3px; font-size: 11px; font-weight: 600; color: #64748b; background: #f1f5f9; border-radius: 7px; padding: 2px 8px; }
 .plw-drawer__chips { display: flex; flex-wrap: wrap; gap: 5px 10px; margin-top: 7px; font-size: 11px; color: #94a3b8; }
 .plw-drawer__chips span, .plw-drawer__chips a { display: inline-flex; align-items: center; gap: 4px; }
@@ -6061,9 +6722,6 @@ export default {
     .plw-unduhan { right: 12px; left: 12px; bottom: 12px; width: auto; }
 }
 
-.plw-drawer__close { appearance: none; border: 1px solid #e6e9f3; background: #fff; width: 38px; height: 38px; border-radius: 11px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.16s; color: #64748b; }
-.plw-drawer__close:hover { background: #f1f5f9; color: #0f172a; }
-.plw-drawer__body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 20px 22px 28px; display: flex; flex-direction: column; gap: 18px; }
 
 .plw-infocard { background: #fff; border: 1px solid #eef0f7; border-radius: 18px; padding: 18px 20px; box-shadow: 0 2px 8px rgba(15, 23, 42, 0.03); }
 .plw-infogrid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 20px; }
@@ -6558,7 +7216,11 @@ export default {
    Dengan auto-fit, jumlah kolom menyesuaikan lebar yang tersedia sendiri:
    drawer lebar → 3 sebaris; menyempit → 2 + 1; sangat sempit → menumpuk.
    Tidak ada breakpoint yang perlu ditebak untuk tiap kombinasi tombol. */
-.plw-foot { flex: 0 0 auto; padding: 14px 22px calc(14px + env(safe-area-inset-bottom, 0px)); background: rgba(255, 255, 255, .94); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-top: 1px solid #eef0f7; box-shadow: 0 -12px 30px rgba(15, 23, 42, .07); }
+/* Kaki modal: keterangan + deretan keputusan. Batas tingginya sendiri —
+   pada tahap yang menahan banyak syarat, panel keterangannya bisa lebih
+   tinggi daripada isi modalnya, dan tombol keputusan justru terdorong keluar
+   layar oleh penjelasan tentang tombol itu sendiri. */
+.plw-foot { max-height: 46vh; overflow-y: auto; overscroll-behavior: contain; }
 .plw-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
 
 /* SATU bentuk tombol keputusan; warnanya dipilih lewat kelas nada, karena
@@ -6749,10 +7411,33 @@ export default {
 .plw-toast-enter-active, .plw-toast-leave-active { transition: opacity 0.25s, transform 0.25s; }
 .plw-toast-enter-from, .plw-toast-leave-to { opacity: 0; transform: translateY(12px); }
 
-/* ═══ RESPONSIF ═══ */
+/* ═══ RESPONSIF ═══
+   Tiga titik henti, masing-masing menjawab satu hal yang benar-benar patah:
+
+     1440px — kisi penyaring enam kolom mulai menyempitkan tiap kotak sampai
+              teks pilihannya terpotong; dipecah jadi tiga kolom.
+     1180px — panel program menyempit; tabel list kehilangan kolom yang tak
+              esensial (kampus & tanggal tetap terbaca di kartu detail).
+      992px — papan pindah ke bawah panel; kanban menumpuk vertikal; tiap
+              baris list MELIPAT jadi kartu berlabel.
+
+   Tabel yang digulung mendatar sengaja tidak dipakai di ponsel: membaca nama
+   orang dengan menggeser layar ke kanan bukan cara siapa pun bekerja. */
+@media (max-width: 1440px) {
+    .plw-fgrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .plw-f--cari { grid-column: span 2; }
+}
 @media (max-width: 1179.98px) {
     .plw-panel { width: 264px; flex-basis: 264px; }
-    .plw-drawer { width: 460px; }
+    /* Kampus & tanggal keluar dari baris: keduanya masih bisa dicari lewat
+       penyaring, sementara nama-posisi-tahap-keadaan adalah tulang punggung
+       baris yang tak boleh menyusut. */
+    .plw-list__head > :nth-child(4),
+    .plw-list__head > :nth-child(6),
+    .plw-lcell[data-k='Kampus'],
+    .plw-lcell[data-k='Melamar'] { display: none; }
+    .plw-list__head,
+    .plw-lrow { grid-template-columns: 1.9fr 1.4fr 1.3fr 1.1fr 92px; }
 }
 @media (max-width: 991.98px) {
     .plw { flex-direction: column; height: auto; overflow: visible; }
@@ -6761,8 +7446,33 @@ export default {
     .plw-prog { flex: 0 0 250px; }
     .plw-kanban { flex-direction: column; }
     .plw-col { width: 100%; flex: 1 1 auto; }
-    .plw-drawer { width: 100%; }
     .plw-main { padding: 20px 16px 44px; }
+
+    .plw-fgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .plw-f--cari, .plw-f--tgl { grid-column: span 2; }
+
+    /* BARIS LIST → KARTU. Kolomnya dilipat jadi tumpukan, dan tiap nilai
+       mendapat label dari `data-k` — tanpa itu "Universitas Sriwijaya" dan
+       "PRODUCTION SUPERVISOR" berdiri berdampingan tanpa keterangan apa pun. */
+    .plw-list__head { display: none; }
+    .plw-lrow { display: flex; flex-direction: column; align-items: stretch; gap: 8px; padding: 14px 15px; }
+    .plw-lcell { flex-wrap: wrap; }
+    .plw-lcell[data-k]::before {
+        content: attr(data-k);
+        flex: 0 0 84px;
+        font-size: 9.5px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: #a2a9ba;
+    }
+    .plw-lcell--act { justify-content: flex-start; padding-top: 4px; border-top: 1px solid #f1f5f9; }
+    .plw-ltgl { flex-direction: row; align-items: baseline; gap: 6px; }
+}
+@media (max-width: 640px) {
+    .plw-fgrid { grid-template-columns: minmax(0, 1fr); }
+    .plw-f--cari, .plw-f--tgl { grid-column: span 1; }
+    .plw-moderow { align-items: flex-start; }
+    .plw-modes { width: 100%; }
+    .plw-mode { flex: 1; justify-content: center; }
+    .plw-pagerbar { justify-content: center; }
+    .plw-pagerbar__info, .plw-pagerbar__per { width: 100%; justify-content: center; text-align: center; }
 }
 /* Ponsel: tombol keputusan menumpuk penuh selebar drawer. Di lebar sekecil ini
    tiga tombol sebaris membuat labelnya terpotong elipsis — lebih baik satu per
@@ -6861,25 +7571,15 @@ export default {
 .plw-kuota__list { margin: 0; padding-left: 17px; display: flex; flex-direction: column; gap: 2px; }
 .plw-kuota__list li { line-height: 1.45; }
 
-/* ══════════════════════════════════════════════════════════════════════════
-   DRAWER — satu rumus lebar untuk ponsel sampai 4K
-   ══════════════════════════════════════════════════════════════════════════
-   Lebar tetap 560px punya dua ujung yang sama-sama buruk: di ponsel ia
-   dipangkas max-width jadi 100% (kebetulan benar), dan di layar 4K ia tetap
-   560px — pita sempit di tepi kanvas raksasa, sementara isinya justru padat
-   dan butuh ruang. clamp() menjawab keduanya sekaligus tanpa satu pun media
-   query, dan batas atas 860px menjaga baris teks tetap terbaca: kolom yang
-   terlalu lebar memaksa mata melompat balik mencari awal baris berikutnya.
-   ═════════════════════════════════════════════════════════════════════════ */
-.plw-drawer { width: min(100%, clamp(560px, 40vw, 860px)); }
-
 @media (max-width: 640px) {
-    /* Kepala drawer: avatar + nama + tombol tak muat sebaris di ponsel. */
-    .plw-drawer__head { padding: 14px 16px; }
-    .plw-drawer__headrow { flex-wrap: wrap; gap: 10px; }
-    .plw-drawer__avatar { width: 44px; height: 44px; border-radius: 13px; font-size: 15px; }
-    .plw-drawer__name { font-size: 17px; }
-    .plw-drawer__body { padding: 16px 16px 24px; gap: 14px; }
+    /* Kepala modal: avatar + nama + tombol cetak tak muat sebaris di ponsel. */
+    .plw-hero { margin: -16px -16px 14px; padding: 15px 16px 0; top: -16px; }
+    .plw-hero__row { gap: 10px; }
+    .plw-hero__avatar { width: 44px; height: 44px; border-radius: 13px; font-size: 15px; }
+    .plw-hero__name { font-size: 17px; }
+    .plw-drawer__cetak { order: 3; }
+    .plw-tabpane { gap: 14px; }
+    .plw-alur { padding: 15px 16px; }
     .plw-test { padding: 11px; gap: 5px 9px; }
     /* Pil status turun menemani isinya — di lebar ini kolom ketiga
        menyisakan terlalu sedikit ruang untuk nama aktivitas. */
@@ -6890,7 +7590,6 @@ export default {
 
 /* Layar sangat lebar: kartu boleh bernapas, tapi teksnya tidak boleh melar. */
 @media (min-width: 1920px) {
-    .plw-drawer__body { padding: 24px 28px 34px; }
     .plw-test { padding: 14px 16px; }
     .plw-test__name { font-size: 13.5px; }
 }

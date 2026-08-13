@@ -5201,11 +5201,24 @@ h6,
     flex-direction: column;
     animation: wcaPop 0.22s cubic-bezier(0.22, 1, 0.36, 1);
 }
+/* ── UKURAN MODULAR ────────────────────────────────────────────────────────
+   Satu tangga: sm → md (bawaan) → lg → xl → full. Dipilih lewat prop `size`
+   di AdminModal.vue; kelas boolean lama (--xxl) tetap dipetakan ke --full. */
+.wca-modal--sm {
+    width: min(420px, 100%);
+}
+.wca-modal--md {
+    width: min(560px, 100%);
+}
 .wca-modal--lg {
     width: min(780px, 100%);
 }
 .wca-modal--xl {
     width: min(1080px, 100%);
+    /* Modal peninjauan (worklist) mengisi tinggi layar: isinya bertab dan
+       tabnya berganti-ganti tinggi. Tanpa tinggi tetap, seluruh jendela
+       melompat naik-turun setiap kali tab ditekan. */
+    max-height: min(94vh, 960px);
 }
 .wca-modal--full,
 .wca-modal--xxl {
@@ -6881,6 +6894,14 @@ h6,
     flex: 0 0 auto;
     margin-left: auto;
     flex-wrap: wrap;
+}
+/* Kaki berisi PANEL (keterangan + deretan keputusan), bukan dua tombol.
+   Lihat prop `footBlok` di AdminModal.vue. */
+.wca-modal__foot--blok .wca-modal__footbtns {
+    display: block;
+    flex: 1 1 auto;
+    margin-left: 0;
+    min-width: 0;
 }
 /* Tombol footer modal — Batal putih bergaris, Simpan gradien ungu */
 .wca-modal__foot .wca-btn--ghost {

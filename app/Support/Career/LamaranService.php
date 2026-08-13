@@ -103,6 +103,47 @@ class LamaranService
     }
 
     /**
+     * Satu nilai identitas (mis. KAMPUS) untuk BANYAK lamaran sekaligus.
+     *
+     * Worklist menyaring kandidat per kampus, dan kampus tidak pernah menjadi
+     * kolom tabel: ia jawaban formulir. Memanggil dataKandidatEmail() per
+     * kandidat berarti dua kueri kali jumlah pelamar — pada program berisi 400
+     * lamaran, papan seleksi berhenti terbuka. Di sini seluruhnya diambil dalam
+     * SATU kueri, lalu dilebur dengan aturan yang sama persis dengan
+     * jawabanGabungan(): urutan lama → baru, jawaban kosong tidak menimpa.
+     *
+     * @param  int[]  $lamaranIds
+     * @return \Illuminate\Support\Collection<int,string> dikunci Id_Lamaran
+     */
+    public static function identitasPerLamaran(array $lamaranIds, string $kode): \Illuminate\Support\Collection
+    {
+        if (! $lamaranIds) {
+            return collect();
+        }
+
+        return DB::table('N_WEB_CAREERS_Formulir_Pengisian')
+            ->whereIn('Lamaran_Id', $lamaranIds)
+            ->orderBy('Waktu_Kirim')            // lama → baru
+            ->orderBy('Id_Formulir_Pengisian')
+            ->get(['Lamaran_Id', 'Jawaban_Json'])
+            ->groupBy('Lamaran_Id')
+            ->map(function ($rows) use ($kode) {
+                $gabung = [];
+                foreach ($rows as $r) {
+                    foreach ((json_decode($r->Jawaban_Json ?: '{}', true) ?: []) as $k => $v) {
+                        if ($v === null || $v === '' || $v === []) {
+                            continue;
+                        }
+                        $gabung[$k] = $v;
+                    }
+                }
+
+                return self::dariKunci($gabung, $kode);
+            })
+            ->filter(fn ($v) => $v !== null && $v !== '');
+    }
+
+    /**
      * Jawaban SELURUH formulir sebuah lamaran, dilebur jadi satu peta.
      *
      * Yang TERBARU ditumpuk paling akhir sehingga ia menang atas yang lama —

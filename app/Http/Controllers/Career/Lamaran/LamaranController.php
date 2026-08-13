@@ -1182,6 +1182,15 @@ class LamaranController extends Controller
      * untuk menggambar tombol "Lihat Berkas". Ukuran & status verifikasi tidak
      * ikut: keduanya milik daftar berkas utuh, dan mengulangnya di tiap baris
      * riwayat cuma menggandakan muatan tanpa ada yang membacanya.
+     *
+     * ── SATU SUB-ISIAN BISA MEMUAT BANYAK BERKAS ────────────────────────────
+     *
+     * Sertifikat kerap diunggah berlembar: satu baris "Ahli K3 Umum" membawa
+     * sertifikat, lampiran nilai, dan surat keterangan sekaligus. Bentuk lama
+     * mengembalikan SATU berkas saja, jadi lembar kedua dan seterusnya masuk ke
+     * basis data lalu tidak pernah muncul di layar mana pun — tak ada galat,
+     * hanya dokumen yang hilang diam-diam. Argumen keempat (`$banyak`)
+     * mengembalikan SELURUHNYA sebagai daftar.
      */
     private static function pencariBerkas(\Illuminate\Support\Collection $berkas, ?string $bagian = null): \Closure
     {
@@ -1190,7 +1199,11 @@ class LamaranController extends Controller
         // pernah menunjuk dokumen yang sama.
         $dipakai = [];
 
-        return static function (string $kunci, string $nilai = '', ?int $baris = null) use ($berkas, $bagian, &$dipakai): ?array {
+        return static function (string $kunci, string $nilai = '', ?int $baris = null, bool $banyak = false) use ($berkas, $bagian, &$dipakai): array|null {
+            if ($banyak) {
+                return self::berkasSeBaris($berkas, $bagian, $kunci, $nilai, $baris, $dipakai);
+            }
+
             $b = null;
 
             // ── 0. COCOKKAN POSISI BARISNYA ─────────────────────────────────
@@ -1249,15 +1262,77 @@ class LamaranController extends Controller
 
             $dipakai[$b['url']] = true;
 
-            return [
-                'field' => $b['field'],
-                'nama' => $b['nama'],
-                'url' => $b['url'],
-                'ext' => $b['ext'],
-                'isImage' => $b['isImage'],
-                'isPdf' => $b['isPdf'],
-            ];
+            return self::berkasRingkas($b);
         };
+    }
+
+    /** Bentuk berkas yang dibaca layar — tanpa ukuran & status verifikasi. */
+    private static function berkasRingkas(array $b): array
+    {
+        return [
+            'field' => $b['field'],
+            'nama' => $b['nama'],
+            'url' => $b['url'],
+            'ext' => $b['ext'],
+            'isImage' => $b['isImage'],
+            'isPdf' => $b['isPdf'],
+        ];
+    }
+
+    /**
+     * SELURUH berkas milik satu sub-isian pada satu baris berulang.
+     *
+     * Urutan pencocokannya sama persis dengan bentuk satuan di pencariBerkas():
+     * posisi baris lebih dulu (paling tegas), nama berkas sebagai cadangan untuk
+     * data lama yang belum punya Bagian_Key/Baris_Index. Bedanya hanya satu —
+     * yang ditemukan tidak berhenti di berkas pertama.
+     *
+     * @param  array<string,bool>  $dipakai  penanda berkas yang sudah diklaim baris lain (by-ref)
+     * @return array<int,array>
+     */
+    private static function berkasSeBaris(
+        \Illuminate\Support\Collection $berkas,
+        ?string $bagian,
+        string $kunci,
+        string $nilai,
+        ?int $baris,
+        array &$dipakai,
+    ): array {
+        $hasil = [];
+
+        if ($bagian !== null && $baris !== null) {
+            foreach ($berkas as $x) {
+                if (($x['bagian'] ?? null) === $bagian && ($x['baris'] ?? null) === $baris
+                    && $x['field'] === $kunci && empty($dipakai[$x['url']])) {
+                    $dipakai[$x['url']] = true;
+                    $hasil[] = self::berkasRingkas($x);
+                }
+            }
+        }
+
+        if ($hasil || $nilai === '') {
+            return $hasil;
+        }
+
+        // ── CADANGAN: COCOKKAN NAMANYA ──────────────────────────────────────
+        //
+        // Nilai utuh dicoba lebih dulu — itulah bentuk unggahan tunggal, dan
+        // nama berkas sendiri boleh mengandung koma. Baru sesudah itu ia dipecah
+        // sebagai daftar, karena nilaiIsian() menggabungkan unggahan berganda
+        // dengan ", ".
+        $nama = $berkas->contains(fn ($x) => $x['field'] === $kunci && $x['nama'] === $nilai)
+            ? [$nilai]
+            : array_filter(array_map('trim', explode(',', $nilai)), fn ($n) => $n !== '');
+
+        foreach ($nama as $n) {
+            $b = $berkas->first(fn ($x) => $x['field'] === $kunci && $x['nama'] === $n && empty($dipakai[$x['url']]));
+            if ($b) {
+                $dipakai[$b['url']] = true;
+                $hasil[] = self::berkasRingkas($b);
+            }
+        }
+
+        return $hasil;
     }
 
     private static function nilaiIsian(mixed $v, int $dalam = 0, ?\Closure $cariBerkas = null): array
@@ -1343,19 +1418,27 @@ class LamaranController extends Controller
                     ? substr((string) $k, strlen($awalan))
                     : (string) $k;
 
+                // Sub-isian yang ternyata UNGGAHAN dibawa berikut url-nya.
+                // Kuncinya dicari APA ADANYA (`sert_file`), bukan yang sudah
+                // dipangkas awalan — Field_Key di tabel berkas menyimpan
+                // bentuk penuhnya.
+                // NILAINYA IKUT DIKIRIM, dan itu yang membedakan baris satu
+                // dari baris lainnya: `$k` identik di seluruh baris riwayat
+                // (`sert_file` lagi dan lagi), sedangkan `$t` memuat NAMA
+                // berkas milik baris ini. Tanpa argumen kedua, tiap baris
+                // menerima berkas yang sama — lihat pencariBerkas().
+                //
+                // Diminta SEKALIGUS BANYAK: satu baris sertifikat kerap membawa
+                // lebih dari satu lembar. `berkas` tetap dikirim (berkas pertama)
+                // supaya layar lama yang hanya mengenal satu berkas tidak ikut
+                // rusak oleh perubahan ini.
+                $lampiran = $cariBerkas ? $cariBerkas((string) $k, $t, $ri, true) : [];
+
                 $pasangan[] = [
                     'label' => ucwords(str_replace(['_', '-'], ' ', $nama)),
                     'nilai' => $t,
-                    // Sub-isian yang ternyata UNGGAHAN dibawa berikut url-nya.
-                    // Kuncinya dicari APA ADANYA (`sert_file`), bukan yang sudah
-                    // dipangkas awalan — Field_Key di tabel berkas menyimpan
-                    // bentuk penuhnya.
-                    // NILAINYA IKUT DIKIRIM, dan itu yang membedakan baris satu
-                    // dari baris lainnya: `$k` identik di seluruh baris riwayat
-                    // (`sert_file` lagi dan lagi), sedangkan `$t` memuat NAMA
-                    // berkas milik baris ini. Tanpa argumen kedua, tiap baris
-                    // menerima berkas yang sama — lihat pencariBerkas().
-                    'berkas' => $cariBerkas ? $cariBerkas((string) $k, $t, $ri) : null,
+                    'berkas' => $lampiran[0] ?? null,
+                    'berkasList' => $lampiran,
                 ];
             }
 
@@ -2749,7 +2832,17 @@ class LamaranController extends Controller
         // Nama resmi dari formulir — satu kueri untuk seluruh daftar.
         $namaResmi = self::namaResmiPerLamaran($lamaran->pluck('Id_Lamaran')->all());
 
-        $pelamar = $lamaran->map(function ($l) use ($tahapPer, $subPer, $kuotaPosisi, $terisiKuota, $berkasCount, $berkasSub, $berkasKandidat, $alasanHold, $kolom, $namaResmi) { // NOSONAR
+        // KAMPUS — penyaring worklist, dan tidak pernah jadi kolom tabel: ia
+        // jawaban formulir pendaftaran. Diambil sekali untuk seluruh daftar
+        // (lihat LamaranService::identitasPerLamaran); memanggilnya per kandidat
+        // berarti dua kueri kali jumlah pelamar.
+        //
+        // Daftar pilihan penyaringnya dibangun layar dari nilai-nilai INI —
+        // "kampus yang memang terdaftar di program ini", bukan 328 ribu baris
+        // Master Kampus yang 99,9%-nya tidak punya satu pun pelamar di sini.
+        $kampusPer = LamaranService::identitasPerLamaran($lamaran->pluck('Id_Lamaran')->all(), 'KAMPUS');
+
+        $pelamar = $lamaran->map(function ($l) use ($tahapPer, $subPer, $kuotaPosisi, $terisiKuota, $berkasCount, $berkasSub, $berkasKandidat, $alasanHold, $kolom, $namaResmi, $kampusPer) { // NOSONAR
             $tahapList = collect($tahapPer->get($l->Id_Lamaran, []));
 
             // Aturan penempatan + badge + kuota dipusatkan di PipelineProgress
@@ -2795,6 +2888,9 @@ class LamaranController extends Controller
                 'lokasi' => $l->Lokasi ?? null,
                 'level' => $l->Level ?? null,
                 'mppRef' => $l->Mpp_Ref ?? null,
+                // Asal kampus/sekolah — dari jawaban formulir, dipakai penyaring
+                // "Kampus" di worklist dan ikut terbaca di baris mode List.
+                'kampus' => $kampusPer->get($l->Id_Lamaran),
                 'waktuLamar' => $l->Waktu_Lamar,
                 'kategori' => $l->Kategori,
                 'statusLamaran' => $l->Status,
@@ -6311,7 +6407,10 @@ class LamaranController extends Controller
                 // bisa membuka dokumennya langsung dari daftar isian dan tidak
                 // hanya melihat nama berkas sebagai teks mati.
                 'jawaban' => collect($jawaban)->map(function ($v, $k) use ($berkas) {
-                    $b = $berkas->firstWhere('field', $k);
+                    // SELURUH berkas isian ini, bukan yang pertama saja. Satu
+                    // pertanyaan unggahan boleh menerima beberapa lembar; bentuk
+                    // lama menampilkan satu dan sisanya lenyap tanpa jejak.
+                    $lampiran = $berkas->where('field', $k)->map(fn ($b) => self::berkasRingkas($b))->values()->all();
                     // Aturan yang SAMA PERSIS dengan layar kandidat — satu
                     // sumber, bukan dua salinan. Lihat nilaiIsian().
                     // $k di sini ADALAH kunci bagian berulangnya (mis.
@@ -6324,14 +6423,8 @@ class LamaranController extends Controller
                         'label' => ucwords(str_replace(['_', '-'], ' ', $k)),
                         'nilai' => $isi['nilai'],
                         'baris' => $isi['baris'],
-                        'berkas' => $b ? [
-                            'field' => $b['field'],
-                            'nama' => $b['nama'],
-                            'url' => $b['url'],
-                            'ext' => $b['ext'],
-                            'isImage' => $b['isImage'],
-                            'isPdf' => $b['isPdf'],
-                        ] : null,
+                        'berkas' => $lampiran[0] ?? null,
+                        'berkasList' => $lampiran,
                     ];
                 })->values(),
                 'berkas' => $berkas,
