@@ -3112,7 +3112,56 @@ class LamaranController extends Controller
             'posisi' => $posisi,
             'kolom' => $kolom,
             'pelamar' => $pelamar,
+            // Bendera per NAMA kampus, untuk penyaring "Kampus" di worklist —
+            // bentuk yang sama dengan pemilih kampus di formulir pendaftaran.
+            'kampusBendera' => $this->benderaKampus($kampusPer->values()->all()),
         ];
+    }
+
+    /**
+     * Kode negara ISO alfa-2 per NAMA kampus — bahan bendera di penyaring.
+     *
+     * Dicocokkan lewat nama karena itulah satu-satunya yang tersimpan di jawaban
+     * formulir: kandidat boleh mengetik sendiri kampusnya, dan yang diketik itu
+     * yang dipakai merekrut. Nama yang tidak ada di master tidak dipaksakan —
+     * ia cukup tidak muncul di peta ini, lalu layar menggambar bola dunia.
+     *
+     * Satu nama bisa punya beberapa baris di master (impor `world` dan PDDIKTI
+     * bertemu di tabel yang sama, lihat ReferensiController::lengkapiNegara).
+     * Yang diambil kode negara PERTAMA yang benar-benar terisi — baris kembar
+     * yang negaranya kosong tidak boleh menghapus bendera yang sudah benar.
+     */
+    private function benderaKampus(array $namaKampus): array
+    {
+        $nama = collect($namaKampus)
+            ->map(fn ($n) => trim((string) $n))
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($nama->isEmpty()) {
+            return [];
+        }
+
+        $peta = [];
+        // Dipotong: satu program dengan ribuan kampus berbeda tidak pernah
+        // terjadi, tapi klausa IN tanpa batas adalah kueri yang menunggu
+        // giliran untuk meledak.
+        foreach ($nama->chunk(500) as $bagian) {
+            DB::table('N_WEB_CAREERS_Master_Kampus')
+                ->whereIn('Nama', $bagian->all())
+                ->select('Nama', 'Negara_Kode')
+                ->get()
+                ->each(function ($r) use (&$peta) {
+                    $kode = strtolower(trim((string) $r->Negara_Kode));
+                    if (preg_match('/^[a-z]{2}$/', $kode) !== 1 || isset($peta[$r->Nama])) {
+                        return;
+                    }
+                    $peta[$r->Nama] = $kode;
+                });
+        }
+
+        return $peta;
     }
 
     /**

@@ -117,7 +117,7 @@
                 <!-- Rincian baris (dilipat) -->
                 <div v-show="buka.has(t.urutan)" class="fn-rinci">
                     <span><i class="bi bi-person-check-fill"></i> Lanjut: <b>{{ angka(t.lanjut) }}</b></span>
-                    <span><i class="bi bi-person-pause-fill"></i> Di tahap ini: <b :class="{ 'is-nol': !t.diSini }">{{ angka(t.diSini) }}</b></span>
+                    <span><i class="bi bi-people-fill"></i> Di tahap ini: <b :class="{ 'is-nol': !t.diSini }">{{ angka(t.diSini) }}</b></span>
                     <span><i class="bi bi-patch-check-fill"></i> Diterima: <b :class="{ 'is-nol': !t.diterima }">{{ angka(t.diterima) }}</b></span>
                     <span><i class="bi bi-person-x-fill"></i> Tidak lolos: <b :class="{ 'is-nol': !t.gugur }">{{ angka(t.gugur) }}</b></span>
                     <span><i class="bi bi-bookmark-star-fill"></i> Talent pool: <b :class="{ 'is-nol': !t.talent }">{{ angka(t.talent) }}</b></span>
