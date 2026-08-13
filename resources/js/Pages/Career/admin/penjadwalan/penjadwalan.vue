@@ -333,7 +333,7 @@
                         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M3 10h18M8 2v4M16 2v4" /></svg>
                     </span>
                     <span class="pjd-panel__ttl">Daftar Penjadwalan</span>
-                    <span class="pjd-count">{{ daftarTotal }} penjadwalan</span>
+                    <span class="pjd-count">{{ daftarTotal }} program</span>
                 </div>
 
                 <!-- Filter — satu program bisa punya banyak sesi, jadi mencari
@@ -378,7 +378,7 @@
                         :id="`penjadwalan-${j.id}`"
                         :key="j.id"
                         class="pjd-sched"
-                        :class="{ 'is-open': terbuka === j.id, 'is-focus': String(fokusId) === String(j.id) }"
+                        :class="{ 'is-open': terbuka === j.id, 'is-focus': sorotId === j.id }"
                     >
                         <!-- Kepala akordion: seluruh barisnya bisa diklik supaya
                              sasaran kliknya besar, tapi tombol aksi di kanan
@@ -389,38 +389,34 @@
                                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6" /></svg>
                                 </span>
                                 <div class="pjd-sched__id">
-                                    <span class="pjd-kode">{{ j.kode }}</span>
-                                    <div class="pjd-sched__nama">{{ j.nama }}</div>
+                                    <!-- JUDULNYA PROGRAM, bukan kode jadwal.
+                                         Sebelumnya tiap gelombang jadi kartu sendiri, jadi
+                                         satu program yang dijadwalkan tiga kali menghasilkan
+                                         tiga kartu berjudul persis sama — hanya bisa
+                                         dibedakan lewat kode JDW di pojok. -->
+                                    <div class="pjd-sched__nama">{{ j.program }}</div>
                                     <div class="pjd-sched__meta">
-                                        <span v-if="j.program">{{ j.program }}</span>
-                                        <span v-if="j.alur">· {{ j.alur }}</span>
+                                        <span v-if="j.kategori">{{ j.kategori }}</span>
+                                        <span>· {{ j.jumlahSesi }} sesi penjadwalan</span>
                                         <span>· {{ j.jumlahPeserta }} peserta</span>
                                     </div>
 
-                                    <!-- APA yang dijadwalkan, dan OLEH SIAPA. Tanpa ini
-                                         kepala kartu hanya berisi nama jadwal, dan admin
-                                         harus membukanya untuk tahu paket tes mana yang
-                                         dipakai serta siapa yang memasangnya. -->
                                     <div class="pjd-facts">
-                                        <span v-if="j.tahapUjian" class="pjd-fact">
+                                        <span v-if="aktivitasSesi(j)" class="pjd-fact">
                                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2" /><path d="M9 9h6v6H9z" /></svg>
-                                            <b>Aktivitas</b>{{ j.tahapUjian }}
+                                            <b>Aktivitas</b>{{ aktivitasSesi(j) }}
                                         </span>
-                                        <span v-if="j.paketUjian" class="pjd-fact">
-                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="3" width="16" height="18" rx="2" /><path d="M8 8h8M8 12h8M8 16h4" /></svg>
-                                            <b>Paket tes</b>{{ j.paketUjian }}
-                                        </span>
-                                        <!-- Ini nilai BAWAAN saat Generate, bukan jadwal semua
-                                             orang: tiap kandidat boleh digeser sendiri. Diberi
-                                             label tegas supaya tak terbaca sebagai jadwal
-                                             tunggal yang berlaku untuk seisi angkatan. -->
-                                        <span v-if="fmtWaktu(j.waktuMulai)" class="pjd-fact">
+                                        <span v-if="rentangSesi(j)" class="pjd-fact">
                                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
-                                            <b>Jendela bawaan</b>{{ fmtWaktu(j.waktuMulai) }} → {{ fmtWaktu(j.waktuAkhir) || '—' }}
+                                            <b>Rentang jadwal</b>{{ rentangSesi(j) }}
                                         </span>
-                                        <span v-if="j.jumlahDigeser" class="pjd-fact is-warn" title="Kandidat ini punya jendela sendiri, tidak mengikuti jendela bawaan">
+                                        <!-- Yang benar-benar perlu ditindaklanjuti: orang
+                                             yang tokennya belum terbit. Angka ini yang
+                                             membuat admin tahu ada sesuatu yang tertinggal
+                                             tanpa harus membuka kartunya. -->
+                                        <span v-if="menungguSesi(j)" class="pjd-fact is-warn" title="Kandidat yang tokennya belum terbit">
                                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01" /><path d="M10.3 3.8L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.8a2 2 0 0 0-3.4 0z" /></svg>
-                                            <b>Jadwal sendiri</b>{{ j.jumlahDigeser }} dari {{ j.jumlahPeserta }} kandidat
+                                            <b>Menunggu token</b>{{ menungguSesi(j) }} kandidat
                                         </span>
                                     </div>
 
@@ -435,23 +431,6 @@
                                     <span class="pjd-status" :class="statusKelas(j.status)">
                                         <i v-if="j.status === 'BERJALAN' || j.status === 'DIANTRIKAN'" class="pjd-dot"></i>{{ j.status }}
                                     </span>
-                                    <!-- COBA LAGI — hanya untuk yang GAGAL.
-                                         Tanpa ini, satu-satunya jalan setelah
-                                         kegagalan adalah menghapus jadwalnya
-                                         lalu menyusun ulang dari nol: program,
-                                         tahap, paket ujian, jendela waktu, dan
-                                         mencentang ulang seluruh kandidat.
-                                         Aman diulang — hanya peserta yang
-                                         tokennya belum terbit yang dikirim. -->
-                                    <button
-                                        v-if="j.status === 'GAGAL'"
-                                        type="button" class="pjd-retry" :disabled="ulangId === j.id"
-                                        title="Antrekan ulang penerbitan token untuk kandidat yang belum berhasil"
-                                        @click.stop="ulangJadwal(j)"
-                                    >
-                                        <i class="bi" :class="ulangId === j.id ? 'bi-arrow-repeat pjd-spin' : 'bi-arrow-clockwise'"></i>
-                                        {{ ulangId === j.id ? 'Mengantrekan…' : 'Coba Lagi' }}
-                                    </button>
                                 </div>
                             </div>
 
@@ -468,17 +447,91 @@
                             </div>
                         </div>
 
-                        <!-- Isi akordion: peserta baru diambil saat dibuka. -->
+                        <!-- Isi akordion: peserta SELURUH program, lintas gelombang,
+                             disaring & dipaginasi di server. -->
                         <div v-if="terbuka === j.id" class="pjd-sched__body">
-                            <div v-if="memuatPeserta && !pesertaBaris(j).length" class="pjd-skel">
+                            <!-- SESI — gelombang yang dulu menjadi kartu tersendiri.
+                                 Turun pangkat jadi penyaring: menekan satu chip
+                                 menyisakan peserta gelombang itu saja, dan menekannya
+                                 lagi mengembalikan seluruhnya. -->
+                            <div class="pjd-sesi">
+                                <span class="pjd-sesi__ttl">Sesi</span>
+                                <button
+                                    v-for="s in j.sesi"
+                                    :key="s.id"
+                                    type="button"
+                                    class="pjd-sesi__chip"
+                                    :class="{ 'is-on': pesFilter.sesi === s.kode, 'is-fail': s.status === 'GAGAL' }"
+                                    :title="`${s.paketUjian || s.nama || ''} · dibuat ${fmtWaktu(s.createdAt) || '—'} oleh ${s.createdBy || '—'}`"
+                                    @click="pilihSesi(j, s)"
+                                >
+                                    <b>{{ s.kode }}</b>
+                                    <span>{{ s.aktivitas || '—' }}</span>
+                                    <em>{{ fmtTanggal(s.waktuMulai) }}</em>
+                                    <i>{{ s.jumlahPeserta }}</i>
+                                    <u v-if="s.menunggu">{{ s.menunggu }} menunggu</u>
+                                </button>
+                            </div>
+
+                            <!-- COBA LAGI melekat pada SESI, bukan program: yang gagal
+                                 selalu satu gelombang tertentu. Aman diulang — hanya
+                                 kandidat yang tokennya belum terbit yang dikirim. -->
+                            <div v-if="sesiPerluUlang(j).length" class="pjd-sesi pjd-sesi--act">
+                                <button
+                                    v-for="s in sesiPerluUlang(j)"
+                                    :key="`ulang-${s.id}`"
+                                    type="button" class="pjd-retry" :disabled="ulangId === s.id"
+                                    title="Antrekan ulang penerbitan token untuk kandidat yang belum berhasil"
+                                    @click="ulangJadwal(s)"
+                                >
+                                    <i class="bi" :class="ulangId === s.id ? 'bi-arrow-repeat pjd-spin' : 'bi-arrow-clockwise'"></i>
+                                    {{ ulangId === s.id ? 'Mengantrekan…' : `Coba Lagi ${s.kode}` }}
+                                </button>
+                            </div>
+
+                            <!-- PENYARING DI DALAM PROGRAM.
+                                 Menggantikan pemisahan per kartu: gelombang dipilih lewat
+                                 tanggal atau chip sesi, bukan dengan menggulir mencari
+                                 kartu yang judulnya sama semua. -->
+                            <div class="pjd-subfilter">
+                                <div class="pjd-field pjd-field--grow">
+                                    <svg class="pjd-field__ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>
+                                    <input v-model="pesFilter.q" type="text" class="pjd-input" placeholder="Cari nama, kode, posisi, atau kampus…" @input="debouncePeserta(j)">
+                                </div>
+                                <el-date-picker
+                                    v-model="pesFilter.tanggal"
+                                    type="daterange"
+                                    value-format="YYYY-MM-DD"
+                                    range-separator="→"
+                                    start-placeholder="Dari tanggal"
+                                    end-placeholder="Sampai"
+                                    class="pjd-fdate"
+                                    @change="filterPeserta(j)"
+                                />
+                                <!-- Kampus dari ISIAN PELAMAR, bukan master: sebagian
+                                     mengetik sendiri nama kampusnya, dan yang diketik
+                                     itulah yang dipakai merekrut. -->
+                                <el-select v-model="pesFilter.kampus" clearable filterable placeholder="Semua kampus" class="pjd-fsel" @change="filterPeserta(j)">
+                                    <el-option v-for="k in pes.kampusOpsi" :key="k" :label="k" :value="k" />
+                                </el-select>
+                                <el-select v-model="pes.perPage" class="pjd-fsel pjd-fsel--sm" @change="gantiPerPage(j)">
+                                    <el-option v-for="n in [20, 50, 100]" :key="n" :label="`${n} / halaman`" :value="n" />
+                                </el-select>
+                                <button v-if="adaFilterPeserta" type="button" class="pjd-reset" title="Bersihkan penyaring" @click="resetPeserta(j)">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
+                                    Reset
+                                </button>
+                            </div>
+
+                            <div v-if="memuatPeserta" class="pjd-skel">
                                 <span v-for="n in 3" :key="n" class="pjd-skel__row"></span>
                             </div>
 
-                            <div v-else-if="!pesertaBaris(j).length" class="pjd-empty pjd-empty--sm">
+                            <div v-else-if="!pes.rows.length" class="pjd-empty pjd-empty--sm">
                                 <span class="pjd-empty__ico">
                                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /></svg>
                                 </span>
-                                <p>Belum ada peserta pada penjadwalan ini.</p>
+                                <p>{{ adaFilterPeserta ? 'Tidak ada peserta yang cocok dengan penyaring ini.' : 'Belum ada peserta pada program ini.' }}</p>
                             </div>
 
                             <template v-else>
@@ -488,15 +541,23 @@
                                      masuk ujian — token & OTP. -->
                                 <div class="pjd-tbl">
                                     <div class="pjd-tbl__head">
-                                        <span>KANDIDAT</span><span class="c">TOKEN</span><span class="c">OTP</span><span class="c">JENDELA UJIAN</span><span>DIJADWALKAN OLEH</span><span class="r">AKSI</span>
+                                        <span>KANDIDAT</span><span>KAMPUS</span><span class="c">TOKEN</span><span class="c">OTP</span><span class="c">JENDELA UJIAN</span><span>DIJADWALKAN OLEH</span><span class="r">AKSI</span>
                                     </div>
-                                    <div v-for="row in pesertaHal(j)" :key="row.id" class="pjd-tbl__row">
+                                    <div v-for="row in pes.rows" :key="row.id" class="pjd-tbl__row">
                                         <span class="pjd-tbl__nama">
                                             <span class="pjd-ava pjd-ava--sm is-on">{{ inisial(row.nama) }}</span>
                                             <span class="pjd-tbl__who">
                                                 <b>{{ row.nama }}</b>
                                                 <em>{{ row.posisi || '—' }}</em>
                                             </span>
+                                        </span>
+                                        <!-- KAMPUS ASAL — apa adanya dari isian pelamar.
+                                             Inilah yang membuat satu kartu program bisa
+                                             dibaca per rombongan kampus tanpa perlu
+                                             membuka profil satu per satu. -->
+                                        <span class="pjd-tbl__kampus" :title="row.kampus || 'Belum mengisi kampus di formulir'">
+                                            <span v-if="row.kampus">{{ row.kampus }}</span>
+                                            <span v-else class="pjd-tbl__sub">—</span>
                                         </span>
                                         <!-- KREDENSIAL DISAMARKAN.
                                              Token & OTP adalah kunci masuk ujian: siapa pun
@@ -536,6 +597,11 @@
                                         <span class="c pjd-tbl__win">
                                             <span>{{ fmtWaktu(row.waktuMulai) || '—' }}</span>
                                             <span class="pjd-tbl__win2">s.d. {{ fmtWaktu(row.waktuAkhir) || '—' }}</span>
+                                            <!-- DARI GELOMBANG MANA. Wajib ada sejak kartu
+                                                 per-sesi dilebur: tanpa ini dua baris
+                                                 berjadwal beda tampak seperti kekeliruan
+                                                 data, bukan dua gelombang berbeda. -->
+                                            <b class="pjd-tbl__sesi">{{ row.sesi }}<template v-if="row.aktivitas"> · {{ row.aktivitas }}</template></b>
                                             <em v-if="row.jadwalSendiri" title="Jadwal khusus kandidat ini, tidak mengikuti jendela bawaan">jadwal sendiri</em>
                                         </span>
 
@@ -567,13 +633,14 @@
 
                                 <!-- Kartu layar sempit -->
                                 <div class="pjd-rows">
-                                    <div v-for="row in pesertaHal(j)" :key="row.id" class="pjd-row">
+                                    <div v-for="row in pes.rows" :key="row.id" class="pjd-row">
                                         <div class="pjd-row__top">
                                             <span class="pjd-ava pjd-ava--sm is-on">{{ inisial(row.nama) }}</span>
                                             <div class="pjd-row__in">
                                                 <div class="pjd-row__nama">{{ row.nama }}</div>
                                                 <div class="pjd-row__pos">{{ row.posisi || '—' }}</div>
-                                                <div class="pjd-row__pos">{{ fmtWaktu(row.waktuMulai) || '—' }}<template v-if="row.jadwalSendiri"> · digeser</template></div>
+                                                <div class="pjd-row__pos">{{ row.kampus || 'Kampus belum diisi' }}</div>
+                                                <div class="pjd-row__pos">{{ row.sesi }} · {{ fmtWaktu(row.waktuMulai) || '—' }}<template v-if="row.jadwalSendiri"> · digeser</template></div>
                                                 <div class="pjd-row__pos">oleh {{ row.ubahNama || row.olehNama || '—' }}</div>
                                             </div>
                                             <button
@@ -597,28 +664,30 @@
                                     </div>
                                 </div>
 
-                                <!-- Paginasi peserta di dalam satu penjadwalan: satu
-                                     angkatan bisa berisi ratusan orang. -->
-                                <div v-if="pesertaTotalPage(j) > 1" class="pjd-pager pjd-pager--in">
+                                <!-- Paginasi peserta — DI SERVER. Satu program bisa
+                                     berisi ribuan pelamar; memuat semuanya lalu memotong
+                                     di browser berarti mengirim seribu baris untuk
+                                     menampilkan dua puluh. -->
+                                <div class="pjd-pager pjd-pager--in">
                                     <span class="pjd-pager__info">
-                                        {{ rentang(pesertaPage[j.id] || 1, pesertaPerPage, pesertaBaris(j).length) }} dari {{ pesertaBaris(j).length }} peserta
+                                        {{ rentang(pes.page, pes.perPage, pes.total) }} dari {{ pes.total }} peserta
                                     </span>
-                                    <div class="pjd-pager__btns">
-                                        <button type="button" class="pjd-pg" title="Sebelumnya" :disabled="(pesertaPage[j.id] || 1) <= 1" @click="gantiHalPeserta(j, (pesertaPage[j.id] || 1) - 1)">
+                                    <div v-if="pes.totalPage > 1" class="pjd-pager__btns">
+                                        <button type="button" class="pjd-pg" title="Sebelumnya" :disabled="pes.page <= 1" @click="gantiHalPeserta(j, pes.page - 1)">
                                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
                                         </button>
-                                        <template v-for="(n, i) in nomorHalaman(pesertaPage[j.id] || 1, pesertaTotalPage(j))" :key="i">
+                                        <template v-for="(n, i) in nomorHalaman(pes.page, pes.totalPage)" :key="i">
                                             <span v-if="n === '…'" class="pjd-pg pjd-pg--gap">…</span>
-                                            <button v-else type="button" class="pjd-pg" :class="{ 'is-on': n === (pesertaPage[j.id] || 1) }" @click="gantiHalPeserta(j, n)">{{ n }}</button>
+                                            <button v-else type="button" class="pjd-pg" :class="{ 'is-on': n === pes.page }" @click="gantiHalPeserta(j, n)">{{ n }}</button>
                                         </template>
-                                        <button type="button" class="pjd-pg" title="Berikutnya" :disabled="(pesertaPage[j.id] || 1) >= pesertaTotalPage(j)" @click="gantiHalPeserta(j, (pesertaPage[j.id] || 1) + 1)">
+                                        <button type="button" class="pjd-pg" title="Berikutnya" :disabled="pes.page >= pes.totalPage" @click="gantiHalPeserta(j, pes.page + 1)">
                                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6" /></svg>
                                         </button>
                                     </div>
                                 </div>
 
-                                <div v-if="pesertaBaris(j).some((r) => r.linkUjian)" class="pjd-sched__foot">
-                                    <button type="button" class="pjd-copy--txt pjd-copy" @click="salin(pesertaBaris(j).find((r) => r.linkUjian).linkUjian, 'Tautan ujian')">
+                                <div v-if="pes.rows.some((r) => r.linkUjian)" class="pjd-sched__foot">
+                                    <button type="button" class="pjd-copy--txt pjd-copy" @click="salin(pes.rows.find((r) => r.linkUjian).linkUjian, 'Tautan ujian')">
                                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1" /><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1" /></svg>
                                         Salin tautan ujian
                                     </button>
@@ -671,7 +740,7 @@
                     <span class="pjd-ava is-on">{{ inisial(editTarget.nama) }}</span>
                     <div>
                         <b>{{ editTarget.nama }}</b>
-                        <span>{{ editTarget.posisi || '—' }}<template v-if="editJadwal"> · {{ editJadwal.paketUjian || editJadwal.nama }}</template></span>
+                        <span>{{ editTarget.posisi || '—' }}<template v-if="editTarget.paketUjian || editTarget.aktivitas"> · {{ editTarget.paketUjian || editTarget.aktivitas }}</template></span>
                     </div>
                 </div>
 
@@ -742,14 +811,22 @@ export default {
             // Pewaktu penutupan otomatis tiap kredensial yang dibuka.
             timerKred: {},
             timerToast: null,
-            // Baris akordion yang terbuka + cache pesertanya (diambil saat dibuka).
+            // Baris akordion yang terbuka (id PROGRAM).
             terbuka: null,
-            pesertaCache: {},
             // Kredensial yang sedang dibuka: kunci `{idPeserta}-tok|otp`.
             kredBuka: {},
-            // Halaman peserta per baris akordion: { idPenjadwalan: halaman }.
-            pesertaPage: {},
-            pesertaPerPage: 20,
+
+            // ── Peserta program yang sedang dibuka ──
+            //
+            // SATU wadah, bukan peta ber-kunci id seperti dulu. Hanya satu
+            // akordion yang bisa terbuka, jadi cache per-id cuma menyimpan data
+            // yang tak akan dilihat siapa pun — dan menyimpannya justru
+            // menyulitkan: hasil yang tersaring dan yang tidak berebut kunci
+            // yang sama, lalu tampil silang.
+            pes: { rows: [], total: 0, page: 1, perPage: 20, totalPage: 1, kampusOpsi: [] },
+            // Penyaring DI DALAM program: gelombang, tanggal, kampus, pencarian.
+            pesFilter: { q: '', kampus: '', sesi: '', tanggal: null },
+            timerPes: null,
             memuatPeserta: false,
 
             cariPaket: '',
@@ -768,6 +845,10 @@ export default {
             // Id penjadwalan yang sedang diantrekan ulang (tombol "Coba Lagi").
             ulangId: '',
             fokusId: new URLSearchParams(window.location.search).get('fokus'),
+            // Program yang disorot karena tautan `?fokus=` — id PROGRAM, sedang
+            // fokusId berisi id PENJADWALAN yang dikirim Dashboard.
+            sorotId: '',
+            sudahSorot: false,
             // Hanya bagian JAM yang dipakai Element Plus; tanggalnya diabaikan.
             jamMulaiBawaan: new Date(2000, 0, 1, 8, 0, 0),
             jamAkhirBawaan: new Date(2000, 0, 1, 23, 59, 0),
@@ -835,6 +916,11 @@ export default {
 
             return !!(f.q || f.programId || f.status);
         },
+        adaFilterPeserta() {
+            const f = this.pesFilter;
+
+            return !!(f.q || f.kampus || f.sesi || (f.tanggal && f.tanggal.length));
+        },
     },
     watch: {
         // Jumlah kandidat berubah (ganti tahap / cari) → jangan tertinggal di
@@ -861,6 +947,7 @@ export default {
         Object.values(this.timerKred).forEach((t) => clearTimeout(t));
         clearTimeout(this.timerToast);
         clearTimeout(this.timerFilter);
+        clearTimeout(this.timerPes);
         clearTimeout(this.timerPaket);
         clearTimeout(this.timerKandidat);
     },
@@ -887,15 +974,22 @@ export default {
          * pesertanya sudah tersimpan — yang diulang hanya penerbitan tokennya,
          * dan hanya untuk kandidat yang tokennya belum terbit.
          */
-        async ulangJadwal(j) {
+        async ulangJadwal(s) {
             if (this.ulangId) return;
-            this.ulangId = j.id;
+            this.ulangId = s.id;
+            // Program yang sedang terbuka — dicatat sebelum daftar dimuat ulang,
+            // karena objek barisnya diganti yang baru setelah itu.
+            const dibuka = this.terbuka;
             try {
-                const res = await axios.post(`/api/v1/penjadwalan/${j.id}/ulang`, {}, {
+                const res = await axios.post(`/api/v1/penjadwalan/${s.id}/ulang`, {}, {
                     headers: { Accept: 'application/json' },
                 });
                 this.beritahu(res.data?.message || 'Penjadwalan diantrekan ulang.');
                 await this.muat();
+                // Akordion yang terbuka ikut disegarkan: statusnya baru saja
+                // berubah, dan yang sedang dilihat admin justru bagian ini.
+                const program = this.daftar.find((p) => p.id === dibuka);
+                if (program) await this.muatPeserta(program);
             } catch (e) {
                 this.beritahu(e.response?.data?.message || 'Gagal mengantrekan ulang.', 'error');
             } finally {
@@ -1056,9 +1150,7 @@ export default {
                 this.daftarTotalPage = r.totalPage || 1;
                 // Halaman bisa jadi kosong setelah menyaring atau menghapus.
                 if (this.daftarPage > this.daftarTotalPage) { this.daftarPage = this.daftarTotalPage; return this.muat(); }
-                if (this.fokusId && this.daftar.some((j) => String(j.id) === String(this.fokusId))) {
-                    this.$nextTick(() => document.getElementById(`penjadwalan-${this.fokusId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
-                }
+                this.sorotDariTautan();
             } catch (e) {
                 this.beritahu('Gagal memuat daftar penjadwalan', 'error');
             } finally {
@@ -1117,34 +1209,137 @@ export default {
             this.kredBuka = {};
             if (this.terbuka === j.id) { this.terbuka = null; return; }
             this.terbuka = j.id;
-            if (this.pesertaCache[j.id]) return;
+            // Program lain = pertanyaan lain. Penyaring lama dilupakan, kalau
+            // tidak admin membuka kartu berisi nol baris tanpa sebab yang
+            // terlihat — kampus dari program sebelumnya masih menempel.
+            this.pesFilter = { q: '', kampus: '', sesi: '', tanggal: null };
+            this.pes = { ...this.pes, rows: [], total: 0, page: 1, totalPage: 1, kampusOpsi: [] };
+            await this.muatPeserta(j);
+        },
+        /**
+         * `?fokus=` — datang dari Dashboard, dan isinya id PENJADWALAN.
+         *
+         * Kartunya kini ber-id PROGRAM, jadi pencocokan langsung tidak lagi
+         * ketemu. Alih-alih membiarkan tautannya mati diam-diam, gelombang itu
+         * dicari di dalam daftar sesi tiap program: kartunya dibuka, digulir ke
+         * layar, dan chip sesinya langsung terpilih — admin mendarat tepat pada
+         * gelombang yang ia klik, bukan sekadar pada programnya.
+         */
+        sorotDariTautan() {
+            if (!this.fokusId) return;
+            const fokus = String(this.fokusId);
+            const program = this.daftar.find((p) => String(p.id) === fokus)
+                || this.daftar.find((p) => (p.sesi || []).some((s) => String(s.id) === fokus));
+            if (!program) return;
+
+            // Kartunya tetap disorot (fokusId dibiarkan utuh), tapi penggulirannya
+            // hanya sekali — kalau tidak, tiap pemuatan ulang daftar menyeret
+            // admin kembali ke sini di tengah pekerjaan lain.
+            if (this.sudahSorot) return;
+            this.sudahSorot = true;
+            this.sorotId = program.id;
+
+            this.$nextTick(async () => {
+                document.getElementById(`penjadwalan-${program.id}`)
+                    ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                if (this.terbuka === program.id) return;
+                await this.toggleBaris(program);
+                const sesi = (program.sesi || []).find((s) => String(s.id) === fokus);
+                if (sesi) this.pilihSesi(program, sesi);
+            });
+        },
+        /** Ambil satu halaman peserta program — seluruh penyaring ikut ke server. */
+        async muatPeserta(j) {
+            if (!j) return;
             this.memuatPeserta = true;
             try {
-                const res = await axios.get(`/api/v1/penjadwalan/${j.id}/peserta`, { headers: { Accept: 'application/json' } });
-                this.pesertaCache = { ...this.pesertaCache, [j.id]: res.data.result || [] };
+                const f = this.pesFilter;
+                const params = { page: this.pes.page, perPage: this.pes.perPage };
+                if (f.q) params.q = f.q;
+                if (f.kampus) params.kampus = f.kampus;
+                if (f.sesi) params.sesi = f.sesi;
+                if (f.tanggal && f.tanggal.length === 2) {
+                    [params.dari, params.sampai] = f.tanggal;
+                }
+                const res = await axios.get(`/api/v1/penjadwalan/program/${j.id}/peserta`, {
+                    params, headers: { Accept: 'application/json' },
+                });
+                const r = res.data.result || {};
+                this.pes = {
+                    rows: r.data || [],
+                    total: r.total || 0,
+                    page: r.page || 1,
+                    perPage: r.perPage || this.pes.perPage,
+                    totalPage: r.totalPage || 1,
+                    // Pilihan kampus datang dari SELURUH program, bukan dari
+                    // hasil yang sedang tersaring — kalau tidak, memilih satu
+                    // kampus akan membuat pilihan lainnya lenyap.
+                    kampusOpsi: r.kampusOpsi || [],
+                };
+                // Halaman bisa jadi kosong setelah penyaring dipersempit.
+                if (this.pes.page > this.pes.totalPage) {
+                    this.pes.page = this.pes.totalPage;
+
+                    return this.muatPeserta(j);
+                }
             } catch (e) {
-                this.beritahu('Gagal memuat peserta penjadwalan', 'error');
-                this.terbuka = null;
+                this.beritahu('Gagal memuat peserta program', 'error');
             } finally {
                 this.memuatPeserta = false;
             }
         },
-        pesertaBaris(j) {
-            return this.pesertaCache[j.id] || [];
+        /** Mengetik tidak langsung menembak server — jeda dulu. */
+        debouncePeserta(j) {
+            clearTimeout(this.timerPes);
+            this.timerPes = setTimeout(() => this.filterPeserta(j), 400);
         },
-        pesertaHal(j) {
-            const a = ((this.pesertaPage[j.id] || 1) - 1) * this.pesertaPerPage;
+        filterPeserta(j) {
+            this.pes.page = 1;
+            this.kredBuka = {};
+            this.muatPeserta(j);
+        },
+        /** Chip sesi bekerja dua arah: menekan yang sedang aktif melepasnya. */
+        pilihSesi(j, s) {
+            this.pesFilter.sesi = this.pesFilter.sesi === s.kode ? '' : s.kode;
+            this.filterPeserta(j);
+        },
+        sesiPerluUlang(j) {
+            return (j.sesi || []).filter((s) => s.menunggu > 0);
+        },
+        /** Aktivitas yang dijadwalkan program ini — disebut sekali bila seragam. */
+        aktivitasSesi(j) {
+            const daftar = [...new Set((j.sesi || []).map((s) => s.aktivitas).filter(Boolean))];
+            if (!daftar.length) return '';
 
-            return this.pesertaBaris(j).slice(a, a + this.pesertaPerPage);
+            return daftar.length === 1 ? daftar[0] : `${daftar.length} aktivitas`;
         },
-        pesertaTotalPage(j) {
-            return Math.max(1, Math.ceil(this.pesertaBaris(j).length / this.pesertaPerPage));
+        /** Rentang tanggal seluruh gelombang — pengganti "jendela bawaan" per kartu. */
+        rentangSesi(j) {
+            const waktu = (j.sesi || []).map((s) => s.waktuMulai).filter(Boolean).sort();
+            if (!waktu.length) return '';
+            const awal = this.fmtTanggal(waktu[0]);
+            const akhir = this.fmtTanggal(waktu[waktu.length - 1]);
+
+            return awal === akhir ? awal : `${awal} → ${akhir}`;
+        },
+        menungguSesi(j) {
+            return (j.sesi || []).reduce((n, s) => n + (s.menunggu || 0), 0);
+        },
+        gantiPerPage(j) {
+            this.pes.page = 1;
+            this.muatPeserta(j);
+        },
+        resetPeserta(j) {
+            this.pesFilter = { q: '', kampus: '', sesi: '', tanggal: null };
+            this.pes.page = 1;
+            this.muatPeserta(j);
         },
         gantiHalPeserta(j, n) {
-            if (n < 1 || n > this.pesertaTotalPage(j)) return;
-            this.pesertaPage = { ...this.pesertaPage, [j.id]: n };
+            if (n < 1 || n > this.pes.totalPage || n === this.pes.page) return;
+            this.pes.page = n;
             // Kredensial yang telanjur dibuka ditutup saat pindah halaman.
             this.kredBuka = {};
+            this.muatPeserta(j);
         },
         /** Rentang baris yang sedang tampil, mis. "21–40". */
         rentang(halaman, perHalaman, total) {
@@ -1221,6 +1416,14 @@ export default {
 
             return d.toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
         },
+        /** Tanggal saja — dipakai chip sesi & rentang, di mana jam cuma mengganggu. */
+        fmtTanggal(v) {
+            if (!v) return '';
+            const d = new Date(String(v).replace(' ', 'T'));
+            if (Number.isNaN(d.getTime())) return '';
+
+            return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+        },
         /**
          * Buka pengubahan jadwal SATU kandidat.
          *
@@ -1293,15 +1496,10 @@ export default {
                 }, { headers: { Accept: 'application/json' } });
                 this.beritahu(res.data.message || 'Jadwal kandidat diperbarui');
                 this.editTampil = false;
-                // Muat ulang peserta baris itu supaya jendela barunya langsung terlihat.
-                const jid = this.editJadwal?.id;
-                if (jid) {
-                    const sisa = { ...this.pesertaCache };
-                    delete sisa[jid];
-                    this.pesertaCache = sisa;
-                    const segar = await axios.get(`/api/v1/penjadwalan/${jid}/peserta`, { headers: { Accept: 'application/json' } });
-                    this.pesertaCache = { ...this.pesertaCache, [jid]: segar.data.result || [] };
-                }
+                // Muat ulang halaman yang sedang dilihat — dengan penyaringnya
+                // utuh, supaya admin tidak terlempar kembali ke halaman satu
+                // hanya karena menggeser jadwal satu orang.
+                if (this.editJadwal) await this.muatPeserta(this.editJadwal);
             } catch (e) {
                 this.beritahu(e.response?.data?.message || 'Gagal memperbarui jadwal', 'error');
             } finally {
@@ -1445,6 +1643,33 @@ export default {
 .pjd-gen:disabled { cursor: not-allowed; color: #a5abc9; background: #eef0f7; box-shadow: none; }
 .pjd-spin { display: inline-block; animation: pjdSpin 1s linear infinite; }
 
+/* ── SESI & PENYARING DI DALAM PROGRAM ──────────────────────────────────
+   Deretan chip menggantikan kartu-per-gelombang yang dulu berjejer di luar
+   dengan judul yang sama persis. Bentuknya sengaja padat: ini konteks, bukan
+   isi utama — yang dicari admin tetap daftar orangnya di bawah. */
+.pjd-sesi { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; padding: 12px 16px 0; }
+.pjd-sesi--act { padding-top: 9px; }
+.pjd-sesi__ttl { font-size: 10px; font-weight: 800; letter-spacing: .08em; color: #94a3b8; margin-right: 2px; }
+.pjd-sesi__chip { appearance: none; font-family: inherit; display: inline-flex; align-items: center; gap: 7px; padding: 6px 10px; border-radius: 10px; border: 1px solid #e6e8f2; background: #fbfbfe; cursor: pointer; font-size: 11px; color: #64748b; transition: all .15s; }
+.pjd-sesi__chip:hover { border-color: #c7d2fe; background: #f5f6ff; }
+.pjd-sesi__chip b { font-weight: 800; color: #4338ca; letter-spacing: .02em; }
+.pjd-sesi__chip span { color: #475569; }
+.pjd-sesi__chip em { font-style: normal; color: #94a3b8; }
+.pjd-sesi__chip i { font-style: normal; min-width: 18px; padding: 1px 5px; border-radius: 6px; background: #eef2ff; color: #4338ca; font-weight: 800; text-align: center; }
+.pjd-sesi__chip u { text-decoration: none; padding: 1px 6px; border-radius: 6px; background: #fef3c7; color: #92400e; font-weight: 700; }
+.pjd-sesi__chip.is-on { border-color: #6366f1; background: #eef2ff; box-shadow: 0 0 0 2px rgba(99, 102, 241, .12); }
+.pjd-sesi__chip.is-fail { border-color: #fecaca; background: #fef2f2; }
+.pjd-sesi__chip.is-fail b { color: #b91c1c; }
+
+.pjd-subfilter { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid #f1f2f9; }
+.pjd-subfilter .pjd-field { min-width: 190px; }
+.pjd-fdate { width: 230px; }
+
+/* Nama kampus bisa sangat panjang ("Adventist International Institute of…").
+   Dipotong dengan elipsis, lengkapnya tetap terbaca lewat title. */
+.pjd-tbl__kampus { font-size: 12px; color: #475569; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pjd-tbl__sesi { display: block; margin-top: 3px; font-size: 10px; font-weight: 700; letter-spacing: .02em; color: #6366f1; }
+
 /* ── KANDIDAT ── */
 .pjd-candbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .pjd-all { display: inline-flex; align-items: center; gap: 9px; appearance: none; border: none; background: transparent; cursor: pointer; font-family: inherit; padding: 0; font-size: 13px; font-weight: 700; color: #475569; }
@@ -1556,7 +1781,8 @@ export default {
 
 /* Tabel peserta — grid, bukan <table>, supaya kolomnya persis desain. */
 .pjd-tbl { display: none; overflow-x: auto; }
-.pjd-tbl__head, .pjd-tbl__row { display: grid; grid-template-columns: 1.8fr 1fr .9fr 1.1fr 1.5fr .45fr; gap: 12px; align-items: center; }
+/* Tujuh kolom sejak KAMPUS ikut tampil — lihat catatan di templatenya. */
+.pjd-tbl__head, .pjd-tbl__row { display: grid; grid-template-columns: 1.7fr 1.2fr .95fr .85fr 1.15fr 1.35fr .45fr; gap: 12px; align-items: center; }
 .pjd-tbl__head { padding: 11px 18px; background: #f7f8fc; border-bottom: 1px solid #eef0f7; font-size: 10px; font-weight: 800; letter-spacing: .08em; color: #94a3b8; }
 .pjd-tbl__row { padding: 14px 18px; border-bottom: 1px solid #f4f5fb; transition: background .14s; }
 .pjd-tbl__row:hover { background: #fbfbfe; }

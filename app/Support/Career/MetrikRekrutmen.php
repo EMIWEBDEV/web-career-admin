@@ -189,6 +189,154 @@ class MetrikRekrutmen
         return "COALESCE({$lt}.Hold_Flag, 'T') <> 'Y'";
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | SIAPA YANG DITUNGGU — DIBACA DARI AKTIVITAS, BUKAN DARI KOLOM TAHAP
+    |--------------------------------------------------------------------------
+    |
+    | `Lamaran_Tahap.Provider` adalah RINGKASAN yang membuang informasi. Ia
+    | disusun MasterAlurController dengan aturan "ada satu aktivitas online →
+    | seluruh tahap THIRD_PARTY". Untuk tahap satu-aktivitas itu benar; untuk
+    | tahap "FGD + Psikotes + Wawancara" ia berbohong: dua aktivitas yang
+    | dikerjakan tim ikut tercap ujian online.
+    |
+    | Akibatnya seluruh papan operasional salah menghitung. Tahap yang FGD-nya
+    | sudah berlangsung dan tinggal dicatat hasilnya masuk keranjang "Menunggu
+    | Tes" — keranjang yang artinya "tidak ada yang bisa kita lakukan, tunggu
+    | kandidat" — sehingga pekerjaan yang sudah menumpuk tidak pernah muncul di
+    | antrean siapa pun. Tidak ada galat, hanya angka yang keliru diam-diam.
+    |
+    | Predikat di bawah membaca `Lamaran_Tahap_Tes` langsung, dengan urutan
+    | kepentingan YANG SAMA PERSIS dengan PipelineReadModel::bucket():
+    | aktivitas tim menang atas aktivitas online. Keduanya wajib sepakat —
+    | papan yang menghitung berbeda dari worklist adalah cacat yang paling
+    | mahal dicari, karena kedua angka sama-sama terlihat masuk akal.
+    */
+
+    /** Alias bawaan derived table aktivitas — lihat denganAktivitas(). */
+    public const ALIAS_AKTIVITAS = 'ak';
+
+    /**
+     * Derived table: satu baris per TAHAP, meringkas aktivitas yang sedang
+     * berarti di dalamnya.
+     *
+     *   Semua      berapa baris aktivitas dimiliki tahap ini (0 = data
+     *              pra-mesin multi-tes, dan itu dibedakan dari "ada tapi
+     *              semuanya sudah selesai");
+     *   AdaDaring  ada ujian online yang sedang berarti;
+     *   AdaTim     ada aktivitas yang dikerjakan/dicatat tim, sedang berarti.
+     *
+     * ══ KENAPA DERIVED TABLE, BUKAN EXISTS ══
+     *
+     * Versi pertama menulisnya sebagai `EXISTS (...)` yang disisipkan langsung
+     * ke dalam `SUM(CASE WHEN ...)`. SQL Server MENOLAKNYA: "Cannot perform an
+     * aggregate function on an expression containing an aggregate or a
+     * subquery." Ditangkap saat verifikasi, bukan di production.
+     *
+     * ══ MODE URUTAN IKUT DIHORMATI ══
+     *
+     * Pada tahap yang aktivitasnya dikunci berurutan, hanya aktivitas TERDEPAN
+     * yang sedang berarti — wawancara di posisi ketiga belum boleh dikerjakan
+     * siapa pun selama FGD belum selesai, jadi ia tidak boleh ikut menentukan
+     * keranjang. Aturannya dibaca dari `Master_Mode_Urutan.Flag_Berurutan`,
+     * bukan dari membandingkan kode dengan 'BERURUTAN', supaya mode ketiga yang
+     * ditambahkan lewat master ikut terbaca tanpa menyentuh berkas ini.
+     *
+     * Yang terdepan dicari lewat WINDOW FUNCTION, bukan subkueri berkorelasi —
+     * selain lebih murah (satu pemindaian), ia juga satu-satunya bentuk yang
+     * boleh berdiri di dalam agregat.
+     *
+     * Terdepan dihitung dari SELURUH aktivitas — termasuk yang disembunyikan
+     * dari kandidat seperti background check — karena yang menahan giliran
+     * adalah kenyataan alurnya, bukan apa yang terlihat.
+     */
+    public static function sqlAktivitasTahap(): string
+    {
+        // PERAN TIDAK IKUT MENYARING — persis seperti PipelineReadModel::bucket().
+        // Peran menjawab "apakah aktivitas ini menentukan lulus/gagal", bukan
+        // "apakah ada yang harus dikerjakan"; psikotes INFORMATIF tetap harus
+        // dijadwalkan dan dicatat. Kedua sisi WAJIB memakai aturan yang sama —
+        // begitu salah satu menyaring dan yang lain tidak, papan dan worklist
+        // menjawab berbeda untuk kandidat yang sama.
+        $berarti = "COALESCE(w.Flag_Selesai, 'N') <> 'Y'
+                AND (w.Berurutan <> 'Y' OR w.Urutan = w.UrutanTerdepan)";
+
+        return "SELECT w.Lamaran_Tahap_Id,
+                       COUNT(*) AS Semua,
+                       MAX(CASE WHEN {$berarti} AND w.Provider = 'THIRD_PARTY' THEN 1 ELSE 0 END) AS AdaDaring,
+                       MAX(CASE WHEN {$berarti} AND COALESCE(w.Provider, 'INTERNAL') <> 'THIRD_PARTY' THEN 1 ELSE 0 END) AS AdaTim
+                  FROM (
+                        SELECT st.Lamaran_Tahap_Id, st.Provider, st.Peran, st.Urutan, st.Flag_Selesai,
+                               COALESCE(mu.Flag_Berurutan, 'T') AS Berurutan,
+                               MIN(CASE WHEN COALESCE(st.Flag_Selesai, 'N') <> 'Y' THEN st.Urutan END)
+                                   OVER (PARTITION BY st.Lamaran_Tahap_Id) AS UrutanTerdepan
+                          FROM N_WEB_CAREERS_Lamaran_Tahap_Tes st
+                          JOIN N_WEB_CAREERS_Lamaran_Tahap lt2
+                            ON lt2.Id_Lamaran_Tahap = st.Lamaran_Tahap_Id
+                          LEFT JOIN N_WEB_CAREERS_Master_Mode_Urutan mu
+                            ON mu.Kode = lt2.Urutan_Aktivitas
+                       ) w
+                 GROUP BY w.Lamaran_Tahap_Id";
+    }
+
+    /**
+     * Pasang derived table aktivitas ke sebuah kueri.
+     *
+     * Disediakan sebagai helper, bukan diserahkan ke tiap pemanggil menulis
+     * JOIN-nya sendiri: predikat di bawah TIDAK BERARTI tanpa join ini, dan
+     * lupa memasangnya menghasilkan galat "invalid column name" — bukan diam,
+     * tapi tetap saja lebih baik tidak bisa lupa.
+     *
+     * @param  \Illuminate\Database\Query\Builder  $q
+     */
+    public static function denganAktivitas($q, string $lt = 'lt', string $alias = self::ALIAS_AKTIVITAS)
+    {
+        return $q->leftJoin(
+            DB::raw('('.self::sqlAktivitasTahap().') AS '.$alias),
+            $alias.'.Lamaran_Tahap_Id',
+            '=',
+            $lt.'.Id_Lamaran_Tahap'
+        );
+    }
+
+    /**
+     * MENUNGGU TES: yang tersisa untuk tahap ini hanya ujian online kandidat.
+     *
+     * Aktivitas tim MENANG — kalau ada yang bisa dikerjakan tim sekarang,
+     * itulah yang harus muncul di antrean, bukan penantian atas ujian kandidat.
+     * Urutan kepentingan ini sama persis dengan PipelineReadModel::bucket().
+     *
+     * Tahap tanpa satu pun baris aktivitas (lamaran pra-mesin multi-tes) jatuh
+     * ke kolom ringkasan `Lamaran_Tahap.Provider`: di situ memang tidak ada
+     * informasi yang lebih baik, dan perilakunya sama persis seperti sebelumnya.
+     */
+    public static function sqlMenungguTes(string $lt = 'lt', string $alias = self::ALIAS_AKTIVITAS): string
+    {
+        return "(
+            (COALESCE({$alias}.AdaDaring, 0) = 1 AND COALESCE({$alias}.AdaTim, 0) = 0)
+            OR ({$alias}.Lamaran_Tahap_Id IS NULL AND {$lt}.Provider = 'THIRD_PARTY')
+        )";
+    }
+
+    /**
+     * GILIRAN TIM — kebalikan tepat dari sqlMenungguTes().
+     *
+     * Ditulis sebagai NEGASI, bukan sebagai daftar syaratnya sendiri. Dengan
+     * begitu keduanya dijamin SALING MENIADAKAN sekaligus MENUTUPI seluruhnya:
+     * tiap tahap BERJALAN jatuh ke tepat satu keranjang.
+     *
+     * Itu bukan kerapian belaka. Dashboard menghitung lencana lewat CASE
+     * ber-`ELSE 'MACET'` dan mengisi keranjangnya lewat WHERE; begitu keduanya
+     * tidak persis berkebalikan, layar menampilkan "0 baris" di sebelah lencana
+     * bertuliskan angka besar — dan tak ada yang tahu mana yang benar. Versi
+     * pertama helper ini menyisakan celah tepat seperti itu untuk tahap yang
+     * seluruh aktivitasnya sudah selesai.
+     */
+    public static function sqlGiliranTim(string $lt = 'lt', string $alias = self::ALIAS_AKTIVITAS): string
+    {
+        return '(NOT '.self::sqlMenungguTes($lt, $alias).')';
+    }
+
     /** Ambang "macet" (hari) — tahap BERJALAN lebih lama dari ini dianggap tersendat. */
     public static function macetHari(): int
     {
@@ -257,9 +405,12 @@ class MetrikRekrutmen
         $umur = self::sqlUmurTahap('lt');
         $aging = self::sqlAging('lt');
         $bukanDitahan = self::sqlBukanDitahan('lt');
+        $menungguTes = self::sqlMenungguTes('lt');
 
-        return DB::table('N_WEB_CAREERS_Lamaran_Tahap as lt')
-            ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'lt.Lamaran_Id')
+        $dasar = DB::table('N_WEB_CAREERS_Lamaran_Tahap as lt')
+            ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'lt.Lamaran_Id');
+
+        return self::denganAktivitas($dasar)
             ->where('lt.Status', 'BERJALAN')->where('l.Status', 'BERJALAN')
             ->whereIn('l.Program_Id', $programIds)
             ->groupBy('l.Program_Id')
@@ -270,7 +421,7 @@ class MetrikRekrutmen
                                    AND DATEDIFF(day, COALESCE(lt.Rekomendasi_At, lt.Updated_At, lt.Created_At), GETDATE()) > {$sorot}
                                   THEN 1 ELSE 0 END) as siapTua,
                          SUM(CASE WHEN {$bukanDitahan} AND lt.Siap_Diputus = 'Y' THEN 1 ELSE 0 END) as siap,
-                         SUM(CASE WHEN {$bukanDitahan} AND lt.Provider = 'THIRD_PARTY' AND lt.Siap_Diputus = 'N' THEN 1 ELSE 0 END) as nungguTes,
+                         SUM(CASE WHEN {$bukanDitahan} AND {$menungguTes} AND lt.Siap_Diputus = 'N' THEN 1 ELSE 0 END) as nungguTes,
                          MAX({$aging}) as maxAging")
             ->get()
             ->keyBy('Program_Id');

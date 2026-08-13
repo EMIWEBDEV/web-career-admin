@@ -188,7 +188,24 @@ class PipelineProgress
             // ("Ditahan — Menunggu kuota"), bukan sekadar bahwa ia ditahan.
             'holdNama' => $ditahan ? ($alasanHold[$tAktif->Hold_Alasan_Kode ?? ''] ?? null) : null,
             'skor' => $tk->Skor ?? null,
-            'isTes' => ($tk->Provider ?? null) === 'THIRD_PARTY',
+            // ADA UJIAN ONLINE di tahap ini — dibaca dari AKTIVITASNYA.
+            //
+            // Dulu dari `$tk->Provider`, ringkasan tingkat tahap yang bernilai
+            // THIRD_PARTY begitu ada satu aktivitas online di dalamnya. Pada
+            // tahap "FGD + Psikotes + Wawancara", lencana papan berubah menjadi
+            // ANGKA SKOR psikotes — menutupi keadaan sebenarnya, yaitu bahwa
+            // FGD dan wawancara belum dijalankan sama sekali.
+            //
+            // Cadangan ke kolom ringkasan hanya untuk tahap yang aktivitasnya
+            // belum tersalin (lamaran pra-mesin multi-tes).
+            //
+            // `collect(...)->isNotEmpty()`, bukan `$subAktif ?`: Collection
+            // KOSONG tetap truthy sebagai objek, jadi pemeriksaan telanjang akan
+            // memilih cabang aktivitas untuk tahap yang justru tak punya satu
+            // pun — lalu selalu menjawab false.
+            'isTes' => collect($subAktif)->isNotEmpty()
+                ? collect($subAktif)->contains(fn ($s) => ($s->Provider ?? '') === 'THIRD_PARTY')
+                : ($tk->Provider ?? null) === 'THIRD_PARTY',
             'siap' => $siap,
             'nungguSistem' => $tAktif && ! $siap && ($otomatis || $belumTercatat > 0),
             'butuhKeputusan' => $butuhKeputusan,

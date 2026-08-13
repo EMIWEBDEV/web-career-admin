@@ -128,7 +128,7 @@ class MasterAlurController extends Controller
 
             return ResponseHelper::success($rows, 'Data alur dimuat');
         } catch (\Throwable $e) {
-            Log::channel('web_career')->error('Gagal memuat alur: ' . $e->getMessage());
+            Log::channel('web_career')->error('Gagal memuat alur: '.$e->getMessage());
 
             return ResponseHelper::error('Gagal memuat data alur', 500);
         }
@@ -453,11 +453,10 @@ class MasterAlurController extends Controller
 
         // Peta mode -> butuhJeda: jeda hari hanya disimpan untuk mode ber-flag.
         $modeButuhJeda = $this->modeAktif();
-        // Mode keputusan + kolom perilakunya (Auto_Lanjut / Auto_Gugur). Dibaca
-        // dari master supaya guard di bawah tak perlu menyebut kode mode apa pun.
-        $modeSemua = DB::table('N_WEB_CAREERS_Master_Mode_Keputusan')->where('Flag_Aktif', 'Y')->orderBy('Urutan')->get();
-        $autoLanjut = $modeSemua->pluck('Auto_Lanjut', 'Kode');
-        $autoGugur = $modeSemua->pluck('Auto_Gugur', 'Kode');
+        // Perilaku maju-otomatis tiap mode. Dibaca dari master supaya guard di
+        // bawah tak perlu menyebut satu pun kode mode.
+        $autoLanjut = DB::table('N_WEB_CAREERS_Master_Mode_Keputusan')
+            ->where('Flag_Aktif', 'Y')->pluck('Auto_Lanjut', 'Kode');
         // Mode urutan aktivitas yang dipakai bila tahapnya cuma 1 aktivitas —
         // dibaca dari master, bukan kode 'PARALEL' yang ditulis di sini.
         $urutanBawaan = $this->urutanBawaan();
@@ -489,7 +488,7 @@ class MasterAlurController extends Controller
         $tuntasTerpakai = false;
 
         foreach (array_values($stages) as $i => $s) {
-            $kode = trim(preg_replace('/[^A-Z0-9]+/', '_', strtoupper($s['label'])), '_') ?: ('TAHAP_' . ($i + 1));
+            $kode = trim(preg_replace('/[^A-Z0-9]+/', '_', strtoupper($s['label'])), '_') ?: ('TAHAP_'.($i + 1));
 
             // ── TIPE MELEKAT PADA AKTIVITAS, BUKAN PADA TAHAP ──────────────────
             //
@@ -534,26 +533,40 @@ class MasterAlurController extends Controller
                 $mode = 'MANUAL_REVIEW';
             }
 
-            // GUARD GAGAL-MENGGANTUNG: tahap yang memuat UJIAN ONLINE PENENTU tak
-            // boleh memakai mode yang tidak menggugurkan otomatis. Hasil CAT sudah
-            // final dan objektif — kalau gagalnya masih menunggu admin, kandidat
-            // yang jelas-jelas tidak lulus menggantung entah berapa lama, dan
-            // daftar "perlu keputusan" terisi perkara yang tak perlu ditimbang.
-            // Modenya dinaikkan ke mode lain yang AUTO_GUGUR-nya menyala dengan
-            // Auto_Lanjut yang sama — jadi keputusan "lulus" tetap milik admin
-            // bila memang begitu setelannya. Pilihan diambil dari master, bukan
-            // kode mode yang ditulis di sini.
-            $onlinePenentu = collect($tests)->contains(
-                fn ($t) => $t['provider'] === 'THIRD_PARTY' && ($t['peran'] ?? 'PENENTU') === 'PENENTU'
-            );
-            if ($onlinePenentu && ($autoGugur[$mode] ?? 'N') !== 'Y') {
-                $pengganti = $modeSemua->first(
-                    fn ($m) => $m->Auto_Gugur === 'Y' && $m->Auto_Lanjut === ($autoLanjut[$mode] ?? 'N')
-                );
-                if ($pengganti) {
-                    $mode = $pengganti->Kode;
-                }
-            }
+            // ── MODE YANG DIPILIH ADMIN DISIMPAN APA ADANYA ──────────────────
+            //
+            // Di sini dulu berdiri "GUARD GAGAL-MENGGANTUNG": tahap yang memuat
+            // ujian online PENENTU dipaksa memakai mode ber-Auto_Gugur, dengan
+            // alasan hasil CAT sudah final dan objektif sehingga kegagalannya
+            // tak perlu menunggu admin.
+            //
+            // Alasannya masuk akal untuk ujian itu sendiri, tapi penerapannya
+            // salah sasaran: gerbangnya diuji di level TAHAP (`contains`), jadi
+            // kehadiran SATU psikotes online mencabut mode manual dari seluruh
+            // tahap — termasuk dari FGD dan wawancara di dalamnya, dua hal yang
+            // justru mustahil disimpulkan mesin.
+            //
+            // Lebih dari itu, ia menyangkal kenyataan bahwa kelulusan adalah
+            // KEBIJAKAN, bukan aritmetika. Kandidat yang nilainya di bawah
+            // ambang bisa saja tetap diloloskan setelah ditinjau ulang — dan
+            // itu keputusan yang memang milik manusia. Mode yang dipaksa naik
+            // membuat sistem menggugurkan lebih dulu, sebelum siapa pun sempat
+            // menimbang.
+            //
+            // Maka penimpaannya DICABUT. Yang admin pilih di "Cara tahap ini
+            // menyimpulkan" itulah yang berlaku, dan `evaluasiTahap()` sudah
+            // membaca seluruh perilakunya dari master (Auto_Gugur, Auto_Lanjut,
+            // Tunggu, Syarat_Lulus) tanpa satu pun kode mode yang ditulis di
+            // dalamnya — jadi MANUAL benar-benar berarti manual.
+            //
+            // Yang hilang — kegagalan CAT tidak lagi menggugurkan sendiri pada
+            // mode manual — tidak menjadi kandidat yang menggantung tanpa jejak:
+            // tahapnya masuk SIAP_DIPUTUS, dan itu justru barisan kerja yang
+            // memang ditampilkan worklist sebagai "perlu keputusan".
+            //
+            // Yang TIDAK dicabut adalah guard nol-PENENTU di atas: itu bukan
+            // kebijakan melainkan keutuhan data — mode auto tanpa satu pun tes
+            // penentu akan meloloskan orang tanpa ada yang menilainya.
 
             $pengumuman = $s['pengumuman'] ?? 'OTOMATIS';
             $jeda = ($modeButuhJeda[$pengumuman] ?? false) ? ($s['jedaHari'] ?? null) : null;
@@ -779,7 +792,7 @@ class MasterAlurController extends Controller
         } catch (\Illuminate\Validation\ValidationException $e) {
             return ResponseHelper::error(collect($e->errors())->flatten()->first() ?? 'Data tidak valid', 422);
         } catch (\Throwable $e) {
-            Log::channel('web_career')->error('Gagal membuat alur: ' . $e->getMessage());
+            Log::channel('web_career')->error('Gagal membuat alur: '.$e->getMessage());
 
             return ResponseHelper::error('Gagal menyimpan data', 500);
         }
@@ -804,6 +817,7 @@ class MasterAlurController extends Controller
                     'Deskripsi' => $data['deskripsi'] ?? null,
                     'Updated_At' => now(), 'Updated_By' => $userName, 'Updated_By_Id' => $userId,
                 ]);
+
                 // TIDAK dihapus lebih dulu: simpanTahap() memakai ulang baris per
                 // urutan dan membuang sisanya sendiri, supaya id tahap tetap sama
                 // bagi lamaran yang sedang berjalan di alur ini.
@@ -811,7 +825,7 @@ class MasterAlurController extends Controller
             });
 
             Log::channel('web_career')->info("Master alur #{$realId} diperbarui"
-                . ($ikut ? " — {$ikut} aktivitas kandidat berjalan ikut menyesuaikan aturan pengumpulannya" : ''));
+                .($ikut ? " — {$ikut} aktivitas kandidat berjalan ikut menyesuaikan aturan pengumpulannya" : ''));
 
             // Jumlah yang ikut DIKATAKAN, tidak diam-diam: menyunting alur yang
             // sedang dipakai orang bukan perbuatan sepele, dan admin berhak tahu
@@ -822,7 +836,7 @@ class MasterAlurController extends Controller
         } catch (\Illuminate\Validation\ValidationException $e) {
             return ResponseHelper::error(collect($e->errors())->flatten()->first() ?? 'Data tidak valid', 422);
         } catch (\Throwable $e) {
-            Log::channel('web_career')->error("Gagal update alur #{$id}: " . $e->getMessage());
+            Log::channel('web_career')->error("Gagal update alur #{$id}: ".$e->getMessage());
 
             return ResponseHelper::error('Gagal memperbarui data', 500);
         }
@@ -840,11 +854,11 @@ class MasterAlurController extends Controller
             if (! $terpengaruh) {
                 return ResponseHelper::error('Data tidak ditemukan', 404);
             }
-            Log::channel('web_career')->info("Master alur #{$realId} status " . ($aktif ? 'AKTIF' : 'NONAKTIF'));
+            Log::channel('web_career')->info("Master alur #{$realId} status ".($aktif ? 'AKTIF' : 'NONAKTIF'));
 
             return ResponseHelper::success(null, 'Status diperbarui');
         } catch (\Throwable $e) {
-            Log::channel('web_career')->error("Gagal toggle alur #{$id}: " . $e->getMessage());
+            Log::channel('web_career')->error("Gagal toggle alur #{$id}: ".$e->getMessage());
 
             return ResponseHelper::error('Gagal mengubah status', 500);
         }
@@ -867,7 +881,7 @@ class MasterAlurController extends Controller
 
             return ResponseHelper::success(null, 'Alur dihapus');
         } catch (\Throwable $e) {
-            Log::channel('web_career')->error("Gagal hapus alur #{$id}: " . $e->getMessage());
+            Log::channel('web_career')->error("Gagal hapus alur #{$id}: ".$e->getMessage());
 
             return ResponseHelper::error('Gagal menghapus data', 500);
         }

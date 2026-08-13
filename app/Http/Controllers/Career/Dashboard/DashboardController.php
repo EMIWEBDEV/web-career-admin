@@ -69,10 +69,24 @@ class DashboardController extends Controller
     /** Batas atas baris per halaman yang boleh diminta layar. */
     private const AKSI_PER_HAL_MAKS = 50;
 
-    /** Penggolong keranjang — dipakai untuk hitung total per jenis. */
-    private const JENIS_SQL = "CASE WHEN lt.Siap_Diputus = 'Y' THEN 'SIAP_DIPUTUS'
-                                    WHEN lt.Provider = 'THIRD_PARTY' THEN 'MENUNGGU_TES'
-                                    ELSE 'MACET' END";
+    /**
+     * Penggolong keranjang — dipakai untuk hitung total per jenis.
+     *
+     * BUKAN KONSTANTA lagi: isinya diturunkan dari MetrikRekrutmen, satu-satunya
+     * tempat aturan "siapa yang ditunggu" boleh ditulis. Dulu ia konstanta
+     * berisi `lt.Provider = 'THIRD_PARTY'` — ringkasan tingkat tahap yang
+     * mencap seluruh tahap "FGD + Psikotes + Wawancara" sebagai ujian online,
+     * sehingga FGD yang tinggal dicatat hasilnya masuk keranjang "Menunggu Tes"
+     * dan tak pernah muncul sebagai pekerjaan siapa pun.
+     */
+    private static function jenisSql(): string
+    {
+        $menungguTes = MetrikRekrutmen::sqlMenungguTes('lt');
+
+        return "CASE WHEN lt.Siap_Diputus = 'Y' THEN 'SIAP_DIPUTUS'
+                     WHEN {$menungguTes} THEN 'MENUNGGU_TES'
+                     ELSE 'MACET' END";
+    }
 
     /**
      * Syarat SATU keranjang, sebagai WHERE — bukan hasil pemilahan di PHP.
@@ -87,12 +101,21 @@ class DashboardController extends Controller
      * Negasinya ditulis NULL-safe: `lt.Siap_Diputus <> 'Y'` telanjang membuang
      * baris ber-NULL (NULL <> 'Y' = NULL), padahal di CASE di atas baris itu
      * justru jatuh ke keranjang berikutnya.
+     *
+     * Pemilahan online/manual-nya dari MetrikRekrutmen, SAMA PERSIS dengan
+     * jenisSql() di atas — keduanya wajib sepakat, kalau tidak lencana
+     * ("200") dan isi keranjangnya ("0 baris") akan bercerita berbeda.
      */
-    private const SYARAT_KERANJANG = [
-        'keputusan' => "lt.Siap_Diputus = 'Y'",
-        'menungguTes' => "(lt.Siap_Diputus IS NULL OR lt.Siap_Diputus <> 'Y') AND lt.Provider = 'THIRD_PARTY'",
-        'macet' => "(lt.Siap_Diputus IS NULL OR lt.Siap_Diputus <> 'Y') AND (lt.Provider IS NULL OR lt.Provider <> 'THIRD_PARTY')",
-    ];
+    private static function syaratKeranjang(): array
+    {
+        $belumDiputus = "(lt.Siap_Diputus IS NULL OR lt.Siap_Diputus <> 'Y')";
+
+        return [
+            'keputusan' => "lt.Siap_Diputus = 'Y'",
+            'menungguTes' => $belumDiputus.' AND '.MetrikRekrutmen::sqlMenungguTes('lt'),
+            'macet' => $belumDiputus.' AND '.MetrikRekrutmen::sqlGiliranTim('lt'),
+        ];
+    }
 
     /**
      * Kata kerja per tipe tahap untuk keranjang "Menunggu Tindakan Kamu".
@@ -199,16 +222,19 @@ class DashboardController extends Controller
 
         $umur = MetrikRekrutmen::sqlUmurTahap('lt');
         $macetHari = MetrikRekrutmen::macetHari();
+        $menungguTes = MetrikRekrutmen::sqlMenungguTes('lt');
 
-        $tahap = DB::table('N_WEB_CAREERS_Lamaran_Tahap as lt')
-            ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'lt.Lamaran_Id')
+        $tahap = MetrikRekrutmen::denganAktivitas(
+            DB::table('N_WEB_CAREERS_Lamaran_Tahap as lt')
+                ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'lt.Lamaran_Id')
+        )
             ->where('lt.Status', 'BERJALAN')->where('l.Status', 'BERJALAN')
             ->whereIn('l.Program_Id', $ids)
             // NULL-safe: `lt.Hold_Flag <> 'Y'` telanjang membuat baris ber-
             // Hold_Flag NULL ikut terkecualikan (NULL <> 'Y' = NULL, bukan TRUE).
             ->whereRaw(MetrikRekrutmen::sqlBukanDitahan('lt'))
             ->selectRaw("SUM(CASE WHEN lt.Siap_Diputus = 'Y' THEN 1 ELSE 0 END) as siap,
-                         SUM(CASE WHEN lt.Provider = 'THIRD_PARTY' AND lt.Siap_Diputus = 'N' THEN 1 ELSE 0 END) as nungguTes,
+                         SUM(CASE WHEN {$menungguTes} AND lt.Siap_Diputus = 'N' THEN 1 ELSE 0 END) as nungguTes,
                          SUM(CASE WHEN lt.Siap_Diputus <> 'Y' AND {$umur} > {$macetHari} THEN 1 ELSE 0 END) as macet")
             ->first();
 
@@ -289,13 +315,14 @@ class DashboardController extends Controller
             // Total SEBENARNYA ketiga keranjang sekaligus — satu kueri, tanpa
             // limit. Inilah dasar label "N dari M", jadi ia harus dihitung
             // terpisah dari baris yang dikirim.
+            $jenis = self::jenisSql();
             $totalPer = $this->dasarAntrean($ids)
-                ->groupByRaw(self::JENIS_SQL)
-                ->selectRaw(self::JENIS_SQL . ' as Jenis, COUNT(*) as J')
+                ->groupByRaw($jenis)
+                ->selectRaw($jenis.' as Jenis, COUNT(*) as J')
                 ->pluck('J', 'Jenis');
 
             // Halaman pertama tiap keranjang, MASING-MASING dengan limitnya
-            // sendiri. Lihat SYARAT_KERANJANG untuk alasan kenapa ini tidak
+            // sendiri. Lihat syaratKeranjang() untuk alasan kenapa ini tidak
             // lagi satu kueri yang dipilah belakangan.
             $peta = ['keputusan' => 'SIAP_DIPUTUS', 'macet' => 'MACET', 'menungguTes' => 'MENUNGGU_TES'];
             foreach ($peta as $kunci => $jenis) {
@@ -354,7 +381,7 @@ class DashboardController extends Controller
                 'kode' => $r->Kode ?: 'LAIN',
                 'nama' => $r->TipeNama ?: 'Tahap lain',
                 'ikon' => $r->Ikon ?: 'bi-three-dots',
-                'aksi' => self::AKSI_TIPE[$r->Kode] ?? ('Tindak lanjuti ' . mb_strtolower($r->TipeNama ?: 'tahap ini')),
+                'aksi' => self::AKSI_TIPE[$r->Kode] ?? ('Tindak lanjuti '.mb_strtolower($r->TipeNama ?: 'tahap ini')),
                 'jumlah' => (int) $r->J,
                 'terlamaHari' => max(0, (int) $r->TerlamaHari),
             ])->all(),
@@ -385,7 +412,7 @@ class DashboardController extends Controller
         }
 
         $keranjang = (string) $request->query('keranjang', '');
-        if (! isset(self::SYARAT_KERANJANG[$keranjang]) && $keranjang !== 'tindakanAdmin') {
+        if (! isset(self::syaratKeranjang()[$keranjang]) && $keranjang !== 'tindakanAdmin') {
             return ResponseHelper::error('Keranjang antrean tidak dikenal.', 422);
         }
 
@@ -426,9 +453,13 @@ class DashboardController extends Controller
         $umur = MetrikRekrutmen::sqlUmurTahap('lt');
         $giliran = MetrikRekrutmen::sqlGiliranAdmin('lt', 'mtt');
 
-        return DB::table('N_WEB_CAREERS_Lamaran_Tahap as lt')
+        $dasar = DB::table('N_WEB_CAREERS_Lamaran_Tahap as lt')
             ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'lt.Lamaran_Id')
-            ->leftJoin('N_WEB_CAREERS_Master_Tipe_Tahap as mtt', 'mtt.Kode', '=', 'lt.Tipe_Tahap_Kode')
+            ->leftJoin('N_WEB_CAREERS_Master_Tipe_Tahap as mtt', 'mtt.Kode', '=', 'lt.Tipe_Tahap_Kode');
+
+        // Ringkasan aktivitas per tahap — dipakai jenisSql() & syaratKeranjang()
+        // untuk memilah "menunggu tes" dari "giliran tim".
+        return MetrikRekrutmen::denganAktivitas($dasar)
             ->where('lt.Status', 'BERJALAN')->where('l.Status', 'BERJALAN')
             ->whereIn('l.Program_Id', $ids)
             // NULL-safe: `lt.Hold_Flag <> 'Y'` telanjang membuat baris
@@ -466,7 +497,7 @@ class DashboardController extends Controller
     {
         $q = $keranjang === 'tindakanAdmin'
             ? $this->dasarTindakan($ids)
-            : $this->dasarAntrean($ids)->whereRaw('(' . self::SYARAT_KERANJANG[$keranjang] . ')');
+            : $this->dasarAntrean($ids)->whereRaw('('.self::syaratKeranjang()[$keranjang].')');
 
         // Penyaring jenis pekerjaan pada keranjang tindakan. Ikut ke server
         // karena kalau disaring di layar, yang tersaring cuma satu halaman —
@@ -485,7 +516,7 @@ class DashboardController extends Controller
             // Wildcard milik LIKE dinetralkan lebih dulu. Tanpa ini, admin yang
             // mengetik "%" mendapat SELURUH antrean seolah itu hasil pencarian.
             // Kurung siku diganti duluan — ia yang jadi alat kabur di T-SQL.
-            $pola = '%' . str_replace(['[', '%', '_'], ['[[]', '[%]', '[_]'], $cari) . '%';
+            $pola = '%'.str_replace(['[', '%', '_'], ['[[]', '[%]', '[_]'], $cari).'%';
 
             $q->where(function ($w) use ($pola) {
                 $w->where('u.Nama', 'like', $pola)
@@ -539,7 +570,7 @@ class DashboardController extends Controller
                 'nama' => $r->Pelamar ?: ($r->FallbackNama ?: 'Tanpa nama'),
                 'program' => $r->ProgramNama,
                 'posisi' => $r->PosisiNama,
-                'tahap' => trim(($r->TahapUrutan ? $r->TahapUrutan . '. ' : '') . ($r->TahapLabel ?: '—')),
+                'tahap' => trim(($r->TahapUrutan ? $r->TahapUrutan.'. ' : '').($r->TahapLabel ?: '—')),
                 'umurHari' => max(0, (int) $r->UmurHari),
             ];
 
@@ -908,7 +939,7 @@ class DashboardController extends Controller
                 }
 
                 $events[] = [
-                    'id' => 'TES-' . Hashids::encode($r->Id_Penjadwalan_Tahap),
+                    'id' => 'TES-'.Hashids::encode($r->Id_Penjadwalan_Tahap),
                     'jenis' => 'TES',
                     'judul' => $r->Nama_Ujian ?: ($r->Label ?: ($r->PenjadwalanNama ?: 'Sesi tes')),
                     'program' => $r->ProgramNama,
@@ -922,9 +953,9 @@ class DashboardController extends Controller
                     'pesertaTerkirim' => $terkirim,
                     'pesertaMenunggu' => $menunggu,
                     'pesertaGagal' => $gagal,
-                    'ket' => $r->Durasi_Menit ? $r->Durasi_Menit . ' menit' : null,
-                    'pesertaUrl' => '/api/v1/karir/dashboard/kalender/tes/' . Hashids::encode($r->Id_Penjadwalan_Tahap) . '/peserta',
-                    'sourceUrl' => $bolehTes ? '/karir/penjadwalan?fokus=' . Hashids::encode($r->Penjadwalan_Id) : null,
+                    'ket' => $r->Durasi_Menit ? $r->Durasi_Menit.' menit' : null,
+                    'pesertaUrl' => '/api/v1/karir/dashboard/kalender/tes/'.Hashids::encode($r->Id_Penjadwalan_Tahap).'/peserta',
+                    'sourceUrl' => $bolehTes ? '/karir/penjadwalan?fokus='.Hashids::encode($r->Penjadwalan_Id) : null,
                     'konflik' => false,
                     'hariPadat' => false,
                 ];
@@ -950,7 +981,7 @@ class DashboardController extends Controller
                     ? \Illuminate\Support\Carbon::parse($r->Tanggal_Selesai)->addDay()->toDateString()
                     : \Illuminate\Support\Carbon::parse($r->Tanggal_Mulai)->addDay()->toDateString();
                 $events[] = [
-                    'id' => 'AGENDA-' . Hashids::encode($r->Id_Master_Jadwal_Agenda) . '-' . Hashids::encode($r->Id_Program),
+                    'id' => 'AGENDA-'.Hashids::encode($r->Id_Master_Jadwal_Agenda).'-'.Hashids::encode($r->Id_Program),
                     'jenis' => 'AGENDA',
                     'judul' => $r->Label ?: 'Agenda program',
                     'program' => $r->ProgramNama,
@@ -962,7 +993,7 @@ class DashboardController extends Controller
                     'kesiapan' => null,
                     'jumlahPeserta' => null,
                     'ket' => $r->Jenis,
-                    'sourceUrl' => $bolehAgenda ? '/master-jadwal?fokus=' . Hashids::encode($r->Master_Jadwal_Id) : null,
+                    'sourceUrl' => $bolehAgenda ? '/master-jadwal?fokus='.Hashids::encode($r->Master_Jadwal_Id) : null,
                     'konflik' => false,
                     'hariPadat' => false,
                 ];
@@ -981,7 +1012,7 @@ class DashboardController extends Controller
 
         foreach ($tutup as $r) {
             $events[] = [
-                'id' => 'TUTUP-' . Hashids::encode($r->Id_Pembukaan),
+                'id' => 'TUTUP-'.Hashids::encode($r->Id_Pembukaan),
                 'jenis' => 'TUTUP',
                 'judul' => 'Pendaftaran ditutup',
                 'program' => $r->ProgramNama,
@@ -993,7 +1024,7 @@ class DashboardController extends Controller
                 'kesiapan' => null,
                 'jumlahPeserta' => null,
                 'ket' => $r->Kode,
-                'sourceUrl' => $bolehPembukaan ? '/karir/pembukaan?fokus=' . Hashids::encode($r->Id_Pembukaan) : null,
+                'sourceUrl' => $bolehPembukaan ? '/karir/pembukaan?fokus='.Hashids::encode($r->Id_Pembukaan) : null,
                 'konflik' => false,
                 'hariPadat' => false,
             ];
@@ -1082,7 +1113,7 @@ class DashboardController extends Controller
         }
 
         $in = implode(',', $ids);
-        $penempatan = DB::table(DB::raw('(' . MetrikRekrutmen::sqlUrutanDisplayBerkode("l.Program_Id IN ({$in})") . ') d'))
+        $penempatan = DB::table(DB::raw('('.MetrikRekrutmen::sqlUrutanDisplayBerkode("l.Program_Id IN ({$in})").') d'))
             ->groupBy('d.Program_Id', 'd.UrutanDisplay', 'd.KodeDisplay')
             ->select('d.Program_Id', 'd.UrutanDisplay', 'd.KodeDisplay',
                 DB::raw("SUM(CASE WHEN d.Status = 'BERJALAN' THEN 1 ELSE 0 END) as aktif"),
@@ -1163,8 +1194,8 @@ class DashboardController extends Controller
                     $konversi = (int) round($capai[$u] * 100 / $capai[$sebelumnya]);
                     if ($sempitTerbesar === null || $konversi < $sempitTerbesar['persen']) {
                         $sempitTerbesar = [
-                            'dari' => $kolom->firstWhere('Urutan', $sebelumnya)->Label ?? ('Tahap ' . $sebelumnya),
-                            'ke' => $t->Label ?: ('Tahap ' . $u),
+                            'dari' => $kolom->firstWhere('Urutan', $sebelumnya)->Label ?? ('Tahap '.$sebelumnya),
+                            'ke' => $t->Label ?: ('Tahap '.$u),
                             'persen' => $konversi,
                             'hilang' => max(0, ($capai[$sebelumnya] ?? 0) - $capai[$u]),
                         ];
@@ -1191,7 +1222,7 @@ class DashboardController extends Controller
                 // Identitasnya: capai = diSini + lanjut + diterima + gugur + talent.
                 $tahapKeluar[] = [
                     'urutan' => $u,
-                    'label' => $t->Label ?: ('Tahap ' . $u),
+                    'label' => $t->Label ?: ('Tahap '.$u),
                     'kode' => $t->Kode,
                     'provider' => $t->Provider,
                     'capai' => $capai[$u] ?? 0,
@@ -1384,7 +1415,7 @@ class DashboardController extends Controller
                     'program' => $r->ProgramNama,
                     'mulai' => $r->Waktu_Mulai,
                     'akhir' => $r->Waktu_Akhir,
-                    'ket' => $r->Durasi_Menit ? $r->Durasi_Menit . ' menit' : null,
+                    'ket' => $r->Durasi_Menit ? $r->Durasi_Menit.' menit' : null,
                     'status' => $r->Status,
                 ];
             }
@@ -1465,7 +1496,9 @@ class DashboardController extends Controller
                 };
 
                 return [
-                    'bentuk' => match ($kategori) { 'MT' => 'MT', 'INTERNSHIP' => 'MAGANG', default => 'REKRUTMEN' },
+                    'bentuk' => match ($kategori) {
+                        'MT' => 'MT', 'INTERNSHIP' => 'MAGANG', default => 'REKRUTMEN'
+                    },
                     'khas' => $khas,
                     'ekstra' => [
                         'tes' => $this->ekstraTes($ids),
@@ -2133,8 +2166,8 @@ class DashboardController extends Controller
             ->groupBy('Program_Posisi_Id')
             ->selectRaw("Program_Posisi_Id,
                          SUM(CASE WHEN Status = 'LULUS' THEN 1 ELSE 0 END) as lulus,
-                         SUM(CASE WHEN Status = 'BERJALAN' AND Id_Lamaran NOT IN (" . ($ditahan->isEmpty() ? '0' : $ditahan->implode(',')) . ") THEN 1 ELSE 0 END) as berjalan,
-                         COUNT(*) as total")
+                         SUM(CASE WHEN Status = 'BERJALAN' AND Id_Lamaran NOT IN (".($ditahan->isEmpty() ? '0' : $ditahan->implode(',')).') THEN 1 ELSE 0 END) as berjalan,
+                         COUNT(*) as total')
             ->get()
             ->keyBy('Program_Posisi_Id');
     }
@@ -2152,14 +2185,14 @@ class DashboardController extends Controller
     {
         $q = trim((string) $program);
 
-        return '/karir/pelamar?jenis=' . urlencode($kategori) . ($q !== '' ? '&q=' . urlencode($q) : '');
+        return '/karir/pelamar?jenis='.urlencode($kategori).($q !== '' ? '&q='.urlencode($q) : '');
     }
 
     /** Satu tempat penanganan galat: dicatat lengkap, dibalas singkat. */
     private function gagal(string $bagian, ?string $kategori, \Throwable $e)
     {
-        Log::channel('web_career')->error("Dashboard {$bagian} gagal (kategori: {$kategori}): " . $e->getMessage(), [
-            'berkas' => $e->getFile() . ':' . $e->getLine(),
+        Log::channel('web_career')->error("Dashboard {$bagian} gagal (kategori: {$kategori}): ".$e->getMessage(), [
+            'berkas' => $e->getFile().':'.$e->getLine(),
         ]);
 
         return ResponseHelper::error('Gagal memuat data dashboard.', 500);

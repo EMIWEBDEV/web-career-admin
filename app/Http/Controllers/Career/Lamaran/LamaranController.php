@@ -3,12 +3,12 @@
 namespace App\Http\Controllers\Career\Lamaran;
 
 use App\Helpers\ResponseHelper;
-use App\Http\Controllers\Controller;
 use App\Http\Controllers\Career\MasterLokasi\MasterLokasiController;
+use App\Http\Controllers\Controller;
 use App\Jobs\Career\WcApplyEmailJob;
+use App\Jobs\Career\WcApplyFormJob;
 use App\Jobs\Career\WcBiodataHrisJob;
 use App\Jobs\Career\WcJadwalEmailJob;
-use App\Jobs\Career\WcApplyFormJob;
 use App\Jobs\Career\WcLaporanKandidatJob;
 use App\Support\Career\AksesService;
 use App\Support\Career\AlurKolom;
@@ -22,10 +22,10 @@ use App\Support\Career\PipelineProgress;
 use App\Support\CareerShell;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Vinkla\Hashids\Facades\Hashids;
 
@@ -46,9 +46,7 @@ class LamaranController extends Controller
     public function __construct(
         private LamaranService $svc,
         private LamaranTargetValidator $targetValidator,
-    )
-    {
-    }
+    ) {}
 
     /**
      * MASTER TIPE TAHAP — satu-satunya sumber "aktivitas ini dijalankan bagaimana".
@@ -159,8 +157,8 @@ class LamaranController extends Controller
         foreach ($pembukaan as $pb) {
             foreach ($posisi->get($pb->Program_Id, []) as $x) {
                 $out[] = [
-                    'applyId' => 'PB-' . $pb->Kode . '-' . $x->Id_Program_Posisi,
-                    'programDetailId' => 'PB-' . $pb->Kode,
+                    'applyId' => 'PB-'.$pb->Kode.'-'.$x->Id_Program_Posisi,
+                    'programDetailId' => 'PB-'.$pb->Kode,
                     'pembukaanId' => Hashids::encode($pb->Id_Pembukaan),
                     'posisiId' => Hashids::encode($x->Id_Program_Posisi),
                     'program' => $pb->ProgramNama,
@@ -243,7 +241,7 @@ class LamaranController extends Controller
         // Feedback INSTAN sebelum unggah berkas (hindari berkas GCS yatim). Job &
         // service tetap cek ulang (defense-in-depth).
         $kategoriProgram = $target['program']->Kategori;
-        $kelayakan = (new \App\Support\Career\KelayakanLamaran())->cek($userId, $kategoriProgram);
+        $kelayakan = (new \App\Support\Career\KelayakanLamaran)->cek($userId, $kategoriProgram);
         if (! $kelayakan['boleh']) {
             return ResponseHelper::error($kelayakan['alasan'], 422);
         }
@@ -307,10 +305,10 @@ class LamaranController extends Controller
         } catch (\Throwable $e) {
             // Ada berkas gagal unggah → bersihkan yang sempat masuk, batalkan (tak ada insert).
             $gcs->hapus($terunggah);
-            Log::channel('web_career')->error('[APPLY] unggah berkas gagal: ' . $e->getMessage()
-                . ' | at ' . $e->getFile() . ':' . $e->getLine() . "\n" . $e->getTraceAsString());
+            Log::channel('web_career')->error('[APPLY] unggah berkas gagal: '.$e->getMessage()
+                .' | at '.$e->getFile().':'.$e->getLine()."\n".$e->getTraceAsString());
 
-            return ResponseHelper::error('Gagal mengunggah berkas: ' . $e->getMessage(), 422);
+            return ResponseHelper::error('Gagal mengunggah berkas: '.$e->getMessage(), 422);
         }
 
         try {
@@ -338,7 +336,7 @@ class LamaranController extends Controller
 
             WcApplyFormJob::dispatch($processId);
 
-            Log::channel('web_career')->info("[APPLY] {$processId} diantrikan (wc-applyform) — " . count($berkasMeta) . ' berkas.');
+            Log::channel('web_career')->info("[APPLY] {$processId} diantrikan (wc-applyform) — ".count($berkasMeta).' berkas.');
 
             return ResponseHelper::success([
                 'processId' => $processId,
@@ -347,7 +345,7 @@ class LamaranController extends Controller
         } catch (\Throwable $e) {
             // Payload/dispatch gagal setelah berkas terunggah → bersihkan (tak ada yatim).
             $gcs->hapus($terunggah);
-            Log::channel('web_career')->error('Gagal mengantrikan lamaran: ' . $e->getMessage());
+            Log::channel('web_career')->error('Gagal mengantrikan lamaran: '.$e->getMessage());
 
             return ResponseHelper::error('Gagal memproses lamaran.', 500);
         }
@@ -439,7 +437,7 @@ class LamaranController extends Controller
 
             return ResponseHelper::success(null, 'Lamaran dibatalkan.');
         } catch (\Throwable $e) {
-            Log::channel('web_career')->error('Gagal membatalkan lamaran: ' . $e->getMessage());
+            Log::channel('web_career')->error('Gagal membatalkan lamaran: '.$e->getMessage());
 
             return ResponseHelper::error('Gagal membatalkan lamaran.', 500);
         }
@@ -480,7 +478,7 @@ class LamaranController extends Controller
         // sumber yang sama, lalu dicocokkan ke lamaran lewat pembukaan (+posisi).
         $landing = app(\App\Http\Controllers\Career\CareerLandingController::class);
         $petaMt = collect($landing->dbMtCards())->keyBy('pembukaanId');
-        $petaRek = collect($landing->dbLowonganCards())->keyBy(fn ($c) => ($c['pembukaanId'] ?? '') . '|' . ($c['posisiId'] ?? ''));
+        $petaRek = collect($landing->dbLowonganCards())->keyBy(fn ($c) => ($c['pembukaanId'] ?? '').'|'.($c['posisiId'] ?? ''));
 
         // TAHAPAN nyata tiap lamaran (nama + status per urutan) — dipakai stepper
         // "PROGRES SELEKSI" pada kartu Lamaran Aktif, sekali kueri untuk semuanya.
@@ -499,7 +497,7 @@ class LamaranController extends Controller
             $posHash = $l->Program_Posisi_Id ? Hashids::encode($l->Program_Posisi_Id) : null;
             $kartu = $l->Kategori === 'MT'
                 ? ($petaMt[$pbHash] ?? null)
-                : ($petaRek[$pbHash . '|' . $posHash] ?? null);
+                : ($petaRek[$pbHash.'|'.$posHash] ?? null);
 
             $tahapan = ($tahapPeta[$l->Id_Lamaran] ?? collect())->map(fn ($t) => [
                 'urutan' => (int) $t->Urutan,
@@ -957,8 +955,8 @@ class LamaranController extends Controller
         $lowonganUrl = null;
         if ($lamaran->PembukaanKode) {
             $lowonganUrl = $lamaran->ProgramKategori === 'MT'
-                ? '/karir/landing-page/mt/PB-' . $lamaran->PembukaanKode
-                : '/karir/landing-page/lowongan/PB-' . $lamaran->PembukaanKode . '-' . $lamaran->Program_Posisi_Id;
+                ? '/karir/landing-page/mt/PB-'.$lamaran->PembukaanKode
+                : '/karir/landing-page/lowongan/PB-'.$lamaran->PembukaanKode.'-'.$lamaran->Program_Posisi_Id;
         }
 
         // KARTU lowongan (info kaya: tanggung jawab, syarat, skill, benefit, tipe
@@ -1076,7 +1074,7 @@ class LamaranController extends Controller
                     'baris' => $b->Baris_Index !== null ? (int) $b->Baris_Index : null,
                     'nomor' => $b->Baris_Index !== null ? ((int) $b->Baris_Index) + 1 : null,
                     'nama' => $b->Nama_Asli,
-                    'url' => url($urlBerkasPrefix . Hashids::encode($b->Id_Formulir_Berkas)),
+                    'url' => url($urlBerkasPrefix.Hashids::encode($b->Id_Formulir_Berkas)),
                     'ext' => $ext,
                     'isPdf' => $ext === 'pdf' || $b->Mime === 'application/pdf',
                     'isImage' => in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'gif'], true),
@@ -1171,10 +1169,10 @@ class LamaranController extends Controller
      * di dalam.
      *
      * @param  ?\Closure  $cariBerkas  fn(string $kunci): ?array — berkas untuk
-     *         satu sub-isian, atau null bila sub-isian itu memang teks biasa.
+     *                                 satu sub-isian, atau null bila sub-isian itu memang teks biasa.
      * @return array{nilai: string, baris: array} `baris` hanya terisi untuk
-     *         field berulang, supaya layar bisa menampilkannya sebagai daftar
-     *         alih-alih satu paragraf panjang.
+     *                                            field berulang, supaya layar bisa menampilkannya sebagai daftar
+     *                                            alih-alih satu paragraf panjang.
      */
     /**
      * Pencari berkas per kunci isian, dipakai nilaiIsian() untuk sub-isian
@@ -1324,6 +1322,7 @@ class LamaranController extends Controller
                 if ($t !== '') {
                     $baris[] = [['label' => '', 'nilai' => $t]];
                 }
+
                 continue;
             }
 
@@ -1369,8 +1368,8 @@ class LamaranController extends Controller
         // lama yang belum membaca `baris`.
         $ringkas = [];
         foreach ($baris as $i => $pasangan) {
-            $isi = implode(', ', array_map(fn ($p) => ($p['label'] !== '' ? $p['label'] . ': ' : '') . $p['nilai'], $pasangan));
-            $ringkas[] = count($baris) > 1 ? ($i + 1) . ') ' . $isi : $isi;
+            $isi = implode(', ', array_map(fn ($p) => ($p['label'] !== '' ? $p['label'].': ' : '').$p['nilai'], $pasangan));
+            $ringkas[] = count($baris) > 1 ? ($i + 1).') '.$isi : $isi;
         }
 
         return ['nilai' => implode(' | ', $ringkas), 'baris' => $baris];
@@ -1406,7 +1405,7 @@ class LamaranController extends Controller
             }
         }
 
-        return $awal . '_';
+        return $awal.'_';
     }
 
     /**
@@ -1440,15 +1439,15 @@ class LamaranController extends Controller
      * ketiga ditambahkan lewat master: dengan perbandingan Kode, mode baru itu
      * diam-diam berperilaku seperti PARALEL di setiap tempat yang lupa diubah.
      *
-     * Di-cache per permintaan — dipanggil sekali per aktivitas per baris rapor.
+     * SATU IMPLEMENTASI, dipakai bersama papan Monitoring lewat
+     * PipelineReadModel (di-cache per proses di sana). Dulu aturannya ditulis
+     * dua kali di dua berkas — dan dua salinan aturan giliran berarti worklist
+     * dan portal kandidat bisa berselisih tentang aktivitas mana yang sedang
+     * terbuka, tanpa satu pun galat yang menandainya.
      */
-    private static ?\Illuminate\Support\Collection $modeUrutanCache = null;
-
     private static function modeUrutanMengunci(?string $kode): bool
     {
-        self::$modeUrutanCache ??= DB::table('N_WEB_CAREERS_Master_Mode_Urutan')->get()->keyBy('Kode');
-
-        return (self::$modeUrutanCache->get((string) $kode)->Flag_Berurutan ?? 'T') === 'Y';
+        return \App\Support\Career\PipelineReadModel::urutanMengunci($kode);
     }
 
     /**
@@ -1700,7 +1699,7 @@ class LamaranController extends Controller
         if ($tes->Unggah_Kirim_At) {
             return ResponseHelper::error(
                 'Berkas untuk aktivitas ini sudah kamu kirim dan sedang dinilai tim — '
-                . 'tidak bisa ditambah atau diubah lagi. Hubungi tim rekrutmen bila ada yang perlu diperbaiki.',
+                .'tidak bisa ditambah atau diubah lagi. Hubungi tim rekrutmen bila ada yang perlu diperbaiki.',
                 409,
             );
         }
@@ -1709,9 +1708,9 @@ class LamaranController extends Controller
         $maksMb = (int) ($tes->Unggah_Maks_Mb ?: 5);
 
         $data = $request->validate([
-            'berkas' => 'required|file|mimes:' . implode(',', $format) . '|max:' . ($maksMb * 1024),
+            'berkas' => 'required|file|mimes:'.implode(',', $format).'|max:'.($maksMb * 1024),
         ], [
-            'berkas.mimes' => 'Hanya menerima berkas ' . implode(', ', $format) . '.',
+            'berkas.mimes' => 'Hanya menerima berkas '.implode(', ', $format).'.',
             'berkas.max' => "Ukuran berkas melebihi {$maksMb} MB.",
         ]);
 
@@ -1731,11 +1730,11 @@ class LamaranController extends Controller
                 (string) ($nama ?: 'kandidat'),
             );
 
-            $path = $gcs->unggah($folder, $tes->Label . '-' . Str::lower(Str::random(6)), $ext, $konten);
+            $path = $gcs->unggah($folder, $tes->Label.'-'.Str::lower(Str::random(6)), $ext, $konten);
         } catch (\Throwable $e) {
-            Log::channel('web_career')->error('[TES-BERKAS] unggah gagal: ' . $e->getMessage());
+            Log::channel('web_career')->error('[TES-BERKAS] unggah gagal: '.$e->getMessage());
 
-            return ResponseHelper::error('Berkas gagal diunggah: ' . Str::limit($e->getMessage(), 140), 500);
+            return ResponseHelper::error('Berkas gagal diunggah: '.Str::limit($e->getMessage(), 140), 500);
         }
 
         $baruId = DB::table('N_WEB_CAREERS_Lamaran_Tes_Berkas')->insertGetId([
@@ -1880,7 +1879,7 @@ class LamaranController extends Controller
         if ($b->Terkirim_At) {
             return ResponseHelper::error(
                 'Berkas ini sudah kamu kirim dan sedang dinilai tim — tidak bisa dihapus lagi. '
-                . 'Hubungi tim rekrutmen bila ada yang perlu diperbaiki.',
+                .'Hubungi tim rekrutmen bila ada yang perlu diperbaiki.',
                 409,
             );
         }
@@ -1893,7 +1892,7 @@ class LamaranController extends Controller
         try {
             Storage::disk(GcsBerkas::DISK)->delete($b->Path_File);
         } catch (\Throwable $e) {
-            Log::channel('web_career')->warning('[TES-BERKAS] sisa GCS gagal dihapus: ' . $e->getMessage());
+            Log::channel('web_career')->warning('[TES-BERKAS] sisa GCS gagal dihapus: '.$e->getMessage());
         }
 
         return ResponseHelper::success(null, 'Berkas dihapus.');
@@ -1920,7 +1919,7 @@ class LamaranController extends Controller
                 return redirect()->away($gcs->temporaryUrl($b->Path_File, now()->addMinutes(15)));
             }
         } catch (\Throwable $e) {
-            Log::channel('web_career')->warning('[TES-BERKAS] signed URL gagal: ' . $e->getMessage());
+            Log::channel('web_career')->warning('[TES-BERKAS] signed URL gagal: '.$e->getMessage());
         }
 
         abort(404);
@@ -1956,7 +1955,7 @@ class LamaranController extends Controller
                 return redirect()->away($gcs->temporaryUrl($b->Path_File, now()->addMinutes(15)));
             }
         } catch (\Throwable $e) {
-            Log::channel('web_career')->warning('[PORTAL] signed URL berkas tahap gagal: ' . $e->getMessage());
+            Log::channel('web_career')->warning('[PORTAL] signed URL berkas tahap gagal: '.$e->getMessage());
         }
 
         abort(404);
@@ -2023,11 +2022,11 @@ class LamaranController extends Controller
                     return redirect()->away($gcs->temporaryUrl($b->Path_File, now()->addMinutes(15)));
                 }
             } catch (\Throwable $e) {
-                Log::channel('web_career')->warning('Signed URL GCS gagal (portal) berkas ' . $b->Id_Formulir_Berkas . ': ' . $e->getMessage());
+                Log::channel('web_career')->warning('Signed URL GCS gagal (portal) berkas '.$b->Id_Formulir_Berkas.': '.$e->getMessage());
             }
         }
 
-        foreach ([storage_path('app/' . $b->Path_File), public_path($b->Path_File), $b->Path_File] as $kandidat) {
+        foreach ([storage_path('app/'.$b->Path_File), public_path($b->Path_File), $b->Path_File] as $kandidat) {
             if ($kandidat && is_file($kandidat)) {
                 return response()->file($kandidat, ['Content-Type' => $b->Mime ?: 'application/octet-stream']);
             }
@@ -2306,7 +2305,7 @@ class LamaranController extends Controller
                     if ($feedbackId) {
                         $tokens = $feedbackService->generateTokenPair($feedbackId, $userEmail);
                         $feedbackUrl = rtrim(config('app.url'), '/')
-                            . '/feedback/' . $tokens['hashids'] . '/' . $tokens['signature'];
+                            .'/feedback/'.$tokens['hashids'].'/'.$tokens['signature'];
                     }
                 }
             }
@@ -2329,7 +2328,7 @@ class LamaranController extends Controller
                 ...$kandidat,
             ]);
         } catch (\Throwable $e) {
-            Log::channel('web_career')->error("[CALLBACK] gagal antre email hasil lamaran #{$lamaranId}: " . $e->getMessage());
+            Log::channel('web_career')->error("[CALLBACK] gagal antre email hasil lamaran #{$lamaranId}: ".$e->getMessage());
         }
     }
 
@@ -2409,7 +2408,7 @@ class LamaranController extends Controller
         } catch (\DomainException $e) {
             return ResponseHelper::error($e->getMessage(), 422);
         } catch (\Throwable $e) {
-            Log::channel('web_career')->error('Gagal simpan pengisian: ' . $e->getMessage());
+            Log::channel('web_career')->error('Gagal simpan pengisian: '.$e->getMessage());
 
             return ResponseHelper::error('Gagal menyimpan formulir.', 500);
         }
@@ -2651,8 +2650,8 @@ class LamaranController extends Controller
         $izin = AksesService::kategoriDiizinkan(self::PAGE);
         if ($izin && ! in_array($program->Kategori, $izin, true)) {
             Log::channel('web_career')->warning(
-                "Akses ditolak: user #" . session('career_auth.id') . " membuka program {$program->Kode} "
-                . "(kategori {$program->Kategori}) di luar jatahnya."
+                'Akses ditolak: user #'.session('career_auth.id')." membuka program {$program->Kode} "
+                ."(kategori {$program->Kategori}) di luar jatahnya."
             );
 
             return ['program' => null, 'kolom' => [], 'pelamar' => []];
@@ -3565,7 +3564,7 @@ class LamaranController extends Controller
         ]);
 
         try {
-                // Keputusan yang datang DARI KANDIDAT menuntut alasan yang benar-benar
+            // Keputusan yang datang DARI KANDIDAT menuntut alasan yang benar-benar
             // ditulis. Batas 10 karakter menyaring isian asal seperti "-" atau
             // "ok" yang tak berguna saat ditinjau berbulan-bulan kemudian.
             $defHasil = \App\Support\Career\LamaranService::masterHasilKeputusan()->get($data['hasil']);
@@ -3607,7 +3606,7 @@ class LamaranController extends Controller
 
                     return ResponseHelper::error(
                         "\"{$defHasil->Nama}\" belum bisa diambil — masih ada aktivitas yang belum tuntas: {$rinci}. "
-                        . 'Selesaikan dulu, atau gunakan Tidak Lolos / Tahan Dulu bila memang harus ditutup sekarang.',
+                        .'Selesaikan dulu, atau gunakan Tidak Lolos / Tahan Dulu bila memang harus ditutup sekarang.',
                         422,
                     );
                 }
@@ -3636,7 +3635,7 @@ class LamaranController extends Controller
                 $talentPool = false;
             }
 
-        $tahap = DB::table('N_WEB_CAREERS_Lamaran_Tahap')->where('Id_Lamaran_Tahap', $realId)->first(['Lamaran_Id']);
+            $tahap = DB::table('N_WEB_CAREERS_Lamaran_Tahap')->where('Id_Lamaran_Tahap', $realId)->first(['Lamaran_Id']);
 
             // ── SATU TRANSAKSI: CATATANNYA IKUT BATAL BILA PALUNYA DITOLAK ───
             //
@@ -3724,10 +3723,126 @@ class LamaranController extends Controller
             // digulung balik, jadi tidak ada satu pun kolom yang berubah.
             return ResponseHelper::error($e->getMessage(), 422);
         } catch (\Throwable $e) {
-            Log::channel('web_career')->error('Gagal ketuk palu: ' . $e->getMessage());
+            Log::channel('web_career')->error('Gagal ketuk palu: '.$e->getMessage());
 
             return ResponseHelper::error('Gagal memproses keputusan.', 500);
         }
+    }
+
+    /**
+     * PATCH /api/v1/karir/lamaran/tahap/putus-massal — KETUK PALU BANYAK SEKALIGUS.
+     *
+     * Satu angkatan diputus dalam satu peristiwa: sesudah rapat panel, sesudah
+     * hasil psikotes turun, sesudah MCU seangkatan keluar. Membuka drawer
+     * kandidat satu per satu untuk itu berarti mengulang pekerjaan yang sama
+     * puluhan kali — dan yang terlewat di tengah daftar tidak meninggalkan
+     * jejak apa pun.
+     *
+     * TIAP ITEM DIPUTUS LEWAT putus() YANG SAMA, bukan lewat salinan aturannya.
+     * Keputusan seleksi menyimpan terlalu banyak gerbang untuk digandakan:
+     * ketuntasan aktivitas, cut-off Talent Pool, alasan wajib bagi keputusan
+     * dari kandidat, dan pengiriman email yang dibaca dari master. Dua salinan
+     * pasti berselisih, dan selisihnya berarti sebagian kandidat diputus dengan
+     * aturan yang berbeda dari yang lain — tanpa satu pun galat muncul.
+     *
+     * TIAP ITEM PUNYA TRANSAKSINYA SENDIRI di dalam putus(). Satu kandidat yang
+     * gerbangnya menolak tidak boleh membatalkan sembilan belas keputusan yang
+     * sudah benar.
+     */
+    public function putusMassal(Request $request)
+    {
+        $data = $request->validate([
+            // Batas 200 mengikuti hold & penjadwalan massal.
+            'item' => 'required|array|min:1|max:200',
+            'item.*.tahapId' => 'required|string|max:64',
+            'item.*.hasil' => ['required', Rule::in(\App\Support\Career\LamaranService::masterHasilKeputusan()->keys()->all())],
+            'item.*.catatan' => 'nullable|string',
+            'item.*.catatanHtml' => 'nullable|string',
+            'item.*.talentPool' => 'nullable|boolean',
+            'item.*.tanggalKonfirmasi' => 'nullable|date',
+        ]);
+
+        $berhasil = [];
+        $gagal = [];
+
+        foreach ($data['item'] as $it) {
+            // Nama diambil DULU, selagi tahapnya masih bisa ditelusuri — dipakai
+            // baik untuk laporan berhasil maupun gagal. Laporan yang menyebut
+            // nomor tahap tidak dikenali siapa pun yang membaca layar.
+            $realId = Hashids::decode($it['tahapId'])[0] ?? null;
+            $nama = $realId
+                ? DB::table('N_WEB_CAREERS_Lamaran_Tahap as t')
+                    ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 't.Lamaran_Id')
+                    ->join('N_WEB_CAREERS_Users as u', 'u.Id_Users', '=', 'l.Id_Users')
+                    ->where('t.Id_Lamaran_Tahap', $realId)
+                    ->value('u.Nama')
+                : null;
+
+            try {
+                // Request buatan sendiri berisi field yang sama dengan yang
+                // dikirim drawer satuan. putus() memvalidasinya lagi — itu
+                // disengaja: gerbangnya tetap berlaku utuh, bukan dilewati
+                // karena panggilannya datang dari dalam.
+                $sub = new Request;
+                $sub->setLaravelSession($request->session());
+                $sub->replace(array_filter([
+                    'hasil' => $it['hasil'],
+                    'catatan' => $it['catatan'] ?? null,
+                    'catatanHtml' => $it['catatanHtml'] ?? null,
+                    'talentPool' => $it['talentPool'] ?? null,
+                    'tanggalKonfirmasi' => $it['tanggalKonfirmasi'] ?? null,
+                ], fn ($v) => $v !== null));
+
+                $resp = $this->putus($sub, $it['tahapId']);
+                $isi = json_decode($resp->getContent(), true) ?: [];
+
+                if ($resp->getStatusCode() < 400 && ($isi['success'] ?? false)) {
+                    $berhasil[] = ['tahapId' => $it['tahapId'], 'nama' => $nama, 'hasil' => $it['hasil']];
+                } else {
+                    $gagal[] = [
+                        'tahapId' => $it['tahapId'],
+                        'nama' => $nama,
+                        'pesan' => $isi['message'] ?? 'Keputusan ditolak.',
+                    ];
+                }
+            } catch (\Illuminate\Validation\ValidationException $e) {
+                // putus() memakai $request->validate(), yang MELEMPAR saat
+                // dipanggil langsung (bukan lewat router). Tanpa tangkapan ini,
+                // satu item cacat menghentikan seluruh sisa daftar.
+                $gagal[] = [
+                    'tahapId' => $it['tahapId'],
+                    'nama' => $nama,
+                    'pesan' => collect($e->errors())->flatten()->first() ?? 'Data tidak valid.',
+                ];
+            } catch (\Throwable $e) {
+                Log::channel('web_career')->error("Gagal putus massal #{$it['tahapId']}: ".$e->getMessage());
+                $gagal[] = ['tahapId' => $it['tahapId'], 'nama' => $nama, 'pesan' => 'Gagal memproses keputusan.'];
+            }
+        }
+
+        Log::channel('web_career')->info(sprintf(
+            '[PUTUS MASSAL] %d berhasil, %d gagal, oleh %s.',
+            count($berhasil), count($gagal), session('career_auth.nama', 'ADMIN')
+        ));
+
+        // Seluruhnya gagal dibalas 422 — dari sisi admin tidak ada yang terjadi,
+        // dan 200 membuat layar menampilkan keberhasilan palsu. Dibentuk
+        // langsung karena layar perlu tahu SIAPA saja yang dilewati dan kenapa;
+        // ResponseHelper::error() hanya membawa satu kalimat.
+        if (! $berhasil) {
+            return response()->json([
+                'success' => false,
+                'status' => 422,
+                'message' => 'Tidak ada kandidat yang berhasil diputus. '.($gagal[0]['pesan'] ?? ''),
+                'result' => ['berhasil' => [], 'gagal' => $gagal],
+            ], 422);
+        }
+
+        $pesan = count($gagal) === 0
+            ? count($berhasil).' kandidat diputus.'
+            : count($berhasil).' kandidat diputus, '.count($gagal).' dilewati.';
+
+        return ResponseHelper::success(['berhasil' => $berhasil, 'gagal' => $gagal], $pesan);
     }
 
     /**
@@ -3825,6 +3940,7 @@ class LamaranController extends Controller
             $realId = Hashids::decode($it['tahapId'])[0] ?? null;
             if (! $realId) {
                 $gagal[] = ['tahapId' => $it['tahapId'], 'nama' => null, 'pesan' => 'Tahap tidak valid.'];
+
                 continue;
             }
 
@@ -3868,14 +3984,14 @@ class LamaranController extends Controller
             return response()->json([
                 'success' => false,
                 'status' => 422,
-                'message' => 'Tidak ada kandidat yang berhasil ' . $kata . '. ' . ($gagal[0]['pesan'] ?? ''),
+                'message' => 'Tidak ada kandidat yang berhasil '.$kata.'. '.($gagal[0]['pesan'] ?? ''),
                 'result' => ['berhasil' => [], 'gagal' => $gagal],
             ], 422);
         }
 
         $pesan = count($gagal) === 0
-            ? count($berhasil) . ' kandidat ' . $kata . '.'
-            : count($berhasil) . ' kandidat ' . $kata . ', ' . count($gagal) . ' dilewati.';
+            ? count($berhasil).' kandidat '.$kata.'.'
+            : count($berhasil).' kandidat '.$kata.', '.count($gagal).' dilewati.';
 
         return ResponseHelper::success(['berhasil' => $berhasil, 'gagal' => $gagal], $pesan);
     }
@@ -3970,7 +4086,7 @@ class LamaranController extends Controller
         });
 
         Log::channel('web_career')->info(
-            'Tahap #' . $realId . ' ' . ($menahan ? 'DITAHAN' : 'DILEPAS dari tahan') . " oleh {$nama}."
+            'Tahap #'.$realId.' '.($menahan ? 'DITAHAN' : 'DILEPAS dari tahan')." oleh {$nama}."
         );
 
         // MENYUSUL KETINGGALAN. Selama ditahan, mesin keputusan sengaja tidak
@@ -4016,16 +4132,16 @@ class LamaranController extends Controller
     {
         $mb = fn (float $kb) => rtrim(rtrim(number_format($kb / 1024, 1, ',', '.'), '0'), ',');
         $file = $request->file('file');
-        $batas = 'Ukuran berkas melebihi batas ' . $mb($maksKb) . ' MB.';
+        $batas = 'Ukuran berkas melebihi batas '.$mb($maksKb).' MB.';
 
         if (! $file || ! $file->isValid()) {
             // Berkas yang GAGAL diunggah (mis. melebihi upload_max_filesize PHP)
             // tidak punya ukuran yang bisa dibaca — menyebut "0 MB" di situ
             // justru menyesatkan.
-            return $batas . ' Perkecil dulu berkasnya, lalu unggah ulang.';
+            return $batas.' Perkecil dulu berkasnya, lalu unggah ulang.';
         }
 
-        return $batas . ' Berkas yang dipilih berukuran ' . $mb($file->getSize() / 1024) . ' MB — perkecil dulu, lalu unggah ulang.';
+        return $batas.' Berkas yang dipilih berukuran '.$mb($file->getSize() / 1024).' MB — perkecil dulu, lalu unggah ulang.';
     }
 
     /** Master alasan HOLD yang aktif, di-cache per permintaan. */
@@ -4039,7 +4155,6 @@ class LamaranController extends Controller
             ->get()
             ->keyBy('Kode');
     }
-
 
     /** Upload berkas hasil tahap (MCU/Interview) — PDF/JPG, oleh admin/requester. */
     public function unggahBerkasTahap(Request $request, string $id)
@@ -4076,7 +4191,7 @@ class LamaranController extends Controller
                 $lam->Nama ?? 'kandidat',
                 $tahap->Tipe_Tahap_Kode,
             );
-            $label = 'hasil-' . strtolower($tahap->Tipe_Tahap_Kode ?? 'tahap') . '-' . \Illuminate\Support\Str::lower(\Illuminate\Support\Str::random(6));
+            $label = 'hasil-'.strtolower($tahap->Tipe_Tahap_Kode ?? 'tahap').'-'.\Illuminate\Support\Str::lower(\Illuminate\Support\Str::random(6));
             $path = $gcs->unggah($folder, $label, $ext, $konten);
         } catch (\Throwable $e) {
             return ResponseHelper::error($e->getMessage(), 422);
@@ -4130,7 +4245,7 @@ class LamaranController extends Controller
                 return redirect()->away($gcs->temporaryUrl($b->Path_File, now()->addMinutes(15)));
             }
         } catch (\Throwable $e) {
-            Log::channel('web_career')->warning('Signed URL berkas tahap gagal: ' . $e->getMessage());
+            Log::channel('web_career')->warning('Signed URL berkas tahap gagal: '.$e->getMessage());
         }
         abort(404, 'File tidak ditemukan.');
     }
@@ -4158,7 +4273,7 @@ class LamaranController extends Controller
         } catch (\Throwable $e) {
             // Dicatat, tidak ditelan diam-diam: objek yatim yang tak pernah
             // dilaporkan adalah tagihan penyimpanan yang tak pernah dijelaskan.
-            Log::channel('web_career')->warning('[BERKAS-TAHAP] sisa GCS gagal dihapus: ' . $e->getMessage());
+            Log::channel('web_career')->warning('[BERKAS-TAHAP] sisa GCS gagal dihapus: '.$e->getMessage());
         }
 
         return ResponseHelper::success(null, 'Berkas dihapus.');
@@ -4235,7 +4350,7 @@ class LamaranController extends Controller
         $exportId = DB::table('N_WEB_CAREERS_Export_Log')->insertGetId([
             'Export_Type' => 'LAPORAN_KANDIDAT',
             'Id_Users' => session('career_auth.id'),
-            'Keterangan' => trim(($lamaran->Nama ?: 'Kandidat') . ' — ' . ($lamaran->ProgramNama ?: '')),
+            'Keterangan' => trim(($lamaran->Nama ?: 'Kandidat').' — '.($lamaran->ProgramNama ?: '')),
             'Filters_Json' => json_encode([
                 'lamaranId' => (int) $realId,
                 'kodeLamaran' => $lamaran->Kode,
@@ -4338,7 +4453,7 @@ class LamaranController extends Controller
         } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
             throw $e;
         } catch (\Throwable $e) {
-            Log::channel('web_career')->warning('[LAPORAN] aliran unduhan gagal: ' . $e->getMessage());
+            Log::channel('web_career')->warning('[LAPORAN] aliran unduhan gagal: '.$e->getMessage());
         }
 
         abort(404, 'Berkas laporan tidak ditemukan.');
@@ -4404,7 +4519,7 @@ class LamaranController extends Controller
                 return redirect()->away($gcs->temporaryUrl($b->Path_File, now()->addMinutes(15)));
             }
         } catch (\Throwable $e) {
-            Log::channel('web_career')->warning('[BERKAS-KANDIDAT] signed URL gagal: ' . $e->getMessage());
+            Log::channel('web_career')->warning('[BERKAS-KANDIDAT] signed URL gagal: '.$e->getMessage());
         }
 
         abort(404);
@@ -4527,7 +4642,7 @@ class LamaranController extends Controller
             );
             // Nama file mengandung potongan acak: satu aktivitas boleh menerima
             // beberapa lembar, dan nama deterministik akan menimpa yang lama.
-            $label = 'hasil-' . strtolower($sub->Tipe_Tahap_Kode ?: 'aktivitas') . '-' . Str::lower(Str::random(6));
+            $label = 'hasil-'.strtolower($sub->Tipe_Tahap_Kode ?: 'aktivitas').'-'.Str::lower(Str::random(6));
             $path = $gcs->unggah($folder, $label, $ext, $konten);
         } catch (\Throwable $e) {
             return ResponseHelper::error($e->getMessage(), 422);
@@ -4648,7 +4763,7 @@ class LamaranController extends Controller
             // Path relatif, bukan URL absolut: inilah yang disimpan ke dalam
             // HTML, dan menyimpan nama host di sana membuat seluruh gambar mati
             // begitu domainnya berganti (dev → staging → production).
-            'url' => '/api/v1/karir/lamaran/catatan/gambar/' . Hashids::encode($id),
+            'url' => '/api/v1/karir/lamaran/catatan/gambar/'.Hashids::encode($id),
         ], 'Gambar terunggah.');
     }
 
@@ -4698,7 +4813,7 @@ class LamaranController extends Controller
                 return redirect()->away($disk->temporaryUrl($b->Path_File, now()->addMinutes(15)));
             }
         } catch (\Throwable $e) {
-            Log::channel('web_career')->warning('[LAPORAN-BERKAS] signed URL gagal: ' . $e->getMessage());
+            Log::channel('web_career')->warning('[LAPORAN-BERKAS] signed URL gagal: '.$e->getMessage());
         }
 
         abort(404, 'Berkas tidak ditemukan.');
@@ -4725,7 +4840,7 @@ class LamaranController extends Controller
                 return redirect()->away($disk->temporaryUrl($g->Path_File, now()->addMinutes(15)));
             }
         } catch (\Throwable $e) {
-            Log::channel('web_career')->warning('Signed URL gambar catatan gagal: ' . $e->getMessage());
+            Log::channel('web_career')->warning('Signed URL gambar catatan gagal: '.$e->getMessage());
         }
 
         abort(404, 'Gambar tidak ditemukan.');
@@ -4865,10 +4980,10 @@ class LamaranController extends Controller
 
             return ResponseHelper::success(
                 $hasil,
-                "Hasil \"{$sub->Label}\" ditarik dari HCLearn: " . ($nilai['Status_Kelulusan'] ?? '-') . ' (nilai ' . ($nilai['Total_Nilai'] ?? '-') . ').'
+                "Hasil \"{$sub->Label}\" ditarik dari HCLearn: ".($nilai['Status_Kelulusan'] ?? '-').' (nilai '.($nilai['Total_Nilai'] ?? '-').').'
             );
         } catch (\Throwable $e) {
-            Log::channel('web_career')->error("Gagal sinkron hasil sub-tes #{$id}: " . $e->getMessage());
+            Log::channel('web_career')->error("Gagal sinkron hasil sub-tes #{$id}: ".$e->getMessage());
 
             return ResponseHelper::error('Gagal menarik hasil dari HCLearn.', 500);
         }
@@ -4937,11 +5052,11 @@ class LamaranController extends Controller
                 return $eval['outcome'] ?? null;
             });
 
-            Log::channel('web_career')->info("Sub-tes #{$realId} ditandai TIDAK_HADIR → evaluasi: " . ($outcome ?? '-'));
+            Log::channel('web_career')->info("Sub-tes #{$realId} ditandai TIDAK_HADIR → evaluasi: ".($outcome ?? '-'));
 
             return ResponseHelper::success(['outcome' => $outcome], 'Sub-tes ditandai tidak hadir.');
         } catch (\Throwable $e) {
-            Log::channel('web_career')->error("Gagal tandai sub-tes #{$id}: " . $e->getMessage());
+            Log::channel('web_career')->error("Gagal tandai sub-tes #{$id}: ".$e->getMessage());
 
             return ResponseHelper::error('Gagal memproses.', 500);
         }
@@ -5032,7 +5147,7 @@ class LamaranController extends Controller
         if (($tipeSub->Flag_Wajib_Luring ?? 'T') === 'Y'
             && (self::masterModeJadwal()->get($data['mode'])->Flag_Luring ?? 'T') !== 'Y') {
             return ResponseHelper::error(
-                ($tipeSub->Nama ?? 'Aktivitas ini') . ' hanya bisa dijadwalkan LURING (tatap muka).',
+                ($tipeSub->Nama ?? 'Aktivitas ini').' hanya bisa dijadwalkan LURING (tatap muka).',
                 422,
             );
         }
@@ -5046,8 +5161,8 @@ class LamaranController extends Controller
         // mengajarinya mengabaikan peringatan.
         $pesan = [
             'terkirim' => 'Jadwal disimpan dan undangan dikirim ke kandidat.',
-            'privat' => 'Jadwal disimpan. ' . ($tipeSub->Nama ?? 'Aktivitas ini')
-                . ' bersifat internal — kandidat tidak menerima undangan dan tidak melihatnya di portal.',
+            'privat' => 'Jadwal disimpan. '.($tipeSub->Nama ?? 'Aktivitas ini')
+                .' bersifat internal — kandidat tidak menerima undangan dan tidak melihatnya di portal.',
             'gagal' => 'Jadwal disimpan. Undangan email gagal dikirim — periksa log.',
         ][$undangan];
 
@@ -5259,11 +5374,11 @@ class LamaranController extends Controller
                 return 'Tempat di luar daftar tidak diizinkan untuk aktivitas ini — pilih dari daftar lokasi.';
             }
             if (empty(trim((string) ($data['lokasiNama'] ?? '')))) {
-                return ($p->Label_Nama_Lainnya ?: 'Nama tempat') . ' wajib diisi.';
+                return ($p->Label_Nama_Lainnya ?: 'Nama tempat').' wajib diisi.';
             }
             if (($p->Flag_Wajib_Alamat_Lainnya ?? 'Y') === 'Y'
                 && empty(trim((string) ($data['lokasiAlamat'] ?? '')))) {
-                return ($p->Label_Alamat_Lainnya ?: 'Alamat') . ' wajib diisi — undangan tanpa alamat membuat kandidat tidak tahu harus datang ke mana.';
+                return ($p->Label_Alamat_Lainnya ?: 'Alamat').' wajib diisi — undangan tanpa alamat membuat kandidat tidak tahu harus datang ke mana.';
             }
 
             return null;
@@ -5287,8 +5402,8 @@ class LamaranController extends Controller
             $nama = DB::table('N_WEB_CAREERS_Master_Lokasi')->where('Id_Master_Lokasi', $id)->value('Nama') ?: 'Lokasi itu';
             $p = MasterLokasiController::masterPeruntukan()->get($butuh);
 
-            return "\"{$nama}\" bukan " . mb_strtolower($p->Nama ?? $butuh)
-                . '. ' . ($p->Label_Pilih ?? 'Pilih lokasi yang sesuai') . '.';
+            return "\"{$nama}\" bukan ".mb_strtolower($p->Nama ?? $butuh)
+                .'. '.($p->Label_Pilih ?? 'Pilih lokasi yang sesuai').'.';
         }
 
         return null;
@@ -5410,7 +5525,7 @@ class LamaranController extends Controller
                 ->select('t.*', 'h.Lamaran_Id', 'l.Status as StatusLamaran', 'u.Nama as Pelamar')
                 ->first() : null;
 
-            $nama = $sub->Pelamar ?? ('#' . $hash);
+            $nama = $sub->Pelamar ?? ('#'.$hash);
 
             // ── Gerbang per kandidat ────────────────────────────────────────
             // Sengaja diperiksa ulang di server untuk SETIAP baris, bukan
@@ -5425,6 +5540,7 @@ class LamaranController extends Controller
 
             if ($tolak) {
                 $gagal[] = ['nama' => $nama, 'alasan' => $tolak];
+
                 continue;
             }
 
@@ -5440,7 +5556,8 @@ class LamaranController extends Controller
 
             if (($tipeSub->Flag_Wajib_Luring ?? 'T') === 'Y'
                 && (self::masterModeJadwal()->get($data['mode'])->Flag_Luring ?? 'T') !== 'Y') {
-                $gagal[] = ['nama' => $nama, 'alasan' => ($tipeSub->Nama ?? 'Aktivitas ini') . ' hanya bisa LURING.'];
+                $gagal[] = ['nama' => $nama, 'alasan' => ($tipeSub->Nama ?? 'Aktivitas ini').' hanya bisa LURING.'];
+
                 continue;
             }
 
@@ -5471,7 +5588,7 @@ class LamaranController extends Controller
         }
 
         Log::channel('web_career')->info(
-            '[JADWAL-MASSAL] ' . count($berhasil) . ' berhasil, ' . count($gagal) . ' gagal — oleh ' . session('career_auth.nama', 'ADMIN')
+            '[JADWAL-MASSAL] '.count($berhasil).' berhasil, '.count($gagal).' gagal — oleh '.session('career_auth.nama', 'ADMIN')
         );
 
         // Kalimatnya mengikuti apa yang BENAR-BENAR terjadi. "Diundang lewat
@@ -5484,8 +5601,8 @@ class LamaranController extends Controller
         return ResponseHelper::success(
             ['berhasil' => $berhasil, 'gagal' => $gagal],
             count($gagal)
-                ? count($berhasil) . ' kandidat dijadwalkan, ' . count($gagal) . ' dilewati — periksa rinciannya.'
-                : count($berhasil) . ' kandidat ' . $kabar . '.',
+                ? count($berhasil).' kandidat dijadwalkan, '.count($gagal).' dilewati — periksa rinciannya.'
+                : count($berhasil).' kandidat '.$kabar.'.',
         );
     }
 
@@ -5559,8 +5676,8 @@ class LamaranController extends Controller
             if (($sub->Tampil_Kandidat ?? 'Y') !== 'Y') {
                 Log::channel('web_career')->warning(
                     "[JADWAL] Aktivitas '{$sub->Label}' (lamaran {$sub->Kode}) DISEMBUNYIKAN dari portal tetapi "
-                    . 'dijadwalkan — undangan tetap dikirim supaya kandidat tidak kehilangan satu-satunya kabar. '
-                    . 'Periksa setelan alurnya: kemungkinan besar aktivitas ini seharusnya tampil.'
+                    .'dijadwalkan — undangan tetap dikirim supaya kandidat tidak kehilangan satu-satunya kabar. '
+                    .'Periksa setelan alurnya: kemungkinan besar aktivitas ini seharusnya tampil.'
                 );
             }
 
@@ -5602,7 +5719,7 @@ class LamaranController extends Controller
 
             return 'terkirim';
         } catch (\Throwable $e) {
-            Log::channel('web_career')->error('[JADWAL] undangan gagal diantrekan: ' . $e->getMessage());
+            Log::channel('web_career')->error('[JADWAL] undangan gagal diantrekan: '.$e->getMessage());
 
             return 'gagal';
         }
@@ -5845,7 +5962,7 @@ class LamaranController extends Controller
                         // predikat salah ketik meninggalkan aktivitas yang
                         // kehadirannya tercatat tapi tak pernah ditutup.
                         throw new \DomainException(
-                            'Pilihan hasil tidak dikenali untuk aktivitas ini: ' . implode(' / ', $penilaian['opsi']) . '.'
+                            'Pilihan hasil tidak dikenali untuk aktivitas ini: '.implode(' / ', $penilaian['opsi']).'.'
                         );
                     }
                     $nilaiTeks = $data['nilaiTeks'];
@@ -5937,7 +6054,7 @@ class LamaranController extends Controller
         }
 
         Log::channel('web_career')->info(
-            "Aktivitas #{$realId} ditandai HADIR + hasil " . ($aksi['hasil'] ?? 'INFORMATIF') . ' → evaluasi: ' . ($outcome ?? '-')
+            "Aktivitas #{$realId} ditandai HADIR + hasil ".($aksi['hasil'] ?? 'INFORMATIF').' → evaluasi: '.($outcome ?? '-')
         );
 
         return ResponseHelper::success(['outcome' => $outcome], 'Kehadiran & hasil tersimpan.');
@@ -6024,9 +6141,9 @@ class LamaranController extends Controller
                 return ResponseHelper::error(
                     $sub->Peran === 'INFORMATIF'
                         ? "Hasil \"{$sub->Label}\" belum masuk dari HCLearn — keputusannya baru bisa diberikan setelah kandidat mengerjakannya. "
-                            . 'Bila ia memang tidak mengerjakan, tandai "Tidak hadir".'
+                            .'Bila ia memang tidak mengerjakan, tandai "Tidak hadir".'
                         : "\"{$sub->Label}\" adalah ujian online penentu — hasilnya masuk sendiri dari HCLearn dan tidak dicatat manual. "
-                            . 'Bila kandidat tidak mengerjakannya, tandai "Tidak hadir".',
+                            .'Bila kandidat tidak mengerjakannya, tandai "Tidak hadir".',
                     422
                 );
             }
@@ -6105,13 +6222,13 @@ class LamaranController extends Controller
                 }
             }
 
-            Log::channel('web_career')->info("Sub-tes #{$realId} dicatat " . ($data['hasil'] ?? 'SELESAI') . " → evaluasi: " . ($outcome ?? '-'));
+            Log::channel('web_career')->info("Sub-tes #{$realId} dicatat ".($data['hasil'] ?? 'SELESAI').' → evaluasi: '.($outcome ?? '-'));
 
             return ResponseHelper::success(['outcome' => $outcome], 'Hasil dicatat.');
         } catch (\Illuminate\Validation\ValidationException $e) {
             throw $e;
         } catch (\Throwable $e) {
-            Log::channel('web_career')->error("Gagal catat hasil sub-tes #{$id}: " . $e->getMessage());
+            Log::channel('web_career')->error("Gagal catat hasil sub-tes #{$id}: ".$e->getMessage());
 
             return ResponseHelper::error('Gagal memproses.', 500);
         }
@@ -6167,7 +6284,7 @@ class LamaranController extends Controller
                     'baris' => $b->Baris_Index !== null ? (int) $b->Baris_Index : null,
                     'nomor' => $b->Baris_Index !== null ? ((int) $b->Baris_Index) + 1 : null,
                     'nama' => $b->Nama_Asli,
-                    'url' => url('/api/v1/karir/lamaran/berkas/file/' . Hashids::encode($b->Id_Formulir_Berkas)),
+                    'url' => url('/api/v1/karir/lamaran/berkas/file/'.Hashids::encode($b->Id_Formulir_Berkas)),
                     'ext' => $ext,
                     'mime' => $b->Mime,
                     'isPdf' => $ext === 'pdf' || $b->Mime === 'application/pdf',
@@ -6259,12 +6376,12 @@ class LamaranController extends Controller
                     return redirect()->away($gcs->temporaryUrl($b->Path_File, now()->addMinutes(15)));
                 }
             } catch (\Throwable $e) {
-                Log::channel('web_career')->warning('Signed URL GCS gagal untuk berkas ' . $b->Id_Formulir_Berkas . ': ' . $e->getMessage());
+                Log::channel('web_career')->warning('Signed URL GCS gagal untuk berkas '.$b->Id_Formulir_Berkas.': '.$e->getMessage());
             }
         }
 
         // Fallback lokal (data lama / lingkungan dev tanpa GCS).
-        foreach ([storage_path('app/' . $b->Path_File), public_path($b->Path_File), $b->Path_File] as $kandidat) {
+        foreach ([storage_path('app/'.$b->Path_File), public_path($b->Path_File), $b->Path_File] as $kandidat) {
             if ($kandidat && is_file($kandidat)) {
                 return response()->file($kandidat, ['Content-Type' => $b->Mime ?: 'application/octet-stream']);
             }
