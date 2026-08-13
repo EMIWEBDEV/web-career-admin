@@ -13,13 +13,10 @@
             <div v-if="show" class="wca-modal-mask wca" @click.self="tolakTutup">
                 <div
                     class="wca-modal"
-                    :class="{
-                        'wca-modal--lg': lg,
-                        'wca-modal--xl': xl,
-                        'wca-modal--full': full || xxl,
-                        'is-busy': busy,
-                        'is-nudge': nudge
-                    }"
+                    :class="[
+                        `wca-modal--${ukuran}`,
+                        { 'is-busy': busy, 'is-nudge': nudge },
+                    ]"
                     role="dialog" aria-modal="true" :aria-busy="busy"
                 >
                     <!-- Garis progres tipis di puncak modal: penanda proses berjalan
@@ -40,7 +37,7 @@
 
                     <div class="wca-modal__body"><slot /></div>
 
-                    <div class="wca-modal__foot">
+                    <div class="wca-modal__foot" :class="{ 'wca-modal__foot--blok': footBlok }">
                         <div v-if="footNote" class="wca-modal__footnote">
                             <i class="bi" :class="busy ? 'bi-hourglass-split' : 'bi-shield-check'"></i>
                             <span>{{ busy ? busyLabel : footNote }}</span>
@@ -65,13 +62,26 @@
 </template>
 
 <script setup>
-import { onBeforeUnmount, ref } from 'vue';
+import { computed, onBeforeUnmount, ref } from 'vue';
 
 const props = defineProps({
     show: { type: Boolean, default: false },
     title: { type: String, default: '' },
     subtitle: { type: String, default: '' },
     icon: { type: String, default: 'bi-window-stack' },
+    /* UKURAN MODULAR — satu prop, bukan empat boolean yang bisa menyala
+       bersamaan. `sm` untuk konfirmasi sebaris, `md` bawaan, `lg`/`xl` untuk
+       formulir & peninjauan, `full` untuk layar kerja penuh.
+       Prop boolean lama tetap dihormati (lihat `ukuran`) supaya belasan
+       halaman yang sudah memakai :lg / :xl tidak perlu disentuh. */
+    /* Nilai asing (salah ketik `size="XL"`, `size="besar"`) ditolak di sini —
+       kalau lolos, ia menghasilkan kelas CSS yang tak pernah ada dan modalnya
+       tampil seukuran bawaan tanpa satu pun petunjuk kenapa. */
+    size: {
+        type: String,
+        default: '',
+        validator: (v) => ['', 'sm', 'md', 'lg', 'xl', 'full'].includes(v),
+    },
     lg: { type: Boolean, default: false },
     xl: { type: Boolean, default: false },
     full: { type: Boolean, default: false },
@@ -80,6 +90,10 @@ const props = defineProps({
     saveDisabled: { type: Boolean, default: false },
     cancelLabel: { type: String, default: 'Batal' },
     footNote: { type: String, default: 'Periksa kembali data sebelum disimpan.' },
+    /* Kaki modal berisi PANEL, bukan dua tombol berjajar. Dipakai jendela
+       peninjauan (worklist) yang menaruh keterangan + deretan keputusan di
+       kakinya; tanpa ini isinya menciut ke lebar isi dan merapat ke kanan. */
+    footBlok: { type: Boolean, default: false },
     /* Proses simpan sedang berjalan: tombol dikunci + spinner, modal tak bisa
        ditutup. Mencegah klik ganda (data dobel) sekaligus memberi tahu pengguna
        bahwa kliknya SUDAH diterima. */
@@ -88,6 +102,23 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['close', 'save']);
+
+/**
+ * Ukuran yang benar-benar dipakai.
+ *
+ * `size` menang bila diisi. Selebihnya diturunkan dari prop boolean lama —
+ * dari yang TERBESAR lebih dulu, karena dua boolean yang menyala bersamaan
+ * (mis. :lg :xl) dulu diselesaikan CSS dengan urutan berkas, dan urutan itu
+ * bukan sesuatu yang bisa dibaca dari halaman pemakainya.
+ */
+const ukuran = computed(() => {
+    if (props.size) return props.size;
+    if (props.full || props.xxl) return 'full';
+    if (props.xl) return 'xl';
+    if (props.lg) return 'lg';
+
+    return 'md';
+});
 
 /** Tutup hanya lewat tombol; diabaikan selama proses simpan berjalan. */
 function tutup() {
