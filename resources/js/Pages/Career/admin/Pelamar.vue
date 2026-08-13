@@ -310,6 +310,22 @@
                                          menahannya satu per satu lewat drawer
                                          berarti mengulang pekerjaan yang sama
                                          belasan kali. -->
+                                    <!-- KEPUTUSAN MASSAL. Satu angkatan diputus dalam
+                                         satu peristiwa — sesudah rapat panel, sesudah
+                                         hasil tes turun. Membuka drawer satu per satu
+                                         untuk itu berarti mengulang pekerjaan yang sama
+                                         puluhan kali, dan yang terlewat di tengah daftar
+                                         tidak meninggalkan jejak apa pun. -->
+                                    <button
+                                        v-if="bolehPutus"
+                                        type="button" class="plw-selbar__putus" :disabled="!bisaPutusMassal.length"
+                                        :title="bisaPutusMassal.length
+                                            ? `Ambil keputusan untuk ${bisaPutusMassal.length} kandidat terpilih`
+                                            : 'Yang terpilih sedang ditahan atau tahapnya sudah diputus'"
+                                        @click="askPutusMassal"
+                                    >
+                                        <i class="bi bi-gavel"></i> Keputusan
+                                    </button>
                                     <button
                                         type="button" class="plw-selbar__hold" :disabled="!bisaTahanMassal.length"
                                         :title="bisaTahanMassal.length
@@ -2719,6 +2735,146 @@
             </div>
         </ConfirmModal>
 
+        <!-- ══ KEPUTUSAN MASSAL (LOLOS / TIDAK LOLOS) ══ -->
+        <ConfirmModal
+            :show="pmShow"
+            :busy="sibuk"
+            icon="bi-gavel"
+            title="Keputusan untuk Beberapa Kandidat"
+            :subtitle="`${pmTarget.length} kandidat terpilih`"
+            :confirm-label="`Ya, Putuskan ${pmTarget.length} Kandidat`"
+            :confirm-disabled="!bolehSimpanPutusMassal"
+            @confirm="konfirmPutusMassal"
+            @cancel="pmShow = false"
+        >
+            <div class="plw-putus__ring is-lulus">
+                <div class="plw-putus__row">
+                    <i class="bi bi-gavel"></i>
+                    <span>Keputusan ini <b>menutup tahap</b> bagi setiap kandidat terpilih dan memindahkannya sesuai hasilnya.</span>
+                </div>
+                <div class="plw-putus__row">
+                    <i class="bi bi-envelope-fill"></i>
+                    <span>Email hasil dikirim <b>sesuai setelan masternya</b> — sama seperti keputusan satuan.</span>
+                </div>
+            </div>
+
+            <!-- Yang TIDAK bisa diproses disebut SEBELUM disimpan. Admin berhak
+                 tahu bahwa dari 12 yang ia centang, hanya 9 yang tersentuh. -->
+            <p v-if="pmDilewati.length" class="plw-note is-err" style="margin-bottom: 10px">
+                <i class="bi bi-exclamation-circle-fill"></i>
+                <span>
+                    <b>{{ pmDilewati.length }}</b> kandidat terpilih dilewati — sedang ditahan
+                    atau tahapnya sudah diputus:
+                    {{ pmDilewati.map((x) => x.pelamar).join(', ') }}.
+                </span>
+            </p>
+
+            <div class="plw-fld">
+                <label class="plw-fld__lbl">Cara mengambil keputusan</label>
+                <div class="plw-opts plw-opts--row">
+                    <button
+                        type="button" class="plw-opt-card" :class="{ 'is-on': pmPola === 'SERAGAM' }"
+                        @click="pmPola = 'SERAGAM'"
+                    >
+                        <span class="plw-opt-card__dot"><i class="bi bi-collection-fill"></i></span>
+                        <span class="plw-opt-card__txt">
+                            <b>Sama untuk semua</b>
+                            <small>Satu keputusan &amp; satu alasan dipakai {{ pmTarget.length }} kandidat.</small>
+                        </span>
+                        <span class="plw-opt-card__cek"><i class="bi bi-check-lg"></i></span>
+                    </button>
+                    <button
+                        type="button" class="plw-opt-card" :class="{ 'is-on': pmPola === 'SENDIRI' }"
+                        @click="pmPola = 'SENDIRI'"
+                    >
+                        <span class="plw-opt-card__dot"><i class="bi bi-person-lines-fill"></i></span>
+                        <span class="plw-opt-card__txt">
+                            <b>Beda per kandidat</b>
+                            <small>Sebagian lolos, sebagian tidak — dalam satu kali simpan.</small>
+                        </span>
+                        <span class="plw-opt-card__cek"><i class="bi bi-check-lg"></i></span>
+                    </button>
+                </div>
+            </div>
+
+            <template v-if="pmPola === 'SERAGAM'">
+                <div class="plw-fld">
+                    <label class="plw-fld__lbl">Keputusan <b>*</b></label>
+                    <div class="plw-opts">
+                        <button
+                            v-for="h in pmHasilOpsi" :key="h.kode"
+                            type="button" class="plw-opt-card"
+                            :class="{ 'is-on': pmHasil === h.kode }"
+                            :style="pmHasil === h.kode ? { borderColor: h.warna, background: h.warna + '14' } : null"
+                            @click="pmHasil = h.kode"
+                        >
+                            <span class="plw-opt-card__dot" :style="{ color: h.warna }"><i class="bi" :class="h.ikon || 'bi-dot'"></i></span>
+                            <span class="plw-opt-card__txt">
+                                <b>{{ h.labelTombol || h.nama }}</b>
+                                <small>{{ h.deskripsi }}</small>
+                            </span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="plw-fld">
+                    <label class="plw-fld__lbl">
+                        Alasan / catatan
+                        <b v-if="pmButuhCatatan">*</b>
+                        <small v-else>opsional, dipakai untuk semua</small>
+                    </label>
+                    <EditorQuill
+                        v-model="pmCatatanHtml"
+                        ringkas
+                        placeholder="mis. Hasil psikotes di bawah ambang batas yang ditetapkan panel."
+                        hint="Tersimpan sebagai catatan keputusan pada tahap SETIAP kandidat terpilih."
+                    />
+                    <p v-if="pmButuhCatatan && !pmCatatanCukup" class="plw-note is-err">
+                        <i class="bi bi-exclamation-circle-fill"></i>
+                        <span>Keputusan ini menuntut alasan yang benar-benar ditulis.</span>
+                    </p>
+                </div>
+            </template>
+
+            <template v-else>
+                <div class="plw-hmhint">
+                    <i class="bi bi-magic"></i>
+                    <span>Isi baris pertama, lalu salin ke sisanya — yang perlu beda tinggal disunting.</span>
+                    <button type="button" :disabled="!pmBaris[0]?.hasil" @click="sebarPutusBarisPertama">
+                        <i class="bi bi-arrow-down-up"></i> Salin ke semua
+                    </button>
+                </div>
+
+                <div class="plw-hmlist">
+                    <div v-for="(b, i) in pmBaris" :key="b.id" class="plw-hmrow" :class="{ 'is-kurang': barisPmKurang(b) }">
+                        <div class="plw-hmrow__head">
+                            <span class="plw-hmrow__n">{{ i + 1 }}</span>
+                            <div style="flex: 1; min-width: 0">
+                                <b>{{ b.pelamar }}</b>
+                                <small>{{ b.posisi || '—' }} · tahap {{ b.tahap }}</small>
+                            </div>
+                            <span v-if="barisPmKurang(b)" class="plw-hmrow__warn">
+                                <i class="bi bi-exclamation-circle-fill"></i> {{ barisPmKurang(b) }}
+                            </span>
+                        </div>
+                        <el-select v-model="b.hasil" placeholder="Pilih keputusan" class="plw-hmrow__sel">
+                            <el-option
+                                v-for="h in pmHasilOpsi" :key="h.kode"
+                                :value="h.kode" :label="h.labelTombol || h.nama"
+                            />
+                        </el-select>
+                        <textarea
+                            v-model="b.catatan"
+                            class="plw-hmrow__note" rows="2"
+                            :placeholder="hasilKeputusan.find((h) => h.kode === b.hasil)?.butuhAlasan
+                                ? 'Alasan WAJIB untuk keputusan ini…'
+                                : 'Catatan (opsional)…'"
+                        ></textarea>
+                    </div>
+                </div>
+            </template>
+        </ConfirmModal>
+
         <transition name="plw-toast"><div v-if="toast" class="plw-toast" :class="{ 'is-err': toastErr, 'is-atas-unduhan': unduhan.length }"><i class="bi" :class="toastErr ? 'bi-exclamation-circle-fill' : 'bi-check-circle-fill'"></i> {{ toast }}</div></transition>
     </div>
 </template>
@@ -2949,6 +3105,15 @@ export default {
             hmBaris: [],            // [{ id, tahapId, pelamar, posisi, tahap, alasan, catatan }]
             // Daftar alasan dari Master Alasan Hold — dimuat sekali per sesi.
             alasanHold: [],
+
+            /* ── KEPUTUSAN MASSAL (LOLOS / TIDAK LOLOS) ── */
+            pmShow: false,
+            pmPola: 'SERAGAM',      // SERAGAM = satu keputusan untuk semua, SENDIRI = per kandidat
+            pmHasil: '',            // kode hasil pada mode SERAGAM
+            pmCatatanHtml: '',      // catatan bersama pada mode SERAGAM
+            pmTarget: [],           // baris yang BENAR-BENAR akan diputus
+            pmDilewati: [],         // tercentang tapi tidak memenuhi syarat
+            pmBaris: [],            // [{ id, tahapId, pelamar, posisi, tahap, hasil, catatan }]
             // Kandidat yang sedang ditahan/dilepas dari KARTU (bukan drawer).
             holdTarget: null,
             // ── PENYARING PAPAN ─────────────────────────────────────────────
@@ -3640,6 +3805,45 @@ export default {
         /** Terpilih yang sedang DITAHAN — sasaran tombol "Lanjutkan". */
         bisaLepasMassal() {
             return this.barisTerpilih.filter((r) => r.tahapId && r.hold);
+        },
+        /**
+         * Terpilih yang BISA diputus.
+         *
+         * Yang sedang ditahan sengaja dikeluarkan: menahan berarti "keputusannya
+         * ditunda", dan mengetuk palu massal ke atasnya membatalkan penundaan itu
+         * diam-diam — justru pada kandidat yang paling butuh ditimbang sendiri.
+         * Lepaskan tahanannya dulu bila memang sudah siap diputus.
+         */
+        bisaPutusMassal() {
+            return this.barisTerpilih.filter((r) => r.tahapId && !r.hold && r.statusLamaran === 'BERJALAN');
+        },
+        /**
+         * Pilihan keputusan untuk massal: HANYA keputusan perusahaan.
+         *
+         * "Mengundurkan diri" dan "menolak tawaran" datang DARI KANDIDAT — satu
+         * per satu, dengan alasan masing-masing, kerap disertai tanggal ia
+         * mengabari. Menerapkannya ke dua puluh orang sekaligus berarti mengaku
+         * dua puluh orang menyatakan hal yang sama pada saat yang sama, dan itu
+         * tidak pernah benar. Keputusan itu tetap lewat drawer per kandidat.
+         */
+        pmHasilOpsi() { return this.hasilKeputusan.filter((h) => !h.olehKandidat); },
+        pmHasilDef() { return this.hasilKeputusan.find((h) => h.kode === this.pmHasil) || null; },
+        pmButuhCatatan() { return !!this.pmHasilDef?.butuhAlasan; },
+        pmCatatanCukup() { return teksDariHtml(this.pmCatatanHtml).trim() !== ''; },
+        /**
+         * Boleh disimpan? Pada mode SENDIRI syaratnya berlaku untuk SETIAP baris —
+         * satu baris kosong di tengah daftar akan ditolak server dan menyisakan
+         * keputusan setengah jadi yang harus dicari sendiri oleh admin.
+         */
+        bolehSimpanPutusMassal() {
+            if (!this.pmTarget.length) return false;
+            if (this.pmPola === 'SERAGAM') {
+                if (!this.pmHasil) return false;
+
+                return !this.pmButuhCatatan || this.pmCatatanCukup;
+            }
+
+            return this.pmBaris.every((b) => !this.barisPmKurang(b));
         },
         hmAlasanDef() { return this.alasanHold.find((a) => a.value === this.hmAlasan) || null; },
         hmButuhCatatan() { return !!this.hmAlasanDef?.butuhCatatan; },
@@ -4422,6 +4626,93 @@ export default {
             return !!this.alasanHold.find((a) => a.value === kode)?.butuhCatatan;
         },
         /** Apa yang kurang dari satu baris — dipakai penanda merah & tombol simpan. */
+        /** Kekurangan satu baris keputusan massal — dipakai menandai barisnya sendiri. */
+        barisPmKurang(b) {
+            if (!b?.hasil) return 'Keputusan belum dipilih';
+            const def = this.hasilKeputusan.find((h) => h.kode === b.hasil);
+            if (def?.butuhAlasan && !String(b.catatan || '').trim()) return 'Alasan wajib';
+
+            return '';
+        },
+        async askPutusMassal() {
+            if (!this.bolehPutus) {
+                return this.notice('Anda tidak punya hak akses untuk mengambil keputusan.', true);
+            }
+            const bisa = this.bisaPutusMassal;
+            if (!bisa.length) return;
+
+            this.pmTarget = bisa;
+            // Yang tercentang tapi tak bisa diproses — disebut di modal supaya
+            // admin tahu SEBELUM menyimpan, bukan sesudah.
+            this.pmDilewati = this.barisTerpilih.filter((r) => !bisa.includes(r));
+            this.pmPola = 'SERAGAM';
+            this.pmHasil = '';
+            this.pmCatatanHtml = '';
+            this.pmBaris = bisa.map((r) => ({
+                id: r.id,
+                tahapId: r.tahapId,
+                pelamar: r.pelamar,
+                posisi: r.posisi,
+                tahap: r.tahap,
+                hasil: '',
+                catatan: '',
+            }));
+            this.pmShow = true;
+        },
+        /** Salin keputusan & alasan baris pertama ke seluruh baris. */
+        sebarPutusBarisPertama() {
+            const a = this.pmBaris[0];
+            if (!a?.hasil) return;
+            this.pmBaris = this.pmBaris.map((b, i) => (i === 0 ? b : { ...b, hasil: a.hasil, catatan: a.catatan }));
+            const nama = this.hasilKeputusan.find((x) => x.kode === a.hasil)?.nama || a.hasil;
+            this.notice(`Keputusan "${nama}" disalin ke ${this.pmBaris.length - 1} baris lain.`);
+        },
+        async konfirmPutusMassal() {
+            if (this.sibuk || !this.pmTarget.length) return;
+            this.sibuk = true;
+            try {
+                // SATU BENTUK KIRIMAN untuk kedua mode — mode seragam hanya
+                // mengisi keputusan yang sama ke tiap item di sini. Server tidak
+                // perlu tahu mode mana yang dipakai, jadi tidak ada aturan kedua
+                // yang harus dijaga tetap sama dengan yang pertama.
+                const item = this.pmTarget.map((r) => {
+                    if (this.pmPola === 'SERAGAM') {
+                        return {
+                            tahapId: r.tahapId,
+                            hasil: this.pmHasil,
+                            catatan: teksDariHtml(this.pmCatatanHtml) || null,
+                            catatanHtml: this.pmCatatanHtml || null,
+                        };
+                    }
+                    const b = this.pmBaris.find((x) => x.tahapId === r.tahapId);
+
+                    return { tahapId: r.tahapId, hasil: b?.hasil, catatan: b?.catatan || null };
+                });
+
+                const res = await axios.patch('/api/v1/karir/lamaran/tahap/putus-massal', { item }, CFG);
+
+                const gagal = res.data?.result?.gagal || [];
+                this.notice(res.data?.message || 'Selesai.', gagal.length > 0);
+                // Yang gagal disebut NAMANYA. Pada daftar dua puluh orang,
+                // "3 dilewati" tanpa nama memaksa admin mencocokkan sendiri.
+                if (gagal.length) {
+                    gagal.slice(0, 5).forEach((g) => this.notice(`✗ ${g.nama || g.tahapId} — ${g.pesan}`, true));
+                }
+                this.pmShow = false;
+                this.terpilih = [];
+                this.tutupPilihKolom();
+                this.muatDetail(this.selectedId);
+                this.muatProgram();
+            } catch (e) {
+                const gagal = e.response?.data?.result?.gagal || [];
+                const rinci = gagal.length
+                    ? ` (${gagal.slice(0, 3).map((g) => g.nama || '?').join(', ')}${gagal.length > 3 ? ', …' : ''})`
+                    : '';
+                this.notice((e.response?.data?.message || 'Gagal memproses keputusan.') + rinci, true);
+            } finally {
+                this.sibuk = false;
+            }
+        },
         barisHmKurang(b) {
             if (!b?.alasan) return 'Alasan belum dipilih';
             if (this.alasanButuhCatatan(b.alasan) && !String(b.catatan || '').trim()) {
@@ -5577,6 +5868,19 @@ export default {
     display: inline-flex; align-items: center; gap: 5px; padding: 6px 9px;
     white-space: nowrap; border-radius: 7px; border: 1px solid transparent; transition: all .16s;
 }
+/* Keputusan massal — indigo, sekeluarga dengan tombol keputusan di drawer.
+   Sengaja BUKAN hijau/merah: satu tombol ini membuka pilihan Lolos MAUPUN
+   Tidak Lolos, jadi mewarnainya seperti salah satunya menyesatkan sebelum
+   admin sempat memilih. */
+.plw-selbar__putus {
+    appearance: none; cursor: pointer; font: inherit; font-size: 10.5px; font-weight: 800;
+    display: inline-flex; align-items: center; gap: 5px; padding: 6px 9px;
+    white-space: nowrap; border-radius: 7px; transition: all .16s;
+    background: #eef2ff; border: 1px solid #c7d2fe; color: #4338ca;
+}
+.plw-selbar__putus:hover:not(:disabled) { background: #e0e7ff; border-color: #a5b4fc; }
+.plw-selbar__putus:disabled { opacity: .45; cursor: not-allowed; }
+
 .plw-selbar__hold { background: #fff7ed; border-color: #fed7aa; color: #b45309; }
 .plw-selbar__hold:hover:not(:disabled) { background: #ffedd5; border-color: #fdba74; }
 .plw-selbar__lepas { background: #ecfdf5; border-color: #a7f3d0; color: #047857; }

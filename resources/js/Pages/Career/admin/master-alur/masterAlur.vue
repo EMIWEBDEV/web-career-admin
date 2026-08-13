@@ -895,57 +895,32 @@ export default {
         jumlahTes(s) { return Math.max(1, (s.tests || []).length); },
 
         /**
-         * Tahap ini memuat ujian online yang MENGIKAT (PENENTU)?
-         *
-         * PERANNYA IKUT DIHITUNG, dan itu inti perbaikannya. Sebelumnya cukup
-         * "ada ujian online" — apa pun perannya. Akibatnya psikotes yang sengaja
-         * disetel INFORMATIF (nilainya cuma bahan pertimbangan, bukan penentu)
-         * tetap menghapus pilihan "Manual — admin memutuskan" dari layar,
-         * padahal server MENERIMANYA: gerbang di MasterAlurController hanya
-         * berlaku untuk ujian online ber-peran PENENTU.
-         *
-         * Selisih itu tak menimbulkan galat apa pun — pilihannya sekadar tidak
-         * pernah muncul, dan admin menyimpulkan sendiri bahwa mode itu memang
-         * tidak ada. Tes kepribadian seperti PAPI Kostick dan DISC justru paling
-         * dirugikan: hasilnya memang bukan lulus/gagal, jadi INFORMATIF adalah
-         * tempatnya yang benar, dan justru di situlah keputusan admin diperlukan.
-         *
-         * Daftar kosong = backend membuat satu aktivitas bawaan ber-peran
-         * PENENTU yang mengikuti tipe tahapnya.
-         */
-        adaUjianOnlinePenentu(s) {
-            const t = s.tests || [];
-            if (!t.length) return this.tesOnline(s.tipe);
-
-            return t.some((x) => this.tesOnline(x.tipe || s.tipe) && (x.peran || 'PENENTU') === 'PENENTU');
-        },
-
-        /**
          * Pilihan mode yang MASUK AKAL untuk tahap ini.
          *
-         * Dua penyaringan, keduanya berdasar KOLOM PERILAKU mode (bukan kodenya):
+         * SELURUH MODE DITAWARKAN, termasuk yang manual penuh.
          *
-         * 1. Tahap ber-UJIAN ONLINE **PENENTU** tidak boleh memakai mode yang
-         *    gagalnya menggantung (`autoGugur` mati). Untuk ujian yang mengikat,
-         *    hasil CAT sudah final & objektif; membiarkan kandidat yang jelas
-         *    gagal menunggu keputusan admin cuma menumpuk antrean. Server juga
-         *    menolaknya — menawarkannya di sini berarti menjanjikan sesuatu yang
-         *    akan diam-diam diubah saat disimpan.
+         * Dulu di sini ada penyaring kedua: tahap ber-ujian online PENENTU
+         * kehilangan semua mode yang `autoGugur`-nya mati, karena server memang
+         * akan menimpanya saat disimpan. Penimpaan itu sudah dicabut — lihat
+         * MasterAlurController::simpanTahap() — dan alasannya ada dua.
          *
-         *    Ujian online INFORMATIF tidak kena aturan ini: ia tidak pernah
-         *    menyatakan lulus/gagal, jadi tidak ada "gagal" yang bisa
-         *    menggantung. Lihat adaUjianOnlinePenentu().
+         * Pertama, gerbangnya diuji di level TAHAP: satu psikotes online cukup
+         * untuk mencabut mode manual dari FGD dan wawancara di tahap yang sama,
+         * dua hal yang justru mustahil disimpulkan mesin.
          *
-         * 2. Dengan 1 aktivitas, "tunggu semua" dan "tunggu tes terakhir" berakhir
-         *    sama persis. Maka mode dikelompokkan per PASANGAN perilaku yang
-         *    benar-benar berbeda — maju-otomatis dan gugur-otomatis — dan tiap
-         *    pasangan diwakili satu. Dulu pengelompokannya hanya melihat
-         *    maju-otomatis, sehingga mode "gagal otomatis gugur, lulus tetap
-         *    dikonfirmasi admin" tak pernah muncul di layar sama sekali.
+         * Kedua, kelulusan itu KEBIJAKAN, bukan aritmetika. Kandidat yang
+         * nilainya di bawah ambang bisa saja tetap diloloskan setelah ditinjau
+         * ulang, dan itu keputusan yang memang milik manusia. Menghapus
+         * pilihannya dari layar berarti memutuskan lebih dulu atas nama admin.
+         *
+         * Yang tersisa cuma satu penyederhanaan, dan itu murni soal keterbacaan:
+         * dengan 1 aktivitas, "tunggu semua" dan "tunggu tes terakhir" berakhir
+         * sama persis. Maka mode dikelompokkan per PASANGAN perilaku yang
+         * benar-benar berbeda — maju-otomatis dan gugur-otomatis — dan tiap
+         * pasangan diwakili satu.
          */
         modeTampil(s) {
-            const online = this.adaUjianOnlinePenentu(s);
-            const layak = this.modeKeputusan.filter((m) => !online || m.autoGugur);
+            const layak = this.modeKeputusan;
             if (this.jumlahTes(s) >= 2) return layak;
 
             const wakil = [];

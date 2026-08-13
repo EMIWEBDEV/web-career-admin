@@ -23,7 +23,7 @@ use Vinkla\Hashids\Facades\Hashids;
  * lebih dulu (status DIANTRIKAN), lalu penerbitan tokennya dikerjakan job ini.
  *
  * KONTRAK STATUS — dibaca layar Daftar Penjadwalan:
- *   DIANTRIKAN  baris sudah ada, token belum terbit;
+ *   DIANTRIKAN  baris sudah ada, token belum terbit (atau baru sebagian);
  *   BERJALAN    minimal satu token terbit;
  *   GAGAL       tak satu pun terbit. Barisnya SENGAJA tidak dihapus supaya
  *               admin tahu apa yang terjadi; tautan kandidatnya dilepas agar
@@ -31,6 +31,32 @@ use Vinkla\Hashids\Facades\Hashids;
  *
  * Idempoten: peserta yang tokennya sudah terbit dilewati, jadi percobaan ulang
  * setelah gagal separuh tidak pernah menerbitkan token dobel.
+ *
+ * ══ KENAPA DIKIRIM SEPOTONG-SEPOTONG ═════════════════════════════════════
+ *
+ * CAT membelah perlakuannya di angka 25 (HclPenjadwalanService::BATAS_SINKRON).
+ * Sampai batas itu ia menjawab dengan token lengkap. Di ATASNYA ia menitipkan
+ * pekerjaan ke antreannya sendiri, membalas `mode: ANTRIAN`, dan menaruh
+ * hasilnya HANYA di cache-nya — cache file, di Cloud Run, milik satu instance.
+ * Instance lain yang ditanya lewat Url_Status menjawab "batch tidak ditemukan".
+ *
+ * Akibatnya bukan galat, melainkan diam: token terbit di CAT, tak pernah
+ * sampai ke kita, dan kandidatnya membaca "menunggu token HCLearn" selamanya.
+ * JDW-0010 — 96 peserta, 96 token yatim — lahir dari jalur itu.
+ *
+ * Maka jalur itu tidak dimasuki. Kiriman dipecah ke bawah batas sinkron,
+ * sehingga CAT selalu menjawab dengan token. Berapa pun kandidatnya, yang
+ * bertambah cuma banyaknya potongan.
+ *
+ * Tiga sifat yang membuatnya tahan banting:
+ *   1. Tiap potongan LANGSUNG diserap dan kandidatnya langsung ditautkan.
+ *      Mati di potongan ke-30 dari 50 berarti 600 orang sudah punya token,
+ *      bukan nol.
+ *   2. Penyaringnya `whereNull('Short_Token')`, jadi percobaan ulang hanya
+ *      mengirim yang memang belum punya.
+ *   3. Lewat anggaran waktu, sisanya diserahkan ke job lanjutan alih-alih
+ *      menabrak $timeout. Yang tumbuh jumlah job, bukan durasi satu job —
+ *      itulah sebabnya 1000 kandidat tidak lagi berarti 1000 antrean.
  *
  * Nama antrean `wc-penjadwalanworker` harus ada di Cloud Tasks:
  *     gcloud tasks queues create wc-penjadwalanworker
@@ -70,6 +96,21 @@ class WcPenjadwalanJob implements ShouldQueue
          * job yang sudah telanjur mengantre.
          */
         private ?int $dimintaOlehId = null,
+        /**
+         * Kursor: peserta yang ditangani job ini adalah yang ber-id DI ATAS
+         * nilai ini. Selalu 0 untuk kiriman pertama.
+         *
+         * Dipakai job lanjutan saat anggaran waktu habis. Kursor, bukan daftar
+         * id: daftar ikut mengendap di tabel antrean dan membengkak seiring
+         * jumlah peserta, sementara kursor tetap satu angka berapa pun besarnya.
+         *
+         * Ia juga yang mencegah putaran tak berujung. Penyaring utamanya
+         * `whereNull('Short_Token')`, jadi potongan yang SELURUH pesertanya
+         * gagal akan terambil lagi persis sama pada putaran berikutnya —
+         * selamanya. Kursor yang selalu maju memastikan setiap peserta dicoba
+         * tepat sekali per jalannya job.
+         */
+        private int $mulaiDariId = 0,
     ) {
         $this->aturAntrean(self::QUEUE);
     }
@@ -93,8 +134,8 @@ class WcPenjadwalanJob implements ShouldQueue
 
         if (str_contains($l, 'duplicate key') && str_contains($l, 'id_wc_penjadwalan_peserta')) {
             return 'CAT menolak karena pengenal peserta sudah terpakai di sana. '
-                . 'Coba jadwalkan ulang — sistem akan memakai pengenal baru. '
-                . 'Bila tetap gagal, laporkan ke tim CAT (rincian teknis ada di log).';
+                .'Coba jadwalkan ulang — sistem akan memakai pengenal baru. '
+                .'Bila tetap gagal, laporkan ke tim CAT (rincian teknis ada di log).';
         }
 
         if (str_contains($l, 'duplicate key')) {
@@ -127,35 +168,174 @@ class WcPenjadwalanJob implements ShouldQueue
             return;
         }
 
-        // Hanya peserta yang tokennya BELUM terbit. Inilah yang membuat percobaan
-        // ulang aman: yang sudah berhasil tidak dikirim ulang ke HCLearn.
-        $peserta = DB::table('N_WEB_CAREERS_Penjadwalan_Peserta')
+        $tahap = DB::table('N_WEB_CAREERS_Penjadwalan_Tahap')
+            ->where('Id_Penjadwalan_Tahap', $this->penjadwalanTahapId)->first();
+        $program = DB::table('N_WEB_CAREERS_Program')
+            ->where('Id_Program', $penjadwalan->Program_Id)->first();
+
+        $ukuran = (int) config('hclearn.chunk_peserta', 20);
+        $jedaMs = (int) config('hclearn.chunk_jeda_ms', 150);
+        $anggaran = (int) config('hclearn.chunk_batas_detik', 600);
+
+        // Dihitung sekali di muka supaya catatan kemajuan tidak menambah kueri
+        // pada tiap potongan.
+        $total = DB::table('N_WEB_CAREERS_Penjadwalan_Peserta')
+            ->where('Penjadwalan_Tahap_Id', $this->penjadwalanTahapId)->count();
+        $terbit = DB::table('N_WEB_CAREERS_Penjadwalan_Peserta')
             ->where('Penjadwalan_Tahap_Id', $this->penjadwalanTahapId)
-            ->whereNull('Short_Token')
-            ->get();
+            ->whereNotNull('Short_Token')->count();
 
-        if ($peserta->isEmpty()) {
-            $this->rapikanStatus();
+        $mulaiJob = microtime(true);
+        $kursor = $this->mulaiDariId;
+        $adaKiriman = false;
+        $pesanGagal = null;
 
-            return;
+        while (($peserta = $this->pesertaTertunda($kursor, $ukuran))->isNotEmpty()) {
+            // ANGGARAN WAKTU HABIS — sisanya diserahkan, bukan dipaksakan.
+            //
+            // Diperiksa SETELAH ada yang terkirim, supaya tiap job dijamin maju
+            // minimal satu potongan. Tanpa syarat itu, anggaran yang kebetulan
+            // disetel terlalu kecil melahirkan rantai job yang saling melempar
+            // pekerjaan tanpa satu token pun terbit.
+            if ($adaKiriman && (microtime(true) - $mulaiJob) >= $anggaran) {
+                $this->serahkanSisanya($kursor, $terbit, $total);
+
+                return;
+            }
+
+            $peserta = $this->berinomorCat($peserta);
+
+            $hasil = $hcl->sebagaiPengguna($this->dimintaOlehId)->post(
+                'penjadwalan',
+                $this->muatan($penjadwalan, $tahap, $program, $peserta),
+                [
+                    'Jenis_Event' => 'PENJADWALAN_UJIAN',
+                    'Penjadwalan_Id' => $this->penjadwalanId,
+                    'Penjadwalan_Tahap_Id' => $this->penjadwalanTahapId,
+                ]
+            );
+
+            $adaKiriman = true;
+            // Kursor maju lebih dulu: apa pun hasilnya, potongan ini sudah
+            // dicoba dan tidak boleh terambil lagi di putaran berikutnya.
+            $kursor = (int) $peserta->max('Id_Penjadwalan_Peserta');
+
+            if (! $hasil['sukses']) {
+                // Ditolak mentah. Dilempar supaya antrean mencoba ulang —
+                // dan percobaan ulang itu hanya akan mengirim yang belum punya
+                // token, jadi potongan yang telanjur berhasil tetap aman.
+                $sejauhIni = $terbit > 0 ? " ({$terbit} dari {$total} token sudah terbit sebelum ini)" : '';
+
+                DB::table('N_WEB_CAREERS_Penjadwalan_Tahap')->where('Id_Penjadwalan_Tahap', $this->penjadwalanTahapId)
+                    ->update([
+                        'Status' => $terbit > 0 ? 'SEBAGIAN' : 'GAGAL',
+                        'Pesan_Error' => substr(self::pesanRamah($hasil['message']).$sejauhIni, 0, 480),
+                        'Updated_At' => now(),
+                    ]);
+
+                // Log menyimpan pesan ASLI — yang dirapikan hanya yang dibaca admin.
+                Log::channel('web_career')->error('[PENJADWALAN] HCLearn menolak: '.$hasil['message']);
+
+                throw new \RuntimeException('HCLearn menolak permintaan: '.$hasil['message']);
+            }
+
+            $res = $hasil['result'] ?? [];
+
+            // GERBANG ANTI-KEJUT.
+            //
+            // Potongan kita dibuat di bawah batas sinkron CAT, jadi balasan ini
+            // seharusnya mustahil. Kalau tetap muncul, artinya CAT menurunkan
+            // batasnya — dan diam-diam mengikuti jalur antrean berarti mengulang
+            // persis kegagalan JDW-0010: token terbit di sana, tak pernah sampai
+            // ke sini, kandidat menggantung tanpa satu galat pun.
+            //
+            // Maka dihentikan dengan keras, dan pesannya menyebut jalan keluarnya.
+            if (($res['mode'] ?? null) === 'ANTRIAN') {
+                $pesan = 'HCLearn memproses lewat antreannya sendiri padahal kiriman ini hanya '
+                    .$peserta->count().' peserta — berarti batas sinkronnya sudah diturunkan. '
+                    .'Hasil jalur itu tidak pernah sampai ke Web Careers. '
+                    .'Turunkan HCLEARN_CHUNK_PESERTA di bawah batas baru CAT, lalu tekan Coba Lagi.';
+
+                DB::table('N_WEB_CAREERS_Penjadwalan_Tahap')->where('Id_Penjadwalan_Tahap', $this->penjadwalanTahapId)
+                    ->update([
+                        'Status' => $terbit > 0 ? 'SEBAGIAN' : 'GAGAL',
+                        'Pesan_Error' => substr($pesan, 0, 480),
+                        'Updated_At' => now(),
+                    ]);
+
+                Log::channel('web_career')->error('[PENJADWALAN] '.$pesan);
+
+                throw new \RuntimeException($pesan);
+            }
+
+            [$s, $g, $p] = app(\App\Http\Controllers\Career\Penjadwalan\PenjadwalanController::class)
+                ->serapBalasanHclearn($res, $peserta);
+
+            $terbit += $s;
+            $pesanGagal ??= $p;
+
+            // TAUTAN DIPASANG PER POTONGAN, bukan di akhir.
+            //
+            // Kandidat potongan pertama sudah bisa membuka tesnya sementara
+            // potongan terakhir masih dikirim. Hanya id potongan ini yang
+            // dilewatkan: memasang ulang seluruh daftar pada tiap putaran
+            // membuat ongkosnya tumbuh kuadratik seiring jumlah peserta.
+            $this->pasangTautanKandidat($peserta->pluck('Lamaran_Id')->filter()->unique()->all());
+
+            $this->catatKemajuan($terbit, $total);
+
+            Log::channel('web_career')->info(
+                "[ANTREAN] {$penjadwalan->Kode} potongan: {$s} terbit, {$g} gagal — {$terbit}/{$total}."
+            );
+
+            if ($jedaMs > 0) {
+                usleep($jedaMs * 1000);
+            }
         }
 
-        // PENGENAL UNTUK CAT DISIAPKAN DI SINI, tepat sebelum dikirim.
-        //
-        // CAT memakai `Id_WC_Penjadwalan_Peserta` sebagai KUNCI UNIK di
-        // tabelnya. Dulu kita mengirim kolom IDENTITY kita sendiri — dan
-        // IDENTITY bisa TERULANG setelah tabel peserta di-reset, sehingga
-        // peserta baru bertabrakan dengan peserta angkatan lama yang masih
-        // tersimpan di CAT. Galatnya muncul sebagai "Violation of UNIQUE KEY"
-        // mentah, dan sudah dua kali terjadi.
-        //
-        // Nomornya kini dari SEQUENCE, yang tidak tersentuh TRUNCATE maupun
-        // reseed — jadi tidak pernah mundur, apa pun yang terjadi pada tabel.
-        //
-        // Diberikan hanya kepada yang BELUM punya: percobaan ulang atas kiriman
-        // yang gagal memakai nomor yang sama, karena barisnya memang tidak
-        // pernah berhasil masuk ke CAT.
-        $peserta = $peserta->map(function ($p) {
+        $this->tutupBuku($penjadwalan, $pesanGagal);
+    }
+
+    /**
+     * Potongan peserta berikutnya yang tokennya BELUM terbit.
+     *
+     * Dua penyaring, dua tugas berbeda. `whereNull('Short_Token')` yang membuat
+     * percobaan ulang aman — yang sudah berhasil tidak pernah dikirim dua kali.
+     * Kursor `> $setelahId` yang membuat PUTARAN INI berhenti: tanpa dia,
+     * potongan yang seluruh pesertanya gagal akan terambil lagi persis sama,
+     * selamanya.
+     */
+    private function pesertaTertunda(int $setelahId, int $ukuran): \Illuminate\Support\Collection
+    {
+        return DB::table('N_WEB_CAREERS_Penjadwalan_Peserta')
+            ->where('Penjadwalan_Tahap_Id', $this->penjadwalanTahapId)
+            ->whereNull('Short_Token')
+            ->where('Id_Penjadwalan_Peserta', '>', $setelahId)
+            ->orderBy('Id_Penjadwalan_Peserta')
+            ->limit($ukuran)
+            ->get();
+    }
+
+    /**
+     * PENGENAL UNTUK CAT DISIAPKAN DI SINI, tepat sebelum dikirim.
+     *
+     * CAT memakai `Id_WC_Penjadwalan_Peserta` sebagai KUNCI UNIK di tabelnya.
+     * Dulu kita mengirim kolom IDENTITY kita sendiri — dan IDENTITY bisa
+     * TERULANG setelah tabel peserta di-reset, sehingga peserta baru
+     * bertabrakan dengan peserta angkatan lama yang masih tersimpan di CAT.
+     * Galatnya muncul sebagai "Violation of UNIQUE KEY" mentah, dan sudah dua
+     * kali terjadi.
+     *
+     * Nomornya kini dari SEQUENCE, yang tidak tersentuh TRUNCATE maupun reseed
+     * — jadi tidak pernah mundur, apa pun yang terjadi pada tabel.
+     *
+     * Diberikan hanya kepada yang BELUM punya: percobaan ulang atas kiriman
+     * yang gagal memakai nomor yang sama, karena barisnya memang tidak pernah
+     * berhasil masuk ke CAT.
+     */
+    private function berinomorCat(\Illuminate\Support\Collection $peserta): \Illuminate\Support\Collection
+    {
+        return $peserta->map(function ($p) {
             if ($p->Ref_Cat_Peserta === null) {
                 $p->Ref_Cat_Peserta = DB::selectOne(
                     'SELECT NEXT VALUE FOR SEQ_WC_Penjadwalan_Peserta_Cat AS n'
@@ -168,13 +348,12 @@ class WcPenjadwalanJob implements ShouldQueue
 
             return $p;
         });
+    }
 
-        $tahap = DB::table('N_WEB_CAREERS_Penjadwalan_Tahap')
-            ->where('Id_Penjadwalan_Tahap', $this->penjadwalanTahapId)->first();
-        $program = DB::table('N_WEB_CAREERS_Program')
-            ->where('Id_Program', $penjadwalan->Program_Id)->first();
-
-        $hasil = $hcl->sebagaiPengguna($this->dimintaOlehId)->post('penjadwalan', [
+    /** Muatan satu potongan — bentuknya sama persis, berapa pun potongannya. */
+    private function muatan(object $penjadwalan, ?object $tahap, ?object $program, \Illuminate\Support\Collection $peserta): array
+    {
+        return [
             'Kode_WC_Penjadwalan' => $penjadwalan->Kode,
             'Nama_Penjadwalan' => $penjadwalan->Nama,
             'Id_WC_Penjadwalan' => $this->penjadwalanId,
@@ -191,7 +370,7 @@ class WcPenjadwalanJob implements ShouldQueue
             // KAMERA WAJIB dipaksa dari sisi Web Careers agar CAT tak pernah
             // menjalankan sesi tanpa kamera.
             config('hclearn.kamera_field', 'Flag_Camera') => (bool) config('hclearn.wajib_kamera', true),
-            'Url_Callback' => config('hclearn.public_url') . '/' . ltrim(config('hclearn.callback_path'), '/'),
+            'Url_Callback' => config('hclearn.public_url').'/'.ltrim(config('hclearn.callback_path'), '/'),
             'peserta' => $peserta->map(fn ($p) => [
                 // Nomor SEQUENCE, bukan IDENTITY kita — lihat penjelasan di atas.
                 'Id_WC_Penjadwalan_Peserta' => (int) $p->Ref_Cat_Peserta,
@@ -223,56 +402,105 @@ class WcPenjadwalanJob implements ShouldQueue
                 // dan menunggu hasilnya masuk — lihat LamaranDetail.vue.
                 'Url_Kembali' => $p->Lamaran_Id
                     ? rtrim(config('hclearn.public_url'), '/')
-                        . '/kandidat/lamaran/' . Hashids::encode($p->Lamaran_Id) . '?dari=tes'
+                        .'/kandidat/lamaran/'.Hashids::encode($p->Lamaran_Id).'?dari=tes'
                     : null,
             ])->values()->all(),
-        ], [
-            'Jenis_Event' => 'PENJADWALAN_UJIAN',
-            'Penjadwalan_Id' => $this->penjadwalanId,
-            'Penjadwalan_Tahap_Id' => $this->penjadwalanTahapId,
-        ]);
+        ];
+    }
 
-        if (! $hasil['sukses']) {
-            // Ditolak mentah — biarkan job dicoba ulang oleh antrean.
-            DB::table('N_WEB_CAREERS_Penjadwalan_Tahap')->where('Id_Penjadwalan_Tahap', $this->penjadwalanTahapId)
-                ->update([
-                    'Status' => 'GAGAL',
-                    'Pesan_Error' => substr(self::pesanRamah($hasil['message']), 0, 480),
-                    'Updated_At' => now(),
-                ]);
+    /**
+     * Kabar kemajuan yang bisa dibaca admin sambil menunggu.
+     *
+     * Penjadwalan besar berjalan menit-menitan. Tanpa ini layarnya cuma
+     * berbunyi "DIANTRIKAN" dari awal sampai akhir — tak terbedakan dari
+     * penjadwalan yang macet, dan itulah yang membuat admin menekan Generate
+     * untuk kedua kalinya.
+     */
+    private function catatKemajuan(int $terbit, int $total): void
+    {
+        DB::table('N_WEB_CAREERS_Penjadwalan')->where('Id_Penjadwalan', $this->penjadwalanId)
+            ->update([
+                'Status' => 'DIANTRIKAN',
+                'Catatan' => "Menerbitkan token — {$terbit} dari {$total} kandidat selesai.",
+                'Updated_At' => now(),
+            ]);
+    }
 
-            // Log menyimpan pesan ASLI — yang dirapikan hanya yang dibaca admin.
-            Log::channel('web_career')->error('[PENJADWALAN] HCLearn menolak: ' . $hasil['message']);
+    /**
+     * Anggaran waktu habis: sisanya diteruskan ke job berikutnya.
+     *
+     * Bukan pembagian kerja, melainkan penyambungan: satu job aktif per
+     * penjadwalan, tidak peduli pesertanya seratus atau seribu. Antrean tidak
+     * pernah dibanjiri, dan tak ada satu job pun yang perlu hidup lebih lama
+     * dari $timeout-nya.
+     */
+    private function serahkanSisanya(int $kursor, int $terbit, int $total): void
+    {
+        self::dispatch(
+            $this->penjadwalanId,
+            $this->penjadwalanTahapId,
+            $this->idMasterUjian,
+            $this->waktuMulai,
+            $this->waktuAkhir,
+            $this->dimintaOlehId,
+            $kursor,
+        );
 
-            throw new \RuntimeException('HCLearn menolak permintaan: ' . $hasil['message']);
-        }
+        DB::table('N_WEB_CAREERS_Penjadwalan')->where('Id_Penjadwalan', $this->penjadwalanId)
+            ->update([
+                'Status' => 'DIANTRIKAN',
+                'Catatan' => "Menerbitkan token — {$terbit} dari {$total} kandidat selesai, sisanya dilanjutkan.",
+                'Updated_At' => now(),
+            ]);
 
-        $res = $hasil['result'] ?? [];
+        Log::channel('web_career')->info(
+            "[ANTREAN] Penjadwalan #{$this->penjadwalanId} dilanjutkan job berikutnya dari peserta #{$kursor} ({$terbit}/{$total})."
+        );
+    }
 
-        // CAT memproses di antreannya sendiri — token menyusul lewat callback.
-        if (($res['mode'] ?? null) === 'ANTRIAN') {
-            DB::table('N_WEB_CAREERS_Penjadwalan_Tahap')->where('Id_Penjadwalan_Tahap', $this->penjadwalanTahapId)
-                ->update(['Status' => 'DIANTRIKAN', 'Waktu_Kirim' => now(), 'Updated_At' => now()]);
-            DB::table('N_WEB_CAREERS_Penjadwalan')->where('Id_Penjadwalan', $this->penjadwalanId)
-                ->update(['Status' => 'DIANTRIKAN', 'Catatan' => 'Menunggu HCLearn menerbitkan token.', 'Updated_At' => now()]);
-            Log::channel('web_career')->info("[ANTREAN] {$penjadwalan->Kode} diteruskan ke antrean HCLearn.");
+    /**
+     * Semua potongan selesai — status disimpulkan dari KENYATAAN di tabel.
+     *
+     * Dihitung ulang dari database, bukan dari penjumlahan selama job ini
+     * berjalan: pekerjaannya bisa terbagi ke beberapa job berantai, dan job
+     * terakhir hanya tahu jatahnya sendiri. Yang menentukan status adalah
+     * berapa token yang benar-benar ada, bukan berapa yang job ini terbitkan.
+     */
+    private function tutupBuku(object $penjadwalan, ?string $pesanGagal): void
+    {
+        $dasar = fn () => DB::table('N_WEB_CAREERS_Penjadwalan_Peserta')
+            ->where('Penjadwalan_Tahap_Id', $this->penjadwalanTahapId);
+
+        $total = $dasar()->count();
+
+        // Tidak ada pesertanya sama sekali — tak ada yang bisa disimpulkan.
+        if ($total === 0) {
+            $this->rapikanStatus($pesanGagal);
 
             return;
         }
 
-        [$sukses, $gagal, $pesanGagal] = app(\App\Http\Controllers\Career\Penjadwalan\PenjadwalanController::class)
-            ->serapBalasanHclearn($res, $peserta);
+        $terbit = $dasar()->whereNotNull('Short_Token')->count();
+        $gagal = $total - $terbit;
+
+        // Pesan dari job SEBELUMNYA di rantai yang sama tidak dibawa dalam
+        // memori — diambil kembali dari baris pesertanya.
+        if (! $pesanGagal && $gagal > 0) {
+            $pesanGagal = $dasar()->whereNull('Short_Token')
+                ->whereNotNull('Pesan_Error')
+                ->value('Pesan_Error');
+        }
 
         DB::table('N_WEB_CAREERS_Penjadwalan_Tahap')->where('Id_Penjadwalan_Tahap', $this->penjadwalanTahapId)
             ->update([
-                'Status' => $gagal === 0 ? 'TERKIRIM' : ($sukses > 0 ? 'SEBAGIAN' : 'GAGAL'),
+                'Status' => $gagal === 0 ? 'TERKIRIM' : ($terbit > 0 ? 'SEBAGIAN' : 'GAGAL'),
                 'Pesan_Error' => $pesanGagal ? substr($pesanGagal, 0, 480) : null,
                 'Waktu_Kirim' => now(), 'Updated_At' => now(),
             ]);
 
         $this->rapikanStatus($pesanGagal);
 
-        Log::channel('web_career')->info("[ANTREAN] {$penjadwalan->Kode}: {$sukses} token terbit, {$gagal} gagal.");
+        Log::channel('web_career')->info("[ANTREAN] {$penjadwalan->Kode}: {$terbit} token terbit, {$gagal} gagal (dari {$total}).");
     }
 
     /**
@@ -286,8 +514,14 @@ class WcPenjadwalanJob implements ShouldQueue
      * Satu tahap bisa memuat Psikotes 1, Psikotes 2, dan DISC yang dijadwalkan
      * sendiri-sendiri; menebak berarti kandidat menerima token untuk aktivitas
      * yang salah, dan itu jauh lebih sulit disadari daripada tidak ada token.
+     *
+     * @param  int[]|null  $hanyaLamaran  batasi pada lamaran ini saja — dipakai
+     *                                    setelah tiap potongan, supaya ongkosnya
+     *                                    tidak tumbuh kuadratik saat pesertanya
+     *                                    ratusan. null = seluruh yang tokennya
+     *                                    sudah terbit (jalur pemulihan).
      */
-    private function pasangTautanKandidat(): void
+    private function pasangTautanKandidat(?array $hanyaLamaran = null): void
     {
         $tahap = DB::table('N_WEB_CAREERS_Penjadwalan_Tahap')
             ->where('Id_Penjadwalan_Tahap', $this->penjadwalanTahapId)
@@ -303,49 +537,57 @@ class WcPenjadwalanJob implements ShouldQueue
         $lamaranIds = DB::table('N_WEB_CAREERS_Penjadwalan_Peserta')
             ->where('Penjadwalan_Tahap_Id', $this->penjadwalanTahapId)
             ->whereNotNull('Short_Token')
+            ->when($hanyaLamaran !== null, fn ($q) => $q->whereIn('Lamaran_Id', $hanyaLamaran ?: [0]))
             ->pluck('Lamaran_Id')
             ->filter()
             ->unique()
-            ->all();
+            ->values();
 
-        if (! $lamaranIds) {
+        if ($lamaranIds->isEmpty()) {
             return;
         }
 
+        // Dipecah per 500: jalur pemulihan memasang ulang SELURUH peserta yang
+        // tokennya sudah terbit, dan pada penjadwalan seribu orang daftar itu
+        // melewati batas 2100 parameter milik SQL Server.
         DB::transaction(function () use ($tahap, $lamaranIds) {
             $now = now();
 
-            DB::table('N_WEB_CAREERS_Lamaran_Tahap')
-                ->whereIn('Lamaran_Id', $lamaranIds)
-                ->where('Urutan', $tahap->Urutan)
-                ->whereNull('Penjadwalan_Tahap_Id')
-                ->update(['Penjadwalan_Tahap_Id' => $this->penjadwalanTahapId, 'Updated_At' => $now]);
+            foreach ($lamaranIds->chunk(500) as $sepotong) {
+                DB::table('N_WEB_CAREERS_Lamaran_Tahap')
+                    ->whereIn('Lamaran_Id', $sepotong->all())
+                    ->where('Urutan', $tahap->Urutan)
+                    ->whereNull('Penjadwalan_Tahap_Id')
+                    ->update(['Penjadwalan_Tahap_Id' => $this->penjadwalanTahapId, 'Updated_At' => $now]);
 
-            $tahapIds = DB::table('N_WEB_CAREERS_Lamaran_Tahap')
-                ->whereIn('Lamaran_Id', $lamaranIds)
-                ->where('Urutan', $tahap->Urutan)
-                ->pluck('Id_Lamaran_Tahap')
-                ->all();
+                $tahapIds = DB::table('N_WEB_CAREERS_Lamaran_Tahap')
+                    ->whereIn('Lamaran_Id', $sepotong->all())
+                    ->where('Urutan', $tahap->Urutan)
+                    ->pluck('Id_Lamaran_Tahap')
+                    ->all();
 
-            if (! $tahapIds) {
-                return;
+                if (! $tahapIds) {
+                    continue;
+                }
+
+                foreach (collect($tahapIds)->chunk(500) as $sepotongTahap) {
+                    DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')
+                        ->whereIn('Lamaran_Tahap_Id', $sepotongTahap->all())
+                        ->when($tahap->Tes_Urutan, fn ($q, $u) => $q->where('Urutan', $u))
+                        ->where('Flag_Selesai', 'N')
+                        ->whereNull('Penjadwalan_Tahap_Id')
+                        ->update([
+                            'Status' => 'DIJADWALKAN',
+                            'Penjadwalan_Tahap_Id' => $this->penjadwalanTahapId,
+                            'Updated_At' => $now,
+                        ]);
+                }
             }
-
-            DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')
-                ->whereIn('Lamaran_Tahap_Id', $tahapIds)
-                ->when($tahap->Tes_Urutan, fn ($q, $u) => $q->where('Urutan', $u))
-                ->where('Flag_Selesai', 'N')
-                ->whereNull('Penjadwalan_Tahap_Id')
-                ->update([
-                    'Status' => 'DIJADWALKAN',
-                    'Penjadwalan_Tahap_Id' => $this->penjadwalanTahapId,
-                    'Updated_At' => $now,
-                ]);
         });
 
         Log::channel('web_career')->info(
-            '[ANTREAN] tautan kandidat dipasang untuk penjadwalan tahap #' . $this->penjadwalanTahapId
-            . ' (' . count($lamaranIds) . ' lamaran).'
+            '[ANTREAN] tautan kandidat dipasang untuk penjadwalan tahap #'.$this->penjadwalanTahapId
+            .' ('.count($lamaranIds).' lamaran).'
         );
     }
 
@@ -407,7 +649,7 @@ class WcPenjadwalanJob implements ShouldQueue
     /** Percobaan terakhir pun gagal: tandai jelas, jangan biarkan menggantung. */
     public function failed(\Throwable $e): void
     {
-        Log::channel('web_career')->error("[ANTREAN] WcPenjadwalanJob #{$this->penjadwalanId} gagal total: " . $e->getMessage());
+        Log::channel('web_career')->error("[ANTREAN] WcPenjadwalanJob #{$this->penjadwalanId} gagal total: ".$e->getMessage());
         $this->rapikanStatus($e->getMessage());
     }
 }

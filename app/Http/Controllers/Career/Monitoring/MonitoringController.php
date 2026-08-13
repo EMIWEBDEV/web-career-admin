@@ -136,6 +136,11 @@ class MonitoringController extends Controller
                 }
 
                 // 4) KPI global (scope program terfilter).
+                //
+                // "Menunggu tes" dibaca dari AKTIVITAS, bukan dari kolom
+                // ringkasan `lt.Provider`. Satu sumber untuk seluruh papan —
+                // lihat MetrikRekrutmen::sqlMenungguTes().
+                $menungguTes = MetrikRekrutmen::sqlMenungguTes('lt');
                 $kpiStatus = $programIds
                     ? DB::table('N_WEB_CAREERS_Lamaran')->whereIn('Program_Id', $programIds)
                         ->groupBy('Status')->select('Status', DB::raw('COUNT(*) as J'))->pluck('J', 'Status')
@@ -145,13 +150,15 @@ class MonitoringController extends Controller
                 //    ditahan — bug yang sama seperti agregatSehat(), lihat
                 //    MetrikRekrutmen::agregatSehat().
                 $kpiTahap = $programIds
-                    ? DB::table('N_WEB_CAREERS_Lamaran_Tahap as lt')
-                        ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'lt.Lamaran_Id')
+                    ? MetrikRekrutmen::denganAktivitas(
+                        DB::table('N_WEB_CAREERS_Lamaran_Tahap as lt')
+                            ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'lt.Lamaran_Id')
+                    )
                         ->where('lt.Status', 'BERJALAN')->where('l.Status', 'BERJALAN')
                         ->whereRaw(MetrikRekrutmen::sqlBukanDitahan('lt'))
                         ->whereIn('l.Program_Id', $programIds)
                         ->selectRaw("SUM(CASE WHEN lt.Siap_Diputus = 'Y' THEN 1 ELSE 0 END) as siap,
-                                     SUM(CASE WHEN lt.Provider = 'THIRD_PARTY' AND lt.Siap_Diputus = 'N' THEN 1 ELSE 0 END) as nunggu")
+                                     SUM(CASE WHEN {$menungguTes} AND lt.Siap_Diputus = 'N' THEN 1 ELSE 0 END) as nunggu")
                         ->first()
                     : null;
 
@@ -210,10 +217,12 @@ class MonitoringController extends Controller
 
                 // 7) PERLU PERHATIAN: Siap Diputus yang menggantung + tahap macet.
                 $perhatian = $programIds
-                    ? DB::table('N_WEB_CAREERS_Lamaran_Tahap as lt')
-                        ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'lt.Lamaran_Id')
-                        ->leftJoin('N_WEB_CAREERS_Users as u', 'u.Id_Users', '=', 'l.Id_Users')
-                        ->leftJoin('N_WEB_CAREERS_Program as p', 'p.Id_Program', '=', 'l.Program_Id')
+                    ? MetrikRekrutmen::denganAktivitas(
+                        DB::table('N_WEB_CAREERS_Lamaran_Tahap as lt')
+                            ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'lt.Lamaran_Id')
+                            ->leftJoin('N_WEB_CAREERS_Users as u', 'u.Id_Users', '=', 'l.Id_Users')
+                            ->leftJoin('N_WEB_CAREERS_Program as p', 'p.Id_Program', '=', 'l.Program_Id')
+                    )
                         ->where('lt.Status', 'BERJALAN')->where('l.Status', 'BERJALAN')
                         ->whereIn('l.Program_Id', $programIds)
                         ->whereRaw(MetrikRekrutmen::sqlBukanDitahan('lt'))
@@ -221,7 +230,7 @@ class MonitoringController extends Controller
                         ->selectRaw("l.Id_Lamaran, lt.Id_Lamaran_Tahap, u.Nama as Pelamar, l.Created_By as FallbackNama,
                                      l.Program_Id, p.Nama as ProgramNama, lt.Urutan as TahapUrutan, lt.Label as TahapLabel,
                                      CASE WHEN lt.Siap_Diputus = 'Y' THEN 'SIAP_DIPUTUS'
-                                          WHEN lt.Provider = 'THIRD_PARTY' THEN 'MENUNGGU_TES'
+                                          WHEN {$menungguTes} THEN 'MENUNGGU_TES'
                                           ELSE 'MACET' END as Jenis,
                                      {$agingSql} as AgingHari")
                         ->orderByDesc(DB::raw($agingSql))

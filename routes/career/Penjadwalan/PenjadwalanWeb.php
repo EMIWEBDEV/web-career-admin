@@ -11,7 +11,14 @@ Route::get('/karir/penjadwalan', [PenjadwalanController::class, 'index'])->name(
 
 Route::prefix('api/v1')->name('career.api.penjadwalan.')->group(function () {
     Route::get('/penjadwalan', [PenjadwalanController::class, 'list'])->name('list')->middleware('career.permission:penjadwalanPage,VIEW');
-    // Peserta satu penjadwalan — diambil saat barisnya dibuka (akordion).
+    // Peserta SATU PROGRAM, lintas gelombang — isi akordion di layar daftar.
+    // Terpaginasi & tersaring di server (tanggal, kampus, sesi, pencarian),
+    // karena satu program bisa berisi ribuan pelamar.
+    //
+    // Didaftarkan SEBELUM pola {id} supaya 'program' tidak pernah tertangkap
+    // sebagai id penjadwalan.
+    Route::get('/penjadwalan/program/{id}/peserta', [PenjadwalanController::class, 'pesertaProgram'])->name('peserta.program')->middleware('career.permission:penjadwalanPage,VIEW');
+    // Peserta satu penjadwalan — dipertahankan untuk pemanggil lain.
     Route::get('/penjadwalan/{id}/peserta', [PenjadwalanController::class, 'peserta'])->name('peserta')->middleware('career.permission:penjadwalanPage,VIEW');
     Route::post('/penjadwalan', [PenjadwalanController::class, 'store'])->name('store')->middleware('career.permission:penjadwalanPage,CREATE');
     // COBA LAGI penjadwalan yang gagal — mengantrekan ulang HANYA peserta yang

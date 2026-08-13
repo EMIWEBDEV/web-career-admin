@@ -79,6 +79,10 @@ Route::prefix('api/v1/karir')
         Route::get('/lamaran/berkas/{id}', [LamaranController::class, 'worklistBerkas'])->name('lamaran.berkas')->middleware('career.permission:pelamarPage,VIEW');
         Route::get('/lamaran/berkas/file/{id}', [LamaranController::class, 'berkasFile'])->name('lamaran.berkas.file')->middleware('career.permission:pelamarPage,VIEW');
         Route::patch('/lamaran/tahap/{id}/putus', [LamaranController::class, 'putus'])->name('lamaran.putus')->middleware('career.permission:pelamarPage,APPROVE');
+        // KETUK PALU BANYAK SEKALIGUS. Izinnya APPROVE, sama persis dengan
+        // putus satuan — yang berubah jumlahnya, bukan wewenangnya. Polanya
+        // beda ruas dari '{id}/putus', jadi urutan pendaftaran tidak penting.
+        Route::patch('/lamaran/tahap/putus-massal', [LamaranController::class, 'putusMassal'])->name('lamaran.putus.massal')->middleware('career.permission:pelamarPage,APPROVE');
         // TAHAN / LEPAS (hold) — menunda keputusan tanpa memindahkan kandidat
         // dan tanpa mengirim pemberitahuan apa pun kepadanya. Izinnya EDIT,
         // bukan APPROVE: menahan bukan memutuskan nasib siapa pun.

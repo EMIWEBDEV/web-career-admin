@@ -166,8 +166,8 @@ class LamaranService
      * Kandidat melamar sebuah posisi.
      *
      * @param  string|null  $gugurAlasan  bila diisi: lamaran langsung ditandai
-     *   TIDAK LOLOS pada tahap pertama (mis. knock-out saat finalisasi ApplyForm).
-     *   Lamaran TETAP tercatat agar muncul di "Lamaran Saya" berstatus Gugur.
+     *                                    TIDAK LOLOS pada tahap pertama (mis. knock-out saat finalisasi ApplyForm).
+     *                                    Lamaran TETAP tercatat agar muncul di "Lamaran Saya" berstatus Gugur.
      * @return array{ok:bool, pesan:string, lamaranId?:int}
      */
     public function buatLamaran(int $userId, int $pembukaanId, int $posisiId, ?int $userAdminId = null, ?string $gugurAlasan = null, ?array $jawaban = null): array
@@ -197,7 +197,7 @@ class LamaranService
 
         // ── KELAYAKAN (aturan jalur MT/REKRUTMEN + cooldown, master DB) ──
         // Dinilai berdasarkan RIWAYAT akun. Blok sebelum lamaran dibuat.
-        $kelayakan = (new KelayakanLamaran())->cek($userId, $program->Kategori);
+        $kelayakan = (new KelayakanLamaran)->cek($userId, $program->Kategori);
         if (! $kelayakan['boleh']) {
             return ['ok' => false, 'pesan' => $kelayakan['alasan'], 'kode' => $kelayakan['kode'] ?? 'TIDAK_LAYAK'];
         }
@@ -212,7 +212,7 @@ class LamaranService
                 ->get()
             : collect();
 
-        $kode = 'LMR-' . strtoupper(Str::random(8));
+        $kode = 'LMR-'.strtoupper(Str::random(8));
         $now = now();
         $nama = session('career_auth.nama', 'KANDIDAT');
 
@@ -454,7 +454,7 @@ class LamaranService
         $evaluasi = $this->evaluasiSyarat($syaratRows, $nilai);
 
         $pengisianId = DB::transaction(function () use ($tahap, $lamaran, $formulir, $schemaPayload, $jawaban, $nilai, $turunan, $evaluasi, $userId, $ip, $now, $nama, $syaratRows) {
-            $kode = 'FLL-' . strtoupper(Str::random(8));
+            $kode = 'FLL-'.strtoupper(Str::random(8));
 
             $pengisianId = DB::table('N_WEB_CAREERS_Formulir_Pengisian')->insertGetId([
                 'Kode' => $kode,
@@ -639,7 +639,7 @@ class LamaranService
             // Melepas tahan itu satu klik, dan klik itulah yang memaksa admin
             // sadar bahwa ada alasan kenapa kandidat ini sengaja belum diputus.
             if (($tahap->Hold_Flag ?? 'T') === 'Y') {
-                return ['ok' => false, 'pesan' => 'Kandidat ini sedang DITAHAN (' . ($tahap->Hold_Alasan_Kode ?: 'tanpa alasan') . '). Lepaskan penahanannya dulu sebelum memutuskan.'];
+                return ['ok' => false, 'pesan' => 'Kandidat ini sedang DITAHAN ('.($tahap->Hold_Alasan_Kode ?: 'tanpa alasan').'). Lepaskan penahanannya dulu sebelum memutuskan.'];
             }
 
             // ── GERBANG MODE KEPUTUSAN (dari Master Alur) ────────────────────
@@ -664,7 +664,7 @@ class LamaranService
             if ($belum->isNotEmpty() && ($tahap->Siap_Diputus ?? 'N') !== 'Y') {
                 $nama = $belum->pluck('Label')->filter()->implode(', ');
 
-                return ['ok' => false, 'pesan' => 'Hasil aktivitas berikut belum dicatat: ' . ($nama ?: $belum->count() . ' aktivitas') . '. Catat hasilnya dulu sebelum memutuskan.'];
+                return ['ok' => false, 'pesan' => 'Hasil aktivitas berikut belum dicatat: '.($nama ?: $belum->count().' aktivitas').'. Catat hasilnya dulu sebelum memutuskan.'];
             }
 
             // Dulu di sini ada GATE WAJIB UPLOAD: tahap tak bisa diloloskan
@@ -725,7 +725,7 @@ class LamaranService
                 'LULUS' => 'Kandidat diloloskan ke tahap berikutnya.',
                 'GUGUR' => 'Kandidat digugurkan.',
                 'TALENT_POOL' => 'Kandidat dialihkan ke Talent Pool.',
-            ][$hasil] ?? ('Keputusan dicatat: ' . ($def->Nama ?? $hasil) . '.');
+            ][$hasil] ?? ('Keputusan dicatat: '.($def->Nama ?? $hasil).'.');
 
             // Nasib Talent Pool ikut disebut — itu satu-satunya bagian keputusan
             // yang tidak terbaca dari nama hasilnya.
@@ -910,7 +910,7 @@ class LamaranService
 
             Log::channel('web_career')->info(
                 "Lamaran #{$tahap->Lamaran_Id} ditutup oleh KANDIDAT ({$def->Nama}) di tahap '{$tahap->Label}'"
-                . ($simpanTalent ? ' — disimpan di Talent Pool.' : ' — TIDAK disimpan di Talent Pool.')
+                .($simpanTalent ? ' — disimpan di Talent Pool.' : ' — TIDAK disimpan di Talent Pool.')
             );
 
             return;
@@ -992,7 +992,23 @@ class LamaranService
             // pihak ke-3 (mis. psikotes CAT) & kandidat punya nilai valid dalam masa
             // berlaku (Master Jenis Tes → Masa_Berlaku_Bulan), pakai ulang — tak
             // perlu tes lagi. Nonaktif otomatis bila masa berlaku tak diset (null/0).
-            if (($berikut->Provider ?? null) === 'THIRD_PARTY' && ! empty($berikut->Jenis_Tes_Kode)) {
+            //
+            // ══ HANYA UNTUK TAHAP YANG BENAR-BENAR CUMA SATU TES ══
+            //
+            // Cabang ini MEMUTUSKAN tahapnya (tetapkanTahap LULUS/GUGUR) tanpa
+            // menjalankan apa pun. Pada tahap satu-aktivitas itu memang yang
+            // dimaksud. Pada tahap campuran — "FGD + Psikotes + Wawancara" —
+            // gerbang lamanya (`Provider = 'THIRD_PARTY'`, ringkasan tingkat
+            // tahap) ikut menyala, dan nilai psikotes lama akan MELOMPATI FGD
+            // dan wawancara yang tak pernah dijalankan. Kandidat melaju atau
+            // gugur atas dasar ujian yang dikerjakannya berbulan-bulan lalu.
+            //
+            // Karena itu dipagari `tahapCumaSatuTesDaring()`: hanya lolos bila
+            // aktivitas penentu tahap itu tepat satu dan memang ujian online.
+            if (
+                ! empty($berikut->Jenis_Tes_Kode)
+                && $this->tahapCumaSatuTesDaring($berikut)
+            ) {
                 $userId = (int) DB::table('N_WEB_CAREERS_Lamaran')->where('Id_Lamaran', $tahap->Lamaran_Id)->value('Id_Users');
                 $lama = $this->nilaiTesBerlaku($userId, $berikut->Jenis_Tes_Kode);
                 if ($lama) {
@@ -1000,7 +1016,7 @@ class LamaranService
                     $lulusLama = $this->tentukanLulusTes($lama);
                     DB::table('N_WEB_CAREERS_Lamaran_Tahap')->where('Id_Lamaran_Tahap', $berikut->Id_Lamaran_Tahap)
                         ->update(['Skor' => $lama->Total_Nilai, 'Updated_At' => $now]);
-                    Log::channel('web_career')->info("Reuse nilai {$berikut->Jenis_Tes_Kode} lamaran #{$tahap->Lamaran_Id} → " . ($lulusLama ? 'LULUS' : 'GUGUR') . " (nilai {$lama->Total_Nilai}, {$tgl}).");
+                    Log::channel('web_career')->info("Reuse nilai {$berikut->Jenis_Tes_Kode} lamaran #{$tahap->Lamaran_Id} → ".($lulusLama ? 'LULUS' : 'GUGUR')." (nilai {$lama->Total_Nilai}, {$tgl}).");
                     // Pakai mekanisme yang sama: tetapkan tahap ini otomatis lalu maju.
                     $this->tetapkanTahap((int) $berikut->Id_Lamaran_Tahap, $lulusLama ? 'LULUS' : 'GUGUR',
                         "Nilai {$berikut->Jenis_Tes_Kode} sebelumnya ({$lama->Total_Nilai}, {$tgl}) masih berlaku — dipakai ulang, kandidat tak tes lagi.", $adminId, $now);
@@ -1022,6 +1038,33 @@ class LamaranService
      * Berlaku = ada hasil selesai dalam N bulan terakhir (Master Jenis Tes →
      * Masa_Berlaku_Bulan). Null bila masa berlaku tak diset atau tak ada hasil.
      */
+    /**
+     * Tahap ini isinya BENAR-BENAR cuma satu ujian online?
+     *
+     * Dibaca dari aktivitasnya (`Lamaran_Tahap_Tes`), bukan dari kolom
+     * ringkasan `Lamaran_Tahap.Provider` — kolom itu bernilai THIRD_PARTY
+     * begitu ADA SATU aktivitas online di dalamnya, walau dua aktivitas
+     * lainnya dikerjakan tim.
+     *
+     * Tahap yang aktivitasnya belum sempat disalin (baru saja dibuka, atau
+     * lamaran pra-mesin multi-tes) jatuh ke kolom ringkasannya — di situ
+     * memang tidak ada informasi yang lebih baik, dan perilakunya sama persis
+     * dengan sebelum pemeriksaan ini ada.
+     */
+    private function tahapCumaSatuTesDaring(object $tahap): bool
+    {
+        $penentu = DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')
+            ->where('Lamaran_Tahap_Id', $tahap->Id_Lamaran_Tahap)
+            ->where('Peran', 'PENENTU')
+            ->get(['Provider']);
+
+        if ($penentu->isEmpty()) {
+            return ($tahap->Provider ?? null) === 'THIRD_PARTY';
+        }
+
+        return $penentu->count() === 1 && ($penentu->first()->Provider ?? null) === 'THIRD_PARTY';
+    }
+
     public function nilaiTesBerlaku(int $userId, string $jenisTesKode): ?object
     {
         if (! $userId || $jenisTesKode === '') {
@@ -1190,7 +1233,7 @@ class LamaranService
 
         $now = now();
         $nama = session('career_auth.nama', 'ADMIN');
-        $kode = 'LMR-' . strtoupper(Str::random(8));
+        $kode = 'LMR-'.strtoupper(Str::random(8));
 
         $lamaranId = DB::transaction(function () use ($kartu, $posisi, $program, $pembukaan, $alur, $tahap, $mulai, $kode, $now, $nama, $adminId, $talentPoolId) {
             $id = DB::table('N_WEB_CAREERS_Lamaran')->insertGetId([
@@ -1471,20 +1514,71 @@ class LamaranService
             ->where('Lamaran_Tahap_Id', $lamaranTahapId)
             ->where('Flag_Selesai', 'N');
 
-        // Arahkan ke sub-tes yang cocok. URUTAN PENCARIAN PENTING: hasil harus
-        // mendarat di aktivitas yang BENAR, karena satu tahap bisa berisi
-        // beberapa ujian yang dijadwalkan terpisah.
-        //   1. Penjadwalan_Tahap_Id — ikatan pasti antara sesi ujian & sub-tes,
-        //      dibuat saat penjadwalan. Ini yang paling dipercaya.
+        $belumSelesai = (clone $base)->orderBy('Urutan')->get();
+
+        if ($belumSelesai->isEmpty()) {
+            return ['outcome' => 'NOOP']; // semua sub-tes sudah final (idempoten)
+        }
+
+        // ── KE AKTIVITAS MANA HASIL INI MENDARAT ─────────────────────────────
+        //
+        // Satu tahap bisa memuat FGD, psikotes online, dan wawancara sekaligus.
+        // Salah alamat di sini bukan tampilan yang keliru, melainkan DATA yang
+        // rusak diam-diam: aktivitas ditandai SELESAI dengan nilai milik ujian
+        // lain, dan evaluasiTahap() menyimpulkan tahap dari angka palsu. Tidak
+        // ada galat yang muncul di mana pun.
+        //
+        // Tiga pencarian, dari yang paling pasti ke yang paling lemah:
+        //
+        //   1. Penjadwalan_Tahap_Id — ikatan pasti sesi ujian ↔ aktivitas,
+        //      dibuat saat penjadwalan. Inilah yang seharusnya selalu dipakai.
         //   2. Jenis tes — hanya untuk data lama; alur baru tak menyimpannya.
-        //   3. Sub-tes pihak ke-3 pertama yang belum selesai.
-        $sub = $penjadwalanTahapId ? (clone $base)->where('Penjadwalan_Tahap_Id', $penjadwalanTahapId)->orderBy('Urutan')->first() : null;
-        $sub ??= $jenisTesKode ? (clone $base)->where('Jenis_Tes_Kode', $jenisTesKode)->orderBy('Urutan')->first() : null;
-        $sub ??= (clone $base)->where('Provider', 'THIRD_PARTY')->orderBy('Urutan')->first();
-        $sub ??= (clone $base)->orderBy('Urutan')->first();
+        //   3. Satu-satunya aktivitas online yang belum selesai.
+        //
+        // Nomor 2 dan 3 HANYA berlaku bila calonnya TEPAT SATU. Begitu ada dua
+        // yang sama-sama mungkin, tidak ada dasar untuk memilih — dan memilih
+        // dengan `orderBy('Urutan')->first()` bukan pemilihan, melainkan
+        // tebakan yang kebetulan konsisten.
+        $sub = $penjadwalanTahapId
+            ? $belumSelesai->firstWhere('Penjadwalan_Tahap_Id', $penjadwalanTahapId)
+            : null;
+
+        if (! $sub && $jenisTesKode) {
+            $cocok = $belumSelesai->where('Jenis_Tes_Kode', $jenisTesKode)->values();
+            $sub = $cocok->count() === 1 ? $cocok->first() : null;
+        }
 
         if (! $sub) {
-            return ['outcome' => 'NOOP']; // semua sub-tes sudah final (idempoten)
+            $online = $belumSelesai->filter(fn ($s) => ($s->Provider ?? '') === 'THIRD_PARTY')->values();
+            $sub = $online->count() === 1 ? $online->first() : null;
+        }
+
+        // ── TIDAK ADA YANG COCOK: BERHENTI, JANGAN MENEBAK ───────────────────
+        //
+        // Dulu di sini berdiri `(clone $base)->orderBy('Urutan')->first()` —
+        // penyaring KOSONG, jadi hasil ujian online bisa mendarat di aktivitas
+        // MANUAL. Pada tahap "FGD + Psikotes + Wawancara", yang tertulis paling
+        // sering FGD: kandidat ditandai sudah menjalani FGD yang tak pernah ia
+        // hadiri, lengkap dengan nilai psikotesnya. Jalur itu bukan teori — ia
+        // terbuka setiap kali Penjadwalan_Tahap_Id menjadi yatim, persis yang
+        // terjadi pada JDW-0010.
+        //
+        // Menolak menulis jauh lebih murah daripada menulis di baris yang
+        // salah: yang pertama meninggalkan pekerjaan yang bisa dilihat dan
+        // diperbaiki admin, yang kedua meninggalkan catatan yang tampak sah.
+        if (! $sub) {
+            Log::channel('web_career')->error(sprintf(
+                '[HASIL-TES] Hasil ujian tidak bisa dipetakan ke aktivitas mana pun — TIDAK DITULIS. '
+                .'Lamaran_Tahap #%d, Penjadwalan_Tahap #%s, jenis tes %s. '
+                .'Kandidat aktivitas belum selesai: %s. '
+                .'Periksa tautan Penjadwalan_Tahap_Id pada N_WEB_CAREERS_Lamaran_Tahap_Tes.',
+                $lamaranTahapId,
+                $penjadwalanTahapId ?: '-',
+                $jenisTesKode ?: '-',
+                $belumSelesai->map(fn ($s) => "#{$s->Id_Lamaran_Tahap_Tes} {$s->Label} ({$s->Provider})")->implode(', ')
+            ));
+
+            return ['outcome' => 'ANOMALI'];
         }
 
         // SATU TRANSAKSI untuk "rekam hasilnya" + "simpulkan tahapnya".
@@ -1584,7 +1678,7 @@ class LamaranService
             // 1) Auto-gugur — ada tes penentu yang selesai & GAGAL.
             $gagal = $penentu->first(fn ($x) => $selesai($x) && $x->Hasil === 'GAGAL');
             if ($mode->Auto_Gugur === 'Y' && $gagal) {
-                $this->tetapkanTahap($lamaranTahapId, 'GUGUR', 'Gugur otomatis — gagal pada tes "' . ($gagal->Label ?? '') . '".', $adminId, now());
+                $this->tetapkanTahap($lamaranTahapId, 'GUGUR', 'Gugur otomatis — gagal pada tes "'.($gagal->Label ?? '').'".', $adminId, now());
                 $this->tulisJejak($tahap, $mode->Kode, 'GUGUR', 'Auto-gugur: tes penentu gagal.');
 
                 return ['outcome' => 'GUGUR'];
@@ -1764,7 +1858,7 @@ class LamaranService
                 'Created_By' => session('career_auth.nama', 'SISTEM'),
             ]);
         } catch (\Throwable $e) {
-            Log::channel('web_career')->warning('Gagal tulis jejak keputusan: ' . $e->getMessage());
+            Log::channel('web_career')->warning('Gagal tulis jejak keputusan: '.$e->getMessage());
         }
     }
 }
