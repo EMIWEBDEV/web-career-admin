@@ -2344,7 +2344,7 @@ h6,
     gap: 1.5rem;
 }
 /* kolom link selebar isinya saja supaya menu menepi ke kanan; sisa ruang
-   diserahkan ke peta — hanya ada saat VITE_GOOGLE_MAPS_KEY diisi */
+   diserahkan ke peta */
 .wc-footer__cols:has(.wc-footer__col--office) {
     grid-template-columns: repeat(3, max-content) minmax(0, 1fr);
     gap: 2.25rem;

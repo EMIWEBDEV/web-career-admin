@@ -53,7 +53,6 @@
         <transition name="wc-hero2-fade">
             <div v-if="activeSlide && activeSlide.showContent" class="wc-hero2__inner">
                 <div class="wc-hero2__content" aria-hidden="false">
-                    <span class="wc-hero2__eyebrow"><span class="wc-hero2__dot"></span> EVO Group Career</span>
                     <h1 class="wc-hero2__title">
                         Bangun Karirmu Bersama
                         <span class="wc-hero2__grad">EVO Group</span>
@@ -456,31 +455,8 @@ onBeforeUnmount(() => {
 .wc-hero2__content {
     max-width: 640px;
 }
-.wc-hero2__eyebrow {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 7px 14px;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.15);
-    border: 1px solid rgba(255, 255, 255, 0.26);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    color: #efeafe;
-    font-size: 11.5px;
-    font-weight: 800;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-}
-.wc-hero2__dot {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: #c4b5fd;
-    box-shadow: 0 0 0 4px rgba(196, 181, 253, 0.34);
-}
 .wc-hero2__title {
-    margin: 20px 0 0;
+    margin: 0;
     font-size: clamp(2rem, 4.6vw, 3.5rem);
     font-weight: 800;
     line-height: 1.08;
@@ -923,8 +899,9 @@ onBeforeUnmount(() => {
     .wc-hero2__search-input {
         font-size: 16px;
     }
+    /* Satu tombol per baris: berdampingan di 360px labelnya terpotong. */
     .wc-hero2__actions .wc-hero2__btn {
-        flex: 1 1 45%;
+        flex: 1 1 100%;
         justify-content: center;
         padding: 13px 16px;
         font-size: 13.5px;
@@ -963,7 +940,6 @@ onBeforeUnmount(() => {
         max-width: 100%;
         text-align: center;
     }
-    .wc-hero2__eyebrow,
     .wc-hero2__sub,
     .wc-hero2__chips,
     .wc-hero2__ribbon,
