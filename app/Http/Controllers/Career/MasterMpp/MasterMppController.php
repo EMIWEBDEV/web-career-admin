@@ -269,11 +269,33 @@ class MasterMppController extends Controller
             : ['id' => (int) $r->id, 'nama' => $r->nama, 'kategori' => $kategori];
     }
 
+    /**
+     * Terjemahkan jenisProgram (bahasa form) → Flag_MT (bahasa kolom HRIS).
+     *
+     * Non-MT ditulis 'T', BUKAN NULL: 'T' adalah DEFAULT kolomnya di
+     * HRIS_Transaksi_GForm, jadi baris buatan Web Careers jadi seragam dengan
+     * baris buatan HRIS. Dulu kolom ini diisi NULL — aman untuk pembacaan di
+     * repo ini (semua filter memakai ISNULL), tapi query HRIS di luar aplikasi
+     * yang mencari `Flag_MT = 'T'` tidak akan melihat baris tersebut.
+     *
+     * Sisi BACA tetap memperlakukan NULL sebagai non-MT — lihat baris() dan
+     * filter jenis di applyFilters() — supaya baris NULL lama tetap terbaca benar.
+     */
+    private function flagMt(string $jenisProgram): string
+    {
+        return $jenisProgram === 'MT' ? 'Y' : 'T';
+    }
+
     /** Buat transaksi MPP baru (header + detail, satu transaksi DB). */
     public function store(Request $request)
     {
         try {
             $data = $this->validasi($request);
+
+            // DIAGNOSTIK SEMENTARA (fix/mpp-mt) — lacak Flag_MT dari request s/d insert.
+            Log::channel('web_career')->info('[DIAG-MT store] mentah=' . var_export($request->input('jenisProgram'), true)
+                . ' tervalidasi=' . var_export($data['jenisProgram'], true)
+                . ' akanDitulis=' . var_export($this->flagMt($data['jenisProgram']), true));
 
             $userId = session('career_auth.id');
             $noTransaksi = DB::transaction(function () use ($data, $userId) {
@@ -294,7 +316,7 @@ class MasterMppController extends Controller
                     'Tanggal_Periode' => $data['tanggalPeriode'],
                     'User_Penganggung_Jawab' => $data['kodeKaryawan'],
                     'Kode_Lokasi' => $data['kodeLokasi'],
-                    'Flag_MT' => $data['jenisProgram'] === 'MT' ? 'Y' : null,
+                    'Flag_MT' => $this->flagMt($data['jenisProgram']),
                 ]);
 
                 $idDetail = DB::table(self::TABEL_D)->insertGetId([
@@ -336,6 +358,13 @@ class MasterMppController extends Controller
             }
 
             $data = $this->validasi($request);
+
+            // DIAGNOSTIK SEMENTARA (fix/mpp-mt) — lacak Flag_MT dari request s/d update.
+            Log::channel('web_career')->info("[DIAG-MT update {$no}] sebelum=" . var_export($row->Flag_MT, true)
+                . ' mentah=' . var_export($request->input('jenisProgram'), true)
+                . ' tervalidasi=' . var_export($data['jenisProgram'], true)
+                . ' akanDitulis=' . var_export($this->flagMt($data['jenisProgram']), true));
+
             $userId = session('career_auth.id');
             $idDetail = (int) DB::table(self::TABEL_D)->where('No_Transaksi_MPP', $no)->value('Id_Detail_MPP');
 
@@ -349,7 +378,7 @@ class MasterMppController extends Controller
                     'Tanggal_Periode' => $data['tanggalPeriode'],
                     'User_Penganggung_Jawab' => $data['kodeKaryawan'],
                     'Kode_Lokasi' => $data['kodeLokasi'],
-                    'Flag_MT' => $data['jenisProgram'] === 'MT' ? 'Y' : null,
+                    'Flag_MT' => $this->flagMt($data['jenisProgram']),
                 ]);
 
                 DB::table(self::TABEL_D)->where('No_Transaksi_MPP', $no)->update([
