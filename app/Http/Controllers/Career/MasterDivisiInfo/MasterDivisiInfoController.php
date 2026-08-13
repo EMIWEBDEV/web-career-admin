@@ -15,7 +15,7 @@ use Inertia\Inertia;
 use Vinkla\Hashids\Facades\Hashids;
 
 /**
- * WEB CAREER — MASTER INFO DIVISI (konten landing page per divisi/sub-divisi).
+ * WEB CAREER — MASTER INFO DIVISI (konten landing page per divisi/departemen).
  *
  * Sumber referensi: HRIS_Divisi + HRIS_Sub_Divisi (+ mapping HRIS_Divisi_Sub_Divisi).
  * Konten disimpan di N_WEB_CAREERS_Division_Informations (Id_Divisi UNIQUE) dan
@@ -44,7 +44,7 @@ class MasterDivisiInfoController extends Controller
         return Inertia::render('Career/admin/master-divisi-info/masterDivisiInfo', CareerShell::props('/master-info-divisi', 'Master Info Divisi'));
     }
 
-    /** Daftar semua divisi HRIS + status kelengkapan info + rekap sub-divisi. */
+    /** Daftar semua divisi HRIS + status kelengkapan info + rekap departemen. */
     public function list()
     {
         try {
@@ -98,7 +98,7 @@ class MasterDivisiInfoController extends Controller
         }
     }
 
-    /** Detail satu divisi: HRIS + info lengkap + daftar sub-divisinya. */
+    /** Detail satu divisi: HRIS + info lengkap + daftar departemennya. */
     public function show($id)
     {
         try {
@@ -195,14 +195,14 @@ class MasterDivisiInfoController extends Controller
         }
     }
 
-    /** Upsert info sub-divisi (satu baris per Id_Sub_Divisi). */
+    /** Upsert info departemen (satu baris per Id_Sub_Divisi). */
     public function upsertSub(Request $request, $id)
     {
         try {
             $realId = Hashids::decode($id)[0] ?? null;
             $sd = DB::table('HRIS_Sub_Divisi')->where('ID_Sub_Divisi', $realId)->first();
             if (! $sd) {
-                return ResponseHelper::error('Sub-divisi tidak ditemukan', 404);
+                return ResponseHelper::error('Departemen tidak ditemukan', 404);
             }
 
             $data = $this->validasiInfo($request);
@@ -211,14 +211,14 @@ class MasterDivisiInfoController extends Controller
                 'Label_Sub_Div' => $data['label'] ?? null,
             ] + $this->kolomInfo($data));
 
-            Log::channel('web_career')->info("Info sub-divisi #{$realId} disimpan oleh " . session('career_auth.nama', 'ADMIN'));
+            Log::channel('web_career')->info("Info departemen #{$realId} disimpan oleh " . session('career_auth.nama', 'ADMIN'));
 
-            return ResponseHelper::success(null, 'Informasi sub-divisi disimpan');
+            return ResponseHelper::success(null, 'Informasi departemen disimpan');
         } catch (\Illuminate\Validation\ValidationException $e) {
             return ResponseHelper::error(collect($e->errors())->flatten()->first() ?? 'Data tidak valid', 422);
         } catch (\Throwable $e) {
-            Log::channel('web_career')->error("Gagal simpan info sub-divisi #{$id}: " . $e->getMessage());
-            return ResponseHelper::error('Gagal menyimpan informasi sub-divisi', 500);
+            Log::channel('web_career')->error("Gagal simpan info departemen #{$id}: " . $e->getMessage());
+            return ResponseHelper::error('Gagal menyimpan informasi departemen', 500);
         }
     }
 
@@ -228,10 +228,10 @@ class MasterDivisiInfoController extends Controller
         return $this->toggleInfo($request, $id, self::T_DIVISI, 'Id_Divisi', 'divisi');
     }
 
-    /** Aktif/nonaktif info sub-divisi. */
+    /** Aktif/nonaktif info departemen. */
     public function toggleSub(Request $request, $id)
     {
-        return $this->toggleInfo($request, $id, self::T_SUB, 'Id_Sub_Divisi', 'sub-divisi');
+        return $this->toggleInfo($request, $id, self::T_SUB, 'Id_Sub_Divisi', 'departemen');
     }
 
     /**

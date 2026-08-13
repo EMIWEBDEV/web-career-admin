@@ -39,7 +39,7 @@
                         :class="{ 'is-on': intervalSec === o }"
                         :title="o === 0 ? 'Muat ulang otomatis mati' : `Muat ulang tiap ${o / 60} menit`"
                         @click="setInterval_(o)">
-                        <i v-if="intervalSec === o && o > 0" class="bi bi-sync wcd-spin"></i>
+                        <i v-if="intervalSec === o && o > 0" class="bi bi-arrow-repeat wcd-spin"></i>
                         {{ o === 0 ? 'Off' : (o / 60) + 'm' }}
                     </button>
                 </div>

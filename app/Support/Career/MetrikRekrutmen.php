@@ -217,6 +217,50 @@ class MetrikRekrutmen
     public const ALIAS_AKTIVITAS = 'ak';
 
     /**
+     * Aktivitas tahap + kolom `Token_Terbit` — kueri baku untuk worklist,
+     * papan Monitoring, dan siapa pun yang memanggil PipelineReadModel::bucket()
+     * atau PipelineProgress::state().
+     *
+     * ══ KENAPA TOKEN, BUKAN CUKUP TAUTAN JADWAL ══
+     *
+     * `Lamaran_Tahap_Tes.Penjadwalan_Tahap_Id` berarti "aktivitas ini sudah
+     * DIIKUTKAN ke sebuah sesi", bukan "sesinya sudah jadi". Di antara keduanya
+     * ada jeda nyata: penerbitan token ke HCLearn berjalan di antrean, dan bisa
+     * gagal. Selama jeda itu tautannya sudah ada tapi kandidat belum punya apa
+     * pun untuk dibuka.
+     *
+     * Portal kandidat sudah memakai ukuran yang benar — `ujian.terjadwal`
+     * dihitung dari ada-tidaknya Short_Token/Link_Ujian pada baris pesertanya.
+     * Sisi admin dulu memakai ukuran yang lebih longgar, sehingga saat token
+     * gagal terbit admin membaca "menunggu hasil" (seolah kandidat sedang
+     * ujian) padahal kandidat membaca "menunggu dijadwalkan". Dua layar,
+     * dua cerita, tanpa satu pun galat.
+     *
+     * Baris peserta unik per (Penjadwalan_Tahap_Id, Lamaran_Id) — sudah
+     * diperiksa terhadap data — jadi LEFT JOIN ini tidak menggandakan baris.
+     *
+     * TIDAK ADA padanannya di sqlAktivitasTahap(), dan itu disengaja: sisi SQL
+     * hanya memilah "menunggu tes" dari "giliran tim", dan kedua keadaan
+     * (menunggu jadwal / menunggu hasil) sama-sama jatuh ke "menunggu tes".
+     * Menambahkan join token di sana hanya memperberat kueri agregat tanpa
+     * mengubah satu pun angkanya.
+     *
+     * @param  array  $lamaranTahapIds  id N_WEB_CAREERS_Lamaran_Tahap
+     */
+    public static function aktivitasDenganToken(array $lamaranTahapIds)
+    {
+        return DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes as st')
+            ->join('N_WEB_CAREERS_Lamaran_Tahap as lth', 'lth.Id_Lamaran_Tahap', '=', 'st.Lamaran_Tahap_Id')
+            ->leftJoin('N_WEB_CAREERS_Penjadwalan_Peserta as pp', function ($j) {
+                $j->on('pp.Penjadwalan_Tahap_Id', '=', 'st.Penjadwalan_Tahap_Id')
+                    ->on('pp.Lamaran_Id', '=', 'lth.Lamaran_Id');
+            })
+            ->whereIn('st.Lamaran_Tahap_Id', $lamaranTahapIds ?: [0])
+            ->orderBy('st.Urutan')
+            ->selectRaw("st.*, CASE WHEN pp.Short_Token IS NOT NULL OR pp.Link_Ujian IS NOT NULL THEN 'Y' ELSE 'T' END AS Token_Terbit");
+    }
+
+    /**
      * Derived table: satu baris per TAHAP, meringkas aktivitas yang sedang
      * berarti di dalamnya.
      *

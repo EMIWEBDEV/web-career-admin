@@ -5,7 +5,7 @@
      sini tanpa menambah tag di sana = format itu akan dibuang saat simpan.
      ══════════════════════════════════════════════════════════ -->
 <template>
-    <div class="eq" :class="{ 'is-disabled': disabled, 'is-ringkas': ringkas }">
+    <div class="eq" :class="{ 'is-disabled': disabled, 'is-ringkas': ringkas, 'is-mungil': mungil }">
         <div ref="wadah"></div>
         <!-- Keadaan unggah ditampilkan DI LUAR editor: menyisipkan baris status
              ke dalam isi editor akan ikut tersimpan sebagai teks catatan. -->
@@ -28,6 +28,14 @@ export default {
         hint: { type: String, default: '' },
         // Editor di dalam modal tidak punya ruang setinggi halaman penuh.
         ringkas: { type: Boolean, default: false },
+        /**
+         * Satu editor PER BARIS daftar — dua puluh baris keputusan massal,
+         * masing-masing punya catatannya sendiri. Setinggi `ringkas` pun,
+         * dua puluh kali 120px berarti daftar sepanjang dua setengah ribu
+         * piksel. Tingginya dipangkas ke kira-kira dua baris teks dan tumbuh
+         * sendiri saat benar-benar diisi.
+         */
+        mungil: { type: Boolean, default: false },
         /**
          * Alamat penerima gambar. KOSONG = tombol gambar tidak dipasang sama
          * sekali — bukan dipasang lalu gagal saat diklik. Editor yang tidak
@@ -272,6 +280,21 @@ export default {
     min-height: 120px;
     max-height: 260px;
     overflow-y: auto;
+}
+/* Sebaris daftar, bukan sehalaman borang. Toolbarnya ikut dirapatkan —
+   pada tinggi ini toolbar bawaan Quill lebih tinggi daripada isinya. */
+.eq.is-mungil :deep(.ql-editor) {
+    min-height: 56px;
+    max-height: 150px;
+    padding: 7px 10px;
+    font-size: 0.86rem;
+    line-height: 1.55;
+}
+.eq.is-mungil :deep(.ql-toolbar) {
+    padding: 3px 5px;
+}
+.eq.is-mungil :deep(.ql-toolbar .ql-formats) {
+    margin-right: 7px;
 }
 /* Potret ponsel beresolusi penuh akan menjebol lebar kolom catatan. */
 .eq :deep(.ql-editor img) {

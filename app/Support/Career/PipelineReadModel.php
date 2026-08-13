@@ -139,11 +139,35 @@ class PipelineReadModel
             return ['bucket' => 'TINDAKAN_ADMIN', 'outcomeOlehKandidat' => false, 'outcomeKode' => null];
         }
 
-        if ($belumSelesai->contains(fn ($s) => $daring($s) && ! $s->Penjadwalan_Tahap_Id)) {
+        if ($belumSelesai->contains(fn ($s) => $daring($s) && ! self::sesiSiap($s))) {
             return ['bucket' => 'MENUNGGU_JADWAL', 'outcomeOlehKandidat' => false, 'outcomeKode' => null];
         }
 
         return ['bucket' => 'MENUNGGU_HASIL', 'outcomeOlehKandidat' => false, 'outcomeKode' => null];
+    }
+
+    /**
+     * Sesi ujian aktivitas ini SUNGGUH sudah jadi — bukan sekadar tertaut.
+     *
+     * `Penjadwalan_Tahap_Id` berarti "aktivitas ini sudah diikutkan ke sebuah
+     * sesi", bukan "sesinya siap dipakai". Di antara keduanya ada jeda nyata:
+     * penerbitan token ke HCLearn berjalan di antrean dan bisa gagal. Selama
+     * jeda itu tautannya sudah ada tapi kandidat belum punya apa pun untuk
+     * dibuka — portalnya jujur berbunyi "menunggu dijadwalkan", sementara papan
+     * admin dulu berbunyi "menunggu hasil", seolah kandidat sedang mengerjakan
+     * ujian yang tokennya bahkan belum terbit.
+     *
+     * `Token_Terbit` disediakan MetrikRekrutmen::aktivitasDenganToken(). Bila
+     * pemanggil tidak membawanya, keputusannya turun ke ukuran lama — pemanggil
+     * lama tetap berperilaku persis seperti sebelumnya, bukan tiba-tiba salah.
+     */
+    private static function sesiSiap(object $s): bool
+    {
+        if (property_exists($s, 'Token_Terbit')) {
+            return $s->Token_Terbit === 'Y';
+        }
+
+        return (bool) ($s->Penjadwalan_Tahap_Id ?? null);
     }
 
     /**

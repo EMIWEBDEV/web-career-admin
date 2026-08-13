@@ -15,7 +15,7 @@ use Inertia\Inertia;
  *
  * Beda dengan master lain: HRIS_Transaksi_GForm BUKAN tabel modul Web Careers
  * (tanpa prefix N_WEB_CAREERS_) — PK komposit Kode_Perusahaan+No_Transaksi,
- * field organisasi (Divisi/Sub Divisi/Level/Jabatan/Lokasi/Penanggung Jawab)
+ * field organisasi (Divisi/Departemen/Level/Jabatan/Lokasi/Penanggung Jawab)
  * semua FK ke tabel HRIS bersama. Detail (N_WEB_CAREERS_Detail_MPP) adalah
  * ekstensi 1:1 milik modul ini.
  *
@@ -478,7 +478,7 @@ class MasterMppController extends Controller
     {
         $idDivisi = (int) $request->query('divisi');
         if (!$idDivisi) {
-            return ResponseHelper::success([], 'Opsi sub divisi');
+            return ResponseHelper::success([], 'Opsi departemen');
         }
 
         $rows = DB::table('HRIS_Divisi_Sub_Divisi as rel')
@@ -493,7 +493,7 @@ class MasterMppController extends Controller
             ->unique('value')
             ->values();
 
-        return ResponseHelper::success($rows, 'Opsi sub divisi');
+        return ResponseHelper::success($rows, 'Opsi departemen');
     }
 
     public function opsiLevel()

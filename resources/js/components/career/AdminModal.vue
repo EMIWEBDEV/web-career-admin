@@ -35,7 +35,21 @@
                         </button>
                     </div>
 
-                    <div class="wca-modal__body"><slot /></div>
+                    <!-- Isi modal. Bila pemakainya mengisi slot `sticky`, bilah itu
+                         dipasang sebagai anak PERTAMA yang menempel, dan padding body
+                         dipindah ke pembungkus dalam.
+
+                         Kenapa begitu dan bukan margin negatif seperti dulu: margin
+                         negatif harus persis sebesar padding body, dan begitu salah
+                         satunya berubah (breakpoint, penyetelan tema) sisanya menjadi
+                         celah — jalur tempat isi yang tergulir terlihat menyembul di
+                         atas bilah. Dengan padding dipindah ke dalam, bilahnya duduk
+                         di koordinat nol scrollport tanpa satu angka pun yang perlu
+                         dicocokkan. -->
+                    <div class="wca-modal__body" :class="{ 'has-sticky': !! $slots.sticky }">
+                        <div v-if="$slots.sticky" class="wca-modal__stickybar"><slot name="sticky" /></div>
+                        <div class="wca-modal__bodyin"><slot /></div>
+                    </div>
 
                     <div class="wca-modal__foot" :class="{ 'wca-modal__foot--blok': footBlok }">
                         <div v-if="footNote" class="wca-modal__footnote">

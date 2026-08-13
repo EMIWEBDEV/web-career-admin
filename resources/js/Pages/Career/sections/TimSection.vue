@@ -81,7 +81,11 @@
                             <h3 class="wc-tim__overlay-title">{{ t.nama }}</h3>
                             <p class="wc-tim__overlay-desc">{{ t.deskripsi }}</p>
 
-                            <!-- Sub-Divisi / Skill Pills Preview -->
+                            <!-- Departemen / Skill Pills Preview.
+                                 Nama propertinya tetap `subDivisi` — itu bentuk
+                                 payload yang dikirim server dari kolom HRIS
+                                 `ID_Sub_Divisi`; yang berubah sebutannya di
+                                 layar, bukan pengenal datanya. -->
                             <div v-if="t.subDivisi && t.subDivisi.length" class="wc-tim__skills">
                                 <span v-for="s in t.subDivisi.slice(0, 3)" :key="s" class="wc-tim__skill-pill">
                                     {{ s }}

@@ -316,16 +316,16 @@ class ProgramKegiatanController extends Controller
 
             // 1) Ada baris info level-divisi?
             $adaInfo = array_flip(DB::table('N_WEB_CAREERS_Division_Informations')->whereIn('Id_Divisi', $idList)->pluck('Id_Divisi')->all());
-            // 2) Total sub-divisi per divisi (dari mapping HRIS).
+            // 2) Total departemen per divisi (dari mapping HRIS).
             $subTotal = DB::table('HRIS_Divisi_Sub_Divisi')->whereIn('ID_Divisi', $idList)
                 ->select('ID_Divisi', DB::raw('COUNT(DISTINCT ID_Sub_Divisi) as t'))->groupBy('ID_Divisi')->pluck('t', 'ID_Divisi');
-            // 3) Sub-divisi yang SUDAH terisi infonya.
+            // 3) Departemen yang SUDAH terisi infonya.
             $subTerisi = DB::table('HRIS_Divisi_Sub_Divisi as m')
                 ->join('N_WEB_CAREERS_Sub_Divisi_Informations as si', 'si.Id_Sub_Divisi', '=', 'm.ID_Sub_Divisi')
                 ->whereIn('m.ID_Divisi', $idList)
                 ->select('m.ID_Divisi', DB::raw('COUNT(DISTINCT m.ID_Sub_Divisi) as t'))->groupBy('m.ID_Divisi')->pluck('t', 'ID_Divisi');
 
-            // LENGKAP = ada info divisi + MINIMAL SATU sub-divisi terisi.
+            // LENGKAP = ada info divisi + MINIMAL SATU departemen terisi.
             // ACCOUNTING (0/0) → belum lengkap; begitu ada 1 sub terisi → boleh lanjut.
             $belum = [];
             foreach ($divisi as $d) {
@@ -340,7 +340,7 @@ class ProgramKegiatanController extends Controller
                     continue;
                 }
                 $alasan = ! $adaRow ? 'info divisi belum dibuat'
-                    : ($total === 0 ? 'belum ada sub-divisi' : "sub-divisi belum diisi (0/{$total})");
+                    : ($total === 0 ? 'belum ada departemen' : "departemen belum diisi (0/{$total})");
                 $belum[$d->Id_Divisi] = [
                     'nama' => $d->Nama ?: ('Divisi #' . $d->Id_Divisi),
                     'id' => Hashids::encode($d->Id_Divisi),

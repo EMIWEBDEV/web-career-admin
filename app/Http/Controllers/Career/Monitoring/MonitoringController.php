@@ -457,10 +457,11 @@ class MonitoringController extends Controller
                 // hasil aktivitas sudah tercatat. Satu query bergrup, bukan per
                 // pelamar, supaya papan tetap ringan. Tanpa ini badge Monitoring
                 // bisa berbeda dari worklist untuk kandidat yang sama.
-                $subPer = DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')
-                    ->whereIn('Lamaran_Tahap_Id', $tahapPer->flatten(1)->pluck('Id_Lamaran_Tahap')->all() ?: [0])
-                    ->orderBy('Urutan')
-                    ->get()
+                // Lewat helper: barisnya ikut membawa `Token_Terbit`, ukuran
+                // yang sama dengan yang dipakai portal kandidat.
+                $subPer = MetrikRekrutmen::aktivitasDenganToken(
+                    $tahapPer->flatten(1)->pluck('Id_Lamaran_Tahap')->all()
+                )->get()
                     ->groupBy('Lamaran_Tahap_Id');
 
                 // Atribut kandidat (kampus, jurusan, jenjang, IPK, …) diambil dari
