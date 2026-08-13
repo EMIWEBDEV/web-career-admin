@@ -16,10 +16,18 @@
 
                 <!-- Baris Ikon Media Sosial & Kontak -->
                 <div class="wc-footer__social">
-                    <a href="https://linkedin.com" target="_blank" rel="noopener noreferrer" title="LinkedIn"><i class="bi bi-linkedin"></i></a>
-                    <a href="https://instagram.com" target="_blank" rel="noopener noreferrer" title="Instagram"><i class="bi bi-instagram"></i></a>
-                    <a href="mailto:recruitment@evogroup.co.id" title="Email Rekrutmen"><i class="bi bi-envelope-fill"></i></a>
-                    <a href="https://wa.me/6281234567890" target="_blank" rel="noopener noreferrer" title="WhatsApp HR"><i class="bi bi-whatsapp"></i></a>
+                    <a href="https://linkedin.com" target="_blank" rel="noopener noreferrer" title="LinkedIn"
+                        ><i class="bi bi-linkedin"></i
+                    ></a>
+                    <a href="https://instagram.com" target="_blank" rel="noopener noreferrer" title="Instagram"
+                        ><i class="bi bi-instagram"></i
+                    ></a>
+                    <a href="mailto:recruitment@evogroup.co.id" title="Email Rekrutmen"
+                        ><i class="bi bi-envelope-fill"></i
+                    ></a>
+                    <a href="https://wa.me/6281234567890" target="_blank" rel="noopener noreferrer" title="WhatsApp HR"
+                        ><i class="bi bi-whatsapp"></i
+                    ></a>
                 </div>
             </div>
 
@@ -43,12 +51,15 @@
                     <button type="button" @click="goToSection('lokasi')">Lokasi Kami</button>
                     <a href="/karir/faq">FAQ Kandidat</a>
                 </div>
-                <div class="wc-footer__col wc-footer__col--office">
-                    <strong>Kantor Pusat</strong>
-                    <div v-for="o in hoOffices" :key="o.kota" class="wc-footer__office">
-                        <i class="bi bi-geo-alt-fill"></i>
-                        <span><b>{{ o.kota }}</b><small>{{ o.tipe || 'Head Office' }}</small></span>
-                    </div>
+                <div v-if="mapSrc" class="wc-footer__col wc-footer__col--office">
+                    <iframe
+                        class="wc-footer__map"
+                        :src="mapSrc"
+                        title="Peta lokasi kantor pusat EVO Group"
+                        loading="lazy"
+                        referrerpolicy="strict-origin-when-cross-origin"
+                        allow="fullscreen"
+                    ></iframe>
                 </div>
             </div>
         </div>
@@ -66,14 +77,21 @@
 import { computed } from 'vue';
 import { goToSection } from '../careerData';
 
-const props = defineProps({
+// ponytail: koordinat HO di-hardcode. Pindahkan ke kolom Latitude/Longitude
+// di N_HRIS_Master_Lokasi kalau cabang lain juga perlu dipetakan.
+const HO = { lat: -2.9441525942113036, lng: 104.7700541264974 };
+
+defineProps({
     hasMt: { type: Boolean, default: false },
-    offices: { type: Array, default: () => [] },
 });
 
-const hoOffices = computed(() => {
-    const list = props.offices.filter((o) => o.statusHo === 'Y' || o.tipe === 'Kantor Pusat' || String(o.kota || '').toLowerCase().includes('palembang'));
-    return (list.length ? list : props.offices).slice(0, 1);
+// Google Maps Embed API (resmi). Key wajib & harus dibatasi HTTP referrer di
+// Google Cloud Console — key ini ikut terkirim ke browser.
+const mapSrc = computed(() => {
+    const key = import.meta.env.VITE_GOOGLE_MAPS_KEY;
+    if (!key) return '';
+    const params = new URLSearchParams({ key, q: `${HO.lat},${HO.lng}`, zoom: '15' });
+    return `https://www.google.com/maps/embed/v1/place?${params}`;
 });
 
 const tahun = new Date().getFullYear();

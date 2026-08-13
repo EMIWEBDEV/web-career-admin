@@ -547,6 +547,14 @@ h6,
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
 }
+/* Saat layar dirotasi, 6 menu + tombol akun lebih tinggi dari viewport ponsel
+   (~400px) dan bagian bawahnya tidak bisa dijangkau — panelnya sendiri yang
+   digulir, bukan halamannya. */
+.wc-nav__mobile {
+    max-height: calc(100svh - 6rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
 .wc-nav__mobile button {
     display: flex;
     align-items: center;
@@ -2250,8 +2258,8 @@ h6,
     margin: 0 auto;
     padding: clamp(2.5rem, 5vw, 3.5rem) 0 2.25rem;
     display: grid;
-    grid-template-columns: 1.4fr 2fr;
-    gap: 2.5rem;
+    grid-template-columns: 1.1fr 2.9fr;
+    gap: 2rem;
 }
 .wc-footer__logo {
     display: flex;
@@ -2332,8 +2340,15 @@ h6,
 }
 .wc-footer__cols {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 1.5rem;
+}
+/* kolom link selebar isinya saja supaya menu menepi ke kanan; sisa ruang
+   diserahkan ke peta — hanya ada saat VITE_GOOGLE_MAPS_KEY diisi */
+.wc-footer__cols:has(.wc-footer__col--office) {
+    grid-template-columns: repeat(3, max-content) minmax(0, 1fr);
+    gap: 2.25rem;
+    justify-content: end;
 }
 .wc-footer__cols strong {
     display: block;
@@ -2367,31 +2382,25 @@ h6,
     color: var(--indigo-d);
     transform: translateX(3px);
 }
-.wc-footer__office {
+.wc-footer__col--office {
     display: flex;
-    align-items: flex-start;
-    gap: 0.55rem;
-    margin-bottom: 0.85rem;
 }
-.wc-footer__office i {
-    color: var(--indigo);
-    margin-top: 0.15rem;
-    font-size: 0.95rem;
+.wc-footer__map {
+    display: block;
+    width: 100%;
+    height: 100%;
+    min-height: 240px;
+    border: 0;
+    border-radius: 1rem;
+    background: #eef2f7;
+    box-shadow: 0 10px 26px rgba(15, 23, 42, 0.07);
+    transition:
+        transform 0.2s ease,
+        box-shadow 0.2s ease;
 }
-.wc-footer__office span {
-    display: flex;
-    flex-direction: column;
-    line-height: 1.35;
-}
-.wc-footer__office b {
-    color: var(--ink);
-    font-size: 0.85rem;
-    font-weight: 900;
-}
-.wc-footer__office small {
-    color: var(--muted);
-    font-size: 0.74rem;
-    font-weight: 700;
+.wc-footer__map:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 16px 34px rgba(79, 70, 229, 0.16);
 }
 .wc-footer__bar {
     position: relative;
@@ -2548,16 +2557,17 @@ h6,
         max-width: none;
         flex: 1;
     }
-    .wc-footer__cols {
+    .wc-footer__cols,
+    .wc-footer__cols:has(.wc-footer__col--office) {
         grid-template-columns: 1fr 1fr;
         gap: 1.1rem 1rem;
+        justify-content: stretch;
     }
-    .wc-footer__office {
-        margin-bottom: 0.5rem;
-        padding: 6px 10px;
-        border-radius: 10px;
-        background: rgba(255, 255, 255, 0.8);
-        border: 1px solid rgba(226, 232, 240, 0.9);
+    .wc-footer__col--office {
+        grid-column: 1 / -1; /* peta melebar penuh di mobile */
+    }
+    .wc-footer__map {
+        min-height: 180px;
     }
     .wc-footer__bar {
         padding-bottom: 115px; /* Floating action bar safe bottom clearance */
@@ -2576,9 +2586,123 @@ h6,
     .wc-nav__brand-txt small {
         display: none;
     }
-    .wc-footer__cols {
+    .wc-footer__cols,
+    .wc-footer__cols:has(.wc-footer__col--office) {
         grid-template-columns: 1fr 1fr;
         gap: 1rem 0.85rem;
+    }
+}
+
+/* ═══════════ KONTROL DASAR DI LAYAR SENTUH ═══════════
+   Berlaku untuk seluruh Web Career (landing, portal, admin): tombol, field,
+   dan dropdown dipakai ulang di mana-mana, jadi aturannya ditaruh sekali di
+   sini alih-alih diulang per komponen. */
+@media (max-width: 640px) {
+    /* Safari iOS men-zoom halaman begitu field ber-font <16px difokuskan, dan
+       zoom itu tidak pernah kembali sendiri — ini penyebab form terlihat
+       "melompat" di iPhone. Termasuk field Element Plus/FormKit karena
+       selector-nya menyasar elemen, bukan kelas.
+       !important dipakai sadar: style scoped komponen (`.kelas[data-v-x]`)
+       spesifisitasnya lebih tinggi dari selector global ini, dan ini syarat
+       teknis platform — bukan pilihan desain yang boleh ditimpa. */
+    .wc-page input,
+    .wc-page select,
+    .wc-page textarea,
+    .wca input,
+    .wca select,
+    .wca textarea {
+        font-size: 16px !important;
+    }
+    /* Target sentuh minimum ~44px (WCAG 2.5.8 Target Size). */
+    .wc-btn,
+    .wc-nav__cta,
+    .wc-nav__burger,
+    .wc-select__btn,
+    .wc-toolbar__clear,
+    .wc-toolbar__search input {
+        min-height: 2.75rem;
+    }
+    .wc-nav__burger {
+        width: 2.75rem;
+    }
+    .wc-toolbar__clear {
+        width: 2.75rem;
+    }
+    .wc-btn {
+        padding: 0.75rem 1.15rem;
+        /* Label panjang membungkus di dalam tombol, bukan melebarkan barisnya. */
+        max-width: 100%;
+    }
+    /* Search mengambil satu baris penuh; filter mengisi sisanya. */
+    .wc-toolbar__search {
+        flex-basis: 100%;
+    }
+    /* Menu dropdown selebar layar — 220px minimum bikin menu keluar viewport
+       kalau tombolnya dekat tepi kanan. */
+    .wc-select__menu {
+        left: 0;
+        right: 0;
+        min-width: 0;
+        max-width: none;
+    }
+    .wc-select__opt {
+        min-height: 2.6rem;
+    }
+}
+@media (hover: none) {
+    /* Layar sentuh tidak punya hover: efek angkat menyangkut setelah ditekan
+       dan tombolnya terlihat "nyantol" terangkat. */
+    .wc-btn:hover,
+    .wc-nav__cta--primary:hover {
+        transform: none;
+    }
+    .wc-btn:active {
+        transform: scale(0.98);
+    }
+}
+
+/* ═══════════ ROTASI MENDARAT — SELURUH WEB CAREER ═══════════
+   Layar pendek & lebar: tinggi jadi sumber daya paling langka, dan takik
+   (notch) pindah ke sisi kiri/kanan. Berlaku untuk landing, portal, dan admin. */
+@media (orientation: landscape) and (max-height: 560px) {
+    /* Navbar diramping­kan; jarak ke tepi atas tetap ada supaya tidak menempel
+       ke bezel, dan lebarnya menghormati takik di sisi kiri/kanan. */
+    .wc-nav {
+        top: 0.55rem;
+        min-height: 3.1rem;
+        width: min(1180px, calc(100vw - 1.5rem - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)));
+        padding: 0.35rem 0.4rem 0.35rem 0.5rem;
+        border-radius: 0.9rem;
+    }
+    .wc-nav__mark {
+        width: 2.15rem;
+        height: 2.15rem;
+        border-radius: 0.65rem;
+    }
+    .wc-nav__cta {
+        min-height: 2.3rem;
+        padding: 0 0.9rem;
+    }
+    .wc-nav__burger {
+        height: 2.3rem;
+    }
+    /* Konten halaman menjauh dari takik; navbar fixed diurus sendiri di atas. */
+    .wc-page,
+    .wca {
+        padding-left: env(safe-area-inset-left, 0px);
+        padding-right: env(safe-area-inset-right, 0px);
+    }
+    /* Header sticky panel admin/portal: 0.85rem × 2 memakan seperlima layar. */
+    .wca-top {
+        padding: 0.55rem 1rem;
+    }
+    /* Sticky apply bar menutupi baris kredit footer kalau tak diberi ruang;
+       aturan lamanya hanya ada di ≤640px sementara ponsel mendarat lebih lebar. */
+    .wc-footer__bar {
+        padding-bottom: 92px;
+    }
+    .wc-section {
+        padding: clamp(2rem, 5vh, 3rem) 0;
     }
 }
 

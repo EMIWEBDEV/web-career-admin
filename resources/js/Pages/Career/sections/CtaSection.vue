@@ -143,9 +143,14 @@ import { Link } from '@inertiajs/vue3';
     font-weight: 900;
 }
 @media (max-width: 560px) {
+    /* basis 14rem: dua tombol tetap sebaris selagi muat, lalu turun ke barisnya
+       sendiri (bukan terjepit jadi dua baris teks) di layar sempit. */
     .ctal__actions .ctal__btn {
-        flex: 1;
+        flex: 1 1 14rem;
         justify-content: center;
+    }
+    .ctal__panel {
+        border-radius: 22px;
     }
 }
 </style>

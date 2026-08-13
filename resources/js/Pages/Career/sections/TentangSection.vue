@@ -698,11 +698,63 @@ const familyValues = [
         grid-template-columns: 1fr;
         gap: 1rem;
     }
+    /* Label tetap tampil; 6 pil berlabel tidak muat satu baris, jadi ditata
+       2 kolom rapi (bukan flex-wrap yang menyisakan satu pil sendirian) dan
+       wadahnya jadi kotak membulat — bentuk pill 999px cuma pas untuk 1 baris. */
+    .wc-about__acronym-track {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.3rem;
+        width: 100%;
+        max-width: 24rem;
+        padding: 0.45rem;
+        border-radius: 1.35rem;
+    }
+    .wc-about__acronym-btn {
+        justify-content: flex-start;
+        width: 100%;
+        min-height: 2.75rem;
+        padding: 0.3rem 0.6rem 0.3rem 0.3rem;
+        border-radius: 999px;
+    }
+    .wc-about__acronym-char {
+        width: 2rem;
+        height: 2rem;
+        font-size: 0.88rem;
+        flex: none;
+    }
     .wc-about__acronym-label {
-        display: none;
+        font-size: 0.78rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
     .wc-about__brands {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.75rem;
+    }
+    .wc-about__visi,
+    .wc-about__misi {
+        border-radius: 1.35rem;
+    }
+    .wc-about__misi {
+        padding: 0.5rem 1rem;
+    }
+    .wc-about__misi-item {
+        gap: 0.8rem;
+        padding: 0.95rem 0.35rem;
+    }
+    /* Ikon dekoratif 11rem memakan hampir seluruh kartu di layar kecil. */
+    .wc-about__visi-bg-icon {
+        font-size: 7rem;
+    }
+    .wc-about__val-card {
+        padding: 1.15rem 1.1rem;
+        border-radius: 1.25rem;
+    }
+    .wc-about__val-tag {
+        font-size: 0.65rem;
+        padding: 0.25rem 0.55rem;
     }
 }
 </style>

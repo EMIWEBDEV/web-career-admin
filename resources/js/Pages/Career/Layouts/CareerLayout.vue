@@ -17,7 +17,7 @@
 
         <slot />
 
-        <CareerFooter :has-mt="hasMt" :offices="offices" />
+        <CareerFooter :has-mt="hasMt" />
     </div>
 </template>
 
@@ -27,6 +27,8 @@ import CareerFooter from '../components/CareerFooter.vue';
 
 defineProps({
     hasMt: { type: Boolean, default: false },
+    // Dideklarasikan agar binding :offices dari halaman tidak bocor jadi
+    // atribut DOM. Footer sudah tidak memakainya.
     offices: { type: Array, default: () => [] },
 });
 </script>

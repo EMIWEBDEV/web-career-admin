@@ -346,9 +346,47 @@ function leave(el) {
     color: #1e1b4b;
     font-weight: 700;
 }
+/* Isi jawaban datang dari editor admin — URL/tabel/kode panjang tidak boleh
+   melebarkan halaman di ponsel. */
+.wc-faq__ringkas,
+.wc-faq__detail {
+    overflow-wrap: anywhere;
+}
+.wc-faq__detail :deep(img) {
+    max-width: 100%;
+    height: auto;
+}
+.wc-faq__detail :deep(pre) {
+    overflow-x: auto;
+}
+.wc-faq__detail :deep(table) {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+}
+
 @media (max-width: 640px) {
     .wc-faq__answer {
         padding-left: 0;
+    }
+    .wc-faq__item {
+        padding: 1rem 1.1rem;
+        border-radius: 1rem;
+    }
+    .wc-faq__question {
+        gap: 0.75rem;
+    }
+    .wc-faq__icon {
+        width: 2.2rem;
+        height: 2.2rem;
+        font-size: 1rem;
+        border-radius: 0.7rem;
+    }
+    .wc-faq__title {
+        font-size: 0.95rem;
+    }
+    .wc-faq__detail {
+        padding: 0.9rem 1rem;
     }
 }
 </style>

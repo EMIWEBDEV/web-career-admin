@@ -151,7 +151,9 @@ const tampil = computed(() => props.programMt.slice(0, MAKS));
     position: relative;
     margin-top: clamp(1.5rem, 3vw, 2.15rem);
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(288px, 1fr));
+    /* min() — tanpa itu track 288px lebih lebar dari panel di layar ≤370px
+       (100vw - 2rem - padding panel) dan kartu meluap ke samping. */
+    grid-template-columns: repeat(auto-fill, minmax(min(288px, 100%), 1fr));
     gap: 1.05rem;
 }
 .mtl__card {
@@ -350,6 +352,20 @@ const tampil = computed(() => props.programMt.slice(0, MAKS));
 @media (max-width: 560px) {
     .mtl__meta {
         grid-template-columns: 1fr;
+    }
+    .mtl__panel {
+        border-radius: 22px;
+    }
+    /* Nama posisi panjang tidak boleh memaksa kartu melebar. */
+    .mtl__chip {
+        max-width: 100%;
+    }
+    .mtl__foot {
+        flex-wrap: wrap;
+    }
+    .mtl__seeall-btn {
+        width: 100%;
+        justify-content: center;
     }
 }
 </style>
