@@ -50,7 +50,7 @@
                                     <div><small>Flag Selesai</small><b><span class="mmp-flag" :class="{ 'is-done': detail.selesai }"><span class="mmp-flag__dot"></span>{{ detail.selesai ? 'Selesai' : 'Berjalan' }}</span></b></div>
                                     <div><small>Jenis Program</small><b><span class="mmp-chip-program" :class="{ 'is-mt': detail.jenisProgram === 'MT' }"><i class="bi" :class="detail.jenisProgram === 'MT' ? 'bi-mortarboard-fill' : 'bi-person-workspace'"></i> {{ jenisProgramLabel(detail.jenisProgram) }}</span></b></div>
                                     <div><small>Divisi</small><b>{{ detail.divisi.nama || '—' }}</b></div>
-                                    <div><small>Sub Divisi</small><b>{{ detail.subDivisi?.nama || '—' }}</b></div>
+                                    <div><small>Departemen</small><b>{{ detail.subDivisi?.nama || '—' }}</b></div>
                                     <div><small>Level</small><b>{{ detail.level.nama || '—' }}</b></div>
                                     <div><small>Jumlah Rekrutmen</small><b>{{ detail.jumlahRekrutmen }} orang</b></div>
                                     <div><small>Tanggal Periode</small><b>{{ formatTanggal(detail.tanggalPeriode) }}</b></div>

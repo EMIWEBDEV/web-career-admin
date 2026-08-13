@@ -1,6 +1,6 @@
 <!-- WEB CAREER — Modal konfirmasi reusable (hapus / aksi berbahaya). Elegan, tombol danger. -->
 <template>
-    <AdminModal :show="show" :title="title" :subtitle="subtitle" :icon="icon" @close="$emit('cancel')">
+    <AdminModal :show="show" :title="title" :subtitle="subtitle" :icon="icon" :size="size" @close="$emit('cancel')">
         <!-- MODE FORMULIR. Isi modal ini biasanya satu kalimat konfirmasi, jadi
              bawaannya rata tengah di dalam <p> dan diberi ikon peringatan besar.
              Untuk modal yang isinya BORANG — label, input, pilihan — bentuk itu
@@ -22,7 +22,7 @@
             <button class="wca-btn wca-btn--ghost" type="button" @click="$emit('cancel')"><i class="bi bi-x-circle"></i> {{ cancelLabel }}</button>
             <button class="wca-btn" :class="danger ? 'wca-btn--danger' : 'wca-btn--dark'" type="button" :disabled="busy || confirmDisabled" @click="$emit('confirm')">
                 <span v-if="busy" class="wca-spin" aria-hidden="true"></span>
-                <i v-else class="bi" :class="danger ? 'bi-trash' : 'bi-check-lg'"></i>
+                <i v-else class="bi" :class="confirmIcon || (danger ? 'bi-trash' : 'bi-check-lg')"></i>
                 {{ busy ? busyLabel : confirmLabel }}
             </button>
         </template>
@@ -39,8 +39,18 @@ export default {
         title: { type: String, default: 'Konfirmasi' },
         subtitle: { type: String, default: 'Tindakan ini tidak dapat dibatalkan' },
         icon: { type: String, default: 'bi-exclamation-octagon' },
+        /* Ukuran diteruskan apa adanya ke AdminModal (validasinya di sana).
+           Konfirmasi sebaris memang cukup dengan bawaan, tapi modal ber-formMode
+           bisa berisi borang penuh — dan borang yang dijejalkan ke lebar
+           konfirmasi memaksa tiap kartu pilihan menumpuk satu per baris. */
+        size: { type: String, default: '' },
         note: { type: String, default: '' },
         danger: { type: Boolean, default: true },
+        /* Ikon tombol konfirmasi. Tanpa ini ia hanya punya dua wajah: tong
+           sampah (danger) atau centang. Tindakan yang bukan penghapusan —
+           memutus tahap, menahan, menerbitkan — jadi memakai ikon tong sampah
+           yang menjanjikan hal yang tidak ia lakukan. */
+        confirmIcon: { type: String, default: '' },
         busy: { type: Boolean, default: false },
         // Kunci tombol konfirmasi selama syarat di dalam modal belum terpenuhi
         // (mis. centang persetujuan sebelum menggugurkan kandidat).

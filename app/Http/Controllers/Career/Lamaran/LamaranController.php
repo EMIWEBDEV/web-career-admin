@@ -12,6 +12,7 @@ use App\Jobs\Career\WcJadwalEmailJob;
 use App\Jobs\Career\WcLaporanKandidatJob;
 use App\Support\Career\AksesService;
 use App\Support\Career\AlurKolom;
+use App\Support\Career\FormulirSchema;
 use App\Support\Career\GcsBerkas;
 use App\Support\Career\HtmlBersih;
 use App\Support\Career\JadwalPrivat;
@@ -1054,14 +1055,30 @@ class LamaranController extends Controller
             ->select('fp.*', 't.Urutan as TahapUrutan', 't.Label as TahapLabel')
             ->get();
 
+        // SKEMA yang dibekukan saat formulir dikirim — bukan yang published
+        // sekarang. Inilah satu-satunya sumber yang tahu: label asli tiap
+        // pertanyaan, tipenya, kelompoknya, dan URUTANNYA.
+        //
+        // Tanpa ini layar hanya punya Komponen_Kode, dan itu cuma terisi untuk
+        // formulir bawaan lama. Untuk formulir yang disusun lewat Master
+        // Formulir — yang kini menjadi mayoritas — kodenya NULL, sehingga
+        // labelnya ditebak dari nama kunci: `v_nama` terbaca "V Nama",
+        // `v_email` terbaca "V Email". Bahasa mesin yang bocor ke mata orang,
+        // dan urutan bacanya ikut acak karena mengikuti urutan kunci di JSON,
+        // bukan urutan pertanyaan di formulirnya.
+        $adaSnapshot = FormulirSchema::punyaKolomPengisianSnapshot();
+
         $berkasPer = DB::table('N_WEB_CAREERS_Formulir_Berkas')
             ->whereIn('Formulir_Pengisian_Id', $pengisian->pluck('Id_Formulir_Pengisian')->all() ?: [0])
             ->orderBy('Urutan')
             ->get()
             ->groupBy('Formulir_Pengisian_Id');
 
-        return $pengisian->values()->map(function ($fp, $i) use ($berkasPer, $urlBerkasPrefix) {
+        return $pengisian->values()->map(function ($fp, $i) use ($berkasPer, $urlBerkasPrefix, $adaSnapshot) {
             $jawaban = json_decode($fp->Jawaban_Json ?: '{}', true) ?: [];
+            $skema = $adaSnapshot && ! empty($fp->Schema_Snapshot_Json)
+                ? (json_decode($fp->Schema_Snapshot_Json, true) ?: null)
+                : null;
 
             $berkas = collect($berkasPer->get($fp->Id_Formulir_Pengisian, []))->map(function ($b) use ($urlBerkasPrefix) {
                 $ext = strtolower($b->Ekstensi ?: pathinfo($b->Nama_Asli, PATHINFO_EXTENSION));
@@ -1093,6 +1110,9 @@ class LamaranController extends Controller
                 // ditebak dari nama kuncinya, dan `v_nama`/`v_wa` terbaca
                 // "V Nama"/"V Wa": bahasa mesin, bukan bahasa manusia.
                 'komponen' => $fp->Komponen_Kode,
+                // Skema beku (langkah → bagian → field). Dipakai layar untuk
+                // label, tipe, kelompok, DAN urutan baca. Lihat catatan di atas.
+                'skema' => $skema,
                 // String mentah dari SQL Server: optional()->__toString()
                 // di atasnya menghasilkan NULL, sehingga formulir yang jelas
                 // sudah dikirim tetap dianggap belum.
@@ -2777,11 +2797,13 @@ class LamaranController extends Controller
             ->groupBy('Lamaran_Id');
 
         // Rapor sub-tes per tahap (baterai multi-tes) — dasar admin memutuskan.
-        $subPer = DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')
-            ->whereIn('Lamaran_Tahap_Id', $tahapPer->flatten(1)->pluck('Id_Lamaran_Tahap')->all() ?: [0])
-            ->orderBy('Urutan')
-            ->get()
-            ->groupBy('Lamaran_Tahap_Id');
+        // Lewat helper, bukan kueri sendiri: baris aktivitasnya ikut membawa
+        // `Token_Terbit`, dan tanpa itu PipelineReadModel menyimpulkan "menunggu
+        // hasil" untuk ujian yang tokennya belum terbit — berselisih dengan
+        // portal kandidat yang membaca hal yang sama dari sumber yang sama.
+        $subPer = \App\Support\Career\MetrikRekrutmen::aktivitasDenganToken(
+            $tahapPer->flatten(1)->pluck('Id_Lamaran_Tahap')->all()
+        )->get()->groupBy('Lamaran_Tahap_Id');
 
         // Kuota MPP per posisi + kursi TERISI (LULUS) — untuk tombol sadar-kuota.
         $posisiIds = $lamaran->pluck('Program_Posisi_Id')->filter()->unique()->all();
@@ -2842,7 +2864,25 @@ class LamaranController extends Controller
         // Master Kampus yang 99,9%-nya tidak punya satu pun pelamar di sini.
         $kampusPer = LamaranService::identitasPerLamaran($lamaran->pluck('Id_Lamaran')->all(), 'KAMPUS');
 
-        $pelamar = $lamaran->map(function ($l) use ($tahapPer, $subPer, $kuotaPosisi, $terisiKuota, $berkasCount, $berkasSub, $berkasKandidat, $alasanHold, $kolom, $namaResmi, $kampusPer) { // NOSONAR
+        // BERKAS FORMULIR per kandidat — ijazah, KTP, CV, sertifikat: yang
+        // diunggah kandidat sendiri saat mengisi formulir.
+        //
+        // Dipakai kolom "Berkas" di mode List. Tanpa angka ini, satu-satunya cara
+        // tahu siapa yang belum melampirkan apa pun adalah membuka modal tiap
+        // orang satu per satu — pekerjaan yang justru paling sering dilakukan
+        // berjajar, saat memverifikasi satu angkatan sekaligus.
+        //
+        // Satu kueri untuk SELURUH daftar, sejalan dengan $kampusPer di atas.
+        $berkasFormulir = ($ids = $lamaran->pluck('Id_Lamaran')->all())
+            ? DB::table('N_WEB_CAREERS_Formulir_Berkas as fb')
+                ->join('N_WEB_CAREERS_Formulir_Pengisian as fp', 'fp.Id_Formulir_Pengisian', '=', 'fb.Formulir_Pengisian_Id')
+                ->whereIn('fp.Lamaran_Id', $ids)
+                ->select('fp.Lamaran_Id', DB::raw('COUNT(*) as J'))
+                ->groupBy('fp.Lamaran_Id')
+                ->pluck('J', 'Lamaran_Id')
+            : collect();
+
+        $pelamar = $lamaran->map(function ($l) use ($tahapPer, $subPer, $kuotaPosisi, $terisiKuota, $berkasCount, $berkasSub, $berkasKandidat, $alasanHold, $kolom, $namaResmi, $kampusPer, $berkasFormulir) { // NOSONAR
             $tahapList = collect($tahapPer->get($l->Id_Lamaran, []));
 
             // Aturan penempatan + badge + kuota dipusatkan di PipelineProgress
@@ -2891,6 +2931,8 @@ class LamaranController extends Controller
                 // Asal kampus/sekolah — dari jawaban formulir, dipakai penyaring
                 // "Kampus" di worklist dan ikut terbaca di baris mode List.
                 'kampus' => $kampusPer->get($l->Id_Lamaran),
+                // Jumlah lampiran formulir kandidat — kolom "Berkas" di mode List.
+                'jmlBerkasForm' => (int) ($berkasFormulir[$l->Id_Lamaran] ?? 0),
                 'waktuLamar' => $l->Waktu_Lamar,
                 'kategori' => $l->Kategori,
                 'statusLamaran' => $l->Status,
@@ -6366,8 +6408,15 @@ class LamaranController extends Controller
             ->get()
             ->groupBy('Formulir_Pengisian_Id');
 
-        $formulir = $pengisian->values()->map(function ($fp, $i) use ($berkasPer) {
+        // Lihat catatan panjang di formulirTerkirim(): skema beku inilah yang
+        // tahu label asli, tipe, kelompok, dan URUTAN tiap pertanyaan.
+        $adaSnapshot = FormulirSchema::punyaKolomPengisianSnapshot();
+
+        $formulir = $pengisian->values()->map(function ($fp, $i) use ($berkasPer, $adaSnapshot) {
             $jawaban = json_decode($fp->Jawaban_Json ?: '{}', true) ?: [];
+            $skema = $adaSnapshot && ! empty($fp->Schema_Snapshot_Json)
+                ? (json_decode($fp->Schema_Snapshot_Json, true) ?: null)
+                : null;
 
             $berkas = collect($berkasPer->get($fp->Id_Formulir_Pengisian, []))->map(function ($b) {
                 $ext = strtolower($b->Ekstensi ?: pathinfo($b->Nama_Asli, PATHINFO_EXTENSION));
@@ -6400,6 +6449,10 @@ class LamaranController extends Controller
                 // ditebak dari nama kuncinya, dan `v_nama`/`v_wa` terbaca
                 // "V Nama"/"V Wa": bahasa mesin, bukan bahasa manusia.
                 'komponen' => $fp->Komponen_Kode,
+                // Skema beku (langkah → bagian → field): label, tipe, kelompok,
+                // dan urutan baca. Kode komponen di atas cuma cadangan untuk
+                // formulir bawaan lama yang memang tak punya snapshot.
+                'skema' => $skema,
                 // String mentah SQL Server — optional()->__toString() di atasnya
                 // menghasilkan NULL, membuat formulir terkirim dianggap belum.
                 'waktuKirim' => (string) ($fp->Waktu_Kirim ?: ''),

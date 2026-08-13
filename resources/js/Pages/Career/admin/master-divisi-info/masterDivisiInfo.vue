@@ -1,4 +1,4 @@
-<!-- WEB CAREER — Master Info Divisi. Konten landing page per divisi/sub-divisi (HRIS).
+<!-- WEB CAREER — Master Info Divisi. Konten landing page per divisi/departemen (HRIS).
      DATA via web route + ResponseHelper (axios), bukan props Inertia. -->
 <template>
     <Head><title>Master Info Divisi - Web Career</title></Head>
@@ -9,7 +9,7 @@
                 <div>
                     <h1>Master Info Divisi</h1>
                     <p>
-                        Konten perkenalan tiap divisi &amp; sub-divisi untuk landing page karir
+                        Konten perkenalan tiap divisi &amp; departemen untuk landing page karir
                         (section <b>Fungsi Perusahaan</b>, halaman <b>Semua Tim</b> dan <b>Detail Tim</b>).
                     </p>
                 </div>
@@ -31,7 +31,7 @@
                                     <th>Divisi</th>
                                     <th>Label Tampilan</th>
                                     <th>Kelengkapan</th>
-                                    <th>Sub-Divisi</th>
+                                    <th>Departemen</th>
                                     <th>Terakhir Diubah</th>
                                     <th>Status</th>
                                     <th></th>
@@ -206,17 +206,17 @@
                     </div>
                 </div>
 
-                <!-- ── C. Sub-Divisi ── -->
+                <!-- ── C. Departemen ── -->
                 <div class="wca-card mdi-card">
                     <div class="wca-card__body--flush">
                         <div class="wca-fsection__label" style="padding: 1rem 1rem 0.4rem">
-                            <i class="bi bi-diagram-2"></i> Sub-Divisi ({{ detail.sub.length }})
+                            <i class="bi bi-diagram-2"></i> Departemen ({{ detail.sub.length }})
                         </div>
                         <div class="wca-tablewrap">
                             <table class="wca-table">
                                 <thead>
                                     <tr>
-                                        <th>Sub-Divisi</th>
+                                        <th>Departemen</th>
                                         <th>Label</th>
                                         <th>Kelengkapan</th>
                                         <th>Status</th>
@@ -254,7 +254,7 @@
                                         <td colspan="5">
                                             <div class="wca-empty">
                                                 <i class="bi bi-diagram-2"></i>
-                                                <h4>Divisi ini tidak punya sub-divisi terdaftar</h4>
+                                                <h4>Divisi ini tidak punya departemen terdaftar</h4>
                                             </div>
                                         </td>
                                     </tr>
@@ -266,13 +266,13 @@
             </div>
         </template>
 
-        <!-- ── Modal edit sub-divisi ── -->
+        <!-- ── Modal edit departemen ── -->
         <AdminModal
             :show="subShow"
-            :title="subEditing ? `Info: ${subEditing.namaHris}` : 'Info Sub-Divisi'"
-            subtitle="Konten sub-divisi untuk halaman Detail Tim"
+            :title="subEditing ? `Info: ${subEditing.namaHris}` : 'Info Departemen'"
+            subtitle="Konten departemen untuk halaman Detail Tim"
             icon="bi-diagram-2"
-            save-label="Simpan Sub-Divisi"
+            save-label="Simpan Departemen"
             @close="closeSub"
             @save="saveSub"
         >
@@ -281,25 +281,25 @@
                 <div class="wca-form">
                     <div class="wca-frow">
                         <div>
-                            <label class="wca-field-lbl">Nama Sub-Divisi di Website</label>
+                            <label class="wca-field-lbl">Nama Departemen di Website</label>
                             <el-input v-model="subForm.label" maxlength="100" :placeholder="subEditing?.namaHris || ''" />
                             <small class="mdi-hint">Kosongkan bila ingin memakai nama asli: <b>{{ subEditing?.namaHris }}</b>.</small>
                         </div>
                         <div>
                             <label class="wca-field-lbl">Kalimat Pembuka</label>
-                            <el-input v-model="subForm.judulUtama" maxlength="255" placeholder="Kalimat menarik tentang sub-divisi ini…" />
+                            <el-input v-model="subForm.judulUtama" maxlength="255" placeholder="Kalimat menarik tentang departemen ini…" />
                         </div>
                     </div>
                     <div>
-                        <label class="wca-field-lbl">Ringkasan Singkat Sub-Divisi</label>
+                        <label class="wca-field-lbl">Ringkasan Singkat Departemen</label>
                         <el-input v-model="subForm.deskripsiSingkat" type="textarea" :rows="2" maxlength="1000" show-word-limit
-                            placeholder="1-2 kalimat tentang peran sub-divisi ini…" />
+                            placeholder="1-2 kalimat tentang peran departemen ini…" />
                         <small class="mdi-hint">Tampil di kartu sub-fungsi pada halaman detail divisi.</small>
                     </div>
                     <div>
-                        <label class="wca-field-lbl">Cerita Lengkap Sub-Divisi</label>
+                        <label class="wca-field-lbl">Cerita Lengkap Departemen</label>
                         <el-input v-model="subForm.deskripsiDetail" type="textarea" :rows="3" maxlength="8000"
-                            placeholder="Ceritakan keseharian dan peran sub-divisi ini…" />
+                            placeholder="Ceritakan keseharian dan peran departemen ini…" />
                     </div>
                     <div>
                         <label class="wca-field-lbl">Poin-Poin Tugas / Keunggulan</label>
@@ -377,7 +377,7 @@ export default {
             form: { label: '', deskripsiSingkat: '', judulUtama: '', deskripsiDetail: '', poin: [] },
             saving: false,
             imgBusy: { header: false, utama: false, img2: false, img3: false },
-            // sub-divisi modal
+            // modal departemen
             subShow: false,
             subEditing: null,
             subForm: { label: '', deskripsiSingkat: '', judulUtama: '', deskripsiDetail: '', poin: [], img: {} },
@@ -481,7 +481,7 @@ export default {
             } catch (e) {
                 s.status = prev;
                 console.error('[MasterDivisiInfo:setSubStatus]', e);
-                this.$message.error(e.response?.data?.message || 'Gagal mengubah status sub-divisi.');
+                this.$message.error(e.response?.data?.message || 'Gagal mengubah status departemen.');
             }
         },
         closeSub() {
@@ -513,12 +513,12 @@ export default {
                     poin: this.subForm.poin.map((p) => p.trim()).filter(Boolean),
                 };
                 await axios.put(`${API}/sub/${this.subEditing.id}`, payload, CFG);
-                this.$message.success('Informasi sub-divisi disimpan.');
+                this.$message.success('Informasi departemen disimpan.');
                 this.subShow = false;
                 await this.fetchDetail(this.detail.id);
             } catch (e) {
                 console.error('[MasterDivisiInfo:saveSub]', e);
-                this.$message.error(e.response?.data?.message || 'Gagal menyimpan informasi sub-divisi.');
+                this.$message.error(e.response?.data?.message || 'Gagal menyimpan informasi departemen.');
             }
         },
         // ── Upload gambar (input file tersembunyi dipakai bergantian) ──

@@ -233,7 +233,7 @@
                         <i class="bi bi-building"></i>
                         <div>
                             <h4>Struktur Organisasi & Jabatan</h4>
-                            <p>Pilih divisi, sub-divisi, level HRIS, dan jabatan yang dibutuhkan</p>
+                            <p>Pilih divisi, departemen, level HRIS, dan jabatan yang dibutuhkan</p>
                         </div>
                     </div>
                     <div class="wca-form">
@@ -245,10 +245,10 @@
                                 </el-select>
                             </div>
                             <div>
-                                <label class="wca-field-lbl"><i class="bi bi-diagram-2"></i> Sub Divisi <span class="mmp-hint">(opsional)</span></label>
-                                <el-select v-model="form.idSubDivisi" placeholder="Pilih sub divisi" filterable clearable :disabled="!form.idDivisi" style="width: 100%">
+                                <label class="wca-field-lbl"><i class="bi bi-diagram-2"></i> Departemen <span class="mmp-hint">(opsional)</span></label>
+                                <el-select v-model="form.idSubDivisi" placeholder="Pilih departemen" filterable clearable :disabled="!form.idDivisi" style="width: 100%">
                                     <el-option v-for="s in subDivisiOptions" :key="s.value" :label="s.label" :value="s.value" />
-                                    <template #empty><div class="mmp-selempty">{{ form.idDivisi ? 'Tidak ada sub divisi untuk divisi ini' : 'Pilih divisi terlebih dahulu' }}</div></template>
+                                    <template #empty><div class="mmp-selempty">{{ form.idDivisi ? 'Tidak ada departemen untuk divisi ini' : 'Pilih divisi terlebih dahulu' }}</div></template>
                                 </el-select>
                             </div>
                         </div>
@@ -675,7 +675,7 @@ export default {
             try {
                 const res = await axios.get(`${API}/opsi/sub-divisi`, { ...CFG, params: { divisi: idDivisi } });
                 this.subDivisiOptions = res.data.result || [];
-            } catch (e) { /* opsi sub divisi opsional */ }
+            } catch (e) { /* opsi departemen opsional */ }
         },
         async cariKaryawan(q) {
             this.karyawanLoading = true;

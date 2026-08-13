@@ -6852,12 +6852,50 @@ h6,
     transform: rotate(90deg);
 }
 .wca-modal__body {
+    /* Satu-satunya sumber angka padding isi modal. Bilah menempel di dalamnya
+       (lihat .wca-modal__sticky) menghitung margin negatifnya DARI variabel
+       ini — bukan dari angka yang disalin — supaya keduanya mustahil meleset. */
+    --wca-modal-pad: 1.35rem;
     flex: 1 1 auto;
     min-height: 0;
-    padding: 1.35rem;
+    padding: var(--wca-modal-pad);
     overflow-y: auto;
     overscroll-behavior: contain;
+    /* Isi modal tidak boleh pernah menimpa kepala atau kaki modal. Keduanya
+       ber-z-index 2 di susunan yang sama dengan isi, jadi satu anak ber-z-index
+       lebih tinggi (mis. hero menempel) cukup untuk naik ke atasnya.
+       `isolation` mengurung seluruh z-index anak di dalam body. */
+    isolation: isolate;
     background: linear-gradient(180deg, #fbfbfe, #ffffff);
+}
+/* ── BILAH MENEMPEL DI PUNCAK ISI MODAL (slot `sticky` di AdminModal) ────────
+   Dipakai hero/toolbar yang tidak boleh ikut tergulung — mis. identitas
+   kandidat di Worklist.
+
+   Yang dulu bocor: bilahnya anak biasa di dalam body, ditarik ke tepi dengan
+   margin negatif yang harus persis sebesar padding body. Begitu salah satunya
+   berubah, sisa selisihnya jadi jalur kosong di atas & samping bilah — dan
+   setiap kali isi digulir, potongan baris di bawahnya terlihat menyembul lewat
+   jalur itu.
+
+   Sekarang padding pindah ke `.wca-modal__bodyin`. Bilahnya sendiri tidak
+   berpadding mendatar dan tidak bermargin, jadi ia duduk tepat di koordinat nol
+   scrollport pada gulungan berapa pun — tanpa satu angka pun yang perlu
+   dicocokkan dengan angka lain. */
+.wca-modal__body.has-sticky {
+    padding: 0;
+}
+.wca-modal__stickybar {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+}
+.wca-modal__bodyin {
+    padding: var(--wca-modal-pad);
+}
+/* Tanpa bilah menempel, pembungkus dalam tidak boleh menambah padding kedua. */
+.wca-modal__body:not(.has-sticky) > .wca-modal__bodyin {
+    padding: 0;
 }
 .wca-modal__foot {
     flex: none;
@@ -7002,6 +7040,11 @@ h6,
     opacity: 0;
 }
 @media (max-width: 560px) {
+    /* Padding isi menyempit di layar kecil; bilah menempel ikut dengan
+       sendirinya karena keduanya membaca variabel yang sama. */
+    .wca-modal__body {
+        --wca-modal-pad: 1rem;
+    }
     .wca-modal__head {
         padding: 1.1rem 1.15rem;
     }

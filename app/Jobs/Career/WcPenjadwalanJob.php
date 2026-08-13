@@ -11,6 +11,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Vinkla\Hashids\Facades\Hashids;
 
 /**
@@ -521,15 +522,53 @@ class WcPenjadwalanJob implements ShouldQueue
      *                                    ratusan. null = seluruh yang tokennya
      *                                    sudah terbit (jalur pemulihan).
      */
+    /**
+     * Kolom identitas aktivitas sudah ada di Penjadwalan_Tahap?
+     *
+     * Cerminan PenjadwalanController::punyaKolomIdentitasTes(). Skrip SQL-nya
+     * dijalankan manual per lingkungan; selama belum, job ini tidak boleh gagal
+     * — ia cuma kembali memakai nomor urut seperti sebelumnya.
+     */
+    private static function punyaKolomIdentitasTes(): bool
+    {
+        static $ada = null;
+
+        try {
+            return $ada ??= Schema::hasColumn('N_WEB_CAREERS_Penjadwalan_Tahap', 'Master_Alur_Tahap_Tes_Id');
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
     private function pasangTautanKandidat(?array $hanyaLamaran = null): void
     {
+        // ── CERMIN PERSIS DARI store() ──────────────────────────────────────
+        //
+        // Dua kolom ini adalah SALINAN dari apa yang dipakai
+        // PenjadwalanController::store() saat menandai snapshot kandidat:
+        // Master_Alur_Tahap_Tes_Id bila kolomnya ada, kalau tidak Tes_Urutan.
+        // Keduanya dibaca apa adanya, TIDAK diturunkan ulang dari master —
+        // menurunkan berarti menjawab pertanyaan yang sama dengan sumber yang
+        // berbeda, dan dua jawaban yang bisa berselisih hanya menunggu giliran
+        // menautkan token ke aktivitas yang salah.
+        //
+        // Kolom identitas ditambahkan lewat skrip SQL opsional
+        // (2026-08-13-penjadwalan-identitas-aktivitas.sql). Selama belum ada,
+        // kedua sisi sama-sama memakai nomor urut — tetap sepasang, tetap benar.
+        $adaKolomTes = self::punyaKolomIdentitasTes();
+
         $tahap = DB::table('N_WEB_CAREERS_Penjadwalan_Tahap')
             ->where('Id_Penjadwalan_Tahap', $this->penjadwalanTahapId)
-            ->first(['Urutan', 'Tes_Urutan']);
+            ->first(array_merge(
+                ['Urutan', 'Kode', 'Tes_Urutan'],
+                $adaKolomTes ? ['Master_Alur_Tahap_Tes_Id'] : [],
+            ));
 
         if (! $tahap) {
             return;
         }
+
+        $tesIdMaster = $adaKolomTes ? ($tahap->Master_Alur_Tahap_Tes_Id ?? null) : null;
 
         // Hanya kandidat yang tokennya terbit. Peserta yang gagal tetap tidak
         // tertaut — portalnya jujur berbunyi "menunggu jadwal", karena memang
@@ -550,19 +589,28 @@ class WcPenjadwalanJob implements ShouldQueue
         // Dipecah per 500: jalur pemulihan memasang ulang SELURUH peserta yang
         // tokennya sudah terbit, dan pada penjadwalan seribu orang daftar itu
         // melewati batas 2100 parameter milik SQL Server.
-        DB::transaction(function () use ($tahap, $lamaranIds) {
+        // Penyaring tahap milik kandidat — Kode bila ada, nomor urut hanya untuk
+        // baris pra-mesin yang memang tak punya Kode. Aturan yang sama dengan
+        // PenjadwalanController::store(); nomor urut sendirian menunjuk tahap
+        // yang lain begitu alur program disunting atau dialihkan.
+        $kodeTahap = trim((string) ($tahap->Kode ?? '')) ?: null;
+        $saringTahap = fn ($q) => $kodeTahap
+            ? $q->where('Kode', $kodeTahap)
+            : $q->where('Urutan', $tahap->Urutan);
+
+        DB::transaction(function () use ($tesIdMaster, $tahap, $saringTahap, $lamaranIds) {
             $now = now();
 
             foreach ($lamaranIds->chunk(500) as $sepotong) {
                 DB::table('N_WEB_CAREERS_Lamaran_Tahap')
                     ->whereIn('Lamaran_Id', $sepotong->all())
-                    ->where('Urutan', $tahap->Urutan)
+                    ->where($saringTahap)
                     ->whereNull('Penjadwalan_Tahap_Id')
                     ->update(['Penjadwalan_Tahap_Id' => $this->penjadwalanTahapId, 'Updated_At' => $now]);
 
                 $tahapIds = DB::table('N_WEB_CAREERS_Lamaran_Tahap')
                     ->whereIn('Lamaran_Id', $sepotong->all())
-                    ->where('Urutan', $tahap->Urutan)
+                    ->where($saringTahap)
                     ->pluck('Id_Lamaran_Tahap')
                     ->all();
 
@@ -573,7 +621,19 @@ class WcPenjadwalanJob implements ShouldQueue
                 foreach (collect($tahapIds)->chunk(500) as $sepotongTahap) {
                     DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')
                         ->whereIn('Lamaran_Tahap_Id', $sepotongTahap->all())
-                        ->when($tahap->Tes_Urutan, fn ($q, $u) => $q->where('Urutan', $u))
+                        // IDENTITAS AKTIVITAS DULU, nomor urut cadangan.
+                        //
+                        // Nomor urut milik master, sedangkan baris yang disentuh
+                        // di sini milik SNAPSHOT kandidat. Keduanya berselisih
+                        // begitu urutan aktivitas di Master Alur disunting — dan
+                        // yang tertaut token lalu aktivitas yang salah. Aturannya
+                        // sama persis dengan PenjadwalanController::store().
+                        ->when($tesIdMaster, fn ($q, $i) => $q->where(fn ($w) => $w
+                            ->where('Master_Alur_Tahap_Tes_Id', $i)
+                            ->when($tahap->Tes_Urutan, fn ($x, $u) => $x->orWhere(fn ($y) => $y
+                                ->whereNull('Master_Alur_Tahap_Tes_Id')
+                                ->where('Urutan', $u)))))
+                        ->when(! $tesIdMaster && $tahap->Tes_Urutan, fn ($q) => $q->where('Urutan', $tahap->Tes_Urutan))
                         ->where('Flag_Selesai', 'N')
                         ->whereNull('Penjadwalan_Tahap_Id')
                         ->update([

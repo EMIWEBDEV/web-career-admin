@@ -11,6 +11,7 @@ use App\Support\CareerShell;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
 use Vinkla\Hashids\Facades\Hashids;
 
@@ -112,6 +113,27 @@ class PenjadwalanController extends Controller
         return $kode;
     }
 
+    /**
+     * Kolom identitas aktivitas sudah ada di Penjadwalan_Tahap?
+     *
+     * Ditambahkan lewat database/sql/2026-08-13-penjadwalan-identitas-aktivitas.sql,
+     * dan skrip itu dijalankan manual per lingkungan. Tanpa penjaga ini,
+     * lingkungan yang belum menjalankannya akan menolak SETIAP penjadwalan
+     * dengan galat kolom tak dikenal — perbaikan yang justru mematikan fitur
+     * yang sedang ia perbaiki. Selama kolomnya belum ada, jalur cadangan
+     * (Tes_Urutan) yang dipakai, persis seperti sebelumnya.
+     */
+    private static function punyaKolomIdentitasTes(): bool
+    {
+        static $ada = null;
+
+        try {
+            return $ada ??= Schema::hasColumn('N_WEB_CAREERS_Penjadwalan_Tahap', 'Master_Alur_Tahap_Tes_Id');
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
     private function tipeCat(): array
     {
         return DB::table('N_WEB_CAREERS_Master_Tipe_Tahap')
@@ -177,8 +199,19 @@ class PenjadwalanController extends Controller
                         continue;
                     }
 
-                    $kunci = self::kunciTes($t->Kode, (int) $t->Urutan, (int) $s->Urutan);
-                    $terpakai[$kunci] = true;
+                    // DUA KUNCI UNTUK SATU BARIS.
+                    //
+                    // Yang ber-id memasangkan kandidat yang snapshot-nya menunjuk
+                    // aktivitas master INI — benar walau alurnya sudah diurut ulang.
+                    // Yang bernomor menampung kandidat pra-mesin yang memang tidak
+                    // punya Master_Alur_Tahap_Tes_Id sama sekali; tanpa itu mereka
+                    // hilang dari daftar dan jadwalnya tak pernah bisa dibuat.
+                    // Keduanya ditandai terpakai supaya tak melahirkan baris
+                    // "alur lama" kembar di bawah.
+                    $kunciId = self::kunciTes($t->Kode, (int) $t->Urutan, (int) $s->Urutan, (int) $s->Id_Master_Alur_Tahap_Tes);
+                    $kunciNo = self::kunciTes($t->Kode, (int) $t->Urutan, (int) $s->Urutan);
+                    $terpakai[$kunciId] = true;
+                    $terpakai[$kunciNo] = true;
 
                     $daftar[] = [
                         // KODE lebih dulu, nomor urut menyusul. Kode inilah yang
@@ -191,11 +224,16 @@ class PenjadwalanController extends Controller
                         'tipe' => $tipeTes,
                         'tipeNama' => $namaTipe[$tipeTes] ?? null,
                         'tesUrutan' => (int) $s->Urutan,
+                        // IDENTITAS AKTIVITAS — dikirim balik saat baris ini
+                        // dipilih. Inilah yang membuat server mengambil aktivitas
+                        // yang sama dengan yang admin lihat, bukan aktivitas yang
+                        // kebetulan bernomor sama di master.
+                        'tesId' => (int) $s->Id_Master_Alur_Tahap_Tes,
                         'tesLabel' => $s->Label,
                         'peran' => $s->Peran,
                         // Tahap dengan >1 aktivitas dijadwalkan satu per satu.
                         'multi' => $anak->count() > 1,
-                        'menunggu' => (int) ($menunggu[$kunci]['jml'] ?? 0),
+                        'menunggu' => (int) ($menunggu[$kunciId]['jml'] ?? 0) + (int) ($menunggu[$kunciNo]['jml'] ?? 0),
                         'alurLain' => false,
                     ];
                 }
@@ -223,9 +261,17 @@ class PenjadwalanController extends Controller
                     'tipe' => null,
                     'tipeNama' => null,
                     'tesUrutan' => $m['tesUrutan'],
-                    'tesLabel' => null,
+                    'tesId' => $m['tesId'],
+                    // Nama AKTIVITASNYA, bukan nama tahapnya saja. Baris ini
+                    // dulu hanya menyebut tahap — pada tahap campuran ("FGD dan
+                    // Wawancara HR" yang memuat FGD manual + Psikotes online),
+                    // yang terbaca admin adalah kegiatan manual, padahal yang
+                    // menunggu jadwal justru ujian online di dalamnya.
+                    'tesLabel' => $m['tesLabel'],
                     'peran' => null,
-                    'multi' => false,
+                    // Namanya ikut ditampilkan seperti tahap multi-aktivitas —
+                    // lihat `tesLabel` di atas.
+                    'multi' => ! empty($m['tesLabel']),
                     'menunggu' => $m['jml'],
                     // Layar memakainya untuk menjelaskan kenapa baris ini ada:
                     // sisa kandidat dari alur sebelum program dialihkan.
@@ -263,17 +309,24 @@ class PenjadwalanController extends Controller
     private function hitungMenunggu(int $programId): array
     {
         return $this->kueriKandidat($programId, null, null)
-            ->groupBy('t.Kode', 't.Urutan', 't.Label', 'st.Urutan')
+            ->groupBy('t.Kode', 't.Urutan', 't.Label', 'st.Urutan', 'st.Label', 'st.Master_Alur_Tahap_Tes_Id')
             ->select('t.Kode as tahapKode', 't.Urutan as tahapUrutan', 't.Label as tahapLabel',
-                'st.Urutan as tesUrutan', DB::raw('COUNT(*) as jml'))
+                'st.Urutan as tesUrutan', 'st.Label as tesLabel',
+                'st.Master_Alur_Tahap_Tes_Id as tesId', DB::raw('COUNT(*) as jml'))
             ->get()
             ->mapWithKeys(fn ($r) => [
-                self::kunciTes($r->tahapKode, (int) $r->tahapUrutan, (int) $r->tesUrutan) => [
+                self::kunciTes($r->tahapKode, (int) $r->tahapUrutan, (int) $r->tesUrutan, $r->tesId ? (int) $r->tesId : null) => [
                     'jml' => (int) $r->jml,
                     'tahapUrutan' => (int) $r->tahapUrutan,
                     'tahapKode' => $r->tahapKode,
                     'tahapLabel' => $r->tahapLabel,
                     'tesUrutan' => (int) $r->tesUrutan,
+                    // Nama aktivitasnya dari SNAPSHOT kandidat. Baris "alur lama"
+                    // dulu tampil sebagai nama tahap saja ("FGD dan Wawancara
+                    // HR"), sehingga admin membaca tahap manual padahal yang
+                    // menunggu adalah ujian online di dalamnya.
+                    'tesLabel' => $r->tesLabel,
+                    'tesId' => $r->tesId ? (int) $r->tesId : null,
                 ],
             ])
             ->all();
@@ -286,12 +339,33 @@ class PenjadwalanController extends Controller
      * tidak punya Kode. Dipisah jadi satu fungsi supaya kedua sisi pasangan
      * tidak mungkin memakai aturan yang berbeda — kalau berbeda, angkanya
      * menempel di baris yang salah dan tidak ada yang menyadarinya.
+     *
+     * ── AKTIVITASNYA PUN DIKUNCI ID, BUKAN NOMOR URUT ────────────────────────
+     *
+     * Sisi tahap sudah lama memakai Kode karena alasan di atas. Sisi AKTIVITAS
+     * tertinggal memakai nomor urut saja, dan itu patah persis dengan cara yang
+     * sama — hanya satu tingkat lebih dalam:
+     *
+     *   Master "FGD dan Wawancara HR" hari ini  : #1 FGD, #2 Psikotes (Tahap 2)
+     *   Snapshot kandidat saat ia melamar       : #1 Psikotes (Tahap 2), #2 FGD
+     *
+     * Kandidat yang menunggu Psikotes membawa `Urutan = 1`. Dicocokkan ke nomor,
+     * ia tidak menemukan barisnya di master (di sana #1 adalah FGD), lalu jatuh
+     * ke baris "alur lama" — padahal tahapnya jelas-jelas masih ada. Dan begitu
+     * baris itu dikirim, server mengambil master #1 (FGD, tes manual) dan menolak
+     * dengan "bukan ujian online". Dua gejala, satu sebab.
+     *
+     * `Master_Alur_Tahap_Tes_Id` dibekukan di snapshot saat lamaran dibuat
+     * (LamaranService::snapshotSubTes) dan tidak pernah berubah walau alurnya
+     * diurut ulang. Nomor urut hanya cadangan untuk baris pra-mesin yang memang
+     * tak punya id itu.
      */
-    private static function kunciTes(?string $kode, int $tahapUrutan, int $tesUrutan): string
+    private static function kunciTes(?string $kode, int $tahapUrutan, int $tesUrutan, ?int $tesId = null): string
     {
         $tahap = trim((string) $kode) !== '' ? 'K:'.$kode : 'U:'.$tahapUrutan;
+        $tes = $tesId ? 'T:'.$tesId : 'N:'.$tesUrutan;
 
-        return $tahap.'#'.$tesUrutan;
+        return $tahap.'#'.$tes;
     }
 
     /** Paket / nama ujian dari HCLearn — ditampilkan sebagai kartu pilihan. */
@@ -349,6 +423,7 @@ class PenjadwalanController extends Controller
             $tahapUrutan = (int) $request->query('tahapUrutan', 0) ?: null;
             $tesUrutan = (int) $request->query('tesUrutan', 0) ?: null;
             $tahapKode = trim((string) $request->query('tahapKode', '')) ?: null;
+            $tesId = (int) $request->query('tesId', 0) ?: null;
             $cari = trim((string) $request->query('q', ''));
 
             if (! $programId) {
@@ -358,7 +433,7 @@ class PenjadwalanController extends Controller
                 return ResponseHelper::success([], 'Pilih tes/tahap yang mau dijadwalkan.');
             }
 
-            $rows = $this->kueriKandidat($programId, $tahapUrutan, $tesUrutan, $cari, $tahapKode)
+            $rows = $this->kueriKandidat($programId, $tahapUrutan, $tesUrutan, $cari, $tahapKode, $tesId)
                 ->orderBy('u.Nama')
                 // Angka yang sama dengan batas validasi penjadwalan — daftar
                 // tidak boleh menawarkan orang yang nanti ditolak saat dikirim.
@@ -384,7 +459,7 @@ class PenjadwalanController extends Controller
 
             return ResponseHelper::success(
                 $rows,
-                $rows->isEmpty() ? $this->alasanKosong($programId, $tahapUrutan, $tesUrutan, $tahapKode) : 'Kandidat dimuat'
+                $rows->isEmpty() ? $this->alasanKosong($programId, $tahapUrutan, $tesUrutan, $tahapKode, $tesId) : 'Kandidat dimuat'
             );
         } catch (\Throwable $e) {
             Log::channel('web_career')->error('Gagal memuat kandidat: '.$e->getMessage());
@@ -399,7 +474,7 @@ class PenjadwalanController extends Controller
      *                                  dipakai menyaring dan $tahapUrutan cuma
      *                                  cadangan untuk baris lama tanpa Kode.
      */
-    private function kueriKandidat(int $programId, ?int $tahapUrutan, ?int $tesUrutan, string $cari = '', ?string $tahapKode = null)
+    private function kueriKandidat(int $programId, ?int $tahapUrutan, ?int $tesUrutan, string $cari = '', ?string $tahapKode = null, ?int $tesId = null)
     {
         $cat = $this->tipeCat();
 
@@ -429,7 +504,19 @@ class PenjadwalanController extends Controller
             // sekali lain setelah alur disunting atau diganti.
             ->when($tahapKode, fn ($q) => $q->where('t.Kode', $tahapKode))
             ->when(! $tahapKode && $tahapUrutan, fn ($q) => $q->where('t.Urutan', $tahapUrutan))
-            ->when($tesUrutan, fn ($q) => $q->where('st.Urutan', $tesUrutan))
+            // AKTIVITASNYA JUGA DIKUNCI IDENTITAS, bukan nomor urut.
+            //
+            // Nomor urut aktivitas milik SNAPSHOT kandidat, sedangkan nomor yang
+            // dikirim layar berasal dari master. Keduanya berselisih begitu urutan
+            // aktivitas di Master Alur disunting — dan yang tersaring lalu orang
+            // yang menunggu tes lain. Kandidat pra-mesin tidak punya id ini, jadi
+            // nomor urut tetap dipakai sebagai cadangan (lihat kunciTes()).
+            ->when($tesId, fn ($q) => $q->where(fn ($w) => $w
+                ->where('st.Master_Alur_Tahap_Tes_Id', $tesId)
+                ->when($tesUrutan, fn ($x, $u) => $x->orWhere(fn ($y) => $y
+                    ->whereNull('st.Master_Alur_Tahap_Tes_Id')
+                    ->where('st.Urutan', $u)))))
+            ->when(! $tesId && $tesUrutan, fn ($q) => $q->where('st.Urutan', $tesUrutan))
             ->when($cari !== '', fn ($q) => $q->where(function ($w) use ($cari) {
                 $w->where('u.Nama', 'like', "%{$cari}%")
                     ->orWhere('l.Kode', 'like', "%{$cari}%")
@@ -445,7 +532,7 @@ class PenjadwalanController extends Controller
      * atau semuanya memang sudah dijadwalkan. Ditelusuri bertingkat dari yang
      * paling umum ke paling khusus.
      */
-    private function alasanKosong(int $programId, ?int $tahapUrutan, ?int $tesUrutan, ?string $tahapKode = null): string
+    private function alasanKosong(int $programId, ?int $tahapUrutan, ?int $tesUrutan, ?string $tahapKode = null, ?int $tesId = null): string
     {
         $berjalan = DB::table('N_WEB_CAREERS_Lamaran')
             ->where('Program_Id', $programId)->where('Status', 'BERJALAN')->count();
@@ -468,7 +555,11 @@ class PenjadwalanController extends Controller
             ->whereNotNull('st.Penjadwalan_Tahap_Id')
             ->when($tahapKode, fn ($q) => $q->where('t.Kode', $tahapKode))
             ->when(! $tahapKode && $tahapUrutan, fn ($q) => $q->where('t.Urutan', $tahapUrutan))
-            ->when($tesUrutan, fn ($q) => $q->where('st.Urutan', $tesUrutan))
+            // Identitas aktivitas lebih dulu, nomor urut cadangan — aturan yang
+            // sama dengan kueriKandidat(). Kalau berbeda, kalimat "semua sudah
+            // dijadwalkan" bisa muncul untuk aktivitas yang belum satu pun.
+            ->when($tesId, fn ($q) => $q->where('st.Master_Alur_Tahap_Tes_Id', $tesId))
+            ->when(! $tesId && $tesUrutan, fn ($q) => $q->where('st.Urutan', $tesUrutan))
             ->count();
         if ($terjadwal > 0) {
             return "Semua kandidat untuk tes ini sudah dijadwalkan ({$terjadwal}). Batalkan jadwalnya bila ingin mengulang.";
@@ -513,6 +604,11 @@ class PenjadwalanController extends Controller
             $q = trim((string) $request->query('q', ''));
             $programId = (int) $request->query('programId', 0);
             $status = trim((string) $request->query('status', ''));
+            // Kategori program (MT / REKRUTMEN / …). Disaring DI SERVER, bukan di
+            // layar: daftarnya dipaginasi per program, jadi menyaring hasil satu
+            // halaman hanya menyembunyikan sebagian dan menyisakan hitungan
+            // halaman yang tidak lagi cocok dengan isinya.
+            $kategori = trim((string) $request->query('kategori', ''));
             $perPage = min(max((int) $request->query('perPage', 10), 1), 50);
             $page = max((int) $request->query('page', 1), 1);
 
@@ -520,6 +616,7 @@ class PenjadwalanController extends Controller
                 ->leftJoin('N_WEB_CAREERS_Program as p', 'p.Id_Program', '=', 'j.Program_Id')
                 ->when($programId, fn ($x) => $x->where('j.Program_Id', $programId))
                 ->when($status !== '', fn ($x) => $x->where('j.Status', $status))
+                ->when($kategori !== '', fn ($x) => $x->where('p.Kategori', $kategori))
                 ->when($q !== '', fn ($x) => $x->where(function ($w) use ($q) {
                     $w->where('j.Kode', 'like', "%{$q}%")
                         ->orWhere('j.Nama', 'like', "%{$q}%")
@@ -553,12 +650,19 @@ class PenjadwalanController extends Controller
             // Ikut dibawa karena dua hal hanya bisa dilakukan per sesi: "Coba
             // Lagi" dan pembacaan jendela bawaan. Yang dimuat hanya program
             // yang benar-benar tampil di halaman ini.
+            // ALUR ikut dibawa. Satu program bisa dijadwalkan memakai alur yang
+            // BERBEDA dari waktu ke waktu — alur lama untuk angkatan yang sudah
+            // berjalan, alur baru untuk yang berikutnya. Tanpa nama alurnya,
+            // dua sesi berjudul sama di dalam satu kartu tak bisa dibedakan
+            // sama sekali, dan justru itulah yang paling membingungkan:
+            // gelombangnya kelihatan kembar padahal rangkaian tahapnya beda.
             $sesi = ! $programIds ? collect() : DB::table('N_WEB_CAREERS_Penjadwalan as j')
                 ->leftJoin('N_WEB_CAREERS_Users as u', 'u.Id_Users', '=', 'j.Created_By_Id')
+                ->leftJoin('N_WEB_CAREERS_Master_Alur as a', 'a.Id_Master_Alur', '=', 'j.Master_Alur_Id')
                 ->whereIn('j.Program_Id', $programIds)
                 ->when($status !== '', fn ($x) => $x->where('j.Status', $status))
                 ->orderByDesc('j.Id_Penjadwalan')
-                ->select('j.*', 'u.Nama as Pembuat')
+                ->select('j.*', 'u.Nama as Pembuat', 'a.Nama as AlurNama')
                 ->get();
 
             $tahap = $sesi->isEmpty() ? collect() : DB::table('N_WEB_CAREERS_Penjadwalan_Tahap')
@@ -598,6 +702,11 @@ class PenjadwalanController extends Controller
                     'kategori' => $r->ProgramKategori,
                     'jumlahSesi' => (int) $r->JumlahSesi,
                     'jumlahPeserta' => (int) $r->JumlahPeserta,
+                    // Alur yang dipakai program ini — SATU nama bila seragam,
+                    // daftar bila sesinya memakai alur berbeda. Layar memakainya
+                    // untuk berterus terang bahwa rangkaian tahap di kartu ini
+                    // tidak sama untuk semua gelombang.
+                    'alur' => $daftarSesi->pluck('AlurNama')->filter()->unique()->values(),
                     'createdAt' => $r->DibuatTerakhir,
                     // Status program = keadaan paling perlu diketahui di antara
                     // sesinya. GAGAL menang atas apa pun: satu gelombang yang
@@ -626,6 +735,7 @@ class PenjadwalanController extends Controller
                         'menunggu' => (int) ($menunggu[$j->Id_Penjadwalan] ?? 0),
                         'paketUjian' => optional($t($j))->Nama_Ujian,
                         'aktivitas' => optional($t($j))->Label,
+                        'alur' => $j->AlurNama,
                         'waktuMulai' => optional($t($j))->Waktu_Mulai,
                         'waktuAkhir' => optional($t($j))->Waktu_Akhir,
                         'catatan' => $j->Catatan,
@@ -916,6 +1026,11 @@ class PenjadwalanController extends Controller
                 // nomor urut, bukan ditolak mentah.
                 'tahapKode' => 'nullable|string|max:30',
                 'tesUrutan' => 'nullable|integer|min:1',
+                // Identitas aktivitas di master. Nullable dengan alasan yang sama
+                // dengan tahapKode: permintaan lama (dan baris "alur lama" yang
+                // aktivitasnya memang sudah dihapus dari master) tetap dilayani
+                // lewat nomor urut, bukan ditolak mentah.
+                'tesId' => 'nullable|integer|min:1',
                 // HCLearn memberi pengenal paket berupa STRING TERENKRIPSI 64
                 // karakter, bukan angka — jadi jangan divalidasi numeric, dan
                 // jangan dijejalkan ke kolom int (lihat Ref_Master_Ujian).
@@ -975,25 +1090,73 @@ class PenjadwalanController extends Controller
             }
 
             // Sub-tes yang dijadwalkan (tahap multi-aktivitas dijadwalkan satu per satu).
-            $subTes = DB::table('N_WEB_CAREERS_Master_Alur_Tahap_Tes')
+            //
+            // ── DICARI LEWAT ID DULU, NOMOR URUT BELAKANGAN ──────────────────
+            //
+            // Nomor urut memercayai hal yang sama dengan yang sudah dibetulkan di
+            // tingkat tahap: bahwa "aktivitas ke-N yang dipilih admin" sama dengan
+            // "aktivitas ke-N di master". Begitu urutan aktivitas disunting di
+            // Master Alur, anggapan itu runtuh — dan yang terambil di sini adalah
+            // aktivitas LAIN di tahap yang sama. Kalau kebetulan aktivitas itu tes
+            // manual, permintaannya ditolak "bukan ujian online" untuk kandidat
+            // yang justru sedang menunggu ujian online; kalau kebetulan sama-sama
+            // ujian online, tak ada penolakan sama sekali — token terbit untuk tes
+            // yang salah, dan itu jauh lebih sulit disadari.
+            // ── ID BOLEH MENUNJUK ALUR LAIN ─────────────────────────────────
+            //
+            // Ini yang membedakannya dari pencarian lama. Kandidat "alur lama"
+            // membawa id aktivitas milik alur yang ia masuki saat melamar —
+            // BUKAN alur yang sekarang menempel di program. Mengurung pencarian
+            // pada tahap master alur sekarang membuat id itu tak pernah ketemu,
+            // dan pencariannya jatuh ke nomor urut: persis jalan yang menuntun
+            // ke FGD dan ke penolakan 422.
+            //
+            // Yang tetap ditegakkan: tahapnya harus tahap yang SAMA IDENTITASNYA
+            // (Kode sama). Tanpa syarat itu, sebuah id yang salah kirim bisa
+            // menjadwalkan aktivitas dari tahap mana pun di alur mana pun.
+            $tesId = (int) ($data['tesId'] ?? 0) ?: null;
+            $subTes = $tesId
+                ? DB::table('N_WEB_CAREERS_Master_Alur_Tahap_Tes as mt')
+                    ->join('N_WEB_CAREERS_Master_Alur_Tahap as m', 'm.Id_Master_Alur_Tahap', '=', 'mt.Master_Alur_Tahap_Id')
+                    ->where('mt.Id_Master_Alur_Tahap_Tes', $tesId)
+                    ->where(fn ($q) => $q
+                        ->where('m.Id_Master_Alur_Tahap', $tahapTes->Id_Master_Alur_Tahap)
+                        ->when(trim((string) ($tahapTes->Kode ?? '')) !== '', fn ($w) => $w->orWhere('m.Kode', $tahapTes->Kode)))
+                    ->first(['mt.*'])
+                : null;
+            $subTes ??= DB::table('N_WEB_CAREERS_Master_Alur_Tahap_Tes')
                 ->where('Master_Alur_Tahap_Id', $tahapTes->Id_Master_Alur_Tahap)
                 ->when($data['tesUrutan'] ?? null, fn ($q, $u) => $q->where('Urutan', $u))
                 ->orderBy('Urutan')
                 ->first();
 
-            // Layak dijadwalkan = TIPE AKTIVITAS itu ujian online. Menolak di sini
-            // penting: tanpa gerbang ini, wawancara di dalam tahap tes ikut
-            // dikirim ke HCLearn dan kandidat menerima token untuk sesi tatap muka.
+            // Layak menurut MASTER. Dipakai bersama pemeriksaan sisi kandidat di
+            // bawah — lihat gerbangnya sesudah daftar peserta diperiksa.
             $tipeTes = ($subTes->Tipe_Tahap_Kode ?? null) ?: $tahapTes->Tipe_Tahap_Kode;
-            $layak = in_array($tipeTes, $this->tipeCat(), true)
+            $layakMaster = in_array($tipeTes, $this->tipeCat(), true)
                 || ($subTes && $subTes->Provider === 'THIRD_PARTY');
-            if (! $layak) {
-                $nama = $subTes->Label ?? $tahapTes->Label;
 
-                return ResponseHelper::error("Aktivitas '{$nama}' bukan ujian online — dilaksanakan tim rekrutmen dan hasilnya dicatat di Worklist, bukan dijadwalkan lewat HCLearn.", 422);
-            }
-
-            $tesUrutan = $subTes->Urutan ?? null;
+            // ── YANG MENYARING KANDIDAT ADALAH PILIHAN ADMIN, BUKAN MASTER ───
+            //
+            // Dulu keduanya diturunkan dari baris master hasil pencarian di atas.
+            // Untuk rombongan alur lama itu keliru dua kali: nomor urutnya milik
+            // alur sekarang, sedangkan snapshot yang hendak disaring & ditandai
+            // milik alur lama. Yang dipakai sekarang adalah apa yang benar-benar
+            // dipilih admin di layar — dan layar itu disusun dari data kandidat.
+            $tesUrutan = (int) ($data['tesUrutan'] ?? 0) ?: ($subTes->Urutan ?? null);
+            // HANYA id dari layar. Sengaja TIDAK jatuh ke id baris master hasil
+            // pencarian di atas: saat layarnya belum mengirim `tesId` (aset lama
+            // yang belum dimuat ulang), baris itu adalah aktivitas hasil tebakan
+            // nomor urut — dan memakainya sebagai penyaring justru MEMPERSEMPIT
+            // pencarian kandidat ke aktivitas yang salah, sampai tak seorang pun
+            // lolos. Tanpa id, seluruh jalur kembali memakai nomor urut snapshot,
+            // persis perilaku yang sudah terbukti benar sebelum ini.
+            $tesIdMaster = $tesId;
+            // Identitas TAHAP yang dipakai menyaring kandidat di atas. Baris
+            // snapshot yang ditandai di bawah HARUS dipilih dengan aturan yang
+            // sama persis — kalau berbeda, yang tertandai "sudah dijadwalkan"
+            // bukan tahap yang orang-orang ini benar-benar tunggu.
+            $tahapKodeDipakai = trim((string) ($tahapTes->Kode ?? '')) ?: null;
 
             // Peserta = lamaran NYATA (by Kode) pada program ini. Bukan lagi HRIS dummy.
             // Kode_Calon (WCyymmdd-xxxxxx) = identitas peserta di HCLearn (HRIS_Rekrutmen).
@@ -1038,7 +1201,28 @@ class PenjadwalanController extends Controller
                 $tesUrutan,
                 '',
                 $tahapTes->Kode ?: null,
+                $tesIdMaster,
             )->pluck('l.Kode')->all();
+
+            // ── GERBANG "INI UJIAN ONLINE?" ─────────────────────────────────
+            //
+            // Dinilai SESUDAH daftar kandidat, dan itu disengaja. Yang menentukan
+            // sebuah aktivitas bisa dikirim ke HCLearn bukan baris master, tapi
+            // SNAPSHOT yang dipegang kandidat — merekalah yang menerima token,
+            // dan kueriKandidat() sudah menegakkan aturannya di sana (Provider
+            // THIRD_PARTY atau tipe ber-perilaku CAT).
+            //
+            // Bentuk lama menilainya dari master saja, lalu menolak rombongan
+            // alur lama yang jelas-jelas menunggu ujian online — hanya karena
+            // aktivitas bernomor sama di alur SEKARANG kebetulan sebuah FGD.
+            // Master tetap dipercaya lebih dulu; sisi kandidat menjadi pembanding
+            // yang menyelamatkan kasus lintas-alur.
+            if (! $layakMaster && ! $layakKode) {
+                $nama = $subTes->Label ?? $tahapTes->Label;
+
+                return ResponseHelper::error("Aktivitas '{$nama}' bukan ujian online — dilaksanakan tim rekrutmen dan hasilnya dicatat di Worklist, bukan dijadwalkan lewat HCLearn.", 422);
+            }
+
             $tidakLayak = array_values(array_diff($data['peserta'], $layakKode));
             if ($tidakLayak) {
                 return ResponseHelper::error(
@@ -1059,7 +1243,14 @@ class PenjadwalanController extends Controller
             // dicari nomor bebas berikutnya dan diverifikasi belum ada.
             $kode = $this->kodeBaru();
 
-            $ids = DB::transaction(function () use ($data, $program, $alur, $semuaTahap, $tahapTes, $tesUrutan, $kandidat, $kode, $userId, $userName, $now) {
+            $ids = DB::transaction(function () use ($data, $program, $alur, $semuaTahap, $tahapTes, $tesUrutan, $tesIdMaster, $tahapKodeDipakai, $kandidat, $kode, $userId, $userName, $now) {
+                // Penyaring tahap milik kandidat — Kode bila ada, nomor urut hanya
+                // untuk baris pra-mesin yang memang tak punya Kode. Ditulis sekali
+                // di sini lalu dipakai dua kali di bawah, supaya mustahil berselisih.
+                $saringTahap = fn ($q) => $tahapKodeDipakai
+                    ? $q->where('Kode', $tahapKodeDipakai)
+                    : $q->where('Urutan', $tahapTes->Urutan);
+
                 $penjadwalanId = DB::table('N_WEB_CAREERS_Penjadwalan')->insertGetId([
                     'Kode' => $kode,
                     'Nama' => $data['namaUjian'].' — '.$program->Nama,
@@ -1081,6 +1272,14 @@ class PenjadwalanController extends Controller
                     $dipilih = $t->Id_Master_Alur_Tahap === $tahapTes->Id_Master_Alur_Tahap;
 
                     $id = DB::table('N_WEB_CAREERS_Penjadwalan_Tahap')->insertGetId([
+                        // Identitas aktivitas, di samping nomor urutnya. Job
+                        // penerbit token memasang ulang tautan ke snapshot
+                        // kandidat memakai kolom ini — nomor urut saja menautkan
+                        // token ke aktivitas yang salah begitu alurnya diurut
+                        // ulang. Lihat WcPenjadwalanJob::pasangTautanKandidat().
+                        ...(self::punyaKolomIdentitasTes()
+                            ? ['Master_Alur_Tahap_Tes_Id' => $dipilih ? $tesIdMaster : null]
+                            : []),
                         'Penjadwalan_Id' => $penjadwalanId,
                         'Master_Alur_Tahap_Id' => $t->Id_Master_Alur_Tahap,
                         'Urutan' => $t->Urutan,
@@ -1165,18 +1364,23 @@ class PenjadwalanController extends Controller
                 foreach ($lamaranIds->chunk(500) as $sepotong) {
                     DB::table('N_WEB_CAREERS_Lamaran_Tahap')
                         ->whereIn('Lamaran_Id', $sepotong->all())
-                        ->where('Urutan', $tahapTes->Urutan)
+                        ->where($saringTahap)
                         ->update(['Penjadwalan_Tahap_Id' => $tahapTerpilihId, 'Updated_At' => $now]);
                 }
 
                 // Tandai SUB-TES yang dijadwalkan (baterai multi-tes: hanya sub-tes
-                // pada urutan ini yang berubah; yang lain menunggu jadwalnya sendiri).
-                // Dikunci lewat Urutan, bukan Jenis_Tes_Kode — jenis tes boleh kosong
-                // dan dua sub-tes bisa memakai jenis yang sama.
+                // ini yang berubah; yang lain menunggu jadwalnya sendiri).
+                //
+                // Dikunci lewat IDENTITAS aktivitas, bukan Jenis_Tes_Kode (boleh
+                // kosong, dan dua sub-tes bisa memakai jenis yang sama) dan bukan
+                // pula nomor urut: nomor di master dan nomor di snapshot kandidat
+                // berselisih begitu urutan aktivitas disunting, dan yang tertandai
+                // "DIJADWALKAN" lalu aktivitas yang salah — kandidat menerima token
+                // untuk tes yang bukan itu, tanpa satu pun galat.
                 foreach ($lamaranIds->chunk(500) as $sepotong) {
                     $lamaranTahapIds = DB::table('N_WEB_CAREERS_Lamaran_Tahap')
                         ->whereIn('Lamaran_Id', $sepotong->all())
-                        ->where('Urutan', $tahapTes->Urutan)
+                        ->where($saringTahap)
                         ->pluck('Id_Lamaran_Tahap')->all();
 
                     if (! $lamaranTahapIds) {
@@ -1186,7 +1390,14 @@ class PenjadwalanController extends Controller
                     foreach (collect($lamaranTahapIds)->chunk(500) as $sepotongTahap) {
                         DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')
                             ->whereIn('Lamaran_Tahap_Id', $sepotongTahap->all())
-                            ->when($tesUrutan, fn ($q, $u) => $q->where('Urutan', $u))
+                            ->when($tesIdMaster, fn ($q, $i) => $q->where(fn ($w) => $w
+                                ->where('Master_Alur_Tahap_Tes_Id', $i)
+                                // Baris pra-mesin tak punya id itu; nomor urut
+                                // satu-satunya pegangan yang tersisa untuk mereka.
+                                ->when($tesUrutan, fn ($x, $u) => $x->orWhere(fn ($y) => $y
+                                    ->whereNull('Master_Alur_Tahap_Tes_Id')
+                                    ->where('Urutan', $u)))))
+                            ->when(! $tesIdMaster && $tesUrutan, fn ($q) => $q->where('Urutan', $tesUrutan))
                             ->where('Flag_Selesai', 'N')
                             ->whereNull('Penjadwalan_Tahap_Id')
                             ->update(['Status' => 'DIJADWALKAN', 'Penjadwalan_Tahap_Id' => $tahapTerpilihId, 'Updated_At' => $now]);
