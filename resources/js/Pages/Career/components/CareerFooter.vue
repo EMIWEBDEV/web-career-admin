@@ -16,16 +16,17 @@
 
                 <!-- Baris Ikon Media Sosial & Kontak -->
                 <div class="wc-footer__social">
-                    <a href="https://linkedin.com" target="_blank" rel="noopener noreferrer" title="LinkedIn"
+                    <a
+                        href="https://www.linkedin.com/company/evopet/posts/?feedView=all"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="LinkedIn"
                         ><i class="bi bi-linkedin"></i
                     ></a>
-                    <a href="https://instagram.com" target="_blank" rel="noopener noreferrer" title="Instagram"
-                        ><i class="bi bi-instagram"></i
-                    ></a>
-                    <a href="mailto:recruitment@evogroup.co.id" title="Email Rekrutmen"
+                    <a href="mailto:rekrutmen@evopet.id" title="Email Rekrutmen"
                         ><i class="bi bi-envelope-fill"></i
                     ></a>
-                    <a href="https://wa.me/6281234567890" target="_blank" rel="noopener noreferrer" title="WhatsApp HR"
+                    <a href="https://wa.me/6282277999790" target="_blank" rel="noopener noreferrer" title="WhatsApp HR"
                         ><i class="bi bi-whatsapp"></i
                     ></a>
                 </div>
@@ -51,10 +52,12 @@
                     <button type="button" @click="goToSection('lokasi')">Lokasi Kami</button>
                     <a href="/karir/faq">FAQ Kandidat</a>
                 </div>
-                <div v-if="mapSrc" class="wc-footer__col wc-footer__col--office">
+                <div class="wc-footer__col wc-footer__col--office">
+                    <!-- URL embed hasil "Bagikan → Sematkan peta" dari Google Maps;
+                         tidak butuh API key. Ganti kalau lokasi kantor pindah. -->
                     <iframe
                         class="wc-footer__map"
-                        :src="mapSrc"
+                        src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3984.5520718382104!2d104.76754357511668!3d-2.9441472396858823!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x2e3b7707ce6db5a3%3A0x353d0e6057d35b20!2sPT.%20EVO%20NUSA%20BERSAUDARA!5e0!3m2!1sid!2sid!4v1786609962390!5m2!1sid!2sid"
                         title="Peta lokasi kantor pusat EVO Group"
                         loading="lazy"
                         referrerpolicy="strict-origin-when-cross-origin"
@@ -74,24 +77,10 @@
 </template>
 
 <script setup>
-import { computed } from 'vue';
 import { goToSection } from '../careerData';
-
-// ponytail: koordinat HO di-hardcode. Pindahkan ke kolom Latitude/Longitude
-// di N_HRIS_Master_Lokasi kalau cabang lain juga perlu dipetakan.
-const HO = { lat: -2.9441525942113036, lng: 104.7700541264974 };
 
 defineProps({
     hasMt: { type: Boolean, default: false },
-});
-
-// Google Maps Embed API (resmi). Key wajib & harus dibatasi HTTP referrer di
-// Google Cloud Console — key ini ikut terkirim ke browser.
-const mapSrc = computed(() => {
-    const key = import.meta.env.VITE_GOOGLE_MAPS_KEY;
-    if (!key) return '';
-    const params = new URLSearchParams({ key, q: `${HO.lat},${HO.lng}`, zoom: '15' });
-    return `https://www.google.com/maps/embed/v1/place?${params}`;
 });
 
 const tahun = new Date().getFullYear();
