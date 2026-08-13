@@ -9,7 +9,7 @@
     </Head>
 
     <CareerLayout :has-mt="hasMt" :offices="offices">
-        <HeroSection :benefits="benefits" :has-mt="hasMt" :hero-slides="heroSlides" />
+        <HeroSection :benefits="benefits" :has-mt="hasMt" :hero-slides="heroSlides" :offices="offices" />
         <TentangSection />
         <AchievementSection :achievements="achievements" />
         <TimSection :tim="tim" />

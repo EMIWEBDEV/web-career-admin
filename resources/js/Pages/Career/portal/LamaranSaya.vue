@@ -17,7 +17,9 @@
                     <h1 class="lms-h1">Lamaran Saya</h1>
                     <p class="lms-sub">Pantau progres seleksimu di EVO Group. Klik lamaran untuk melihat detail &amp; mengisi formulir tahap.</p>
                 </div>
-                <Link href="/karir/landing-page" class="lms-btn-cari">
+                <!-- Kandidat yang lamarannya masih BERJALAN tidak diajak mencari
+                     lowongan lain — fokusnya proses yang sedang dijalani. -->
+                <Link v-if="!adaLamaranBerjalan" href="/karir/landing-page" class="lms-btn-cari">
                     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>
                     Cari Lowongan
                 </Link>
@@ -72,7 +74,7 @@
                                     {{ stLabel(l) }}
                                 </span>
                             </div>
-                            <div style="text-align: right; color: #94a3b8; font-size: 12px">
+                            <div class="lms-hero__stamp">
                                 <div style="font-weight: 700; color: #334155">Dilamar {{ tglLamar(l.waktuLamar) }}</div>
                                 <div style="margin-top: 2px">Kode: <span class="lms-mono">{{ l.kode }}</span></div>
                             </div>
@@ -87,13 +89,30 @@
                             </span>
                         </div>
 
-                        <!-- PROGRES SELEKSI (stepper real dari tahapan DB) -->
-                        <div class="lms-prog">
-                            <div class="lms-prog__head">
-                                <span class="lms-sec-label">PROGRES SELEKSI</span>
-                                <span style="font-size: 13px; font-weight: 800; color: #4f46e5">Tahap {{ l.urutanTahap }} dari {{ l.totalTahap }}</span>
-                            </div>
-                            <div class="lms-prog__bar"><div :style="{ width: heroPct(l) + '%' }"></div></div>
+                        <!-- PROGRES SELEKSI (stepper real dari tahapan DB).
+                             <details>, bukan accordion buatan sendiri: buka-tutup,
+                             keyboard, dan pencarian dalam halaman sudah ditangani
+                             browser. Ringkasannya tetap menampilkan bar & "Tahap X
+                             dari Y" saat tertutup. -->
+                        <details class="lms-prog" :open="!kompak">
+                            <summary class="lms-prog__sum">
+                                <span class="lms-prog__head">
+                                    <span class="lms-sec-label">PROGRES SELEKSI</span>
+                                    <span class="lms-prog__count">
+                                        Tahap {{ l.urutanTahap }} dari {{ l.totalTahap }}
+                                        <svg class="lms-prog__chev" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+                                    </span>
+                                </span>
+                                <span class="lms-prog__bar"><span :style="{ width: heroPct(l) + '%' }"></span></span>
+                                <!-- Nama tahap yang sedang berjalan ikut di ringkasan:
+                                     "Tahap 1 dari 7" saja tidak memberi tahu apa pun
+                                     tentang APA yang sedang berlangsung. -->
+                                <span v-if="tahapAktif(l)" class="lms-prog__now" :class="'is-' + tahapAktif(l).st">
+                                    <span class="lms-prog__now-dot"></span>
+                                    <span class="lms-prog__now-lbl">{{ tahapAktif(l).teks }}</span>
+                                    <strong>{{ tahapAktif(l).name }}</strong>
+                                </span>
+                            </summary>
                             <div class="lms-steps">
                                 <div v-for="(sg, i) in heroSteps(l)" :key="i" class="lms-step">
                                     <div v-if="i > 0" class="lms-step__line" :style="{ background: sg.line }"></div>
@@ -105,7 +124,7 @@
                                     <div class="lms-step__lbl" :style="{ color: sg.lbl }">{{ sg.name }}</div>
                                 </div>
                             </div>
-                        </div>
+                        </details>
 
                         <!-- Kalimatnya mengikuti SEBAB berhentinya, bukan satu
                              kalimat untuk semua. "Tidak lolos di tahap X" pada
@@ -161,7 +180,7 @@
                                         <span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3 8-8" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>{{ h.lastStage }}</span>
                                     </span>
                                 </span>
-                                <span style="display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex: 0 0 auto">
+                                <span class="lms-hcard__side">
                                     <span class="lms-pill" :style="pillStyle(h.status)">{{ h.statusLabel }}</span>
                                     <a
                                         v-if="isFinalStatus(h) && fbCta(h)"
@@ -264,7 +283,20 @@ export default {
             toast: '',
             toastErr: false,
             tm: null,
+            // Stepper baru dilipat jadi dropdown di layar sempit. Di tablet ke
+            // atas ruangnya cukup, jadi ia dibiarkan terbuka seperti semula.
+            kompak: false,
+            mqKompak: null,
         };
+    },
+    mounted() {
+        this.mqKompak = window.matchMedia('(max-width: 767.98px)');
+        this.syncKompak();
+        this.mqKompak.addEventListener('change', this.syncKompak);
+    },
+    beforeUnmount() {
+        this.mqKompak?.removeEventListener('change', this.syncKompak);
+        if (this.tm) clearTimeout(this.tm);
     },
     computed: {
         // Strip statistik — NILAI REAL dari controller (props.stats).
@@ -278,6 +310,9 @@ export default {
         },
         // Kartu hero = lamaran BERJALAN (real). Bila tak ada yang berjalan,
         // tampilkan lamaran terbaru agar kandidat tetap melihat status akhirnya.
+        adaLamaranBerjalan() {
+            return this.lamaran.some((l) => l.status === 'BERJALAN');
+        },
         heroes() {
             const jalan = this.lamaran.filter((l) => l.status === 'BERJALAN');
             return jalan.length ? jalan : this.lamaran.slice(0, 1);
@@ -300,6 +335,7 @@ export default {
         },
     },
     methods: {
+        syncKompak() { this.kompak = !!this.mqKompak?.matches; },
         // [feat/feedback]
         isFinalStatus(item) {
             if (!item || !item.status) return false;
@@ -418,6 +454,22 @@ export default {
                 lbl: r.st === 'todo' ? '#94a3b8' : r.st === 'fail' ? '#dc2626' : '#334155',
             }));
         },
+        /**
+         * Tahap yang sedang dijalani — untuk ringkasan progres (terlihat tanpa
+         * membuka stepper). Kata pengantarnya mengikuti keadaan: yang berhenti
+         * di suatu tahap bukan sedang "berjalan" di sana.
+         */
+        tahapAktif(l) {
+            const steps = this.heroSteps(l);
+            if (!steps.length) return null;
+            const jalan = steps.find((s) => s.st === 'current');
+            if (jalan) return { ...jalan, teks: 'Sedang berjalan:' };
+            const gagal = steps.find((s) => s.st === 'fail');
+            if (gagal) return { ...gagal, teks: 'Berhenti di:' };
+            const selesai = [...steps].reverse().find((s) => s.st === 'done');
+            if (selesai) return { ...selesai, teks: 'Tahap terakhir:' };
+            return { ...steps[0], teks: 'Tahap berikutnya:' };
+        },
         heroPct(l) {
             const steps = this.heroSteps(l);
             if (!steps.length) return 0;
@@ -468,7 +520,14 @@ export default {
 
 /* ═══ HALAMAN: fluid penuh (container-fluid), latar dari shell ═══ */
 /* clip (bukan hidden) agar tidak jadi scroll container → hindari scrollbar ganda. */
-.lms { position: relative; margin: -1rem; padding: 28px 34px 48px; min-height: calc(100vh - 68px); overflow-x: clip; }
+/* margin bawah 0 & TANPA min-height sendiri: '-1rem' di bawah menarik kotak ini
+   melewati batas .app-shell, dan 'calc(100vh - 68px)' menebak tinggi topbar yang
+   di ponsel tidak 68px — keduanya membuat halaman menjulur keluar gradasi shell
+   sehingga tersisa pita putih body di bawah. Tinggi penuh sudah dijamin
+   .shell-content (min-height: calc(100vh - 4rem)).
+   overflow: clip (dua sumbu) menahan blob dekoratif yang ditempatkan di
+   bottom: -160px; clip tidak membuat elemen ini jadi kontainer gulir. */
+.lms { position: relative; margin: -1rem -1rem 0; padding: 28px 34px 48px; overflow: clip; }
 .lms-blob { position: absolute; border-radius: 50%; filter: blur(8px); pointer-events: none; z-index: 0; }
 .lms-blob--a { top: -120px; right: 12%; width: 440px; height: 440px; background: radial-gradient(circle at 30% 30%, rgba(139, 92, 246, 0.14), rgba(139, 92, 246, 0) 70%); animation: lmsFloatA 16s ease-in-out infinite; }
 .lms-blob--b { bottom: -160px; left: 6%; width: 460px; height: 460px; background: radial-gradient(circle at 60% 40%, rgba(99, 102, 241, 0.1), rgba(99, 102, 241, 0) 70%); animation: lmsFloatB 19s ease-in-out infinite; }
@@ -507,10 +566,30 @@ export default {
 .lms-meta :deep(svg) { flex: 0 0 auto; }
 
 .lms-prog { margin-top: 20px; background: #f8f9fc; border: 1px solid #eef0f7; border-radius: 18px; padding: 16px 18px; }
+/* Segitiga bawaan <summary> diganti chevron sendiri agar sebaris dengan teks. */
+.lms-prog__sum { cursor: pointer; list-style: none; }
+.lms-prog__sum::-webkit-details-marker { display: none; }
+.lms-prog__sum:focus-visible { outline: 2px solid #6366f1; outline-offset: 3px; border-radius: 10px; }
+.lms-prog__count { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 800; color: #4f46e5; }
+.lms-prog__chev { transition: transform 0.24s cubic-bezier(0.22, 1, 0.36, 1); }
+.lms-prog[open] .lms-prog__chev { transform: rotate(180deg); }
 .lms-prog__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .lms-prog__head .lms-sec-label { letter-spacing: 0.1em; }
-.lms-prog__bar { height: 7px; border-radius: 99px; background: #eef0f7; overflow: hidden; margin-bottom: 16px; }
-.lms-prog__bar div { height: 100%; border-radius: 99px; background: linear-gradient(90deg, #8b5cf6, #6366f1); }
+.lms-prog__bar { height: 7px; border-radius: 99px; background: #eef0f7; overflow: hidden; }
+.lms-prog[open] .lms-steps { margin-top: 16px; animation: lmsAccIn 0.26s cubic-bezier(0.22, 1, 0.36, 1) both; }
+/* Baris "sedang berjalan" — status tahap terbaca tanpa membuka stepper. Begitu
+   stepper dibuka ia mubazir: tahap yang sama sudah ditandai di dalamnya. */
+.lms-prog[open] .lms-prog__now { display: none; }
+.lms-prog__now { display: flex; align-items: center; gap: 7px; margin-top: 11px; font-size: 12.5px; line-height: 1.35; color: #64748b; flex-wrap: wrap; }
+.lms-prog__now strong { font-weight: 800; color: #1e293b; }
+.lms-prog__now-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: #f59e0b; box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.18); }
+.lms-prog__now.is-fail .lms-prog__now-dot { background: #ef4444; box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.16); }
+.lms-prog__now.is-fail strong { color: #dc2626; }
+.lms-prog__now.is-done .lms-prog__now-dot { background: #10b981; box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.16); }
+.lms-prog__now.is-todo .lms-prog__now-dot { background: #94a3b8; box-shadow: none; }
+.lms-prog__now-lbl { flex: none; }
+/* Anak <span> (bukan div): isi <summary> harus phrasing content agar HTML-nya sah. */
+.lms-prog__bar > * { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, #8b5cf6, #6366f1); }
 .lms-steps { display: flex; align-items: flex-start; gap: 0; overflow-x: auto; padding-bottom: 6px; }
 .lms-step { flex: 0 0 130px; display: flex; flex-direction: column; align-items: center; position: relative; }
 .lms-step__line { position: absolute; top: 14px; left: -50%; width: 100%; height: 3px; }
@@ -550,6 +629,11 @@ export default {
 .lms-hcard__meta { display: flex; align-items: center; gap: 14px; margin-top: 7px; font-size: 12px; color: #8792a6; flex-wrap: wrap; }
 .lms-hcard__meta span { display: inline-flex; align-items: center; gap: 5px; }
 .lms-pill { display: inline-block; padding: 5px 12px; border-radius: 999px; font-size: 11px; font-weight: 800; white-space: nowrap; }
+/* Kolom kanan kartu riwayat & cap tanggal hero — dulu style inline, dijadikan
+   kelas agar bisa ditata ulang di layar sempit (style inline tak bisa ditimpa
+   media query). */
+.lms-hcard__side { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex: 0 0 auto; }
+.lms-hero__stamp { text-align: right; color: #94a3b8; font-size: 12px; }
 
 /* ═══ REKOMENDASI ═══ */
 .lms-recrow { display: flex; align-items: center; gap: 9px; margin: 38px 2px 14px; }
@@ -663,6 +747,9 @@ export default {
     .lms-recs { grid-template-columns: repeat(2, 1fr); }
     .lms-drawer { width: 460px; }
 }
+/* ═══ TABLET & PONSEL — bukan versi mengecil dari desktop ═══
+   Tiga bentuk di halaman ini memang lahir untuk layar lebar dan tidak pernah
+   jadi benar sekadar dengan dikecilkan; di sini ketiganya diganti bentuk. */
 @media (max-width: 759.98px) {
     .lms { padding: 20px 16px 44px; }
     .lms-stats { grid-template-columns: 1fr 1fr; gap: 14px; }
@@ -670,6 +757,82 @@ export default {
     .lms-drawer { width: 100%; }
     .lms-fields { grid-template-columns: 1fr; }
     .lms-hero__in { padding: 20px 18px; }
+
+    /* 1. STEPPER: mendatar → menurun.
+       Bentuk mendatar butuh 130px per tahap; pada 5-6 tahap isinya tersembunyi
+       di balik gulir samping yang tak terlihat, padahal ini informasi utama
+       halaman. Menurun: semua tahap terbaca sekaligus, label boleh panjang. */
+    .lms-steps { flex-direction: column; align-items: stretch; gap: 15px; overflow-x: visible; padding-bottom: 0; }
+    .lms-step { flex: 0 0 auto; flex-direction: row; align-items: center; gap: 12px; width: 100%; }
+    .lms-step__line { top: auto; bottom: calc(100% + 1px); left: 13.5px; width: 3px; height: 15px; }
+    .lms-step__node { flex: 0 0 auto; }
+    .lms-step__lbl { margin-top: 0; padding: 0; text-align: left; font-size: 12.5px; }
+
+    /* 2. RIWAYAT: rel timeline dibuang.
+       Garis + titiknya memakan 34px lebar (±10% layar 360px) hanya untuk
+       menegaskan urutan yang sudah jelas dari urutan kartunya sendiri. */
+    .lms-tl { padding-left: 0; }
+    .lms-tl__line, .lms-tl__dot { display: none; }
+
+    /* 3. AKSI KARTU: tombol utama selebar kartu, hapus tetap ikon di ujung. */
+    .lms-btn-detail { flex: 1 1 auto; justify-content: center; }
+    .lms-btn-hapus { margin-left: auto; }
+
+    /* 4. AKSEN KARTU: pita kiri → garis atas. Setinggi kartu ia ikut memanjang
+       mengikuti isi; di layar sempit kartunya paling panjang dan pita itu
+       terbaca seperti kesalahan render. Di layar lebar bentuk aslinya dipakai. */
+    .lms-hero__bar { right: 0; bottom: auto; width: auto; height: 4px; background: linear-gradient(90deg, #8b5cf6, #6366f1); }
+    .lms-hero__in { padding-left: 18px; }
+}
+/* Tablet ke atas: stepper bukan dropdown — selalu terbuka & tak bisa dilipat. */
+@media (min-width: 768px) {
+    .lms-prog__sum { cursor: default; pointer-events: none; }
+    .lms-prog__chev { display: none; }
+    .lms-prog__bar { margin-bottom: 16px; }
+    .lms-prog[open] .lms-steps { margin-top: 0; animation: none; }
+}
+
+/* ═══ PONSEL ═══ */
+@media (max-width: 560px) {
+    .lms { padding: 18px 12px 40px; }
+    .lms-h1 { font-size: 23px; }
+    .lms-sub { font-size: 13px; }
+    .lms-btn-cari { width: 100%; justify-content: center; }
+
+    /* Strip statistik: 2×2 dengan angka & ikon lebih ringkas. `nowrap` pada
+       label membuat "Total Lamaran" meluap keluar kolomnya di 360px. */
+    .lms-stats { padding: 14px; gap: 12px 10px; border-radius: 18px; }
+    .lms-stat { gap: 10px; padding: 4px 0; }
+    .lms-stat__ico { width: 38px; height: 38px; border-radius: 11px; }
+    .lms-stat__val { font-size: 20px; }
+    .lms-stat__lbl { font-size: 11px; white-space: normal; }
+
+    /* Kartu lamaran aktif */
+    .lms-hero { border-radius: 18px; }
+    .lms-hero__in { padding: 18px 14px; }
+    .lms-hero__title { font-size: 19px; }
+    .lms-hero__desc { font-size: 13px; }
+    /* Setelah membungkus ke baris sendiri, rata kanan terbaca seperti salah tempat. */
+    .lms-hero__stamp { text-align: left; }
+    .lms-prog { padding: 14px 12px; border-radius: 14px; }
+    .lms-prog__head { flex-wrap: wrap; gap: 4px 10px; }
+    .lms-btn-feedback { flex: 1 1 12rem; justify-content: center; }
+
+    /* Riwayat: kolom kanan turun jadi baris sendiri. */
+    .lms-histrow { gap: 10px; margin-top: 26px; }
+    /* Strip filter digeser satu baris, bukan menumpuk jadi dua-tiga baris. */
+    .lms-histrow > div:last-child { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-inline: -12px; padding: 2px 12px 4px; width: 100%; }
+    .lms-histrow > div:last-child::-webkit-scrollbar { display: none; }
+    .lms-fbtn { min-height: 2.25rem; flex: 0 0 auto; }
+    .lms-hcard { padding: 14px; border-radius: 15px; }
+    .lms-hcard__row { flex-direction: column; gap: 10px; }
+    .lms-hcard__side { flex-direction: row; align-items: center; justify-content: space-between; width: 100%; }
+    /* Judul posisi lebih penting daripada tinggi kartu — biarkan turun baris. */
+    .lms-hcard__title { white-space: normal; }
+    .lms-hcard__meta { gap: 6px 12px; }
+
+    .lms-modal__act { flex-direction: column-reverse; }
+    .lms-modal__soft, .lms-modal__danger { width: 100%; justify-content: center; }
 }
 
 /* PONSEL — toast sudut melebar penuh. Pada 360px, lebar sudut hanya menyisakan

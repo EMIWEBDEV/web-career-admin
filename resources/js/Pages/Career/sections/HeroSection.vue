@@ -2,7 +2,12 @@
      "tampilkan konten" merender headline/search/CTA/kartu statistik EVO Group (tetap,
      tidak diedit dari DB); slide lain murni media (gambar desktop/mobile atau video). -->
 <template>
-    <section id="hero" class="wc-hero2">
+    <section
+        id="hero"
+        class="wc-hero2"
+        @touchstart.passive="onSwipeStart"
+        @touchend.passive="onSwipeEnd"
+    >
         <!-- Media latar: carousel fade video + foto -->
         <div class="wc-hero2__media" aria-hidden="true">
             <div
@@ -38,76 +43,76 @@
                     />
                 </picture>
                 <div class="wc-hero2__slide-scrim" :class="'wc-hero2__slide-scrim--' + slide.overlay"></div>
-
-                <!-- Konten tetap EVO Group (headline, search, CTA, kartu statistik) -->
-                <div v-if="slide.showContent" class="wc-hero2__inner">
-                    <div class="wc-hero2__content" aria-hidden="false">
-                        <span class="wc-hero2__eyebrow"><span class="wc-hero2__dot"></span> EVO Group Career</span>
-                        <h1 class="wc-hero2__title">
-                            Bangun Karirmu Bersama
-                            <span class="wc-hero2__grad">EVO Group</span>
-                        </h1>
-                        <p class="wc-hero2__sub">
-                            Bergabunglah dengan EVO FAMILY, perusahaan terdepan di bidang pet food industry di Indonesia. Temukan peran, tumbuh, dan wujudkan versi terbaik dirimu.
-                        </p>
-
-                        <div class="wc-hero2__search">
-                            <form @submit.prevent="handleSearch" class="wc-hero2__search-form">
-                                <i class="bi bi-search wc-hero2__search-icon"></i>
-                                <input
-                                    v-model="searchQuery"
-                                    type="text"
-                                    class="wc-hero2__search-input"
-                                    placeholder="Cari posisi atau kata kunci..."
-                                />
-                                <button type="submit" class="wc-hero2__search-btn">
-                                    Cari <i class="bi bi-arrow-right"></i>
-                                </button>
-                            </form>
-                        </div>
-
-                        <div class="wc-hero2__actions">
-                            <Link class="wc-hero2__btn wc-hero2__btn--primary" href="/karir/lowongan">
-                                <i class="bi bi-briefcase"></i> Semua Lowongan
-                            </Link>
-                            <button v-if="hasMt" class="wc-hero2__btn wc-hero2__btn--glass" type="button" @click="goToSection('mt')">
-                                <i class="bi bi-stars"></i> Management Trainee
-                            </button>
-                        </div>
-
-                        <ul class="wc-hero2__chips">
-                            <li v-for="b in benefits" :key="b.title"><i class="bi" :class="b.icon"></i> {{ b.title }}</li>
-                        </ul>
-                    </div>
-
-                    <!-- Kartu glass mengambang -->
-                    <aside class="wc-hero2__card">
-                        <div class="wc-hero2__card-shine" aria-hidden="true"></div>
-                        <div class="wc-hero2__stats">
-                            <div class="wc-hero2__stat">
-                                <strong>1.200<span>+</span></strong>
-                                <small>Karyawan Aktif</small>
-                            </div>
-                            <span class="wc-hero2__vr"></span>
-                            <div class="wc-hero2__stat">
-                                <strong>15<span>+</span></strong>
-                                <small>Tahun Berkarya</small>
-                            </div>
-                            <span class="wc-hero2__vr"></span>
-                            <div class="wc-hero2__stat">
-                                <strong>2</strong>
-                                <small>Lokasi Operasional</small>
-                            </div>
-                        </div>
-                        <div class="wc-hero2__ribbon">
-                            <span class="wc-hero2__ribbon-dot" aria-hidden="true"></span>
-                            <span>Perusahaan terdepan di bidang pet food industry di Indonesia</span>
-                        </div>
-                    </aside>
-                </div>
             </div>
             <div class="wc-hero2__fade"></div>
         </div>
+
+        <!-- Konten tetap EVO Group (headline, search, CTA, kartu statistik).
+             Di luar .wc-hero2__media (yang absolute + overflow:hidden) supaya tingginya
+             ikut mendorong section — kalau di dalam, konten terpotong di layar pendek. -->
+        <transition name="wc-hero2-fade">
+            <div v-if="activeSlide && activeSlide.showContent" class="wc-hero2__inner">
+                <div class="wc-hero2__content" aria-hidden="false">
+                    <span class="wc-hero2__eyebrow"><span class="wc-hero2__dot"></span> EVO Group Career</span>
+                    <h1 class="wc-hero2__title">
+                        Bangun Karirmu Bersama
+                        <span class="wc-hero2__grad">EVO Group</span>
+                    </h1>
+                    <p class="wc-hero2__sub">
+                        Bergabunglah dengan EVO FAMILY, perusahaan terdepan di bidang pet food industry di Indonesia. Temukan peran, tumbuh, dan wujudkan versi terbaik dirimu.
+                    </p>
+
+                    <div class="wc-hero2__search">
+                        <form @submit.prevent="handleSearch" class="wc-hero2__search-form">
+                            <i class="bi bi-search wc-hero2__search-icon"></i>
+                            <input
+                                v-model="searchQuery"
+                                type="text"
+                                class="wc-hero2__search-input"
+                                placeholder="Cari posisi atau kata kunci..."
+                            />
+                            <button type="submit" class="wc-hero2__search-btn">
+                                Cari <i class="bi bi-arrow-right"></i>
+                            </button>
+                        </form>
+                    </div>
+
+                    <div class="wc-hero2__actions">
+                        <Link class="wc-hero2__btn wc-hero2__btn--primary" href="/karir/lowongan">
+                            <i class="bi bi-briefcase"></i> Semua Lowongan
+                        </Link>
+                        <button v-if="hasMt" class="wc-hero2__btn wc-hero2__btn--glass" type="button" @click="goToSection('mt')">
+                            <i class="bi bi-stars"></i> Management Trainee
+                        </button>
+                    </div>
+
+                    <ul class="wc-hero2__chips">
+                        <li v-for="b in benefits" :key="b.title"><i class="bi" :class="b.icon"></i> {{ b.title }}</li>
+                    </ul>
+                </div>
+
+                <!-- Kartu glass mengambang -->
+                <aside class="wc-hero2__card">
+                    <div class="wc-hero2__card-shine" aria-hidden="true"></div>
+                    <!-- Statistik ditulis sebagai DATA, bukan tiga blok markup
+                         kembar: angkanya berubah (jumlah lokasi datang dari
+                         database), dan tiga salinan berarti tiga tempat yang
+                         bisa menyimpang. Kolomnya dibagi rata lewat grid
+                         sehingga lebar angka — 2 digit atau 5 — tidak pernah
+                         menggeser garis pemisahnya. -->
+                    <div class="wc-hero2__stats">
+                        <div v-for="s in statCards" :key="s.label" class="wc-hero2__stat">
+                            <strong>{{ s.value }}<span v-if="s.suffix">{{ s.suffix }}</span></strong>
+                            <small>{{ s.label }}</small>
+                        </div>
+                    </div>
+                    <div class="wc-hero2__ribbon">
+                        <span class="wc-hero2__ribbon-dot" aria-hidden="true"></span>
+                        <span>Perusahaan terdepan di bidang pet food industry di Indonesia</span>
+                    </div>
+                </aside>
+            </div>
+        </transition>
 
         <!-- Pagination timeline ala pertamina.com -->
         <div v-if="resolvedSlides.length > 1" class="wc-hero2__pagination" role="tablist" aria-label="Sorotan EVO Group">
@@ -145,9 +150,19 @@ const props = defineProps({
     benefits: { type: Array, default: () => [] },
     hasMt: { type: Boolean, default: false },
     heroSlides: { type: Array, default: () => [] },
+    offices: { type: Array, default: () => [] },
 });
 
 const searchQuery = ref('');
+
+/* Angka besar diformat gaya Indonesia (1.200), bukan ditulis tangan — begitu
+   nilainya datang dari database, pemisah ribuannya ikut benar dengan sendirinya. */
+const statCards = computed(() => [
+    { value: (1200).toLocaleString('id-ID'), suffix: '++', label: 'Karyawan Aktif' },
+    { value: '15', suffix: '++', label: 'Tahun Berkarya' },
+    // Jumlah lokasi tanpa imbuhan: angkanya dihitung tepat dari master lokasi aktif.
+    { value: props.offices.length.toLocaleString('id-ID'), suffix: '', label: 'Lokasi Operasional' },
+]);
 
 function handleSearch() {
     if (searchQuery.value.trim()) {
@@ -212,6 +227,8 @@ const resolvedSlides = computed(() => {
     });
 });
 
+const activeSlide = computed(() => resolvedSlides.value[activeIndex.value] || null);
+
 /* Video tidak dimuat di layar <1024px (hemat bandwidth) — dipakai poster/gambar mobile sebagai gantinya. */
 const isMobile = ref(false);
 let mq = null;
@@ -273,6 +290,35 @@ function playActiveVideo() {
 
 function next() {
     goTo((activeIndex.value + 1) % resolvedSlides.value.length);
+}
+
+function prev() {
+    const n = resolvedSlides.value.length;
+    goTo((activeIndex.value - 1 + n) % n);
+}
+
+/* Geser jari untuk ganti slide — di ponsel strip pagination terlalu kecil untuk
+   jadi satu-satunya cara pindah. Listener-nya passive: gulir vertikal halaman
+   tidak boleh ikut tertahan. */
+let swipeX = null;
+let swipeY = null;
+
+function onSwipeStart(e) {
+    const t = e.changedTouches[0];
+    swipeX = t.clientX;
+    swipeY = t.clientY;
+}
+
+function onSwipeEnd(e) {
+    if (swipeX === null || resolvedSlides.value.length < 2) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - swipeX;
+    const dy = t.clientY - swipeY;
+    swipeX = null;
+    // Ambang 45px menyaring ketukan; dominasi sumbu X menyaring gerak menggulir.
+    if (Math.abs(dx) < 45 || Math.abs(dx) <= Math.abs(dy)) return;
+    if (dx < 0) next();
+    else prev();
 }
 
 function goTo(i) {
@@ -397,6 +443,7 @@ onBeforeUnmount(() => {
 .wc-hero2__inner {
     position: relative;
     z-index: 1;
+    flex: 0 0 auto;
     width: min(1180px, calc(100vw - 2rem));
     margin: 0 auto;
     padding: clamp(7rem, 15vh, 10.5rem) 0 clamp(6.5rem, 16vh, 9.5rem);
@@ -578,6 +625,9 @@ onBeforeUnmount(() => {
 .wc-hero2__card {
     position: relative;
     overflow: hidden;
+    /* Ukuran angka statistik diukur terhadap LEBAR KARTU, bukan lebar layar —
+       kartunya menyempit di tablet meski layarnya masih lebar. */
+    container-type: inline-size;
     padding: 1.6rem 1.7rem;
     border-radius: 1.5rem;
     background: rgba(255, 255, 255, 0.09);
@@ -600,22 +650,45 @@ onBeforeUnmount(() => {
 }
 .wc-hero2__stats {
     position: relative;
-    display: flex;
-    align-items: stretch;
-    gap: 22px;
+    /* GRID KOLOM SAMA LEBAR, bukan flex mengikuti isi. Lebar angka tidak boleh
+       menentukan tata letak: "2" hari ini bisa jadi "14" atau "1.200" besok,
+       dan pada flex setiap perubahan itu menggeser garis pemisahnya. */
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: start;
 }
 .wc-hero2__stat {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 4px;
     text-align: left;
+    min-width: 0;
+    padding: 0 14px;
+}
+/* GARIS PEMISAH = border kolomnya sendiri, bukan <span> terpisah. Sebagai
+   elemen flex, jaraknya bergantung sisa ruang dan bisa tertimpa angka yang
+   melebar; sebagai border kolom grid, letaknya selalu tepat di batas kolom. */
+.wc-hero2__stat + .wc-hero2__stat {
+    border-left: 1px solid rgba(255, 255, 255, 0.2);
+}
+.wc-hero2__stat:first-child {
+    padding-left: 0;
+}
+.wc-hero2__stat:last-child {
+    padding-right: 0;
 }
 .wc-hero2__stat strong {
-    font-size: 30px;
+    /* Menyusut sendiri bila angkanya panjang, sampai batas yang masih terbaca —
+       jadi 5 digit pun tetap satu baris di dalam kolomnya. */
+    font-size: 1.5rem; /* cadangan bila container query tak didukung */
+    font-size: clamp(1.15rem, 7.5cqw, 1.6rem);
     font-weight: 800;
     letter-spacing: -0.02em;
     line-height: 1.1;
     color: #fff;
+    white-space: nowrap;
+    /* Digit selebar sama rata: angka yang berubah tidak membuat barisnya bergoyang. */
+    font-variant-numeric: tabular-nums;
 }
 .wc-hero2__stat strong span {
     color: #c4b5fd;
@@ -625,11 +698,6 @@ onBeforeUnmount(() => {
     font-size: 11px;
     font-weight: 400;
     line-height: 1.3;
-}
-.wc-hero2__vr {
-    width: 1px;
-    background: rgba(255, 255, 255, 0.2);
-    flex: none;
 }
 .wc-hero2__ribbon {
     position: relative;
@@ -725,29 +793,247 @@ onBeforeUnmount(() => {
     transition: width 0.05s linear;
 }
 
+/* Fade konten mengikuti fade slide (dulu ikut opacity slide induknya). */
+.wc-hero2-fade-enter-active,
+.wc-hero2-fade-leave-active {
+    transition: opacity 0.6s ease;
+}
+.wc-hero2-fade-enter-from,
+.wc-hero2-fade-leave-to {
+    opacity: 0;
+}
+.wc-hero2-fade-leave-active {
+    position: absolute;
+    inset: 0;
+}
+
 @media (max-width: 1024px) {
     .wc-hero2__inner {
-        grid-template-columns: 1fr;
+        gap: 1.75rem;
+        padding: clamp(6.5rem, 13vh, 8.5rem) 0 clamp(3rem, 8vh, 5rem);
+    }
+}
+/* TABLET TEGAK — tetap dua kolom.
+   Runtuh jadi satu kolom di sini menyisakan setengah lebar layar kosong di
+   kanan sekaligus membuat konten menumpuk di sepertiga atas; lebar 768px+
+   masih cukup untuk teks + kartu statistik berdampingan. */
+@media (min-width: 768px) and (max-width: 1024px) {
+    .wc-hero2__inner {
+        grid-template-columns: minmax(0, 1fr) minmax(250px, 300px);
+        align-items: center;
+    }
+    .wc-hero2__card {
+        justify-self: end;
+        max-width: 300px;
+        padding: 1.3rem 1.35rem;
+    }
+    /* Kartu lebih sempit dari desktop — jarak kolom ikut menyempit. Ukuran
+       angkanya tidak diatur di sini: `cqw` sudah menyesuaikannya sendiri. */
+    .wc-hero2__stat {
+        padding: 0 10px;
+    }
+    .wc-hero2__stat small {
+        font-size: 10.5px;
+    }
+    .wc-hero2__content {
+        max-width: none;
+    }
+    .wc-hero2__sub,
+    .wc-hero2__search {
+        max-width: 440px;
+    }
+}
+@media (max-width: 767.98px) {
+    .wc-hero2__inner {
+        /* minmax(0, …), BUKAN `1fr`. `1fr` = minmax(auto, 1fr): lantainya ukuran
+           min-content, jadi baris terlebar di dalamnya (kartu statistik) memaksa
+           kolomnya melebihi lebar layar dan SELURUH isi hero meleber ke kanan. */
+        grid-template-columns: minmax(0, 1fr);
         gap: 2rem;
     }
     .wc-hero2__card {
         justify-self: start;
         max-width: 520px;
     }
+    /* Kolom, bukan baris: pagination jadi baris terakhir hero.
+       Rentang 641–767px dulu terlewat — layoutnya sudah satu kolom sementara
+       pagination masih melayang absolute, sehingga ia menimpa kartu statistik. */
+    .wc-hero2 {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .wc-hero2__inner,
+    .wc-hero2__pagination {
+        align-self: center;
+        width: min(1180px, calc(100vw - 2rem));
+    }
+    .wc-hero2__pagination {
+        position: relative;
+        z-index: 3;
+        bottom: auto;
+        /* auto → menempel ke dasar hero, termasuk pada slide tanpa konten. */
+        margin-top: auto;
+        padding-bottom: 1.5rem;
+        gap: 0.5rem;
+    }
+    /* Bullet dibagi rata selebar layar mengikuti jumlah slide — `min-width` tetap
+       memaksa gulir samping dan memotong slide terakhir. */
+    .wc-hero2__pagination {
+        overflow-x: visible;
+    }
+    .wc-hero2__bullet {
+        flex: 1 1 0;
+        min-width: 0;
+        padding: 0.35rem 0 0.5rem;
+    }
+    /* Label hanya untuk slide aktif: empat judul berdampingan di 360px sama-sama
+       terpotong jadi dua kata dan tak satu pun terbaca. */
+    .wc-hero2__bullet-title {
+        display: none;
+        font-size: 11.5px;
+    }
+    .wc-hero2__bullet.is-active .wc-hero2__bullet-title {
+        display: block;
+    }
+    .wc-hero2__bullet-top {
+        min-height: 1.1rem;
+    }
 }
 @media (max-width: 640px) {
     .wc-hero2__inner {
-        padding-top: 6.5rem;
+        /* Bawah cukup 1,25rem — pagination di bawahnya sudah membawa jaraknya sendiri. */
+        padding: 6.5rem 0 1.25rem;
+        gap: 1.5rem;
+    }
+    .wc-hero2__title {
+        font-size: clamp(1.75rem, 8.5vw, 2.4rem);
+    }
+    .wc-hero2__sub {
+        font-size: 14.5px;
+        line-height: 1.6;
+    }
+    .wc-hero2__search-form {
+        padding: 5px 5px 5px 14px;
+    }
+    .wc-hero2__search-btn {
+        padding: 10px 14px;
+        min-height: 2.5rem;
+    }
+    /* 16px — di bawah itu Safari iOS men-zoom halaman saat field difokuskan. */
+    .wc-hero2__search-input {
+        font-size: 16px;
     }
     .wc-hero2__actions .wc-hero2__btn {
-        flex: 1;
+        flex: 1 1 45%;
+        justify-content: center;
+        padding: 13px 16px;
+        font-size: 13.5px;
+        text-align: center;
+    }
+    .wc-hero2__card {
+        padding: 1.25rem 1.25rem;
+    }
+    .wc-hero2__stat {
+        padding: 0 10px;
+    }
+}
+
+/* ═══════════ ROTASI MENDARAT — HERO DIRANCANG ULANG ═══════════
+   Layar ~400px tinggi tidak muat menampung susunan potret/desktop apa pun:
+   eyebrow + judul + paragraf + pencarian + 2 tombol + 4 chip + kartu statistik
+   berbingkai. Merapatkan jaraknya hanya menunda masalah. Di sini hero disusun
+   ulang jadi satu blok terpusat berisi yang benar-benar dipakai orang —
+   judul, kolom pencarian, dua tombol — dengan statistik sebagai strip tipis
+   tanpa bingkai. Yang dibuang: eyebrow, paragraf pengantar, chip benefit, dan
+   bingkai kaca kartu; semuanya masih ada di orientasi tegak. */
+@media (orientation: landscape) and (max-height: 560px) {
+    .wc-hero2 {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .wc-hero2__inner {
+        grid-template-columns: 1fr;
+        justify-items: center;
+        max-width: 40rem;
+        gap: 0.85rem;
+        /* 5.5rem: tepat di bawah navbar ramping (lihat blok landscape di evo-theme.css). */
+        padding: 5.5rem 0 0.75rem;
+    }
+    .wc-hero2__content {
+        max-width: 100%;
+        text-align: center;
+    }
+    .wc-hero2__eyebrow,
+    .wc-hero2__sub,
+    .wc-hero2__chips,
+    .wc-hero2__ribbon,
+    .wc-hero2__card-shine {
+        display: none;
+    }
+    .wc-hero2__title {
+        margin: 0;
+        font-size: clamp(1.4rem, 3.2vw, 1.9rem);
+        line-height: 1.15;
+    }
+    .wc-hero2__search {
+        margin: 0.85rem auto 0;
+        max-width: 30rem;
+        width: 100%;
+    }
+    .wc-hero2__actions {
+        margin-top: 0.7rem;
         justify-content: center;
     }
+    .wc-hero2__actions .wc-hero2__btn {
+        flex: 0 1 auto;
+        padding: 11px 18px;
+        font-size: 13px;
+    }
+    /* Kartu kaca → strip statistik telanjang: bingkai, blur, dan bayangannya
+       menuntut tinggi yang tidak ada, sementara angkanya tetap terbaca. */
+    .wc-hero2__card {
+        width: auto;
+        max-width: none;
+        padding: 0;
+        border: none;
+        background: none;
+        box-shadow: none;
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+        justify-self: center;
+    }
+    .wc-hero2__stat {
+        align-items: center;
+        text-align: center;
+        padding: 0 0.75rem;
+    }
+    /* Kartu kehilangan padding-nya di sini (tampil polos di atas foto), jadi
+       kolom tepi ikut dipadatkan supaya tidak menempel ke tepi layar. */
+    .wc-hero2__stat:first-child,
+    .wc-hero2__stat:last-child {
+        padding: 0 0.75rem;
+    }
     .wc-hero2__stat strong {
-        font-size: 1.4rem;
+        font-size: 1.2rem;
+    }
+    .wc-hero2__stat small {
+        font-size: 10px;
+    }
+    /* Pagination menempel ke dasar hero, tidak melayang menimpa konten. */
+    .wc-hero2__pagination {
+        position: relative;
+        z-index: 3;
+        bottom: auto;
+        margin-top: auto;
+        padding-bottom: 0.9rem;
+    }
+    .wc-hero2__bullet {
+        flex: 1 1 0;
+        min-width: 0;
+        padding: 0.25rem 0 0.4rem;
     }
     .wc-hero2__pagination {
-        display: none;
+        overflow-x: visible;
     }
 }
 </style>
