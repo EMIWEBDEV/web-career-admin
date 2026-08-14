@@ -223,7 +223,7 @@
                                     </span>
                                     <span class="pjd-pkg__kode">{{ p.Kode_Paket }}</span>
                                     <span class="pjd-pkg__chips">
-                                        <span v-for="d in p.detail" :key="d.id_paket_detail" class="pjd-chip">{{ d.nama_indikator }}</span>
+                                        <span v-for="d in p.detail" :key="d.id_paket_detail" class="pjd-ptag">{{ d.nama_indikator }}</span>
                                     </span>
                                     <span class="pjd-pkg__foot">
                                         <span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="3" width="16" height="18" rx="2" /><path d="M8 8h8M8 12h8M8 16h4" /></svg>{{ p.Jumlah_Soal }} soal</span>
@@ -1212,6 +1212,17 @@
             </div>
         </AdminModal>
 
+        <!-- PANEL ANTREAN — pojok kanan-bawah, bentuk panel unggahan Drive.
+             Menekan Generate untuk 500 kandidat menyerahkan pekerjaannya ke
+             Cloud Tasks lalu mengembalikan admin ke daftar yang tampak tidak
+             berubah; panel inilah yang menunjukkan bahwa ia sedang berjalan,
+             sampai di mana, dan siapa yang gagal.
+
+             `ids` berisi gelombang yang BARU dibuat di tab ini supaya panelnya
+             muncul seketika — tanpa itu ia baru menyusul pada denyut berikutnya
+             dan tombol Generate terasa tidak melakukan apa-apa. -->
+        <PanelAntrean :ids="antreanIds" @selesai="onAntreanSelesai" />
+
         <!-- Toast — bentuk pemberitahuan yang sama dengan halaman admin lain,
              menggantikan spanduk alert yang dulu mendorong isi halaman turun. -->
         <transition name="pjd-toast">
@@ -1226,10 +1237,11 @@
 <script>
 import axios from 'axios';
 import AdminModal from '@career/AdminModal.vue';
+import PanelAntrean from '@career/PanelAntrean.vue';
 
 export default {
     name: 'Penjadwalan',
-    components: { AdminModal },
+    components: { AdminModal, PanelAntrean },
     data() {
         return {
             memuat: false,
@@ -1323,6 +1335,16 @@ export default {
             jamMulaiBawaan: new Date(2000, 0, 1, 8, 0, 0),
             jamAkhirBawaan: new Date(2000, 0, 1, 23, 59, 0),
             form: { programId: null, tahapUrutan: null, tahapKode: null, tesUrutan: null, tesId: null, idMasterUjian: null, namaUjian: '', waktuMulai: '', waktuAkhir: '', peserta: [] },
+
+            /**
+             * Gelombang yang dipantau paksa oleh panel antrean.
+             *
+             * Diisi tepat setelah Generate atau Coba Lagi. Sesudah itu panel
+             * menemukannya sendiri lewat status DIANTRIKAN — daftar ini hanya
+             * menjembatani beberapa detik pertama, saat barisnya sudah ada tapi
+             * jobnya belum menyentuh apa pun.
+             */
+            antreanIds: [],
 
             // ── WIZARD BUAT SESI ────────────────────────────────────────────
             // Susunan sesi pindah ke modal berlangkah; halaman ini kembali jadi
@@ -1585,6 +1607,9 @@ export default {
                     headers: { Accept: 'application/json' },
                 });
                 this.beritahu(res.data?.message || 'Penjadwalan diantrekan ulang.');
+                // Ikut dipantau panel antrean — percobaan ulang untuk ratusan
+                // orang sama lamanya dengan penerbitan pertama.
+                this.antreanIds = [...new Set([...this.antreanIds, s.id])];
                 await this.muat();
                 // Akordion yang terbuka ikut disegarkan: statusnya baru saja
                 // berubah, dan yang sedang dilihat admin justru bagian ini.
@@ -1781,6 +1806,11 @@ export default {
             try {
                 const res = await axios.post('/api/v1/penjadwalan', this.form, { headers: { Accept: 'application/json' } });
                 this.beritahu(res.data.message || 'Penjadwalan dibuat');
+                // Panel antrean langsung menampilkannya. Tanpa baris ini ia
+                // baru menyusul beberapa detik kemudian, dan justru detik-detik
+                // pertama itulah yang paling menuntut kepastian.
+                const idBaru = res.data?.result?.id;
+                if (idBaru) this.antreanIds = [...new Set([...this.antreanIds, idBaru])];
                 this.form.peserta = [];
                 // Sesi sudah terbit — wizard ditutup dan dikembalikan ke langkah
                 // pertama. Membiarkannya terbuka di layar Tinjau yang isinya
@@ -1936,6 +1966,26 @@ export default {
             if (this.pesFilter.sesi === s.kode) return;
             this.pesFilter.sesi = s.kode;
             this.filterPeserta(j);
+        },
+        /**
+         * Satu gelombang tuntas di panel antrean → daftar ikut menyusul.
+         *
+         * Statusnya baru saja berubah di server (DIANTRIKAN → BERJALAN/GAGAL)
+         * dan hitungan "menunggu token" di kartu programnya ikut bergeser.
+         * Tanpa ini, satu-satunya cara melihat hasilnya adalah menyegarkan
+         * halaman — persis pekerjaan yang panel ini hendak hapus.
+         */
+        async onAntreanSelesai(s) {
+            this.beritahu(
+                s.gagal > 0
+                    ? `${s.kode}: ${s.selesai} token terbit, ${s.gagal} gagal.`
+                    : `${s.kode}: ${s.selesai} token selesai diterbitkan.`,
+                s.gagal > 0 && s.selesai === 0 ? 'error' : 'success',
+            );
+            const dibuka = this.terbuka;
+            await this.muat();
+            const program = this.daftar.find((p) => p.id === dibuka);
+            if (program) await this.muatPeserta(program);
         },
         /** Simpan cara membaca daftar sesi ('panel' | 'petak'). */
         setTampilan(v) {
@@ -2332,7 +2382,7 @@ export default {
 .pjd-pkg__check { width: 22px; height: 22px; border-radius: 7px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #8b5cf6, #6366f1); }
 .pjd-pkg__kode { display: block; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 10.5px; font-weight: 600; color: #a2a9ba; margin-top: 6px; }
 .pjd-pkg__chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
-.pjd-chip { font-size: 10px; font-weight: 700; color: #4f46e5; background: rgba(99, 102, 241, .1); border-radius: 6px; padding: 3px 8px; }
+.pjd-ptag { font-size: 10px; font-weight: 700; color: #4f46e5; background: rgba(99, 102, 241, .1); border-radius: 6px; padding: 3px 8px; }
 .pjd-pkg__foot { display: flex; align-items: center; gap: 12px; margin-top: 11px; padding-top: 10px; border-top: 1px solid #f1f2f9; font-size: 11px; color: #8792a6; }
 .pjd-pkg__foot > span { display: inline-flex; align-items: center; gap: 5px; }
 

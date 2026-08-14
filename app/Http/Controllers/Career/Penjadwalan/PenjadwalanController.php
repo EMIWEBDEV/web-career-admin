@@ -1430,7 +1430,14 @@ class PenjadwalanController extends Controller
             Log::channel('web_career')->info("Penjadwalan {$kode} dibuat oleh {$userName} — {$jml} peserta diantrekan ke {$antrean}.");
 
             return ResponseHelper::success(
-                ['kode' => $kode, 'jumlahPeserta' => $jml, 'status' => 'DIANTRIKAN'],
+                [
+                    // Id-nya ikut dikembalikan supaya panel antrean bisa
+                    // menyertakan gelombang ini SEKETIKA — tanpa itu ia baru
+                    // tersapu pada denyut berikutnya, dan beberapa detik pertama
+                    // setelah Generate terasa seperti tak terjadi apa-apa.
+                    'id' => Hashids::encode($ids['penjadwalan']),
+                    'kode' => $kode, 'jumlahPeserta' => $jml, 'status' => 'DIANTRIKAN',
+                ],
                 "Penjadwalan {$kode} dibuat — token untuk {$jml} kandidat sedang diterbitkan di latar belakang. Segarkan daftar sebentar lagi untuk melihat hasilnya.",
                 201
             );
@@ -1769,6 +1776,216 @@ class PenjadwalanController extends Controller
             ['jumlah' => $menunggu],
             "Penjadwalan diantrekan ulang untuk {$menunggu} kandidat. Segarkan daftar sebentar lagi.",
         );
+    }
+
+    /**
+     * POST /api/v1/penjadwalan/peserta/{id}/ulang — COBA LAGI SATU ORANG.
+     *
+     * Berbeda dari ulang() yang menyasar seluruh gelombang. Kegagalan
+     * penerbitan token hampir selalu perorangan — email bentrok di CAT, nama
+     * yang menabrak batas kolom, satu pengenal yang kebetulan sudah terpakai —
+     * dan memaksa admin mengirim ulang 500 orang demi satu yang gagal berarti
+     * menunggu bermenit-menit untuk pekerjaan yang sudah selesai.
+     *
+     * Aman diulang berapa kali pun: job menyaring `whereNull('Short_Token')`,
+     * jadi orang yang tokennya sudah terbit tidak pernah dikirim dua kali.
+     */
+    public function ulangPeserta(string $id)
+    {
+        try {
+            $realId = Hashids::decode($id)[0] ?? null;
+            $peserta = $realId
+                ? DB::table('N_WEB_CAREERS_Penjadwalan_Peserta')->where('Id_Penjadwalan_Peserta', $realId)->first()
+                : null;
+
+            if (! $peserta) {
+                return ResponseHelper::error('Peserta tidak ditemukan.', 404);
+            }
+
+            // Sudah punya token = tidak ada yang perlu diulang. Mengirimkannya
+            // lagi hanya bisa berakhir buruk: token kedua untuk orang yang
+            // sama, sementara yang dipegang kandidat adalah yang pertama.
+            if ($peserta->Short_Token) {
+                return ResponseHelper::error('Peserta ini sudah punya token — tidak ada yang perlu diulang.', 409);
+            }
+
+            $tahap = DB::table('N_WEB_CAREERS_Penjadwalan_Tahap as pt')
+                ->join('N_WEB_CAREERS_Penjadwalan as p', 'p.Id_Penjadwalan', '=', 'pt.Penjadwalan_Id')
+                ->where('pt.Id_Penjadwalan_Tahap', $peserta->Penjadwalan_Tahap_Id)
+                ->select('pt.*', 'p.Kode')
+                ->first();
+
+            if (! $tahap || ! $tahap->Waktu_Mulai || ! $tahap->Waktu_Akhir) {
+                return ResponseHelper::error('Jendela ujian penjadwalan ini tidak lengkap — perbaiki jadwalnya dulu.', 422);
+            }
+
+            $refUjian = $tahap->Ref_Master_Ujian ?: $tahap->Id_Master_Ujian;
+            if (! $refUjian) {
+                return ResponseHelper::error('Penjadwalan ini tidak menyimpan paket ujiannya — hapus lalu buat ulang.', 422);
+            }
+
+            // Pesan galat lama dihapus lebih dulu. Membiarkannya membuat panel
+            // antrean tetap menandai orang ini merah sepanjang percobaan yang
+            // sedang berjalan — dan admin menekan tombolnya berkali-kali.
+            DB::table('N_WEB_CAREERS_Penjadwalan_Peserta')
+                ->where('Id_Penjadwalan_Peserta', $realId)
+                ->update(['Status_Kirim' => 'MENUNGGU', 'Pesan_Error' => null, 'Updated_At' => now()]);
+
+            // Gelombangnya kembali berstatus DIANTRIKAN supaya panel antrean
+            // memunculkannya lagi — tanpa ini, sesi yang sudah "selesai dengan
+            // 3 gagal" tidak akan terpantau saat ketiganya dicoba ulang.
+            DB::table('N_WEB_CAREERS_Penjadwalan')
+                ->where('Id_Penjadwalan', $tahap->Penjadwalan_Id)
+                ->update(['Status' => 'DIANTRIKAN', 'Updated_At' => now()]);
+
+            WcPenjadwalanJob::dispatch(
+                (int) $tahap->Penjadwalan_Id,
+                (int) $tahap->Id_Penjadwalan_Tahap,
+                (string) $refUjian,
+                (string) $tahap->Waktu_Mulai,
+                (string) $tahap->Waktu_Akhir,
+                (int) session('career_auth.id'),
+                0,
+                (int) $realId,
+            );
+
+            Log::channel('web_career')->info(
+                "[PENJADWALAN] {$tahap->Kode} — peserta {$peserta->Kode_Peserta} dicoba ulang oleh ".session('career_auth.nama', 'ADMIN').'.'
+            );
+
+            return ResponseHelper::success(
+                ['nama' => $peserta->Nama],
+                "{$peserta->Nama} diantrekan ulang.",
+            );
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->error("Gagal mengulang peserta #{$id}: ".$e->getMessage());
+
+            return ResponseHelper::error('Gagal mengantrekan ulang peserta.', 500);
+        }
+    }
+
+    /**
+     * GET /api/v1/penjadwalan/progres — DENYUT ANTREAN PENERBITAN TOKEN.
+     *
+     * Sumber angka panel antrean di pojok layar. Yang dikembalikan HITUNGAN
+     * saja, bukan daftar orangnya: satu gelombang bisa 500 peserta, dan
+     * menariknya tiap dua detik berarti memindahkan berkas ratusan kilobyte
+     * demi menggerakkan satu bilah kemajuan. Daftar orang baru diambil saat
+     * admin membuka gelombangnya (lihat peserta()).
+     *
+     * TIDAK ADA KOLOM BARU. Kemajuannya diturunkan dari data yang memang sudah
+     * ada di baris peserta:
+     *   selesai  = Short_Token terisi
+     *   gagal    = token kosong TAPI ada Pesan_Error
+     *   menunggu = token kosong, belum ada galat — inilah yang sedang dikerjakan
+     *
+     * Cara ini juga tahan terhadap job yang mati mendadak: angkanya dibaca dari
+     * keadaan sebenarnya di tabel, bukan dari penghitung yang dititipkan job
+     * dan ikut hilang bersamanya.
+     */
+    public function progres(Request $request)
+    {
+        try {
+            // Gelombang yang baru dibuat di tab ini ikut ditanyakan lewat `ids`,
+            // supaya ia langsung muncul di panel bahkan sebelum job pertamanya
+            // menyentuh basis data.
+            $ids = collect(explode(',', (string) $request->query('ids', '')))
+                ->map(fn ($h) => Hashids::decode(trim($h))[0] ?? null)
+                ->filter()
+                ->map(fn ($x) => (int) $x)
+                ->unique()
+                ->values();
+
+            // Batas waktu: gelombang yang tuntas berjam-jam lalu bukan lagi
+            // "sedang berjalan", dan panel yang memunculkannya kembali tiap
+            // kali halaman dibuka berubah jadi papan pengumuman permanen.
+            $sejak = now()->subHours(6);
+
+            $rows = DB::table('N_WEB_CAREERS_Penjadwalan as p')
+                ->leftJoin('N_WEB_CAREERS_Program as prog', 'prog.Id_Program', '=', 'p.Program_Id')
+                ->tap(fn ($qb) => AksesService::saringKategori($qb, self::PAGE, 'prog.Kategori'))
+                ->where(function ($w) use ($ids, $sejak) {
+                    $w->where(function ($x) use ($sejak) {
+                        $x->whereIn('p.Status', ['DIANTRIKAN', 'GAGAL'])
+                            ->where('p.Updated_At', '>=', $sejak);
+                    });
+                    if ($ids->isNotEmpty()) {
+                        $w->orWhereIn('p.Id_Penjadwalan', $ids->all());
+                    }
+                })
+                ->orderByDesc('p.Id_Penjadwalan')
+                // Panel memang tidak dirancang memuat puluhan gelombang
+                // sekaligus; yang di luar batas ini tetap terbaca di daftar.
+                ->limit(12)
+                ->get(['p.Id_Penjadwalan', 'p.Kode', 'p.Status', 'p.Catatan', 'p.Created_At', 'p.Updated_At', 'prog.Nama as ProgramNama']);
+
+            if ($rows->isEmpty()) {
+                return ResponseHelper::success(['data' => []], 'Tidak ada antrean berjalan');
+            }
+
+            $idList = $rows->pluck('Id_Penjadwalan')->all();
+
+            // SATU kueri untuk seluruh gelombang di panel — bukan satu per
+            // baris. Panel ini berdenyut tiap beberapa detik; kueri per baris
+            // akan mengalikan ongkosnya dengan jumlah gelombang yang terbuka.
+            $hitung = DB::table('N_WEB_CAREERS_Penjadwalan_Peserta')
+                ->whereIn('Penjadwalan_Id', $idList)
+                ->groupBy('Penjadwalan_Id')
+                ->select(
+                    'Penjadwalan_Id',
+                    DB::raw('COUNT(*) as Total'),
+                    DB::raw('SUM(CASE WHEN Short_Token IS NOT NULL THEN 1 ELSE 0 END) as Selesai'),
+                    DB::raw('SUM(CASE WHEN Short_Token IS NULL AND Pesan_Error IS NOT NULL THEN 1 ELSE 0 END) as Gagal')
+                )
+                ->get()
+                ->keyBy('Penjadwalan_Id');
+
+            $aktivitas = DB::table('N_WEB_CAREERS_Penjadwalan_Tahap')
+                ->whereIn('Penjadwalan_Id', $idList)
+                ->whereNotNull('Nama_Ujian')
+                ->get()
+                ->keyBy('Penjadwalan_Id');
+
+            $data = $rows->map(function ($r) use ($hitung, $aktivitas) {
+                $h = $hitung->get($r->Id_Penjadwalan);
+                $total = (int) ($h->Total ?? 0);
+                $selesai = (int) ($h->Selesai ?? 0);
+                $gagal = (int) ($h->Gagal ?? 0);
+                $t = $aktivitas->get($r->Id_Penjadwalan);
+
+                return [
+                    'id' => Hashids::encode($r->Id_Penjadwalan),
+                    'kode' => $r->Kode,
+                    'program' => $r->ProgramNama,
+                    'aktivitas' => $t->Label ?? null,
+                    'paketUjian' => $t->Nama_Ujian ?? null,
+                    'status' => $r->Status,
+                    'catatan' => $r->Catatan,
+                    'total' => $total,
+                    'selesai' => $selesai,
+                    'gagal' => $gagal,
+                    'menunggu' => max(0, $total - $selesai - $gagal),
+                    // Persennya dihitung DI SERVER supaya satu-satunya rumus
+                    // ada di satu tempat. Gelombang tanpa peserta bernilai 0,
+                    // bukan NaN — dan tidak pernah 100 sebelum benar-benar ada
+                    // yang berhasil.
+                    'persen' => $total > 0 ? (int) floor($selesai * 100 / $total) : 0,
+                    // "Masih ada yang dikerjakan" — inilah yang menentukan panel
+                    // terus berdenyut atau berhenti. Bukan status gelombang:
+                    // status bisa telanjur SELESAI sementara job lanjutannya
+                    // baru saja diantrekan.
+                    'berjalan' => $r->Status === 'DIANTRIKAN' && ($total - $selesai - $gagal) > 0,
+                    'dibuatPada' => $r->Created_At,
+                    'diperbaruiPada' => $r->Updated_At,
+                ];
+            })->values();
+
+            return ResponseHelper::success(['data' => $data], 'Progres antrean dimuat');
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->error('Gagal memuat progres antrean: '.$e->getMessage());
+
+            return ResponseHelper::error('Gagal memuat progres antrean', 500);
+        }
     }
 
     /**

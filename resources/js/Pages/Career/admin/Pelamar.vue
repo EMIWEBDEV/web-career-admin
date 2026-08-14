@@ -682,7 +682,7 @@
                                  tidak terlihat di layar untuk diperiksa. -->
                             <span class="plw-lcek plw-lcek--head">
                                 <button
-                                    type="button" class="plw-cek"
+                                    type="button" class="plw-tick"
                                     :class="{ 'is-on': halamanTercentangPenuh, 'is-half': halamanTercentangSebagian }"
                                     :title="halamanTercentangPenuh ? 'Batalkan pilihan di halaman ini' : 'Pilih semua di halaman ini'"
                                     :aria-pressed="halamanTercentangPenuh"
@@ -714,7 +714,7 @@
                                  modal. -->
                             <span class="plw-lcek" @click.stop>
                                 <button
-                                    type="button" class="plw-cek" :class="{ 'is-on': terpilih.includes(r.id) }"
+                                    type="button" class="plw-tick" :class="{ 'is-on': terpilih.includes(r.id) }"
                                     :title="terpilih.includes(r.id) ? `Batal memilih ${r.pelamar}` : `Pilih ${r.pelamar}`"
                                     :aria-pressed="terpilih.includes(r.id)"
                                     @click="toggleBarisList(r)"
@@ -931,7 +931,7 @@
                             <div style="grid-column: 1 / -1">
                                 <div class="plw-klabel">PROGRESS ALUR</div>
                                 <div class="plw-segs">
-                                    <div v-for="n in detailKandidat.totalTahap" :key="n" class="plw-seg" :class="segKelas(n)"></div>
+                                    <div v-for="n in detailKandidat.totalTahap" :key="n" class="plw-segbar" :class="segKelas(n)"></div>
                                 </div>
                             </div>
                         </div>
@@ -1196,7 +1196,7 @@
                                     title="Buka aktivitas berikutnya untuk kandidat ini"
                                     @click="lanjutkanAktivitas(t)"
                                 >
-                                    <i class="bi" :class="lanjutId === t.id ? 'bi-arrow-repeat plw-spin' : 'bi-arrow-right-circle-fill'"></i>
+                                    <i class="bi" :class="lanjutId === t.id ? 'bi-arrow-repeat plw-putar' : 'bi-arrow-right-circle-fill'"></i>
                                     {{ lanjutId === t.id ? 'Membuka…' : 'Lanjutkan' }}
                                 </button>
 
@@ -1241,7 +1241,7 @@
                                         title="Kandidat dinyatakan LULUS pada aktivitas ini"
                                         @click="putusTes(t, 'LULUS')"
                                     >
-                                        <i class="bi" :class="keputusanId === t.id && keputusanHasil === 'LULUS' ? 'bi-arrow-repeat plw-spin' : 'bi-check-circle-fill'"></i>
+                                        <i class="bi" :class="keputusanId === t.id && keputusanHasil === 'LULUS' ? 'bi-arrow-repeat plw-putar' : 'bi-check-circle-fill'"></i>
                                         Lulus
                                     </button>
                                     <button
@@ -1249,7 +1249,7 @@
                                         title="Kandidat dinyatakan TIDAK LULUS pada aktivitas ini"
                                         @click="putusTes(t, 'GAGAL')"
                                     >
-                                        <i class="bi" :class="keputusanId === t.id && keputusanHasil === 'GAGAL' ? 'bi-arrow-repeat plw-spin' : 'bi-x-circle-fill'"></i>
+                                        <i class="bi" :class="keputusanId === t.id && keputusanHasil === 'GAGAL' ? 'bi-arrow-repeat plw-putar' : 'bi-x-circle-fill'"></i>
                                         Tidak Lulus
                                     </button>
                                 </template>
@@ -1270,7 +1270,7 @@
                                     title="Tarik hasil ujian ini langsung dari HCLearn. Dipakai bila hasilnya belum masuk sendiri."
                                     @click="sinkronHasil(t)"
                                 >
-                                    <i class="bi" :class="sinkronId === t.id ? 'bi-arrow-repeat plw-spin' : 'bi-cloud-download'"></i>
+                                    <i class="bi" :class="sinkronId === t.id ? 'bi-arrow-repeat plw-putar' : 'bi-cloud-download'"></i>
                                     {{ sinkronId === t.id ? 'Menarik…' : 'Sinkronkan' }}
                                 </button>
                                 <button
@@ -7508,15 +7508,36 @@ export default {
 .plw-list__head,
 .plw-lrow { display: grid; grid-template-columns: 26px 1.8fr 1.3fr 1.2fr 1.4fr 0.95fr 1fr 0.95fr 92px; gap: 12px; align-items: center; }
 .plw-lcek { display: flex; align-items: center; justify-content: center; min-width: 0; }
-.plw-cek {
-    appearance: none; cursor: pointer; flex: none; width: 19px; height: 19px;
-    border-radius: 6px; border: 1.6px solid #cbd5e1; background: #fff;
-    display: grid; place-items: center; color: #fff; font-size: 11px;
-    transition: all .15s;
+/* NAMANYA `plw-tick`, BUKAN `plw-cek`. Kelas `plw-cek` sudah dipakai kartu
+   pilihan formulir di modal cetak laporan — berkas yang sama, komponen yang
+   lain. Definisi yang belakangan menang, jadi kotak centang ini memungut
+   `padding: 9px 11px` + `border-radius: 10px` + `align-items: flex-start`
+   miliknya: 19px berubah jadi gumpalan 37px yang membulat, dan centangnya
+   terlempar ke pojok kiri-atas sampai tak terlihat. */
+.plw-tick {
+    appearance: none; cursor: pointer; flex: none; padding: 0;
+    /* 18px = kelipatan genap, jadi tepinya jatuh tepat di batas piksel pada
+       layar 1x. 19px membuat garis 1,6px-nya digambar setengah piksel dan
+       terbaca kabur/cembung. */
+    width: 18px; height: 18px;
+    border-radius: 5px; border: 1.6px solid #cbd5e1; background: #fff;
+    display: grid; place-items: center; color: #fff;
+    transition: background .15s, border-color .15s, box-shadow .15s;
 }
-.plw-cek:hover { border-color: #a5b4fc; }
-.plw-cek.is-on { border-color: transparent; background: linear-gradient(135deg, #8b5cf6, #6366f1); box-shadow: 0 3px 8px rgba(99, 102, 241, .3); }
-.plw-cek.is-half { border-color: #a5b4fc; background: #eef2ff; color: #4f46e5; }
+/* Ikon dipaksa jadi kotak setinggi glifnya sendiri. Bootstrap Icons menurunkan
+   glif 0,125em lewat vertical-align agar sejajar teks di kalimat — di dalam
+   kotak yang isinya HANYA ikon, geseran itu justru menjatuhkannya sekitar
+   1,5px di bawah titik tengah. Terlihat jelas pada kotak 18px. */
+.plw-tick > .bi { display: block; font-size: 11px; line-height: 1; }
+.plw-tick > .bi::before { display: block; vertical-align: 0; line-height: 1; }
+.plw-tick:hover { border-color: #a5b4fc; }
+.plw-tick.is-on { border-color: transparent; background: linear-gradient(135deg, #8b5cf6, #6366f1); box-shadow: 0 2px 6px rgba(99, 102, 241, .35); }
+.plw-tick.is-half { border-color: #a5b4fc; background: #eef2ff; color: #4f46e5; }
+/* Garis "sebagian" digambar sendiri, bukan lewat glif bi-dash-lg: dash di font
+   ini lebarnya mengikuti metrik huruf dan terbaca sebagai tanda minus yang
+   melayang, bukan sebagai keadaan tengah sebuah kotak centang. */
+.plw-tick.is-half > .bi { width: 9px; height: 2px; border-radius: 1px; background: #4f46e5; }
+.plw-tick.is-half > .bi::before { content: none; }
 .plw-lrow.is-terpilih { background: #f5f3ff; }
 .plw-lrow.is-terpilih:hover { background: #ede9fe; }
 
@@ -7674,11 +7695,6 @@ export default {
 .plw-selbar__lepas:hover { background: #d1fae5; border-color: #6ee7b7; }
 .plw-selbar__hold:disabled { opacity: .45; cursor: not-allowed; }
 
-/* Dua pilihan cara mengisi — berdampingan, bukan bertumpuk: keduanya setara
-   dan perbandingannya harus terbaca sekali lihat. */
-.plw-opts--row { flex-direction: row; flex-wrap: wrap; }
-.plw-opts--row > .plw-opt-card { flex: 1 1 200px; }
-
 /* Jalan pintas "salin ke semua". */
 .plw-hmbar {
     display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
@@ -7725,7 +7741,11 @@ export default {
     .plw-hmrow__isi { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 640px) {
-    .plw-opts--row { flex-direction: column; }
+    /* `.plw-opts--row { flex-direction: column }` yang dulu di sini DIHAPUS.
+       Media query tidak menambah kekhususan, dan aturan `--row` yang sebenarnya
+       berada jauh di bawah berkas ini — jadi ia tetap menang dan baris ini tak
+       pernah berlaku. Penumpukan di layar sempit kini datang dari
+       `min-width: 190px` + `flex-wrap`, yang bekerja tanpa bergantung urutan. */
     .plw-hmlist { max-height: 52vh; }
 }
 
@@ -7821,8 +7841,9 @@ export default {
 .plw-alur__item.is-kini .plw-alur__tag { background: rgba(245, 158, 11, 0.14); color: #b45309; }
 .plw-alur__item.is-tutup .plw-alur__tag { background: rgba(239, 68, 68, 0.12); color: #dc2626; }
 
-.plw-drawer__akun { display: inline-flex; align-items: center; gap: 5px; margin-top: 3px; font-size: 11px; font-weight: 600; color: #64748b; background: rgba(255, 255, 255, 0.72); border-radius: 7px; padding: 2px 8px; }
 .plw-drawer__meta { font-size: 12.5px; color: #6b6597; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Dulu ditulis dua kali berturut-turut, beda hanya pada `background` — yang
+   pertama tidak pernah terpakai sedetik pun. */
 .plw-drawer__akun { display: inline-flex; align-items: center; gap: 5px; margin-top: 3px; font-size: 11px; font-weight: 600; color: #64748b; background: #f1f5f9; border-radius: 7px; padding: 2px 8px; }
 .plw-drawer__chips { display: flex; flex-wrap: wrap; gap: 5px 10px; margin-top: 7px; font-size: 11px; color: #94a3b8; }
 .plw-drawer__chips span, .plw-drawer__chips a { display: inline-flex; align-items: center; gap: 4px; }
@@ -7910,11 +7931,16 @@ export default {
 .plw-status.st-gugur { color: #dc2626; }
 .plw-status.st-gugur .plw-status__dot { background: #ef4444; }
 @keyframes plwPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.5); } 70% { box-shadow: 0 0 0 7px rgba(245, 158, 11, 0); } }
+/* `plw-segbar`, bukan `plw-seg`: nama kedua itu dipakai KELOMPOK TOMBOL
+   Lulus/Gagal di modal penilaian — komponen lain, berkas yang sama. Selama
+   keduanya bernama sama, wadah tombol itu ikut memungut `height: 6px` milik
+   bilah kemajuan ini, dan tombol-tombolnya meluber keluar wadah setinggi enam
+   piksel. */
 .plw-segs { display: flex; gap: 5px; margin-top: 9px; }
-.plw-seg { flex: 1; height: 6px; border-radius: 99px; background: #eef0f7; }
-.plw-seg.is-done { background: linear-gradient(90deg, #8b5cf6, #6366f1); }
-.plw-seg.is-cur { background: linear-gradient(90deg, #fbbf24, #f59e0b); }
-.plw-seg.is-fail { background: linear-gradient(90deg, #f87171, #ef4444); }
+.plw-segbar { flex: 1; height: 6px; border-radius: 99px; background: #eef0f7; }
+.plw-segbar.is-done { background: linear-gradient(90deg, #8b5cf6, #6366f1); }
+.plw-segbar.is-cur { background: linear-gradient(90deg, #fbbf24, #f59e0b); }
+.plw-segbar.is-fail { background: linear-gradient(90deg, #f87171, #ef4444); }
 .plw-sysnote { display: flex; gap: 12px; margin-top: 16px; padding: 13px 15px; border-radius: 14px; background: linear-gradient(135deg, #fffbeb, #fff8ec); border: 1px solid #f5e0a3; font-size: 12.5px; line-height: 1.6; color: #8a6d29; }
 .plw-sysnote b { color: #92660a; }
 .plw-sysnote.is-ready { background: linear-gradient(135deg, #ecfdf5, #f0fdf9); border-color: #a7f3d0; color: #065f46; }
@@ -7960,7 +7986,12 @@ export default {
 .plw-test__sync { flex: none; display: inline-flex; align-items: center; gap: 5px; border: 1px solid #a5b4fc; background: #fff; color: #4338ca; font-size: 11px; font-weight: 700; border-radius: 9px; padding: 5px 9px; cursor: pointer; transition: background .15s; }
 .plw-test__sync:hover:not(:disabled) { background: #eef0fe; }
 .plw-test__sync:disabled { opacity: .6; cursor: default; }
-.plw-spin { display: inline-block; animation: plwSpin 1s linear infinite; }
+/* Ikon yang BERPUTAR di tempat — bukan cincin pemuat.
+   Dulu keduanya sama-sama bernama .plw-spin di berkas yang sama, dan definisi
+   yang belakangan menang: setiap <i class="bi-arrow-repeat plw-spin"> ikut
+   memungut lebar 18px, tinggi 18px, dan border 2.5px milik cincin — panah
+   berputarnya digambar terkurung di dalam lingkaran bergaris. */
+.plw-putar { display: inline-block; animation: plwSpin 1s linear infinite; }
 @keyframes plwSpin { to { transform: rotate(360deg); } }
 .plw-test__rec { flex: none; display: inline-flex; align-items: center; gap: 5px; border: 1px solid #a5b4fc; background: #eef2ff; color: #4338ca; font-size: 11px; font-weight: 700; border-radius: 9px; padding: 5px 9px; cursor: pointer; transition: background .15s; }
 .plw-test__rec:hover { background: #e0e7ff; }
@@ -8033,6 +8064,25 @@ export default {
 
 /* Pilihan bentuk kartu — pengganti radio bawaan. */
 .plw-opts { display: flex; flex-direction: column; gap: 7px; }
+
+/* DUA PILIHAN BERDAMPINGAN — setengah lebar masing-masing. Keduanya setara,
+   dan perbandingannya harus terbaca sekali lihat.
+
+   Aturan ini dulu ditulis JAUH DI ATAS `.plw-opts`, padahal kekhususannya
+   sama persis (satu kelas). Yang belakangan menang, jadi `flex-direction: row`
+   selalu dikalahkan `column` milik aturan dasar — modifier `--row` tidak
+   pernah bekerja sehari pun. Akibatnya bukan cuma bertumpuk: pada wadah
+   ber-arah kolom, `flex-basis` mengukur TINGGI, sehingga tiap kartu berdiri
+   setinggi 200px lebih dengan isi setinggi dua baris di tengah kekosongan.
+
+   Sekarang ia duduk tepat setelah aturan dasarnya — urutan berkas yang
+   menentukan, jadi jaraknya harus dekat supaya tetap begitu. */
+.plw-opts--row { flex-direction: row; flex-wrap: wrap; align-items: stretch; }
+/* calc(50% - 4px): setengah lebar dikurangi separuh gap 7px. Dua kartu pas
+   sebaris, dan `min-width` memaksanya turun jadi satu kolom di modal sempit
+   alih-alih memeras keduanya sampai judulnya terpotong. */
+.plw-opts--row > .plw-opt-card { flex: 1 1 calc(50% - 4px); min-width: 190px; }
+
 .plw-opt-card {
     display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 12px;
     border: 1px solid #e3e6f0; border-radius: 11px; background: #fff;
@@ -8098,7 +8148,6 @@ export default {
 .plw-mform .plw-opt-card__txt small { color: #64748b; }
 
 /* Dua pilihan berdampingan (Lulus / Gagal) — pengganti radio-button bawaan. */
-.plw-seg { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .plw-seg__b { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 10px; border: 1px solid #e3e6f0; border-radius: 10px; background: #fff; font: inherit; font-size: 13px; font-weight: 800; color: #64748b; cursor: pointer; transition: border-color .16s, background .16s, color .16s; }
 .plw-seg__b:hover { border-color: #c7cbdb; }
 .plw-seg__b.is-ok.is-on { border-color: rgba(16, 185, 129, .5); background: rgba(16, 185, 129, .1); color: #047857; }
@@ -8263,17 +8312,13 @@ export default {
 .plw-badge { display: inline-flex; align-items: center; gap: 5px; margin-top: 3px; padding: 3px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 800; }
 .plw-badge.is-ada { color: #047857; background: rgba(16, 185, 129, .12); }
 .plw-badge.is-kosong { color: #94a3b8; background: #f1f5f9; }
-/* Tombol buka berkas DI DALAM baris isian. Setinggi lencana di sebelahnya
-   supaya baris berkas dan baris teks biasa tetap sejajar. */
-.plw-lihat {
-    display: inline-flex; align-items: center; gap: 6px; margin-top: 3px; padding: 4px 10px;
-    border-radius: 999px; border: 1px solid #c7d2fe; background: #eef2ff; color: #4338ca;
-    font: inherit; font-size: 11.5px; font-weight: 800; cursor: pointer;
-    transition: background .15s, border-color .15s, color .15s;
-}
-.plw-lihat:hover { background: #e0e7ff; border-color: #a5b4fc; color: #3730a3; }
-.plw-lihat .bi { font-size: 12.5px; }
-.plw-lihat__ext { font-size: 9.5px; font-weight: 800; letter-spacing: .05em; color: #6366f1; background: #fff; border-radius: 5px; padding: 1px 5px; }
+/* Blok "tombol buka berkas" yang dulu di sini SUDAH DIHAPUS.
+   Templatenya tidak lagi memakai `.plw-lihat` sebagai tombol maupun
+   `.plw-lihat__ext` — yang tersisa cuma lencana penanda pembaca di bawah
+   (HANYA TIM / DIBACA KANDIDAT), dan aturan mati ini membocorkan
+   `cursor: pointer`, efek hover, serta `.plw-lihat .bi { font-size: 12.5px }`
+   ke sana: lencana setinggi 9,5px dengan ikon 12,5px yang mengundang diklik
+   padahal tidak melakukan apa pun. */
 .plw-field__k { font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; color: #a2a9ba; text-transform: uppercase; }
 .plw-putus__unggah { margin: 12px 0 10px; border: 1px solid #eef0f7; border-radius: 12px; padding: 10px 12px; background: #fbfbfe; }
 .plw-putus__unggah-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12px; font-weight: 800; color: #334155; }

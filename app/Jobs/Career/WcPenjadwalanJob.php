@@ -112,6 +112,21 @@ class WcPenjadwalanJob implements ShouldQueue
          * tepat sekali per jalannya job.
          */
         private int $mulaiDariId = 0,
+        /**
+         * Batasi job ini pada SATU peserta saja.
+         *
+         * Dipakai tombol "Coba lagi" di panel antrean, yang menyasar satu orang
+         * yang gagal — bukan seluruh gelombang. Tanpa pembatas ini, mencoba
+         * ulang satu nama akan ikut mengirim ulang semua yang masih tertunda,
+         * dan admin yang sengaja menunda sisanya kehilangan kendali itu.
+         *
+         * Yang TIDAK berubah: penyaring `whereNull('Short_Token')` tetap
+         * berlaku, jadi ia tidak pernah bisa menerbitkan token dobel. Dan
+         * tutupBuku() tetap menghitung SELURUH peserta tahap, sehingga status
+         * gelombang tidak ikut jatuh ke GAGAL hanya karena satu percobaan
+         * ulang yang kebetulan gagal lagi.
+         */
+        private ?int $hanyaPesertaId = null,
     ) {
         $this->aturAntrean(self::QUEUE);
     }
@@ -312,6 +327,8 @@ class WcPenjadwalanJob implements ShouldQueue
             ->where('Penjadwalan_Tahap_Id', $this->penjadwalanTahapId)
             ->whereNull('Short_Token')
             ->where('Id_Penjadwalan_Peserta', '>', $setelahId)
+            // Percobaan ulang satu orang: yang lain tidak ikut terkirim.
+            ->when($this->hanyaPesertaId, fn ($q) => $q->where('Id_Penjadwalan_Peserta', $this->hanyaPesertaId))
             ->orderBy('Id_Penjadwalan_Peserta')
             ->limit($ukuran)
             ->get();
@@ -445,6 +462,10 @@ class WcPenjadwalanJob implements ShouldQueue
             $this->waktuAkhir,
             $this->dimintaOlehId,
             $kursor,
+            // Cakupannya ikut diwariskan. Tanpa ini, percobaan ulang satu orang
+            // yang kebetulan menabrak anggaran waktu akan dilanjutkan job
+            // berikutnya sebagai kiriman SELURUH peserta yang tertunda.
+            $this->hanyaPesertaId,
         );
 
         DB::table('N_WEB_CAREERS_Penjadwalan')->where('Id_Penjadwalan', $this->penjadwalanId)

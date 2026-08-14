@@ -11,6 +11,9 @@ Route::get('/karir/penjadwalan', [PenjadwalanController::class, 'index'])->name(
 
 Route::prefix('api/v1')->name('career.api.penjadwalan.')->group(function () {
     Route::get('/penjadwalan', [PenjadwalanController::class, 'list'])->name('list')->middleware('career.permission:penjadwalanPage,VIEW');
+    // DENYUT PANEL ANTREAN. Didaftarkan SEBELUM pola {id} — tanpa itu 'progres'
+    // tertangkap sebagai id penjadwalan dan dijawab 404 oleh Hashids.
+    Route::get('/penjadwalan/progres', [PenjadwalanController::class, 'progres'])->name('progres')->middleware('career.permission:penjadwalanPage,VIEW');
     // Peserta SATU PROGRAM, lintas gelombang — isi akordion di layar daftar.
     // Terpaginasi & tersaring di server (tanggal, kampus, sesi, pencarian),
     // karena satu program bisa berisi ribuan pelamar.
@@ -25,6 +28,11 @@ Route::prefix('api/v1')->name('career.api.penjadwalan.')->group(function () {
     // tokennya belum terbit. Izinnya EDIT: ini memperbaiki jadwal yang sudah
     // ada, bukan membuat yang baru.
     Route::post('/penjadwalan/{id}/ulang', [PenjadwalanController::class, 'ulang'])->name('ulang')->middleware('career.permission:penjadwalanPage,EDIT');
+    // COBA LAGI SATU ORANG — dipakai tombol di panel antrean. Kegagalan
+    // penerbitan token hampir selalu perorangan, dan mengirim ulang 500 orang
+    // demi satu yang gagal berarti menunggu lama untuk pekerjaan yang sudah
+    // selesai.
+    Route::post('/penjadwalan/peserta/{id}/ulang', [PenjadwalanController::class, 'ulangPeserta'])->name('peserta.ulang')->middleware('career.permission:penjadwalanPage,EDIT');
     // Geser jadwal SATU kandidat (yang dipakai layar Penjadwalan).
     Route::put('/penjadwalan/peserta/{id}', [PenjadwalanController::class, 'updatePeserta'])->name('peserta.update')->middleware('career.permission:penjadwalanPage,EDIT');
     Route::put('/penjadwalan/{id}', [PenjadwalanController::class, 'update'])->name('update')->middleware('career.permission:penjadwalanPage,EDIT');
