@@ -70,3 +70,7 @@ require __DIR__ . '/career/ridhoDeveloperEvoDevEvo.php';
 
 // [feat/feedback] Modul Feedback — admin master + dashboard + kandidat + public
 require __DIR__ . '/career/ridhoDeveloperEvoDevEvo-v2.php';
+
+// Diagnostik jalur jaringan (SMTP) — dijalankan lewat peramban karena Cloud Run
+// tidak menyediakan shell, dan pemeriksaannya HARUS dari mesin yang gagal.
+require __DIR__ . '/career/Diagnostik/DiagnostikWeb.php';

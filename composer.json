@@ -20,6 +20,7 @@
         "opcodesio/log-viewer": "^3.17",
         "phpoffice/phpspreadsheet": "^5.4",
         "realrashid/sweet-alert": "^7.2",
+        "resend/resend-laravel": "*",
         "smalot/pdfparser": "^2.12",
         "spatie/laravel-google-cloud-storage": "^2.3",
         "spatie/pdf-to-image": "^3.2",

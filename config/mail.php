@@ -34,6 +34,30 @@ return [
     */
 
     'mailers' => [
+        /*
+        | resend — PENGIRIMAN LEWAT HTTPS, BUKAN SMTP.
+        |
+        | Cloud Run merotasi alamat IP keluarnya di rentang bersama 34.x/35.x,
+        | dan alamat-alamat itu rutin tersangkut daftar blokir maupun pembatasan
+        | laju di sisi penyedia SMTP — dikonfirmasi sendiri oleh Niagahoster.
+        | Akibatnya bukan galat yang berbunyi, melainkan sambungan menggantung
+        | sampai habis waktu, dengan pesan yang tak membedakan 'diblokir' dari
+        | 'salah sandi'.
+        |
+        | Jalur ini lewat HTTPS/443 — port yang tidak diblokir siapa pun, dan
+        | sudah terbukti jalan di layanan ini (HCLearn & Cloud Tasks lewat sana).
+        | Reputasi IP, DKIM, pemanasan, dan pemantauan daftar hitam jadi urusan
+        | penyedia. Domain pengirim tetap milik sendiri (evopet.id).
+        |
+        | Ganti ke Mailgun/Postmark? Slotnya sudah ada di bawah; yang berubah
+        | cuma MAIL_MAILER dan kunci API-nya — tidak ada kode kirim yang perlu
+        | disentuh.
+        */
+        'resend' => [
+            'transport' => 'resend',
+            'key' => env('RESEND_API_KEY'),
+        ],
+
         'smtp' => [
             'transport' => 'smtp',
             'url' => env('MAIL_URL'),

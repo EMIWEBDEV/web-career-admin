@@ -20,6 +20,30 @@ return [
         'production' => env('HCLEARN_URL_PRODUCTION', 'https://hclearn.evonusabersaudara.co.id'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | ALAMAT UJIAN YANG DIBUKA KANDIDAT — bukan alamat kanal API
+    |--------------------------------------------------------------------------
+    |
+    | `domains` di atas adalah tempat HclClient bicara server-ke-server; ia
+    | berganti-ganti mengikuti HCLEARN_ENV. Yang ini alamat yang DIKETIK MANUSIA
+    | di peramban, dan ia menghadap publik — jadi bawaannya selalu domain
+    | produksi, apa pun lingkungan yang sedang dipakai.
+    |
+    | Pemisahan ini bukan kemewahan. Tanpa itu, menjadwalkan tes dari laptop
+    | yang masih ber-HCLEARN_ENV=development akan menuliskan
+    | `http://cat-evo-pembaharuan.test/...` ke baris peserta — di basis data
+    | yang sama yang dibaca produksi — lalu tautan itu dikirim ke kandidat yang
+    | tidak akan pernah bisa menjangkau domain `.test`.
+    |
+    | Isi HCLEARN_EXAM_URL hanya bila alamat ujian memang berbeda dari domain
+    | produksi (mis. saat menguji seluruh alur di staging).
+    */
+    'exam_url' => rtrim(env(
+        'HCLEARN_EXAM_URL',
+        env('HCLEARN_URL_PRODUCTION', 'https://hclearn.evonusabersaudara.co.id')
+    ), '/'),
+
     // Kredensial KANAL WEB CAREERS — sengaja beda nama dari HCLEARN_API_* yang
     // dipakai config/dev/fransDev.php (itu milik HCIS, jangan dipakai ulang).
     'api_public' => env('HCLEARN_WC_API_PUBLIC'),
