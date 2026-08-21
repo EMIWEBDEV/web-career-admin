@@ -5,6 +5,7 @@ use App\Http\Controllers\Career\Dashboard\DashboardController;
 use App\Http\Controllers\Career\Lamaran\FormulirDrafController;
 use App\Http\Controllers\Career\Lamaran\LamaranController;
 use App\Http\Controllers\Career\Monitoring\MonitoringController;
+use App\Http\Controllers\Career\Pemeriksaan\PemeriksaanController;
 use App\Http\Controllers\Career\TalentPool\TalentPoolController;
 use Illuminate\Support\Facades\Route;
 
@@ -78,15 +79,35 @@ Route::prefix('api/v1/karir')
         Route::get('/lamaran/pengisian/{id}', [LamaranController::class, 'lihatPengisian'])->name('lamaran.pengisian')->middleware('career.permission:pelamarPage,VIEW');
         Route::get('/lamaran/berkas/{id}', [LamaranController::class, 'worklistBerkas'])->name('lamaran.berkas')->middleware('career.permission:pelamarPage,VIEW');
         Route::get('/lamaran/berkas/file/{id}', [LamaranController::class, 'berkasFile'])->name('lamaran.berkas.file')->middleware('career.permission:pelamarPage,VIEW');
+        // KIRIM ULANG EMAIL HASIL — pemadam kebakaran, bukan alat keputusan.
+        //
+        // Izinnya EDIT, bukan APPROVE: yang dilakukan bukan mengetuk palu,
+        // melainkan mengirim ulang kabar atas palu yang sudah diketuk. Menuntut
+        // APPROVE berarti email yang gagal terkirim menunggu orang yang berhak
+        // memutus — padahal keputusannya sendiri sudah selesai.
+        Route::get('/lamaran/{id}/email-hasil', [LamaranController::class, 'emailHasilDaftar'])->name('lamaran.email.daftar')->middleware('career.permission:pelamarPage,VIEW');
+        Route::post('/lamaran/tahap/{id}/email-hasil', [LamaranController::class, 'emailHasilUlang'])->name('lamaran.email.ulang')->middleware('career.permission:pelamarPage,EDIT');
         Route::patch('/lamaran/tahap/{id}/putus', [LamaranController::class, 'putus'])->name('lamaran.putus')->middleware('career.permission:pelamarPage,APPROVE');
         // KETUK PALU BANYAK SEKALIGUS. Izinnya APPROVE, sama persis dengan
         // putus satuan — yang berubah jumlahnya, bukan wewenangnya. Polanya
         // beda ruas dari '{id}/putus', jadi urutan pendaftaran tidak penting.
         Route::patch('/lamaran/tahap/putus-massal', [LamaranController::class, 'putusMassal'])->name('lamaran.putus.massal')->middleware('career.permission:pelamarPage,APPROVE');
+        // KEMAJUAN & PERCOBAAN ULANG GELOMBANG KEPUTUSAN.
+        //
+        // Progres cuma membaca — izinnya VIEW, supaya panel tetap hidup di layar
+        // orang yang boleh melihat papan tapi tidak boleh mengetuk palu.
+        // Mengantrekan ulang adalah keputusan itu sendiri, jadi APPROVE.
+        Route::get('/lamaran/putus-massal/progres', [LamaranController::class, 'progresMassal'])->name('lamaran.putus.massal.progres')->middleware('career.permission:pelamarPage,VIEW');
+        Route::post('/lamaran/putus-massal/ulang', [LamaranController::class, 'ulangMassal'])->name('lamaran.putus.massal.ulang')->middleware('career.permission:pelamarPage,APPROVE');
         // TAHAN / LEPAS (hold) — menunda keputusan tanpa memindahkan kandidat
         // dan tanpa mengirim pemberitahuan apa pun kepadanya. Izinnya EDIT,
         // bukan APPROVE: menahan bukan memutuskan nasib siapa pun.
         Route::patch('/lamaran/tahap/{id}/hold', [LamaranController::class, 'hold'])->name('lamaran.hold')->middleware('career.permission:pelamarPage,EDIT');
+        // MENGULANG TAHAP — aksi ULANG, bukan APPROVE.
+        // Mengetuk keputusan dan membatalkan keputusan yang sudah diketuk
+        // adalah dua kewenangan berbeda; lihat 20-8-2026/2026-08-20-ulang-tahap.sql.
+        Route::get('/lamaran/{id}/ulang/tahap', [LamaranController::class, 'ulangDaftarTahap'])->name('lamaran.ulang.tahap')->middleware('career.permission:pelamarPage,ULANG');
+        Route::patch('/lamaran/tahap/{id}/ulang', [LamaranController::class, 'ulangTahap'])->name('lamaran.ulang')->middleware('career.permission:pelamarPage,ULANG');
         // TAHAN / LEPAS BANYAK sekaligus. Didaftarkan SEBELUM rute ber-{id} di
         // atas tidak perlu — polanya berbeda ruas ('hold-massal' vs '{id}/hold'),
         // jadi tidak ada yang saling menelan. Izinnya sama persis dengan hold
@@ -96,6 +117,22 @@ Route::prefix('api/v1/karir')
         Route::patch('/lamaran/sub-tes/{id}/tidak-hadir', [LamaranController::class, 'subTesTidakHadir'])->name('lamaran.subtes.tidakhadir')->middleware('career.permission:pelamarPage,EDIT');
         // Catat hasil sub-tes MANUAL (wawancara/FGD di tahap campuran) → mesin yang sama.
         Route::patch('/lamaran/sub-tes/{id}/catat-hasil', [LamaranController::class, 'subTesCatatHasil'])->name('lamaran.subtes.catathasil')->middleware('career.permission:pelamarPage,EDIT');
+        // ── PEMERIKSAAN (background / reference check) ──────────────────
+        //
+        // Terpisah dari catat-hasil dengan sengaja: catat-hasil MENUTUP
+        // aktivitas, sedangkan pemeriksaan berlangsung berhari-hari dan tiap
+        // potongannya harus bisa disimpan tanpa menutup apa pun. Izinnya sama
+        // — yang mencatat temuan adalah orang yang sama yang menutup tahapnya.
+        // Membuka isi temuan sensitif — dan mencatat pembukaannya. Izinnya VIEW:
+        // membaca temuan bukan menyuntingnya.
+        Route::get('/lamaran/sub-tes/{id}/pemeriksaan', [PemeriksaanController::class, 'buka'])->name('lamaran.subtes.pemeriksaan')->middleware('career.permission:pelamarPage,VIEW');
+        Route::patch('/lamaran/sub-tes/{id}/persetujuan', [PemeriksaanController::class, 'simpanPersetujuan'])->name('lamaran.subtes.persetujuan')->middleware('career.permission:pelamarPage,EDIT');
+        Route::patch('/lamaran/sub-tes/{id}/tanggapan', [PemeriksaanController::class, 'simpanTanggapan'])->name('lamaran.subtes.tanggapan')->middleware('career.permission:pelamarPage,EDIT');
+        Route::patch('/lamaran/sub-tes/{id}/verifikasi', [PemeriksaanController::class, 'simpanKomponen'])->name('lamaran.subtes.verifikasi')->middleware('career.permission:pelamarPage,EDIT');
+        Route::delete('/lamaran/sub-tes/{id}/verifikasi/{jenisKode}', [PemeriksaanController::class, 'hapusKomponen'])->name('lamaran.subtes.verifikasi.hapus')->middleware('career.permission:pelamarPage,EDIT');
+        Route::post('/lamaran/sub-tes/{id}/referensi', [PemeriksaanController::class, 'simpanReferensi'])->name('lamaran.subtes.referensi')->middleware('career.permission:pelamarPage,EDIT');
+        Route::delete('/lamaran/sub-tes/{id}/referensi/{refId}', [PemeriksaanController::class, 'hapusReferensi'])->name('lamaran.subtes.referensi.hapus')->middleware('career.permission:pelamarPage,EDIT');
+
         // Jadwal wawancara / tes tatap muka + undangan email ke kandidat.
         Route::patch('/lamaran/sub-tes/{id}/jadwal', [LamaranController::class, 'subTesJadwal'])->name('lamaran.subtes.jadwal')->middleware('career.permission:pelamarPage,EDIT');
         // JADWAL MASSAL — seratus kandidat sekaligus, serentak atau bergiliran.

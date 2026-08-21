@@ -30,7 +30,7 @@
                             <h3>{{ title }}</h3>
                             <p v-if="subtitle">{{ subtitle }}</p>
                         </div>
-                        <button class="wca-modal__close" type="button" aria-label="Tutup" :disabled="busy" @click="tutup">
+                        <button class="wca-modal__close" type="button" aria-label="Tutup" :disabled="busy" :onClick="busy ? null : tutup">
                             <i class="bi bi-x-lg"></i>
                         </button>
                     </div>
@@ -58,10 +58,10 @@
                         </div>
                         <div class="wca-modal__footbtns">
                             <slot name="footer">
-                                <button class="wca-btn wca-btn--ghost" type="button" :disabled="busy" @click="tutup">
+                                <button class="wca-btn wca-btn--ghost" type="button" :disabled="busy" :onClick="busy ? null : tutup">
                                     <i class="bi bi-x-lg"></i> {{ cancelLabel }}
                                 </button>
-                                <button class="wca-btn wca-btn--dark" type="button" :disabled="busy || saveDisabled" @click="$emit('save')">
+                                <button class="wca-btn wca-btn--dark" type="button" :disabled="busy || saveDisabled" :onClick="busy || saveDisabled ? null : () => $emit('save')">
                                     <span v-if="busy" class="wca-spin" aria-hidden="true"></span>
                                     <i v-else class="bi bi-save"></i>
                                     {{ busy ? busyLabel : saveLabel }}

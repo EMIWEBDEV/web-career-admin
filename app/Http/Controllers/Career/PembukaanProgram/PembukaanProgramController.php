@@ -120,7 +120,9 @@ class PembukaanProgramController extends Controller
                 ->leftJoin('N_WEB_CAREERS_Master_Jadwal as j', 'j.Kode', '=', 'p.Jadwal_Kode')
                 ->where('p.Status', 'BERJALAN')
                 ->when($izin, fn ($w) => $w->whereIn('p.Kategori', $izin))
-                // Terbaru → terlama (program yang baru dibuat paling atas).
+                // Terbaru → terlama, disamakan dengan daftar Program Kegiatan:
+                // waktu dibuat yang menentukan, Id hanya pemecah seri.
+                ->orderByDesc('p.Created_At')
                 ->orderByDesc('p.Id_Program')
                 ->select('p.Kode', 'p.Nama', 'p.Kategori', 'p.Penyelenggara', 'p.Jadwal_Kode', 'a.Nama as AlurNama', 'j.Kegiatan as JadwalNama')
                 ->get();

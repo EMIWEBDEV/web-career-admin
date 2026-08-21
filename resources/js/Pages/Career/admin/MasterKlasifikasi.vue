@@ -131,6 +131,7 @@ import { Head } from '@inertiajs/vue3';
 import AdminModal from '@career/AdminModal.vue';
 import ConfirmModal from '@career/ConfirmModal.vue';
 import AuditStamp from '@career/AuditStamp.vue';
+import { ingatModal } from '@utils/ingatModal';
 
 const API = '/api/v1/karir/master/rich';
 const KEY = 'kategori';
@@ -144,6 +145,8 @@ export default {
         modeOptions: { type: Array, default: () => [] },
         kategoriOptions: { type: Array, default: () => [] },
     },
+    // Modal di halaman ini selamat dari refresh — lihat @utils/ingatModal.
+    mixins: [ingatModal('admin/MasterKlasifikasi')],
     data() {
         return {
             list: this.klasifikasi.map((k) => ({ ...k })),

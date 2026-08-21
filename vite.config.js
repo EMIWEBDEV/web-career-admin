@@ -72,6 +72,10 @@ export default defineConfig({
             "@": path.resolve(__dirname, "./src"),
             // Komponen reusable Web Career (modal, dsb) — dipakai lintas halaman master.
             "@career": path.resolve(__dirname, "./resources/js/components/career"),
+            // Utilitas non-komponen (JS murni + berkas ujinya). Dipakai lintas
+            // halaman yang kedalaman foldernya berbeda-beda, jadi jalur relatif
+            // ("../../../utils/…") cuma jadi sumber salah ketik.
+            "@utils": path.resolve(__dirname, "./resources/js/utils"),
         },
     },
     build: {

@@ -23,7 +23,7 @@
                 <el-option label="Kantor" value="KANTOR" />
                 <el-option label="Vendor" value="VENDOR" />
             </el-select>
-            <button class="wca-btn" :disabled="loading" @click="muat">
+            <button class="wca-btn" :disabled="loading" :onClick="loading ? null : muat">
                 <i class="bi" :class="loading ? 'bi-arrow-repeat mlk-spin' : 'bi-funnel'"></i> Terapkan
             </button>
         </div>
@@ -235,6 +235,7 @@ import axios from 'axios';
 import { Head } from '@inertiajs/vue3';
 import AdminModal from '@career/AdminModal.vue';
 import ConfirmModal from '@career/ConfirmModal.vue';
+import { ingatModal } from '@utils/ingatModal';
 
 const CFG = { headers: { Accept: 'application/json' } };
 
@@ -253,6 +254,8 @@ export default {
     // untuk menempelkan atribut bawaan Inertia. Dimatikan agar tidak memicu
     // peringatan "Extraneous non-props attributes".
     inheritAttrs: false,
+    // Modal di halaman ini selamat dari refresh — lihat @utils/ingatModal.
+    mixins: [ingatModal('admin/master-lokasi/masterLokasi')],
     data() {
         return {
             rows: [], loading: false, cari: '', jenis: '', peruntukan: [],

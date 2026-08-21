@@ -255,7 +255,7 @@
                                                         class="wca-iconbtn"
                                                         title="Naikkan urutan"
                                                         :disabled="idx === 0 || !!busyMap[f.id]"
-                                                        @click="pindahGroup(grp, idx, -1)"
+                                                        :onClick="idx === 0 || !!busyMap[f.id] ? null : () => pindahGroup(grp, idx, -1)"
                                                     >
                                                         <span v-if="busyMap[f.id] === 'reorder'" class="wca-spin mf-btn-spin"></span>
                                                         <i v-else class="bi bi-chevron-up"></i>
@@ -264,7 +264,7 @@
                                                         class="wca-iconbtn"
                                                         title="Turunkan urutan"
                                                         :disabled="idx === grp.items.length - 1 || !!busyMap[f.id]"
-                                                        @click="pindahGroup(grp, idx, 1)"
+                                                        :onClick="idx === grp.items.length - 1 || !!busyMap[f.id] ? null : () => pindahGroup(grp, idx, 1)"
                                                     >
                                                         <span v-if="busyMap[f.id] === 'reorder'" class="wca-spin mf-btn-spin"></span>
                                                         <i v-else class="bi bi-chevron-down"></i>
@@ -420,7 +420,7 @@
                                                     class="wca-iconbtn"
                                                     :title="pesanNaik(i)"
                                                     :disabled="!bisaNaik(i) || !!busyMap[f.id]"
-                                                    @click="pindah(i, -1)"
+                                                    :onClick="!bisaNaik(i) || !!busyMap[f.id] ? null : () => pindah(i, -1)"
                                                 >
                                                     <span v-if="busyMap[f.id] === 'reorder'" class="wca-spin mf-btn-spin"></span>
                                                     <i v-else class="bi bi-chevron-up"></i>
@@ -429,7 +429,7 @@
                                                     class="wca-iconbtn"
                                                     :title="pesanTurun(i)"
                                                     :disabled="!bisaTurun(i) || !!busyMap[f.id]"
-                                                    @click="pindah(i, 1)"
+                                                    :onClick="!bisaTurun(i) || !!busyMap[f.id] ? null : () => pindah(i, 1)"
                                                 >
                                                     <span v-if="busyMap[f.id] === 'reorder'" class="wca-spin mf-btn-spin"></span>
                                                     <i v-else class="bi bi-chevron-down"></i>
@@ -912,6 +912,7 @@ import AdminModal from '@career/AdminModal.vue';
 import ConfirmModal from '@career/ConfirmModal.vue';
 import IconPicker from '@career/IconPicker.vue';
 import EditorQuill from '@career/EditorQuill.vue';
+import { ingatModal } from '@utils/ingatModal';
 
 const API = '/api/v1/master-faq';
 const API_KAT = '/api/v1/master-faq-kategori';
@@ -932,6 +933,8 @@ const formKatKosong = () => ({ nama: '', ikon: '', deskripsi: '', urutan: 0, akt
 
 export default {
     components: { Head, AdminModal, ConfirmModal, IconPicker, EditorQuill },
+    // Modal di halaman ini selamat dari refresh — lihat @utils/ingatModal.
+    mixins: [ingatModal('admin/master-faq/masterFaq')],
     data() {
         return {
             tab: 'faq',

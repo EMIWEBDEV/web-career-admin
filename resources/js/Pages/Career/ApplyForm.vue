@@ -602,7 +602,7 @@
 
                         <!-- Footer aksi -->
                         <div class="wca-apply__foot">
-                            <button class="wca-btn wca-btn--ghost" :disabled="step === 0" @click="back">
+                            <button class="wca-btn wca-btn--ghost" :disabled="step === 0" :onClick="step === 0 ? null : back">
                                 <i class="bi bi-arrow-left"></i> Kembali
                             </button>
                             <button v-if="cur.tipe !== 'REVIEW'" class="wca-btn wca-btn--primary" @click="next">
@@ -612,7 +612,7 @@
                                 v-else
                                 class="wca-btn wca-btn--dark"
                                 :disabled="!consentOk || mengirim"
-                                @click="finalize"
+                                :onClick="!consentOk || mengirim ? null : finalize"
                             >
                                 <i class="bi" :class="mengirim ? 'bi-hourglass-split' : 'bi-send-check'"></i>
                                 {{ mengirim ? 'Mengirim…' : 'Finalisasi & Kirim' }}

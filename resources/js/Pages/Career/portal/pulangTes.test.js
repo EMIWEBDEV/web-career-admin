@@ -90,6 +90,78 @@ describe('penanda ?dari=tes', () => {
     });
 });
 
+describe('sambutPulangTes menghabiskan penanda alamat', () => {
+    /*
+     * LAPORAN: tahap 5 punya satu tes daring (belum tersentuh) dan satu tes
+     * luring yang sudah selesai. Kandidat membuka halaman, dan tes daringnya
+     * langsung berkata "Jawabanmu sudah terkirim".
+     *
+     * Sebabnya bukan tebakan alamatnya, melainkan URUTAN pemanggilannya. Saat
+     * kandidat pulang dari ujian tahap sebelumnya, jejak sessionStorage yang
+     * menang — sehingga `tebakPulangDariAlamat()` tidak pernah jalan, dan
+     * `?dari=tes` tertinggal di alamat. Penanda itu baru hidup lagi setelah
+     * tahapnya bergerak, tepat ketika jejaknya sudah hangus, lalu memungut tes
+     * tahap baru yang belum pernah dibuka.
+     */
+    function konteksSambut(o) {
+        const ctx = Object.assign(konteks(o), {
+            bacaPergiTes: M.bacaPergiTes,
+            tebakPulangDariAlamat: M.tebakPulangDariAlamat,
+            tandaiPergiTes: M.tandaiPergiTes,
+            hentikanPantauHasil() {},
+            pulangCek: 0,
+            pulangTimer: null,
+        });
+
+        // defineProperty, BUKAN Object.assign: assign menyalin NILAI getter
+        // sekali di tempat itu juga — `tesDitunggu` akan membeku pada hasil
+        // saat `pulangTes` masih null, dan sambutannya selalu terbaca kosong.
+        Object.defineProperty(ctx, 'tesDitunggu', {
+            get() {
+                return C.tesDitunggu.call(this);
+            },
+        });
+
+        return ctx;
+    }
+
+    it('BUG ASLI: penanda tidak boleh selamat ketika jejak sessionStorage yang menang', () => {
+        // Tahap 3 — kandidat benar-benar pulang dari ujian: ada jejak DAN penanda.
+        window.history.replaceState({}, '', '/kandidat/lamaran/LMR1?dari=tes');
+        const ditahap3 = konteksSambut({ tahapId: 'th3', aktivitas: TES_TAHAP_3 });
+        M.tandaiPergiTes.call(ditahap3, TES_TAHAP_3[0]);
+        M.sambutPulangTes.call(ditahap3);
+
+        // Jejaknya yang dipakai — tapi penandanya tetap harus habis.
+        expect(ditahap3.pulangTes).toMatchObject({ id: 'akt3' });
+        expect(window.location.search).toBe('');
+    });
+
+    it('BUG ASLI: tes tahap berikutnya tidak disambut sebagai sudah terkirim', () => {
+        window.history.replaceState({}, '', '/kandidat/lamaran/LMR1?dari=tes');
+        const ditahap3 = konteksSambut({ tahapId: 'th3', aktivitas: TES_TAHAP_3 });
+        M.tandaiPergiTes.call(ditahap3, TES_TAHAP_3[0]);
+        M.sambutPulangTes.call(ditahap3);
+
+        // Hasil masuk, tahap bergerak. Kandidat membuka halaman lagi — dulu
+        // penanda yang tertinggal memungut 'akt5' di sini.
+        const ditahap5 = konteksSambut({ tahapId: 'th5', aktivitas: TES_TAHAP_5 });
+        M.sambutPulangTes.call(ditahap5);
+
+        expect(ditahap5.pulangTes).toBeNull();
+    });
+
+    it('cadangan alamat tetap jalan untuk kandidat tanpa sessionStorage', () => {
+        window.history.replaceState({}, '', '/kandidat/lamaran/LMR1?dari=tes');
+        const ctx = konteksSambut({ tahapId: 'th3', aktivitas: TES_TAHAP_3 });
+        M.sambutPulangTes.call(ctx);
+
+        expect(ctx.pulangTes).toMatchObject({ id: 'akt3', tahap: 'th3' });
+        ctx.hentikanPantauHasil();
+        clearInterval(ctx.pulangTimer);
+    });
+});
+
 describe('jejak sessionStorage', () => {
     it('sah selama masih di tahap yang sama', () => {
         const ctx = konteks({ tahapId: 'th3', aktivitas: TES_TAHAP_3 });

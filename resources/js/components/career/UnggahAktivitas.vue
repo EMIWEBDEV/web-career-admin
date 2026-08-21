@@ -135,11 +135,11 @@
                     </span>
                 </p>
                 <div class="ld-upl__aksi">
-                    <button type="button" class="ld-upl__btn" :disabled="kirimDi === u.key" @click="$emit('kirim', u)">
+                    <button type="button" class="ld-upl__btn" :disabled="kirimDi === u.key" :onClick="kirimDi === u.key ? null : () => $emit('kirim', u)">
                         <i class="bi" :class="kirimDi === u.key ? 'bi-arrow-repeat ld-upl__spin' : 'bi-send-fill'"></i>
                         {{ kirimDi === u.key ? 'Mengirim…' : 'Ya, kirim sekarang' }}
                     </button>
-                    <button type="button" class="ld-upl__batal" :disabled="kirimDi === u.key" @click="konfirmasiDi = null">
+                    <button type="button" class="ld-upl__batal" :disabled="kirimDi === u.key" :onClick="kirimDi === u.key ? null : () => konfirmasiDi = null">
                         Periksa lagi
                     </button>
                 </div>
@@ -149,7 +149,7 @@
                     type="button"
                     class="ld-upl__btn"
                     :disabled="!(berkas[u.key] || []).length"
-                    @click="konfirmasiDi = u.key"
+                    :onClick="!(berkas[u.key] || []).length ? null : () => konfirmasiDi = u.key"
                 >
                     <i class="bi bi-send-fill"></i>
                     Kirim Berkas

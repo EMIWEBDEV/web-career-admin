@@ -28,7 +28,7 @@
                             <b>data diri, kelengkapan berkas, dan seluruh alur proses</b> yang pernah diikuti.
                         </p>
                     </div>
-                    <button type="button" class="tp-btn-export gbtn" :disabled="loading" @click="exportCsv">
+                    <button type="button" class="tp-btn-export gbtn" :disabled="loading" :onClick="loading ? null : exportCsv">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11m0 0l-3.5-3.5M12 14l3.5-3.5" /><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" /></svg>
                         Ekspor Excel
                     </button>
@@ -192,7 +192,7 @@
             <div v-if="total > 0" class="tp-pager">
                 <div class="tp-pager__info">Halaman {{ page }} dari {{ totalPage }} · {{ total }} talenta</div>
                 <div class="tp-pager__nav">
-                    <button type="button" class="tp-pg-btn" :disabled="page <= 1" title="Sebelumnya" @click="gotoPage(page - 1)">
+                    <button type="button" class="tp-pg-btn" :disabled="page <= 1" title="Sebelumnya" :onClick="page <= 1 ? null : () => gotoPage(page - 1)">
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7" /></svg>
                     </button>
                     <template v-for="(p, i) in nomorHalaman" :key="i">
@@ -537,7 +537,7 @@
                     </div>
                     <div class="tp-modal__btns">
                         <button type="button" class="tp-btn-ghost2" @click="tutupModal">Batal</button>
-                        <button type="button" class="tp-btn-primary gbtn" :disabled="!bolehTarik || tarikBusy" @click="konfirmTarik">
+                        <button type="button" class="tp-btn-primary gbtn" :disabled="!bolehTarik || tarikBusy" :onClick="!bolehTarik || tarikBusy ? null : konfirmTarik">
                             {{ tarikBusy ? 'Memproses…' : 'Tarik Kandidat' }}
                         </button>
                     </div>
@@ -594,7 +594,7 @@
                     <div class="tp-modal__note">Perubahan tercatat di riwayat kartu.</div>
                     <div class="tp-modal__btns">
                         <button type="button" class="tp-btn-ghost2" @click="tutupModal">Batal</button>
-                        <button type="button" class="tp-btn-primary gbtn" :disabled="saving" @click="simpanKelola">
+                        <button type="button" class="tp-btn-primary gbtn" :disabled="saving" :onClick="saving ? null : simpanKelola">
                             {{ saving ? 'Menyimpan…' : 'Simpan' }}
                         </button>
                     </div>
@@ -614,7 +614,7 @@
                 </div>
                 <div class="tp-del__foot">
                     <button type="button" class="tp-btn-ghost2 is-wide" @click="tutupModal">Batal</button>
-                    <button type="button" class="tp-btn-danger" :disabled="deleting" @click="konfirmHapus">
+                    <button type="button" class="tp-btn-danger" :disabled="deleting" :onClick="deleting ? null : konfirmHapus">
                         {{ deleting ? 'Menghapus…' : 'Ya, Hapus' }}
                     </button>
                 </div>

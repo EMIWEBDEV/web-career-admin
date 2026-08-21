@@ -490,7 +490,7 @@ export default {
             <p v-if="pendingVerifEmail" class="verif-pending">
                 <i class="bi bi-envelope-exclamation"></i>
                 Belum menerima email verifikasi?
-                <button type="button" class="switch-link" :disabled="resendingVerif" @click="resendVerif">
+                <button type="button" class="switch-link" :disabled="resendingVerif" :onClick="resendingVerif ? null : resendVerif">
                     {{ resendingVerif ? 'Mengirim…' : 'Kirim ulang' }}
                 </button>
             </p>

@@ -151,6 +151,7 @@ import { Head } from '@inertiajs/vue3';
 import AdminModal from '@career/AdminModal.vue';
 import ConfirmModal from '@career/ConfirmModal.vue';
 import RefSelect from '@career/RefSelect.vue';
+import { ingatModal } from '@utils/ingatModal';
 
 const API = '/api/v1/master-kampus';
 const CFG = { headers: { Accept: 'application/json' } };
@@ -158,6 +159,8 @@ const blank = () => ({ nama: '', singkatan: '', jenis: '', jenjang: '', kepemili
 
 export default {
     components: { Head, AdminModal, ConfirmModal, RefSelect },
+    // Modal di halaman ini selamat dari refresh — lihat @utils/ingatModal.
+    mixins: [ingatModal('admin/master-kampus/masterKampus')],
     data() {
         return {
             list: [], total: 0, page: 1, perPage: 25, loading: false,

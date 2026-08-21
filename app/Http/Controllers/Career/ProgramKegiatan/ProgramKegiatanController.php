@@ -13,6 +13,7 @@ use App\Support\CareerShell;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Vinkla\Hashids\Facades\Hashids;
 
@@ -65,7 +66,23 @@ class ProgramKegiatanController extends Controller
 
             $programs = $dasar()
                 ->when($kategori !== '', fn ($w) => $w->where('p.Kategori', $kategori))
-                // Terbaru di atas — program yang baru dibuat paling sering dibuka.
+                /*
+                 * TERBARU KE TERLAMA — diurutkan dari WAKTU DIBUAT, bukan dari Id.
+                 *
+                 * Id memang hampir selalu sejalan dengan waktu, dan selama ini
+                 * hasilnya kebetulan benar. Tapi keduanya bisa berpisah: baris
+                 * hasil impor atau pemindahan data lazim membawa Created_At lama
+                 * dengan Id baru, dan begitu itu terjadi program lama menclok di
+                 * paling atas tanpa ada yang bisa menjelaskan kenapa.
+                 *
+                 * Id tetap dipakai sebagai PEMECAH SERI, dan itu bukan hiasan:
+                 * delapan program di basis data ini berbagi satu Created_At yang
+                 * sama persis. Tanpa pemecah, urutan kedelapannya diserahkan pada
+                 * SQL Server — bisa berbeda antar pemuatan, dan daftar yang
+                 * berubah-ubah sendiri jauh lebih membingungkan daripada daftar
+                 * yang urutannya kurang ideal.
+                 */
+                ->orderByDesc('p.Created_At')
                 ->orderByDesc('p.Id_Program')
                 ->select('p.*', 'u.Nama as Pembuat', 'a.Nama as AlurNama')
                 ->get();
@@ -132,11 +149,54 @@ class ProgramKegiatanController extends Controller
         }
     }
 
+    /**
+     * KATEGORI DIBATASI HAK AKSES — di sini, bukan di layar.
+     *
+     * Layar memang sudah menyembunyikan kategori yang tidak boleh dipakai, dan
+     * bila hak aksesnya cuma satu, pilihannya tidak ditampilkan sama sekali.
+     * Tapi itu kenyamanan, bukan pengaman: isi <select> bisa disunting lewat
+     * DevTools, dan permintaannya bisa disusun tanpa membuka halamannya sama
+     * sekali. Yang benar-benar menahan adalah baris di bawah.
+     *
+     * Sebelumnya aturannya cuma 'required|string|max:20' — artinya admin yang
+     * dijatah kategori MT bisa membuat program REKRUTMEN, dan program itu lalu
+     * hilang dari daftarnya sendiri (daftarnya disaring hak akses) sambil tetap
+     * hidup dan menerima pelamar. Kegagalan yang tidak pernah terlihat oleh yang
+     * membuatnya.
+     *
+     * kategoriDiizinkan() mengembalikan null bila pengguna tidak dibatasi; dalam
+     * hal itu yang berlaku cukup daftar kategori aktif di master.
+     */
+    private function kategoriSah(): array
+    {
+        $izin = AksesService::kategoriDiizinkan('programPage');
+
+        return DB::table('N_WEB_CAREERS_Master_Talent_Acquisition')
+            ->where('Flag_Aktif', 'Y')
+            ->when($izin, fn ($q) => $q->whereIn('Kode', $izin))
+            ->pluck('Kode')
+            ->all();
+    }
+
+    /**
+     * Kalimat penolakan yang menyebut sebabnya.
+     *
+     * Bawaan Laravel untuk Rule::in berbunyi "The selected kategori is invalid"
+     * — benar, tapi tidak menjelaskan apa pun kepada admin yang memang tidak
+     * pernah melihat kategori itu di layarnya.
+     */
+    private function pesanValidasi(): array
+    {
+        return [
+            'kategori.in' => 'Kategori itu di luar hak akses Anda, jadi programnya tidak bisa dibuat di sana.',
+        ];
+    }
+
     private function rules(): array
     {
         return [
             'nama' => 'required|string|max:150',
-            'kategori' => 'required|string|max:20',
+            'kategori' => ['required', 'string', 'max:20', Rule::in($this->kategoriSah())],
             'warna' => 'nullable|string|max:20',
             'mode' => 'nullable|string|max:20',
             'alur' => 'nullable|string|max:30',
@@ -359,7 +419,7 @@ class ProgramKegiatanController extends Controller
     public function store(Request $request)
     {
         try {
-            $data = $request->validate($this->rules());
+            $data = $request->validate($this->rules(), $this->pesanValidasi());
             if ($galat = $this->cekKuotaBatch($data)) {
                 return ResponseHelper::error($galat, 422);
             }
@@ -402,7 +462,7 @@ class ProgramKegiatanController extends Controller
             if (! $row) {
                 return ResponseHelper::error('Data tidak ditemukan', 404);
             }
-            $data = $request->validate($this->rules());
+            $data = $request->validate($this->rules(), $this->pesanValidasi());
             if ($galat = $this->cekKuotaBatch($data)) {
                 return ResponseHelper::error($galat, 422);
             }

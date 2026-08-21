@@ -47,19 +47,17 @@ return [
     'timeout' => (int) env('SURAT_TIMEOUT', 25),
 
     /*
-    | SAKELAR PERALIHAN.
+    | TIDAK ADA SAKELAR PERALIHAN DI SINI, DAN ITU DISENGAJA.
     |
-    | false = Web Careers tetap mengirim sendiri lewat MAIL_MAILER, persis
-    |         seperti sekarang.
-    | true  = seluruh email lewat server surat.
+    | Peralihannya sudah selesai. Web Careers tidak lagi memegang kredensial
+    | SMTP, tidak lagi menyimpan berkas Blade surat, dan tidak lagi memanggil
+    | Mail:: di mana pun — jadi tidak ada lagi jalur kedua yang bisa dituju
+    | seandainya sakelarnya dimatikan.
     |
-    | Ada supaya peralihannya bisa dibatalkan dalam hitungan detik tanpa
-    | deploy. Pada perubahan yang menyentuh email verifikasi pendaftaran —
-    | satu-satunya jalan kandidat baru bisa masuk — kemampuan membatalkan itu
-    | jauh lebih berharga daripada kode yang lebih ringkas.
-    |
-    | Buang sakelarnya (dan cabang `else`-nya) setelah beberapa hari berjalan
-    | tenang, bukan sebelum.
+    | Sakelar yang satu-satunya akibatnya adalah "tidak ada surat yang
+    | berangkat, tanpa satu pun galat" jauh lebih berbahaya daripada tidak
+    | punya sakelar sama sekali. Yang menggantikannya: kegagalan memanggil
+    | server surat DILEMPAR, diulang oleh antrean, lalu tercatat di
+    | N_WEB_CAREERS_Failed_Jobs — terlihat, bukan senyap.
     */
-    'aktif' => filter_var(env('SURAT_AKTIF', false), FILTER_VALIDATE_BOOLEAN),
 ];

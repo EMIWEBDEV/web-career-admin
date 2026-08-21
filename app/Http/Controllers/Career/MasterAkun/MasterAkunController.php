@@ -50,7 +50,7 @@ class MasterAkunController extends Controller
                     // ── KEADAAN VERIFIKASI EMAIL ────────────────────────────
                     //
                     // `verifSentAt` bukan sekadar hiasan: kolom itu HANYA ditulis
-                    // setelah Mail::send benar-benar berhasil (WcSyncEmailJob).
+                    // setelah server surat menjawab TERKIRIM (WcSyncEmailJob).
                     // Jadi `verifAttempt > 0` dengan `verifSentAt` kosong berarti
                     // "sudah dicoba sekian kali, tidak satu pun pernah keluar" —
                     // keadaan yang selama ini hanya terbaca di log job, dan tidak

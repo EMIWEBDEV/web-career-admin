@@ -1,3 +1,11 @@
+// @vitest-environment jsdom
+/*
+ * Perangkap fokus dialog. Berkas ini menyentuh `document`, jadi ia BUTUH jsdom;
+ * tanpa baris pragma di atas ia jalan di lingkungan node dan gagal di baris
+ * pertama — bukan karena perangkapnya rusak, melainkan karena tak ada DOM sama
+ * sekali. Proyek ini tidak menyetel environment global, jadi tiap berkas uji
+ * yang memakai DOM menyebutkannya sendiri.
+ */
 import { describe, expect, it } from 'vitest';
 import { trapFocusWithin } from './dialogFocus';
 

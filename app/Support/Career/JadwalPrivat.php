@@ -51,4 +51,43 @@ class JadwalPrivat
     {
         return $kodeTipe !== null && in_array($kodeTipe, self::KODE, true);
     }
+
+    /**
+     * KANDIDAT BOLEH MELIHAT AKTIVITAS INI DI PORTALNYA?
+     *
+     * `Tampil_Kandidat` dibekukan ke baris lamaran saat orangnya melamar, dari
+     * setelan Master Alur waktu itu. Setelan itu bisa salah, dan satu bentuk
+     * salahnya berakibat fatal: aktivitas yang DIJADWALKAN tapi ditandai
+     * internal.
+     *
+     * Yang dialami kandidatnya begini. Ia menerima undangan MCU lewat email,
+     * membuka portal untuk memastikan tanggal dan rumah sakitnya, dan tidak
+     * menemukan apa pun — halamannya justru berbunyi "menunggu dijadwalkan".
+     * Ia menyimpulkan jadwalnya batal, atau emailnya salah kirim. Kalau ia
+     * tidak datang, yang tercatat di sistem adalah mangkir.
+     *
+     * Karena itu JADWAL MENANG ATAS SETELAN: aktivitas yang sudah punya tanggal
+     * adalah janji temu, dan janji temu selalu ditunjukkan kepada orang yang
+     * harus menepatinya. Satu-satunya pengecualian adalah tipe berjadwal privat
+     * di atas — itu memang dijalankan tim untuk dirinya sendiri, dan kandidat
+     * tidak pernah diundang ke sana.
+     *
+     * Diputuskan SAAT DIBACA, bukan dengan memperbaiki baris lamarannya. 358
+     * baris MCU sudah telanjur tersimpan salah, dan kandidatnya sudah diundang
+     * hari ini — mereka perlu melihat jadwalnya sekarang, bukan setelah ada
+     * yang sempat menjalankan skrip perbaikan.
+     *
+     * @param  object       $baris     Baris N_WEB_CAREERS_Lamaran_Tahap_Tes.
+     * @param  string|null  $kodeTipe  Kode tipe yang sudah diselesaikan bila
+     *                                 baris itu mewarisinya dari tahap.
+     */
+    public static function terlihat(object $baris, ?string $kodeTipe = null): bool
+    {
+        if (($baris->Tampil_Kandidat ?? 'Y') === 'Y') {
+            return true;
+        }
+
+        return ! empty($baris->Jadwal_Mulai)
+            && ! self::untuk($kodeTipe ?: ($baris->Tipe_Tahap_Kode ?? null));
+    }
 }

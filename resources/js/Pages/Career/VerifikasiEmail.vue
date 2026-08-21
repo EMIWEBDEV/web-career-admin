@@ -129,7 +129,7 @@ export default {
             <p class="eyebrow-txt">TAUTAN KEDALUWARSA</p>
             <h1>Waktunya Sudah Habis</h1>
             <p class="desc">Demi keamanan, tautan verifikasi hanya berlaku <b>30 menit</b> dan sekali pakai. Tenang — cukup satu klik untuk mendapatkan tautan baru ke <b>{{ email }}</b>.</p>
-            <button type="button" class="btn-main" :disabled="resending" @click="kirimUlang">
+            <button type="button" class="btn-main" :disabled="resending" :onClick="resending ? null : kirimUlang">
                 <span v-if="resending" class="spinner" aria-hidden="true"></span>
                 {{ resending ? 'Mengirim…' : 'Kirim Ulang Email Verifikasi' }}
             </button>

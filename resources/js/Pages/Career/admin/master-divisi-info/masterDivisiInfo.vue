@@ -353,6 +353,7 @@ import axios from 'axios';
 import { Head } from '@inertiajs/vue3';
 import AdminModal from '@career/AdminModal.vue';
 import AuditStamp from '@career/AuditStamp.vue';
+import { ingatModal } from '@utils/ingatModal';
 
 const API = '/api/v1/master-info-divisi';
 const CFG = { headers: { Accept: 'application/json' } };
@@ -365,6 +366,8 @@ const SLOTS = [
 
 export default {
     components: { Head, AdminModal, AuditStamp },
+    // Modal di halaman ini selamat dari refresh — lihat @utils/ingatModal.
+    mixins: [ingatModal('admin/master-divisi-info/masterDivisiInfo')],
     data() {
         return {
             SLOTS,

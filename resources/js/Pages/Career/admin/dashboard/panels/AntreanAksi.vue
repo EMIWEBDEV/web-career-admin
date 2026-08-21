@@ -304,7 +304,7 @@
                     </em>
                 </span>
                 <div v-if="totalHal > 1" class="ak-paginasi__nav">
-                    <button type="button" class="ak-paginasi__btn" :disabled="hal <= 1" @click="hal--">
+                    <button type="button" class="ak-paginasi__btn" :disabled="hal <= 1" :onClick="hal <= 1 ? null : () => hal--">
                         <i class="bi bi-chevron-left"></i> Sebelum
                     </button>
                     <span class="ak-paginasi__page">{{ hal }} / {{ totalHal }}</span>

@@ -8,12 +8,12 @@
                 <h1>Master Hero</h1>
             </div>
             <div class="wca-phead__actions">
-                <button class="wca-btn wca-btn--dark" :disabled="!hasDirty || savingAll" @click="saveAll">
+                <button class="wca-btn wca-btn--dark" :disabled="!hasDirty || savingAll" :onClick="!hasDirty || savingAll ? null : saveAll">
                     <span v-if="savingAll" class="wca-spin" aria-hidden="true"></span>
                     <i v-else class="bi bi-save"></i>
                     {{ savingAll ? 'Menyimpan…' : hasDirty ? `Simpan Semua (${dirtyCount})` : 'Simpan Semua' }}
                 </button>
-                <button class="wca-btn wca-btn--primary" :disabled="creating" @click="addSlide">
+                <button class="wca-btn wca-btn--primary" :disabled="creating" :onClick="creating ? null : addSlide">
                     <span v-if="creating" class="wca-spin" aria-hidden="true"></span>
                     <i v-else class="bi bi-plus-lg"></i> Tambah Slide
                 </button>

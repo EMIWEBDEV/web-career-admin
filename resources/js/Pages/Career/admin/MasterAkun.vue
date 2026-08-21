@@ -154,7 +154,7 @@
             </div>
             <template #footer>
                 <button class="wca-btn wca-btn--ghost" type="button" @click="delShow = false"><i class="bi bi-x-circle"></i> Batal</button>
-                <button class="wca-btn wca-btn--danger" type="button" :disabled="deleting" @click="confirmDelete">
+                <button class="wca-btn wca-btn--danger" type="button" :disabled="deleting" :onClick="deleting ? null : confirmDelete">
                     <i class="bi bi-trash"></i> {{ deleting ? 'Menghapus…' : 'Ya, Hapus Akun' }}
                 </button>
             </template>
@@ -168,6 +168,7 @@
 import axios from 'axios';
 import { Head } from '@inertiajs/vue3';
 import AdminModal from '@career/AdminModal.vue';
+import { ingatModal } from '@utils/ingatModal';
 
 const API = '/api/v1/karir/master/akun';
 const CFG = { headers: { Accept: 'application/json' } };
@@ -179,6 +180,8 @@ export default {
         admin: { type: Array, default: () => [] },
         klasifikasiOptions: { type: Array, default: () => [] },
     },
+    // Modal di halaman ini selamat dari refresh — lihat @utils/ingatModal.
+    mixins: [ingatModal('admin/MasterAkun')],
     data() {
         return {
             tab: 'pengguna',

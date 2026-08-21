@@ -283,6 +283,7 @@ import AdminModal from '@career/AdminModal.vue';
 import ConfirmModal from '@career/ConfirmModal.vue';
 import AuditStamp from '@career/AuditStamp.vue';
 import RefSelect from '@career/RefSelect.vue';
+import { ingatModal } from '@utils/ingatModal';
 
 const API = '/api/v1/master-kemitraan';
 const CFG = { headers: { Accept: 'application/json' } };
@@ -318,6 +319,8 @@ function blankForm() {
 
 export default {
     components: { Head, AdminModal, ConfirmModal, AuditStamp, RefSelect },
+    // Modal di halaman ini selamat dari refresh — lihat @utils/ingatModal.
+    mixins: [ingatModal('admin/master-kemitraan/masterKemitraan')],
     data() {
         return {
             jenisOptions: JENIS_OPTIONS,

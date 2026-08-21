@@ -80,7 +80,7 @@
                                                 {{ a.verifAttempt && !a.verifSentAt ? 'Email tak terkirim' : 'Belum verifikasi' }}
                                             </span>
                                             <small class="akun-verif__note">{{ catatanVerif(a) }}</small>
-                                            <button class="akun-verif__btn" :disabled="kirimId === a.id" @click="kirimVerifikasi(a)">
+                                            <button class="akun-verif__btn" :disabled="kirimId === a.id" :onClick="kirimId === a.id ? null : () => kirimVerifikasi(a)">
                                                 <i class="bi" :class="kirimId === a.id ? 'bi-arrow-repeat akun-spin' : 'bi-envelope-arrow-up'"></i>
                                                 {{ kirimId === a.id ? 'Mengirim…' : 'Kirim Ulang' }}
                                             </button>
@@ -165,12 +165,15 @@ import { Head } from '@inertiajs/vue3';
 import AdminModal from '@career/AdminModal.vue';
 import ConfirmModal from '@career/ConfirmModal.vue';
 import RefSelect from '@career/RefSelect.vue';
+import { ingatModal } from '@utils/ingatModal';
 
 const API = '/api/v1/master-akun';
 const CFG = { headers: { Accept: 'application/json' } };
 
 export default {
     components: { Head, AdminModal, ConfirmModal, RefSelect },
+    // Modal di halaman ini selamat dari refresh — lihat @utils/ingatModal.
+    mixins: [ingatModal('admin/master-akun/masterAkun')],
     data() {
         return {
             all: [],

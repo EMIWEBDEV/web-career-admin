@@ -122,7 +122,7 @@
                   type="button"
                   class="fb-wz-btn fb-wz-btn--submit w-100 py-3 text-center"
                   :disabled="!isComplete || submitting"
-                  @click="submitFeedback"
+                  :onClick="!isComplete || submitting ? null : submitFeedback"
                 >
                   <span v-if="submitting" class="spinner-border spinner-border-sm me-1.5" role="status" aria-hidden="true"></span>
                   <span>{{ submitting ? 'Mengirim...' : 'Kirim Feedback ✨' }}</span>

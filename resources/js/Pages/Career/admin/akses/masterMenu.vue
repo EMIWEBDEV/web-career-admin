@@ -151,6 +151,7 @@ import { Head } from '@inertiajs/vue3';
 import AdminModal from '@career/AdminModal.vue';
 import ConfirmModal from '@career/ConfirmModal.vue';
 import IconPicker from '@career/IconPicker.vue';
+import { ingatModal } from '@utils/ingatModal';
 
 const API = '/api/v1/master-menu';
 const CFG = { headers: { Accept: 'application/json' } };
@@ -158,6 +159,8 @@ const KOSONG = { jenisPage: '', nama: '', header: '', subHeader: '', ikon: '', u
 
 export default {
     components: { Head, AdminModal, ConfirmModal, IconPicker },
+    // Modal di halaman ini selamat dari refresh — lihat @utils/ingatModal.
+    mixins: [ingatModal('admin/akses/masterMenu')],
     data() {
         return {
             list: [], loading: false, show: false, editingId: null,

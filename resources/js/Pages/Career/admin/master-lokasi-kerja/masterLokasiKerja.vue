@@ -150,7 +150,7 @@
                                             class="wca-iconbtn wca-iconbtn--danger"
                                             :disabled="!!l.dipakai"
                                             :title="l.dipakai ? `Tidak bisa dihapus — dipakai ${l.dipakai} transaksi GForm` : 'Hapus'"
-                                            @click="askRemove(l)"
+                                            :onClick="!!l.dipakai ? null : () => askRemove(l)"
                                         >
                                             <i class="bi" :class="l.dipakai ? 'bi-lock' : 'bi-trash'"></i>
                                         </button>
@@ -278,6 +278,7 @@ import { Head } from '@inertiajs/vue3';
 import AdminModal from '@career/AdminModal.vue';
 import ConfirmModal from '@career/ConfirmModal.vue';
 import { PULAU, PROVINSI_PER_PULAU, pulauDariProvinsi } from '../../../../data/wilayahIndonesia';
+import { ingatModal } from '@utils/ingatModal';
 
 const API = '/api/v1/master-lokasi-kerja';
 const CFG = { headers: { Accept: 'application/json' } };
@@ -290,6 +291,8 @@ const RINGKASAN_KOSONG = {
 
 export default {
     components: { Head, AdminModal, ConfirmModal },
+    // Modal di halaman ini selamat dari refresh — lihat @utils/ingatModal.
+    mixins: [ingatModal('admin/master-lokasi-kerja/masterLokasiKerja')],
     data() {
         return {
             list: [], total: 0, page: 1, perPage: 25, loading: false,

@@ -3,8 +3,8 @@
      Contoh isi: tim Information Technology.
      CATATAN: seluruh teks & gambar ditulis langsung di file ini
      (tanpa props/array JS) supaya mudah disesuaikan manual.
-     Ganti `url('/img/IMG_5417.JPG')` pada blok .dt-shot--* di CSS
-     dengan foto asli tiap momen tim.
+     Foto tiap momen tim dipasang lewat :style pada elemennya
+     (lihat TimSection.vue), bukan url() di CSS.
      ══════════════════════════════════════════════════════════ -->
 <template>
     <Head>
@@ -987,8 +987,16 @@ onUnmounted(() => revealObs?.disconnect());
     height: 2.9rem;
     flex: none;
     border-radius: 50%;
-    /* PLACEHOLDER — ganti dengan foto anggota tim */
-    background: url('/img/IMG_5417.JPG') 45% 25% / cover;
+    /* Foto disuplai template lewat --dt-ava, mis.
+       :style="{ '--dt-ava': `url('${anggota.foto}')` }". Tanpa itu, abu-abu.
+
+       Sengaja TIDAK menulis url('/img/...') literal di sini: Vite mencoba
+       menyelesaikan setiap url() absolut saat build, sementara laravel-vite-plugin
+       mematikan publicDir — jadi berkas di public/ berada di luar jangkauannya dan
+       setiap build berakhir dengan "didn't resolve at build time". Menyalakan
+       publicDir bukan jalan keluarnya: Vite lalu menulis ulang jalurnya jadi
+       /build/img/... yang justru tidak ada di sana. */
+    background: var(--dt-ava, #e2e8f0) 45% 25% / cover;
     border: 2px solid rgba(255, 255, 255, 0.6);
 }
 .dt-quote footer strong {

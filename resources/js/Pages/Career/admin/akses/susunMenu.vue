@@ -21,8 +21,8 @@
             </div>
             <div class="sm-head__act">
                 <span v-if="kotor" class="sm-dirty"><i class="bi bi-dot"></i> Belum disimpan</span>
-                <button class="sm-btn-ghost" type="button" :disabled="!kotor || sibuk" @click="muat"><i class="bi bi-arrow-counterclockwise"></i> Batalkan</button>
-                <button class="pkg-newbtn" type="button" :disabled="sibuk" @click="simpan">
+                <button class="sm-btn-ghost" type="button" :disabled="!kotor || sibuk" :onClick="!kotor || sibuk ? null : muat"><i class="bi bi-arrow-counterclockwise"></i> Batalkan</button>
+                <button class="pkg-newbtn" type="button" :disabled="sibuk" :onClick="sibuk ? null : simpan">
                     <i class="bi" :class="sibuk ? 'bi-hourglass-split' : 'bi-check2'"></i> Simpan Susunan
                 </button>
             </div>
@@ -84,7 +84,7 @@
                         <el-option v-for="(g, i) in grup" :key="g._k" :value="i" :label="g.judul || 'Tanpa nama'" />
                         <el-option :value="-1" label="＋ Grup baru (ikut header master)" />
                     </el-select>
-                    <button class="sm-addbtn" type="button" :disabled="!pilihan.length" @click="tambahKeMenu">
+                    <button class="sm-addbtn" type="button" :disabled="!pilihan.length" :onClick="!pilihan.length ? null : tambahKeMenu">
                         <i class="bi bi-arrow-right-circle"></i> Tambah ke Menu<span v-if="pilihan.length"> ({{ pilihan.length }})</span>
                     </button>
                 </div>
@@ -108,7 +108,7 @@
                                     placeholder="Nama grup (header sidebar)" maxlength="100"
                                 />
                                 <span class="sm-grp__n">{{ g.items.length }} menu</span>
-                                <button class="sm-mini sm-mini--danger" type="button" :title="g.items.length ? 'Kosongkan dulu grupnya' : 'Hapus grup'" :disabled="!!g.items.length" @click="hapusGrup(gi)">
+                                <button class="sm-mini sm-mini--danger" type="button" :title="g.items.length ? 'Kosongkan dulu grupnya' : 'Hapus grup'" :disabled="!!g.items.length" :onClick="!!g.items.length ? null : () => hapusGrup(gi)">
                                     <i class="bi bi-trash"></i>
                                 </button>
                             </div>
@@ -157,7 +157,7 @@
                                                 <span class="sm-edit__note">
                                                     Kosong / sama dengan master = <b>ikut Master Menu</b>, jadi perubahan di Master Menu tetap menular ke akun ini.
                                                 </span>
-                                                <button class="sm-btn-ghost sm-btn-ghost--sm" type="button" :disabled="!ditimpa(it)" @click="kembalikanKeMaster(it)">
+                                                <button class="sm-btn-ghost sm-btn-ghost--sm" type="button" :disabled="!ditimpa(it)" :onClick="!ditimpa(it) ? null : () => kembalikanKeMaster(it)">
                                                     <i class="bi bi-arrow-counterclockwise"></i> Kembalikan ke master
                                                 </button>
                                             </div>

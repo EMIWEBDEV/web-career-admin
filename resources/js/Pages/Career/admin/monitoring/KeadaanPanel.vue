@@ -28,7 +28,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed } from 'vue';
 
 const props = defineProps({
     keadaan: { type: String, default: 'kosong' }, // memuat | galat | kosong
@@ -37,15 +37,15 @@ const props = defineProps({
     ket: { type: String, default: '' },
     // Versi ringkas untuk laci/kolom sempit — padding & ikon diperkecil.
     rapat: { type: Boolean, default: false },
-})
+});
 
-defineEmits(['ulang'])
+defineEmits(['ulang']);
 
-const IKON = { memuat: 'bi-arrow-repeat', galat: 'bi-wifi-off', kosong: 'bi-inbox' }
-const TEKS = { memuat: 'Memuat…', galat: 'Gagal memuat data', kosong: 'Belum ada data' }
+const IKON = { memuat: 'bi-arrow-repeat', galat: 'bi-wifi-off', kosong: 'bi-inbox' };
+const TEKS = { memuat: 'Memuat…', galat: 'Gagal memuat data', kosong: 'Belum ada data' };
 
-const ikonAkhir = computed(() => props.ikon || IKON[props.keadaan] || IKON.kosong)
-const teksBawaan = computed(() => TEKS[props.keadaan] || TEKS.kosong)
+const ikonAkhir = computed(() => props.ikon || IKON[props.keadaan] || IKON.kosong);
+const teksBawaan = computed(() => TEKS[props.keadaan] || TEKS.kosong);
 </script>
 
 <style scoped>

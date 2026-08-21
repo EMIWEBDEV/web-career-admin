@@ -205,6 +205,17 @@ class CareerAdminController extends Controller
                     // tak boleh disembunyikan dari portalnya — kalau
                     // disembunyikan, ia tak pernah melihat tombol mengerjakan.
                     'wajibTampil' => ($r->Flag_Wajib_Tampil ?? 'T') === 'Y',
+                    // Tipe yang jadwalnya TIDAK diumumkan ke kandidat (negosiasi
+                    // penawaran). Dikirim supaya layar Alur bisa membedakan
+                    // "berjadwal, jadi wajib terlihat" dari "berjadwal, tapi
+                    // rapat internal" — tanpa ini ia harus menghafal kodenya.
+                    'jadwalPrivat' => \App\Support\Career\JadwalPrivat::untuk($r->Kode),
+                    // PEMERIKSAAN (reference check, background check): bukan tes,
+                    // jadi tidak dinilai dengan angka maupun predikat — hasilnya
+                    // berupa temuan per komponen/narasumber lalu satu adjudikasi.
+                    // Selama kolomnya belum ada di basis data, nilainya false dan
+                    // layar Alur memakai daftar kode cadangannya sendiri.
+                    'pemeriksaan' => ($r->Flag_Pemeriksaan ?? 'T') === 'Y',
                     'ikon' => $r->Ikon,
                 ])
                 ->values();

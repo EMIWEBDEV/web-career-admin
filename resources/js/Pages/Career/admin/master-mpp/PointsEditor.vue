@@ -67,7 +67,7 @@
                     type="button"
                     class="pted-add-btn"
                     :disabled="!draft.trim()"
-                    @click="tambah"
+                    :onClick="!draft.trim() ? null : tambah"
                 >
                     <i class="bi bi-plus-circle-fill"></i> Tambah <span class="pted-kbd">Enter ↵</span>
                 </button>

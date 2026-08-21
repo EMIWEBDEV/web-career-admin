@@ -13,7 +13,7 @@
                 <p>Monitor sesi tes, agenda program, dan tenggat waktu pendaftaran dalam satu hub interaktif modern.</p>
             </div>
             <div class="wcc-hero__actions">
-                <button type="button" class="wcc-hero-btn wcc-hero-btn--ghost" title="Muat ulang data kalender" :disabled="memuat" @click="refresh">
+                <button type="button" class="wcc-hero-btn wcc-hero-btn--ghost" title="Muat ulang data kalender" :disabled="memuat" :onClick="memuat ? null : refresh">
                     <i class="bi bi-arrow-clockwise" :class="{ 'wcc-spin': memuat }"></i>
                     <span>Muat Ulang</span>
                 </button>
@@ -97,7 +97,7 @@
                             <button type="button" class="wcc-nav-btn" title="Minggu sebelumnya" @click="geserMinggu(-1)">
                                 <i class="bi bi-chevron-left"></i>
                             </button>
-                            <button type="button" class="wcc-nav-btn wcc-nav-btn--today" :disabled="offsetMinggu === 0" title="Kembali ke minggu ini" @click="resetMinggu">
+                            <button type="button" class="wcc-nav-btn wcc-nav-btn--today" :disabled="offsetMinggu === 0" title="Kembali ke minggu ini" :onClick="offsetMinggu === 0 ? null : resetMinggu">
                                 Hari ini
                             </button>
                             <button type="button" class="wcc-nav-btn" title="Minggu berikutnya" @click="geserMinggu(1)">
@@ -160,7 +160,16 @@
                     </div>
 
                     <div v-else class="wcc-event-list">
-                        <button v-for="event in agendaHariSaring" :key="event.id" type="button" class="wcc-event"
+                        <!-- SATU BARIS = DUA AKSI, jadi dua tombol BERSEBELAHAN.
+                             Dulu tombol "Salin ringkasan" bersarang di dalam tombol
+                             barisnya. HTML melarang itu, dan akibatnya bukan sekadar
+                             peringatan build: peramban MEMBETULKAN sendiri sarangnya
+                             saat mengurai, sehingga pohon yang dirender berbeda dari
+                             yang dirender server — persis penyebab galat hidrasi.
+                             Pembungkusnya sekarang <div>, dan kedua tombol jadi
+                             saudara di dalamnya. -->
+                        <div v-for="event in agendaHariSaring" :key="event.id" class="wcc-event-row">
+                        <button type="button" class="wcc-event"
                             :class="{ alert: event.konflik || event.kesiapan === 'PERLU_PERHATIAN' }"
                             :style="{ '--event-color': jenis(event).warna }" @click="bukaDetail(event)">
                             <span class="wcc-event__time">
@@ -187,11 +196,17 @@
                                 </span>
                             </div>
 
-                            <button type="button" class="wcc-event__copy-btn" title="Salin ringkasan" @click.stop="salinEvent(event)">
-                                <i class="bi bi-clipboard"></i>
-                            </button>
                             <i class="bi bi-chevron-right wcc-event__arrow"></i>
                         </button>
+
+                        <!-- Di LUAR tombol baris, ditumpuk di atasnya lewat CSS.
+                             @click.stop tetap dipertahankan: pembungkusnya sekarang
+                             div, tapi klik yang merambat naik masih bisa tertangkap
+                             penangan lain di atasnya. -->
+                        <button type="button" class="wcc-event__copy-btn" title="Salin ringkasan" @click.stop="salinEvent(event)">
+                            <i class="bi bi-clipboard"></i>
+                        </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1495,6 +1510,16 @@ onUnmounted(() => {
     padding-right: 4px;
 }
 
+/* Pembungkus satu baris agenda. Ada supaya tombol salin bisa berdiri di LUAR
+   tombol barisnya — HTML melarang tombol bersarang, dan peramban membetulkan
+   sarangnya sendiri saat mengurai sehingga pohonnya berbeda dari yang dirender
+   server. Geseran hover pindah ke sini supaya keduanya bergerak bersama. */
+.wcc-event-row {
+    position: relative;
+    transition: transform 0.15s ease;
+}
+.wcc-event-row:hover { transform: translateX(2px); }
+
 .wcc-event {
     display: flex;
     align-items: center;
@@ -1512,11 +1537,10 @@ onUnmounted(() => {
     transition: all 0.15s ease;
     position: relative;
 }
-.wcc-event:hover {
+.wcc-event-row:hover .wcc-event {
     background: #f8fafc;
     border-color: #cbd5e1;
     border-left-color: var(--event-color);
-    transform: translateX(2px);
 }
 .wcc-event.alert {
     background: #fffaf7;
@@ -1592,6 +1616,13 @@ onUnmounted(() => {
 }
 
 .wcc-event__copy-btn {
+    /* Ditumpuk di atas baris, tepat di kiri panahnya — posisi yang sama dengan
+       sebelumnya, hanya tidak lagi bersarang di dalam tombolnya. */
+    position: absolute;
+    top: 50%;
+    right: 30px;
+    transform: translateY(-50%);
+    z-index: 1;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1605,7 +1636,10 @@ onUnmounted(() => {
     opacity: 0;
     transition: all 0.15s ease;
 }
-.wcc-event:hover .wcc-event__copy-btn { opacity: 1; }
+/* Ikut tampil saat papan ketik masuk ke barisnya — kalau hanya :hover, tombol
+   ini tidak pernah bisa dijangkau tanpa tetikus. */
+.wcc-event-row:hover .wcc-event__copy-btn,
+.wcc-event-row:focus-within .wcc-event__copy-btn { opacity: 1; }
 .wcc-event__copy-btn:hover { background: #e2e8f0; color: var(--wcc-accent); }
 
 .wcc-event__arrow {
@@ -1613,7 +1647,7 @@ onUnmounted(() => {
     color: #cbd5e1;
     transition: color 0.15s;
 }
-.wcc-event:hover .wcc-event__arrow { color: var(--wcc-accent); }
+.wcc-event-row:hover .wcc-event__arrow { color: var(--wcc-accent); }
 
 .wcc-badge {
     display: inline-flex;

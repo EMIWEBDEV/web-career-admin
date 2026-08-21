@@ -61,7 +61,7 @@
                         <span><i class="bi bi-list-ol"></i> PERTANYAAN FORM — {{ (f._pertanyaan || []).length }} butir</span>
                         <button class="wca-btn wca-btn--soft wca-btn--sm" type="button"
                                 :disabled="savingQ[f.Id_Master_Feedback_Form]"
-                                @click="showTypePicker(f)"><i class="bi bi-plus-circle"></i> Tambah Pertanyaan</button>
+                                :onClick="savingQ[f.Id_Master_Feedback_Form] ? null : () => showTypePicker(f)"><i class="bi bi-plus-circle"></i> Tambah Pertanyaan</button>
                     </div>
 
                     <!-- Loading skeleton -->
@@ -382,7 +382,7 @@
                             <button
                                 class="wca-btn wca-btn--primary"
                                 type="button"
-                                @click="saveQuestions(f)"
+                                :onClick="savingQ[f.Id_Master_Feedback_Form] ? null : () => saveQuestions(f)"
                                 :disabled="savingQ[f.Id_Master_Feedback_Form]"
                             >
                                 <i class="bi" :class="savingQ[f.Id_Master_Feedback_Form] ? 'bi-hourglass-split' : 'bi-check-lg'"></i>
@@ -546,9 +546,12 @@ import { Head } from '@inertiajs/vue3';
 import AdminModal from '@career/AdminModal.vue';
 import ConfirmModal from '@career/ConfirmModal.vue';
 import draggable from 'vuedraggable';
+import { ingatModal } from '@utils/ingatModal';
 
 export default {
     components: { Head, AdminModal, ConfirmModal, draggable },
+    // Modal di halaman ini selamat dari refresh — lihat @utils/ingatModal.
+    mixins: [ingatModal('admin/master-feedback/Index')],
     data() {
         return {
             list: [],

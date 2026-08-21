@@ -53,7 +53,7 @@
                                     <div><small>Departemen</small><b>{{ detail.subDivisi?.nama || '—' }}</b></div>
                                     <div><small>Level</small><b>{{ detail.level.nama || '—' }}</b></div>
                                     <div><small>Jumlah Rekrutmen</small><b>{{ detail.jumlahRekrutmen }} orang</b></div>
-                                    <div><small>Tanggal Periode</small><b>{{ formatTanggal(detail.tanggalPeriode) }}</b></div>
+                                    <div><small>{{ detail.sla?.mulai ? 'Periode Target' : 'Tenggat' }}</small><b>{{ periodeTeks }}</b></div>
                                     <div><small>Lokasi</small><b>{{ detail.lokasi.nama || '—' }}</b></div>
                                     <div><small>Penanggung Jawab</small><b>{{ detail.penanggungJawab.nama }}</b></div>
                                 </div>
@@ -160,6 +160,7 @@
 import { ref, computed, watch, onBeforeUnmount, nextTick } from 'vue';
 import axios from 'axios';
 import { formatTanggal, statusBadge, statusLabel, jenisProgramLabel } from './masterMppHelpers';
+import { rentangPendek } from '@utils/rentangTanggal';
 
 const props = defineProps({ no: { type: String, default: null } });
 const emit = defineEmits(['close', 'edit', 'toggle-selesai', 'batalkan', 'aktifkan']);
@@ -169,6 +170,16 @@ const loading = ref(false);
 const error = ref(false);
 const panel = ref(null);
 const closeBtn = ref(null);
+
+/**
+ * Periode target sebagai RENTANG bila tanggal mulainya memang tersimpan.
+ *
+ * Satu tanggal di bawah label "Tanggal Periode" tidak bisa dibaca — mulai atau
+ * selesai? Yang dimaksud rentang kerjanya: dari hari MPP dibuat sampai tenggat
+ * SLA-nya. MPP lama (lahir sebelum snapshot SLA ada) tidak punya tanggal mulai,
+ * dan di situ tenggatnya ditulis sendirian, dengan label yang sesuai.
+ */
+const periodeTeks = computed(() => rentangPendek(detail.value?.sla?.mulai, detail.value?.tanggalPeriode));
 
 const categorizedSkills = computed(() => {
     if (!detail.value?.skill || !detail.value.skill.length) return [];

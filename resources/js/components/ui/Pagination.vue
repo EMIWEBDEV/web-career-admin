@@ -2,7 +2,7 @@
     <div class="pagination-container" v-if="totalPages > 1">
         <button
             class="page-btn"
-            @click="changePage(currentPage - 1)"
+            :onClick="currentPage === 1 ? null : () => changePage(currentPage - 1)"
             :disabled="currentPage === 1"
         >
             <i class="bi bi-chevron-left"></i>
@@ -20,7 +20,7 @@
         </div>
         <button
             class="page-btn"
-            @click="changePage(currentPage + 1)"
+            :onClick="currentPage === totalPages ? null : () => changePage(currentPage + 1)"
             :disabled="currentPage === totalPages"
         >
             <i class="bi bi-chevron-right"></i>

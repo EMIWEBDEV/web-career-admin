@@ -4,9 +4,7 @@ namespace App\Jobs\Career;
 
 use App\Jobs\Career\Concerns\AntreanWebCareers;
 use App\Jobs\Career\Concerns\CatatGagalWebCareers;
-use App\Mail\Career\ResetOtpMail;
-use App\Mail\Career\ResetSelesaiMail;
-use App\Mail\Career\VerifikasiEmailMail;
+use App\Services\Surat\SuratClient;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -14,7 +12,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
 
 /**
  * WEB CAREER — pengiriman email kandidat secara ASINKRON.
@@ -25,6 +23,16 @@ use Illuminate\Support\Facades\Mail;
  *
  * Jenis email dibuat extensible lewat $jenis; saat ini baru VERIFIKASI.
  * Token verifikasi ASLI hanya lewat payload job ini — DB cuma menyimpan hash.
+ *
+ * ══ SURATNYA DIKIRIM EVO MAIL SERVER, BUKAN OLEH LAYANAN INI ══════════════
+ *
+ * Web Careers tidak lagi memegang kredensial SMTP dan tidak lagi merender
+ * berkas surat. Job ini tetap yang memutuskan KAPAN sebuah surat dikirim dan
+ * untuk kandidat mana — ia yang tahu konteksnya — lalu menembak API ke server
+ * surat, yang mengirim serentak dan menjawab terkirim atau gagal apa adanya.
+ *
+ * Yang tidak berubah: antrean, batas percobaan, dan pencatatan kegagalan
+ * semuanya tetap milik job ini.
  */
 class WcSyncEmailJob implements ShouldQueue
 {
@@ -51,13 +59,63 @@ class WcSyncEmailJob implements ShouldQueue
     /** Data tambahan per jenis (VERIFIKASI: ['token' => tokenAsli]). */
     protected array $data;
 
+    /**
+     * Kunci idempotensi yang dibawa ke server surat.
+     *
+     * ══ DISUSUN DI KONSTRUKTOR, DAN ITU YANG MEMBUATNYA BEKERJA ═══════════
+     *
+     * Kunci ini ikut ter-serialisasi bersama job. Cloud Tasks mengulang job
+     * dengan MUATAN YANG SAMA — konstruktor tidak dijalankan lagi — jadi
+     * percobaan kedua membawa kunci yang persis sama, dan server surat
+     * mengembalikan jawaban yang pertama tanpa mengirim apa pun lagi.
+     *
+     * Itu menutup lubang yang paling merepotkan: jaringan putus SESUDAH server
+     * surat mengirim tapi SEBELUM jawabannya sampai kemari. Tanpa kunci ini,
+     * kandidat menerima surat yang sama dua atau tiga kali.
+     *
+     * Menyusunnya di dalam handle() akan menghasilkan kunci baru di setiap
+     * percobaan — sama saja dengan tidak memakai kunci sama sekali.
+     */
+    protected string $kunci;
+
     public function __construct(string $jenis, int $userId, array $data = [])
     {
         $this->jenis = $jenis;
         $this->userId = $userId;
         $this->data = $data;
 
+        $this->kunci = $this->susunKunci();
+
         $this->aturAntrean(self::QUEUE);
+    }
+
+    /**
+     * Kunci untuk satu pekerjaan yang sama.
+     *
+     * Verifikasi dan OTP diturunkan dari RAHASIANYA SENDIRI — token dan kode
+     * yang bersangkutan — karena keduanya memang sekali pakai: satu token
+     * verifikasi berhak atas tepat satu surat. Kalau kandidat menekan "kirim
+     * ulang", token barunya menghasilkan kunci baru, dan suratnya berangkat
+     * sebagaimana mestinya.
+     *
+     * Yang disimpan cuma potongan sidiknya, bukan nilai aslinya. Kunci ini
+     * mendarat di tabel basis data milik server surat, dan token verifikasi
+     * yang tersimpan di sana sama saja dengan menaruh kunci rumah di bawah
+     * kesetnya.
+     *
+     * Pemberitahuan ganti sandi tidak punya rahasia semacam itu, jadi ia
+     * memakai penanda acak — yang tetap stabil lintas percobaan karena
+     * dibuat di konstruktor.
+     */
+    private function susunKunci(): string
+    {
+        $sidik = fn (string $nilai) => substr(hash('sha256', $nilai.'|'.$this->userId), 0, 24);
+
+        return match ($this->jenis) {
+            self::JENIS_VERIFIKASI => 'verif:'.$this->userId.':'.$sidik((string) ($this->data['token'] ?? '')),
+            self::JENIS_RESET_OTP => 'otp:'.$this->userId.':'.$sidik((string) ($this->data['otp'] ?? '')),
+            default => 'sandi:'.$this->userId.':'.Str::random(16),
+        };
     }
 
     /**
@@ -132,7 +190,16 @@ class WcSyncEmailJob implements ShouldQueue
             'token' => $token,
         ]);
 
-        Mail::to($user->Email)->send(new VerifikasiEmailMail($user->Nama, $verifUrl));
+        app(SuratClient::class)->kirim(
+            kepada: $user->Email,
+            template: 'verifikasi-email',
+            data: [
+                'nama' => $user->Nama,
+                'verif_url' => $verifUrl,
+                'berlaku_menit' => (int) ($this->data['menit'] ?? 30),
+            ],
+            kunciIdempotensi: $this->kunci,
+        );
 
         DB::table('N_WEB_CAREERS_Users')->where('Id_Users', $this->userId)->update([
             'Email_Verif_Sent_At' => now(),
@@ -165,7 +232,16 @@ class WcSyncEmailJob implements ShouldQueue
 
         $menit = (int) ($this->data['menit'] ?? 10);
 
-        Mail::to($user->Email)->send(new ResetOtpMail($user->Nama, $otp, $menit));
+        app(SuratClient::class)->kirim(
+            kepada: $user->Email,
+            template: 'reset-sandi-otp',
+            data: [
+                'nama' => $user->Nama,
+                'otp' => $otp,
+                'berlaku_menit' => $menit,
+            ],
+            kunciIdempotensi: $this->kunci,
+        );
 
         DB::table('N_WEB_CAREERS_Users')->where('Id_Users', $this->userId)->update([
             'Reset_Otp_Sent_At' => now(),
@@ -180,7 +256,12 @@ class WcSyncEmailJob implements ShouldQueue
     /** Kirim email pemberitahuan bahwa kata sandi berhasil diubah (tanpa rahasia). */
     protected function kirimResetSelesai(object $user): void
     {
-        Mail::to($user->Email)->send(new ResetSelesaiMail($user->Nama));
+        app(SuratClient::class)->kirim(
+            kepada: $user->Email,
+            template: 'reset-sandi-selesai',
+            data: ['nama' => $user->Nama],
+            kunciIdempotensi: $this->kunci,
+        );
 
         Log::info("[EMAIL] notifikasi ganti sandi terkirim ke {$user->Email} (user #{$this->userId}).");
         Log::channel('web_career')->info("[EMAIL] notifikasi ganti sandi terkirim ke {$user->Email} (user #{$this->userId}).");

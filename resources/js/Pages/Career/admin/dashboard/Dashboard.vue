@@ -44,7 +44,7 @@
                     </button>
                 </div>
 
-                <button type="button" class="wca-btn wca-btn--primary wcd-btn-refresh" :disabled="sibuk" @click="refreshNow">
+                <button type="button" class="wca-btn wca-btn--primary wcd-btn-refresh" :disabled="sibuk" :onClick="sibuk ? null : refreshNow">
                     <i class="bi bi-arrow-clockwise" :class="{ 'wcd-spin': sibuk }"></i>
                     <span>Muat ulang</span>
                 </button>

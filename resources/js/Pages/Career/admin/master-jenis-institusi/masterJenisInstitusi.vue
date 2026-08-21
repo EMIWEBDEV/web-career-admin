@@ -122,12 +122,15 @@ import axios from 'axios';
 import { Head } from '@inertiajs/vue3';
 import AdminModal from '@career/AdminModal.vue';
 import ConfirmModal from '@career/ConfirmModal.vue';
+import { ingatModal } from '@utils/ingatModal';
 
 const API = '/api/v1/master-jenis-institusi';
 const CFG = { headers: { Accept: 'application/json' } };
 
 export default {
     components: { Head, AdminModal, ConfirmModal },
+    // Modal di halaman ini selamat dari refresh — lihat @utils/ingatModal.
+    mixins: [ingatModal('admin/master-jenis-institusi/masterJenisInstitusi')],
     data() {
         return {
             list: [], loading: false, q: '',

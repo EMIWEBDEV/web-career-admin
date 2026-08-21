@@ -161,7 +161,7 @@
         <div v-if="totalPages > 1" class="pkg-pager">
             <span class="pkg-pager__info">Menampilkan <b>{{ pageFrom }}–{{ pageTo }}</b> dari <b>{{ list.length }}</b> pembukaan</span>
             <div class="pkg-pager__nav">
-                <button type="button" class="pkg-pager__btn" :disabled="page <= 1" @click="page = Math.max(1, page - 1)"><i class="bi bi-chevron-left"></i></button>
+                <button type="button" class="pkg-pager__btn" :disabled="page <= 1" :onClick="page <= 1 ? null : () => page = Math.max(1, page - 1)"><i class="bi bi-chevron-left"></i></button>
                 <button v-for="n in totalPages" :key="n" type="button" class="pkg-pager__btn" :class="{ on: n === page }" @click="page = n">{{ n }}</button>
                 <button type="button" class="pkg-pager__btn" :disabled="page >= totalPages" @click="page = Math.min(totalPages, page + 1)"><i class="bi bi-chevron-right"></i></button>
             </div>
@@ -229,6 +229,7 @@ import { Head } from '@inertiajs/vue3';
 import AdminModal from '@career/AdminModal.vue';
 import ConfirmModal from '@career/ConfirmModal.vue';
 import RefSelect from '@career/RefSelect.vue';
+import { ingatModal } from '@utils/ingatModal';
 
 const API = '/api/v1/pembukaan';
 const CFG = { headers: { Accept: 'application/json' } };
@@ -236,6 +237,8 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', '
 
 export default {
     components: { Head, AdminModal, ConfirmModal, RefSelect },
+    // Modal di halaman ini selamat dari refresh — lihat @utils/ingatModal.
+    mixins: [ingatModal('admin/pembukaan-program/pembukaanProgram')],
     data() {
         return {
             list: [],

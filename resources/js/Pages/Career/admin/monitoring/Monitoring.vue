@@ -24,7 +24,7 @@
                         :title="opt === 0 ? 'Auto refresh mati' : `Refresh tiap ${opt} detik`"
                         @click="intervalSec = opt">{{ opt === 0 ? 'Off' : opt + 's' }}</button>
                 </div>
-                <button class="wca-btn wca-btn--primary wca-btn--sm" title="Refresh sekarang" :disabled="busy" @click="refreshNow">
+                <button class="wca-btn wca-btn--primary wca-btn--sm" title="Refresh sekarang" :disabled="busy" :onClick="busy ? null : refreshNow">
                     <i class="bi bi-arrow-clockwise"></i> Refresh
                 </button>
             </div>

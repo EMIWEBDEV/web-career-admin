@@ -41,6 +41,7 @@ use Illuminate\Support\Str;
  *
  * CONTOH
  *   php artisan karir:seed-kandidat --program=20 --jumlah=120
+ *   php artisan karir:seed-kandidat --program=20 --jumlah=100 --tahap=2 --slug=psikotes
  *   php artisan karir:seed-kandidat --program=25 --jumlah=40 --slug=squad
  *   php artisan karir:seed-kandidat --program=20 --bersihkan
  */
@@ -50,6 +51,7 @@ class SeedKandidatUji extends Command
         {--program= : Id program (lihat daftar bila dikosongkan)}
         {--jumlah=60 : Berapa kandidat dibuat (1–500)}
         {--slug=uji : Penanda kumpulan — dipakai email & Kode_Calon, dan dipakai --bersihkan}
+        {--tahap= : Parkir SEMUA kandidat di tahap ini (1-based). Kosong = sebaran corong}
         {--bersihkan : Hapus kandidat uji ber-slug ini, jangan membuat yang baru}
         {--seed=2026 : Benih pengacak; nilai sama menghasilkan sebaran yang sama}';
 
@@ -67,12 +69,39 @@ class SeedKandidatUji extends Command
      */
     private const BOBOT_TAHAP = [1 => 26, 2 => 24, 3 => 18, 4 => 14, 5 => 10, 6 => 5, 7 => 3];
 
+    /**
+     * Panjang terbesar slug yang masih muat di Kode_Calon.
+     *
+     * Kolomnya varchar(15) dan isinya berpola UJI-<SLUG>-<4 digit>, jadi yang
+     * tersisa untuk slug tinggal enam huruf.
+     *
+     * Penjagaan ini ada karena kegagalannya sangat tidak informatif: slug yang
+     * satu huruf kelewat panjang membuat SETIAP kandidat ditolak dengan
+     * "String or binary data would be truncated" — kalimat yang tidak menyebut
+     * kolom, tidak menyebut nilainya, dan tidak menyinggung slug sama sekali.
+     * Meminta 300 kandidat lalu menerima 300 baris galat itu, satu per satu,
+     * adalah cara yang sangat mahal untuk mengetahui bahwa namanya kepanjangan.
+     */
+    private const SLUG_MAKS = 6;
+
     public function handle(LamaranService $svc): int
     {
         $slug = Str::slug((string) $this->option('slug')) ?: 'uji';
 
         if ($this->option('bersihkan')) {
             return $this->bersihkan($slug);
+        }
+
+        if (strlen($slug) > self::SLUG_MAKS) {
+            $this->error(sprintf(
+                "Slug '%s' kepanjangan (%d huruf). Maksimum %d — Kode_Calon cuma varchar(15) dan polanya UJI-<SLUG>-0000.",
+                $slug,
+                strlen($slug),
+                self::SLUG_MAKS,
+            ));
+            $this->line('  Coba yang lebih pendek, mis. --slug='.substr($slug, 0, self::SLUG_MAKS));
+
+            return self::FAILURE;
         }
 
         $programId = (int) $this->option('program');
@@ -120,10 +149,46 @@ class SeedKandidatUji extends Command
         $this->info("Program : {$program->Nama} (#{$programId})");
         $this->info("Alur    : ".($alur->Nama ?? '-').' — '.$tahapAlur->count().' tahap');
         $this->info("Membuat : {$jumlah} kandidat, penanda '{$slug}'");
+
+        /*
+         * --tahap: SELURUH kandidat diparkir di satu tahap yang sama.
+         *
+         * Sebaran corong bawaan bagus untuk melihat papan yang hidup, tapi
+         * buruk untuk menguji satu layar tertentu: meminta 300 kandidat demi
+         * menguji penjadwalan massal lalu mendapat 42 di tahap yang dituju
+         * bukan pengujian, melainkan tebak-tebakan.
+         *
+         * Diparkir berarti tahapnya BERJALAN dan aktivitasnya belum satu pun
+         * selesai — persis keadaan yang dicari layar penjadwalan.
+         */
+        $parkir = $this->option('tahap') === null ? 0 : (int) $this->option('tahap');
+
+        if ($parkir < 0 || $parkir > $tahapAlur->count()) {
+            $this->error("Alur ini punya {$tahapAlur->count()} tahap — --tahap={$parkir} di luar jangkauan.");
+
+            return self::FAILURE;
+        }
+
+        if ($parkir > 0) {
+            $label = $tahapAlur->firstWhere('Urutan', $parkir)->Label ?? ('tahap '.$parkir);
+            $this->info("Diparkir: SEMUA di tahap {$parkir} — {$label}");
+        }
+
         $this->newLine();
 
-        $sasaran = $this->rencanaSebaran($jumlah, $tahapAlur->count());
+        $sasaran = $parkir > 0
+            ? array_fill(0, $jumlah, $parkir)
+            : $this->rencanaSebaran($jumlah, $tahapAlur->count());
         $mulai = $this->nomorTerakhir($slug) + 1;
+
+        // Nomor lima digit membuat Kode_Calon melewati 15 huruf, dan gejalanya
+        // sama tidak informatifnya dengan slug kepanjangan. Dihentikan di sini,
+        // sebelum satu baris pun ditulis.
+        if ($mulai + $jumlah - 1 > 9999) {
+            $this->error("Nomor kandidat akan melewati 9999 untuk slug '{$slug}'. Pakai slug lain, atau bersihkan yang lama.");
+
+            return self::FAILURE;
+        }
 
         $bar = $this->output->createProgressBar($jumlah);
         $bar->start();

@@ -33,7 +33,7 @@
                     {{ (hal - 1) * perHal + 1 }}–{{ Math.min(hal * perHal, items.length) }} dari {{ items.length }}
                 </span>
                 <div class="db-paginasi__nav">
-                    <button type="button" class="db-paginasi__btn" :disabled="hal <= 1" @click="hal--">
+                    <button type="button" class="db-paginasi__btn" :disabled="hal <= 1" :onClick="hal <= 1 ? null : () => hal--">
                         <i class="bi bi-chevron-left"></i>
                     </button>
                     <span class="db-paginasi__page">{{ hal }}/{{ totalHal }}</span>

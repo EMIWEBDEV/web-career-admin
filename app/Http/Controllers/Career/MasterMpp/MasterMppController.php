@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Career\MasterMpp;
 
 use App\Helpers\ResponseHelper;
 use App\Http\Controllers\Controller;
+use App\Support\Career\SlaMpp;
 use App\Support\CareerShell;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -54,13 +55,31 @@ class MasterMppController extends Controller
         );
     }
 
-    /** Kolom sort yang diizinkan (whitelist) → cegah sort ke kolom sembarang. */
-    private const SORTABLE = ['tanggal_periode', 'status'];
+    /**
+     * Kolom sort yang diizinkan (whitelist) → cegah sort ke kolom sembarang.
+     *
+     * `terbaru` = urutan MPP DIBUAT, bukan tanggal periodenya. Keduanya sering
+     * dikira sama padahal tidak: MPP yang dibuat hari ini bisa saja periodenya
+     * lebih awal daripada MPP bulan lalu, dan daftar yang diurutkan periode
+     * membuat transaksi yang baru saja disimpan muncul entah di halaman berapa.
+     */
+    private const SORTABLE = ['terbaru', 'tanggal_periode', 'status'];
 
     /** Kolom select dasar (list() & detail()) — method, bukan const: butuh DB::raw() di runtime. */
     private function selectList(): array
     {
-        return [
+        // Snapshot SLA ikut dibaca bila kolomnya sudah ada. Tanpa ini, borang
+        // Ubah memperlihatkan tenggat hasil hitungan HARI INI untuk MPP yang
+        // dibuat berbulan-bulan lalu — angka yang tidak pernah tersimpan di mana
+        // pun dan tidak sama dengan tenggat MPP itu sendiri.
+        $sla = SlaMpp::siapSnapshot()
+            ? [
+                DB::raw('CONVERT(varchar(10), d.Sla_Mulai, 23) as sla_mulai'),
+                'd.Sla_Hari_Kerja as sla_hari',
+            ]
+            : [];
+
+        return array_merge($sla, [
             'g.No_Transaksi as no_transaksi',
             'g.Status as status_raw',
             'g.Flag_Selesai as flag_selesai_raw',
@@ -87,7 +106,7 @@ class MasterMppController extends Controller
             'mw.Nama_Workplace as workplace_type',
             'd.Experience_Level as experience_level_id',
             'mx.Nama_Experience_Level as experience_level',
-        ];
+        ]);
     }
 
     /** Daftar MPP — join header+detail+master organisasi, search/filter/sort + PAGINATION di server. */
@@ -95,11 +114,11 @@ class MasterMppController extends Controller
     {
         try {
             $page = max(1, (int) $request->query('page', 1));
-            $perPage = min(50, max(1, (int) $request->query('per_page', 9)));
-            $sort = (string) $request->query('sort', 'tanggal_periode');
+            $perPage = min(50, max(1, (int) $request->query('per_page', 12)));
+            $sort = (string) $request->query('sort', 'terbaru');
             $dir = strtolower((string) $request->query('dir', 'desc')) === 'asc' ? 'asc' : 'desc';
             if (!in_array($sort, self::SORTABLE, true)) {
-                $sort = 'tanggal_periode';
+                $sort = 'terbaru';
             }
 
             $result = DB::transaction(function () use ($request, $page, $perPage, $sort, $dir) {
@@ -108,10 +127,25 @@ class MasterMppController extends Controller
                 $data = $this->applyFilters($this->baseQuery(), $request)->select($this->selectList());
                 if ($sort === 'status') {
                     $data->orderByRaw("CASE WHEN g.Status = 'Y' THEN 1 ELSE 0 END " . $dir);
+                } elseif ($sort === 'terbaru') {
+                    // Id_Detail_MPP itu IDENTITY: naik terus, tidak pernah dipakai ulang.
+                    // No_Transaksi tidak bisa dipakai — "MPP-2026-99" mengurut SESUDAH
+                    // "MPP-2026-112" kalau dibandingkan sebagai teks.
+                    $data->orderBy('d.Id_Detail_MPP', $dir);
+                    $urutUtama = true;
                 } else {
                     $data->orderBy('g.Tanggal_Periode', $dir);
                 }
-                $data->orderBy('g.No_Transaksi'); // tie-breaker → urutan & pagination stabil
+
+                // Tie-breaker → urutan & pagination stabil: dua MPP berperiode sama
+                // tidak boleh bertukar tempat antar halaman.
+                //
+                // TIDAK dipasang saat urutan utamanya sudah kolom ini juga — SQL Server
+                // menolak kolom yang muncul dua kali di ORDER BY ("A column has been
+                // specified more than once in the order by list").
+                if (empty($urutUtama)) {
+                    $data->orderBy('d.Id_Detail_MPP', 'desc');
+                }
 
                 $rows = $data->offset(($page - 1) * $perPage)->limit($perPage)->get();
 
@@ -246,6 +280,11 @@ class MasterMppController extends Controller
             'employmentType' => $r->employment_type_id ? ['id' => $r->employment_type_id, 'nama' => $r->employment_type] : null,
             'workplaceType' => $r->workplace_type_id ? ['id' => $r->workplace_type_id, 'nama' => $r->workplace_type] : null,
             'experienceLevel' => $r->experience_level_id ? ['id' => $r->experience_level_id, 'nama' => $r->experience_level] : null,
+            // Ketentuan yang DIBEKUKAN pada MPP ini — null bila MPP-nya lahir
+            // sebelum fitur SLA ada, dan borangnya memang harus tahu itu.
+            'sla' => isset($r->sla_hari) && $r->sla_hari
+                ? ['mulai' => $r->sla_mulai, 'hari' => (int) $r->sla_hari]
+                : null,
         ];
     }
 
@@ -292,6 +331,15 @@ class MasterMppController extends Controller
         try {
             $data = $this->validasi($request);
 
+            // GERBANG SLA — tanggal target tidak boleh melewati ketentuan levelnya.
+            //
+            // Ditegakkan DI SINI, bukan cukup dengan mengunci kalender di layar:
+            // layar bisa basi (aturannya baru saja diubah di tab lain) dan pintu
+            // ini tetap bisa diketuk langsung tanpa lewat layar sama sekali.
+            if ($galat = $this->galatSla($data, null, true)) {
+                return ResponseHelper::error($galat, 422);
+            }
+
             // DIAGNOSTIK SEMENTARA (fix/mpp-mt) — lacak Flag_MT dari request s/d insert.
             Log::channel('web_career')->info('[DIAG-MT store] mentah=' . var_export($request->input('jenisProgram'), true)
                 . ' tervalidasi=' . var_export($data['jenisProgram'], true)
@@ -327,7 +375,10 @@ class MasterMppController extends Controller
                     'Experience_Level' => $data['experienceLevel'],
                     'Created_At' => now(),
                     'Created_By' => $userId,
-                ], 'Id_Detail_MPP');
+                ]
+                // SNAPSHOT SLA — lihat snapshotSla(). Inilah yang membuat perubahan
+                // master tahun depan tidak menulis ulang penilaian tahun ini.
+                + $this->snapshotSla($data['idLevel'], now()->toDateString()), 'Id_Detail_MPP');
 
                 $this->simpanPoints($idDetail, $data['tanggungJawab'], $data['persyaratan']);
                 $this->simpanRelasi($idDetail, 'N_WEB_CAREERS_Detail_Skill_MPP', 'Id_Skill', $this->resolveTagIds($data['skills'], 'N_WEB_CAREERS_Master_Skill', 'Id_Skill', 'Nama_Skill', $userId), $userId);
@@ -359,6 +410,14 @@ class MasterMppController extends Controller
 
             $data = $this->validasi($request);
 
+            // Gerbang yang sama dengan store(). Dihitung dari tanggal MULAI yang
+            // sudah beku di barisnya, bukan dari hari ini: kalau tidak, menyunting
+            // deskripsi sebuah MPP lama akan memperpanjang tenggatnya sendiri.
+            $bekuLama = $this->slaTersimpan($no);
+            if ($galat = $this->galatSla($data, $bekuLama->mulai ?? null)) {
+                return ResponseHelper::error($galat, 422);
+            }
+
             // DIAGNOSTIK SEMENTARA (fix/mpp-mt) — lacak Flag_MT dari request s/d update.
             Log::channel('web_career')->info("[DIAG-MT update {$no}] sebelum=" . var_export($row->Flag_MT, true)
                 . ' mentah=' . var_export($request->input('jenisProgram'), true)
@@ -388,7 +447,16 @@ class MasterMppController extends Controller
                     'Experience_Level' => $data['experienceLevel'],
                     'Updated_At' => now(),
                     'Updated_By' => $userId,
-                ]);
+                ]
+                // SNAPSHOT HANYA DIBEKUKAN ULANG BILA LEVELNYA BERGANTI.
+                //
+                // Level berganti berarti aturan lamanya memang tidak berlaku lagi
+                // untuk MPP ini. Selama levelnya sama, angkanya dibiarkan apa adanya —
+                // termasuk bila master sudah diubah sejak MPP ini dibuat. Menyunting
+                // satu kata di deskripsi tidak boleh diam-diam memindahkan tenggat.
+                + ((int) ($bekuLama->level ?? 0) === (int) $data['idLevel']
+                    ? []
+                    : $this->snapshotSla($data['idLevel'], $bekuLama->mulai ?? now()->toDateString())));
 
                 $this->simpanPoints($idDetail, $data['tanggungJawab'], $data['persyaratan']);
                 $this->simpanRelasi($idDetail, 'N_WEB_CAREERS_Detail_Skill_MPP', 'Id_Skill', $this->resolveTagIds($data['skills'], 'N_WEB_CAREERS_Master_Skill', 'Id_Skill', 'Nama_Skill', $userId), $userId);
@@ -701,6 +769,120 @@ class MasterMppController extends Controller
         }
 
         return $q;
+    }
+
+    /**
+     * Tanggal target sesuai ketentuan SLA levelnya? — kalimat galat, atau null.
+     *
+     * Tiga hal yang ditolaknya, semua hanya untuk MPP BARU kecuali yang kedua:
+     *   1. level yang belum punya ketentuan SLA sama sekali;
+     *   2. tanggal target yang melewati batas ketentuan levelnya;
+     *   3. tanggal target yang sudah lewat dari hari ini.
+     *
+     * MPP LAMA sengaja lebih longgar: menyunting deskripsi sebuah MPP tidak
+     * boleh ditolak karena kebijakan yang berubah setelah MPP itu dibuat.
+     * Lingkungan yang skrip skemanya belum dijalankan berjalan seperti sebelum
+     * fitur ini ada.
+     */
+    private function galatSla(array $data, ?string $mulai = null, bool $baru = false): ?string
+    {
+        $target = substr((string) ($data['tanggalPeriode'] ?? ''), 0, 10);
+
+        // TARGET DI MASA LALU — ditolak untuk MPP BARU, apa pun levelnya.
+        //
+        // Kalender lama hanya mematikan tanggal SESUDAH batas SLA, sehingga
+        // tanggal SEBELUM hari ini tetap bisa dipilih: MPP yang baru dibuat
+        // sudah lahir dalam keadaan telat, dan tidak ada laporan yang bisa
+        // membacanya sebagai apa pun selain kelalaian tim rekrutmen.
+        //
+        // MPP LAMA dikecualikan: menyunting deskripsi sebuah MPP yang tenggatnya
+        // memang sudah lewat tidak boleh ditolak karena hal yang tak ada
+        // hubungannya dengan suntingan itu.
+        if ($baru && $target !== '' && $target < now()->toDateString()) {
+            return sprintf(
+                'Tanggal target sudah lewat (%s, sementara hari ini %s). '
+                .'Pilih tanggal hari ini atau sesudahnya.',
+                $target, now()->toDateString(),
+            );
+        }
+        $sla = SlaMpp::batas((int) $data['idLevel'], $mulai);
+        if (! $sla['batas']) {
+            // LEVEL TANPA ATURAN: MPP BARU DITOLAK.
+            //
+            // Tanggal periode target bukan lagi isian bebas — ia hasil hitungan dari
+            // ketentuan level. Tanpa ketentuan itu, tanggal apa pun yang dikirim
+            // borang tidak berdasar pada apa-apa, dan MPP-nya jadi MPP yang tidak
+            // pernah bisa dinilai telat.
+            //
+            // Layar sudah menahannya, tapi layar bukan penjaganya: permintaan bisa
+            // datang dari tab lama yang sudah terbuka sebelum aturannya dihapus.
+            //
+            // Dua pengecualian, keduanya disengaja:
+            //   - MPP LAMA (bukan $baru) tetap boleh disunting; aturannya mungkin
+            //     memang dihapus lama setelah MPP-nya dibuat.
+            //   - Lingkungan yang skrip masternya BELUM dijalankan (! siap())
+            //     berjalan persis seperti sebelum fitur ini ada.
+            if ($baru && SlaMpp::siap()) {
+                return sprintf(
+                    'Level yang dipilih belum punya ketentuan SLA, sehingga tanggal periode '
+                    .'target tidak bisa dihitung. Tambahkan aturannya dulu di menu Master SLA MPP.',
+                );
+            }
+
+            return null;
+        }
+
+        if ($target <= $sla['batas']) {
+            return null;
+        }
+
+        // Kalimatnya menyebut ANGKA, TANGGAL BATAS, dan HARI MULAInya sekaligus.
+        // "Melebihi SLA" tanpa ketiganya memindahkan tebakan ke orang berikutnya:
+        // ia tidak tahu ketentuannya berapa hari, dihitung dari kapan, dan harus mundur ke
+        // tanggal berapa supaya diterima.
+        return sprintf(
+            'Tanggal target melewati batas SLA level ini: %d hari kerja sejak %s, '
+            .'jadi paling lambat %s. Pilih tanggal itu atau sebelumnya.',
+            $sla['hari'], $sla['mulai'], $sla['batas'],
+        );
+    }
+
+    /**
+     * Kolom Sla_* yang akan ditulis — kosong bila skema/masternya belum ada.
+     *
+     * Dikembalikan sebagai larik yang digabung ke payload insert/update,
+     * sehingga MPP tetap tersimpan normal di lingkungan yang skrip skemanya
+     * belum dijalankan — tanpa satu pun galat tentang kolom yang tidak ada.
+     */
+    private function snapshotSla(int $idLevel, string $mulai): array
+    {
+        if (! SlaMpp::siapSnapshot()) {
+            return [];
+        }
+
+        $sla = SlaMpp::batas($idLevel, $mulai);
+
+        return [
+            'Sla_Master_Id' => $sla['masterId'],
+            'Sla_Hari_Kerja' => $sla['hari'],
+            'Sla_Mulai' => $sla['mulai'],
+            'Sla_Batas' => $sla['batas'],
+            'Sla_Dikunci_At' => now(),
+        ];
+    }
+
+    /** Snapshot yang sudah tersimpan pada sebuah MPP — untuk update(). */
+    private function slaTersimpan(string $no): ?object
+    {
+        if (! SlaMpp::siapSnapshot()) {
+            return null;
+        }
+
+        return DB::table(self::TABEL_G.' as g')
+            ->join(self::TABEL_D.' as d', 'd.No_Transaksi_MPP', '=', 'g.No_Transaksi')
+            ->where('g.No_Transaksi', $no)
+            ->selectRaw('g.Id_Level as level, CONVERT(varchar(10), d.Sla_Mulai, 23) as mulai, d.Sla_Hari_Kerja as hari')
+            ->first();
     }
 
     /** Aturan borang — header + detail dalam satu payload. */

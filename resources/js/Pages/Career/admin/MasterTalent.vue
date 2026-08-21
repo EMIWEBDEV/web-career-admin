@@ -91,6 +91,7 @@ import { Head } from '@inertiajs/vue3';
 import AdminModal from '@career/AdminModal.vue';
 import ConfirmModal from '@career/ConfirmModal.vue';
 import AuditStamp from '@career/AuditStamp.vue';
+import { ingatModal } from '@utils/ingatModal';
 
 const API = '/api/v1/karir/master/rich';
 const KEY = 'talent';
@@ -99,6 +100,8 @@ const CFG = { headers: { Accept: 'application/json' } };
 export default {
     components: { Head, AdminModal, ConfirmModal, AuditStamp },
     props: { talent: { type: Array, default: () => [] } },
+    // Modal di halaman ini selamat dari refresh — lihat @utils/ingatModal.
+    mixins: [ingatModal('admin/MasterTalent')],
     data() {
         return {
             list: this.talent.map((t) => ({ ...t })),

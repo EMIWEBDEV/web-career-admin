@@ -112,7 +112,7 @@
                                             class="wca-iconbtn wca-iconbtn--danger"
                                             :disabled="!!e.dipakai"
                                             :title="e.dipakai ? `Tidak bisa dihapus — dipakai ${e.dipakai} data MPP` : 'Hapus'"
-                                            @click="askRemove(e)"
+                                            :onClick="!!e.dipakai ? null : () => askRemove(e)"
                                         >
                                             <i class="bi" :class="e.dipakai ? 'bi-lock' : 'bi-trash'"></i>
                                         </button>
@@ -195,6 +195,7 @@ import { Head } from '@inertiajs/vue3';
 import AdminModal from '@career/AdminModal.vue';
 import AuditStamp from '@career/AuditStamp.vue';
 import ConfirmModal from '@career/ConfirmModal.vue';
+import { ingatModal } from '@utils/ingatModal';
 
 const API = '/api/v1/master-employment';
 const CFG = { headers: { Accept: 'application/json' } };
@@ -218,6 +219,8 @@ const RINGKASAN_KOSONG = {
 
 export default {
     components: { Head, AdminModal, AuditStamp, ConfirmModal },
+    // Modal di halaman ini selamat dari refresh — lihat @utils/ingatModal.
+    mixins: [ingatModal('admin/master-employment/masterEmployment')],
     data() {
         return {
             list: [], total: 0, page: 1, perPage: 25, loading: false,

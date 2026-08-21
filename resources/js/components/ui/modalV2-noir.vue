@@ -43,7 +43,7 @@
                                 <button
                                     v-if="showCancel"
                                     class="btn-modern btn-secondary"
-                                    @click="closeModal"
+                                    :onClick="loading ? null : closeModal"
                                     :disabled="loading"
                                 >
                                     {{ cancelText }}
@@ -51,7 +51,7 @@
                                 <button
                                     v-if="showConfirm"
                                     class="btn-modern btn-primary"
-                                    @click="confirmModal"
+                                    :onClick="loading || confirmDisabled ? null : confirmModal"
                                     :disabled="loading || confirmDisabled"
                                 >
                                     <span v-if="loading" class="loading-spinner-small"></span>

@@ -125,12 +125,15 @@ import ConfirmModal from '@career/ConfirmModal.vue';
 import AuditStamp from '@career/AuditStamp.vue';
 import RefSelect from '@career/RefSelect.vue';
 import IconPicker from '@career/IconPicker.vue';
+import { ingatModal } from '@utils/ingatModal';
 
 const API = '/api/v1/master-tipe';
 const CFG = { headers: { Accept: 'application/json' } };
 
 export default {
     components: { Head, AdminModal, ConfirmModal, AuditStamp, RefSelect, IconPicker },
+    // Modal di halaman ini selamat dari refresh — lihat @utils/ingatModal.
+    mixins: [ingatModal('admin/master-tipe/masterTipe')],
     data() {
         return {
             list: [],

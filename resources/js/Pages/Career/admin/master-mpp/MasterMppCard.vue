@@ -34,9 +34,13 @@
                     <i class="bi" :class="mpp.jenisProgram === 'MT' ? 'bi-mortarboard-fill' : 'bi-person-workspace'"></i>
                     {{ jenisProgramLabel(mpp.jenisProgram) }}
                 </span>
-                <span class="mmp-status-flag" :class="{ 'is-done': mpp.selesai }">
+                <!-- "Berjalan" tidak ditulis: itu keadaan hampir semua MPP, dan
+                     penanda yang muncul di setiap kartu tidak membedakan apa pun —
+                     ia cuma memenuhi baris yang sama dengan nomor transaksi dan
+                     jenis program. Yang tersisa "Selesai", yang memang kabar. -->
+                <span v-if="mpp.selesai" class="mmp-status-flag is-done">
                     <span class="mmp-status-flag__dot"></span>
-                    {{ mpp.selesai ? 'Selesai' : 'Berjalan' }}
+                    Selesai
                 </span>
             </div>
         </div>
@@ -54,9 +58,13 @@
                     <i class="bi bi-people-fill"></i>
                     <strong>{{ mpp.jumlahRekrutmen }}</strong> orang
                 </span>
-                <span class="mmp-meta-pill" title="Tanggal Periode Target">
-                    <i class="bi bi-calendar3"></i>
-                    {{ formatTanggal(mpp.tanggalPeriode) }}
+                <!-- PERIODE, bukan satu tanggal: dari hari MPP dibuat sampai tenggat
+                     SLA-nya. Bentuk pendek ("20 Agu – 01 Okt 2026") supaya muat di
+                     kartu; MPP lama yang tidak menyimpan tanggal mulai jatuh ke
+                     tenggatnya saja, berikut judul & ikon yang menyesuaikan. -->
+                <span class="mmp-meta-pill" :title="judulPeriode">
+                    <i class="bi" :class="adaRentang ? 'bi-calendar-range' : 'bi-calendar-check'"></i>
+                    {{ rentangPendek(mpp.sla?.mulai, mpp.tanggalPeriode) }}
                 </span>
             </div>
 
@@ -133,9 +141,18 @@
 <script setup>
 import { computed } from 'vue';
 import { formatTanggal, initials, statusBadge, statusLabel, jenisProgramLabel } from './masterMppHelpers';
+import { punyaRentang, rentangPendek } from '@utils/rentangTanggal';
 
 const props = defineProps({ mpp: { type: Object, required: true } });
 defineEmits(['open', 'edit', 'toggle-selesai', 'batalkan', 'aktifkan']);
+
+const adaRentang = computed(() => punyaRentang(props.mpp.sla?.mulai, props.mpp.tanggalPeriode));
+
+const judulPeriode = computed(() =>
+    adaRentang.value
+        ? `Periode target: ${rentangPendek(props.mpp.sla.mulai, props.mpp.tanggalPeriode)} (tenggat ${formatTanggal(props.mpp.tanggalPeriode)})`
+        : 'Tenggat penyelesaian MPP',
+);
 
 const allTags = computed(() => {
     const list = [];

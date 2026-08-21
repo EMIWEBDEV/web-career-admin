@@ -21,7 +21,7 @@
                         type="button"
                         class="fa-btn fa-btn--yes"
                         :disabled="status === 'mengirim'"
-                        @click="$emit('vote', { id: item.id, membantu: true })"
+                        :onClick="status === 'mengirim' ? null : () => $emit('vote', { id: item.id, membantu: true })"
                     >
                         <i class="bi bi-hand-thumbs-up-fill"></i> Ya
                     </button>
@@ -29,7 +29,7 @@
                         type="button"
                         class="fa-btn fa-btn--no"
                         :disabled="status === 'mengirim'"
-                        @click="$emit('vote', { id: item.id, membantu: false })"
+                        :onClick="status === 'mengirim' ? null : () => $emit('vote', { id: item.id, membantu: false })"
                     >
                         <i class="bi bi-hand-thumbs-down-fill"></i> Tidak
                     </button>

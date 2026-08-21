@@ -213,8 +213,53 @@ class MetrikRekrutmen
     | mahal dicari, karena kedua angka sama-sama terlihat masuk akal.
     */
 
+    /**
+     * BATAS 2100 PARAMETER SQL SERVER — dan kenapa ia selalu ditemukan
+     * PALING TERLAMBAT.
+     *
+     * `whereIn` menerbitkan satu parameter per nilai. Program berisi 300
+     * pelamar sudah menghasilkan 2100 id tahap, dan pada baris ke-2101 driver
+     * menolak SELURUH kueri:
+     *
+     *     SQLSTATE[IMSSP]: Tried to bind parameter number 2101.
+     *
+     * Yang membuatnya berbahaya: ia lolos di semua program kecil, lolos di
+     * seluruh pengujian, lalu meledak justru pada program terbesar — yang
+     * paling ramai dibuka dan paling mahal kalau tidak bisa dibuka.
+     *
+     * Dipotong 1000, bukan 2100: kueri yang sama masih membawa parameter lain
+     * (saringan status, kategori, tanggal), dan batas itu berlaku untuk
+     * SELURUH parameter dalam satu perintah, bukan untuk whereIn-nya saja.
+     * Sisanya ruang bernapas supaya penambahan satu saringan kelak tidak
+     * menghidupkan kembali kesalahan yang sama.
+     *
+     * `$bangun` sebuah closure, bukan builder jadi: builder yang sama tidak
+     * boleh dipakai ulang antar potongan — whereIn-nya akan menumpuk dan
+     * potongan kedua justru meminta gabungan keduanya.
+     *
+     * @param  \Closure(): \Illuminate\Database\Query\Builder  $bangun
+     * @param  array  $nilai  isi klausa IN — boleh berapa pun banyaknya
+     */
+    public static function potongIn(\Closure $bangun, string $kolom, array $nilai, int $perPotong = self::MAKS_IN): \Illuminate\Support\Collection
+    {
+        $nilai = array_values(array_unique($nilai));
+        if (! $nilai) {
+            return collect();
+        }
+
+        $hasil = collect();
+        foreach (array_chunk($nilai, max(1, $perPotong)) as $potong) {
+            $hasil = $hasil->concat($bangun()->whereIn($kolom, $potong)->get());
+        }
+
+        return $hasil;
+    }
+
     /** Alias bawaan derived table aktivitas — lihat denganAktivitas(). */
     public const ALIAS_AKTIVITAS = 'ak';
+
+    /** Sekali kirim ke SQL Server, dengan ruang untuk parameter lain. */
+    public const MAKS_IN = 1000;
 
     /**
      * Aktivitas tahap + kolom `Token_Terbit` — kueri baku untuk worklist,
@@ -249,13 +294,37 @@ class MetrikRekrutmen
      */
     public static function aktivitasDenganToken(array $lamaranTahapIds)
     {
+        return self::dasarAktivitasToken()->whereIn('st.Lamaran_Tahap_Id', $lamaranTahapIds ?: [0]);
+    }
+
+    /**
+     * Aktivitas SELURUH tahap yang diminta, DIKELOMPOKKAN per tahap — aman
+     * untuk berapa pun banyaknya id.
+     *
+     * Inilah bentuk yang dipakai worklist dan Monitoring. Keduanya dulu
+     * memanggil aktivitasDenganToken() lalu ->get() sendiri, dan program
+     * berisi ratusan pelamar menerbitkan lebih dari 2100 id tahap — batas
+     * parameter SQL Server. Papannya tidak melambat, melainkan gagal dimuat
+     * sama sekali.
+     */
+    public static function aktivitasDenganTokenPer(array $lamaranTahapIds): \Illuminate\Support\Collection
+    {
+        return self::potongIn(
+            fn () => self::dasarAktivitasToken(),
+            'st.Lamaran_Tahap_Id',
+            $lamaranTahapIds,
+        )->groupBy('Lamaran_Tahap_Id');
+    }
+
+    /** Kueri dasarnya — dibangun ulang tiap potongan, tanpa saringan id. */
+    private static function dasarAktivitasToken()
+    {
         return DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes as st')
             ->join('N_WEB_CAREERS_Lamaran_Tahap as lth', 'lth.Id_Lamaran_Tahap', '=', 'st.Lamaran_Tahap_Id')
             ->leftJoin('N_WEB_CAREERS_Penjadwalan_Peserta as pp', function ($j) {
                 $j->on('pp.Penjadwalan_Tahap_Id', '=', 'st.Penjadwalan_Tahap_Id')
                     ->on('pp.Lamaran_Id', '=', 'lth.Lamaran_Id');
             })
-            ->whereIn('st.Lamaran_Tahap_Id', $lamaranTahapIds ?: [0])
             ->orderBy('st.Urutan')
             ->selectRaw("st.*, CASE WHEN pp.Short_Token IS NOT NULL OR pp.Link_Ujian IS NOT NULL THEN 'Y' ELSE 'T' END AS Token_Terbit");
     }

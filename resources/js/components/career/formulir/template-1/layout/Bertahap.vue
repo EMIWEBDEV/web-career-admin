@@ -129,11 +129,11 @@
             </div>
 
             <footer class="t2__foot">
-                <button class="t2__btn t2__btn--ghost" type="button" :disabled="aktif === 0" @click="mundur">
+                <button class="t2__btn t2__btn--ghost" type="button" :disabled="aktif === 0" :onClick="aktif === 0 ? null : mundur">
                     <i class="bi bi-arrow-left"></i> Kembali
                 </button>
                 <span class="t2__spacer"></span>
-                <button v-if="!terakhir" class="t2__btn t2__btn--primary" type="button" :disabled="disabled" @click="maju">
+                <button v-if="!terakhir" class="t2__btn t2__btn--primary" type="button" :disabled="disabled" :onClick="disabled ? null : maju">
                     Lanjut <i class="bi bi-arrow-right"></i>
                 </button>
                 <!-- Bila persetujuan belum lengkap, tombolnya dirender TANPA

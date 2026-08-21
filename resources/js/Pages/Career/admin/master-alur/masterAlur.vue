@@ -280,7 +280,7 @@
                                     <div class="wca-frow">
                                         <div><label class="wca-field-lbl">Nama Tes / Aktivitas</label><el-input v-model="t.label" placeholder="mis. Papi Kostick" /></div>
                                         <div><label class="wca-field-lbl">Tipe Aktivitas</label>
-                                            <RefSelect type="tipe" v-model="t.tipe" :placeholder="`Ikut tahap (${namaTipe(s.tipe)})`" clearable @update:model-value="samakanMode(s)" />
+                                            <RefSelect type="tipe" v-model="t.tipe" :placeholder="`Ikut tahap (${namaTipe(s.tipe)})`" clearable @update:model-value="tipeAktivitasBerubah(t, s)" />
                                         </div>
                                     </div>
                                     <div class="wca-frow">
@@ -340,7 +340,34 @@
                                          bentuk untuk ketiganya membuat penilai
                                          mengarang angka, dan angka karangan itu
                                          terbaca seolah hasil ukur. -->
-                                    <div v-if="!tesOnline(t.tipe || s.tipe) && modePenilaian.length" class="alr-nilai">
+                                    <!-- PEMERIKSAAN ≠ TES, JADI LAYARNYA BEDA.
+
+                                         Reference check & background check tidak dinilai: tidak ada angka,
+                                         tidak ada predikat. Hasilnya berupa TEMUAN per komponen (atau per
+                                         narasumber) lalu satu adjudikasi. Menawarkan "Cara aktivitas ini
+                                         dinilai" di sini membuat admin memilih skala 0–1000 untuk verifikasi
+                                         ijazah — dan angka karangan itu terbaca seolah hasil ukur.
+
+                                         Penandanya dari Master Tipe Tahap (Flag_Pemeriksaan), bukan daftar
+                                         kode di layar ini. -->
+                                    <div v-if="pemeriksaan(t, s)" class="alr-periksa">
+                                        <div class="alr-periksa__head">
+                                            <i class="bi bi-shield-check"></i>
+                                            <span>Pemeriksaan — tidak dinilai dengan angka</span>
+                                        </div>
+                                        <p class="alr-periksa__ket">
+                                            Hasilnya dicatat sebagai <b>{{ satuanPeriksa(t, s) }}</b> beserta statusnya,
+                                            lalu ditutup satu kesimpulan: <b>{{ adjudikasiPeriksa(t, s) }}</b>.
+                                            Berkas bukti diunggah tim di kotak “Berkas hasil” pada tahap ini.
+                                        </p>
+                                        <p v-if="!tampilKandidat(t, s)" class="alr-periksa__ket is-samar">
+                                            <i class="bi bi-eye-slash"></i>
+                                            Aktivitas ini internal — kandidat tidak melihatnya. Pastikan persetujuan
+                                            pemeriksaan sudah diambil di formulir lamaran.
+                                        </p>
+                                    </div>
+
+                                    <div v-if="!tesOnline(t.tipe || s.tipe) && !pemeriksaan(t, s) && modePenilaian.length" class="alr-nilai">
                                         <div class="alr-nilai__head">
                                             <i class="bi bi-clipboard-data"></i>
                                             <span>Cara aktivitas ini dinilai</span>
@@ -396,7 +423,16 @@
                                          (ujian online, atau yang meminta unggahan)
                                          tidak boleh disembunyikan — itu jalan buntu,
                                          jadi pilihannya dikunci, bukan sekadar
-                                         diingatkan. -->
+                                         diingatkan.
+
+                                         Begitu pula yang BERJADWAL. MCU, wawancara,
+                                         tes offline, tanda tangan kontrak: kandidat
+                                         harus hadir di tanggal dan tempat tertentu,
+                                         dan portal adalah tempat ia memastikannya.
+                                         Menyembunyikannya pernah terjadi pada MCU —
+                                         undangannya terkirim, portalnya berbunyi
+                                         "menunggu dijadwalkan", dan yang tidak
+                                         datang dicatat mangkir. -->
                                     <label class="alr-lihat" :class="{ 'is-off': !tampilKandidat(t, s), 'is-locked': wajibTampil(t, s) }">
                                         <el-switch
                                             :model-value="tampilKandidat(t, s)"
@@ -409,8 +445,7 @@
                                                 {{ tampilKandidat(t, s) ? 'Terlihat kandidat' : 'Internal — tidak terlihat kandidat' }}
                                             </b>
                                             <small v-if="wajibTampil(t, s)">
-                                                Aktivitas ini menuntut kandidat mengerjakan atau mengunggah sesuatu,
-                                                jadi harus terlihat.
+                                                {{ alasanWajibTampil(t, s) }}
                                             </small>
                                             <small v-else-if="tampilKandidat(t, s)">
                                                 Muncul di portal kandidat berikut status &amp; jadwalnya.
@@ -548,8 +583,8 @@
 
                     </div>
                     <div class="wca-stagecard__actions">
-                        <button class="wca-iconbtn" type="button" title="Naik" :disabled="i === 0" @click="moveStage(i, -1)"><i class="bi bi-chevron-up"></i></button>
-                        <button class="wca-iconbtn" type="button" title="Turun" :disabled="i === form.stages.length - 1" @click="moveStage(i, 1)"><i class="bi bi-chevron-down"></i></button>
+                        <button class="wca-iconbtn" type="button" title="Naik" :disabled="i === 0" :onClick="i === 0 ? null : () => moveStage(i, -1)"><i class="bi bi-chevron-up"></i></button>
+                        <button class="wca-iconbtn" type="button" title="Turun" :disabled="i === form.stages.length - 1" :onClick="i === form.stages.length - 1 ? null : () => moveStage(i, 1)"><i class="bi bi-chevron-down"></i></button>
                         <button class="wca-iconbtn wca-iconbtn--danger" type="button" title="Hapus" @click="removeStage(i)"><i class="bi bi-trash"></i></button>
                     </div>
                 </div>
@@ -642,12 +677,20 @@ import AdminModal from '@career/AdminModal.vue';
 import ConfirmModal from '@career/ConfirmModal.vue';
 import AuditStamp from '@career/AuditStamp.vue';
 import RefSelect from '@career/RefSelect.vue';
+import { ingatModal } from '@utils/ingatModal';
 
 const API = '/api/v1/master-alur';
 const CFG = { headers: { Accept: 'application/json' } };
 
+/* Cadangan penanda pemeriksaan, dipakai HANYA selama kolom Flag_Pemeriksaan
+   belum ada di basis data. Sesudah skrip skemanya dijalankan, masterlah yang
+   menentukan — termasuk untuk tipe pemeriksaan yang belum ada hari ini. */
+const PEMERIKSAAN_CADANGAN = ['REFERENCE_CHECK', 'BACKGROUND_CHECK'];
+
 export default {
     components: { Head, AdminModal, ConfirmModal, AuditStamp, RefSelect },
+    // Modal di halaman ini selamat dari refresh — lihat @utils/ingatModal.
+    mixins: [ingatModal('admin/master-alur/masterAlur')],
     data() {
         return {
             list: [],
@@ -769,6 +812,52 @@ export default {
          */
         tesOnline(kode) { return this.infoTipe(kode)?.perilaku === 'CAT'; },
 
+        /**
+         * Aktivitas ini PEMERIKSAAN (reference check / background check)?
+         *
+         * Sumber utamanya penanda master (Flag_Pemeriksaan). Daftar kode di
+         * bawah hanya cadangan untuk lingkungan yang skrip skemanya belum
+         * dijalankan — begitu kolomnya ada, master yang menentukan, termasuk
+         * untuk tipe pemeriksaan baru yang belum terpikirkan sekarang.
+         */
+        pemeriksaan(t, s) {
+            const kode = t?.tipe || s?.tipe || null;
+            if (! kode) return false;
+
+            return !! this.infoTipe(kode)?.pemeriksaan || PEMERIKSAAN_CADANGAN.includes(kode);
+        },
+        /** "temuan per komponen" vs "keterangan per narasumber". */
+        satuanPeriksa(t, s) {
+            return (t?.tipe || s?.tipe) === 'REFERENCE_CHECK'
+                ? 'keterangan per narasumber'
+                : 'temuan per komponen pemeriksaan';
+        },
+        adjudikasiPeriksa(t, s) {
+            return (t?.tipe || s?.tipe) === 'REFERENCE_CHECK'
+                ? 'Direkomendasikan / Ragu / Tidak'
+                : 'Bersih / Perlu Pertimbangan / Tidak Memenuhi';
+        },
+        /**
+         * Tipe aktivitas diganti — setelan yang tak lagi masuk akal ikut dibetulkan.
+         *
+         * Tanpa ini, aktivitas yang tadinya "Tes Offline" lalu diubah jadi
+         * Background Check membawa serta mode penilaian ANGKA beserta nilai
+         * maksimumnya. Layarnya memang tak lagi menampilkannya, tapi angkanya
+         * tetap tersimpan dan ikut membeku ke setiap lamaran baru.
+         */
+        tipeAktivitasBerubah(t, s) {
+            this.samakanMode(s);
+            if (! this.pemeriksaan(t, s)) return;
+
+            t.penilaianMode = this.penilaianBawaan();
+            t.penilaianOpsi = '';
+            t.nilaiMaks = null;
+
+            // Internal secara bawaan — kecuali aktivitasnya memang meminta
+            // berkas dari kandidat, yang berarti ia harus bisa melihatnya.
+            if (t.unggahKandidat !== true) t.tampilKandidat = false;
+        },
+
         /** Muat tipe tahap AKTIF beserta perilaku & flag-nya. */
         async loadTipeTahap() {
             try {
@@ -888,7 +977,24 @@ export default {
          * berselisih.
          */
         wajibTampil(t, s) {
-            return !!this.infoTipe(t.tipe || s.tipe)?.wajibTampil || t.unggahKandidat === true;
+            const i = this.infoTipe(t.tipe || s.tipe);
+
+            // BERJADWAL = KANDIDAT HARUS HADIR, jadi ia harus melihatnya.
+            // Undangan MCU-nya sudah terkirim lewat email; kalau portalnya
+            // menutup jadwal itu, satu-satunya kabar yang ia punya adalah surel
+            // yang mungkin sudah terkubur — dan yang tidak datang dicatat
+            // mangkir. Negosiasi penawaran dikecualikan: itu rapat tim, kandidat
+            // memang tidak pernah diundang ke sana.
+            return !!i?.wajibTampil || (!!i?.jadwal && !i?.jadwalPrivat) || t.unggahKandidat === true;
+        },
+        /** Kenapa sakelarnya terkunci — kalimatnya berbeda per sebab. */
+        alasanWajibTampil(t, s) {
+            const i = this.infoTipe(t.tipe || s.tipe);
+            if (!!i?.jadwal && !i?.jadwalPrivat) {
+                return 'Aktivitas ini dijadwalkan dan kandidat harus hadir, jadi jadwalnya wajib terlihat di portalnya.';
+            }
+
+            return 'Aktivitas ini menuntut kandidat mengerjakan atau mengunggah sesuatu, jadi harus terlihat.';
         },
 
         /** Jumlah aktivitas nyata: daftar kosong tetap dihitung 1 (dibuat sistem). */
@@ -1502,6 +1608,17 @@ export default {
 .alr-nilai__opt b { font-size: 12.5px; color: #1e293b; }
 .alr-nilai__opt small { font-size: 11px; color: #94a3b8; white-space: normal; }
 .alr-nilai__ket { display: block; margin-top: .3rem; font-size: 11px; line-height: 1.5; color: #64748b; }
+
+/* Panel pemeriksaan — menggantikan pemilih "cara dinilai" pada reference &
+   background check. Warnanya sengaja beda dari kotak penilaian: yang ini
+   keterangan, bukan sesuatu yang perlu disetel. */
+.alr-periksa { margin-top: 10px; padding: 10px 11px; border-radius: 12px; border: 1px solid #dbeafe; background: #f5f9ff; }
+.alr-periksa__head { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 800; color: #1e40af; }
+.alr-periksa__head i { color: #2563eb; }
+.alr-periksa__ket { margin: 6px 0 0; font-size: 11.5px; line-height: 1.55; color: #475569; }
+.alr-periksa__ket b { color: #1e293b; }
+.alr-periksa__ket.is-samar { display: flex; gap: 6px; margin-top: 7px; padding-top: 7px; border-top: 1px dashed #dbeafe; color: #64748b; }
+.alr-periksa__ket.is-samar i { flex: none; margin-top: 2px; }
 
 .alr-unggah { margin-top: 10px; border: 1px solid #eef0f7; border-radius: 12px; background: #fbfbfe; transition: border-color .18s, background .18s; }
 .alr-unggah.is-on { border-color: rgba(99, 102, 241, .32); background: rgba(99, 102, 241, .05); }

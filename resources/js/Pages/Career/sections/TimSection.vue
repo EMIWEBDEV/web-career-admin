@@ -108,7 +108,7 @@
                 type="button"
                 aria-label="Sebelumnya"
                 :disabled="filteredTim.length <= 1"
-                @click="prevSlide"
+                :onClick="filteredTim.length <= 1 ? null : prevSlide"
             >
                 <i class="bi bi-arrow-left"></i>
             </button>
@@ -138,7 +138,7 @@
                 type="button"
                 aria-label="Berikutnya"
                 :disabled="filteredTim.length <= 1"
-                @click="nextSlide"
+                :onClick="filteredTim.length <= 1 ? null : nextSlide"
             >
                 <i class="bi bi-arrow-right"></i>
             </button>

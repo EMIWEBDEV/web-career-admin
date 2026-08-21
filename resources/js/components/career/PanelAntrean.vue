@@ -135,7 +135,7 @@
                                         v-if="keadaan(o) === 'GAGAL'"
                                         type="button" class="ant-o__ulang" :disabled="ulangId === o.id"
                                         :title="`Coba lagi untuk ${o.nama} saja`"
-                                        @click="ulangOrang(s, o)"
+                                        :onClick="ulangId === o.id ? null : () => ulangOrang(s, o)"
                                     >
                                         <i class="bi" :class="ulangId === o.id ? 'bi-arrow-repeat ant-putar' : 'bi-arrow-clockwise'"></i>
                                     </button>

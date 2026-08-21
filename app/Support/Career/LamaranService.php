@@ -121,12 +121,17 @@ class LamaranService
             return collect();
         }
 
-        return DB::table('N_WEB_CAREERS_Formulir_Pengisian')
-            ->whereIn('Lamaran_Id', $lamaranIds)
-            ->orderBy('Waktu_Kirim')            // lama → baru
-            ->orderBy('Id_Formulir_Pengisian')
-            ->get(['Lamaran_Id', 'Jawaban_Json'])
-            ->groupBy('Lamaran_Id')
+        // BERPOTONG — lihat MetrikRekrutmen::potongIn(). Worklist memanggilnya
+        // dengan SELURUH pelamar satu program; di atas 2100 id, SQL Server
+        // menolak kuerinya bulat-bulat dan papannya gagal dimuat.
+        return \App\Support\Career\MetrikRekrutmen::potongIn(
+            fn () => DB::table('N_WEB_CAREERS_Formulir_Pengisian')
+                ->orderBy('Waktu_Kirim')            // lama → baru
+                ->orderBy('Id_Formulir_Pengisian')
+                ->select(['Lamaran_Id', 'Jawaban_Json']),
+            'Lamaran_Id',
+            $lamaranIds,
+        )->groupBy('Lamaran_Id')
             ->map(function ($rows) use ($kode) {
                 $gabung = [];
                 foreach ($rows as $r) {
@@ -170,6 +175,95 @@ class LamaranService
         }
 
         return $gabung;
+    }
+
+    /**
+     * ALAMAT EMAIL KANDIDAT — SATU SUMBER KEBENARAN, DARI DATABASE.
+     *
+     * Alamat tujuan TIDAK PERNAH boleh datang dari layar. Layar bisa basi,
+     * bisa menampilkan kandidat lain yang baru saja dibuka, dan permintaannya
+     * bisa disusun sendiri oleh siapa pun yang punya akses admin — sekali
+     * alamat tujuan diterima mentah dari klien, surat berisi keputusan
+     * seleksi orang lain bisa diarahkan ke mana saja. Layar boleh MEMERIKSA
+     * (lihat emailHasilUlang), tidak boleh MENENTUKAN.
+     *
+     * ── KENAPA BUKAN CUKUP Users.Email ──────────────────────────────────
+     *
+     * Karena ada lamaran yang barisan akunnya sudah tidak ada. Log yang
+     * melahirkan metode ini berbunyi:
+     *
+     *     [APPLYMAIL] user #185 / email tidak ada — dilewati.
+     *
+     * Kandidatnya nyata, lamarannya berjalan, dan alamat emailnya terpampang
+     * di layar admin — dibaca dari jawaban formulirnya. Yang tidak ada cuma
+     * baris akunnya. Job diam-diam melewatinya, dan tak ada satu pun surat
+     * keputusan yang pernah sampai.
+     *
+     * Urutannya: akun dulu (di sanalah alamat yang ia pakai masuk dan
+     * diverifikasi), baru jawaban formulir sebagai cadangan.
+     *
+     * ── KUNCI FORMULIRNYA ───────────────────────────────────────────────
+     *
+     * Dibaca dari Master Kunci Identitas dengan kode EMAIL, sama seperti
+     * NAMA/KAMPUS/TGL_LAHIR. Selama kode itu belum ada isinya di master,
+     * daftar cadangan di bawah yang dipakai — dan begitu barisnya ditambahkan,
+     * masterlah yang menang tanpa menyentuh berkas ini.
+     */
+    public static function emailKandidat(?int $userId, ?int $lamaranId = null, ?string $kodeLamaran = null): ?string
+    {
+        $akun = $userId
+            ? DB::table('N_WEB_CAREERS_Users')->where('Id_Users', $userId)->value('Email')
+            : null;
+
+        if (self::emailSah($akun)) {
+            return trim((string) $akun);
+        }
+
+        // Lamaran mana yang jawabannya dibaca. Kode lamaran lebih tepat daripada
+        // "punya user ini": satu orang bisa melamar dua lowongan, dan alamat yang
+        // benar adalah yang ia tulis pada lamaran YANG SEDANG dikabari.
+        $lamaranId ??= $kodeLamaran
+            ? DB::table('N_WEB_CAREERS_Lamaran')->where('Kode', $kodeLamaran)->value('Id_Lamaran')
+            : null;
+
+        $lamaranId ??= $userId
+            ? DB::table('N_WEB_CAREERS_Lamaran')->where('Id_Users', $userId)->orderByDesc('Id_Lamaran')->value('Id_Lamaran')
+            : null;
+
+        if (! $lamaranId) {
+            return null;
+        }
+
+        $jawaban = self::jawabanGabungan((int) $lamaranId);
+        $kunci = self::kunciIdentitas('EMAIL') ?: self::EMAIL_CADANGAN;
+
+        foreach ($kunci as $k) {
+            $v = $jawaban[$k] ?? null;
+            if (self::emailSah($v)) {
+                return trim((string) $v);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Kunci formulir yang menanyakan email — CADANGAN, dipakai hanya selama
+     * Master Kunci Identitas belum punya baris berkode EMAIL.
+     */
+    public const EMAIL_CADANGAN = ['email', 'email_aktif', 'alamat_email', 'e_mail', 'email_pribadi'];
+
+    /**
+     * Terbaca sebagai alamat email? Bukan sekadar "tidak kosong".
+     *
+     * Jawaban formulir diketik kandidat sendiri, dan kolom email kerap berisi
+     * "-", "tidak punya", atau nomor telepon. Mengirim ke isian semacam itu
+     * berakhir sebagai pentalan yang menumpuk di reputasi domain pengirim —
+     * ongkos yang ditanggung SELURUH kandidat lain.
+     */
+    private static function emailSah($v): bool
+    {
+        return is_string($v) && filter_var(trim($v), FILTER_VALIDATE_EMAIL) !== false;
     }
 
     /** Nilai pertama yang berisi menurut urutan kunci di master. */

@@ -203,7 +203,7 @@
                         <button 
                             type="button"
                             class="wca-btn wca-btn--primary" 
-                            @click="exportExcel" 
+                            :onClick="exporting || (!filters.form_ids || !filters.form_ids.length) ? null : exportExcel" 
                             :disabled="exporting || (!filters.form_ids || !filters.form_ids.length)" 
                             :title="(!filters.form_ids || !filters.form_ids.length) ? 'Pilih Form terlebih dahulu' : 'Export data ke Excel'"
                         >
@@ -969,7 +969,7 @@
                             class="wca-btn wca-btn--soft wca-btn--sm"
                             :disabled="selectedFeedbackDetail?.Status_Pengisian === 'TERISI'"
                             :title="selectedFeedbackDetail?.Status_Pengisian === 'TERISI' ? 'Feedback sudah TERISI â€” tidak bisa diganti form' : 'Ganti form feedback'"
-                            @click="openReassignFromDrawer"
+                            :onClick="selectedFeedbackDetail?.Status_Pengisian === 'TERISI' ? null : openReassignFromDrawer"
                         >
                             <i class="bi bi-arrow-repeat"></i>
                             {{ selectedFeedbackDetail?.Status_Pengisian === 'TERISI' ? 'Sudah TERISI' : 'Ganti Form' }}
@@ -979,7 +979,7 @@
                             class="wca-btn wca-btn--primary wca-btn--sm"
                             :disabled="selectedFeedbackDetail?.Status_Pengisian === 'TERISI'"
                             :title="selectedFeedbackDetail?.Status_Pengisian === 'TERISI' ? 'Feedback sudah TERISI — tidak perlu resend' : 'Kirim ulang email feedback'"
-                            @click="resendFromDrawer"
+                            :onClick="selectedFeedbackDetail?.Status_Pengisian === 'TERISI' ? null : resendFromDrawer"
                         >
                             <i class="bi bi-envelope-at"></i>
                             {{ selectedFeedbackDetail?.Status_Pengisian === 'TERISI' ? 'Sudah TERISI' : 'Resend Email' }}
@@ -1031,7 +1031,7 @@
                     <button
                         type="button"
                         class="wca-btn wca-btn--primary px-4 font-bold"
-                        @click="doReassign"
+                        :onClick="!reassignFormId || reassignLoading ? null : doReassign"
                         :disabled="!reassignFormId || reassignLoading"
                     >
                         <span v-if="reassignLoading" class="spinner-border spinner-border-sm me-1.5" role="status" aria-hidden="true"></span>
@@ -1071,7 +1071,7 @@
                     <button
                         type="button"
                         class="wca-btn wca-btn--amber px-4 font-bold"
-                        @click="doResend"
+                        :onClick="resendLoading ? null : doResend"
                         :disabled="resendLoading"
                     >
                         <span v-if="resendLoading" class="spinner-border spinner-border-sm me-1.5" role="status" aria-hidden="true"></span>
@@ -2653,7 +2653,7 @@ export default {
 }
 
 /* Element Plus Deep Overrides for Theme Consistency */
-::v-deep .el-table__header-wrapper th {
+:deep(.el-table__header-wrapper th) {
     background-color: #f8fafc !important;
     color: #475569 !important;
     font-size: 0.75rem !important;
@@ -2663,42 +2663,42 @@ export default {
     border-bottom: 1px solid #e2e8f0 !important;
 }
 
-::v-deep .el-table__row:hover > td {
+:deep(.el-table__row:hover > td) {
     background-color: #f8fafc !important;
 }
 
-::v-deep .el-checkbox__input.is-checked .el-checkbox__inner {
+:deep(.el-checkbox__input.is-checked .el-checkbox__inner) {
     background-color: #6366f1 !important;
     border-color: #6366f1 !important;
 }
 
-::v-deep .el-pagination.is-background .el-pager li.is-active {
+:deep(.el-pagination.is-background .el-pager li.is-active) {
     background-color: #6366f1 !important;
     color: #ffffff !important;
     border-radius: 8px !important;
     font-weight: 700 !important;
 }
 
-::v-deep .el-pagination.is-background .el-pager li,
-::v-deep .el-pagination.is-background .btn-prev,
-::v-deep .el-pagination.is-background .btn-next {
+:deep(.el-pagination.is-background .el-pager li),
+:deep(.el-pagination.is-background .btn-prev),
+:deep(.el-pagination.is-background .btn-next) {
     border-radius: 8px !important;
     font-weight: 600 !important;
 }
 
-::v-deep .el-dialog {
+:deep(.el-dialog) {
     border-radius: 16px !important;
     overflow: hidden !important;
     box-shadow: 0 16px 40px rgba(0, 0, 0, 0.12) !important;
 }
 
-::v-deep .el-dialog__header {
+:deep(.el-dialog__header) {
     margin: 0 !important;
     padding: 16px 20px !important;
     border-bottom: 1px solid #e2e8f0 !important;
 }
 
-::v-deep .el-dialog__footer {
+:deep(.el-dialog__footer) {
     padding: 14px 20px !important;
     border-top: 1px solid #e2e8f0 !important;
 }

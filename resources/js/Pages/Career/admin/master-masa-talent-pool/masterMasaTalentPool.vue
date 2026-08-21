@@ -27,7 +27,7 @@
                     <span v-if="m.status === 'AKTIF'" class="mtp-badge"><i class="bi bi-check-circle-fill"></i> Dipakai</span>
                     <el-switch :model-value="m.status === 'AKTIF'" :disabled="m.status === 'AKTIF'" @change="(v) => setAktif(m, v)" />
                     <button class="pkg-ibtn" title="Ubah" @click="openEdit(m)"><i class="bi bi-pencil"></i></button>
-                    <button class="pkg-ibtn pkg-ibtn--danger" :disabled="m.status === 'AKTIF'" title="Hapus" @click="askRemove(m)"><i class="bi bi-trash"></i></button>
+                    <button class="pkg-ibtn pkg-ibtn--danger" :disabled="m.status === 'AKTIF'" title="Hapus" :onClick="m.status === 'AKTIF' ? null : () => askRemove(m)"><i class="bi bi-trash"></i></button>
                 </div>
             </div>
             <div v-if="!loading && !list.length" class="pkg-empty"><i class="bi bi-hourglass"></i> Belum ada masa berlaku.</div>
@@ -66,12 +66,15 @@ import axios from 'axios';
 import { Head } from '@inertiajs/vue3';
 import AdminModal from '@career/AdminModal.vue';
 import ConfirmModal from '@career/ConfirmModal.vue';
+import { ingatModal } from '@utils/ingatModal';
 
 const API = '/api/v1/master-masa-talent-pool';
 const CFG = { headers: { Accept: 'application/json' } };
 
 export default {
     components: { Head, AdminModal, ConfirmModal },
+    // Modal di halaman ini selamat dari refresh — lihat @utils/ingatModal.
+    mixins: [ingatModal('admin/master-masa-talent-pool/masterMasaTalentPool')],
     data() {
         return {
             list: [],

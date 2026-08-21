@@ -198,7 +198,7 @@
         <div v-if="totalPages > 1" class="pkg-pager">
             <span class="pkg-pager__info">Menampilkan <b>{{ pageFrom }}–{{ pageTo }}</b> dari <b>{{ searched.length }}</b> program</span>
             <div class="pkg-pager__nav">
-                <button type="button" class="pkg-pager__btn" :disabled="page <= 1" @click="page = Math.max(1, page - 1)"><i class="bi bi-chevron-left"></i></button>
+                <button type="button" class="pkg-pager__btn" :disabled="page <= 1" :onClick="page <= 1 ? null : () => page = Math.max(1, page - 1)"><i class="bi bi-chevron-left"></i></button>
                 <button v-for="n in totalPages" :key="n" type="button" class="pkg-pager__btn" :class="{ on: n === page }" @click="page = n">{{ n }}</button>
                 <button type="button" class="pkg-pager__btn" :disabled="page >= totalPages" @click="page = Math.min(totalPages, page + 1)"><i class="bi bi-chevron-right"></i></button>
             </div>
@@ -229,9 +229,36 @@
                 <div class="wca-form">
                     <div class="wca-frow wca-frow--single">
                         <div>
-                            <label class="wca-field-lbl">Kategori <span class="pgk-req">wajib</span></label>
-                            <RefSelect type="talent" v-model="form.kategori" placeholder="Pilih kategori dulu" @picked="onKategori" />
-                            <div class="pgk-hint">Menentukan alur & jadwal yang tersedia di bawah.</div>
+                            <label class="wca-field-lbl">Kategori <span v-if="!kategoriTunggal" class="pgk-req">wajib</span></label>
+
+                            <!-- SUMBERNYA kategoriTab, BUKAN master mentah.
+                                 kategoriTab sudah disaring hak akses di server; daftar
+                                 master penuh akan menawarkan kategori yang tak boleh
+                                 dipakai pengguna ini, lalu penyimpanannya ditolak
+                                 tanpa ia pernah tahu kenapa. -->
+                            <el-select
+                                v-if="!kategoriTunggal"
+                                filterable
+                                v-model="form.kategori"
+                                placeholder="Pilih kategori dulu"
+                                style="width:100%"
+                                @change="onKategori()"
+                            >
+                                <el-option v-for="k in kategoriTab" :key="k.kode" :value="k.kode" :label="k.nama" />
+                            </el-select>
+
+                            <!-- Hanya satu kategori yang boleh: tidak ada yang perlu
+                                 dipilih, jadi tidak ada kendali yang ditampilkan.
+                                 Nilainya sudah dipasang openCreate(); yang tersisa cuma
+                                 keterangan supaya admin tahu program ini masuk ke mana. -->
+                            <div v-else class="pgk-kat-tetap">
+                                <span class="pkg-pill" :class="katPill(kategoriTunggal.kode)">
+                                    <i class="bi" :class="katIkon(kategoriTunggal.kode)"></i> {{ kategoriTunggal.nama }}
+                                </span>
+                                <small><i class="bi bi-lock-fill"></i> satu-satunya kategori yang menjadi hak akses Anda</small>
+                            </div>
+
+                            <div v-if="!kategoriTunggal" class="pgk-hint">Menentukan alur &amp; jadwal yang tersedia di bawah.</div>
                         </div>
                     </div>
 
@@ -379,8 +406,7 @@
                          daftarnya gagal dimuat. -->
                     <div v-else class="pgk-empty">
                         <template v-if="form.kategori === 'MT'">
-                            Belum ada MPP <b>Management Trainee</b> yang aktif.
-                            Ajukan dulu di Master MPP dengan jenis program <b>MT</b>.
+                            Ajukan dulu di Master MPP dengan jenis program <strong>MT</strong>.
                         </template>
                         <template v-else>
                             Belum ada MPP <b>non-MT</b> yang aktif untuk dipilih.
@@ -768,6 +794,7 @@ import ConfirmModal from '@career/ConfirmModal.vue';
 import AuditStamp from '@career/AuditStamp.vue';
 import RefSelect from '@career/RefSelect.vue';
 import { skemaDariFormulir, semuaField } from '@career/formulir';
+import { ingatModal } from '@utils/ingatModal';
 
 // Salinan lokal (dulu impor dari folder monitoring-mpp yang sudah dihapus —
 // fitur itu digabung ke master-mpp, folder ini tetap butuh helper kecilnya).
@@ -783,6 +810,8 @@ const DRAFT_KEY = 'evo_pgk_draft_v1';
 
 export default {
     components: { Head, AdminModal, ConfirmModal, AuditStamp, RefSelect },
+    // Modal di halaman ini selamat dari refresh — lihat @utils/ingatModal.
+    mixins: [ingatModal('admin/program-kegiatan/programKegiatan')],
     data() {
         return {
             list: [],
@@ -864,6 +893,26 @@ export default {
 
         /** Semua field selain Kategori terkunci sampai kategori dipilih. */
         terkunci() { return !this.form.kategori; },
+
+        /**
+         * Satu-satunya kategori yang boleh dipakai pengguna ini — atau null bila
+         * ia berhak atas lebih dari satu.
+         *
+         * kategoriTab datang dari AksesService::tabKategori('programPage'), yang
+         * sudah menyaring master terhadap hak akses. Jadi "berapa yang boleh"
+         * memang dijawab basis data, bukan ditebak di layar.
+         *
+         * Dipakai untuk MENYEMBUNYIKAN pilihannya, bukan sekadar mengunci: kendali
+         * yang tampil tapi cuma berisi satu baris hanya menyuruh orang menekan
+         * sesuatu yang jawabannya sudah pasti.
+         *
+         * Ini kenyamanan, BUKAN pengaman. Siapa pun bisa mengetik kategori lain
+         * lewat DevTools — yang menahannya adalah pemeriksaan di sisi server saat
+         * menyimpan, bukan baris ini.
+         */
+        kategoriTunggal() {
+            return this.kategoriTab.length === 1 ? this.kategoriTab[0] : null;
+        },
 
         /**
          * Mode ubah. Dipakai untuk menyembunyikan field yang jawabannya sudah pasti
@@ -972,8 +1021,32 @@ export default {
         tipeField(S, key) {
             const m = this.metaField(S, key);
             if (!m) return 'text';
-            // Field turunan (usia dst) bertipe dari definisinya; date dibanding sbg angka tidak — biarkan number saja.
-            return m.tipe === 'number' ? 'number' : (m.tipe || 'text');
+
+            /*
+             * DUA KOSAKATA TIPE BERTEMU DI SINI, DAN INI SATU-SATUNYA TEMPAT
+             * MENYATUKANNYA.
+             *
+             * Field formulir memakai kosakata skema borang ('number', 'text',
+             * 'date'). Field TURUNAN memakai kosakata domain dari
+             * App\Support\Career\FieldTurunan ('ANGKA', 'TEKS', 'TANGGAL') —
+             * dan kosakata itu memang dipakai mesin syaratnya di server, jadi
+             * bukan tempatnya diganti di sana.
+             *
+             * Tanpa penyeragaman ini, 'ANGKA' tidak pernah sama dengan 'number'
+             * dan Usia diperlakukan sebagai teks: operator yang muncul cuma
+             * 'sama dengan' dan 'salah satu dari'. Akibatnya syarat yang paling
+             * lazim — USIA MAKSIMAL dan IPK MINIMAL — tidak bisa disusun sama
+             * sekali, padahal placeholder di layarnya sendiri menyebut keduanya
+             * sebagai contoh. Server sudah lama sanggup mengevaluasi '>=' dan
+             * '<=' (lihat MesinSyarat::OPERATOR); yang hilang hanya jalan untuk
+             * memilihnya.
+             *
+             * Dicocokkan setelah huruf kecil supaya penulisan baru — dari mana
+             * pun datangnya — tidak diam-diam jatuh ke cabang teks lagi.
+             */
+            const t = String(m.tipe || 'text').toLowerCase();
+
+            return (t === 'number' || t === 'angka') ? 'number' : t;
         },
         adaOpsi(S, key) {
             const m = this.metaField(S, key);
@@ -1138,6 +1211,20 @@ export default {
             this.pakaiBatch = false;
             this.pakaiSyarat = false;
             this.show = true;
+
+            /*
+             * Hak akses cuma satu kategori -> langsung dipasang, berikut presetnya.
+             *
+             * onKategori() dipanggil, bukan sekadar mengisi form.kategori: mode,
+             * warna, dan alur bawaan datang dari preset Master Kategori, dan
+             * memasang kodenya saja meninggalkan ketiganya kosong. Admin lalu
+             * melihat form yang tampak siap padahal alurnya belum terpilih.
+             */
+            if (this.kategoriTunggal) {
+                this.form.kategori = this.kategoriTunggal.kode;
+                this.onKategori();
+            }
+
             this.loadTahapFormulir();
         },
 
@@ -1739,6 +1826,25 @@ export default {
 .pgk-mppscope.is-mt { color: #b45309; background: #fef3c7; }
 .pgk-mppscope .bi { font-size: 10px; }
 .pgk-hint { font-size: 11.5px; color: #64748b; margin-top: .3rem; }
+
+/* Kategori yang sudah pasti — keterangan, bukan kendali.
+   Sengaja TIDAK menyerupai kotak input: percobaan pertama memakai bingkai
+   putus-putus abu-abu, dan hasilnya terbaca seperti input yang mati dengan
+   isian kosong. Yang perlu terbaca justru NAMA kategorinya, jadi pilnya dibuat
+   sama persis dengan pil kategori di daftar program — warna dan ikonnya pun
+   mengikuti kategori, supaya sekali lihat sudah jelas ini MT atau Rekrutmen. */
+.pgk-kat-tetap {
+    display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+    padding: .35rem 0 .1rem;
+}
+.pgk-kat-tetap small {
+    display: inline-flex; align-items: center; gap: .3rem;
+    font-size: 11.5px; color: #94a3b8;
+}
+.pgk-kat-tetap small i { font-size: 10px; }
+/* Pil daftar berukuran 11px — kekecilan untuk sesuatu yang di sini justru jadi
+   satu-satunya keterangan kategori. Dibesarkan sedikit, warna tetap sama. */
+.pgk-kat-tetap .pkg-pill { font-size: 12.5px; padding: 6px 12px; }
 .pgk-hint--warn { color: #b45309; }
 .pgk-syarat { border: 1px solid rgba(79,70,229,.18); border-radius: 14px; padding: .9rem; margin-bottom: .7rem; background: #fff; }
 /* Identitas syarat: nama + tahap berlabel, tombol hapus di kanan. */

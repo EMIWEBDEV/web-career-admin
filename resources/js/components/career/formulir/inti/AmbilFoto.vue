@@ -45,21 +45,21 @@
                     type="button"
                     class="af__btn af__btn--utama"
                     :disabled="disabled || menyalakan"
-                    @click="nyalakan"
+                    :onClick="disabled || menyalakan ? null : nyalakan"
                 >
                     <i class="bi" :class="menyalakan ? 'bi-arrow-repeat af__spin' : 'bi-camera-video-fill'"></i>
                     {{ menyalakan ? 'Menunggu izin kamera…' : 'Aktifkan Kamera' }}
                 </button>
                 <template v-else>
-                    <button type="button" class="af__btn af__btn--utama" :disabled="disabled" @click="jepret">
+                    <button type="button" class="af__btn af__btn--utama" :disabled="disabled" :onClick="disabled ? null : jepret">
                         <i class="bi bi-camera-fill"></i> Ambil Foto
                     </button>
-                    <button type="button" class="af__btn" :disabled="disabled" @click="matikan">
+                    <button type="button" class="af__btn" :disabled="disabled" :onClick="disabled ? null : matikan">
                         <i class="bi bi-x-lg"></i> Batal
                     </button>
                 </template>
             </template>
-            <button v-else type="button" class="af__btn" :disabled="disabled" @click="ulangi">
+            <button v-else type="button" class="af__btn" :disabled="disabled" :onClick="disabled ? null : ulangi">
                 <i class="bi bi-arrow-repeat"></i> Ambil Ulang
             </button>
         </div>

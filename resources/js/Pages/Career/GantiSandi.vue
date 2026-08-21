@@ -81,7 +81,7 @@
 
             <p class="switch-row">
                 Tidak menerima kode?
-                <button v-if="resendCooldown <= 0" type="button" class="switch-link as-btn" :disabled="processing" @click="mintaOtp()">Kirim ulang</button>
+                <button v-if="resendCooldown <= 0" type="button" class="switch-link as-btn" :disabled="processing" :onClick="processing ? null : () => mintaOtp()">Kirim ulang</button>
                 <span v-else class="switch-muted">Kirim ulang dalam {{ resendCooldown }}s</span>
             </p>
             <p class="switch-row"><button type="button" class="switch-link" @click="kembaliKeMinta()"><i class="bi bi-arrow-left"></i> Ganti email</button></p>

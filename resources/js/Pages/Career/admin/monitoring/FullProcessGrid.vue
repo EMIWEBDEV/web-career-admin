@@ -64,7 +64,7 @@
                 <button v-for="(s, si) in o.jejak" :key="s.kode || si" type="button"
                     class="wcm-sel" :class="[`k-${s.keadaan.toLowerCase()}`, { 'is-siap': menungguKetukan(s) }]"
                     :title="judulSel(o, s)" :disabled="!bisaDibuka(s)"
-                    @click="bisaDibuka(s) && $emit('open-cell', { id: o.id, urutan: s.urutan, label: s.label })">
+                    :onClick="!bisaDibuka(s) ? null : () => bisaDibuka(s) && $emit('open-cell', { id: o.id, urutan: s.urutan, label: s.label })">
                     <i class="bi" :class="IKON[s.keadaan]"></i>
                     <span v-if="lamaTeks(s)" class="wcm-sel__hari" :class="{ 'is-tua': terlaluLama(s) }">
                         {{ lamaTeks(s) }}

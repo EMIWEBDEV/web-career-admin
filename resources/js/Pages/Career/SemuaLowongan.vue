@@ -376,7 +376,7 @@
 
                     <!-- Paginasi MT (10 per halaman) -->
                     <div v-if="mtTotalPages > 1" class="sl-pager">
-                        <button type="button" class="sl-pager__nav" :disabled="mtPage <= 1" @click="goMtPage(mtPage - 1)">
+                        <button type="button" class="sl-pager__nav" :disabled="mtPage <= 1" :onClick="mtPage <= 1 ? null : () => goMtPage(mtPage - 1)">
                             <i class="bi bi-chevron-left"></i>
                         </button>
                         <button v-for="p in mtTotalPages" :key="p" type="button" class="sl-pager__num" :class="{ 'is-on': p === mtPage }" @click="goMtPage(p)">

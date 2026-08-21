@@ -224,7 +224,7 @@ export default {
                         <input v-model="pasteVal" type="text" placeholder="Tempel tautan / token dari email" @input="pasteErr = ''" @keyup.enter="prosesTempel" />
                     </div>
                     <p v-if="pasteErr" class="paste-err">{{ pasteErr }}</p>
-                    <button type="button" class="btn-ghost" :disabled="pasteBusy" @click="prosesTempel">
+                    <button type="button" class="btn-ghost" :disabled="pasteBusy" :onClick="pasteBusy ? null : prosesTempel">
                         <span v-if="pasteBusy" class="spinner spinner--indigo" aria-hidden="true"></span>
                         {{ pasteBusy ? 'Memverifikasi…' : 'Verifikasi Sekarang' }}
                     </button>

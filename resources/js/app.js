@@ -1,4 +1,27 @@
 import './bootstrap';
+
+/*
+ * URUTAN IMPOR CSS DI BAWAH INI MENENTUKAN SIAPA YANG MENANG.
+ *
+ * Vite memancarkan CSS mengikuti urutan impornya, dan pada kekhususan yang
+ * sama, yang belakangan menang. Sebelumnya evo-theme.css diimpor di baris
+ * kedua sementara element-plus/dist/index.css jauh di bawah — artinya SELURUH
+ * tema EVO kalah dari gaya bawaan Element Plus, kecuali aturan yang dipaksa
+ * dengan !important.
+ *
+ * Itu sebabnya evo-theme.css penuh !important pada kotak input dan select:
+ * satu-satunya cara menang melawan urutan yang terbalik. Dan yang belum
+ * sempat dipaksa — warna item dropdown, popper, ikon chevron — tetap tampil
+ * dengan warna bawaan Element Plus, di layar yang seluruh sisanya sudah
+ * indigo EVO.
+ *
+ * Maka pustakanya dimuat DULU, tema aplikasi SESUDAHNYA. Ini urutan yang
+ * lazim untuk pustaka komponen: bawaan dulu, penyesuaian belakangan.
+ *
+ * JANGAN dikembalikan ke urutan lama tanpa membaca ini. Gejalanya tidak akan
+ * berupa galat — hanya sebagian warna yang diam-diam berubah kembali.
+ */
+import 'element-plus/dist/index.css';
 import '../css/evo-theme.css';
 import { createApp, h } from 'vue';
 import { createInertiaApp } from '@inertiajs/vue3';
@@ -9,7 +32,7 @@ import { plugin, defaultConfig } from '@formkit/vue';
 import '@formkit/themes/genesis';
 import 'vue-select/dist/vue-select.css';
 import ElementPlus from 'element-plus';
-import 'element-plus/dist/index.css';
+// CSS-nya sudah diimpor paling atas — lihat catatan urutan di sana.
 import axios from 'axios';
 import AppShell from './Layouts/AppShell.vue';
 // Refresh CSRF single-flight dipusatkan di utils/csrf agar dipakai bersama

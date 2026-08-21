@@ -18,8 +18,10 @@ use App\Support\Career\HtmlBersih;
 use App\Support\Career\JadwalPrivat;
 use App\Support\Career\KatalogPrefill;
 use App\Support\Career\LamaranService;
+use App\Support\Career\Pemeriksaan;
 use App\Support\Career\LamaranTargetValidator;
 use App\Support\Career\PipelineProgress;
+use App\Support\Career\UlangTahap;
 use App\Support\CareerShell;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -625,6 +627,9 @@ class LamaranController extends Controller
         // Boleh dilihat kandidat — yang ditahan hanya nilainya, bukan dokumennya.
         $berkasTahap = DB::table('N_WEB_CAREERS_Lamaran_Tahap_Berkas')
             ->where('Lamaran_Id', $realId)
+            // Hanya berkas putaran berjalan; yang sudah ikut pengulangan
+            // punya Ulang_Id dan menjadi riwayat. Lihat UlangTahap.
+            ->whereNull('Ulang_Id')
             ->orderBy('Id_Lamaran_Tahap_Berkas')
             ->get()
             ->groupBy('Lamaran_Tahap_Id');
@@ -658,8 +663,14 @@ class LamaranController extends Controller
             //
             // Disaring di SERVER, bukan disembunyikan di layar — apa pun yang
             // masuk payload bisa dibaca lewat DevTools.
+            //
+            // JADWAL MENANG ATAS SETELAN — lihat JadwalPrivat::terlihat().
+            // Aktivitas yang sudah bertanggal adalah janji temu yang undangannya
+            // sudah dikirim; menyembunyikannya membuat kandidat membaca
+            // "menunggu dijadwalkan" untuk pemeriksaan yang harus ia datangi
+            // besok pagi.
             $terlihat = collect($subTesRows->get($t->Id_Lamaran_Tahap, []))
-                ->filter(fn ($s) => ($s->Tampil_Kandidat ?? 'Y') === 'Y')
+                ->filter(fn ($s) => JadwalPrivat::terlihat($s, $s->Tipe_Tahap_Kode ?: $t->Tipe_Tahap_Kode))
                 ->values();
 
             // Giliran pengerjaan pada tahap BERURUTAN. Dihitung dari SELURUH
@@ -738,6 +749,16 @@ class LamaranController extends Controller
                         'tanggal' => (string) ($s->Mcu_Tanggal ?: ''),
                         'catatan' => $s->Mcu_Catatan,
                     ] : null,
+                    // TIPE INI DILAKSANAKAN PADA WAKTU & TEMPAT TERTENTU.
+                    //
+                    // Diambil dari Master_Tipe_Tahap.Flag_Jadwal — bukan daftar kode
+                    // tipe yang ditulis di layar. Tes offline, wawancara, MCU, dan
+                    // phone screening bernilai Y; formulir dan tes daring tidak.
+                    //
+                    // Portal memakainya untuk menahan kotak unggah sampai jadwalnya
+                    // terbit: berkas jawaban tes offline baru masuk akal diminta
+                    // sesudah kandidat tahu kapan dan di mana tesnya dikerjakan.
+                    'perluJadwal' => ($ti->Flag_Jadwal ?? 'T') === 'Y',
                     'jadwal' => $s->Jadwal_Mulai ? [
                         'mode' => $s->Jadwal_Mode,
                         'daring' => strtoupper((string) $s->Jadwal_Mode) === 'DARING',
@@ -779,7 +800,7 @@ class LamaranController extends Controller
                     'menunggu' => $penghalang
                         && $s->Flag_Selesai !== 'Y'
                         && $penghalang->Id_Lamaran_Tahap_Tes !== $s->Id_Lamaran_Tahap_Tes
-                        && ($penghalang->Tampil_Kandidat ?? 'Y') === 'Y'
+                        && JadwalPrivat::terlihat($penghalang, $penghalang->Tipe_Tahap_Kode ?: $t->Tipe_Tahap_Kode)
                             ? $penghalang->Label
                             : null,
                     'ujian' => $bentukUjian($su),
@@ -1759,6 +1780,7 @@ class LamaranController extends Controller
 
         $rows = DB::table('N_WEB_CAREERS_Lamaran_Tes_Berkas')
             ->where('Lamaran_Tahap_Tes_Id', $tes->Id_Lamaran_Tahap_Tes)
+            ->whereNull('Ulang_Id')
             ->orderBy('Id_Lamaran_Tes_Berkas')
             ->get();
 
@@ -1895,6 +1917,7 @@ class LamaranController extends Controller
 
         $jumlah = DB::table('N_WEB_CAREERS_Lamaran_Tes_Berkas')
             ->where('Lamaran_Tahap_Tes_Id', $tes->Id_Lamaran_Tahap_Tes)
+            ->whereNull('Ulang_Id')
             ->count();
 
         // Gerbang ini berlaku untuk SEMUA aktivitas berunggahan, bukan hanya
@@ -2330,8 +2353,19 @@ class LamaranController extends Controller
         return ['diproses' => true, 'hasil' => $hasil, 'outcome' => $outcome];
     }
 
-    /** Kirim email hasil setelah tahap tes diputus otomatis. */
-    private function kirimEmailHasilTahap(int $lamaranId, bool $lulus): void
+    /**
+     * Kirim email hasil sebuah TAHAP kepada kandidat.
+     *
+     * `$tahapId` menunjuk tahap mana yang diberitakan. Dibiarkan null saat
+     * dipanggil sesudah sebuah keputusan baru diambil — yang dimaksud pasti
+     * keputusan barusan, yaitu yang Diputus_At-nya terbaru.
+     *
+     * DISEBUT EKSPLISIT saat admin mengirim ULANG. Tanpa itu, kirim ulang
+     * untuk "Seleksi Administrasi" pada kandidat yang sudah berada di tahap
+     * 3 akan memberitakan tahap 3 — kandidat menerima kabar tahap yang salah,
+     * dan justru email yang gagal itulah yang tetap tidak pernah sampai.
+     */
+    private function kirimEmailHasilTahap(int $lamaranId, bool $lulus, ?int $tahapId = null): void
     {
         try {
             $l = DB::table('N_WEB_CAREERS_Lamaran as l')
@@ -2378,6 +2412,7 @@ class LamaranController extends Controller
             $tahapDiputus = DB::table('N_WEB_CAREERS_Lamaran_Tahap')
                 ->where('Lamaran_Id', $lamaranId)
                 ->whereNotNull('Diputus_At')
+                ->when($tahapId, fn ($q) => $q->where('Id_Lamaran_Tahap', $tahapId))
                 ->orderByDesc('Diputus_At')
                 ->orderByDesc('Urutan')
                 ->first(['Urutan', 'Label']);
@@ -2623,6 +2658,185 @@ class LamaranController extends Controller
     private const PROGRAM_PER_HALAMAN = 10;
 
     /** GET panel kiri — daftar program berjalan (paginasi + cari + filter jenis). */
+    /**
+     * GET /api/v1/karir/lamaran/{id}/email-hasil — TAHAP APA SAJA yang
+     * emailnya bisa dikirim ulang untuk satu lamaran.
+     *
+     * Kirim ulang tanpa daftar ini berarti menebak. Kandidat yang emailnya
+     * gagal terkirim sudah berpindah ke tahap berikutnya begitu keputusannya
+     * jatuh — papan menunjukkannya di kolom baru — sementara yang perlu
+     * dikirim ulang justru kabar tahap SEBELUMNYA. Satu tombol "kirim ulang"
+     * tanpa pilihan akan selalu mengirimkan tahap yang salah.
+     *
+     * Yang disebut hanya tahap yang BENAR-BENAR pernah diputus: hanya itu
+     * yang punya kabar untuk disampaikan.
+     */
+    public function emailHasilDaftar(string $id)
+    {
+        $realId = Hashids::decode($id)[0] ?? null;
+        if (! $realId) {
+            return ResponseHelper::error('Lamaran tidak valid.', 422);
+        }
+
+        $hasilMaster = \App\Support\Career\LamaranService::masterHasilKeputusan();
+
+        // ALAMAT YANG BENAR-BENAR AKAN DIPAKAI, dihitung dari database.
+        // Dikirim ke layar supaya admin melihat ke mana suratnya pergi SEBELUM
+        // menekan kirim — bukan supaya layar yang menentukannya.
+        $kepada = \App\Support\Career\LamaranService::emailKandidat(
+            (int) DB::table('N_WEB_CAREERS_Lamaran')->where('Id_Lamaran', (int) $realId)->value('Id_Users'),
+            (int) $realId,
+        );
+
+        $rows = DB::table('N_WEB_CAREERS_Lamaran_Tahap')
+            ->where('Lamaran_Id', (int) $realId)
+            ->whereNotNull('Diputus_At')
+            ->orderByDesc('Urutan')
+            ->get(['Id_Lamaran_Tahap', 'Urutan', 'Label', 'Hasil', 'Diputus_At', 'Diputus_By']);
+
+        $daftar = $rows->map(function ($t) use ($hasilMaster) {
+            $def = $hasilMaster->get((string) $t->Hasil);
+
+            return [
+                'tahapId' => Hashids::encode($t->Id_Lamaran_Tahap),
+                'urutan' => (int) $t->Urutan,
+                'label' => $t->Label,
+                'hasil' => (string) $t->Hasil,
+                'hasilNama' => $def->Nama ?? (string) $t->Hasil,
+                'lolos' => ($def->Flag_Lolos ?? 'T') === 'Y',
+                // Ada keputusan yang MEMANG tidak pernah dikabarkan lewat email:
+                // Talent Pool, pengunduran diri, penolakan penawaran. Layar perlu
+                // tahu supaya barisnya tidak menawarkan tombol yang akan ditolak.
+                'kirimEmail' => ($def->Flag_Kirim_Email ?? 'T') === 'Y',
+                'diputusAt' => (string) $t->Diputus_At,
+                'diputusBy' => $t->Diputus_By,
+            ];
+        })->values()->all();
+
+        return ResponseHelper::success(['tahap' => $daftar, 'email' => $kepada], 'Tahap yang emailnya bisa dikirim ulang');
+    }
+
+    /**
+     * POST /api/v1/karir/lamaran/tahap/{id}/email-hasil — KIRIM ULANG email
+     * keputusan satu tahap.
+     *
+     * Dipakai ketika pengirimannya gagal di percobaan pertama (server surat
+     * menolak, kotak surat penuh, jam mesin melenceng). Keputusannya sendiri
+     * sudah sah dan tidak boleh diambil ulang hanya demi memicu emailnya —
+     * mengetuk palu dua kali meninggalkan dua jejak keputusan untuk satu
+     * peristiwa, dan jejak itulah yang dibaca saat ada sengketa.
+     *
+     * TIDAK MENYENTUH KEPUTUSAN. Yang dikirim ulang adalah kabar atas
+     * keputusan yang sudah tercatat, apa adanya.
+     *
+     * ── ALAMAT TUJUAN TIDAK DITERIMA DARI LAYAR ─────────────────────────
+     *
+     * Layar WAJIB mengirimkan alamat yang sedang ia tampilkan, tapi alamat
+     * itu dipakai sebagai PEMERIKSA, bukan sebagai tujuan. Tujuannya selalu
+     * dihitung ulang dari database.
+     *
+     * Dua bahaya yang ditutup sekaligus:
+     *
+     *   1. Permintaan bisa disusun sendiri. Sekali alamat tujuan diterima
+     *      mentah dari klien, surat berisi keputusan seleksi orang lain bisa
+     *      diarahkan ke mana saja oleh siapa pun yang punya akses admin.
+     *   2. Layar bisa basi. Drawer yang masih memegang kandidat sebelumnya,
+     *      atau data yang berubah di tab lain, akan mengirimkan kabar orang
+     *      ini ke alamat orang itu — dan tak ada satu pun galat yang muncul.
+     *
+     * Kalau keduanya berselisih, pengiriman DIBATALKAN. Bukan "pakai yang
+     * dari database diam-diam": selisih itu sendiri pertanda ada yang salah,
+     * dan admin berhak tahu sebelum surat berangkat.
+     */
+    public function emailHasilUlang(Request $request, string $id)
+    {
+        $realId = Hashids::decode($id)[0] ?? null;
+        if (! $realId) {
+            return ResponseHelper::error('Tahap tidak valid.', 422);
+        }
+
+        $data = $request->validate([
+            // Wajib ada — layar harus menyatakan alamat yang ia tampilkan supaya
+            // ada yang bisa dicocokkan. Yang tidak menyertakannya bukan layar ini.
+            'email' => 'required|email|max:200',
+        ]);
+
+        $t = DB::table('N_WEB_CAREERS_Lamaran_Tahap')
+            ->where('Id_Lamaran_Tahap', (int) $realId)
+            ->first(['Lamaran_Id', 'Urutan', 'Label', 'Hasil', 'Diputus_At']);
+
+        // Tahap yang belum diputus tidak punya kabar untuk dikirim. Mengirimnya
+        // berarti mengabarkan hasil yang belum ada.
+        if (! $t || ! $t->Diputus_At) {
+            return ResponseHelper::error('Tahap ini belum diputus — belum ada hasil yang bisa dikabarkan.', 422);
+        }
+
+        $def = \App\Support\Career\LamaranService::masterHasilKeputusan()->get((string) $t->Hasil);
+        if (! $def) {
+            return ResponseHelper::error('Hasil tahap ini tidak dikenali — email tidak dikirim.', 422);
+        }
+
+        // KEPUTUSAN YANG MEMANG TIDAK DIKABARKAN, TETAP TIDAK DIKABARKAN.
+        //
+        // Talent Pool bukan penolakan dan bukan kelulusan — ia catatan internal
+        // bahwa kandidat disimpan untuk kesempatan lain; surat untuk itu justru
+        // membuat kandidat mengira ia diterima. Pengunduran diri dan penolakan
+        // penawaran pun tak perlu dibalas surat: kandidatlah yang memutuskan.
+        //
+        // Dibaca dari Master_Hasil_Keputusan.Flag_Kirim_Email — aturan yang sama
+        // persis dengan yang dipakai putus(), bukan salinan kedua yang bisa
+        // menyimpang. Pintu kirim ulang tidak boleh lebih longgar daripada pintu
+        // keputusannya sendiri.
+        if (($def->Flag_Kirim_Email ?? 'T') !== 'Y') {
+            return ResponseHelper::error(
+                "Keputusan \"{$def->Nama}\" memang tidak dikabarkan lewat email — tidak ada surat yang bisa dikirim ulang.",
+                422,
+            );
+        }
+
+        $kepada = \App\Support\Career\LamaranService::emailKandidat(
+            (int) DB::table('N_WEB_CAREERS_Lamaran')->where('Id_Lamaran', (int) $t->Lamaran_Id)->value('Id_Users'),
+            (int) $t->Lamaran_Id,
+        );
+
+        if (! $kepada) {
+            return ResponseHelper::error(
+                'Kandidat ini tidak punya alamat email — tidak di akunnya, tidak juga di jawaban formulirnya. '
+                    .'Lengkapi dulu datanya, lalu kirim ulang.',
+                422,
+            );
+        }
+
+        // Dibandingkan tanpa peduli besar-kecil huruf dan spasi di tepi: itu
+        // perbedaan yang tidak pernah berarti pada alamat email, dan menolak
+        // karenanya cuma membuat admin mengira sistemnya rusak.
+        $diLayar = mb_strtolower(trim($data['email']));
+        if ($diLayar !== mb_strtolower($kepada)) {
+            Log::channel('web_career')->warning(sprintf(
+                '[EMAIL ULANG] DIBATALKAN — layar menyebut %s, data menyebut %s (tahap #%d, oleh %s).',
+                $diLayar, $kepada, $realId, session('career_auth.nama', 'ADMIN')
+            ));
+
+            return ResponseHelper::error(
+                "Alamat di layar ({$diLayar}) berbeda dengan data kandidat ini. "
+                    .'Muat ulang halaman lalu coba lagi — email tidak dikirim.',
+                409,
+            );
+        }
+
+        $this->kirimEmailHasilTahap((int) $t->Lamaran_Id, ($def->Flag_Lolos ?? 'T') === 'Y', (int) $realId);
+
+        Log::channel('web_career')->info(sprintf(
+            '[EMAIL ULANG] tahap %d (%s) hasil %s lamaran #%d → %s, oleh %s.',
+            $t->Urutan, $t->Label, $t->Hasil, $t->Lamaran_Id, $kepada, session('career_auth.nama', 'ADMIN')
+        ));
+
+        return ResponseHelper::success(
+            ['tahap' => $t->Label, 'email' => $kepada],
+            "Email hasil \"{$t->Label}\" diantrekan ulang ke {$kepada}.",
+        );
+    }
+
     public function worklistProgram(Request $request)
     {
         return ResponseHelper::success(
@@ -2686,7 +2900,16 @@ class LamaranController extends Controller
 
         $total = (clone $base)->count();
 
-        $rows = $base->orderBy('p.Nama')
+        // TERBARU DI ATAS.
+        //
+        // Diurutkan menurut nama, panel kiri worklist menaruh program yang
+        // dibuka tahun lalu di atas program yang dibuka pekan ini semata-mata
+        // karena namanya berawalan 'A'. Yang dikerjakan admin tiap hari justru
+        // program terbaru, dan ia harus memaginasinya dulu untuk sampai ke
+        // sana. Id_Program jadi pemutus supaya dua program yang dibuat pada
+        // detik yang sama tidak bertukar tempat tiap kali halaman dimuat —
+        // urutan yang goyah membuat paginasi melewatkan atau menggandakan baris.
+        $rows = $base->orderByDesc('p.Created_At')->orderByDesc('p.Id_Program')
             ->offset(($page - 1) * $perPage)
             ->limit($perPage)
             ->select('p.*', 'a.Nama as AlurNama')
@@ -2790,20 +3013,22 @@ class LamaranController extends Controller
                 'x.Posisi', 'x.Departemen', 'x.Lokasi', 'x.Level', 'x.Mpp_Ref')
             ->get();
 
-        $tahapPer = DB::table('N_WEB_CAREERS_Lamaran_Tahap')
-            ->whereIn('Lamaran_Id', $lamaran->pluck('Id_Lamaran')->all() ?: [0])
-            ->orderBy('Urutan')
-            ->get()
-            ->groupBy('Lamaran_Id');
+        // BERPOTONG — lihat MetrikRekrutmen::potongIn(). Satu program bisa
+        // berisi ribuan pelamar, dan whereIn menerbitkan satu parameter per id.
+        $tahapPer = \App\Support\Career\MetrikRekrutmen::potongIn(
+            fn () => DB::table('N_WEB_CAREERS_Lamaran_Tahap')->orderBy('Urutan'),
+            'Lamaran_Id',
+            $lamaran->pluck('Id_Lamaran')->all(),
+        )->groupBy('Lamaran_Id');
 
         // Rapor sub-tes per tahap (baterai multi-tes) — dasar admin memutuskan.
         // Lewat helper, bukan kueri sendiri: baris aktivitasnya ikut membawa
         // `Token_Terbit`, dan tanpa itu PipelineReadModel menyimpulkan "menunggu
         // hasil" untuk ujian yang tokennya belum terbit — berselisih dengan
         // portal kandidat yang membaca hal yang sama dari sumber yang sama.
-        $subPer = \App\Support\Career\MetrikRekrutmen::aktivitasDenganToken(
+        $subPer = \App\Support\Career\MetrikRekrutmen::aktivitasDenganTokenPer(
             $tahapPer->flatten(1)->pluck('Id_Lamaran_Tahap')->all()
-        )->get()->groupBy('Lamaran_Tahap_Id');
+        );
 
         // Kuota MPP per posisi + kursi TERISI (LULUS) — untuk tombol sadar-kuota.
         $posisiIds = $lamaran->pluck('Program_Posisi_Id')->filter()->unique()->all();
@@ -2815,23 +3040,25 @@ class LamaranController extends Controller
 
         // Jumlah berkas hasil (MCU/Interview) per tahap — untuk gate wajib-upload.
         $tahapIdsAll = $tahapPer->flatten(1)->pluck('Id_Lamaran_Tahap')->all();
-        $berkasCount = $tahapIdsAll
-            ? DB::table('N_WEB_CAREERS_Lamaran_Tahap_Berkas')->whereIn('Lamaran_Tahap_Id', $tahapIdsAll)
-                ->select('Lamaran_Tahap_Id', DB::raw('COUNT(*) as J'))->groupBy('Lamaran_Tahap_Id')->pluck('J', 'Lamaran_Tahap_Id')
-            : collect();
+        $berkasCount = \App\Support\Career\MetrikRekrutmen::potongIn(
+            fn () => DB::table('N_WEB_CAREERS_Lamaran_Tahap_Berkas')
+                ->whereNull('Ulang_Id')
+                ->select('Lamaran_Tahap_Id', DB::raw('COUNT(*) as J'))
+                ->groupBy('Lamaran_Tahap_Id'),
+            'Lamaran_Tahap_Id',
+            $tahapIdsAll,
+        )->pluck('J', 'Lamaran_Tahap_Id');
 
         // Berkas yang melekat pada SATU AKTIVITAS (form wawancara terpindai,
         // lembar jawaban tes offline). Diambil sekali untuk seluruh program —
         // memuatnya per aktivitas saat drawer dibuka berarti satu kueri per
         // baris rapor, dan drawer terasa tersendat justru saat paling dipakai.
         $subIdsAll = $subPer->flatten(1)->pluck('Id_Lamaran_Tahap_Tes')->all();
-        $berkasSub = $subIdsAll
-            ? DB::table('N_WEB_CAREERS_Lamaran_Tahap_Berkas')
-                ->whereIn('Lamaran_Tahap_Tes_Id', $subIdsAll)
-                ->orderByDesc('Id_Lamaran_Tahap_Berkas')
-                ->get()
-                ->groupBy('Lamaran_Tahap_Tes_Id')
-            : collect();
+        $berkasSub = \App\Support\Career\MetrikRekrutmen::potongIn(
+            fn () => DB::table('N_WEB_CAREERS_Lamaran_Tahap_Berkas')->whereNull('Ulang_Id')->orderByDesc('Id_Lamaran_Tahap_Berkas'),
+            'Lamaran_Tahap_Tes_Id',
+            $subIdsAll,
+        )->groupBy('Lamaran_Tahap_Tes_Id');
 
         // Berkas yang DIUNGGAH KANDIDAT (lembar jawaban terpindai, sertifikat).
         //
@@ -2839,13 +3066,11 @@ class LamaranController extends Controller
         // Akibatnya seluruh setelan "kandidat wajib mengunggah" di Master Alur
         // tidak berguna: berkasnya masuk, tetapi tim yang harus menilainya tidak
         // punya satu pun layar yang menampilkannya.
-        $berkasKandidat = $subIdsAll
-            ? DB::table('N_WEB_CAREERS_Lamaran_Tes_Berkas')
-                ->whereIn('Lamaran_Tahap_Tes_Id', $subIdsAll)
-                ->orderBy('Id_Lamaran_Tes_Berkas')
-                ->get()
-                ->groupBy('Lamaran_Tahap_Tes_Id')
-            : collect();
+        $berkasKandidat = \App\Support\Career\MetrikRekrutmen::potongIn(
+            fn () => DB::table('N_WEB_CAREERS_Lamaran_Tes_Berkas')->whereNull('Ulang_Id')->orderBy('Id_Lamaran_Tes_Berkas'),
+            'Lamaran_Tahap_Tes_Id',
+            $subIdsAll,
+        )->groupBy('Lamaran_Tahap_Tes_Id');
 
         // Master alasan HOLD — dimuat SEKALI untuk seluruh daftar, bukan per
         // kandidat. PipelineProgress sengaja tidak menyentuh database sendiri.
@@ -2873,14 +3098,15 @@ class LamaranController extends Controller
         // berjajar, saat memverifikasi satu angkatan sekaligus.
         //
         // Satu kueri untuk SELURUH daftar, sejalan dengan $kampusPer di atas.
-        $berkasFormulir = ($ids = $lamaran->pluck('Id_Lamaran')->all())
-            ? DB::table('N_WEB_CAREERS_Formulir_Berkas as fb')
+        // BERPOTONG — lihat MetrikRekrutmen::potongIn().
+        $berkasFormulir = \App\Support\Career\MetrikRekrutmen::potongIn(
+            fn () => DB::table('N_WEB_CAREERS_Formulir_Berkas as fb')
                 ->join('N_WEB_CAREERS_Formulir_Pengisian as fp', 'fp.Id_Formulir_Pengisian', '=', 'fb.Formulir_Pengisian_Id')
-                ->whereIn('fp.Lamaran_Id', $ids)
                 ->select('fp.Lamaran_Id', DB::raw('COUNT(*) as J'))
-                ->groupBy('fp.Lamaran_Id')
-                ->pluck('J', 'Lamaran_Id')
-            : collect();
+                ->groupBy('fp.Lamaran_Id'),
+            'fp.Lamaran_Id',
+            $lamaran->pluck('Id_Lamaran')->all(),
+        )->pluck('J', 'Lamaran_Id');
 
         $pelamar = $lamaran->map(function ($l) use ($tahapPer, $subPer, $kuotaPosisi, $terisiKuota, $berkasCount, $berkasSub, $berkasKandidat, $alasanHold, $kolom, $namaResmi, $kampusPer, $berkasFormulir) { // NOSONAR
             $tahapList = collect($tahapPer->get($l->Id_Lamaran, []));
@@ -3352,6 +3578,17 @@ class LamaranController extends Controller
         $tipe = self::masterTipeTahap()[$x->Tipe_Tahap_Kode ?? ''] ?? null;
         $online = ($tipe->Perilaku_Kode ?? null) === 'CAT' || ($x->Provider ?? '') === 'THIRD_PARTY';
         $isMcu = ($x->Tipe_Tahap_Kode ?? '') === 'MCU';
+
+        /* PEMERIKSAAN (background / reference check) PUNYA GERBANG SENDIRI.
+         *
+         * Sebelum kandidat ditanya bersedia atau tidak, tidak ada yang boleh
+         * dikerjakan: tidak mencatat hasil, tidak menandai apa pun. Menampilkan
+         * "Catat Hasil" di keadaan itu mengundang petugas mengisi temuan atas
+         * pemeriksaan yang belum boleh dijalankan. */
+        $periksa = Pemeriksaan::bentuk($x);
+        $butuhSetuju = $periksa !== null
+            && ! (($periksa['persetujuan']['ada'] ?? false) || ($periksa['persetujuan']['ditolak'] ?? false));
+
         // ── AKTIVITAS PENAWARAN ────────────────────────────────────────────
         // Dua bentuk, dibedakan oleh flag tipenya sendiri — bukan oleh kodenya:
         //
@@ -3448,6 +3685,15 @@ class LamaranController extends Controller
             // datang) tidak berarti apa-apa — yang tersisa hanyalah tombol yang
             // mengundang salah tekan, dan sekali ditekan undangannya terkirim.
             'butuhJadwal' => ($tipe->Flag_Jadwal ?? 'T') === 'Y' && ! $final && ! $terkunci && empty($x->Jadwal_Hadir),
+            // JADWAL YANG TIDAK DIUMUMKAN KE KANDIDAT (negosiasi penawaran).
+            //
+            // Layar WAJIB tahu ini, bukan menyimpulkannya dari kode tipe.
+            // Tanpa penanda ini tombolnya berbunyi "kandidat diundang lewat
+            // email" dan kaki modal berbunyi "Simpan & Undang Kandidat" untuk
+            // jadwal yang justru tidak mengirim apa-apa — rekruter menekannya,
+            // percaya kandidatnya sudah dikabari, lalu menunggu jawaban yang
+            // tidak akan pernah datang.
+            'jadwalPrivat' => JadwalPrivat::untuk($x->Tipe_Tahap_Kode ?? null),
             // ── URUTAN & VISIBILITAS ────────────────────────────────────────
             // Terkunci = tahapnya BERURUTAN dan giliran aktivitas ini belum
             // tiba. `menunggu` menyebut aktivitas mana yang ditunggu, supaya
@@ -3458,7 +3704,11 @@ class LamaranController extends Controller
             // kandidat. Ditandai di sini agar admin tahu bahwa yang ia lihat
             // memang tidak dilihat kandidat, dan tidak menunggu kandidat
             // melakukan apa pun.
-            'internal' => ($x->Tampil_Kandidat ?? 'Y') !== 'Y',
+            // Dibaca lewat JadwalPrivat::terlihat(), bukan langsung dari kolomnya:
+            // aktivitas internal yang TELANJUR dijadwalkan tetap tampil di portal,
+            // dan lencana "internal" di sini akan meyakinkan rekruter bahwa
+            // kandidatnya tidak melihat apa yang sebenarnya ia lihat.
+            'internal' => ! JadwalPrivat::terlihat($x),
             // Tipe yang MUSTAHIL daring (MCU, tes offline, tanda tangan kontrak).
             // Aturannya melekat di master, bukan ditebak dari nama tipe di layar.
             'wajibLuring' => ($tipe->Flag_Wajib_Luring ?? 'T') === 'Y',
@@ -3550,7 +3800,8 @@ class LamaranController extends Controller
             // nilainya sudah datang dari HCLearn. Yang tersisa cuma "lulus atau
             // tidak", dan itu dua tombol, bukan sebuah formulir: lihat
             // `butuhKeputusan` di bawah.
-            'dapatDicatat' => ($dicatatTim && ! $tipeBerjadwal) && ! $final && ! $terkunci,
+            'dapatDicatat' => ($dicatatTim && ! $tipeBerjadwal) && ! $final && ! $terkunci
+                && ! $butuhSetuju,
             // HASILNYA DINILAI TIM — lepas dari tombol mana yang tampil.
             // Dipakai jendela "Hadir" untuk tahu perlu-tidaknya menampilkan
             // bidang hasil. `dapatDicatat` di atas hanya mengatur tombol
@@ -3565,6 +3816,22 @@ class LamaranController extends Controller
             // angka, dan angka karangan itu terbaca seolah hasil ukur.
             'penilaian' => self::bentukPenilaian($x),
             'nilaiTeks' => $x->Nilai_Teks ?? null,
+            // ── PEMERIKSAAN ────────────────────────────────────────────
+            //
+            // Null untuk aktivitas biasa, sehingga layar cukup memeriksa satu
+            // kunci untuk tahu perlu menampilkan panel temuan atau tidak.
+            //
+            // Dua query tambahan per aktivitas pemeriksaan — dan hanya untuk
+            // aktivitas itu. Satu lamaran umumnya punya nol atau satu; memuat
+            // seluruhnya di muka lalu mengedarkannya lewat empat lapis
+            // pemanggil menambah lebih banyak yang bisa salah daripada yang
+            // dihemat.
+            'pemeriksaan' => $periksa,
+            // MENUNGGU JAWABAN KANDIDAT.
+            //
+            // Selama belum dijawab, barisnya hanya menawarkan Setuju / Tidak
+            // setuju — bukan "Catat Hasil", dan tidak pernah "Tidak hadir".
+            'butuhPersetujuan' => $butuhSetuju,
             // AKTIVITAS INI MENAHAN YANG BERIKUTNYA?
             //
             // Sudah selesai, ber-mode MANUAL, dan belum ditekan "Lanjutkan".
@@ -3593,7 +3860,14 @@ class LamaranController extends Controller
             // ini hanya menggandakan keputusan yang sudah diambil lewat pasangan
             // Hadir/Tidak Hadir, dan dua jalan menuju keadaan yang sama membuat
             // admin menebak mana yang benar.
-            'dapatTidakHadir' => ($online || $dicatatTim || ($isPenawaran && $tipeBerjadwal))
+            // PEMERIKSAAN TIDAK PUNYA KEHADIRAN.
+            //
+            // Kandidat tidak datang ke mana pun dan tidak diminta hadir di mana
+            // pun — tim yang menelepon kampus dan mantan atasannya. "Tidak hadir"
+            // di barisnya adalah tombol yang tidak pernah punya arti, dan sekali
+            // tertekan ia menutup aktivitas dengan alasan yang tidak pernah terjadi.
+            'dapatTidakHadir' => $periksa === null
+                && ($online || $dicatatTim || ($isPenawaran && $tipeBerjadwal))
                 && ! $final && ! $terkunci && empty($x->Jadwal_Hadir),
             // Penanda UI: aktivitas ini menunggu hasil dari sistem lain.
             'online' => $online,
@@ -3936,6 +4210,166 @@ class LamaranController extends Controller
      * gerbangnya menolak tidak boleh membatalkan sembilan belas keputusan yang
      * sudah benar.
      */
+    /**
+     * ISI HASIL AKTIVITAS YANG BELUM TERCATAT, MENGIKUTI KEPUTUSAN.
+     *
+     * Gerbang ketuntasan menuntut tiap aktivitas punya hasil sebelum tahap
+     * boleh diputus. Untuk satu orang itu wajar; untuk lima puluh orang yang
+     * hasilnya sama, admin harus menekan "Tidak Lulus" lima puluh kali dulu
+     * SEBELUM bisa menekan keputusan massal — pekerjaan yang sama dikerjakan
+     * dua putaran, dan putaran pertamanya tidak menambah satu pun informasi
+     * yang tak sudah terkandung di keputusan massalnya.
+     *
+     * YANG DIISI hanya yang jawabannya memang sudah terkandung dalam
+     * keputusan itu: verdict lulus/gagal, dan kehadiran pada aktivitas yang
+     * jadwalnya sudah ada.
+     *
+     * YANG SENGAJA DILEWATI — dan disebut namanya kepada admin:
+     *
+     *   bernilai angka/kategori  Angkanya hasil pengukuran. Menuliskan
+     *                            "tepat di ambang batas" berarti sistem
+     *                            mengarang skor yang kelak dibaca sebagai
+     *                            hasil ukur sungguhan.
+     *   ujian online             Nilainya milik HCLearn. Yang belum masuk
+     *                            tidak bisa disimpulkan dari sini.
+     *   MCU                      Status kesehatan orang tidak boleh
+     *                            diturunkan dari keputusan rekrutmen.
+     *   belum dijadwalkan        Tidak ada peristiwa yang bisa dinilai.
+     *
+     * KEHADIRAN SELALU DITANDAI HADIR, tidak pernah "tidak hadir" — bahkan
+     * saat keputusannya tidak lolos. "Tidak hadir" adalah pernyataan tentang
+     * perbuatan kandidat, bukan tentang nilainya; orang yang datang lalu
+     * gagal akan tercatat mangkir, dan catatan itu ikut terbawa ke lamaran
+     * berikutnya.
+     *
+     * TIDAK MEMANGGIL evaluasiTahap(). Yang menyimpulkan tahap ini adalah
+     * putus() sesudahnya. Bila evaluasi ikut dijalankan di sini, tahap
+     * bermode otomatis akan menyimpulkan sendiri lebih dulu — lalu putus()
+     * menolak "tahap sudah diputus", dan admin melihat kegagalan atas
+     * keputusan yang justru berhasil.
+     *
+     * @return array{terisi:int, dilewati:array<int,string>}
+     */
+    private function catatAktivitasIkutKeputusan(int $tahapId, bool $lolos): array
+    {
+        $nama = session('career_auth.nama', 'ADMIN');
+        $mode = self::masterModePenilaian();
+        $terisi = 0;
+        $dilewati = [];
+
+        // MENAIK — pada tahap berurutan, aktivitas berikutnya baru terbuka
+        // setelah yang di depannya final. Diproses dari belakang, seluruhnya
+        // tertahan giliran dan tak satu pun terisi.
+        $subs = DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')
+            ->where('Lamaran_Tahap_Id', $tahapId)
+            ->orderBy('Urutan')
+            ->get();
+
+        foreach ($subs as $x) {
+            // Sudah final, atau sudah dinyatakan tidak hadir — tak ada yang kurang.
+            if (($x->Flag_Selesai ?? 'N') === 'Y' || ($x->Jadwal_Hadir ?? null) === 'T') {
+                continue;
+            }
+
+            $tipe = self::masterTipeTahap()[$x->Tipe_Tahap_Kode ?? ''] ?? null;
+            $online = ($tipe->Perilaku_Kode ?? null) === 'CAT' || ($x->Provider ?? '') === 'THIRD_PARTY';
+            $isMcu = ($x->Tipe_Tahap_Kode ?? '') === 'MCU';
+            $tipeNilai = $mode->get((string) ($x->Penilaian_Mode ?: 'TANPA_NILAI'))->Tipe_Nilai ?? 'NONE';
+
+            // Penawaran berdokumen memang tidak menuntut apa pun di rapor —
+            // suratnya diunggah di jendela keputusan. Dibiarkan apa adanya.
+            if (($tipe->Flag_Penawaran ?? 'T') === 'Y' && ($tipe->Flag_Jadwal ?? 'T') !== 'Y') {
+                continue;
+            }
+
+            if (($tipe->Flag_Jadwal ?? 'T') === 'Y' && empty($x->Jadwal_Mulai)) {
+                $dilewati[] = "{$x->Label} (belum dijadwalkan)";
+                continue;
+            }
+            if ($isMcu) {
+                $dilewati[] = "{$x->Label} (status kesehatan harus dicatat sendiri)";
+                continue;
+            }
+            if ($tipeNilai !== 'NONE') {
+                $dilewati[] = "{$x->Label} (bernilai angka — isi sendiri)";
+                continue;
+            }
+            // Ujian online: hanya yang nilainya SUDAH masuk dan tinggal menunggu
+            // keputusan penilai. Yang hasilnya belum datang tidak bisa disimpulkan.
+            if ($online && ! (($x->Peran ?? '') === 'INFORMATIF' && ($x->Status ?? '') === 'MENUNGGU_KEPUTUSAN')) {
+                $dilewati[] = "{$x->Label} (hasil ujian belum masuk)";
+                continue;
+            }
+
+            $isi = [
+                'Status' => 'SELESAI',
+                // INFORMATIF non-ujian memang tak menyimpan verdict — perannya
+                // bahan pertimbangan, bukan penentu.
+                'Hasil' => (($x->Peran ?? '') === 'INFORMATIF' && ! $online) ? null : ($lolos ? 'LULUS' : 'GAGAL'),
+                'Flag_Selesai' => 'Y',
+                'Waktu_Selesai' => now(),
+                'Updated_At' => now(),
+                'Updated_By' => $nama,
+                'Updated_By_Id' => session('career_auth.id'),
+            ];
+
+            // Kehadiran hanya ditetapkan bila memang ada jadwalnya.
+            if (! empty($x->Jadwal_Mulai) && empty($x->Jadwal_Hadir)) {
+                $isi['Jadwal_Hadir'] = 'Y';
+                $isi['Jadwal_Hadir_At'] = now();
+                $isi['Jadwal_Hadir_By'] = $nama;
+            }
+
+            // JEJAKNYA DISEBUT. Catatan kosong pada aktivitas yang hasilnya
+            // muncul entah dari mana membuat peninjau berikutnya mengira ada
+            // penilai yang menuliskannya.
+            if (empty($x->Catatan)) {
+                $isi['Catatan'] = 'Terisi mengikuti keputusan massal tahap ini.';
+            }
+
+            DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')
+                ->where('Id_Lamaran_Tahap_Tes', $x->Id_Lamaran_Tahap_Tes)
+                ->update($isi);
+            $terisi++;
+        }
+
+        return ['terisi' => $terisi, 'dilewati' => $dilewati];
+    }
+
+    /**
+     * PATCH /api/v1/karir/lamaran/tahap/putus-massal — ANTREKAN keputusan.
+     *
+     * TIDAK LAGI MEMUTUS DI DALAM PERMINTAAN INI. Satu keputusan bukan satu
+     * baris UPDATE: ia menjalankan mesin syarat, menulis riwayat tahap, membuka
+     * tahap berikutnya, dan menerbitkan tugas email. Lima puluh kali pekerjaan
+     * itu melewati batas waktu permintaan — dan yang terjadi bukan "gagal
+     * semua", melainkan yang lebih buruk: sebagian orang pertama benar-benar
+     * diputus, sisanya tidak, lalu layar memuntahkan satu galat tanpa menyebut
+     * siapa yang sudah selesai. Admin menekan ulang, dan yang terlanjur diputus
+     * ditolak "tahap sudah diputus". Pada 150 kandidat, jalur itu tidak pernah
+     * bisa tuntas.
+     *
+     * Sekarang tiap keputusan dikirim ke antrean `wc-putusmassal` sebagai satu
+     * job, dan permintaan ini selesai dalam sekejap.
+     *
+     * ── TANPA TABEL BARU ────────────────────────────────────────────────────
+     *
+     * Seluruh keadaan gelombang sudah punya tempatnya masing-masing:
+     *
+     *   kiriman keputusan  payload job di antrean (N_WEB_CAREERS_Jobs untuk
+     *                      driver database; Cloud Tasks di produksi);
+     *   sudah diputus      N_WEB_CAREERS_Lamaran_Tahap.Diputus_At — kebenaran
+     *                      yang sesungguhnya, bukan salinan status;
+     *   gagal + sebabnya   N_WEB_CAREERS_Failed_Jobs (Jenis, Payload,
+     *                      Exception) lewat CatatGagalWebCareers.
+     *
+     * Tabel keempat hanya akan menyalin ketiganya, dan salinan itu yang kelak
+     * berselisih dengan aslinya.
+     *
+     * `gelombang` adalah kode yang MENGIKAT ketiganya — dibuat di sini, ikut di
+     * payload, dan dipakai panel untuk bertanya "gelombang ini sudah sampai
+     * mana".
+     */
     public function putusMassal(Request $request)
     {
         $data = $request->validate([
@@ -3947,89 +4381,331 @@ class LamaranController extends Controller
             'item.*.catatanHtml' => 'nullable|string',
             'item.*.talentPool' => 'nullable|boolean',
             'item.*.tanggalKonfirmasi' => 'nullable|date',
+            // SEKALIAN CATAT HASIL AKTIVITAS YANG BELUM TERCATAT.
+            //
+            // Dikirim layar sebagai satu setelan untuk seluruh gelombang, bukan
+            // per orang: yang dinyatakan admin adalah "hasil aktivitas mereka
+            // sama dengan keputusan ini", dan pernyataan itu berlaku sama untuk
+            // semua yang ia pilih.
+            'catatAktivitas' => 'nullable|boolean',
         ]);
 
-        $berhasil = [];
-        $gagal = [];
+        $catatAktivitas = (bool) ($data['catatAktivitas'] ?? false);
+
+        // Kode gelombang: waktu + acak pendek. Waktunya di depan supaya kode
+        // yang lebih baru selalu terbaca lebih besar saat diurutkan sebagai teks.
+        $gelombang = 'KPM-'.now()->format('ymdHis').'-'.strtoupper(Str::random(4));
+
+        $admin = [
+            'id' => (int) session('career_auth.id'),
+            'nama' => session('career_auth.nama', 'ADMIN'),
+        ];
+
+        $antre = [];
+        $tolak = [];
 
         foreach ($data['item'] as $it) {
-            // Nama diambil DULU, selagi tahapnya masih bisa ditelusuri — dipakai
-            // baik untuk laporan berhasil maupun gagal. Laporan yang menyebut
-            // nomor tahap tidak dikenali siapa pun yang membaca layar.
             $realId = Hashids::decode($it['tahapId'])[0] ?? null;
-            $nama = $realId
+
+            // Nama diambil DI SINI, selagi permintaan masih membawa sesi dan
+            // satu kueri melayani seluruh daftar. Laporan gagal yang cuma
+            // menyebut id tahap tidak dikenali siapa pun yang membacanya.
+            //
+            // AKUNNYA LEFT JOIN — dan itu bukan kerapian, itu perbaikan bug.
+            //
+            // Dengan INNER JOIN, kandidat yang barisan akunnya sudah tidak ada
+            // menghasilkan nol baris, dan SELURUH gelombang ditolak "Tahap tidak
+            // ditemukan" — padahal tahapnya jelas ada dan kartunya sedang
+            // terpampang di papan. Nama kandidat bukan syarat sah-tidaknya sebuah
+            // keputusan; ia cuma label pada laporan.
+            $t = $realId
                 ? DB::table('N_WEB_CAREERS_Lamaran_Tahap as t')
                     ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 't.Lamaran_Id')
-                    ->join('N_WEB_CAREERS_Users as u', 'u.Id_Users', '=', 'l.Id_Users')
+                    ->leftJoin('N_WEB_CAREERS_Users as u', 'u.Id_Users', '=', 'l.Id_Users')
                     ->where('t.Id_Lamaran_Tahap', $realId)
-                    ->value('u.Nama')
+                    ->first(['u.Nama', 't.Label', 't.Diputus_At', 'l.Program_Id', 'l.Id_Lamaran', 'l.Created_By'])
                 : null;
 
-            try {
-                // Request buatan sendiri berisi field yang sama dengan yang
-                // dikirim drawer satuan. putus() memvalidasinya lagi — itu
-                // disengaja: gerbangnya tetap berlaku utuh, bukan dilewati
-                // karena panggilannya datang dari dalam.
-                $sub = new Request;
-                $sub->setLaravelSession($request->session());
-                $sub->replace(array_filter([
-                    'hasil' => $it['hasil'],
-                    'catatan' => $it['catatan'] ?? null,
-                    'catatanHtml' => $it['catatanHtml'] ?? null,
-                    'talentPool' => $it['talentPool'] ?? null,
-                    'tanggalKonfirmasi' => $it['tanggalKonfirmasi'] ?? null,
-                ], fn ($v) => $v !== null));
+            if (! $t) {
+                $tolak[] = ['tahapId' => $it['tahapId'], 'nama' => null, 'pesan' => 'Tahap tidak ditemukan.'];
 
-                $resp = $this->putus($sub, $it['tahapId']);
-                $isi = json_decode($resp->getContent(), true) ?: [];
-
-                if ($resp->getStatusCode() < 400 && ($isi['success'] ?? false)) {
-                    $berhasil[] = ['tahapId' => $it['tahapId'], 'nama' => $nama, 'hasil' => $it['hasil']];
-                } else {
-                    $gagal[] = [
-                        'tahapId' => $it['tahapId'],
-                        'nama' => $nama,
-                        'pesan' => $isi['message'] ?? 'Keputusan ditolak.',
-                    ];
-                }
-            } catch (\Illuminate\Validation\ValidationException $e) {
-                // putus() memakai $request->validate(), yang MELEMPAR saat
-                // dipanggil langsung (bukan lewat router). Tanpa tangkapan ini,
-                // satu item cacat menghentikan seluruh sisa daftar.
-                $gagal[] = [
-                    'tahapId' => $it['tahapId'],
-                    'nama' => $nama,
-                    'pesan' => collect($e->errors())->flatten()->first() ?? 'Data tidak valid.',
-                ];
-            } catch (\Throwable $e) {
-                Log::channel('web_career')->error("Gagal putus massal #{$it['tahapId']}: ".$e->getMessage());
-                $gagal[] = ['tahapId' => $it['tahapId'], 'nama' => $nama, 'pesan' => 'Gagal memproses keputusan.'];
+                continue;
             }
+
+            // Nama resmi dari formulir dipakai bila akunnya sudah tidak ada —
+            // laporan yang berbunyi "(?, ?, ?)" tidak menolong siapa pun.
+            $namaKandidat = $t->Nama
+                ?: (self::namaResmiPerLamaran([(int) $t->Id_Lamaran])->get((int) $t->Id_Lamaran)
+                    ?: ($t->Created_By ?: 'Kandidat'));
+
+            // SUDAH DIPUTUS — ditolak DI SINI, bukan setelah mengantre.
+            // Gelombang yang isinya sebagian sudah selesai akan menampilkan
+            // kegagalan yang menakutkan ("tahap sudah diputus") untuk orang yang
+            // justru tidak kurang apa pun.
+            if ($t->Diputus_At) {
+                $tolak[] = ['tahapId' => $it['tahapId'], 'nama' => $namaKandidat, 'pesan' => 'Tahap ini sudah diputus sebelumnya.'];
+
+                continue;
+            }
+
+            $muatan = [
+                'gelombang' => $gelombang,
+                'tahapId' => $it['tahapId'],
+                'tahapRealId' => (int) $realId,
+                'nama' => $namaKandidat,
+                'tahapLabel' => $t->Label,
+                'programId' => (int) $t->Program_Id,
+                'hasil' => $it['hasil'],
+                'catatan' => $it['catatan'] ?? null,
+                'catatanHtml' => $it['catatanHtml'] ?? null,
+                'talentPool' => $it['talentPool'] ?? null,
+                'tanggalKonfirmasi' => $it['tanggalKonfirmasi'] ?? null,
+                'catatAktivitas' => $catatAktivitas,
+                'adminId' => $admin['id'],
+                'adminNama' => $admin['nama'],
+            ];
+
+            \App\Jobs\Career\WcPutusMassalJob::dispatch($muatan);
+
+            $antre[] = ['tahapId' => $it['tahapId'], 'nama' => $namaKandidat];
         }
 
         Log::channel('web_career')->info(sprintf(
-            '[PUTUS MASSAL] %d berhasil, %d gagal, oleh %s.',
-            count($berhasil), count($gagal), session('career_auth.nama', 'ADMIN')
+            '[PUTUS MASSAL] gelombang %s diantrekan: %d keputusan, %d ditolak di muka, oleh %s.',
+            $gelombang, count($antre), count($tolak), $admin['nama']
         ));
 
-        // Seluruhnya gagal dibalas 422 — dari sisi admin tidak ada yang terjadi,
-        // dan 200 membuat layar menampilkan keberhasilan palsu. Dibentuk
-        // langsung karena layar perlu tahu SIAPA saja yang dilewati dan kenapa;
-        // ResponseHelper::error() hanya membawa satu kalimat.
-        if (! $berhasil) {
+        if (! $antre) {
             return response()->json([
                 'success' => false,
                 'status' => 422,
-                'message' => 'Tidak ada kandidat yang berhasil diputus. '.($gagal[0]['pesan'] ?? ''),
-                'result' => ['berhasil' => [], 'gagal' => $gagal],
+                'message' => 'Tidak ada kandidat yang bisa diantrekan. '.($tolak[0]['pesan'] ?? ''),
+                'result' => ['gelombang' => $gelombang, 'antre' => [], 'tolak' => $tolak],
             ], 422);
         }
 
-        $pesan = count($gagal) === 0
-            ? count($berhasil).' kandidat diputus.'
-            : count($berhasil).' kandidat diputus, '.count($gagal).' dilewati.';
+        return ResponseHelper::success(
+            ['gelombang' => $gelombang, 'antre' => $antre, 'tolak' => $tolak, 'total' => count($antre)],
+            count($antre).' keputusan diantrekan — kemajuannya muncul di panel.',
+        );
+    }
 
-        return ResponseHelper::success(['berhasil' => $berhasil, 'gagal' => $gagal], $pesan);
+    /**
+     * SATU KEPUTUSAN, DIJALANKAN APA ADANYA. Dipanggil WcPutusMassalJob.
+     *
+     * Publik karena job-lah pemakainya, dan job bukan bagian dari controller
+     * ini. Isinya persis jalur yang dulu dijalankan di dalam perulangan
+     * putusMassal(): hasil aktivitas dulu (bila diminta), lalu putus() yang
+     * memvalidasi ulang seluruh kirimannya — gerbangnya tetap berlaku utuh,
+     * bukan dilewati karena panggilannya datang dari dalam.
+     *
+     * @return array{ok:bool, pesan:?string, dilewati:array<int,string>}
+     */
+    public function prosesKeputusanSatu(int $tahapRealId, array $it, bool $catatAktivitas): array
+    {
+        $dilewati = [];
+
+        if ($catatAktivitas) {
+            // Hasil aktivitas dulu, keputusan tahap sesudahnya — urutannya tidak
+            // boleh terbalik: gerbang ketuntasan di putus() membaca keadaan
+            // aktivitas SAAT ITU JUGA.
+            $def = \App\Support\Career\LamaranService::masterHasilKeputusan()->get($it['hasil']);
+            $isi = $this->catatAktivitasIkutKeputusan($tahapRealId, ($def->Flag_Lolos ?? 'T') === 'Y');
+            $dilewati = $isi['dilewati'];
+        }
+
+        // Request buatan sendiri berisi field yang sama dengan yang dikirim
+        // drawer satuan. putus() memvalidasinya lagi — itu disengaja.
+        $sub = new Request;
+        $sub->replace(array_filter([
+            'hasil' => $it['hasil'],
+            'catatan' => $it['catatan'] ?? null,
+            'catatanHtml' => $it['catatanHtml'] ?? null,
+            'talentPool' => $it['talentPool'] ?? null,
+            'tanggalKonfirmasi' => $it['tanggalKonfirmasi'] ?? null,
+        ], fn ($v) => $v !== null));
+
+        try {
+            $resp = $this->putus($sub, Hashids::encode($tahapRealId));
+            $isi = json_decode($resp->getContent(), true) ?: [];
+
+            return $resp->getStatusCode() < 400 && ($isi['success'] ?? false)
+                ? ['ok' => true, 'pesan' => null, 'dilewati' => $dilewati]
+                : ['ok' => false, 'pesan' => $isi['message'] ?? 'Keputusan ditolak.', 'dilewati' => $dilewati];
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            // putus() memakai $request->validate(), yang MELEMPAR saat dipanggil
+            // langsung (bukan lewat router).
+            return [
+                'ok' => false,
+                'pesan' => collect($e->errors())->flatten()->first() ?? 'Data tidak valid.',
+                'dilewati' => $dilewati,
+            ];
+        }
+    }
+
+    /**
+     * GET /api/v1/karir/lamaran/putus-massal/progres?gelombang=..&ids=..
+     *
+     * KEMAJUAN DIHITUNG DARI KENYATAAN, BUKAN DARI CATATAN STATUS.
+     *
+     * "Selesai" berarti tahapnya benar-benar ber-Diputus_At — bukan "job-nya
+     * pernah dilaporkan sukses". Keduanya bisa berselisih, dan yang dipercaya
+     * harus yang menentukan nasib kandidat. Pola yang sama dipakai panel antrean
+     * penjadwalan, dan alasannya sama: tak ada salinan status yang perlu dijaga
+     * tetap jujur.
+     *
+     * Yang gagal dibaca dari N_WEB_CAREERS_Failed_Jobs — tabel yang memang sudah
+     * menampung kegagalan job modul ini, lengkap dengan payload dan pesannya.
+     *
+     * `ids` datang dari layar karena hanya layar yang tahu isi gelombang ini
+     * sebelum satu pun job-nya berjalan. Ia disimpan di sisi peramban, jadi
+     * panelnya tetap hidup melewati muat ulang halaman.
+     */
+    public function progresMassal(Request $request)
+    {
+        $gelombang = trim((string) $request->query('gelombang', ''));
+        if ($gelombang === '') {
+            return ResponseHelper::error('Gelombang tidak disebut.', 422);
+        }
+
+        $ids = collect(explode(',', (string) $request->query('ids', '')))
+            ->map(fn ($h) => Hashids::decode(trim($h))[0] ?? null)
+            ->filter()
+            ->map(fn ($x) => (int) $x)
+            ->unique()
+            ->values();
+
+        if ($ids->isEmpty()) {
+            return ResponseHelper::error('Daftar tahap kosong.', 422);
+        }
+
+        // AKUN LEFT JOIN. Dengan INNER JOIN, kandidat yang barisan akunnya
+        // sudah tidak ada membuat kuerinya pulang kosong — dan panel berbunyi
+        // "0 dari 0 kandidat" untuk gelombang yang jelas-jelas sedang berjalan.
+        $tahap = DB::table('N_WEB_CAREERS_Lamaran_Tahap as t')
+            ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 't.Lamaran_Id')
+            ->leftJoin('N_WEB_CAREERS_Users as u', 'u.Id_Users', '=', 'l.Id_Users')
+            ->leftJoin('N_WEB_CAREERS_Program as p', 'p.Id_Program', '=', 'l.Program_Id')
+            ->whereIn('t.Id_Lamaran_Tahap', $ids->all())
+            ->get(['t.Id_Lamaran_Tahap', 't.Label', 't.Hasil', 't.Diputus_At', 'u.Nama', 'l.Id_Lamaran', 'l.Created_By', 'p.Nama as ProgramNama']);
+
+        // Nama resmi dari formulir untuk yang akunnya sudah tidak ada — satu
+        // kueri untuk seluruh gelombang, bukan satu per baris.
+        $namaResmi = self::namaResmiPerLamaran($tahap->pluck('Id_Lamaran')->all());
+
+        // Kegagalan gelombang ini. Payload-nya JSON yang kita tulis sendiri di
+        // job, jadi id tahapnya bisa dibaca kembali tanpa menebak.
+        $gagalRow = DB::table('N_WEB_CAREERS_Failed_Jobs')
+            ->where('Jenis', 'PUTUSMASSAL:'.$gelombang)
+            ->orderByDesc('Id')
+            ->limit(300)
+            ->get(['Payload', 'Exception', 'Failed_At']);
+
+        $gagal = [];
+        foreach ($gagalRow as $g) {
+            $p = json_decode((string) $g->Payload, true) ?: [];
+            $kunci = $p['tahapId'] ?? null;
+            if ($kunci && ! isset($gagal[$kunci])) {
+                $gagal[$kunci] = [
+                    'nama' => $p['nama'] ?? null,
+                    'pesan' => $g->Exception,
+                    'waktu' => (string) $g->Failed_At,
+                ];
+            }
+        }
+
+        $baris = $tahap->map(function ($t) use ($gagal, $namaResmi) {
+            $kunci = Hashids::encode($t->Id_Lamaran_Tahap);
+            $selesai = (bool) $t->Diputus_At;
+
+            return [
+                'tahapId' => $kunci,
+                'nama' => $t->Nama ?: ($namaResmi->get((int) $t->Id_Lamaran) ?: ($t->Created_By ?: 'Kandidat')),
+                'tahap' => $t->Label,
+                'program' => $t->ProgramNama,
+                // Yang sudah diputus TIDAK pernah dilaporkan gagal, walau
+                // percobaan sebelumnya sempat mencatat kegagalan: kenyataannya
+                // ia sudah selesai, dan baris merah untuk orang yang tidak
+                // kurang apa pun cuma mengundang keputusan kedua.
+                'keadaan' => $selesai ? 'selesai' : (isset($gagal[$kunci]) ? 'gagal' : 'menunggu'),
+                'hasil' => $selesai ? $t->Hasil : null,
+                'pesan' => $selesai ? null : ($gagal[$kunci]['pesan'] ?? null),
+            ];
+        })->values();
+
+        return ResponseHelper::success([
+            'gelombang' => $gelombang,
+            'program' => $baris->first()['program'] ?? null,
+            'tahap' => $baris->first()['tahap'] ?? null,
+            'total' => $baris->count(),
+            'selesai' => $baris->where('keadaan', 'selesai')->count(),
+            'gagal' => $baris->where('keadaan', 'gagal')->count(),
+            'menunggu' => $baris->where('keadaan', 'menunggu')->count(),
+            'baris' => $baris->all(),
+        ], 'Kemajuan gelombang keputusan');
+    }
+
+    /**
+     * POST /api/v1/karir/lamaran/putus-massal/ulang — ANTREKAN ULANG yang gagal.
+     *
+     * Kirimannya diambil kembali dari payload kegagalan, bukan diminta ulang ke
+     * admin: alasan yang sudah ia tulis tidak boleh hilang hanya karena server
+     * surat sedang tersendat. Baris kegagalannya dihapus supaya panel tidak
+     * memampang kegagalan lama di sebelah percobaan yang sedang berjalan.
+     */
+    public function ulangMassal(Request $request)
+    {
+        $data = $request->validate([
+            'gelombang' => 'required|string|max:64',
+            'tahapId' => 'nullable|array|max:200',
+            'tahapId.*' => 'string|max:64',
+        ]);
+
+        $rows = DB::table('N_WEB_CAREERS_Failed_Jobs')
+            ->where('Jenis', 'PUTUSMASSAL:'.$data['gelombang'])
+            ->orderByDesc('Id')
+            ->limit(300)
+            ->get(['Id', 'Payload']);
+
+        $pilih = collect($data['tahapId'] ?? []);
+        $sudah = [];
+        $ulang = 0;
+
+        foreach ($rows as $r) {
+            $p = json_decode((string) $r->Payload, true) ?: [];
+            $kunci = $p['tahapId'] ?? null;
+
+            if (! $kunci || isset($sudah[$kunci])) {
+                continue;
+            }
+            if ($pilih->isNotEmpty() && ! $pilih->contains($kunci)) {
+                continue;
+            }
+
+            // Sudah terlanjur berhasil di percobaan lain — jangan pernah
+            // mengetuk palu untuk kedua kalinya.
+            $diputus = DB::table('N_WEB_CAREERS_Lamaran_Tahap')
+                ->where('Id_Lamaran_Tahap', (int) ($p['tahapRealId'] ?? 0))
+                ->value('Diputus_At');
+
+            $sudah[$kunci] = true;
+            DB::table('N_WEB_CAREERS_Failed_Jobs')->where('Id', $r->Id)->delete();
+
+            if ($diputus) {
+                continue;
+            }
+
+            \App\Jobs\Career\WcPutusMassalJob::dispatch($p);
+            $ulang++;
+        }
+
+        Log::channel('web_career')->info(
+            "[PUTUS MASSAL] gelombang {$data['gelombang']}: {$ulang} keputusan diantrekan ulang oleh ".session('career_auth.nama', 'ADMIN').'.'
+        );
+
+        return $ulang
+            ? ResponseHelper::success(['ulang' => $ulang], $ulang.' keputusan diantrekan ulang.')
+            : ResponseHelper::error('Tidak ada yang perlu diulang.', 422);
     }
 
     /**
@@ -4078,6 +4754,188 @@ class LamaranController extends Controller
         return $r['ok']
             ? ResponseHelper::success(array_key_exists('outcome', $r) ? ['outcome' => $r['outcome']] : null, $r['pesan'])
             : ResponseHelper::error($r['pesan'], $r['status']);
+    }
+
+    /**
+     * GET .../lamaran/{id}/ulang/tahap — DAFTAR TAHAP YANG BISA DIULANG.
+     *
+     * Dimuat saat dialog "Ulangi Tahap" dibuka, bukan ikut menempel di muatan
+     * worklist. Worklist mengirim satu halaman berisi puluhan kandidat; ikut
+     * membawa daftar tahap tiap orang berarti memperbesar SETIAP pemuatan
+     * halaman demi dialog yang mungkin tidak pernah dibuka sama sekali.
+     *
+     * Yang dikembalikan hanya tahap yang SUDAH ATAU SEDANG dijalani. Tahap yang
+     * masih MENUNGGU tidak bisa "diulang" — tidak ada yang pernah terjadi di
+     * sana untuk diulang.
+     */
+    public function ulangDaftarTahap(string $id)
+    {
+        $realId = Hashids::decode($id)[0] ?? null;
+        if (! $realId) {
+            return ResponseHelper::error('Lamaran tidak valid.', 422);
+        }
+
+        $lamaran = DB::table('N_WEB_CAREERS_Lamaran')->where('Id_Lamaran', $realId)->first();
+        if (! $lamaran) {
+            return ResponseHelper::error('Lamaran tidak ditemukan.', 404);
+        }
+
+        $rows = DB::table('N_WEB_CAREERS_Lamaran_Tahap')
+            ->where('Lamaran_Id', $realId)
+            // Status hanya pernah bernilai MENUNGGU / BELUM / BERJALAN / SELESAI.
+            // LULUS, GUGUR, dan DITOLAK adalah nilai kolom HASIL, bukan Status —
+            // mencantumkannya di sini hanya membuat penyaring ini terlihat lebih
+            // longgar daripada yang sebenarnya.
+            ->whereIn('Status', ['BERJALAN', 'SELESAI'])
+            ->orderBy('Urutan')
+            ->get(['Id_Lamaran_Tahap', 'Urutan', 'Label', 'Status', 'Hasil', 'Diputus_At']);
+
+        $tahap = $rows->map(fn ($t) => [
+            'id' => Hashids::encode($t->Id_Lamaran_Tahap),
+            'urutan' => (int) $t->Urutan,
+            'label' => $t->Label,
+            'status' => $t->Status,
+            'hasil' => $t->Hasil,
+            'diputusAt' => $t->Diputus_At,
+        ])->values();
+
+        // Riwayat pengulangan sebelumnya — supaya admin tahu kandidat ini sudah
+        // pernah diulang, sebelum ia mengulanginya lagi.
+        $riwayat = DB::table('N_WEB_CAREERS_Lamaran_Ulang')
+            ->where('Lamaran_Id', $realId)
+            ->orderByDesc('Id_Lamaran_Ulang')
+            ->limit(20)
+            ->get(['Putaran', 'Cakupan', 'Dari_Urutan', 'Sampai_Urutan', 'Alasan', 'Flag_Email', 'Created_At', 'Created_By'])
+            ->map(fn ($r) => [
+                'putaran' => (int) $r->Putaran,
+                'cakupan' => $r->Cakupan,
+                'dariUrutan' => (int) $r->Dari_Urutan,
+                'sampaiUrutan' => (int) $r->Sampai_Urutan,
+                'alasan' => $r->Alasan,
+                'email' => $r->Flag_Email === 'Y',
+                'at' => $r->Created_At,
+                'oleh' => $r->Created_By,
+            ]);
+
+        return ResponseHelper::success([
+            'tahap' => $tahap,
+            'putaran' => (int) ($lamaran->Putaran ?? 1),
+            'urutanSekarang' => (int) $lamaran->Urutan_Tahap,
+            'riwayat' => $riwayat,
+        ]);
+    }
+
+    /**
+     * PATCH .../lamaran/tahap/{id}/ulang — ULANGI TAHAP.
+     *
+     * `{id}` adalah tahap TUJUAN: tempat kandidat akan berdiri lagi.
+     *
+     * == KENAPA ALASAN WAJIB ==
+     *
+     * Pengulangan membatalkan keputusan yang sudah pernah diketuk seseorang.
+     * Tanpa alasan tertulis, yang tersisa di arsip cuma "tahap 5 pernah diulang
+     * pada 21 Agustus" — dan pertanyaan yang sesungguhnya, kenapa, baru datang
+     * berbulan-bulan kemudian dari orang yang tidak ada di ruangan waktu itu.
+     *
+     * == KENAPA EMAIL BAWAANNYA MATI ==
+     *
+     * Sebagian besar pengulangan adalah KOREKSI INTERNAL — jadwal salah ketik,
+     * hasil tertukar, token gagal terbit. Mengabari kandidat setiap kali berarti
+     * memberitahunya bahwa ada yang keliru di pihak kami, untuk hal yang sering
+     * kali sudah dibetulkan sebelum ia sempat membuka portalnya. Yang benar-benar
+     * perlu dikabari adalah pengulangan yang mengubah apa yang harus ia kerjakan
+     * — dan itu keputusan manusia, bukan bawaan sistem.
+     */
+    public function ulangTahap(Request $request, string $id)
+    {
+        $realId = Hashids::decode($id)[0] ?? null;
+        if (! $realId) {
+            return ResponseHelper::error('Tahap tidak valid.', 422);
+        }
+
+        $data = $request->validate([
+            'cakupan' => ['required', Rule::in([UlangTahap::CAKUPAN_TAHAP, UlangTahap::CAKUPAN_RANGKAIAN])],
+            'alasan' => ['required', 'string', 'min:10', 'max:2000'],
+            'alasanHtml' => ['nullable', 'string'],
+            'kirimEmail' => ['nullable', 'boolean'],
+        ], [
+            'alasan.required' => 'Alasan pengulangan wajib diisi.',
+            'alasan.min' => 'Alasan terlalu pendek — tuliskan apa yang membuat tahap ini perlu diulang.',
+        ]);
+
+        $tahap = DB::table('N_WEB_CAREERS_Lamaran_Tahap')
+            ->where('Id_Lamaran_Tahap', (int) $realId)
+            ->first(['Id_Lamaran_Tahap', 'Lamaran_Id', 'Urutan', 'Label', 'Status']);
+
+        if (! $tahap) {
+            return ResponseHelper::error('Tahap tidak ditemukan.', 404);
+        }
+
+        // MENUNGGU dan BELUM sama-sama berarti "belum pernah dijalani". Keduanya
+        // harus ditolak: mengulang tahap yang tak pernah terjadi akan mengarsipkan
+        // baris kosong lalu menggeser kandidat MUNDUR ke tahap yang belum ia capai.
+        if (! in_array($tahap->Status, ['BERJALAN', 'SELESAI'], true)) {
+            return ResponseHelper::error(
+                'Tahap ini belum pernah dijalani, jadi tidak ada yang bisa diulang.',
+                422
+            );
+        }
+
+        // Kategori program ikut dijaga, sepola dengan aksi worklist lainnya:
+        // admin yang jatahnya hanya REKRUTMEN tidak boleh mengulang tahap
+        // kandidat Management Trainee.
+        $izin = AksesService::kategoriDiizinkan(self::PAGE);
+        if ($izin) {
+            $kategori = DB::table('N_WEB_CAREERS_Lamaran')
+                ->where('Id_Lamaran', $tahap->Lamaran_Id)
+                ->value('Kategori');
+
+            if (! in_array($kategori, $izin, true)) {
+                return ResponseHelper::error('Kategori program ini di luar jatah akses Anda.', 403);
+            }
+        }
+
+        $admin = [
+            'id' => session('career_user.id') ?? auth()->id(),
+            'nama' => session('career_user.nama') ?? 'SISTEM',
+        ];
+
+        try {
+            $hasil = UlangTahap::jalankan(
+                lamaranId: (int) $tahap->Lamaran_Id,
+                urutan: (int) $tahap->Urutan,
+                cakupan: $data['cakupan'],
+                alasan: $data['alasan'],
+                admin: $admin,
+                alasanHtml: $data['alasanHtml'] ?? null,
+                kirimEmail: (bool) ($data['kirimEmail'] ?? false),
+            );
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->error(
+                '[ULANG] lamaran #'.$tahap->Lamaran_Id.' tahap '.$tahap->Urutan.' GAGAL: '.$e->getMessage()
+            );
+
+            return ResponseHelper::error('Gagal mengulang tahap: '.$e->getMessage(), 500);
+        }
+
+        Log::channel('web_career')->info(sprintf(
+            '[ULANG] lamaran #%d kembali ke tahap %d (%s) — %s, %d tahap / %d aktivitas / %d berkas ditandai riwayat. Oleh %s.',
+            $tahap->Lamaran_Id,
+            $tahap->Urutan,
+            $tahap->Label,
+            $hasil['cakupan'],
+            $hasil['jmlTahap'],
+            $hasil['jmlAktivitas'],
+            $hasil['jmlBerkas'],
+            $admin['nama']
+        ));
+
+        $pesan = $hasil['cakupan'] === UlangTahap::CAKUPAN_RANGKAIAN
+            ? sprintf('Kandidat dikembalikan ke tahap %d (%s). Tahap %d-%d direset.',
+                $hasil['dariUrutan'], $tahap->Label, $hasil['dariUrutan'], $hasil['sampaiUrutan'])
+            : sprintf('Tahap %d (%s) diulang.', $hasil['dariUrutan'], $tahap->Label);
+
+        return ResponseHelper::success($hasil, $pesan);
     }
 
     /**
@@ -4406,7 +5264,7 @@ class LamaranController extends Controller
     public function berkasTahap(string $id)
     {
         $realId = Hashids::decode($id)[0] ?? null;
-        $rows = DB::table('N_WEB_CAREERS_Lamaran_Tahap_Berkas')->where('Lamaran_Tahap_Id', $realId)->orderByDesc('Id_Lamaran_Tahap_Berkas')->get();
+        $rows = DB::table('N_WEB_CAREERS_Lamaran_Tahap_Berkas')->where('Lamaran_Tahap_Id', $realId)->whereNull('Ulang_Id')->orderByDesc('Id_Lamaran_Tahap_Berkas')->get();
 
         return ResponseHelper::success($rows->map(fn ($b) => [
             'id' => Hashids::encode($b->Id_Lamaran_Tahap_Berkas),
@@ -4756,6 +5614,8 @@ class LamaranController extends Controller
                 'url' => route('career.api.lamaran.tahap.berkas.file', Hashids::encode($b->Id_Lamaran_Tahap_Berkas)),
                 'olehSiapa' => $b->Created_By,
                 'createdAt' => $b->Created_At,
+                // Komponen pemeriksaan yang menaunginya — null untuk berkas biasa.
+                'verifikasiId' => isset($b->Verifikasi_Latar_Id) ? (int) $b->Verifikasi_Latar_Id ?: null : null,
             ])
             ->values()
             ->all();
@@ -4835,6 +5695,28 @@ class LamaranController extends Controller
             return ResponseHelper::error($e->getMessage(), 422);
         }
 
+        /* BERKAS BISA MENEMPEL KE SATU KOMPONEN PEMERIKSAAN.
+         *
+         * Hasil verifikasi dari kampus menempel ke baris PENDIDIKAN, bukan
+         * mengambang di aktivitas. Tanpa itu, sepuluh lampiran background check
+         * berakhir sebagai sepuluh berkas tak bernama yang harus dibuka satu per
+         * satu untuk tahu mana milik komponen mana.
+         *
+         * Idnya diperiksa terhadap aktivitas ini juga: id dari luar tidak boleh
+         * menempelkan berkas ke pemeriksaan milik lamaran orang lain. */
+        $verifikasiId = (int) $request->input('verifikasiId', 0) ?: null;
+
+        if ($verifikasiId) {
+            $sah = DB::table('N_WEB_CAREERS_Verifikasi_Latar')
+                ->where('Id_Verifikasi_Latar', $verifikasiId)
+                ->where('Lamaran_Tahap_Tes_Id', $sub->Id_Lamaran_Tahap_Tes)
+                ->exists();
+
+            if (! $sah) {
+                $verifikasiId = null;
+            }
+        }
+
         DB::table('N_WEB_CAREERS_Lamaran_Tahap_Berkas')->insert([
             'Lamaran_Tahap_Id' => $sub->Lamaran_Tahap_Id,
             'Lamaran_Tahap_Tes_Id' => $sub->Id_Lamaran_Tahap_Tes,
@@ -4845,6 +5727,7 @@ class LamaranController extends Controller
             'Mime' => $file->getClientMimeType(),
             'Ukuran' => strlen($konten),
             'Ext' => $gcs->normalkanExt($ext),
+            'Verifikasi_Latar_Id' => $verifikasiId,
             'Created_At' => $now,
             'Created_By' => session('career_auth.nama', 'ADMIN'),
             'Created_By_Id' => session('career_auth.id'),
@@ -5493,14 +6376,19 @@ class LamaranController extends Controller
         // MENANYAKAN nama, tanpa perlu kuncinya terdaftar di master lebih dulu.
         $adaSnapshot = \App\Support\Career\FormulirSchema::punyaKolomPengisianSnapshot();
 
-        return DB::table('N_WEB_CAREERS_Formulir_Pengisian')
-            ->whereIn('Lamaran_Id', $lamaranIds)
-            ->orderBy('Id_Formulir_Pengisian')
-            ->get(array_merge(
-                ['Lamaran_Id', 'Jawaban_Json'],
-                $adaSnapshot ? ['Schema_Snapshot_Json'] : [],
-            ))
-            ->groupBy('Lamaran_Id')
+        // BERPOTONG — lihat MetrikRekrutmen::potongIn(). Daftar ini sepanjang
+        // jumlah pelamar satu program, dan whereIn menerbitkan satu parameter
+        // per id: pada program besar seluruh worklist gagal dimuat.
+        return \App\Support\Career\MetrikRekrutmen::potongIn(
+            fn () => DB::table('N_WEB_CAREERS_Formulir_Pengisian')
+                ->orderBy('Id_Formulir_Pengisian')
+                ->select(array_merge(
+                    ['Lamaran_Id', 'Jawaban_Json'],
+                    $adaSnapshot ? ['Schema_Snapshot_Json'] : [],
+                )),
+            'Lamaran_Id',
+            $lamaranIds,
+        )->groupBy('Lamaran_Id')
             ->map(function ($g) {
                 foreach ($g as $fp) {
                     $nama = self::namaDariJawaban(
@@ -5862,9 +6750,9 @@ class LamaranController extends Controller
 
             if (($sub->Tampil_Kandidat ?? 'Y') !== 'Y') {
                 Log::channel('web_career')->warning(
-                    "[JADWAL] Aktivitas '{$sub->Label}' (lamaran {$sub->Kode}) DISEMBUNYIKAN dari portal tetapi "
-                    .'dijadwalkan — undangan tetap dikirim supaya kandidat tidak kehilangan satu-satunya kabar. '
-                    .'Periksa setelan alurnya: kemungkinan besar aktivitas ini seharusnya tampil.'
+                    "[JADWAL] Aktivitas '{$sub->Label}' (lamaran {$sub->Kode}) ditandai INTERNAL di alurnya tetapi "
+                    .'dijadwalkan. Undangan dikirim dan portal tetap menampilkannya (JadwalPrivat::terlihat), '
+                    .'sebab kandidat harus datang. Perbaiki setelan alurnya supaya keduanya tidak lagi berselisih.'
                 );
             }
 
@@ -6257,6 +7145,15 @@ class LamaranController extends Controller
         $data = $request->validate([
             'hasil' => 'nullable|in:LULUS,GAGAL',
             'nilai' => 'nullable|numeric|min:0|max:1000',
+            // Predikat (mode KATEGORI). Pintu kehadiran sudah menerimanya sejak
+            // lama; pintu ini belum — sehingga aktivitas ber-mode KATEGORI yang
+            // dicatat lewat "Catat Hasil" kehilangan predikatnya tanpa satu pun
+            // galat, dan rekap "berapa yang Dominance" diam-diam kurang.
+            'nilaiTeks' => 'nullable|string|max:100',
+            // Kesimpulan pemeriksaan (background / reference check). Daftar
+            // nilainya berbeda per jenis, jadi kesahihannya diperiksa setelah
+            // aktivitasnya diketahui — bukan di sini.
+            'adjudikasi' => 'nullable|string|max:30',
             'catatan' => 'nullable|string',
             // Isi editor berformat — tanpa batas panjang, lihat alasannya di putus().
             'catatanHtml' => 'nullable|string',
@@ -6373,7 +7270,106 @@ class LamaranController extends Controller
             // satu keputusan. Bila evaluasi gagal setelah aktivitasnya ditandai
             // final, tak ada jalan mengulang — pintu ini menolak aktivitas yang
             // sudah final, dan tahapnya diam menunggu kesimpulan yang tak datang.
-            $outcome = DB::transaction(function () use ($realId, $sub, $data, $catatan, $html, $mcu, $nama, $adminYangMemutuskan) {
+            // NILAI DISIMPAN SESUAI MODENYA — aturan yang sama persis dengan
+            // pintu kehadiran (subTesKehadiran).
+            //
+            // Sebelumnya pintu ini selalu menulis ke kolom ANGKA, apa pun mode
+            // aktivitasnya. Akibatnya dua arah: predikat KATEGORI hilang, dan
+            // pemeriksaan (reference/background check) yang memang TANPA_NILAI
+            // tetap punya kotak angka di layar — angka yang lalu tersimpan
+            // sebagai kalau hasil ukur.
+            // KESIMPULAN PEMERIKSAAN — nilainya harus milik jenis ini.
+            //
+            // "BERSIH" pada reference check dan "DIREKOMENDASIKAN" pada background
+            // check sama-sama tidak berarti apa-apa; menerimanya membuat laporan
+            // memuat kategori yang tak pernah didefinisikan untuk aktivitas itu.
+            $adjudikasi = null;
+            $pilihanAdj = Pemeriksaan::ADJUDIKASI[$sub->Tipe_Tahap_Kode ?? ''] ?? [];
+
+            if (! empty($data['adjudikasi'])) {
+                if (! in_array($data['adjudikasi'], $pilihanAdj, true)) {
+                    return ResponseHelper::error('Kesimpulan pemeriksaan tidak dikenali untuk aktivitas ini.', 422);
+                }
+                $adjudikasi = $data['adjudikasi'];
+            }
+
+            // ── DUA GERBANG KEPATUHAN, HANYA UNTUK PEMERIKSAAN ───────────────────
+            if (Pemeriksaan::untuk($sub->Tipe_Tahap_Kode ?? null)) {
+                // 1. TANPA PERSETUJUAN, TIDAK ADA PEMERIKSAAN.
+                //
+                // Memeriksa latar belakang seseorang tanpa persetujuannya adalah
+                // pelanggaran UU PDP 27/2022, bukan kelalaian administratif. Yang
+                // dicari lebih dulu pernyataan `consent` di formulir lamaran yang
+                // sudah dikirim; kalau formulirnya memang belum memuatnya, admin
+                // menyatakan sendiri di mana persetujuan tertulisnya berada.
+                $setuju = Pemeriksaan::persetujuanAktivitas($sub);
+                $ditolak = (bool) ($setuju['ditolak'] ?? false);
+
+                // Yang dituntut KEPUTUSAN DI AKTIVITAS INI, bukan pernyataan umum di
+                // formulir lamaran: pertanyaan "bersediakah diperiksa" memang baru
+                // diajukan saat tahap ini dimulai.
+                if (($setuju['keputusan'] ?? null) === null) {
+                    return ResponseHelper::error(
+                        'Kandidat belum ditanya bersedia atau tidak diperiksa. '
+                        .'Tekan Setuju atau Tidak setuju pada aktivitas ini lebih dulu.',
+                        422,
+                    );
+                }
+
+                // KANDIDAT MENOLAK → TIDAK ADA YANG DIPERIKSA.
+                //
+                // Aktivitasnya tetap boleh ditutup — penolakan adalah kenyataan yang
+                // harus bisa diselesaikan, bukan jalan buntu. Yang dilarang
+                // menyimpulkannya BERSIH atau DIREKOMENDASIKAN: tidak ada seorang pun
+                // yang benar-benar diperiksa, jadi tidak ada dasar menyatakannya aman.
+                $positif = ['BERSIH', 'DIREKOMENDASIKAN'];
+
+                if ($ditolak && in_array($adjudikasi, $positif, true)) {
+                    return ResponseHelper::error(
+                        'Kandidat menolak pemeriksaan, jadi hasilnya tidak bisa disimpulkan '
+                        .'bersih atau direkomendasikan — tidak ada yang sempat diperiksa.',
+                        422,
+                    );
+                }
+
+                // 2. HAK MENANGGAPI sebelum digugurkan karena temuan.
+                //
+                // "Tidak memenuhi" hampir selalu berasal dari satu komponen yang
+                // bermasalah — dan yang paling sering bermasalah bukan kandidatnya,
+                // melainkan kampus yang tak membalas surat verifikasi. Kandidat
+                // berhak tahu dan berhak menjawab lebih dulu.
+                $negatif = ['TIDAK_MEMENUHI', 'TIDAK_REKOMENDASI'];
+
+                if (in_array($adjudikasi, $negatif, true) && empty($sub->Tanggapan_Diminta_At)) {
+                    return ResponseHelper::error(
+                        'Kesimpulan ini menggugurkan kandidat karena temuan. Catat dulu bahwa kandidat '
+                        .'sudah diberi kesempatan menanggapi — ada di panel Pemeriksaan.',
+                        422,
+                    );
+                }
+            }
+
+            $penilaian = self::bentukPenilaian($sub);
+            $tipeNilai = $penilaian["tipe"] ?? 'NONE';
+            $nilaiAngka = $sub->Nilai;
+            $nilaiTeks = $sub->Nilai_Teks;
+
+            if ($adminYangMemutuskan) {
+                // Ujian online: angkanya milik HCLearn — jangan ditimpa kosong.
+                $nilaiAngka = $sub->Nilai;
+            } elseif ($tipeNilai === 'ANGKA') {
+                $nilaiAngka = $data['nilai'] ?? null;
+            } elseif ($tipeNilai === 'TEKS' && ! empty($data['nilaiTeks'])) {
+                if (! empty($penilaian['opsi']) && ! in_array($data['nilaiTeks'], $penilaian['opsi'], true)) {
+                    return ResponseHelper::error(
+                        'Pilihan hasil tidak dikenali untuk aktivitas ini: '.implode(' / ', $penilaian['opsi']).'.',
+                        422,
+                    );
+                }
+                $nilaiTeks = $data['nilaiTeks'];
+            }
+
+            $outcome = DB::transaction(function () use ($realId, $sub, $data, $catatan, $html, $mcu, $nama, $adminYangMemutuskan, $nilaiAngka, $nilaiTeks, $adjudikasi) {
                 DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')->where('Id_Lamaran_Tahap_Tes', $realId)->update([
                     'Status' => 'SELESAI',
                     // INFORMATIF pada UJIAN ONLINE tetap menyimpan verdict-nya:
@@ -6382,10 +7378,19 @@ class LamaranController extends Controller
                     // (wawancara pendamping, catatan) — di sana perannya memang
                     // sekadar bahan pertimbangan.
                     'Hasil' => ($sub->Peran === 'INFORMATIF' && ! $adminYangMemutuskan) ? null : $data['hasil'],
-                    // Nilai ujian online milik HCLearn — jangan ditimpa kosong.
-                    'Nilai' => $adminYangMemutuskan ? $sub->Nilai : ($data['nilai'] ?? null),
+                    'Nilai' => $nilaiAngka,
+                    'Nilai_Teks' => $nilaiTeks,
                     'Catatan' => $catatan ?: $sub->Catatan,
                     'Catatan_Html' => $html ?: $sub->Catatan_Html,
+                ] + ($adjudikasi ? [
+                    // Siapa & kapan ikut disimpan: kesimpulan pemeriksaan adalah
+                    // penilaian atas seseorang, dan penilaian tanpa nama penilainya
+                    // tidak bisa dipertanggungjawabkan siapa pun.
+                    'Adjudikasi' => $adjudikasi,
+                    'Adjudikasi_At' => now(),
+                    'Adjudikasi_By' => $nama,
+                    'Adjudikasi_By_Id' => session('career_auth.id'),
+                ] : []) + [
                     'Flag_Selesai' => 'Y',
                     'Waktu_Selesai' => now(),
                     'Updated_At' => now(),

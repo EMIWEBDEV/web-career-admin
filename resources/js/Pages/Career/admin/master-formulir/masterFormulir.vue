@@ -46,12 +46,12 @@
                     <i class="bi bi-plus-lg"></i> Formulir Baru
                 </button>
 
-                <button class="mfb-btn mfb-btn--indigo" type="button" :disabled="!aktif || saving" @click="simpanDraft">
+                <button class="mfb-btn mfb-btn--indigo" type="button" :disabled="!aktif || saving" :onClick="!aktif || saving ? null : simpanDraft">
                     <i class="bi" :class="saving ? 'bi-arrow-repeat mfb-spin' : 'bi-save'"></i>
                     {{ saving ? 'Menyimpan...' : 'Simpan Draft' }}
                 </button>
 
-                <button class="mfb-btn mfb-btn--soft" type="button" :disabled="!aktif || saving" @click="reviewPublish">
+                <button class="mfb-btn mfb-btn--soft" type="button" :disabled="!aktif || saving" :onClick="!aktif || saving ? null : reviewPublish">
                     <i class="bi bi-git"></i> Review &amp; Compare
                     <span v-if="perubahanVersi.length" class="mfb-btn-badge">{{ perubahanVersi.length }}</span>
                 </button>
@@ -60,7 +60,7 @@
                     class="mfb-btn mfb-btn--emerald"
                     type="button"
                     :disabled="!aktif || saving"
-                    @click="publish(false)"
+                    :onClick="!aktif || saving ? null : () => publish(false)"
                 >
                     <i class="bi bi-send-check-fill"></i> Publish Versi
                 </button>
@@ -304,7 +304,7 @@
                                         type="button"
                                         class="mfb-btn-tool mfb-btn-tool--section"
                                         :disabled="stepAktif < 0"
-                                        @click="tambahSection"
+                                        :onClick="stepAktif < 0 ? null : tambahSection"
                                     >
                                         <i class="bi bi-layout-text-window-reverse"></i> Tambah Section
                                     </button>
@@ -1029,10 +1029,8 @@
                         class="mfb-btn mfb-btn--emerald"
                         type="button"
                         :disabled="saving"
-                        @click="
-                            showCompare = false;
-                            publish(true);
-                        "
+                        :onClick="saving ? null : () => { showCompare = false;
+                            publish(true); }"
                     >
                         <i class="bi bi-send-check-fill"></i> Publish Versi Ini
                     </button>
@@ -1080,7 +1078,7 @@
                         class="mfb-btn mfb-btn--indigo"
                         type="button"
                         :disabled="saving || !duplicateName.trim()"
-                        @click="eksekusiDuplikat"
+                        :onClick="saving || !duplicateName.trim() ? null : eksekusiDuplikat"
                     >
                         <i class="bi bi-copy"></i> Duplikat Sekarang
                     </button>

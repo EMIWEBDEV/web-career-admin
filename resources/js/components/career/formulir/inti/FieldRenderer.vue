@@ -275,7 +275,7 @@
                     :class="{ 'is-kosong': !urlPratinjau }"
                     :disabled="!urlPratinjau"
                     :title="urlPratinjau ? 'Lihat berkas' : 'Berkas belum tersimpan di server'"
-                    @click="lihatBerkas"
+                    :onClick="!urlPratinjau ? null : lihatBerkas"
                 >
                     <img v-if="urlPratinjau && gambarPratinjau" :src="urlPratinjau" :alt="String(nilai)" />
                     <i v-else class="bi" :class="urlPratinjau ? 'bi-file-earmark-pdf-fill' : 'bi-file-earmark-fill'"></i>
@@ -285,7 +285,7 @@
                     class="fr__chip-nama"
                     :disabled="!urlPratinjau"
                     :title="urlPratinjau ? 'Lihat berkas' : 'Berkas belum tersimpan di server'"
-                    @click="lihatBerkas"
+                    :onClick="!urlPratinjau ? null : lihatBerkas"
                 >{{ nilai }}</button>
                 <el-upload
                     class="fr__chip-ganti"
@@ -304,7 +304,7 @@
                     class="fr__chip-btn fr__chip-btn--danger"
                     :disabled="disabled"
                     title="Hapus berkas"
-                    @click="hapusBerkas"
+                    :onClick="disabled ? null : hapusBerkas"
                 >
                     <i class="bi bi-trash3-fill"></i>
                 </button>

@@ -80,6 +80,7 @@ import AdminModal from '@career/AdminModal.vue';
 import ConfirmModal from '@career/ConfirmModal.vue';
 import AuditStamp from '@career/AuditStamp.vue';
 import IconPicker from '@career/IconPicker.vue';
+import { ingatModal } from '@utils/ingatModal';
 
 const API = '/api/v1/karir/master/rich';
 const KEY = 'tipe';
@@ -91,6 +92,8 @@ export default {
         tipe: { type: Array, default: () => [] },
         perilakuOptions: { type: Array, default: () => [] },
     },
+    // Modal di halaman ini selamat dari refresh — lihat @utils/ingatModal.
+    mixins: [ingatModal('admin/MasterTipeTahap')],
     data() {
         return {
             list: this.tipe.map((t) => ({ ...t })),

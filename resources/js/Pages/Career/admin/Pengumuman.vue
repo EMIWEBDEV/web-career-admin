@@ -48,7 +48,7 @@
                         <div><label class="wca-field-lbl">Tanggal Publish</label><el-date-picker v-model="pf.tanggal" type="date" value-format="YYYY-MM-DD" placeholder="Pilih tanggal" style="width:100%" /></div>
                         <div><label class="wca-field-lbl">Isi Pengumuman</label><el-input v-model="pf.isi" type="textarea" :rows="4" placeholder="Tulis isi pengumuman untuk kandidat…" /></div>
                         <div class="wca-hint"><i class="bi bi-info-circle"></i> Pengumuman langsung tampil di dashboard kandidat terpilih beserta status kelulusannya.</div>
-                        <button class="wca-btn wca-btn--primary" :disabled="!selected.length || !pf.judul.trim()" @click="publishToCandidates"><i class="bi bi-send"></i> Publikasikan ke {{ selected.length }} Kandidat</button>
+                        <button class="wca-btn wca-btn--primary" :disabled="!selected.length || !pf.judul.trim()" :onClick="!selected.length || !pf.judul.trim() ? null : publishToCandidates"><i class="bi bi-send"></i> Publikasikan ke {{ selected.length }} Kandidat</button>
                     </div>
                 </div>
             </div>

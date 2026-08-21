@@ -379,7 +379,7 @@
                                 {{ rentang(kandPage, kandPerPage, kandidat.length) }} dari {{ kandidat.length }} kandidat<template v-if="form.peserta.length"> · {{ form.peserta.length }} dipilih</template>
                             </span>
                             <div v-if="kandTotalPage > 1" class="pjd-pager__btns">
-                                <button type="button" class="pjd-pg" title="Sebelumnya" :disabled="kandPage <= 1" @click="kandPage--">
+                                <button type="button" class="pjd-pg" title="Sebelumnya" :disabled="kandPage <= 1" :onClick="kandPage <= 1 ? null : () => kandPage--">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
                                 </button>
                                 <template v-for="(n, i) in nomorHalaman(kandPage, kandTotalPage)" :key="i">
@@ -486,18 +486,18 @@
                      terlihat menggoda ditekan sebelum semuanya terisi. -->
                 <template #footer>
                     <div class="pjd-wiz__foot">
-                        <button type="button" class="pjd-wiz__back" :disabled="wizLangkah === 1 || menyimpan" @click="keLangkah(wizLangkah - 1)">
+                        <button type="button" class="pjd-wiz__back" :disabled="wizLangkah === 1 || menyimpan" :onClick="wizLangkah === 1 || menyimpan ? null : () => keLangkah(wizLangkah - 1)">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
                             Kembali
                         </button>
                         <span class="pjd-wiz__dots">
                             <i v-for="s in wizSteps" :key="s.no" :class="{ 'is-on': s.no === wizLangkah, 'is-done': s.no < wizLangkah }"></i>
                         </span>
-                        <button v-if="wizLangkah < 3" type="button" class="pjd-wiz__next" :disabled="!wizBisaLanjut" :title="wizAlasan" @click="keLangkah(wizLangkah + 1)">
+                        <button v-if="wizLangkah < 3" type="button" class="pjd-wiz__next" :disabled="!wizBisaLanjut" :title="wizAlasan" :onClick="!wizBisaLanjut ? null : () => keLangkah(wizLangkah + 1)">
                             Lanjut
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6" /></svg>
                         </button>
-                        <button v-else type="button" class="pjd-gen pjd-gen--foot" :disabled="!bisaGenerate || menyimpan" @click="simpan">
+                        <button v-else type="button" class="pjd-gen pjd-gen--foot" :disabled="!bisaGenerate || menyimpan" :onClick="!bisaGenerate || menyimpan ? null : simpan">
                             <svg v-if="!menyimpan" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z" /></svg>
                             <i v-else class="bi bi-arrow-repeat pjd-spin"></i>
                             {{ labelGenerate }}
@@ -724,7 +724,7 @@
                                 :key="`ulang-${s.id}`"
                                 type="button" class="pjd-retry" :disabled="ulangId === s.id"
                                 title="Antrekan ulang penerbitan token untuk kandidat yang belum berhasil"
-                                @click="ulangJadwal(s)"
+                                :onClick="ulangId === s.id ? null : () => ulangJadwal(s)"
                             >
                                 <i class="bi" :class="ulangId === s.id ? 'bi-arrow-repeat pjd-spin' : 'bi-arrow-clockwise'"></i>
                                 {{ ulangId === s.id ? 'Mengantrekan…' : `Coba Lagi ${s.kode}` }}
@@ -772,7 +772,7 @@
                                 Sesi {{ rentang(sesiPage, sesiPerPage, sesiTampil(j).length) }} dari {{ sesiTampil(j).length }}
                             </span>
                             <div class="pjd-pager__btns">
-                                <button type="button" class="pjd-pg" title="Sesi sebelumnya" :disabled="sesiPage <= 1" @click="gantiHalSesi(j, sesiPage - 1)">
+                                <button type="button" class="pjd-pg" title="Sesi sebelumnya" :disabled="sesiPage <= 1" :onClick="sesiPage <= 1 ? null : () => gantiHalSesi(j, sesiPage - 1)">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
                                 </button>
                                 <template v-for="(n, i) in nomorHalaman(sesiPage, sesiTotalPage(j))" :key="i">
@@ -838,7 +838,7 @@
                                 <div v-if="sesiTotalPage(j) > 1" class="pjd-pager pjd-pager--pane">
                                     <span class="pjd-pager__info">{{ rentang(sesiPage, sesiPerPage, sesiTampil(j).length) }}</span>
                                     <div class="pjd-pager__btns">
-                                        <button type="button" class="pjd-pg pjd-pg--sm" title="Sesi sebelumnya" :disabled="sesiPage <= 1" @click="gantiHalSesi(j, sesiPage - 1)">
+                                        <button type="button" class="pjd-pg pjd-pg--sm" title="Sesi sebelumnya" :disabled="sesiPage <= 1" :onClick="sesiPage <= 1 ? null : () => gantiHalSesi(j, sesiPage - 1)">
                                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
                                         </button>
                                         <span class="pjd-pager__nomor">{{ sesiPage }} / {{ sesiTotalPage(j) }}</span>
@@ -869,7 +869,7 @@
                                                 v-if="sesiTerpilih(j).menunggu"
                                                 type="button" class="pjd-detail__ulang" :disabled="ulangId === sesiTerpilih(j).id"
                                                 title="Antrekan ulang penerbitan token untuk kandidat yang belum berhasil"
-                                                @click="ulangJadwal(sesiTerpilih(j))"
+                                                :onClick="ulangId === sesiTerpilih(j).id ? null : () => ulangJadwal(sesiTerpilih(j))"
                                             >
                                                 <i class="bi" :class="ulangId === sesiTerpilih(j).id ? 'bi-arrow-repeat pjd-spin' : 'bi-send'"></i>
                                                 Kirim Ulang
@@ -1060,7 +1060,7 @@
                                                         type="button" class="pjd-ibtn" :disabled="row.terkunci || !row.dapatDiubah"
                                                         :title="row.terkunci ? 'Ujian sudah dikerjakan — jadwal terkunci'
                                                             : (!row.dapatDiubah ? 'Sesi ini dibuat sebelum penautan ke HCLearn ada — buat ulang penjadwalannya agar bisa diubah' : 'Ubah jadwal kandidat ini')"
-                                                        @click="bukaEdit(row, j)"
+                                                        :onClick="row.terkunci || !row.dapatDiubah ? null : () => bukaEdit(row, j)"
                                                     >
                                                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
                                                     </button>
@@ -1084,7 +1084,7 @@
                                                         type="button" class="pjd-ibtn" :disabled="row.terkunci || !row.dapatDiubah"
                                                         :title="row.terkunci ? 'Ujian sudah dikerjakan — jadwal terkunci'
                                                             : (!row.dapatDiubah ? 'Sesi ini dibuat sebelum penautan ke HCLearn ada — buat ulang penjadwalannya agar bisa diubah' : 'Ubah jadwal kandidat ini')"
-                                                        @click="bukaEdit(row, j)"
+                                                        :onClick="row.terkunci || !row.dapatDiubah ? null : () => bukaEdit(row, j)"
                                                     >
                                                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
                                                     </button>
@@ -1114,7 +1114,7 @@
                                                 {{ rentang(pes.page, pes.perPage, pes.total) }} dari {{ pes.total }} peserta
                                             </span>
                                             <div v-if="pes.totalPage > 1" class="pjd-pager__btns">
-                                                <button type="button" class="pjd-pg" title="Sebelumnya" :disabled="pes.page <= 1" @click="gantiHalPeserta(j, pes.page - 1)">
+                                                <button type="button" class="pjd-pg" title="Sebelumnya" :disabled="pes.page <= 1" :onClick="pes.page <= 1 ? null : () => gantiHalPeserta(j, pes.page - 1)">
                                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
                                                 </button>
                                                 <template v-for="(n, i) in nomorHalaman(pes.page, pes.totalPage)" :key="i">
@@ -1154,7 +1154,7 @@
                         Menampilkan {{ rentang(daftarPage, daftarPerPage, daftarTotal) }} dari {{ daftarTotal }} program
                     </span>
                     <div class="pjd-pager__btns">
-                        <button type="button" class="pjd-pg" title="Sebelumnya" :disabled="daftarPage <= 1" @click="gantiHalaman(daftarPage - 1)">
+                        <button type="button" class="pjd-pg" title="Sebelumnya" :disabled="daftarPage <= 1" :onClick="daftarPage <= 1 ? null : () => gantiHalaman(daftarPage - 1)">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
                         </button>
                         <template v-for="(n, i) in nomorHalaman(daftarPage, daftarTotalPage)" :key="i">
@@ -1238,10 +1238,13 @@
 import axios from 'axios';
 import AdminModal from '@career/AdminModal.vue';
 import PanelAntrean from '@career/PanelAntrean.vue';
+import { ingatModal } from '@utils/ingatModal';
 
 export default {
     name: 'Penjadwalan',
     components: { AdminModal, PanelAntrean },
+    // Modal di halaman ini selamat dari refresh — lihat @utils/ingatModal.
+    mixins: [ingatModal('admin/penjadwalan/penjadwalan')],
     data() {
         return {
             memuat: false,

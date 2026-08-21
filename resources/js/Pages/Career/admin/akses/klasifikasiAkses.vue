@@ -30,7 +30,7 @@
                     </div>
                     <span v-if="k.defaultRegister" class="wca-badge wca-b--green" title="Klasifikasi bawaan saat registrasi">Default Daftar</span>
                     <span class="wca-badge" :class="k.status === 'AKTIF' ? 'wca-b--indigo' : 'wca-b--slate'">{{ k.status }}</span>
-                    <button class="ka-apply" :disabled="sibuk" title="Salin cetakan ini ke seluruh kandidat yang sudah ada" @click="terapkan(k)">
+                    <button class="ka-apply" :disabled="sibuk" title="Salin cetakan ini ke seluruh kandidat yang sudah ada" :onClick="sibuk ? null : () => terapkan(k)">
                         <i class="bi bi-arrow-repeat"></i> Terapkan Sekarang
                     </button>
                 </div>

@@ -133,7 +133,7 @@
               type="button"
               class="fb-wz-btn fb-wz-btn--next"
               :disabled="!canAdvance"
-              @click="nextStep"
+              :onClick="!canAdvance ? null : nextStep"
             >
               Selanjutnya <i class="bi bi-arrow-right ms-1"></i>
             </button>
@@ -144,7 +144,7 @@
               class="fb-wz-btn fb-wz-btn--submit"
               :disabled="!isComplete || submitting"
               :title="!isComplete ? 'Mohon isi semua pertanyaan terlebih dahulu' : 'Kirim Feedback'"
-              @click="submitWizard"
+              :onClick="!isComplete || submitting ? null : submitWizard"
             >
               <span v-if="submitting" class="spinner-border spinner-border-sm me-1.5" role="status" aria-hidden="true"></span>
               <span>{{ submitting ? 'Mengirim...' : 'Kirim Feedback ✨' }}</span>

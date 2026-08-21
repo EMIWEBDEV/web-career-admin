@@ -459,10 +459,11 @@ class MonitoringController extends Controller
                 // bisa berbeda dari worklist untuk kandidat yang sama.
                 // Lewat helper: barisnya ikut membawa `Token_Terbit`, ukuran
                 // yang sama dengan yang dipakai portal kandidat.
-                $subPer = MetrikRekrutmen::aktivitasDenganToken(
+                // BERPOTONG: papan Monitoring memuat SELURUH program sekaligus, jadi
+                // ia menabrak batas 2100 parameter lebih dulu daripada worklist.
+                $subPer = MetrikRekrutmen::aktivitasDenganTokenPer(
                     $tahapPer->flatten(1)->pluck('Id_Lamaran_Tahap')->all()
-                )->get()
-                    ->groupBy('Lamaran_Tahap_Id');
+                );
 
                 // Atribut kandidat (kampus, jurusan, jenjang, IPK, …) diambil dari
                 // jawaban formulir. Tabel Formulir_Jawaban_Index TIDAK dipakai
@@ -1086,6 +1087,7 @@ class MonitoringController extends Controller
                 // Berkas hasil tahap (MCU/interview) yang diunggah admin.
                 $berkas = DB::table('N_WEB_CAREERS_Lamaran_Tahap_Berkas')
                     ->where('Lamaran_Tahap_Id', $t->Id_Lamaran_Tahap)
+                    ->whereNull('Ulang_Id')
                     ->orderByDesc('Id_Lamaran_Tahap_Berkas')->get();
 
                 // Formulir yang diisi kandidat pada tahap ini + dokumennya.

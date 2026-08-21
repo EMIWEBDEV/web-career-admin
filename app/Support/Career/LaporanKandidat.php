@@ -205,7 +205,7 @@ class LaporanKandidat
                 'status' => $s->Status,
                 'hasil' => $s->Hasil,
                 'nilai' => $s->Nilai !== null ? (float) $s->Nilai : null,
-                'internal' => ($s->Tampil_Kandidat ?? 'Y') !== 'Y',
+                'internal' => ! JadwalPrivat::terlihat($s),
                 'catatan' => $s->Catatan,
                 'mcuStatus' => $s->Mcu_Status,
             ])->values()->all(),

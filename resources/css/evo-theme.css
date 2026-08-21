@@ -8178,6 +8178,69 @@ h6,
     box-shadow: 0 20px 44px rgba(15, 23, 42, 0.14) !important;
 }
 
+/* ── Panel dropdown select: permukaan yang paling terlihat "bawaan" ──────────
+   Aturan di atas hanya menyentuh kotak popper-nya. Isi panelnya — latar, garis
+   pemisah, teks kosong, teks memuat, judul grup, dan batang gulir — masih
+   memakai variabel Element Plus, dan itu yang membuat panelnya terbaca abu-abu
+   netral di tengah layar yang seluruhnya indigo. */
+.el-select-dropdown {
+    background: #ffffff;
+    border-radius: 0.85rem;
+    padding: 0.28rem 0;
+}
+.el-select-dropdown__list {
+    padding: 0.15rem 0;
+}
+
+/* Centang pada item terpilih ikut indigo; bawaannya biru Element Plus. */
+.el-select-dropdown__item.is-selected::after {
+    background-color: #4f46e5;
+}
+
+/* Keadaan kosong & memuat: bawaannya abu-abu pucat tanpa bobot. */
+.el-select-dropdown__empty,
+.el-select-dropdown__loading {
+    color: #94a3b8;
+    font-weight: 600;
+    font-size: 0.82rem;
+    padding: 0.9rem 1rem;
+}
+
+/* Judul grup — pembeda kelompok, bukan sekadar teks kecil. */
+.el-select-group__title {
+    color: #64748b;
+    font-weight: 800;
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding-left: 0.85rem;
+}
+.el-select-group__wrap:not(:last-of-type)::after {
+    background: #eef2f7;
+}
+
+/* Batang gulir di dalam panel: bawaan Element Plus abu-abu tebal. */
+.el-select-dropdown .el-scrollbar__thumb {
+    background: #cbd5e1;
+    opacity: 1;
+}
+.el-select-dropdown .el-scrollbar__thumb:hover {
+    background: #a5b4fc;
+}
+
+/* Tombol bersihkan (clearable) — bawaannya abu-abu yang nyaris tak terlihat. */
+.el-select__clear:hover,
+.el-input__clear:hover {
+    color: #4f46e5;
+}
+
+/* Select yang sedang terbuka: kotaknya ikut menandai keadaan itu, sehingga
+   panel dan pemicunya terbaca sebagai satu benda. */
+.el-select .el-select__wrapper.is-focused,
+.el-select.is-focus .el-input__wrapper {
+    box-shadow: 0 0 0 2px #6366f1 inset, 0 0 0 4px rgba(99, 102, 241, 0.12) !important;
+}
+
 /* Number stepper agar selaras */
 .el-input-number__decrease,
 .el-input-number__increase {

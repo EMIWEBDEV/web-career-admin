@@ -34,7 +34,7 @@
                 <button
                     v-if="!disabled"
                     type="button" class="bka-del" title="Hapus berkas ini"
-                    :disabled="sibuk" @click="hapus(b)"
+                    :disabled="sibuk" :onClick="sibuk ? null : () => hapus(b)"
                 >
                     <i class="bi bi-trash3"></i>
                 </button>
@@ -44,7 +44,7 @@
         <p v-else class="bka-kosong">Belum ada berkas dilampirkan.</p>
 
         <div v-if="!disabled" class="bka-aksi">
-            <button type="button" class="bka-btn" :disabled="sibuk" @click="pilih">
+            <button type="button" class="bka-btn" :disabled="sibuk" :onClick="sibuk ? null : pilih">
                 <i class="bi" :class="sibuk ? 'bi-arrow-repeat bka-spin' : 'bi-upload'"></i>
                 {{ sibuk ? 'Mengunggah…' : 'Unggah Berkas' }}
             </button>

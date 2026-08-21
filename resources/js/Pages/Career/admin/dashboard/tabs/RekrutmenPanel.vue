@@ -135,7 +135,7 @@
                 Menampilkan <b>{{ perHal === 0 ? 1 : ((hal - 1) * perHal) + 1 }} - {{ perHal === 0 ? barisTersaring.length : Math.min(hal * perHal, barisTersaring.length) }}</b> dari <b>{{ barisTersaring.length }}</b> posisi
             </span>
             <div v-if="totalHal > 1" class="rk-paginasi__nav">
-                <button type="button" class="rk-paginasi__btn" :disabled="hal <= 1" @click="hal--">
+                <button type="button" class="rk-paginasi__btn" :disabled="hal <= 1" :onClick="hal <= 1 ? null : () => hal--">
                     <i class="bi bi-chevron-left"></i> Sebelum
                 </button>
                 <span class="rk-paginasi__page">{{ hal }} / {{ totalHal }}</span>

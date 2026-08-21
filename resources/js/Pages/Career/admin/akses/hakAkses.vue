@@ -145,7 +145,7 @@
             </div>
 
             <div v-if="pag.totalPage > 1" class="ha-pager">
-                <button :disabled="pag.page <= 1" @click="load(pag.page - 1)"><i class="bi bi-chevron-left"></i></button>
+                <button :disabled="pag.page <= 1" :onClick="pag.page <= 1 ? null : () => load(pag.page - 1)"><i class="bi bi-chevron-left"></i></button>
                 <span>Halaman {{ pag.page }} / {{ pag.totalPage }}</span>
                 <button :disabled="pag.page >= pag.totalPage" @click="load(pag.page + 1)"><i class="bi bi-chevron-right"></i></button>
             </div>
@@ -212,12 +212,15 @@ import axios from 'axios';
 import { Head, router } from '@inertiajs/vue3';
 import AdminModal from '@career/AdminModal.vue';
 import ConfirmModal from '@career/ConfirmModal.vue';
+import { ingatModal } from '@utils/ingatModal';
 
 const API = '/api/v1/hak-akses';
 const CFG = { headers: { Accept: 'application/json' } };
 
 export default {
     components: { Head, AdminModal, ConfirmModal },
+    // Modal di halaman ini selamat dari refresh — lihat @utils/ingatModal.
+    mixins: [ingatModal('admin/akses/hakAkses')],
     data() {
         return {
             list: [], loading: false, loadingSum: true,

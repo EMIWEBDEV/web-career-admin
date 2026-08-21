@@ -236,7 +236,7 @@
                                                 class="wca-iconbtn wca-iconbtn--danger"
                                                 :disabled="!!s.dipakai"
                                                 :title="s.dipakai ? `Tidak bisa dihapus — dipakai ${s.dipakai} lowongan` : 'Hapus'"
-                                                @click="askRemove(s)"
+                                                :onClick="!!s.dipakai ? null : () => askRemove(s)"
                                             >
                                                 <i class="bi" :class="s.dipakai ? 'bi-lock' : 'bi-trash'"></i>
                                             </button>
@@ -403,7 +403,7 @@
                                                 class="wca-iconbtn wca-iconbtn--danger"
                                                 :disabled="!!k.dipakai"
                                                 :title="k.dipakai ? `Tidak bisa dihapus — dipakai ${k.dipakai} skill` : 'Hapus'"
-                                                @click="katAskRemove(k)"
+                                                :onClick="!!k.dipakai ? null : () => katAskRemove(k)"
                                             >
                                                 <i class="bi" :class="k.dipakai ? 'bi-lock' : 'bi-trash'"></i>
                                             </button>
@@ -569,6 +569,7 @@ import AdminModal from '@career/AdminModal.vue';
 import AuditStamp from '@career/AuditStamp.vue';
 import ConfirmModal from '@career/ConfirmModal.vue';
 import IconPicker from '@career/IconPicker.vue';
+import { ingatModal } from '@utils/ingatModal';
 
 const API = '/api/v1/master-skill';
 const API_KAT = '/api/v1/master-skill-kategori';
@@ -590,6 +591,8 @@ const RINGKASAN_KOSONG = {
 
 export default {
     components: { Head, AdminModal, AuditStamp, ConfirmModal, IconPicker },
+    // Modal di halaman ini selamat dari refresh — lihat @utils/ingatModal.
+    mixins: [ingatModal('admin/master-skill/masterSkill')],
     data() {
         return {
             tab: 'skill',

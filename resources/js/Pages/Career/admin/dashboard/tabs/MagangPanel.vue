@@ -79,7 +79,7 @@
                     Menampilkan <b>{{ perHalKemitraan === 0 ? 1 : ((halKemitraan - 1) * perHalKemitraan) + 1 }} - {{ perHalKemitraan === 0 ? kemitraanTersaring.length : Math.min(halKemitraan * perHalKemitraan, kemitraanTersaring.length) }}</b> dari <b>{{ kemitraanTersaring.length }}</b> mitra
                 </span>
                 <div v-if="totalHalKemitraan > 1" class="mg-paginasi__nav">
-                    <button type="button" class="mg-paginasi__btn" :disabled="halKemitraan <= 1" @click="halKemitraan--">
+                    <button type="button" class="mg-paginasi__btn" :disabled="halKemitraan <= 1" :onClick="halKemitraan <= 1 ? null : () => halKemitraan--">
                         <i class="bi bi-chevron-left"></i> Sebelum
                     </button>
                     <span class="mg-paginasi__page">{{ halKemitraan }} / {{ totalHalKemitraan }}</span>

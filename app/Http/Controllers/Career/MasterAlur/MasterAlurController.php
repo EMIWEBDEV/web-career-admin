@@ -699,12 +699,23 @@ class MasterAlurController extends Controller
                     // penolakan yang tertunda. Pengecualian unggahan tetap
                     // dihormati: menyembunyikan layar yang justru meminta berkas
                     // darinya adalah jalan buntu yang sama seperti di atas.
+                    //
+                    // AKTIVITAS BERJADWAL JUGA TIDAK BOLEH DISEMBUNYIKAN.
+                    //
+                    // Flag_Jadwal='Y' berarti kandidat harus HADIR — MCU, wawancara,
+                    // tes offline, tanda tangan kontrak. Menyembunyikannya membuat
+                    // undangan tanggal dan tempatnya tidak punya tempat berlabuh di
+                    // portal: kandidat menerima emailnya, membuka halamannya untuk
+                    // memastikan, lalu membaca "menunggu dijadwalkan". Itu persis
+                    // yang terjadi pada MCU, dan tidak seorang pun menyadarinya
+                    // sampai kandidatnya bertanya.
                     'Tampil_Kandidat' => (
                         \App\Support\Career\JadwalPrivat::untuk($t['tipe'] ?? null)
                         && empty($t['unggahKandidat'])
                     ) ? 'T' : ((
                         ! empty($t['tampilKandidat'])
                         || ($tipe[$t['tipe'] ?? '']->Flag_Wajib_Tampil ?? 'T') === 'Y'
+                        || ($tipe[$t['tipe'] ?? '']->Flag_Jadwal ?? 'T') === 'Y'
                         || ! empty($t['unggahKandidat'])
                     ) ? 'Y' : 'T'),
                     // ── MODE PENILAIAN ─────────────────────────────────────

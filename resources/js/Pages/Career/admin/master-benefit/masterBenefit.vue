@@ -123,7 +123,7 @@
                                             class="wca-iconbtn wca-iconbtn--danger"
                                             :disabled="!!b.dipakai"
                                             :title="b.dipakai ? `Tidak bisa dihapus — terpasang di ${b.dipakai} lowongan` : 'Hapus'"
-                                            @click="askRemove(b)"
+                                            :onClick="!!b.dipakai ? null : () => askRemove(b)"
                                         >
                                             <i class="bi" :class="b.dipakai ? 'bi-lock' : 'bi-trash'"></i>
                                         </button>
@@ -207,6 +207,7 @@ import { Head } from '@inertiajs/vue3';
 import AdminModal from '@career/AdminModal.vue';
 import AuditStamp from '@career/AuditStamp.vue';
 import ConfirmModal from '@career/ConfirmModal.vue';
+import { ingatModal } from '@utils/ingatModal';
 
 const API = '/api/v1/master-benefit';
 const CFG = { headers: { Accept: 'application/json' } };
@@ -234,6 +235,8 @@ const RINGKASAN_KOSONG = {
 
 export default {
     components: { Head, AdminModal, AuditStamp, ConfirmModal },
+    // Modal di halaman ini selamat dari refresh — lihat @utils/ingatModal.
+    mixins: [ingatModal('admin/master-benefit/masterBenefit')],
     data() {
         return {
             list: [], total: 0, page: 1, perPage: 25, loading: false,

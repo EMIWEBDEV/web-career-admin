@@ -19,12 +19,12 @@ use Illuminate\Support\Facades\Route;
 |
 | ══ PENJAGAAN ═════════════════════════════════════════════════════════════
 |
-| Keluarannya menyebut host, nama pengguna SMTP, dan alamat IP keluar server.
-| Bukan rahasia besar, tapi jelas bukan konsumsi publik — halaman ini memetakan
+| Keluarannya menyebut alamat server surat dan potongan kunci publiknya. Bukan
+| rahasia besar, tapi jelas bukan konsumsi publik — halaman ini memetakan
 | permukaan jaringan sistem bagi siapa pun yang membacanya.
 |
 | Karena itu SUPERADMIN saja, lewat sesi login yang sama dengan panel admin.
-| Kata sandi TIDAK PERNAH ikut tercetak; perintahnya hanya melaporkan
+| Kunci rahasia TIDAK PERNAH ikut tercetak; perintahnya hanya melaporkan
 | "terisi" atau "kosong".
 */
 Route::middleware(['career.auth', 'career.role:SUPERADMIN'])
@@ -32,34 +32,41 @@ Route::middleware(['career.auth', 'career.role:SUPERADMIN'])
     ->name('career.diagnostik.')
     ->group(function () {
         /*
-         * Pemeriksa jalur SMTP.
-         *
-         * ?kirim=alamat@contoh.com  — sekalian kirim email uji sungguhan.
-         * Sengaja lewat query, bukan POST: yang memakainya sedang menelusuri
-         * gangguan lewat bilah alamat, dan menuntut borang di tengah itu cuma
-         * menambah langkah tanpa menambah keamanan — gerbangnya sudah di sesi.
-         */
-        /*
-         * Penanda hidup. Dibuka lebih dulu saat halaman /smtp tampil kosong:
+         * Penanda hidup. Dibuka lebih dulu saat halaman /surat tampil kosong:
          * ia menjawab seketika, jadi ia memisahkan "rutenya belum ter-deploy /
          * sesi ditolak" dari "perintahnya jalan tapi mati di tengah".
          */
         Route::get('/ping', fn () => response(
             "DIAGNOSTIK HIDUP\n"
-            .'mesin      : '.gethostname()."\n"
-            .'waktu      : '.now()->toDateTimeString()."\n"
-            .'app_env    : '.config('app.env')."\n"
-            .'mail_host  : '.config('mail.mailers.smtp.host').':'.config('mail.mailers.smtp.port')."\n"
+            .'mesin       : '.gethostname()."\n"
+            .'waktu       : '.now()->toDateTimeString()."\n"
+            .'app_env     : '.config('app.env')."\n"
+            .'server surat: '.(config('surat.basis') ?: '(kosong)')."\n"
             .'batas eksekusi PHP : '.(ini_get('max_execution_time') ?: '?')." detik\n",
             200,
             ['Content-Type' => 'text/plain; charset=utf-8']
         ))->name('ping');
 
-        Route::get('/smtp', function (\Illuminate\Http\Request $request) {
+        /*
+         * Pemeriksa jalur ke EVO Mail Server — pengganti pemeriksa SMTP yang
+         * dulu ada di sini. Web Careers sudah tidak membuka port SMTP dari
+         * mana pun; yang menentukan sampai-tidaknya surat sekarang adalah
+         * server surat, kunci API, dan izin per-template.
+         *
+         *   ?kirim=alamat@contoh.com   sekalian kirim surat uji SUNGGUHAN
+         *   ?semua=1                   kirim contoh SELURUH template
+         *   ?template=hasil-lamaran    kirim satu template itu saja
+         *
+         * Sengaja lewat query, bukan POST: yang memakainya sedang menelusuri
+         * gangguan lewat bilah alamat, dan menuntut borang di tengah itu cuma
+         * menambah langkah tanpa menambah keamanan — gerbangnya sudah di sesi.
+         */
+        Route::get('/surat', function (\Illuminate\Http\Request $request) {
             /*
-             * Pemeriksaan ini memang LAMBAT — itu sifatnya, bukan cacatnya.
-             * Setiap port yang diblokir menghabiskan seluruh jatah tunggunya,
-             * dan justru lamanya itulah datanya.
+             * Pemeriksaan ini bisa memakan beberapa detik: server surat
+             * mengirim SERENTAK, dan satu jabat tangan SMTP di seberang
+             * terukur 3–5 detik. Dengan ?semua=1 ia mengirim lima surat
+             * berturut-turut, jadi lamanya berlipat.
              *
              * PHP membunuh skrip yang melewati max_execution_time TANPA menulis
              * apa pun ke badan respons. Halaman kosong tanpa galat — persis
@@ -80,18 +87,19 @@ Route::middleware(['career.auth', 'career.role:SUPERADMIN'])
                 $argumen['--kirim'] = $kirim;
             }
 
-            // Bawaannya 4 detik, bukan 8. Delapan port × 8 detik bisa menembus
-            // batas waktu permintaan Cloud Run; empat detik sudah lebih dari
-            // cukup untuk membedakan "terbuka" (puluhan milidetik) dari
-            // "dijatuhkan" (selalu mentok di batas).
-            $timeout = (int) $request->query('timeout', 4);
-            $argumen['--timeout'] = (string) min(20, max(2, $timeout));
+            // Keduanya hanya berarti bila ?kirim= juga diisi — tanpa alamat
+            // tujuan tidak ada satu surat pun yang berangkat.
+            if ($request->boolean('semua')) {
+                $argumen['--semua'] = true;
+            } elseif ($request->query('template')) {
+                $argumen['--template'] = (string) $request->query('template');
+            }
 
             $mulai = microtime(true);
             $galat = null;
 
             try {
-                Artisan::call('karir:cek-smtp', $argumen);
+                Artisan::call('karir:cek-surat', $argumen);
                 $keluaran = Artisan::output();
             } catch (\Throwable $e) {
                 // Perintah yang melempar tidak boleh berakhir jadi halaman
@@ -107,7 +115,7 @@ Route::middleware(['career.auth', 'career.role:SUPERADMIN'])
             $detik = round(microtime(true) - $mulai, 1);
 
             return response(
-                "PEMERIKSAAN JALUR SMTP\n"
+                "PEMERIKSAAN JALUR SURAT\n"
                 .'dijalankan dari: '.gethostname()."\n"
                 .'waktu          : '.now()->toDateTimeString().' ('.config('app.timezone').")\n"
                 .'lama proses    : '.$detik." detik\n"
@@ -117,5 +125,5 @@ Route::middleware(['career.auth', 'career.role:SUPERADMIN'])
                 200,
                 ['Content-Type' => 'text/plain; charset=utf-8']
             );
-        })->name('smtp');
+        })->name('surat');
     });
