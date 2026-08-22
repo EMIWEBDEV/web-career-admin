@@ -90,7 +90,7 @@
 
 <script setup>
 import { computed } from 'vue';
-import { keadaanProgram } from './monitoringHelpers';
+import { keadaanProgram } from '@utils/career/monitoring';
 
 const props = defineProps({ program: { type: Object, required: true } });
 defineEmits(['open']);

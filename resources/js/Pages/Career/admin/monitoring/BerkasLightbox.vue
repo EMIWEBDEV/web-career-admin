@@ -29,7 +29,7 @@
 
 <script setup>
 import { computed } from 'vue'
-import { formatUkuran, jenisPratinjau } from './monitoringHelpers'
+import { formatUkuran, jenisPratinjau } from '@utils/career/monitoring'
 import { useLapisEsc } from '../../../../composables/useLapisEsc'
 
 const props = defineProps({ berkas: { type: Object, required: true } })

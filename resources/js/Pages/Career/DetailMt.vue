@@ -336,7 +336,7 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from
 import CareerLayout from './Layouts/CareerLayout.vue';
 import LowonganCard from './components/LowonganCard.vue';
 import CtaSection from './sections/CtaSection.vue';
-import { daysLeft, deadlineLabel, formatDate, goToSection, observeReveal, stageTypeLabel, statusLabel } from './careerData';
+import { daysLeft, deadlineLabel, formatDate, goToSection, observeReveal, stageTypeLabel, statusLabel } from '@utils/career/data';
 
 defineOptions({ layout: null });
 

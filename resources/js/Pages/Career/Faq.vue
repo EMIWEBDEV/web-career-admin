@@ -234,7 +234,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue';
 import CareerLayout from './Layouts/CareerLayout.vue';
 import FaqAccordion from './components/FaqAccordion.vue';
 import FaqAksi from './components/FaqAksi.vue';
-import { goToSection, observeReveal, scrollToId } from './careerData';
+import { goToSection, observeReveal, scrollToId } from '@utils/career/data';
 
 defineOptions({ layout: null });
 

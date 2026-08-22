@@ -38,7 +38,7 @@
  * sumber `jenjang`. Field `program_studi` menyatu ke `jurusan`, yang kini
  * dipilih dari Master Prodi alih-alih diketik bebas.
  */
-import { blokDataDiri, blokPendidikan } from '../../inti/blok';
+import { blokDataDiri, blokPendidikan } from '@utils/formulir/blok';
 
 export const SKEMA = {
     template: 'TEMPLATE_1',

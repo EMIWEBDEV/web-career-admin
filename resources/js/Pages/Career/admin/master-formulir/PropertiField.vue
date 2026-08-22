@@ -338,7 +338,7 @@
  * Gaya kelas mfb-inspector__* disalin dari masterFormulir.vue, karena `<style>`
  * induk bersifat scoped dan tidak menjangkau komponen anak.
  */
-import { daftarTipe, propertiTipe } from '@career/formulir/inti/katalogField';
+import { daftarTipe, propertiTipe } from '@utils/formulir/katalogField';
 
 export default {
     name: 'PropertiField',

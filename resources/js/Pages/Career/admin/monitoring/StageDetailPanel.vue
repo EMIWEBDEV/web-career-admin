@@ -146,8 +146,8 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
 import axios from 'axios'
-import { initials } from '../careerAdmin'
-import { formatAging, formatTanggal, toneClass } from './monitoringHelpers'
+import { initials } from '@utils/career/admin'
+import { formatAging, formatTanggal, toneClass } from '@utils/career/monitoring'
 import KeadaanPanel from './KeadaanPanel.vue'
 import { useLapisEsc } from '../../../../composables/useLapisEsc'
 

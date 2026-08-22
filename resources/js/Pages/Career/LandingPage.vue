@@ -34,7 +34,7 @@ import LokasiSection from './sections/LokasiSection.vue';
 import FaqSection from './sections/FaqSection.vue';
 import CtaSection from './sections/CtaSection.vue';
 import StickyApplyBar from './components/StickyApplyBar.vue';
-import { scrollToId } from './careerData';
+import { scrollToId } from '@utils/career/data';
 
 defineOptions({ layout: null });
 

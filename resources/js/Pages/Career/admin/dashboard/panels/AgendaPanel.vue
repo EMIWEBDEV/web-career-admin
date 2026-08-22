@@ -247,7 +247,7 @@
 
 <script setup>
 import { ref, computed } from 'vue';
-import { tanggal } from '../dashboardHelpers';
+import { tanggal } from '@utils/career/dashboard';
 import KeadaanPanel from '../../monitoring/KeadaanPanel.vue';
 import AdminModal from '@career/AdminModal.vue';
 

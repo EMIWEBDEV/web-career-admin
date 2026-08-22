@@ -1,31 +1,47 @@
 /**
  * WEB CAREER — Katalog formulir.
  *
- * SUSUNAN FOLDER
- *   formulir/
- *     index.js               <- berkas ini: daftar formulir yang tersedia
- *     inti/                  <- mesin bersama, tidak tahu nama formulir apa pun
- *       aturan.js              syarat tampil, nilai awal, validasi
- *       FieldRenderer.vue      render satu field sesuai tipenya
- *       BagianRenderer.vue     render satu bagian (biasa / berulang)
- *       blok.js                blok pertanyaan siap pakai (data diri, pendidikan)
- *       referensi.js           pengambil opsi dari server untuk tipe `referensi`
- *     template-1/            <- satu keluarga tampilan
- *       layout/
- *         SatuHalaman.vue      semua pertanyaan dalam satu layar
- *         Bertahap.vue         stepper, validasi per langkah
- *       form-1/                pendaftaran MT
- *       form-2/                identitas peserta MT (lanjutan)
- *       form-3/                pendaftaran rekrutmen umum
- *       form-4/                pendaftaran magang
- *       (tiap folder: skema.js = PERTANYAAN & SYARAT, FormN.vue = tampilan)
+ * TAMPILAN dan PERTANYAAN dipisah ke dua pohon. Yang digambar tinggal di
+ * components/; yang dijawab — skema, aturan, validasi — tinggal di utils/.
+ *
+ *   components/career/formulir/
+ *     index.js                 <- berkas ini
+ *     DynamicForm.vue            formulir yang dirakit dari skema database
+ *     inti/
+ *       FieldRenderer.vue        render satu field sesuai tipenya
+ *       BagianRenderer.vue       render satu bagian (biasa / berulang)
+ *     template-1/                satu keluarga tampilan
+ *       layout/SatuHalaman.vue   semua pertanyaan dalam satu layar
+ *       layout/Bertahap.vue      stepper, validasi per langkah
+ *       form-1/Form1.vue         pendaftaran MT
+ *       form-2/Form2.vue         identitas peserta MT (lanjutan)
+ *       form-3/Form3.vue         pendaftaran rekrutmen umum
+ *       form-4/Form4.vue         pendaftaran magang
+ *
+ *   utils/formulir/            (@utils/formulir/...)
+ *     aturan.js                  syarat tampil, nilai awal, validasi
+ *     blok.js                    blok pertanyaan siap pakai (data diri, pendidikan)
+ *     katalogField.js            tipe field & properti yang berlaku untuknya
+ *     schema.js                  bentuk baku skema formulir
+ *     referensi.js               pengambil opsi dari server untuk tipe `referensi`
+ *     berkasBaris.js  drafLokal.js
+ *     template-1/form-1.js .. form-4.js   PERTANYAAN & SYARAT tiap formulir
+ *
+ * ── KENAPA index.js TETAP DI SINI, BUKAN IKUT KE utils/ ─────────────────────
+ *
+ * Berkas ini bukan utilitas: ia mengimpor lima komponen .vue dan memetakan kode
+ * database ke masing-masing. Memindahkannya ke utils/ akan melahirkan
+ * "utilitas" yang bergantung pada folder komponen — arah ketergantungan yang
+ * terbalik, dan lebih membingungkan daripada satu .js yang duduk di sini
+ * sebagai pintu masuk foldernya sendiri.
  *
  * Database hanya menyimpan KODE (Master_Formulir.Komponen_Kode). Peta di
  * bawah yang menerjemahkannya jadi komponen — jadi tidak ada "if nama
  * formulir" di mana pun.
  *
  * MENAMBAH FORMULIR BARU
- *   - Masih mirip yang sudah ada -> buat template-1/form-3/{skema.js,Form3.vue}
+ *   - Masih mirip yang sudah ada -> buat utils/formulir/template-1/form-5.js
+ *                                    + components/.../template-1/form-5/Form5.vue
  *   - Tampilannya beda jauh      -> buat template-2/ dengan layout sendiri
  *   Lalu daftarkan satu baris di FORMULIR, dan INSERT satu baris di
  *   N_WEB_CAREERS_Master_Formulir. Tidak ada ALTER TABLE — jawaban kandidat
@@ -36,11 +52,11 @@ import Form2 from './template-1/form-2/Form2.vue';
 import Form3 from './template-1/form-3/Form3.vue';
 import Form4 from './template-1/form-4/Form4.vue';
 import DynamicForm from './DynamicForm.vue';
-import { SKEMA as SKEMA_FORM_1 } from './template-1/form-1/skema';
-import { SKEMA as SKEMA_FORM_2 } from './template-1/form-2/skema';
-import { SKEMA as SKEMA_FORM_3 } from './template-1/form-3/skema';
-import { SKEMA as SKEMA_FORM_4 } from './template-1/form-4/skema';
-import { kunciBagian, semuaField } from './inti/aturan';
+import { SKEMA as SKEMA_FORM_1 } from '@utils/formulir/template-1/form-1';
+import { SKEMA as SKEMA_FORM_2 } from '@utils/formulir/template-1/form-2';
+import { SKEMA as SKEMA_FORM_3 } from '@utils/formulir/template-1/form-3';
+import { SKEMA as SKEMA_FORM_4 } from '@utils/formulir/template-1/form-4';
+import { kunciBagian, semuaField } from '@utils/formulir/aturan';
 
 export const FORMULIR = {
     FORMULIR_1: {
@@ -50,7 +66,7 @@ export const FORMULIR = {
         keterangan: 'Satu halaman. Jenjang, institusi, dan jurusan dipilih berantai dari master pendidikan.',
         template: 'Template 1',
         layout: 'Satu halaman',
-        berkas: 'template-1/form-1/skema.js',
+        berkas: '@utils/formulir/template-1/form-1.js',
     },
     FORMULIR_2: {
         komponen: Form2,
@@ -59,7 +75,7 @@ export const FORMULIR = {
         keterangan: 'Empat langkah: validasi data, identitas tambahan, kesiapan & dokumen, pernyataan.',
         template: 'Template 1',
         layout: 'Bertahap',
-        berkas: 'template-1/form-2/skema.js',
+        berkas: '@utils/formulir/template-1/form-2.js',
     },
     FORMULIR_3: {
         komponen: Form3,
@@ -68,7 +84,7 @@ export const FORMULIR = {
         keterangan: 'Satu halaman. Terbuka semua jenjang, menimbang pengalaman kerja & kesediaan.',
         template: 'Template 1',
         layout: 'Satu halaman',
-        berkas: 'template-1/form-3/skema.js',
+        berkas: '@utils/formulir/template-1/form-3.js',
     },
     FORMULIR_4: {
         komponen: Form4,
@@ -77,7 +93,7 @@ export const FORMULIR = {
         keterangan: 'Tiga langkah: data & pendidikan, rencana magang, dokumen & pernyataan.',
         template: 'Template 1',
         layout: 'Bertahap',
-        berkas: 'template-1/form-4/skema.js',
+        berkas: '@utils/formulir/template-1/form-4.js',
     },
 };
 
@@ -307,6 +323,6 @@ export {
     barisKosong,
     jawabanAwal,
     periksaLangkah,
-} from './inti/aturan';
+} from '@utils/formulir/aturan';
 
-export { normalisasiSkema, skemaKosong, validasiSkema, slugKey, buatFieldId } from './inti/schema';
+export { normalisasiSkema, skemaKosong, validasiSkema, slugKey, buatFieldId } from '@utils/formulir/schema';

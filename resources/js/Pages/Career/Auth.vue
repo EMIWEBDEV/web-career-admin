@@ -5,7 +5,7 @@ import axios from 'axios';
 import { Link, router } from '@inertiajs/vue3';
 import AuthShell from './components/AuthShell.vue';
 import TeleponNegara from '@career/TeleponNegara.vue';
-import { logout as clearSession, syncFromServer } from './careerSession';
+import { logout as clearSession, syncFromServer } from '@utils/career/session';
 import { csrfHeaders, refreshCsrfToken } from '../../utils/csrf';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

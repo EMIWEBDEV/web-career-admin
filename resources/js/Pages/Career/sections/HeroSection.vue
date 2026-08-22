@@ -143,7 +143,7 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue';
 import { Link, router } from '@inertiajs/vue3';
-import { goToSection } from '../careerData';
+import { goToSection } from '@utils/career/data';
 
 const props = defineProps({
     benefits: { type: Array, default: () => [] },

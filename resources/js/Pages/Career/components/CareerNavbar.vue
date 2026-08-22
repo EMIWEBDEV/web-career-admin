@@ -65,7 +65,7 @@
 <script setup>
 import { Link, usePage } from '@inertiajs/vue3';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
-import { CAREER_HOME, CAREER_LANDING, goHome, goToSection } from '../careerData';
+import { CAREER_HOME, CAREER_LANDING, goHome, goToSection } from '@utils/career/data';
 
 const props = defineProps({
     hasMt: { type: Boolean, default: false },

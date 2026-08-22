@@ -57,7 +57,7 @@
 <script setup>
 import { computed, ref } from 'vue';
 import BagianRenderer from '../../inti/BagianRenderer.vue';
-import { bagianTampil, periksaLangkah } from '../../inti/aturan';
+import { bagianTampil, periksaLangkah } from '@utils/formulir/aturan';
 
 const props = defineProps({
     konteks: { type: Object, default: () => ({}) }, // opsi dinamis pembukaan

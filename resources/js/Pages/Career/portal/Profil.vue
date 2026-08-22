@@ -74,8 +74,8 @@
 <script setup>
 import { Head, Link } from '@inertiajs/vue3';
 import { computed, onMounted, ref } from 'vue';
-import { initials } from '../admin/careerAdmin';
-import { getApps, getSession } from '../careerSession';
+import { initials } from '@utils/career/admin';
+import { getApps, getSession } from '@utils/career/session';
 
 const props = defineProps({
     user: { type: Object, default: null },

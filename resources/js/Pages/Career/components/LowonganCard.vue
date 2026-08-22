@@ -64,7 +64,7 @@
 
 <script setup>
 import { Link } from '@inertiajs/vue3';
-import { lokasiLabel, lowonganUrl } from '../careerData';
+import { lokasiLabel, lowonganUrl } from '@utils/career/data';
 
 defineProps({
     job: { type: Object, required: true },

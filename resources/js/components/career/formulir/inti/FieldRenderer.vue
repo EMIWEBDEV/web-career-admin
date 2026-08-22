@@ -343,9 +343,9 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue';
-import { ambilOpsi, benderaDiingat, tunda } from './referensi';
-import { syaratTerpenuhi } from './aturan';
-import { kunciBerkas } from './berkasBaris';
+import { ambilOpsi, benderaDiingat, tunda } from '@utils/formulir/referensi';
+import { syaratTerpenuhi } from '@utils/formulir/aturan';
+import { kunciBerkas } from '@utils/formulir/berkasBaris';
 import TeleponNegara from '@career/TeleponNegara.vue';
 import AmbilFoto from './AmbilFoto.vue';
 

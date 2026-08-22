@@ -497,6 +497,105 @@
                                 </el-select>
                             </div>
                         </div>
+
+                        <!-- KETENTUAN SLA & PERIODE TARGET
+                             Tanggal periode diisi sistem, bukan diketik admin. Selama
+                             tidak ada yang menuliskannya, layar ini diam-diam menaruh
+                             tanggal yang tak pernah dijelaskan asalnya - dan angka
+                             yang menentukannya, "berapa hari kerja", tidak muncul di
+                             mana pun padahal justru itu isi kebijakannya. -->
+
+                        <!-- MT: bukan peringatan. Tidak terikat SLA itu keadaan
+                             normal baginya, jadi nadanya netral (is-longgar). -->
+                        <div v-if="mtDipilih" class="mmp-slawrap">
+                            <div class="mmp-slanull is-longgar">
+                                <div class="mmp-slanull__head">
+                                    <i class="bi bi-mortarboard-fill"></i>
+                                    <div>
+                                        <b>Program MT tidak terikat SLA level</b>
+                                        <span>
+                                            Periode targetnya mengikuti <b>tanggal MPP ini dibuat</b><template v-if="form.tanggalPeriode"> &mdash; {{ tglPanjang(form.tanggalPeriode) }}</template>.
+                                            Ketentuan hari kerja per level hanya berlaku untuk Rekrutmen Reguler.
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div v-else-if="slaMemuat" class="mmp-sla is-muat">
+                            <i class="bi bi-arrow-repeat"></i>
+                            <span>Membaca ketentuan SLA level yang dipilih&hellip;</span>
+                        </div>
+
+                        <!-- ANGKA HARINYA DITULIS, bukan cuma rentang tanggalnya.
+                             "20 Agu - 1 Okt" bisa lahir dari janji 30 hari kerja
+                             maupun 45 - tergantung berapa akhir pekan dan hari libur
+                             yang kebetulan jatuh di dalamnya. Menghitungnya mundur
+                             dari dua tanggal bukan pekerjaan pembaca. -->
+                        <div v-else-if="periodeHari" class="mmp-slabox">
+                            <div class="mmp-tgl">
+                                <i class="bi bi-calendar-check"></i>
+                                <div class="mmp-tgl__txt">
+                                    <small>Periode Target</small>
+                                    <b>{{ periodeTeks }}</b>
+                                    <em><b>{{ periodeHari }} hari kerja</b> untuk level {{ namaLevelTerpilih }}.</em>
+                                </div>
+                                <i class="bi bi-lock-fill mmp-tgl__lock" title="Dihitung dari ketentuan level - tidak diisi manual."></i>
+                            </div>
+                            <p class="mmp-slabox__note">
+                                <i class="bi bi-snow"></i>
+                                <span>
+                                    Angka ini <b>dibekukan</b> pada MPP saat disimpan. Ketentuan master boleh berubah
+                                    nanti; MPP ini tetap dinilai dengan angka yang berlaku hari ini.
+                                </span>
+                            </p>
+                        </div>
+
+                        <!-- Gagal DIBEDAKAN dari tidak ada. Yang pertama bisa dicoba
+                             lagi; yang kedua butuh orang menambah aturannya. -->
+                        <div v-else-if="slaGagal" class="mmp-slawrap">
+                            <div class="mmp-slanull">
+                                <div class="mmp-slanull__head">
+                                    <i class="bi bi-wifi-off"></i>
+                                    <div>
+                                        <b>Ketentuan SLA gagal dibaca</b>
+                                        <span>Bukan berarti aturannya tidak ada &mdash; yang gagal pembacaannya. Periode target belum bisa dihitung sampai ini berhasil.</span>
+                                    </div>
+                                </div>
+                                <div class="mmp-slanull__act">
+                                    <button type="button" class="wca-btn wca-btn--ghost" @click="muatSla(form.idLevel)">
+                                        <i class="bi bi-arrow-clockwise"></i> Periksa lagi
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div v-else-if="slaKurang" class="mmp-slawrap">
+                            <div class="mmp-slanull" :class="{ 'is-longgar': !!editingNo }">
+                                <div class="mmp-slanull__head">
+                                    <i class="bi bi-exclamation-triangle-fill"></i>
+                                    <div>
+                                        <b>Level {{ namaLevelTerpilih }} belum punya ketentuan SLA</b>
+                                        <span v-if="editingNo">
+                                            MPP ini tetap boleh disunting &mdash; periodenya sudah tercatat sejak dibuat, dan
+                                            kebijakan yang berubah belakangan tidak menghapusnya.
+                                        </span>
+                                        <span v-else>
+                                            Periode target dihitung dari <b>jumlah hari kerja</b> milik level ini, jadi MPP
+                                            baru belum bisa dibuat sampai aturannya ada.
+                                        </span>
+                                    </div>
+                                </div>
+                                <div v-if="!editingNo" class="mmp-slanull__act">
+                                    <button type="button" class="wca-btn wca-btn--ghost" @click="bukaMasterSla">
+                                        <i class="bi bi-box-arrow-up-right"></i> Buka Master SLA MPP
+                                    </button>
+                                    <button type="button" class="wca-btn wca-btn--ghost" @click="muatSla(form.idLevel)">
+                                        <i class="bi bi-arrow-clockwise"></i> Periksa lagi
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -863,9 +962,10 @@ import Pagination from '../../../../components/ui/Pagination.vue';
 import MasterMppCard from './MasterMppCard.vue';
 import MasterMppDetailPanel from './MasterMppDetailPanel.vue';
 import PointsEditor from './PointsEditor.vue';
-import { formatTanggal, initials, statusBadge, statusLabel, periodeLabel, jenisProgramLabel } from './masterMppHelpers';
+import { formatTanggal, initials, statusBadge, statusLabel, periodeLabel, jenisProgramLabel } from '@utils/career/masterMpp';
 import { ingatModal } from '@utils/ingatModal';
 import { punyaRentang as cekRentang, rentangPanjang } from '@utils/rentangTanggal';
+import { hariIni } from '@utils/tanggalLokal';
 
 const API = '/api/v1/master-mpp';
 const CFG = { headers: { Accept: 'application/json' } };
@@ -973,6 +1073,9 @@ export default {
             // Ketentuan yang DIBEKUKAN pada MPP yang sedang disunting. Berbeda
             // dari `sla` di atas, yang selalu hitungan hari ini.
             slaBeku: null,
+            // Tanggal MPP yang sedang disunting DIBUAT. Inilah periode sebuah
+            // program MT — dibaca dari barisnya, bukan ditebak "hari ini".
+            mppDibuat: null,
             slaMemuat: false,
             slaGagal: false,
             levelBerubah: false,
@@ -993,6 +1096,16 @@ export default {
             );
         },
         /**
+         * PROGRAM MT? — satu jawaban yang dibaca semua aturan di bawah.
+         *
+         * Ditulis sekali supaya "SLA tidak berlaku untuk MT" tidak tersebar jadi
+         * enam perbandingan string yang bisa berbeda pendapat setelah salah satu
+         * di antaranya lupa ikut diubah.
+         */
+        mtDipilih() {
+            return this.form.jenisProgram === 'MT';
+        },
+        /**
          * Awal periode: tanggal MPP ini DIBUAT.
          *
          * Pada MPP lama dipakai tanggal yang dibekukan di barisnya sendiri, bukan
@@ -1000,6 +1113,10 @@ export default {
          * berjalan sejak layarnya dibuka lagi hari ini.
          */
         periodeMulai() {
+            // MT tidak punya rentang: periodenya SATU tanggal, yaitu hari MPP
+            // itu dibuat. Memberi awal di sini akan mencetak "22 Agu – 22 Agu",
+            // rentang sehari yang tidak pernah dimaksudkan siapa pun.
+            if (this.mtDipilih) return null;
             if (this.editingNo && this.slaBeku?.mulai) return this.slaBeku.mulai;
 
             return this.sla.mulai;
@@ -1015,6 +1132,7 @@ export default {
             return this.form.tanggalPeriode || this.sla.batas || null;
         },
         periodeHari() {
+            if (this.mtDipilih) return null;
             if (this.editingNo && this.slaBeku?.hari) return this.slaBeku.hari;
 
             return this.sla.hari;
@@ -1047,6 +1165,9 @@ export default {
          * sebagai masalah akan memerahkan borang sebelum ada yang salah.
          */
         slaKurang() {
+            // MT tidak pernah "kurang SLA" — ia memang tidak memakainya.
+            if (this.mtDipilih) return false;
+
             return !!this.form.idLevel && !this.slaMemuat && !this.sla.batas;
         },
         /**
@@ -1058,6 +1179,14 @@ export default {
          * pekerjaannya selesai.
          */
         slaMenahan() {
+            // MT TIDAK PERNAH DITAHAN SLA.
+            //
+            // Inilah inti perubahannya: sebelumnya MT ikut antre di gerbang yang
+            // sama, sehingga memilih level yang belum punya aturan SLA membuat MT
+            // mustahil dibuat — terhalang ketentuan yang tidak pernah berlaku
+            // untuknya.
+            if (this.mtDipilih) return false;
+
             return this.slaMemuat || (this.slaKurang && !this.editingNo);
         },
         /** Modal sedang bekerja — dipakai semua tombol di kakinya. */
@@ -1174,6 +1303,11 @@ export default {
         formFootNote() {
             if (this.saving) return 'Menyimpan transaksi MPP…';
             if (this.loadingDetail) return 'Memuat detail data MPP…';
+            // MT lebih dulu: ketiga kalimat SLA di bawah tidak berlaku baginya,
+            // dan menampilkannya hanya menyuruh orang membereskan aturan yang
+            // tidak pernah dipakai program yang sedang ia buat.
+            if (this.mtDipilih)
+                return 'Program MT tidak terikat SLA level — periode targetnya mengikuti tanggal MPP ini dibuat.';
             if (this.slaMemuat) return 'Membaca ketentuan SLA level yang dipilih…';
             if (this.slaGagal && !this.editingNo)
                 return 'Ketentuan SLA level ini gagal dibaca, jadi tanggal periode target belum bisa dihitung. Tekan “Periksa lagi” pada keterangan di Langkah 1.';
@@ -1243,6 +1377,24 @@ export default {
                 this.muatSla(v);
             },
         },
+        /**
+         * Berpindah Rekrutmen <-> MT MENGUBAH ASAL TANGGALNYA.
+         *
+         * Rekrutmen mengambilnya dari ketentuan SLA level; MT dari tanggal MPP
+         * dibuat. Tanpa pengamat ini, tanggal milik jenis yang LAMA akan tetap
+         * tertinggal di borang setelah jenisnya diganti — dan pratinjau di
+         * Langkah 4 memperlihatkan tanggal yang tidak akan pernah tersimpan.
+         */
+        'form.jenisProgram': {
+            handler(v, lama) {
+                if (lama === undefined || v === lama) return;
+
+                // Bukan "level berubah" — tapi asal tanggalnya berubah, dan
+                // itulah yang membuat muatSla() boleh menimpa isinya kembali.
+                this.levelBerubah = true;
+                this.muatSla(this.form.idLevel);
+            },
+        },
     },
     mounted() {
         this.load();
@@ -1254,6 +1406,25 @@ export default {
         async muatSla(idLevel) {
             this.sla = { hari: null, mulai: null, batas: null };
             this.slaGagal = false;
+
+            // ── MT: PERIODENYA TANGGAL MPP DIBUAT ───────────────────────────
+            //
+            // Tidak ada permintaan SLA yang dikirim sama sekali — bukan dikirim
+            // lalu hasilnya diabaikan. Level yang belum punya aturan tidak boleh
+            // memunculkan kegagalan pada layar yang memang tidak memakainya.
+            //
+            // Pada MPP yang SEDANG DISUNTING tanggalnya dibiarkan: itu tanggal
+            // pembuatan aslinya, dan menyunting deskripsi tidak boleh
+            // memindahkannya ke hari ini. Server menjaga hal yang sama.
+            if (this.mtDipilih) {
+                this.form.tanggalPeriode = this.editingNo
+                    ? this.mppDibuat || this.form.tanggalPeriode
+                    : hariIni();
+                this.levelBerubah = false;
+
+                return;
+            }
+
             if (!idLevel) return;
 
             this.slaMemuat = true;
@@ -1262,6 +1433,13 @@ export default {
                     ...CFG,
                     params: { idLevel },
                 });
+                // Jenisnya bisa sudah berpindah ke MT selagi permintaan ini di
+                // jalan. Jawaban yang datang terlambat untuk jenis yang sudah
+                // ditinggalkan harus dibuang, bukan dipasang — kalau tidak, ia
+                // menimpa tanggal MT dengan tenggat SLA beberapa saat setelah
+                // layarnya terlihat benar.
+                if (this.mtDipilih) return;
+
                 const r = res.data.result || {};
                 this.sla = { hari: r.hari, mulai: r.mulai, batas: r.batas };
 
@@ -1501,6 +1679,7 @@ export default {
             this.modalTab = 1;
             this.form = FORM_KOSONG();
             this.slaBeku = null;
+            this.mppDibuat = null;
             this.subDivisiOptions = [];
             this.karyawanOptions = [];
             this.show = true;
@@ -1512,6 +1691,7 @@ export default {
             this.modalTab = 1;
             this.form = FORM_KOSONG();
             this.slaBeku = null;
+            this.mppDibuat = null;
             this.subDivisiOptions = [];
             this.karyawanOptions = [];
             this.show = true;
@@ -1555,6 +1735,10 @@ export default {
 
                 // Periode MPP ini dibaca dari barisnya sendiri, bukan dihitung ulang.
                 this.slaBeku = d.sla ? { mulai: d.sla.mulai, hari: d.sla.hari } : null;
+                // Dipasang SESUDAH form diisi: kalau jenisnya diubah menjadi MT di
+                // tengah suntingan, inilah tanggal yang akan dipakai — sama dengan
+                // yang ditulis server, bukan sisa tenggat SLA jenis sebelumnya.
+                this.mppDibuat = d.tanggalDibuat || null;
                 this.karyawanOptions = d.penanggungJawab?.kode
                     ? [
                           {

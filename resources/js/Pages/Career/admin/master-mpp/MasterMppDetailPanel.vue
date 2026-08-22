@@ -54,6 +54,7 @@
                                     <div><small>Level</small><b>{{ detail.level.nama || '—' }}</b></div>
                                     <div><small>Jumlah Rekrutmen</small><b>{{ detail.jumlahRekrutmen }} orang</b></div>
                                     <div><small>{{ detail.sla?.mulai ? 'Periode Target' : 'Tenggat' }}</small><b>{{ periodeTeks }}</b></div>
+                                    <div><small>Ketentuan SLA</small><b>{{ slaHariTeks }}</b></div>
                                     <div><small>Lokasi</small><b>{{ detail.lokasi.nama || '—' }}</b></div>
                                     <div><small>Penanggung Jawab</small><b>{{ detail.penanggungJawab.nama }}</b></div>
                                 </div>
@@ -159,7 +160,7 @@
 <script setup>
 import { ref, computed, watch, onBeforeUnmount, nextTick } from 'vue';
 import axios from 'axios';
-import { formatTanggal, statusBadge, statusLabel, jenisProgramLabel } from './masterMppHelpers';
+import { formatTanggal, statusBadge, statusLabel, jenisProgramLabel } from '@utils/career/masterMpp';
 import { rentangPendek } from '@utils/rentangTanggal';
 
 const props = defineProps({ no: { type: String, default: null } });
@@ -180,6 +181,32 @@ const closeBtn = ref(null);
  * dan di situ tenggatnya ditulis sendirian, dengan label yang sesuai.
  */
 const periodeTeks = computed(() => rentangPendek(detail.value?.sla?.mulai, detail.value?.tanggalPeriode));
+
+/**
+ * ANGKA HARI KERJA YANG DIJANJIKAN — bukan tanggalnya.
+ *
+ * Rentang di atasnya tidak bisa menjawab pertanyaan ini. "20 Agu – 1 Okt" bisa
+ * berasal dari janji 30 hari kerja maupun 45, tergantung berapa akhir pekan dan
+ * hari libur yang kebetulan jatuh di dalamnya — dan menghitungnya mundur dari
+ * dua tanggal adalah pekerjaan yang seharusnya tidak dibebankan ke pembaca.
+ *
+ * Angkanya sudah dibekukan di N_WEB_CAREERS_Detail_MPP sejak MPP-nya dibuat;
+ * yang kurang selama ini cuma menuliskannya.
+ *
+ * Tiga keadaan sengaja dibedakan, sebab ketiganya berarti hal yang berlainan:
+ *   MT       — memang tidak punya SLA, periodenya mengikuti tanggal dibuat.
+ *   ada hari — janji yang berlaku untuk MPP ini.
+ *   kosong   — MPP lahir sebelum SLA dicatat. "Tidak tercatat", bukan "tidak ada":
+ *              menyamakannya dengan MT akan mengarang kebijakan yang tak pernah
+ *              diputuskan siapa pun.
+ */
+const slaHariTeks = computed(() => {
+    if (detail.value?.jenisProgram === 'MT') return 'Tidak terikat SLA';
+
+    const hari = detail.value?.sla?.hari;
+
+    return hari ? `${hari} hari kerja` : 'Tidak tercatat';
+});
 
 const categorizedSkills = computed(() => {
     if (!detail.value?.skill || !detail.value.skill.length) return [];

@@ -4,7 +4,6 @@
     "scripts": {
         "dev": "vite",
         "build": "vite build",
-        "test:unit": "vitest run",
         "optimize": "php artisan optimize:clear",
         "host": "php artisan serve --host=0.0.0.0 --port=5678",
         "tunnel": "cloudflared tunnel run n8n-tunnel",

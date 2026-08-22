@@ -109,8 +109,8 @@
 <script setup>
 import { ref, watch, onMounted } from 'vue'
 import axios from 'axios'
-import { initials } from '../careerAdmin'
-import { formatTanggal, labelOutcome, labelStatusTes, tesBermakna, toneOutcome } from './monitoringHelpers'
+import { initials } from '@utils/career/admin'
+import { formatTanggal, labelOutcome, labelStatusTes, tesBermakna, toneOutcome } from '@utils/career/monitoring'
 import KeadaanPanel from './KeadaanPanel.vue'
 
 const props = defineProps({

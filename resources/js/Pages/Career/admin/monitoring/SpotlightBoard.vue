@@ -178,8 +178,8 @@ import StagePersonDrawer from './StagePersonDrawer.vue'
 import FilterPapan from './FilterPapan.vue'
 import FullProcessGrid from './FullProcessGrid.vue'
 import KeadaanPanel from './KeadaanPanel.vue'
-import { initials, statusBadge } from '../careerAdmin'
-import { formatAging, toneClass } from './monitoringHelpers'
+import { initials, statusBadge } from '@utils/career/admin'
+import { formatAging, toneClass } from '@utils/career/monitoring'
 import { useLapisEsc } from '../../../../composables/useLapisEsc'
 
 const props = defineProps({

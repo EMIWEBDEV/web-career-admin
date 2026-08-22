@@ -26,7 +26,7 @@
 <script setup>
 import { computed } from 'vue';
 import Bertahap from '../layout/Bertahap.vue';
-import { SKEMA } from './skema';
+import { SKEMA } from '@utils/formulir/template-1/form-2';
 
 const props = defineProps({
     modelValue: { type: Object, default: () => ({}) },

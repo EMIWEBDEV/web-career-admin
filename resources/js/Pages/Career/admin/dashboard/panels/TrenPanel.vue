@@ -112,7 +112,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
 import apexchart from 'vue3-apexcharts';
-import { angka, tanggal, SERI, INK } from '../dashboardHelpers';
+import { angka, tanggal, SERI, INK } from '@utils/career/dashboard';
 import KeadaanPanel from '../../monitoring/KeadaanPanel.vue';
 
 const props = defineProps({ tren: { type: Object, default: () => ({ titik: [], totalMasuk: 0, totalDiterima: 0 }) } });

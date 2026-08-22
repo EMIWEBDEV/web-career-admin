@@ -246,7 +246,7 @@
 import { ref, reactive, computed, onMounted, onUnmounted, nextTick } from 'vue';
 import { Head, usePage } from '@inertiajs/vue3';
 import axios from 'axios';
-import { CFG } from './dashboardHelpers';
+import { CFG } from '@utils/career/dashboard';
 import KeadaanPanel from '../monitoring/KeadaanPanel.vue';
 import KpiStrip from './panels/KpiStrip.vue';
 import AntreanAksi from './panels/AntreanAksi.vue';

@@ -168,7 +168,7 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue';
-import { angka, desimal, persen, STATUS } from '../dashboardHelpers';
+import { angka, desimal, persen, STATUS } from '@utils/career/dashboard';
 import DaftarBatang from '../panels/DaftarBatang.vue';
 import KeadaanPanel from '../../monitoring/KeadaanPanel.vue';
 

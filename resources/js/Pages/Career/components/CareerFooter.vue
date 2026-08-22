@@ -77,7 +77,7 @@
 </template>
 
 <script setup>
-import { goToSection } from '../careerData';
+import { goToSection } from '@utils/career/data';
 
 defineProps({
     hasMt: { type: Boolean, default: false },

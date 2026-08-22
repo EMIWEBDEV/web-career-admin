@@ -673,8 +673,8 @@ import {
     petaSkema,
     sapuDrafKedaluwarsa,
     tulisDraf,
-} from '@career/formulir/inti/drafLokal';
-import { checkKnockout, clearApps, flowFor, getApp, nextActionFor, removeApp, upsertApp } from './careerSession';
+} from '@utils/formulir/drafLokal';
+import { checkKnockout, clearApps, flowFor, getApp, nextActionFor, removeApp, upsertApp } from '@utils/career/session';
 
 defineOptions({ layout: null }); // tanpa shell HCIS — pakai CareerLayout (situs karir)
 

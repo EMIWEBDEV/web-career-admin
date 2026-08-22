@@ -78,7 +78,7 @@
 <script setup>
 import { computed } from 'vue';
 import FieldRenderer from './FieldRenderer.vue';
-import { fieldTampil, kunciBagian, barisKosong } from './aturan';
+import { fieldTampil, kunciBagian, barisKosong } from '@utils/formulir/aturan';
 
 const props = defineProps({
     bagian: { type: Object, required: true },

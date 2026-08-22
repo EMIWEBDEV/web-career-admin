@@ -259,7 +259,7 @@
 
 <script setup>
 import { computed } from 'vue';
-import { angka, desimal, tglJam, STATUS } from '../dashboardHelpers';
+import { angka, desimal, tglJam, STATUS } from '@utils/career/dashboard';
 import KeadaanPanel from '../../monitoring/KeadaanPanel.vue';
 
 const props = defineProps({ ekstra: { type: Object, required: true } });

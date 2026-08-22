@@ -123,7 +123,7 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue';
-import { angka, desimal, nadaSehat, persen, STATUS } from '../dashboardHelpers';
+import { angka, desimal, nadaSehat, persen, STATUS } from '@utils/career/dashboard';
 import KeadaanPanel from '../../monitoring/KeadaanPanel.vue';
 
 const props = defineProps({ baris: { type: Array, default: () => [] } });

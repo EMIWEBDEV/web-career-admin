@@ -1106,7 +1106,7 @@ import {
     slugKey,
     validasiSkema,
 } from '@career/formulir';
-import { KATALOG_FIELD, bersihkanField, galatTipe } from '@career/formulir/inti/katalogField';
+import { KATALOG_FIELD, bersihkanField, galatTipe } from '@utils/formulir/katalogField';
 import PropertiField from './PropertiField.vue';
 
 const API = '/api/v1/master-formulir';

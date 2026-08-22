@@ -168,7 +168,7 @@
 import { computed, ref, watch } from 'vue';
 import BagianRenderer from '../../inti/BagianRenderer.vue';
 import FieldRenderer from '../../inti/FieldRenderer.vue';
-import { bagianTampil, fieldTampil, kunciBagian, periksaLangkah, syaratTerpenuhi } from '../../inti/aturan';
+import { bagianTampil, fieldTampil, kunciBagian, periksaLangkah, syaratTerpenuhi } from '@utils/formulir/aturan';
 
 const props = defineProps({
     konteks: { type: Object, default: () => ({}) }, // opsi dinamis pembukaan

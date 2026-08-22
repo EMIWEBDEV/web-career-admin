@@ -160,7 +160,7 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue';
-import { angka, desimal, RAMP, selRamp, selTinta, STATUS } from '../dashboardHelpers';
+import { angka, desimal, RAMP, selRamp, selTinta, STATUS } from '@utils/career/dashboard';
 import KeadaanPanel from '../../monitoring/KeadaanPanel.vue';
 
 const props = defineProps({ khas: { type: Object, required: true } });

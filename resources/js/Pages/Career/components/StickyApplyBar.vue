@@ -45,7 +45,7 @@
 <script setup>
 import { computed, ref, onMounted, onUnmounted } from 'vue';
 import { Link } from '@inertiajs/vue3';
-import { goToSection } from '../careerData';
+import { goToSection } from '@utils/career/data';
 
 defineProps({
     hasMt: { type: Boolean, default: false },

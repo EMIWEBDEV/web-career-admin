@@ -42,7 +42,7 @@
 
 <script setup>
 import { computed } from 'vue';
-import { angka, STATUS, INK } from '../dashboardHelpers';
+import { angka, STATUS, INK } from '@utils/career/dashboard';
 
 const props = defineProps({
     kpi: { type: Object, required: true },

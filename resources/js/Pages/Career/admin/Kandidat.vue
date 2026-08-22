@@ -99,7 +99,7 @@
 <script setup>
 import { Head } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
-import { initials, statusBadge } from './careerAdmin';
+import { initials, statusBadge } from '@utils/career/admin';
 
 const props = defineProps({ kandidat: { type: Array, default: () => [] } });
 const q = ref('');

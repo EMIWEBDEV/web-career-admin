@@ -156,7 +156,7 @@ import {
     stageTypeLabel,
     sudahLogin,
     typeClass,
-} from './careerData';
+} from '@utils/career/data';
 
 defineOptions({ layout: null });
 

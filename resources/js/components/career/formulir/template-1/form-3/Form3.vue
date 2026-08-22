@@ -25,7 +25,7 @@
 <script setup>
 import { computed } from 'vue';
 import SatuHalaman from '../layout/SatuHalaman.vue';
-import { SKEMA } from './skema';
+import { SKEMA } from '@utils/formulir/template-1/form-3';
 
 const props = defineProps({
     modelValue: { type: Object, default: () => ({}) },

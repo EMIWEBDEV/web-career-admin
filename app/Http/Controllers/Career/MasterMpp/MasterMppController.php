@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Support\Career\SlaMpp;
 use App\Support\CareerShell;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
@@ -85,6 +86,10 @@ class MasterMppController extends Controller
             'g.Flag_Selesai as flag_selesai_raw',
             'g.Flag_MT as flag_mt_raw',
             DB::raw('CONVERT(varchar(10), g.Tanggal_Periode, 23) as tanggal_periode'),
+            // Tanggal MPP DIBUAT. Dipakai borang Ubah: pada program MT, inilah
+            // periodenya — dan pratinjau harus menyebut tanggal yang sama dengan
+            // yang kelak ditulis server, bukan sisa tanggal jenis sebelumnya.
+            DB::raw('CONVERT(varchar(10), g.Tanggal, 23) as tanggal_dibuat'),
             'g.Id_Divisi as id_divisi',
             'dv.Keterangan as divisi',
             'g.Id_Sub_Divisi as id_sub_divisi',
@@ -269,6 +274,7 @@ class MasterMppController extends Controller
             // Flag_MT: 'Y' = Management Trainee, 'T' atau NULL = Rekrutmen biasa.
             'jenisProgram' => $r->flag_mt_raw === 'Y' ? 'MT' : 'REKRUTMEN',
             'tanggalPeriode' => $r->tanggal_periode,
+            'tanggalDibuat' => $r->tanggal_dibuat ?? null,
             'divisi' => ['id' => $r->id_divisi, 'nama' => $r->divisi],
             'subDivisi' => $r->id_sub_divisi ? ['id' => $r->id_sub_divisi, 'nama' => $r->sub_divisi] : null,
             'level' => ['id' => $r->id_level, 'nama' => $r->level],
@@ -361,7 +367,8 @@ class MasterMppController extends Controller
                     'Jumlah_Rekruitmen' => $data['jumlahRekrutmen'],
                     'Id_Jabatan' => $data['idJabatan'],
                     'Flag_Selesai' => 'T',
-                    'Tanggal_Periode' => $data['tanggalPeriode'],
+                    // REKRUTMEN: hasil hitungan SLA. MT: tanggal hari ini.
+                    'Tanggal_Periode' => $this->periodeMpp($data),
                     'User_Penganggung_Jawab' => $data['kodeKaryawan'],
                     'Kode_Lokasi' => $data['kodeLokasi'],
                     'Flag_MT' => $this->flagMt($data['jenisProgram']),
@@ -378,7 +385,11 @@ class MasterMppController extends Controller
                 ]
                 // SNAPSHOT SLA — lihat snapshotSla(). Inilah yang membuat perubahan
                 // master tahun depan tidak menulis ulang penilaian tahun ini.
-                + $this->snapshotSla($data['idLevel'], now()->toDateString()), 'Id_Detail_MPP');
+                + $this->snapshotSla(
+                    $data['idLevel'],
+                    now()->toDateString(),
+                    $data['jenisProgram'] === 'MT'
+                ), 'Id_Detail_MPP');
 
                 $this->simpanPoints($idDetail, $data['tanggungJawab'], $data['persyaratan']);
                 $this->simpanRelasi($idDetail, 'N_WEB_CAREERS_Detail_Skill_MPP', 'Id_Skill', $this->resolveTagIds($data['skills'], 'N_WEB_CAREERS_Master_Skill', 'Id_Skill', 'Nama_Skill', $userId), $userId);
@@ -427,14 +438,36 @@ class MasterMppController extends Controller
             $userId = session('career_auth.id');
             $idDetail = (int) DB::table(self::TABEL_D)->where('No_Transaksi_MPP', $no)->value('Id_Detail_MPP');
 
-            DB::transaction(function () use ($data, $no, $userId, $idDetail) {
+            $mtBaru = $data['jenisProgram'] === 'MT';
+            $mtLama = $row->Flag_MT === 'Y';
+
+            // MT: periodenya tanggal baris ini DIBUAT, bukan hari penyuntingan.
+            $periode = $this->periodeMpp($data, $row->Tanggal ?? null);
+
+            // SNAPSHOT DIBEKUKAN ULANG BILA LEVELNYA BERGANTI — ATAU BILA
+            // JENIS PROGRAMNYA BERGANTI.
+            //
+            // Yang kedua sama pentingnya: rekrutmen yang diubah menjadi MT harus
+            // kehilangan angka SLA-nya, dan MT yang dikembalikan menjadi rekrutmen
+            // harus mendapatkannya. Tanpa syarat itu, satu-satunya yang berubah
+            // adalah labelnya, sementara tenggat lamanya diam-diam masih menempel.
+            $levelSama = (int) ($bekuLama->level ?? 0) === (int) $data['idLevel'];
+            $kolomSla = ($levelSama && $mtBaru === $mtLama)
+                ? []
+                : $this->snapshotSla(
+                    $data['idLevel'],
+                    $bekuLama->mulai ?? now()->toDateString(),
+                    $mtBaru
+                );
+
+            DB::transaction(function () use ($data, $no, $userId, $idDetail, $periode, $kolomSla) {
                 DB::table(self::TABEL_G)->where('No_Transaksi', $no)->update([
                     'Id_Divisi' => $data['idDivisi'],
                     'Id_Sub_Divisi' => $data['idSubDivisi'],
                     'Id_Level' => $data['idLevel'],
                     'Jumlah_Rekruitmen' => $data['jumlahRekrutmen'],
                     'Id_Jabatan' => $data['idJabatan'],
-                    'Tanggal_Periode' => $data['tanggalPeriode'],
+                    'Tanggal_Periode' => $periode,
                     'User_Penganggung_Jawab' => $data['kodeKaryawan'],
                     'Kode_Lokasi' => $data['kodeLokasi'],
                     'Flag_MT' => $this->flagMt($data['jenisProgram']),
@@ -448,15 +481,11 @@ class MasterMppController extends Controller
                     'Updated_At' => now(),
                     'Updated_By' => $userId,
                 ]
-                // SNAPSHOT HANYA DIBEKUKAN ULANG BILA LEVELNYA BERGANTI.
-                //
-                // Level berganti berarti aturan lamanya memang tidak berlaku lagi
-                // untuk MPP ini. Selama levelnya sama, angkanya dibiarkan apa adanya —
-                // termasuk bila master sudah diubah sejak MPP ini dibuat. Menyunting
-                // satu kata di deskripsi tidak boleh diam-diam memindahkan tenggat.
-                + ((int) ($bekuLama->level ?? 0) === (int) $data['idLevel']
-                    ? []
-                    : $this->snapshotSla($data['idLevel'], $bekuLama->mulai ?? now()->toDateString())));
+                // Selama level DAN jenis programnya sama, angkanya dibiarkan apa
+                // adanya — termasuk bila master sudah diubah sejak MPP ini dibuat.
+                // Menyunting satu kata di deskripsi tidak boleh diam-diam
+                // memindahkan tenggat. Lihat $kolomSla di atas.
+                + $kolomSla);
 
                 $this->simpanPoints($idDetail, $data['tanggungJawab'], $data['persyaratan']);
                 $this->simpanRelasi($idDetail, 'N_WEB_CAREERS_Detail_Skill_MPP', 'Id_Skill', $this->resolveTagIds($data['skills'], 'N_WEB_CAREERS_Master_Skill', 'Id_Skill', 'Nama_Skill', $userId), $userId);
@@ -786,6 +815,20 @@ class MasterMppController extends Controller
      */
     private function galatSla(array $data, ?string $mulai = null, bool $baru = false): ?string
     {
+        // ── MT TIDAK TERIKAT SLA LEVEL ──────────────────────────────────────
+        //
+        // SLA menjawab "berapa lama satu lowongan boleh terbuka", dan itu
+        // pertanyaan rekrutmen reguler. Program MT berjalan per angkatan dengan
+        // kalendernya sendiri; menyeretnya ke SLA level berarti MT tidak bisa
+        // dibuat sama sekali pada level yang belum punya aturan — padahal aturan
+        // itu memang tidak pernah dimaksudkan untuknya.
+        //
+        // Tak ada yang perlu diperiksa di sini: tanggal periode MT ditetapkan
+        // server, bukan dikirim borang. Lihat periodeMpp().
+        if (($data['jenisProgram'] ?? null) === 'MT') {
+            return null;
+        }
+
         $target = substr((string) ($data['tanggalPeriode'] ?? ''), 0, 10);
 
         // TARGET DI MASA LALU — ditolak untuk MPP BARU, apa pun levelnya.
@@ -848,16 +891,55 @@ class MasterMppController extends Controller
     }
 
     /**
+     * TANGGAL_PERIODE YANG BENAR-BENAR DISIMPAN.
+     *
+     *   REKRUTMEN → hasil hitungan SLA level, dikirim borang dan sudah lolos
+     *               galatSla().
+     *   MT        → tanggal MPP itu DIBUAT. Ditetapkan di sini, bukan oleh
+     *               borang: apa pun yang dikirim layar diabaikan, sehingga
+     *               permintaan yang datang langsung ke pintu ini pun tidak bisa
+     *               menyelundupkan tanggal karangan.
+     *
+     * $dibuat diisi saat MENYUNTING — tanggal lahir baris itu sendiri. Tanpa
+     * itu, membuka lalu menyimpan MPP MT bulan depan akan memindahkan
+     * periodenya ke bulan depan, dan MPP-nya seolah baru dibuat hari itu.
+     */
+    private function periodeMpp(array $data, ?string $dibuat = null): string
+    {
+        if (($data['jenisProgram'] ?? null) === 'MT') {
+            return $dibuat
+                ? Carbon::parse($dibuat)->toDateString()
+                : now()->toDateString();
+        }
+
+        return substr((string) ($data['tanggalPeriode'] ?? ''), 0, 10);
+    }
+
+    /**
      * Kolom Sla_* yang akan ditulis — kosong bila skema/masternya belum ada.
      *
      * Dikembalikan sebagai larik yang digabung ke payload insert/update,
      * sehingga MPP tetap tersimpan normal di lingkungan yang skrip skemanya
      * belum dijalankan — tanpa satu pun galat tentang kolom yang tidak ada.
      */
-    private function snapshotSla(int $idLevel, string $mulai): array
+    private function snapshotSla(int $idLevel, string $mulai, bool $mt = false): array
     {
         if (! SlaMpp::siapSnapshot()) {
             return [];
+        }
+
+        // MT tidak punya SLA. Kolomnya DIKOSONGKAN, bukan dilewati begitu saja:
+        // MPP yang tadinya rekrutmen lalu diubah menjadi MT akan tetap membawa
+        // angka lamanya kalau tidak ditulis ulang — dan panel detailnya
+        // menampilkan rentang tenggat untuk program yang tidak punya tenggat.
+        if ($mt) {
+            return [
+                'Sla_Master_Id' => null,
+                'Sla_Hari_Kerja' => null,
+                'Sla_Mulai' => null,
+                'Sla_Batas' => null,
+                'Sla_Dikunci_At' => null,
+            ];
         }
 
         $sla = SlaMpp::batas($idLevel, $mulai);
@@ -895,7 +977,11 @@ class MasterMppController extends Controller
             'idLevel' => 'required|integer',
             'idJabatan' => 'required|integer',
             'jumlahRekrutmen' => 'required|integer|min:1',
-            'tanggalPeriode' => 'required|date',
+            // Wajib hanya untuk REKRUTMEN — di sanalah tanggalnya memang datang
+            // dari borang (hasil hitungan SLA). Untuk MT tanggalnya ditetapkan
+            // server, jadi menuntutnya di sini berarti menolak permintaan yang
+            // isinya justru akan diabaikan.
+            'tanggalPeriode' => 'nullable|required_unless:jenisProgram,MT|date',
             'kodeLokasi' => 'required|string|max:20',
             'kodeKaryawan' => 'required|string|max:25',
             'deskripsi' => 'required|string|max:1000',
@@ -919,7 +1005,7 @@ class MasterMppController extends Controller
             'idJabatan.required' => 'Jabatan wajib dipilih.',
             'jumlahRekrutmen.required' => 'Jumlah rekrutmen wajib diisi.',
             'jumlahRekrutmen.min' => 'Jumlah rekrutmen minimal 1.',
-            'tanggalPeriode.required' => 'Tanggal periode wajib diisi.',
+            'tanggalPeriode.required_unless' => 'Tanggal periode wajib diisi.',
             'kodeLokasi.required' => 'Lokasi wajib dipilih.',
             'kodeKaryawan.required' => 'Penanggung jawab wajib dipilih.',
             'deskripsi.required' => 'Deskripsi lowongan wajib diisi.',

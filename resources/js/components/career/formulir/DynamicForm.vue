@@ -32,7 +32,7 @@
 import { computed } from 'vue';
 import SatuHalaman from './template-1/layout/SatuHalaman.vue';
 import Bertahap from './template-1/layout/Bertahap.vue';
-import { normalisasiSkema } from './inti/schema';
+import { normalisasiSkema } from '@utils/formulir/schema';
 
 const props = defineProps({
     modelValue: { type: Object, default: () => ({}) },

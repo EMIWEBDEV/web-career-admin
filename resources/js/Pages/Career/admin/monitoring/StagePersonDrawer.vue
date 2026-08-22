@@ -226,7 +226,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import axios from 'axios'
 import BerkasLightbox from './BerkasLightbox.vue'
 import KeadaanPanel from './KeadaanPanel.vue'
-import { formatTanggal, formatUkuran, jenisPratinjau, labelOutcome, labelStatusTes, tesBermakna, toneOutcome } from './monitoringHelpers'
+import { formatTanggal, formatUkuran, jenisPratinjau, labelOutcome, labelStatusTes, tesBermakna, toneOutcome } from '@utils/career/monitoring'
 import { useLapisEsc } from '../../../../composables/useLapisEsc'
 
 const props = defineProps({

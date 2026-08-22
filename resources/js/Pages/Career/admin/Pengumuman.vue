@@ -139,8 +139,8 @@
 import { Head } from '@inertiajs/vue3';
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import AdminModal from '@career/AdminModal.vue';
-import { initials, statusBadge } from './careerAdmin';
-import { announceResult, getApps } from '../careerSession';
+import { initials, statusBadge } from '@utils/career/admin';
+import { announceResult, getApps } from '@utils/career/session';
 
 const props = defineProps({
     pengumuman: { type: Array, default: () => [] },

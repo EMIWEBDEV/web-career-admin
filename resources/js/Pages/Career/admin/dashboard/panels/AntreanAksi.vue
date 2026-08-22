@@ -325,7 +325,7 @@
 <script setup>
 import { ref, computed, watch, onBeforeUnmount } from 'vue';
 import axios from 'axios';
-import { angka, tglJam, nadaUmur, inisial, STATUS } from '../dashboardHelpers';
+import { angka, tglJam, nadaUmur, inisial, STATUS } from '@utils/career/dashboard';
 import KeadaanPanel from '../../monitoring/KeadaanPanel.vue';
 
 const props = defineProps({

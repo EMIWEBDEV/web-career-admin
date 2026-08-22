@@ -1297,7 +1297,7 @@ import axios from 'axios';
 import { Head, Link, router } from '@inertiajs/vue3';
 import { FORMULIR, komponenFormulir, skemaFormulir, jawabanAwal } from '@career/formulir';
 import DynamicForm from '@career/formulir/DynamicForm.vue';
-import { kunciBerkas } from '@career/formulir/inti/berkasBaris';
+import { kunciBerkas } from '@utils/formulir/berkasBaris';
 import JadwalKartu from '@career/JadwalKartu.vue';
 import UnggahAktivitas from '@career/UnggahAktivitas.vue';
 

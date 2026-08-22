@@ -15,7 +15,7 @@
  *  Bentuk field & daftar operator syarat: lihat form-1/skema.js.
  * ══════════════════════════════════════════════════════════════════════
  */
-import { blokDataDiri, blokPendidikan } from '../../inti/blok';
+import { blokDataDiri, blokPendidikan } from '@utils/formulir/blok';
 
 export const SKEMA = {
     template: 'TEMPLATE_1',

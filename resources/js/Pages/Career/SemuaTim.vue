@@ -124,7 +124,7 @@
 import { Head, Link } from '@inertiajs/vue3';
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import CareerLayout from './Layouts/CareerLayout.vue';
-import { goToSection, observeReveal } from './careerData';
+import { goToSection, observeReveal } from '@utils/career/data';
 
 defineOptions({ layout: null });
 

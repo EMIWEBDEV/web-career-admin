@@ -527,7 +527,7 @@ import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { Head, Link, usePage } from '@inertiajs/vue3';
 import CareerLayout from './Layouts/CareerLayout.vue';
 import LowonganCard from './components/LowonganCard.vue';
-import { daysLeft, formatDate, mtUrl, statusClass, statusLabel } from './careerData';
+import { daysLeft, formatDate, mtUrl, statusClass, statusLabel } from '@utils/career/data';
 
 defineOptions({ layout: null });
 

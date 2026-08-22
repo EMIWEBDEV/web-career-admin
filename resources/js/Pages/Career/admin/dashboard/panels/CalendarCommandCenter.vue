@@ -507,12 +507,12 @@ import interactionPlugin from '@fullcalendar/interaction';
 import listPlugin from '@fullcalendar/list';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import idLocale from '@fullcalendar/core/locales/id';
-import { CFG } from '../dashboardHelpers';
+import { CFG } from '@utils/career/dashboard';
 import {
     JENIS_KALENDER, KESIAPAN_KALENDER, formatRentang, hitungPersentasePeserta,
     keEventFullCalendar, kunciTanggal, salinRingkasanEvent, saringEvent,
     tambahHari, tanggalApi, warnaEvent,
-} from '../calendarHelpers';
+} from '@utils/career/kalender';
 
 const props = defineProps({
     category: { type: String, required: true },

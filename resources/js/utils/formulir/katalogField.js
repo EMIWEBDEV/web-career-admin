@@ -10,8 +10,11 @@
  * Isi `properti` diturunkan dari apa yang BENAR-BENAR dibaca FieldRenderer.vue,
  * aturan.js, dan layout. Menawarkan kotak yang tidak dibaca siapa pun sama
  * buruknya dengan menyembunyikan kotak yang dibutuhkan: keduanya membuat admin
- * menebak. katalogField.test.js menjaga janji itu dengan membaca berkas-berkas
- * tersebut dan memastikan tiap properti benar-benar punya pembaca.
+ * menebak.
+ *
+ * Janji itu kini dijaga MANUAL. Menambah properti di sini berarti memastikan
+ * sendiri ada yang membacanya di ketiga berkas tersebut — dulu ada pemeriksaan
+ * otomatis yang melakukannya, dan pemeriksaan itu sudah dihapus.
  *
  * Menambah tipe field baru = menambah satu entri di sini. Dropdown, palette,
  * inspector, normalisasi, dan validasi mengikutinya sendiri.

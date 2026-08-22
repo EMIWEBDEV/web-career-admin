@@ -140,7 +140,7 @@
 
 <script setup>
 import { computed } from 'vue';
-import { formatTanggal, initials, statusBadge, statusLabel, jenisProgramLabel } from './masterMppHelpers';
+import { formatTanggal, initials, statusBadge, statusLabel, jenisProgramLabel } from '@utils/career/masterMpp';
 import { punyaRentang, rentangPendek } from '@utils/rentangTanggal';
 
 const props = defineProps({ mpp: { type: Object, required: true } });

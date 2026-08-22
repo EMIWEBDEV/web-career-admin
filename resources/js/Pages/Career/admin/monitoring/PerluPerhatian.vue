@@ -10,8 +10,8 @@
 
 <script setup>
 import { ref, computed } from 'vue'
-import { initials } from '../careerAdmin'
-import { formatAging, jenisPerhatian } from './monitoringHelpers'
+import { initials } from '@utils/career/admin'
+import { formatAging, jenisPerhatian } from '@utils/career/monitoring'
 
 const props = defineProps({
     items: { type: Array, default: () => [] },

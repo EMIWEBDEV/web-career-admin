@@ -50,7 +50,7 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue';
-import { angka } from '../dashboardHelpers';
+import { angka } from '@utils/career/dashboard';
 import KeadaanPanel from '../../monitoring/KeadaanPanel.vue';
 
 const props = defineProps({

@@ -164,7 +164,7 @@
 
 <script setup>
 import { ref, computed } from 'vue';
-import { angka, STATUS, INK } from '../dashboardHelpers';
+import { angka, STATUS, INK } from '@utils/career/dashboard';
 import KeadaanPanel from '../../monitoring/KeadaanPanel.vue';
 import AdminModal from '@career/AdminModal.vue';
 

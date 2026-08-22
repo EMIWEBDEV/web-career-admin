@@ -223,7 +223,7 @@
 <script setup>
 import { Head, Link } from '@inertiajs/vue3';
 import { computed, onMounted, onBeforeUnmount, ref } from 'vue';
-import { CAT_URL, ensureTestSession, getApp, nextActionFor } from '../careerSession';
+import { CAT_URL, ensureTestSession, getApp, nextActionFor } from '@utils/career/session';
 
 const props = defineProps({
     programId: { type: String, default: '' },

@@ -70,7 +70,7 @@
 <script setup>
 import { computed } from 'vue';
 import { Link } from '@inertiajs/vue3';
-import { daysLeft, formatDate, mtUrl, statusClass, statusLabel } from '../careerData';
+import { daysLeft, formatDate, mtUrl, statusClass, statusLabel } from '@utils/career/data';
 
 const props = defineProps({
     programMt: { type: Array, default: () => [] },

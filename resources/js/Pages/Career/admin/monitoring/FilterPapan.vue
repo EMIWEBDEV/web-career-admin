@@ -104,7 +104,7 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import { opsiStatus } from './monitoringHelpers'
+import { opsiStatus } from '@utils/career/monitoring'
 
 const props = defineProps({
     nilai: { type: Object, required: true },
