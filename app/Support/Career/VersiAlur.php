@@ -544,7 +544,7 @@ class VersiAlur
 
             $u++;
 
-            DB::table('N_WEB_CAREERS_Lamaran_Tahap')->insert([
+            $idTahapBaru = DB::table('N_WEB_CAREERS_Lamaran_Tahap')->insertGetId([
                 'Lamaran_Id' => (int) $l->Id_Lamaran,
                 'Master_Alur_Tahap_Id' => (int) $t->Id_Master_Alur_Tahap,
                 'Urutan' => $u,
@@ -567,7 +567,22 @@ class VersiAlur
                 'Flag_Wajib_Upload' => $t->Flag_Wajib_Upload,
                 'Created_At' => now(), 'Created_By' => $userName, 'Created_By_Id' => $userId,
                 'Updated_At' => now(), 'Updated_By' => $userName, 'Updated_By_Id' => $userId,
-            ]);
+            ], 'Id_Lamaran_Tahap');
+
+            // ══ AKTIVITASNYA IKUT DIBEKUKAN ════════════════════════════════
+            //
+            // Tanpa ini, tahap baru lahir KOSONG — punya baris tahap, tapi nol
+            // baris aktivitas. Worklist dan Penjadwalan sama-sama meng-INNER
+            // JOIN Lamaran_Tahap_Tes, jadi kandidat yang berhenti di tahap
+            // seperti itu MENGHILANG dari kedua papan: tidak bisa dijadwalkan,
+            // tidak bisa dinilai, tidak bisa dilanjutkan — dan tidak ada satu
+            // pun galat yang muncul. Persis yang terjadi pada LMR-VFZMGSW5
+            // sesudah alurnya dipindah ke "Wawancara Management dan MCU".
+            //
+            // pastikanSubTes() dipakai ulang, bukan disalin: ia sudah menangani
+            // master yang tak punya aktivitas (dibuatkan satu dari tahap itu
+            // sendiri) dan aman dipanggil berulang.
+            (new LamaranService())->pastikanSubTes((int) $idTahapBaru);
         }
 
         DB::table('N_WEB_CAREERS_Lamaran')->where('Id_Lamaran', $l->Id_Lamaran)->update([

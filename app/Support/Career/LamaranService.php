@@ -1737,8 +1737,15 @@ class LamaranService
      * Kalau kodenya sudah tidak cocok, master diabaikan dan tahapnya diberi
      * satu aktivitas yang dibentuk dari dirinya sendiri (blok di bawah). Lebih
      * baik sederhana dan benar daripada lengkap tapi milik tahap lain.
+     *
+     * PUBLIC karena VersiAlur ikut memakainya: pemindahan kandidat ke alur baru
+     * menyisipkan baris TAHAP tanpa satu pun baris AKTIVITAS, dan tahap tanpa
+     * aktivitas tidak pernah muncul di Worklist maupun Penjadwalan — keduanya
+     * meng-INNER JOIN Lamaran_Tahap_Tes. Kandidatnya hilang dari papan tanpa
+     * satu pun galat. Aman dipanggil berkali-kali: baris yang sudah punya
+     * aktivitas langsung dilewati.
      */
-    private function pastikanSubTes(int $lamaranTahapId): void
+    public function pastikanSubTes(int $lamaranTahapId): void
     {
         if (DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')->where('Lamaran_Tahap_Id', $lamaranTahapId)->exists()) {
             return;
