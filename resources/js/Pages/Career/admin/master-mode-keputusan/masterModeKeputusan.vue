@@ -1,6 +1,6 @@
 <!-- WEB CAREER — Master Mode Keputusan (bagaimana sebuah tahap menyimpulkan). DATA via /api/v1/master-mode-keputusan. -->
 <template>
-    <Head><title>Master Mode Keputusan - Web Career</title></Head>
+    <Head title="Master Mode Keputusan" />
     <div class="wca">
         <div class="wca-phead">
             <div>

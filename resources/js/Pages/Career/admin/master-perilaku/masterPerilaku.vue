@@ -1,6 +1,6 @@
 <!-- WEB CAREER — Master Perilaku (per-modul). DATA via web route + ResponseHelper (axios), bukan props Inertia. -->
 <template>
-    <Head><title>Master Perilaku - Web Career</title></Head>
+    <Head title="Master Perilaku" />
     <div class="wca">
         <div class="wca-phead">
             <div>

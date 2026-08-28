@@ -88,17 +88,26 @@ function baca(kunci) {
 }
 
 /**
- * Berkas tidak bisa dititipkan ke sessionStorage.
+ * Nilai yang tidak selamat melewati JSON.
  *
- * JSON.stringify mengubah File/Blob jadi `{}` — dan `{}` yang dipasang kembali
- * ke borang tampak seperti berkas yang masih terpilih, padahal isinya sudah
- * tidak ada. Lebih jujur mengembalikannya sebagai kosong: orangnya memilih
- * ulang, bukan mengirim benda hampa.
+ * BERKAS — JSON.stringify mengubah File/Blob jadi `{}`, dan `{}` yang dipasang
+ * kembali ke borang tampak seperti berkas yang masih terpilih padahal isinya
+ * sudah tidak ada. Lebih jujur mengembalikannya sebagai kosong: orangnya
+ * memilih ulang, bukan mengirim benda hampa.
+ *
+ * TANGGAL — lebih licik, karena kelihatannya berhasil. `new Date(...)` menjadi
+ * string ISO saat disimpan dan tetap string saat dibaca kembali; komponen yang
+ * menerimanya menuntut Date lalu memuntahkan "type check failed for prop", dan
+ * bidangnya diam-diam berhenti bekerja. Kuncinya karena itu DILEWATI sama
+ * sekali (mengembalikan `undefined` membuat JSON.stringify membuang kuncinya),
+ * bukan dikosongkan — dengan begitu nilai bawaan dari data() tetap utuh dan
+ * tidak ada yang perlu memasang apa pun kembali.
  */
 function pengganti(_kunci, nilai) {
     if (typeof File !== 'undefined' && nilai instanceof File) return null;
     if (typeof Blob !== 'undefined' && nilai instanceof Blob) return null;
     if (typeof FormData !== 'undefined' && nilai instanceof FormData) return null;
+    if (nilai instanceof Date) return undefined;
 
     return nilai;
 }

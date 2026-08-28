@@ -2,7 +2,7 @@
      Full sessionStorage: tahapan (app.pipeline) + progres (stageIdx/result) real-time.
      Palet calm/elegan. Tahap TES → tautan CAT eksternal. Tahap FORM2 → formulir lanjutan. -->
 <template>
-    <Head><title>Detail Lamaran - EVO Career</title></Head>
+    <Head title="Detail Lamaran" />
     <div class="wca wct">
         <Link href="/kandidat/portal" class="wct-back"><i class="bi bi-arrow-left"></i> Kembali ke Lamaran Saya</Link>
 

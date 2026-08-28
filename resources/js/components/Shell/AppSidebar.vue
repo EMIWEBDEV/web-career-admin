@@ -150,11 +150,34 @@
                                     <span style="flex: 1; text-align: left">{{ g.title }}</span>
                                     <svg class="evs-grp__chev" :class="{ 'is-open': openGroups[g.id] }" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#aab2c5" stroke-width="2.4" stroke-linecap="round"><path d="M9 6l6 6-6 6" /></svg>
                                 </button>
-                                <div class="evs-grp__body" :class="{ 'is-open': openGroups[g.id] }" :style="openGroups[g.id] ? { maxHeight: (g.items || []).length * 46 + 8 + 'px' } : {}">
+                                <div class="evs-grp__body" :class="{ 'is-open': openGroups[g.id] }" :style="openGroups[g.id] ? { maxHeight: tinggiGrup(g) + 'px' } : {}">
+                                    <!--
+                                        Menu tanpa sub-grup digambar LEBIH DULU,
+                                        tepat di bawah judul grupnya. Menu yang
+                                        baru ditambahkan lewat Master Menu belum
+                                        punya sub-grup, dan menaruhnya di ujung
+                                        bawah setelah semua sub-grup membuatnya
+                                        terlihat seperti sisa, bukan seperti
+                                        menu yang belum diberi tempat.
+                                    -->
                                     <a v-for="it in g.items || []" :key="it.id" class="evs-item" :class="{ 'is-active': it.isActive }" :href="it.url" @click="visit($event, it.url)">
                                         <span class="evs-item__dot" :class="{ 'is-active': it.isActive }"></span>
                                         <span class="evs-item__txt">{{ it.title }}</span>
                                     </a>
+
+                                    <div v-for="sb in g.subs || []" :key="sb.id" class="evs-sub">
+                                        <button type="button" class="evs-sub__head" :class="{ 'is-open': openSubs[sb.id] }" @click="toggleSub(sb.id)">
+                                            <svg class="evs-sub__chev" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M9 6l6 6-6 6" /></svg>
+                                            <span class="evs-sub__txt">{{ sb.title }}</span>
+                                            <span class="evs-sub__n">{{ (sb.items || []).length }}</span>
+                                        </button>
+                                        <div class="evs-sub__body" :class="{ 'is-open': openSubs[sb.id] }" :style="openSubs[sb.id] ? { maxHeight: (sb.items || []).length * 46 + 6 + 'px' } : {}">
+                                            <a v-for="it in sb.items || []" :key="it.id" class="evs-item evs-item--sub" :class="{ 'is-active': it.isActive }" :href="it.url" @click="visit($event, it.url)">
+                                                <span class="evs-item__dot" :class="{ 'is-active': it.isActive }"></span>
+                                                <span class="evs-item__txt">{{ it.title }}</span>
+                                            </a>
+                                        </div>
+                                    </div>
                                 </div>
                             </template>
                         </div>
@@ -170,10 +193,9 @@
                     <i class="bi bi-person-circle"></i>
                     <span>Profil Saya</span>
                 </button>
-                <button class="shell-profile-menu__item shell-btn" type="button" @click.stop="profileAction('/about')">
-                    <i class="bi bi-info-circle"></i>
-                    <span>Tentang</span>
-                </button>
+                <!-- "Tentang" DIHAPUS: tidak pernah ada route /about, jadi satu-
+                     satunya yang dilakukannya adalah melempar pemakainya ke
+                     halaman 404 dari dalam menu profilnya sendiri. -->
                 <div class="shell-profile-divider"></div>
                 <button class="shell-profile-menu__item shell-btn is-danger" type="button" @click.stop="profileAction('/logout')">
                     <i class="bi bi-box-arrow-right"></i>
@@ -224,6 +246,7 @@ const expanded = computed(() => (shell.state.isMobile ? shell.state.mobileSideba
 /* ── Akordeon modul & grup ── */
 const openModule = ref(null);
 const openGroups = reactive({});
+const openSubs = reactive({});
 
 /**
  * Dashboard SELAIN beranda yang boleh dilihat akun ini.
@@ -242,6 +265,13 @@ function syncFromNav() {
     openModule.value = aktif ? aktif.id : null;
     Object.keys(openGroups).forEach((k) => delete openGroups[k]);
     if (aktif && aktif.activeGroupId) openGroups[aktif.activeGroupId] = true;
+
+    // Sub-grup yang memuat halaman aktif ikut terbuka. Tanpa ini, membuka
+    // Master Pertanyaan Skrining memperlihatkan grup "Master Data" yang
+    // terbuka tapi seluruh sub-grupnya tertutup — halaman yang sedang dibuka
+    // justru satu-satunya yang tidak terlihat.
+    Object.keys(openSubs).forEach((k) => delete openSubs[k]);
+    if (aktif && aktif.activeSubId) openSubs[aktif.activeSubId] = true;
     // Hanya bila anaknya yang aktif — bukan berandanya sendiri. Membuka
     // collapse saat Dashboard Utama dibuka justru menyembunyikan bahwa
     // halaman yang aktif adalah kepalanya, bukan salah satu anaknya.
@@ -255,6 +285,29 @@ function toggleModule(id) {
 }
 function toggleGroup(id) {
     openGroups[id] = !openGroups[id];
+}
+function toggleSub(id) {
+    openSubs[id] = !openSubs[id];
+}
+
+/**
+ * Tinggi collapse grup.
+ *
+ * Dihitung, bukan diserahkan ke `max-height: 9999px`: nilai tetap yang jauh
+ * lebih besar daripada isinya membuat animasi buka-tutup berjalan sebagian
+ * besar waktunya di ruang kosong — kotaknya sudah selesai bergerak sementara
+ * transisinya masih berjalan.
+ *
+ * Sub-grup yang tertutup hanya menyumbang tinggi kepalanya sendiri.
+ */
+function tinggiGrup(g) {
+    const item = (g.items || []).length * 46;
+    const sub = (g.subs || []).reduce(
+        (n, sb) => n + 34 + (openSubs[sb.id] ? (sb.items || []).length * 46 + 6 : 0),
+        0,
+    );
+
+    return item + sub + 10;
 }
 function railModule(id) {
     openModule.value = id;
@@ -312,6 +365,9 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocMousedown))
 /* Ikon grup — fallback tematik per judul (props grup tak membawa ikon). */
 function groupIcon(g) {
     const t = (g.title || '').toLowerCase();
+    // 'akses' diperiksa sebelum 'akun': grup "Hak Akses & Akun" memuat
+    // keduanya, dan yang menjelaskan isinya adalah aksesnya.
+    if (t.includes('akses')) return 'bi bi-person-lock';
     if (t.includes('master')) return 'bi bi-database';
     if (t.includes('operasional')) return 'bi bi-list-task';
     if (t.includes('seleksi')) return 'bi bi-clipboard-check';
@@ -319,7 +375,12 @@ function groupIcon(g) {
     if (t.includes('lamaran')) return 'bi bi-file-earmark-text';
     if (t.includes('akun')) return 'bi bi-person-vcard';
     if (t.includes('data')) return 'bi bi-folder2';
-    return (g.items && g.items[0] && g.items[0].icon) || 'bi bi-folder2';
+
+    // Grup yang seluruh isinya bersub-grup punya `items` kosong; ikonnya
+    // diambil dari menu pertama di sub-grup pertama.
+    const pertama = (g.items || [])[0] || ((g.subs || [])[0] || {}).items?.[0];
+
+    return pertama?.icon || 'bi bi-folder2';
 }
 </script>
 
@@ -853,6 +914,79 @@ function groupIcon(g) {
     overflow: hidden;
     text-overflow: ellipsis;
 }
+
+/* ── SUB-GRUP (level 3, menu jadi level 4) ───────────────────────────────────
+   Kepalanya sengaja TIDAK menyerupai menu: huruf kecil berspasi, tanpa titik,
+   tanpa latar saat disorot penuh. Kalau ia terlihat seperti menu, orang
+   mengkliknya berharap pindah halaman — dan yang terjadi cuma daftar terbuka. */
+.evs-sub {
+    display: flex;
+    flex-direction: column;
+}
+.evs-sub__head {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    width: 100%;
+    border: 0;
+    background: transparent;
+    padding: 9px 10px 6px 6px;
+    font-family: inherit;
+    font-size: 10.5px;
+    font-weight: 800;
+    letter-spacing: 0.085em;
+    text-transform: uppercase;
+    color: #98a0b5;
+    cursor: pointer;
+    text-align: left;
+    transition: color 0.14s;
+}
+.evs-sub__head:hover { color: #4338ca; }
+.evs-sub__head.is-open { color: #4f46e5; }
+.evs-sub__chev {
+    flex: 0 0 auto;
+    color: #c3cad8;
+    transition: transform 0.22s;
+}
+.evs-sub__head.is-open .evs-sub__chev { transform: rotate(90deg); color: #6366f1; }
+.evs-sub__txt {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+/* Jumlah isinya. Ditulis kecil dan samar: ia menjawab "seberapa panjang kalau
+   saya buka", bukan menuntut dibaca. */
+.evs-sub__n {
+    flex: 0 0 auto;
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0;
+    color: #b6bdcf;
+    background: #f1f3f9;
+    border-radius: 5px;
+    padding: 1px 5px;
+    font-variant-numeric: tabular-nums;
+}
+.evs-sub__head.is-open .evs-sub__n { background: rgba(99, 102, 241, 0.11); color: #4f46e5; }
+
+.evs-sub__body {
+    overflow: hidden;
+    transition: all 0.24s ease;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    max-height: 0;
+    opacity: 0;
+    /* Garis penghubung: menyatakan menu-menu ini milik kepalanya, bukan
+       tetangga sejajar yang kebetulan menjorok. */
+    margin-left: 6px;
+    padding-left: 8px;
+    border-left: 1px solid #eef0f7;
+}
+.evs-sub__body.is-open { opacity: 1; }
+.evs-item--sub { padding-left: 10px; }
 
 /* Footer */
 .evs-sb__foot {

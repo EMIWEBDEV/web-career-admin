@@ -49,6 +49,33 @@ class LamaranTargetValidator
             return ['ok' => false, 'pesan' => 'Posisi ini sudah tidak menerima pelamar.'];
         }
 
+        // ── DIMATIKAN ADMIN ─────────────────────────────────────────────────
+        //
+        // Menyaringnya di landing saja tidak cukup. Tautan lowongan beredar di
+        // grup pesan dan tersimpan sebagai penanda; loker yang sudah dimatikan
+        // tetap bisa dibuka langsung lewat tautan lamanya, dan tanpa gerbang di
+        // sini lamarannya tetap masuk — ke posisi yang tim rekrutmen sudah
+        // putuskan untuk tidak diisi.
+        if (($posisi->Flag_Aktif ?? 'Y') === 'N') {
+            return ['ok' => false, 'pesan' => 'Lowongan ini sedang tidak dibuka.'];
+        }
+
+        // ── RENCANA MPP SUDAH TERPENUHI ─────────────────────────────────────
+        //
+        // Status loker (BUKA/PENUH) hanya tahu jatah PROGRAM INI. Satu MPP yang
+        // dibuka di dua program punya dua baris loker yang tidak saling kenal:
+        // yang satu bisa masih 'BUKA' padahal seluruh kursi yang disetujui sudah
+        // terisi lewat program sebelah.
+        //
+        // Menahan di sini, bukan cuma di gerbang keputusan, karena membiarkan
+        // orang menyelesaikan seluruh proses seleksi untuk kursi yang sudah
+        // tidak ada adalah hal yang paling mahal yang bisa dilakukan sistem ini
+        // kepada seorang pelamar.
+        $mpp = KursiMpp::keadaan($posisi->Mpp_Ref ?? null);
+        if ($mpp && $mpp['penuh']) {
+            return ['ok' => false, 'pesan' => 'Lowongan ini sudah terpenuhi — seluruh kursinya telah terisi.'];
+        }
+
         return [
             'ok' => true,
             'pesan' => 'Target lamaran valid.',

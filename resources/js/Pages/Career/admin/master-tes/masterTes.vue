@@ -1,6 +1,6 @@
 <!-- WEB CAREER — Master Jenis Tes (induk-detail: Jenis Tes + Paket). DATA dari DB via /api/v1/master-tes. -->
 <template>
-    <Head><title>Master Jenis Tes - Web Career</title></Head>
+    <Head title="Master Jenis Tes" />
     <div class="wca">
         <div class="wca-phead">
             <div>

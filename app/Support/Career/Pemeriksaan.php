@@ -62,9 +62,9 @@ class Pemeriksaan
     /** Skema pemeriksaan sudah dijalankan? */
     public static function siap(): bool
     {
-        return self::$siap ??= Schema::hasTable('N_WEB_CAREERS_Verifikasi_Latar')
-            && Schema::hasTable('N_WEB_CAREERS_Referensi_Kandidat')
-            && Schema::hasColumn('N_WEB_CAREERS_Lamaran_Tahap_Tes', 'Adjudikasi');
+        return self::$siap ??= Skema::adaTabel('N_WEB_CAREERS_Verifikasi_Latar')
+            && Skema::adaTabel('N_WEB_CAREERS_Referensi_Kandidat')
+            && Skema::adaKolom('N_WEB_CAREERS_Lamaran_Tahap_Tes', 'Adjudikasi');
     }
 
     /**
@@ -76,24 +76,49 @@ class Pemeriksaan
      */
     public static function untuk(?string $tipeKode): bool
     {
-        if (! $tipeKode) {
-            return false;
+        return $tipeKode ? isset(self::petaPeriksa()[$tipeKode]) : false;
+    }
+
+    /**
+     * PETA TIPE PEMERIKSAAN — DIBACA SEKALI PER PERMINTAAN.
+     *
+     * Bentuk sebelumnya bertanya ke database pada SETIAP pemanggilan untuk()
+     * — dan untuk() dipanggil sekali per aktivitas kandidat. Pada papan
+     * worklist berisi 352 kandidat itu berarti ~1.100 kueri `exists`, DITAMBAH
+     * ~1.100 pemeriksaan skema (`Schema::hasColumn` menembak sys.columns, dan
+     * satu pemeriksaan saja memakan puluhan milidetik di SQL Server jarak
+     * jauh). Dua pemanggil semacam ini menghabiskan lebih dari 300 detik dari
+     * satu permintaan papan — endpoint-nya tidak pernah selesai dimuat.
+     *
+     * Masternya belasan baris dan tidak berubah di tengah permintaan, jadi
+     * dibaca sekali lalu dipegang. Statis per proses PHP: pada permintaan web
+     * ia hidup selama satu permintaan, persis seumur data yang diwakilinya.
+     */
+    private static ?array $petaPeriksa = null;
+
+    /** @return array<string,bool> kode tipe yang bertanda, sebagai himpunan */
+    private static function petaPeriksa(): array
+    {
+        if (self::$petaPeriksa !== null) {
+            return self::$petaPeriksa;
         }
 
-        if (Schema::hasColumn('N_WEB_CAREERS_Master_Tipe_Tahap', 'Flag_Pemeriksaan')) {
-            return DB::table('N_WEB_CAREERS_Master_Tipe_Tahap')
-                ->where('Kode', $tipeKode)
+        // Lingkungan yang kolom penandanya belum ada tetap dilayani daftar
+        // cadangan di bawah — sama seperti sebelumnya, hanya tidak lagi
+        // ditanyakan berulang kali.
+        $kode = Skema::adaKolom('N_WEB_CAREERS_Master_Tipe_Tahap', 'Flag_Pemeriksaan')
+            ? DB::table('N_WEB_CAREERS_Master_Tipe_Tahap')
                 ->where('Flag_Pemeriksaan', 'Y')
-                ->exists();
-        }
+                ->pluck('Kode')->map(fn ($k) => (string) $k)->all()
+            : ['REFERENCE_CHECK', 'BACKGROUND_CHECK'];
 
-        return in_array($tipeKode, ['REFERENCE_CHECK', 'BACKGROUND_CHECK'], true);
+        return self::$petaPeriksa = array_fill_keys($kode, true);
     }
 
     /** Master komponen yang aktif — dipakai layar untuk menawarkan pilihan. */
     public static function jenisTersedia(): array
     {
-        if (! Schema::hasTable('N_WEB_CAREERS_Master_Jenis_Verifikasi')) {
+        if (! Skema::adaTabel('N_WEB_CAREERS_Master_Jenis_Verifikasi')) {
             return [];
         }
 
@@ -194,7 +219,7 @@ class Pemeriksaan
     /** Kode komponen yang ditandai data pribadi bersifat spesifik. */
     public static function kodeSensitif(): array
     {
-        if (! Schema::hasTable('N_WEB_CAREERS_Master_Jenis_Verifikasi')) {
+        if (! Skema::adaTabel('N_WEB_CAREERS_Master_Jenis_Verifikasi')) {
             return [];
         }
 
@@ -226,7 +251,7 @@ class Pemeriksaan
      */
     public static function persetujuanAktivitas(object $sub): ?array
     {
-        if (! Schema::hasColumn('N_WEB_CAREERS_Lamaran_Tahap_Tes', 'Persetujuan_Sumber')) {
+        if (! Skema::adaKolom('N_WEB_CAREERS_Lamaran_Tahap_Tes', 'Persetujuan_Sumber')) {
             return null;
         }
 
@@ -273,7 +298,7 @@ class Pemeriksaan
 
     public static function persetujuanFormulir(int $lamaranId): ?array
     {
-        if (! $lamaranId || ! Schema::hasTable('N_WEB_CAREERS_Formulir_Pengisian')) {
+        if (! $lamaranId || ! Skema::adaTabel('N_WEB_CAREERS_Formulir_Pengisian')) {
             return null;
         }
 
@@ -360,7 +385,7 @@ class Pemeriksaan
      */
     public static function catatAkses(object $sub, array $kode, $request = null): void
     {
-        if (! $kode || ! Schema::hasTable('N_WEB_CAREERS_Pemeriksaan_Akses_Log')) {
+        if (! $kode || ! Skema::adaTabel('N_WEB_CAREERS_Pemeriksaan_Akses_Log')) {
             return;
         }
 

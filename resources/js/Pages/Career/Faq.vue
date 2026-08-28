@@ -7,13 +7,11 @@
      Data: FaqPublikController::index() → App\Support\Career\FaqPublik::semua()
      ══════════════════════════════════════════════════════════ -->
 <template>
-    <Head>
-        <title>FAQ Kandidat - EVO Group Career</title>
-        <meta
-            name="description"
-            content="Pertanyaan yang sering diajukan kandidat tentang pendaftaran, seleksi, program Management Trainee, dan penempatan kerja di EVO Group."
-        />
-    </Head>
+    <!-- Deskripsi halaman TIDAK dipasang di sini: meta description sudah
+         dicetak server lewat config/seo.php (kunci rute career.faq). Memasangnya
+         lagi dari Vue hanya melahirkan dua tag description di dokumen yang
+         sama, dan perayap sosial pun tidak pernah melihat versi Vue-nya. -->
+    <Head title="FAQ Kandidat" />
 
     <CareerLayout :has-mt="hasMt" :offices="offices">
         <div class="fq">

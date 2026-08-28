@@ -58,7 +58,7 @@ export default {
                 return;
             }
             if (this.quill && (nilai || '') !== this.quill.root.innerHTML) {
-                this.quill.root.innerHTML = nilai || '';
+                this.pasangIsi(nilai || '');
             }
         },
         disabled(v) {
@@ -98,7 +98,7 @@ export default {
         });
 
         if (this.modelValue) {
-            this.quill.root.innerHTML = this.modelValue;
+            this.pasangIsi(this.modelValue);
         }
         if (this.disabled) {
             this.quill.enable(false);
@@ -147,6 +147,35 @@ export default {
         this.quill = null;
     },
     methods: {
+        /**
+         * Pasang isi lewat JALUR QUILL, bukan lewat innerHTML.
+         *
+         * ── KENAPA INI PENTING ─────────────────────────────────────────────
+         *
+         * Menulis langsung ke `quill.root.innerHTML` mengubah DOM tapi TIDAK
+         * memberi tahu Quill. Modelnya tetap mengira editornya kosong, jadi
+         * kelas `ql-blank` tidak pernah dilepas — dan `.ql-blank::before`,
+         * tempat placeholder digambar, terus melukis teks abu-abu DI ATAS
+         * tulisan yang sebenarnya. Itulah tumpang tindih yang terlihat:
+         * "Tulis penjelasan…" dan kalimat penilai saling menimpa di baris
+         * yang sama.
+         *
+         * `dangerouslyPasteHTML` melewati model, jadi ql-blank ikut benar.
+         * Mode 'silent' dipakai supaya ia tidak memancing text-change —
+         * kalau tidak, memuat nilai dari server langsung dihitung sebagai
+         * "diketik orang" dan memancarkan update:modelValue kembali.
+         */
+        pasangIsi(html) {
+            if (! this.quill) {
+                return;
+            }
+
+            if (html) {
+                this.quill.clipboard.dangerouslyPasteHTML(html, 'silent');
+            } else {
+                this.quill.setText('', 'silent');
+            }
+        },
         /**
          * Tanya Quill di mana kursornya — TANPA bisa menjatuhkan editor.
          *

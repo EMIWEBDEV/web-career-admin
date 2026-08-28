@@ -1,6 +1,6 @@
 <!-- WEB CAREER — Admin: Master Kampus (universitas/mitra pendidikan). CRUD, form Element Plus. -->
 <template>
-    <Head><title>Master Kampus - Web Career</title></Head>
+    <Head title="Master Kampus" />
     <div class="wca">
         <div class="wca-phead">
             <div>

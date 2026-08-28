@@ -1,6 +1,6 @@
 <!-- WEB CAREER — Admin: Kandidat (offcanvas detail, dummy) -->
 <template>
-    <Head><title>Kandidat - Web Career</title></Head>
+    <Head title="Kandidat" />
     <div class="wca">
         <div class="wca-phead">
             <div>

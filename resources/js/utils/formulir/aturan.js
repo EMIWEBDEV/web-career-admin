@@ -252,7 +252,36 @@ export function periksaLangkah(langkah, jawaban) {
 
 /** Gabungan pemeriksaan format nilai satu field: telepon, email, digit saja. */
 function galatFormat(f, v) {
-    return galatTelepon(f, v) || galatEmail(f, v) || galatAngka(f, v);
+    return galatTelepon(f, v) || galatEmail(f, v) || galatAngka(f, v) || galatDaftar(f, v);
+}
+
+/**
+ * Daftar butir: jumlah yang BENAR-BENAR terisi, bukan panjang lariknya.
+ *
+ * Larik bisa berisi lima baris yang tiga di antaranya kosong. Menghitung
+ * panjangnya akan meloloskan itu — dan tuntutan "minimal 5" jadi tuntutan
+ * "tekan tambah 5 kali".
+ */
+function galatDaftar(f, v) {
+    if (f.tipe !== 'daftar') return '';
+
+    const isi = Array.isArray(v) ? v.filter((x) => String(x ?? '').trim() !== '') : [];
+    const min = Math.max(1, Number(f.min_butir) || 1);
+    const maks = Number(f.maks_butir) || 0;
+
+    // Kosong sama sekali diserahkan ke pemeriksa "wajib" di atas: field tak
+    // wajib yang dibiarkan kosong bukan pelanggaran, dan dua pesan untuk satu
+    // keadaan hanya membuat orang menebak mana yang harus dituruti.
+    if (isi.length === 0) return '';
+
+    if (isi.length < min) {
+        return `"${f.label}" baru terisi ${isi.length} dari ${min} yang diminta.`;
+    }
+    if (maks && isi.length > maks) {
+        return `"${f.label}" melebihi ${maks} jawaban.`;
+    }
+
+    return '';
 }
 
 /** Email harus berbentuk "sesuatu@sesuatu.sesuatu" — bukan sekadar terisi. */

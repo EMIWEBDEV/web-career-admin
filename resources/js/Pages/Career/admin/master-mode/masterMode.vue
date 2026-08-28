@@ -1,6 +1,6 @@
 <!-- WEB CAREER — Master Mode Pelaksanaan (per-modul). DATA via web route + ResponseHelper (axios), bukan props Inertia. -->
 <template>
-    <Head><title>Master Mode Pelaksanaan - Web Career</title></Head>
+    <Head title="Master Mode Pelaksanaan" />
     <div class="wca">
         <div class="wca-phead">
             <div>

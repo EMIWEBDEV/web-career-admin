@@ -1,6 +1,6 @@
 <!-- WEB CAREER — Admin: Pengumuman (create modal, dummy) -->
 <template>
-    <Head><title>Pengumuman - Web Career</title></Head>
+    <Head title="Pengumuman" />
     <div class="wca">
         <div class="wca-phead">
             <div>

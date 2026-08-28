@@ -2,7 +2,7 @@
      Data via web route + ResponseHelper (axios); komponen & kelas mengikuti
      master lain (AdminModal, el-switch, wca-iconbtn, wca-badge). -->
 <template>
-    <Head><title>Master SLA MPP - Web Career</title></Head>
+    <Head title="Master SLA MPP" />
     <div class="wca">
         <div class="wca-phead">
             <div>

@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Career;
 
 use App\Helpers\ResponseHelper;
 use App\Http\Controllers\Controller;
+use App\Support\Career\AksesService;
 use App\Support\Career\FieldTurunan;
+use App\Support\Career\ProfilPengguna;
 use App\Support\CareerShell;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -101,13 +103,21 @@ class CareerAdminController extends Controller
 
     // ═══════════════════════ PORTAL KANDIDAT ═══════════════════════
 
-    /** /profil — SATU route untuk semua akun; shell menyesuaikan role. */
+    /**
+     * /profil — SATU route untuk semua akun; isinya menyesuaikan peran.
+     *
+     * Dulu diisi CareerShell::adminUser(), yaitu identitas SHELL (name /
+     * username / department) — bentuk yang benar untuk footer sidebar, tapi
+     * bukan yang dibaca layar profil, sehingga kartunya tampil kosong tanpa
+     * galat. Sumbernya sekarang ProfilPengguna: dibaca ulang dari DB, lengkap,
+     * dan berlaku untuk kandidat maupun admin/superadmin.
+     */
     public function profil()
     {
         return Inertia::render(
             'Career/portal/Profil',
             CareerShell::props('/profil', 'Profil Saya', [
-                'user' => CareerShell::adminUser(),
+                'user' => ProfilPengguna::payload(),
             ]),
         );
     }
@@ -163,9 +173,19 @@ class CareerAdminController extends Controller
         if ($type === 'tahap-formulir') {
             return $this->options_tahap_formulir();
         }
-        // [feat/feedback] Opsi program untuk assignment form feedback
+        // [feat/feedback] Opsi program untuk assignment form feedback.
+        //
+        // Cabang ini PULANG DULUAN, sebelum $map di bawah — jadi entri 'program'
+        // di sana tidak pernah terpakai, dan gerbang kategori yang dipasang di
+        // sana pun tidak pernah menyentuhnya. Karena itu gerbangnya diulang di
+        // sini. Bukan pengulangan yang bisa dihindari tanpa menyatukan kedua
+        // cabang, dan menyatukannya berarti mengubah bentuk value-nya
+        // (Id_Program di sini, Kode di $map) yang dipakai layar lain.
         if ($type === 'program') {
+            $izinProgram = AksesService::kategoriSemuaHalaman();
+
             $rows = DB::table('N_WEB_CAREERS_Program')
+                ->when($izinProgram, fn ($w) => $w->whereIn('Kategori', $izinProgram))
                 ->select('Id_Program', 'Nama')
                 ->orderBy('Nama')
                 ->get()
@@ -404,8 +424,34 @@ class CareerAdminController extends Controller
             $q->where($aktifCol, 'Y');
         }
 
+        // ── GERBANG HAK AKSES KATEGORI ──────────────────────────────────────
+        //
+        // Rutenya cuma dijaga peran (career.auth + role ADMIN/SUPERADMIN), jadi
+        // tanpa blok ini SETIAP admin bisa membaca seluruh alur, jadwal, dan
+        // program lewat satu URL — termasuk milik kategori yang layarnya sendiri
+        // sudah menyembunyikannya. Menyaring di layar saja berarti datanya tetap
+        // dikirim lebih dulu, lalu "disembunyikan" oleh kode yang bisa dibaca
+        // siapa pun di peramban.
+        //
+        // Akibat nyatanya bukan cuma soal intip: jadwal MT bisa berakhir menunjuk
+        // alur Rekrutmen karena daftarnya menawarkan alur itu, dan tidak ada satu
+        // pun peringatan yang muncul sesudahnya.
+        $izin = AksesService::kategoriSemuaHalaman();
+        if ($izin) {
+            if (in_array($type, ['alur', 'jadwal', 'program'], true)) {
+                $q->whereIn('Kategori', $izin);
+            } elseif ($type === 'talent') {
+                // Master kategori itu sendiri: yang disaring KODEnya, bukan kolom
+                // Kategori — tabel ini tidak punya kolom itu, ia adalah kolom itu.
+                $q->whereIn('Kode', $izin);
+            }
+        }
+
         // Filter kontekstual — dipakai modal Program Kegiatan: admin memilih
         // Kategori lebih dulu, lalu pilihan Alur & Jadwal ikut menyempit.
+        //
+        // Berlapis DI ATAS gerbang, bukan menggantikannya: yang ini penyempit
+        // pilihan yang diminta layar, yang di atas penjaga yang tidak bisa diminta.
         $kategori = request()->query('kategori');
         if ($kategori && in_array($type, ['alur', 'jadwal'], true)) {
             $q->where('Kategori', $kategori);
@@ -517,6 +563,20 @@ class CareerAdminController extends Controller
         // pemanggil lama tidak mendadak menerima daftar kosong.
         $kategori = strtoupper(trim((string) request()->query('kategori', '')));
 
+        // ── PENYARING PIC YANG DIMINTA LAYAR ────────────────────────────────
+        //
+        // Program yang ditugaskan kepada seseorang harus dibangun dari MPP
+        // ORANG ITU. Loker yang lahir darinya akan jadi miliknya; mengambilnya
+        // dari MPP orang lain berarti ia mengerjakan permintaan tenaga kerja
+        // yang bukan tanggung jawabnya, dan pemilik MPP-nya tidak pernah tahu
+        // permintaannya sudah dibuka.
+        //
+        // Berlapis DI ATAS gerbang lingkup, bukan menggantikannya: yang ini
+        // penyempit yang diminta layar, yang di atas penjaga yang tidak bisa
+        // diminta. Permintaan `pic` di luar lingkup karena itu tetap memulangkan
+        // kartu terkunci, bukan kartu yang bisa dipilih.
+        $picDiminta = trim((string) request()->query('pic', ''));
+
         // REAL (2026-07-23): sumber = Monitoring MPP (HRIS_Transaksi_GForm ⋈ N_WEB_CAREERS_Detail_MPP),
         // bukan dummy lowonganAdmin() lagi. Hanya MPP AKTIF & BELUM SELESAI yang bisa ditautkan program.
         // Catatan: MPP tidak menyimpan kota — kolom 'lokasi' diisi tempat kerja (Onsite/Hybrid/...).
@@ -534,6 +594,14 @@ class CareerAdminController extends Controller
             ->leftJoin('HRIS_Jabatan as jb', function ($j) {
                 $j->on('jb.ID_Jabatan', '=', 'g.Id_Jabatan')->on('jb.Kode_Perusahaan', '=', 'g.Kode_Perusahaan');
             })
+            // Nama penanggung jawabnya ikut dibaca. Kartu yang terkunci harus
+            // menyebut SIAPA pemegangnya — "di luar lingkup Anda" tanpa nama
+            // memindahkan pencarian ke orang yang membacanya, dan ia akan
+            // menelepon satu per satu untuk mencari tahu.
+            ->leftJoin('Karyawan as pic', function ($j) {
+                $j->on('pic.Kode_Karyawan', '=', 'g.User_Penganggung_Jawab')
+                    ->on('pic.Kode_Perusahaan', '=', 'g.Kode_Perusahaan');
+            })
             ->leftJoin('N_WEB_CAREERS_Master_Employment as me', 'me.Id_Employment', '=', 'd.Employment_Type')
             ->leftJoin('N_WEB_CAREERS_Master_Workplace as mw', 'mw.Id_Workplace', '=', 'd.Workplace_Type')
             ->leftJoin(
@@ -548,6 +616,7 @@ class CareerAdminController extends Controller
             // sisanya. ISNULL dipakai karena kolomnya NULL untuk MPP biasa —
             // `<> 'Y'` sendirian tidak pernah benar terhadap NULL di SQL
             // Server, dan seluruh daftar akan terbaca kosong.
+            ->when($picDiminta !== '', fn ($q) => $q->where('g.User_Penganggung_Jawab', $picDiminta))
             ->when($kategori === 'MT', fn ($q) => $q->where('g.Flag_MT', 'Y'))
             ->when($kategori !== '' && $kategori !== 'MT', fn ($q) => $q->whereRaw("ISNULL(g.Flag_MT, '') <> 'Y'"))
             ->orderByDesc('g.Tanggal_Periode')
@@ -562,13 +631,33 @@ class CareerAdminController extends Controller
                 'lv.Keterangan as level',
                 'g.Jumlah_Rekruitmen as kuota',
                 'g.Flag_MT as flag_mt',
+                'g.User_Penganggung_Jawab as pic_kode',
+                'pic.Nama as pic_nama',
                 'me.Nama_Employment as employment',
                 'mw.Nama_Workplace as workplace',
                 'mx.Nama_Experience_Level as experience',
             ]);
 
+        // ── LINGKUP PIC ─────────────────────────────────────────────────────
+        //
+        // TIDAK dipakai sebagai WHERE. MPP di luar lingkup tetap dipulangkan,
+        // hanya ditandai `boleh => false` berikut nama pemegangnya.
+        //
+        // Menyembunyikannya terasa lebih aman, tapi akibatnya justru menghambat:
+        // rekruter yang tidak menemukan sebuah MPP tidak tahu apakah MPP itu
+        // belum dibuat, sudah selesai, atau sekadar milik orang lain — dan pada
+        // pukul 22.00 ketika pemegangnya cuti, ia berhenti bekerja tanpa tahu
+        // harus minta ke siapa. Terlihat-tapi-terkunci menjawab keduanya
+        // sekaligus.
+        //
+        // Yang menjaga data tetap gerbang di sisi SIMPAN (ProgramKegiatan),
+        // bukan daftar ini: daftar apa pun yang dikirim ke peramban harus
+        // dianggap bisa dibaca seluruhnya.
+        $picBoleh = AksesService::picDiizinkan('programPage');
+
+
         $rows = collect($rows)
-            ->map(function ($r) {
+            ->map(function ($r) use ($picBoleh) {
                 $dept = trim(implode(' · ', array_filter([trim((string) $r->divisi), trim((string) $r->sub)])));
                 // Label sebelum "/" saja (mis. "Full-time / Purnawaktu" -> "Full-time").
                 $emp = trim(explode('/', (string) $r->employment)[0]);
@@ -585,6 +674,12 @@ class CareerAdminController extends Controller
                     'lokasi' => $r->workplace ?: '',
                     'level' => $r->level,
                     'kuota' => (int) ($r->kuota ?? 0),
+                    // Penanggung jawab MPP ini + apakah pengguna berhak memakainya.
+                    // `boleh` false = kartunya digambar tanpa kendali sama sekali,
+                    // bukan digambar lalu dimatikan — lihat catatannya di layar.
+                    'picKode' => $r->pic_kode,
+                    'picNama' => $r->pic_nama ?: $r->pic_kode,
+                    'boleh' => $picBoleh === null || in_array((string) $r->pic_kode, $picBoleh, true),
                     'employment' => $emp,
                     'workplace' => $r->workplace,
                     'experience' => $r->experience,

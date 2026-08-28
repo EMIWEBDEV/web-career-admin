@@ -1,6 +1,6 @@
 <!-- WEB CAREER — Master Akun (Users). Tabs Pengguna/Pelamar vs Admin/Superadmin. DATA dari /api/v1/master-akun. -->
 <template>
-    <Head><title>Master Akun - Web Career</title></Head>
+    <Head title="Master Akun" />
     <div class="wca">
         <div class="wca-phead">
             <div>
@@ -101,6 +101,15 @@
                                 <td><small class="akun-muted">{{ a.last_login_at ? fmtDateTime(a.last_login_at) : 'Belum pernah' }}</small></td>
                                 <td>
                                     <div style="display:flex;gap:.35rem;justify-content:flex-end">
+                                        <!-- Hanya untuk akun internal yang sudah ditautkan ke karyawan:
+                                             akun tanpa kode karyawan mustahil memegang loker, jadi tombolnya
+                                             tidak digambar — bukan digambar lalu memunculkan daftar kosong. -->
+                                        <button
+                                            v-if="a.role !== 'KANDIDAT' && a.kodeKaryawan"
+                                            class="wca-iconbtn akun-ibtn--serah"
+                                            title="Pekerjaan yang dipegang & serah terima"
+                                            @click="bukaSerah(a)"
+                                        ><i class="bi bi-arrow-left-right"></i></button>
                                         <button class="wca-iconbtn" title="Ubah" @click="openEdit(a)"><i class="bi bi-pencil"></i></button>
                                         <button class="wca-iconbtn wca-iconbtn--danger" title="Hapus" @click="askRemove(a)"><i class="bi bi-trash"></i></button>
                                     </div>
@@ -147,8 +156,147 @@
                             <el-option label="Nonaktif" value="NONAKTIF" />
                         </el-select>
                     </div>
+
+                    <!-- ══ JEMBATAN AKUN -> KARYAWAN ══════════════════════════
+                         MPP menyimpan penanggung jawabnya sebagai KODE KARYAWAN
+                         ('A1', 'H45'), bukan sebagai akun. Tanpa kolom ini sistem
+                         tidak punya cara mengetahui akun mana yang setara dengan
+                         karyawan itu — dan pertanyaan "MPP siapa yang boleh saya
+                         buka" tidak bisa dijawab sama sekali.
+
+                         Hanya digambar untuk akun internal: kandidat memang bukan
+                         karyawan, dan menawarkan kotak ini pada 395 akun kandidat
+                         cuma mengundang isian yang salah. -->
+                    <div v-if="form.role !== 'KANDIDAT'">
+                        <label class="wca-field-lbl">
+                            Karyawan Terkait
+                            <span class="akun-hint">(untuk lingkup MPP &amp; program)</span>
+                        </label>
+                        <!-- ISIAN BEBAS, bukan pilihan dari tabel Karyawan.
+                             Sumber data kepegawaian yang dipakai berbeda dari tabel
+                             itu, jadi memaksanya memilih dari sana berarti menolak
+                             kode yang justru benar. -->
+                        <el-input
+                            v-model="form.kodeKaryawan"
+                            placeholder="mis. A1"
+                            maxlength="20"
+                            clearable
+                        >
+                            <template #prefix><i class="bi bi-person-vcard"></i></template>
+                        </el-input>
+                        <small class="akun-hint akun-hint--blok">
+                            Boleh dikosongkan. Selama kosong, akun ini tidak dikenali sebagai penanggung jawab
+                            loker mana pun — dan lingkup <b>Sendiri</b> / <b>Tim</b> tidak bisa ditegakkan untuknya.
+                            <br />Ditulis apa adanya; tidak dicocokkan ke daftar mana pun, jadi <b>pastikan ejaannya benar</b>.
+                        </small>
+                    </div>
                 </div>
             </div>
+        </AdminModal>
+
+        <!-- ══ PEKERJAAN YANG DIPEGANG & SERAH TERIMA ══════════════════════════
+             Dibuka dari AKUN orang yang berhalangan, bukan dari salah satu
+             programnya — sebab titik tolaknya adalah ORANGNYA: "si A masuk
+             rumah sakit, ia sedang memegang apa saja?".
+
+             Centang per loker, jadi satu panel melayani dua keadaan sekaligus:
+             centang semua = serah terima seluruh program (kasus cuti),
+             centang satu = rekan membantu satu loker saja. -->
+        <AdminModal
+            :show="serahShow"
+            xl
+            icon="bi-arrow-left-right"
+            title="Pekerjaan yang Dipegang"
+            :subtitle="serahTarget ? `${serahTarget.nama} — ${serahTarget.karyawanNama || serahTarget.kodeKaryawan}` : ''"
+            :busy="serahSibuk"
+            busy-label="Memindahkan…"
+            foot-note="Serah terima tidak menyentuh satu baris lamaran pun — kandidat ikut lokernya."
+            @close="serahShow = false"
+        >
+            <div v-if="serahMuat" class="akun-hint">Memuat daftar loker…</div>
+
+            <div v-else-if="!serahLoker.length" class="wca-empty">
+                <i class="bi bi-inbox"></i>
+                <h4>Tidak memegang loker apa pun</h4>
+                <p class="akun-hint">Tidak ada yang perlu diserahterimakan dari akun ini.</p>
+            </div>
+
+            <template v-else>
+                <div class="akun-serah-bar">
+                    <label class="akun-chk">
+                        <input type="checkbox" :checked="semuaTerpilih" @change="pilihSemua($event.target.checked)" />
+                        <span>Pilih semua ({{ serahLoker.length }} loker)</span>
+                    </label>
+                    <span class="akun-hint">
+                        Terpilih <b>{{ serahPilih.length }}</b> loker &middot; <b>{{ kandidatTerpilih }}</b> kandidat
+                    </span>
+                </div>
+
+                <div class="akun-serah-list">
+                    <label
+                        v-for="l in serahLoker"
+                        :key="l.id"
+                        class="akun-serah-item"
+                        :class="{ on: serahPilih.includes(l.id) }"
+                    >
+                        <input type="checkbox" :value="l.id" v-model="serahPilih" />
+                        <div class="akun-serah-item__body">
+                            <strong>{{ l.posisi }}</strong>
+                            <small>{{ l.program }} &middot; {{ l.mppRef || '—' }}</small>
+                        </div>
+                        <div class="akun-serah-item__meta">
+                            <span><i class="bi bi-people-fill"></i> {{ l.kandidat }} kandidat</span>
+                            <span :class="l.status === 'PENUH' ? 'is-penuh' : ''">{{ l.terisi }}/{{ l.kuota }}</span>
+                        </div>
+                    </label>
+                </div>
+
+                <div class="wca-frow" style="margin-top:1rem">
+                    <div>
+                        <label class="wca-field-lbl">Serahkan ke <span class="mmp-req">*</span></label>
+                        <!-- Penerima DIPILIH, bukan diketik: ia harus punya akun
+                             yang bisa masuk, kalau tidak lokernya berpindah ke
+                             kode yang tak seorang pun bisa mengerjakannya.
+                             Sumbernya akun internal di sini, bukan tabel Karyawan. -->
+                        <el-select
+                            v-model="serahKe"
+                            filterable remote clearable reserve-keyword
+                            :remote-method="cariPenerima"
+                            :loading="penerimaLoading"
+                            placeholder="Pilih akun penerima…"
+                            style="width:100%"
+                        >
+                            <el-option v-for="k in penerimaOptions" :key="k.value" :label="k.label" :value="k.value" />
+                            <template #empty><div class="akun-selempty">Hanya akun internal aktif yang sudah punya kode karyawan</div></template>
+                        </el-select>
+                    </div>
+                    <div>
+                        <label class="wca-field-lbl">Alasan <span class="mmp-req">*</span></label>
+                        <el-input v-model="serahAlasan" placeholder="mis. cuti sakit s/d 5 September" maxlength="500" show-word-limit />
+                    </div>
+                </div>
+                <small class="akun-hint akun-hint--blok">
+                    Alasan wajib. Inilah satu-satunya jawaban atas &ldquo;kenapa kandidat ini tiba-tiba dipegang
+                    orang lain di tengah proses&rdquo; saat riwayatnya dibaca berbulan-bulan kemudian.
+                </small>
+            </template>
+
+            <template #footer>
+                <button class="wca-btn wca-btn--ghost" type="button" :disabled="serahSibuk" @click="serahShow = false">
+                    <i class="bi bi-x-lg"></i> Tutup
+                </button>
+                <button
+                    v-if="serahLoker.length"
+                    class="wca-btn wca-btn--dark"
+                    type="button"
+                    :disabled="!bolehSerah"
+                    @click="simpanSerah"
+                >
+                    <span v-if="serahSibuk" class="wca-spin" aria-hidden="true"></span>
+                    <i v-else class="bi bi-arrow-left-right"></i>
+                    Serahkan {{ serahPilih.length || '' }} loker
+                </button>
+            </template>
         </AdminModal>
 
         <ConfirmModal :show="delShow" title="Hapus Akun" :busy="deleting" confirm-label="Ya, Hapus Akun" note="Data akun akan dihapus permanen." @cancel="delShow = false" @confirm="confirmDelete">
@@ -183,7 +331,22 @@ export default {
             show: false,
             editingId: null,
             saving: false,
-            form: { nama: '', email: '', phone: '', password: '', role: 'KANDIDAT', klasifikasi: '', status: 'AKTIF' },
+            form: { nama: '', email: '', phone: '', password: '', role: 'KANDIDAT', klasifikasi: '', status: 'AKTIF', kodeKaryawan: null },
+            // Opsi karyawan dimuat SAAT DIKETIK, bukan sekaligus: daftarnya berisi
+            // 958 orang, dan mengirim semuanya demi satu pilihan membuat modal
+            // ini terasa berat tanpa alasan yang terlihat.
+            penerimaOptions: [],
+            penerimaLoading: false,
+
+            // ── SERAH TERIMA ──
+            serahShow: false,
+            serahTarget: null,
+            serahMuat: false,
+            serahSibuk: false,
+            serahLoker: [],
+            serahPilih: [],
+            serahKe: null,
+            serahAlasan: '',
             delShow: false,
             delTarget: null,
             deleting: false,
@@ -194,6 +357,21 @@ export default {
         };
     },
     computed: {
+        semuaTerpilih() {
+            return this.serahLoker.length > 0 && this.serahPilih.length === this.serahLoker.length;
+        },
+        kandidatTerpilih() {
+            return this.serahLoker
+                .filter((l) => this.serahPilih.includes(l.id))
+                .reduce((n, l) => n + (l.kandidat || 0), 0);
+        },
+        /** Alasan minimal 5 huruf — sama dengan gerbang di server. */
+        bolehSerah() {
+            return !this.serahSibuk
+                && this.serahPilih.length > 0
+                && !!this.serahKe
+                && (this.serahAlasan || '').trim().length >= 5;
+        },
         penggunaList() { return this.all.filter((a) => a.role === 'KANDIDAT'); },
         adminList() { return this.all.filter((a) => a.role === 'ADMIN' || a.role === 'SUPERADMIN'); },
         activeList() { return this.tab === 'pengguna' ? this.penggunaList : this.adminList; },
@@ -245,13 +423,84 @@ export default {
         },
         openCreate() {
             this.editingId = null;
-            this.form = { nama: '', email: '', phone: '', password: '', role: this.tab === 'pengguna' ? 'KANDIDAT' : 'ADMIN', klasifikasi: '', status: 'AKTIF' };
+            this.form = { nama: '', email: '', phone: '', password: '', role: this.tab === 'pengguna' ? 'KANDIDAT' : 'ADMIN', klasifikasi: '', status: 'AKTIF', kodeKaryawan: '' };
             this.show = true;
         },
         openEdit(a) {
             this.editingId = a.id;
-            this.form = { nama: a.nama, email: a.email, phone: a.phone || '', password: '', role: a.role, klasifikasi: a.klasifikasi || '', status: a.status };
+            this.form = { nama: a.nama, email: a.email, phone: a.phone || '', password: '', role: a.role, klasifikasi: a.klasifikasi || '', status: a.status, kodeKaryawan: a.kodeKaryawan || '' };
             this.show = true;
+        },
+        /**
+         * Cari karyawan aktif — dipanggil el-select tiap admin mengetik.
+         *
+         * Dibatasi 2 huruf oleh server maupun di sini: satu huruf memanggil
+         * hampir seluruh 958 baris, dan daftar sepanjang itu bukan pilihan,
+         * melainkan gulungan.
+         */
+        /** Buka panel: siapa dia, dan sedang memegang apa. */
+        async bukaSerah(a) {
+            this.serahTarget = a;
+            this.serahShow = true;
+            this.serahMuat = true;
+            this.serahLoker = [];
+            this.serahPilih = [];
+            this.serahKe = null;
+            this.serahAlasan = '';
+            this.penerimaOptions = [];
+            this.cariPenerima('');
+            try {
+                const res = await axios.get(`${API}/${a.id}/pekerjaan`, CFG);
+                this.serahLoker = res.data.result?.loker || [];
+            } catch (e) {
+                this.notice(e.response?.data?.message || 'Gagal memuat daftar loker.');
+                this.serahShow = false;
+            } finally {
+                this.serahMuat = false;
+            }
+        },
+        pilihSemua(aktif) {
+            this.serahPilih = aktif ? this.serahLoker.map((l) => l.id) : [];
+        },
+        async simpanSerah() {
+            if (!this.bolehSerah || this.serahSibuk) return;
+            this.serahSibuk = true;
+            try {
+                const res = await axios.post(`${API}/serah-terima`, {
+                    posisiIds: this.serahPilih,
+                    keKode: this.serahKe,
+                    alasan: this.serahAlasan.trim(),
+                }, CFG);
+                this.serahShow = false;
+                this.notice(res.data?.message || 'Serah terima selesai.');
+            } catch (e) {
+                this.notice(e.response?.data?.message || 'Gagal melakukan serah terima.');
+            } finally {
+                this.serahSibuk = false;
+            }
+        },
+        /**
+         * Calon penerima serah terima — akun internal yang sudah punya kode.
+         *
+         * Bukan dari tabel Karyawan: penerimanya harus BISA MASUK dan
+         * mengerjakan lokernya. Karyawan tanpa akun di sini bukan calon yang
+         * sah, seberapa pun benar kodenya.
+         */
+        async cariPenerima(q) {
+            const kata = String(q || '').trim();
+            this.penerimaLoading = true;
+            try {
+                const res = await axios.get('/api/v1/master-akun/opsi/penerima', { ...CFG, params: { q: kata || undefined } });
+                this.penerimaOptions = res.data.result || [];
+            } catch (e) {
+                // Didiamkan dengan sengaja: pencarian yang gagal cukup terlihat
+                // sebagai daftar kosong. Toast di sini akan muncul berkali-kali
+                // saat orang mengetik cepat di jaringan yang buruk, menutupi
+                // borang yang sedang ia isi.
+                this.penerimaOptions = [];
+            } finally {
+                this.penerimaLoading = false;
+            }
         },
         async save() {
             if (this.saving) return;
@@ -260,7 +509,14 @@ export default {
             if (!this.editingId && (!f.password || f.password.length < 6)) return this.notice('Kata sandi minimal 6 karakter.');
             if (f.password && f.password.length < 6) return this.notice('Kata sandi minimal 6 karakter.');
             this.saving = true;
-            const payload = { nama: f.nama, email: f.email, phone: f.phone, password: f.password || '', role: f.role, klasifikasi: f.klasifikasi, status: f.status };
+            const payload = {
+                nama: f.nama, email: f.email, phone: f.phone, password: f.password || '',
+                role: f.role, klasifikasi: f.klasifikasi, status: f.status,
+                // Kandidat tidak pernah membawa kode karyawan, walau nilainya
+                // sempat terisi lalu perannya diubah menjadi KANDIDAT: kotaknya
+                // hilang dari layar tapi isinya masih menempel di form.
+                kodeKaryawan: f.role === 'KANDIDAT' ? null : (f.kodeKaryawan || null),
+            };
             try {
                 if (this.editingId) {
                     await axios.put(`${API}/${this.editingId}`, payload, CFG);
@@ -360,6 +616,24 @@ export default {
 .akun-muted { color: #7c81a3; font-size: 12px; }
 .akun-exp { color: #dc2626; font-weight: 600; }
 .akun-hint { color: #9096b8; font-weight: 500; font-size: 11.5px; }
+/* Keterangan di BAWAH bidang, bukan di sampingnya — kalimatnya dua baris dan
+   menempel di label akan mendorong kotaknya turun tak beraturan. */
+.akun-hint--blok { display: block; margin-top: .35rem; line-height: 1.6; }
+.akun-hint--blok b { color: #64748b; font-weight: 700; }
+.akun-selempty { padding: .6rem .8rem; font-size: 12px; color: #94a3b8; }
+.akun-ibtn--serah { color: #b45309; }
+.akun-ibtn--serah:hover { background: #fffbeb; border-color: #fde68a; }
+.akun-serah-bar { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap; margin-bottom: .6rem; }
+.akun-chk { display: inline-flex; align-items: center; gap: .4rem; font-size: 12.5px; font-weight: 700; color: #334155; cursor: pointer; }
+.akun-serah-list { display: flex; flex-direction: column; gap: .4rem; max-height: 22rem; overflow-y: auto; }
+.akun-serah-item { display: flex; align-items: center; gap: .7rem; padding: .6rem .75rem; border: 1px solid #e2e8f0; border-radius: .7rem; background: #fff; cursor: pointer; transition: all .15s ease; }
+.akun-serah-item:hover { border-color: #c7d2fe; }
+.akun-serah-item.on { border-color: #6366f1; background: #eef2ff; }
+.akun-serah-item__body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.akun-serah-item__body strong { font-size: 13px; color: #1e293b; }
+.akun-serah-item__body small { font-size: 11.5px; color: #64748b; }
+.akun-serah-item__meta { flex: none; display: flex; align-items: center; gap: .6rem; font-size: 11.5px; color: #64748b; }
+.akun-serah-item__meta .is-penuh { color: #b45309; font-weight: 800; }
 .akun-status { display: flex; align-items: center; gap: 10px; --el-switch-on-color: #059669; }
 .akun-status__lbl { font-size: 12px; font-weight: 700; }
 .akun-status__lbl.is-on { color: #059669; }

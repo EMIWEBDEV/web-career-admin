@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Career\MasterJadwal;
 
 use App\Helpers\ResponseHelper;
 use App\Http\Controllers\Controller;
+use App\Support\Career\AksesService;
 use App\Support\Career\KodeUnik;
 use App\Support\CareerShell;
 use Illuminate\Http\Request;
@@ -18,19 +19,55 @@ use Vinkla\Hashids\Facades\Hashids;
  */
 class MasterJadwalController extends Controller
 {
+    /** Kunci halaman untuk hak akses — sama dengan yang dipakai middleware rute. */
+    private const PAGE = 'masterJadwalPage';
+
     public function index()
     {
         return Inertia::render('Career/admin/master-jadwal/masterJadwal', CareerShell::props('/master-jadwal', 'Master Jadwal Kegiatan'));
     }
 
-    /** List jadwal + agenda (anak) — Query Builder, join nama alur/pembuat. */
-    public function list()
+    /**
+     * List jadwal + agenda (anak) — Query Builder, join nama alur/pembuat.
+     *
+     * SELURUH PENYARINGAN DIKERJAKAN DI SINI, bukan di browser. Menyaring di layar
+     * berarti seluruh jadwal tetap dikirim lebih dulu — termasuk milik kategori
+     * yang tidak boleh dilihat pengguna, yang lalu "disembunyikan" oleh kode yang
+     * bisa dibaca siapa pun di peramban.
+     */
+    public function list(Request $request)
     {
         try {
+            $q = trim((string) $request->query('q', ''));
+            $status = strtoupper(trim((string) $request->query('status', '')));
+            $dari = $request->query('dari');
+            $sampai = $request->query('sampai');
+
+            // ── GERBANG KATEGORI ────────────────────────────────────────────
+            // NULL = pengguna tidak dibatasi. Chip di layar hanya mengikuti; inilah
+            // penjaga yang sesungguhnya, jadi ?kategori=MT yang diketik sendiri
+            // tetap tidak membuka apa pun di luar jatah.
+            $izin = AksesService::kategoriDiizinkan(self::PAGE);
+            $kategori = AksesService::kategoriDiminta(self::PAGE, $request->query('kategori'));
+
             $jadwals = DB::table('N_WEB_CAREERS_Master_Jadwal as j')
                 ->leftJoin('N_WEB_CAREERS_Users as u', 'u.Id_Users', '=', 'j.Created_By_Id')
                 ->leftJoin('N_WEB_CAREERS_Master_Alur as a', 'a.Kode', '=', 'j.Alur_Kode')
-                ->orderBy('j.Id_Master_Jadwal')
+                ->when($izin, fn ($w) => $w->whereIn('j.Kategori', $izin))
+                ->when($q !== '', fn ($w) => $w->where(function ($x) use ($q) {
+                    $x->where('j.Kegiatan', 'like', "%{$q}%")
+                        ->orWhere('j.Kode', 'like', "%{$q}%")
+                        ->orWhere('a.Nama', 'like', "%{$q}%");
+                }))
+                ->when($kategori !== '', fn ($w) => $w->where('j.Kategori', $kategori))
+                ->when(in_array($status, ['AKTIF', 'NONAKTIF'], true), fn ($w) => $w->where('j.Status', $status))
+                ->when($dari, fn ($w) => $w->whereDate('j.Created_At', '>=', $dari))
+                ->when($sampai, fn ($w) => $w->whereDate('j.Created_At', '<=', $sampai))
+                // TERBARU DI ATAS. Jadwal yang baru disusun adalah gelombang yang
+                // sedang berjalan; menaruhnya di dasar daftar berarti ia digulir
+                // dicari tiap kali, sementara gelombang tahun lalu menempati layar
+                // pertama.
+                ->orderByDesc('j.Id_Master_Jadwal')
                 ->select('j.*', 'u.Nama as Pembuat', 'a.Nama as AlurNama')
                 ->get();
 
@@ -56,12 +93,36 @@ class MasterJadwalController extends Controller
                 ];
             })->values();
 
-            return ResponseHelper::success($rows, 'Data jadwal dimuat');
+            // Kategori yang boleh dilihat pengguna ini. Diambil dari master, bukan
+            // dari data yang kebetulan ada: kategori yang belum punya satu pun
+            // jadwal tetap harus bisa dipilih saat membuat yang pertama.
+            return ResponseHelper::success([
+                'data' => $rows,
+                'kategori' => AksesService::tabKategori(self::PAGE),
+            ], 'Data jadwal dimuat');
         } catch (\Throwable $e) {
             Log::channel('web_career')->error('Gagal memuat jadwal: ' . $e->getMessage());
 
             return ResponseHelper::error('Gagal memuat data jadwal', 500);
         }
+    }
+
+    /**
+     * Kategori ini di luar jatah pengguna? — balasan galat, atau null.
+     *
+     * Dipakai store() dan update(). Ditulis sekali karena keduanya harus menjawab
+     * sama: gerbang yang berbeda antara "buat" dan "ubah" berarti apa yang tidak
+     * bisa dibuat langsung, bisa dibuat dalam dua langkah.
+     */
+    private function galatKategori(?string $kategori)
+    {
+        $izin = AksesService::kategoriDiizinkan(self::PAGE);
+
+        if ($izin && ! in_array((string) $kategori, $izin, true)) {
+            return ResponseHelper::error('Kategori ini di luar jatah akses Anda.', 403);
+        }
+
+        return null;
     }
 
     /** Aturan validasi jadwal + agenda. */
@@ -115,6 +176,15 @@ class MasterJadwalController extends Controller
             $sumber = $realId ? DB::table('N_WEB_CAREERS_Master_Jadwal')->where('Id_Master_Jadwal', $realId)->first() : null;
             if (! $sumber) {
                 return ResponseHelper::error('Jadwal sumber tidak ditemukan.', 404);
+            }
+
+            // Duplikat MEWARISI kategori sumbernya (lihat catatan di bawah), jadi
+            // penjaganya membaca kategori SUMBER — bukan kiriman borang, yang di
+            // sini memang tidak memuat kategori sama sekali. Tanpa ini, menyalin
+            // adalah celah untuk membuat jadwal di kategori yang tak boleh dibuat
+            // langsung.
+            if ($galat = $this->galatKategori($sumber->Kategori)) {
+                return $galat;
             }
 
             $data = $request->validate([
@@ -187,6 +257,10 @@ class MasterJadwalController extends Controller
     {
         try {
             $data = $request->validate($this->rules());
+
+            if ($galat = $this->galatKategori($data['kategori'] ?? null)) {
+                return $galat;
+            }
             $userId = session('career_auth.id');
             $userName = session('career_auth.nama', 'ADMIN');
             $now = now();
@@ -233,6 +307,10 @@ class MasterJadwalController extends Controller
                 return ResponseHelper::error('Data tidak ditemukan', 404);
             }
             $data = $request->validate($this->rules());
+
+            if ($galat = $this->galatKategori($data['kategori'] ?? null)) {
+                return $galat;
+            }
             $userId = session('career_auth.id');
             $userName = session('career_auth.nama', 'ADMIN');
 

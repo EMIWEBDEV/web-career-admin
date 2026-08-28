@@ -1,6 +1,6 @@
 <!-- WEB CAREER - Master Formulir dinamis: builder schema + preview kandidat + management. -->
 <template>
-    <Head><title>Master Formulir - Web Career</title></Head>
+    <Head title="Master Formulir" />
 
     <div class="wca mfb-page">
         <!-- Header Utama (Native Web Career Modern Header) -->

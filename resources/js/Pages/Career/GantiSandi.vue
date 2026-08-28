@@ -1,6 +1,6 @@
 <template>
     <AuthShell
-        page-title="Ganti Kata Sandi - EVO Group Career"
+        page-title="Ganti Kata Sandi"
         eyebrow="Keamanan Akun"
         title="Atur Ulang"
         title-accent="Kata Sandi."

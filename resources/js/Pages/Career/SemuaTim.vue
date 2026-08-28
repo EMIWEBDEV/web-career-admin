@@ -6,9 +6,7 @@
      Data masih statis di file ini — sesuaikan sesuai kebutuhan.
      ══════════════════════════════════════════════════════════ -->
 <template>
-    <Head>
-        <title>Semua Tim - EVO Group Career</title>
-    </Head>
+    <Head title="Fungsi Perusahaan" />
 
     <CareerLayout :has-mt="hasMt" :offices="offices">
         <div class="st">

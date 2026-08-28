@@ -9,7 +9,7 @@
 
      DATA dari DB via /api/v1/karir/talent-pool. -->
 <template>
-    <Head><title>Talent Pool - Web Career</title></Head>
+    <Head title="Talent Pool" />
 
     <div class="wca tp">
         <!-- ══════════════════ TAMPILAN DAFTAR ══════════════════ -->

@@ -132,6 +132,31 @@ export const KATALOG_FIELD = {
         bawaan: { accept: '.pdf', maks_mb: 5, penuh: true, lebar_persen: 100 },
         periksa: (f) => (f.accept ? null : 'Format berkas yang diterima belum diatur.'),
     },
+    daftar: {
+        // ── KENAPA TIPE SENDIRI, BUKAN TEXTAREA ─────────────────────────────
+        //
+        // "Sebutkan minimal 5 hal" selama ini dipakai sebagai textarea, dan
+        // jawabannya jadi "ga,ga,ga,ga,ga" — lima kata yang memenuhi hitungan
+        // tapi tidak menjawab apa pun. Yang bisa dihitung mesin cuma koma, dan
+        // koma bukan gagasan.
+        //
+        // Dengan butir terpisah, jumlahnya jadi hal yang dijaga sistem, dan
+        // setiap butir punya kolomnya sendiri — kandidat melihat ada lima kotak
+        // kosong yang menunggu, bukan satu kotak yang bisa diisi apa saja.
+        label: 'Daftar Bernomor',
+        ikon: 'bi-list-ol',
+        properti: ['ph', 'min_butir', 'maks_butir'],
+        bawaan: { min_butir: 3, penuh: true, lebar_persen: 100 },
+        periksa: (f) => {
+            const min = Number(f.min_butir);
+            const maks = Number(f.maks_butir);
+            if (Number.isFinite(min) && min < 1) return 'Minimal jawaban setidaknya 1.';
+            if (Number.isFinite(min) && Number.isFinite(maks) && min > maks) {
+                return 'Minimal jawaban tidak boleh lebih besar dari maksimal.';
+            }
+            return null;
+        },
+    },
     foto: {
         // Dirender AmbilFoto.vue, yang tidak membaca ph/accept/maks_mb.
         label: 'Foto Verifikasi (Kamera)',

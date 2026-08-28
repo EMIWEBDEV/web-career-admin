@@ -1,6 +1,6 @@
 <!-- WEB CAREER — Admin: Master Tipe Tahap (katalog jenis tahap untuk Alur Seleksi + deskripsi). -->
 <template>
-    <Head><title>Master Tipe Tahap - Web Career</title></Head>
+    <Head title="Master Tipe Tahap" />
     <div class="wca">
         <div class="wca-phead">
             <div>

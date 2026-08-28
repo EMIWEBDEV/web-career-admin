@@ -1,7 +1,7 @@
 <!-- WEB CAREER — Master Hero (kelola slide hero landing: gambar desktop/mobile + video).
      Tanpa modal — semua field & media langsung tampil & bisa diedit di kartu list (autosave). -->
 <template>
-    <Head><title>Master Hero - Web Career</title></Head>
+    <Head title="Master Hero" />
     <div class="wca">
         <div class="wca-phead">
             <div>

@@ -1,6 +1,6 @@
 <!-- WEB CAREERS — Akses Klasifikasi Akun: CETAKAN hak akses kandidat + whitelist kategori program. -->
 <template>
-    <Head><title>Akses Klasifikasi Akun - Web Career</title></Head>
+    <Head title="Akses Klasifikasi Akun" />
     <div class="wca">
         <div class="pkg-head">
             <div class="pkg-head__l">

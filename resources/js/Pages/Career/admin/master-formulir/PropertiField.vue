@@ -90,6 +90,27 @@
             <small class="mfb-help">IPK memakai 2; jumlah orang memakai 0.</small>
         </div>
 
+        <!-- ══ DAFTAR BUTIR ══════════════════════════════════════════════════
+             Inilah yang membuat "Sebutkan minimal 5 hal" bisa ditegakkan.
+             Sebelumnya angka 5 hanya ada di dalam kalimat labelnya, dan tidak
+             ada satu pun yang membacanya — jawaban "ga,ga,ga,ga,ga" lolos. -->
+        <template v-if="punya('min_butir') || punya('maks_butir')">
+            <div class="mfb-inspector__row">
+                <div v-if="punya('min_butir')" class="mfb-inspector__group">
+                    <label>Minimal Jawaban</label>
+                    <el-input-number v-model="field.min_butir" :min="1" :max="20" style="width: 100%" />
+                </div>
+                <div v-if="punya('maks_butir')" class="mfb-inspector__group">
+                    <label>Maksimal Jawaban <span class="mfb-opsional">opsional</span></label>
+                    <el-input-number v-model="field.maks_butir" :min="1" :max="20" style="width: 100%" />
+                </div>
+            </div>
+            <small class="mfb-help">
+                Kandidat langsung melihat sebanyak <b>minimal</b> kotak kosong, dan tidak bisa lanjut
+                sebelum semuanya terisi. Kosongkan maksimal bila tidak ingin dibatasi.
+            </small>
+        </template>
+
         <div v-if="punya('maks_panjang')" class="mfb-inspector__group">
             <label>Panjang Maksimal Karakter</label>
             <el-input-number v-model="field.maks_panjang" :min="1" :max="500" style="width: 100%" />
@@ -637,6 +658,7 @@ export default {
     grid-template-columns: 1fr 1fr;
     gap: 0.75rem;
 }
+.mfb-opsional { font-weight: 500; font-size: 10.5px; color: #94a3b8; }
 </style>
 
 <!-- Gaya untuk opsi dropdown el-select, yang di-teleport ke body —

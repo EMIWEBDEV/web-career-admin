@@ -81,6 +81,8 @@ Route::prefix('api/v1')->name('career.api.hak-akses.')->group(function () {
         ->middleware('career.permission:hakAksesPage,CREATE');
     Route::post('/hak-akses/toggle-aksi', [HakAksesController::class, 'toggleAksi'])->name('toggle.aksi')
         ->middleware('career.permission:hakAksesPage,EDIT');
+    Route::post('/hak-akses/ubah-lingkup', [HakAksesController::class, 'ubahLingkup'])->name('ubah.lingkup')
+        ->middleware('career.permission:hakAksesPage,EDIT');
     Route::post('/hak-akses/toggle-konten', [HakAksesController::class, 'toggleKonten'])->name('toggle.konten')
         ->middleware('career.permission:hakAksesPage,EDIT');
     Route::post('/hak-akses/bulk-toggle', [HakAksesController::class, 'bulkToggle'])->name('bulk')

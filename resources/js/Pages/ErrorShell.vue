@@ -27,12 +27,12 @@ const props = defineProps({
 
 const judulTab = computed(() => {
     const peta = { 403: 'Akses Ditolak', 404: 'Tidak Ditemukan', 503: 'Mode Pemeliharaan' };
-    return `${peta[String(props.status)] || 'Informasi'} - Web Career`;
+    return peta[String(props.status)] || 'Informasi';
 });
 </script>
 
 <template>
-    <Head><title>{{ judulTab }}</title></Head>
+    <Head :title="judulTab" />
 
     <div class="errs-wrap">
         <ErrorContent

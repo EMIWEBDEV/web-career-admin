@@ -46,6 +46,7 @@ class KatalogField
         'radio' => ['properti' => ['opsi', 'prefill', 'dapat_disaring']],
         'checkbox' => ['properti' => ['opsi', 'dapat_disaring']],
         'file' => ['properti' => ['accept', 'maks_mb']],
+        'daftar' => ['properti' => ['ph', 'min_butir', 'maks_butir']],
         'foto' => ['properti' => []],
         'phone' => ['properti' => ['ph', 'beda_dengan', 'prefill', 'dapat_disaring']],
         'email' => ['properti' => ['ph', 'prefill']],

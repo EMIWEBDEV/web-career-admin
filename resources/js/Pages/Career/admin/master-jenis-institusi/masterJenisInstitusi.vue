@@ -1,6 +1,6 @@
 <!-- WEB CAREER — Master Jenis Institusi Pendidikan. Data via web route + ResponseHelper (axios). -->
 <template>
-    <Head><title>Master Jenis Institusi - Web Career</title></Head>
+    <Head title="Master Jenis Institusi" />
     <div class="wca">
         <div class="wca-phead">
             <div>

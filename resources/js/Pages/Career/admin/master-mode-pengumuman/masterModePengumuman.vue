@@ -1,6 +1,6 @@
 <!-- WEB CAREER — Master Mode Pengumuman (kapan hasil tahap terlihat kandidat). DATA via web route + ResponseHelper (axios). -->
 <template>
-    <Head><title>Master Mode Pengumuman - Web Career</title></Head>
+    <Head title="Master Mode Pengumuman" />
     <div class="wca">
         <div class="wca-phead">
             <div>

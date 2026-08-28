@@ -1,6 +1,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title> @yield('title')</title>
+
+{{-- Judul + seluruh meta sosial (Open Graph / Twitter / JSON-LD). WAJIB berada
+     di atas @vite dan @inertiaHead: <title> di sini harus jadi tag judul
+     PERTAMA di dokumen, karena peramban memakai yang pertama dan mengabaikan
+     sisanya. --}}
+@include('components.seo')
+
 <link rel="icon" href="{{ asset('logo/logo.png') }}" sizes="any" />
 <link rel="icon" type="image/png" sizes="192x192" href="{{ asset('logo/logo.png') }}" />
 <link rel="icon" type="image/png" sizes="512x512" href="{{ asset('logo/logo.png') }}" />

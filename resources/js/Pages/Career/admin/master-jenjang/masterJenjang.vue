@@ -1,6 +1,6 @@
 <!-- WEB CAREER — Master Jenjang Pendidikan. Data via web route + ResponseHelper (axios). -->
 <template>
-    <Head><title>Master Jenjang Pendidikan - Web Career</title></Head>
+    <Head title="Master Jenjang Pendidikan" />
     <div class="wca">
         <div class="wca-phead">
             <div>

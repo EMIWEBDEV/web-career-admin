@@ -1,6 +1,6 @@
 <!-- WEB CAREER — Master Sumber Kandidat (per-modul). DATA via web route + ResponseHelper (axios), bukan props Inertia. -->
 <template>
-    <Head><title>Master Sumber Kandidat - Web Career</title></Head>
+    <Head title="Master Sumber Kandidat" />
     <div class="wca">
         <div class="wca-phead">
             <div>

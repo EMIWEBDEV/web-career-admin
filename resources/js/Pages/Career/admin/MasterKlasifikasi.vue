@@ -1,6 +1,6 @@
 <!-- WEB CAREER — Admin: Master Kategori (label kategori TA + preset default program). CRUD real DB, Element Plus. -->
 <template>
-    <Head><title>Master Kategori - Web Career</title></Head>
+    <Head title="Master Kategori" />
     <div class="wca">
         <div class="wca-phead">
             <div>

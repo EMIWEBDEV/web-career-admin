@@ -2,7 +2,7 @@
      Menggabungkan bekas /karir/monitoring-mpp (read-only, sudah dihapus) — grid/tabel, panel detail,
      dan pagination server pindah ke sini, ditambah aksi Ubah/Batalkan/Tandai Selesai. -->
 <template>
-    <Head><title>Master MPP - Web Career</title></Head>
+    <Head title="Master MPP" />
     <div class="wca">
         <div class="wca-phead">
             <div>
@@ -353,11 +353,12 @@
             :foot-note="formFootNote"
             @close="show = false"
         >
-            <!-- BILAH LANGKAH — sekaligus SATU-SATUNYA cara mundur.
+            <!-- BILAH LANGKAH — penunjuk posisi, sekaligus jalan LOMPAT.
 
-                 Tombol "Kembali" dibuang dari kaki modal supaya di sana tinggal dua:
-                 satu membatalkan, satu melangkah. Mundur tetap ada, tapi lewat bilah
-                 ini — dan bilahnya memang sudah selalu bisa diklik. -->
+                 Mundur satu langkah ada di kaki modal ("Kembali"). Bilah ini untuk
+                 melompat jauh — dari Langkah 4 langsung ke Langkah 1 — tanpa menekan
+                 Kembali tiga kali. Keduanya memanggil pergiKeLangkah() yang sama,
+                 jadi penjagaan dan penggulirannya tidak bisa berbeda. -->
             <div class="mmp-modal-tabs">
                 <button
                     v-for="l in LANGKAH"
@@ -891,28 +892,219 @@
                 </div>
             </div>
 
-            <!-- Wizard Step Control Footer Bar -->
-            <div class="mmp-tab-foot">
+            <!-- ══ TAB 4: PRATINJAU & SIMPAN ══════════════════════════════════
+                 Halaman terakhir sengaja TIDAK berisi kotak isian. Isinya bacaan:
+                 seluruh isi borang dirangkai jadi kalimat yang bisa diperiksa
+                 sekali jalan, sebab tiga langkah sebelumnya tidak pernah terlihat
+                 bersamaan — dan kekeliruan yang paling mahal (level salah, kuota
+                 salah, lokasi salah) justru yang paling mudah lolos saat tiap
+                 bagian dibaca terpisah.
+
+                 Tiap kartu punya tautan "Ubah" yang melompat ke langkah asalnya,
+                 jadi memperbaiki satu bidang tidak menuntut orang menekan Kembali
+                 tiga kali lalu mencari sendiri bidangnya. -->
+            <div v-show="modalTab === 4" class="mmp-tab-pane">
+                <div class="mmp-rev">
+                    <!-- IKHTISAR -->
+                    <div class="mmp-rev__hero">
+                        <span class="mmp-rev__tag" :class="{ 'is-mt': form.jenisProgram === 'MT' }">
+                            <i class="bi" :class="form.jenisProgram === 'MT' ? 'bi-mortarboard-fill' : 'bi-person-workspace'"></i>
+                            {{ ringkas.jenis }}
+                        </span>
+                        <h3>{{ ringkas.jabatan || 'Jabatan belum dipilih' }}</h3>
+                        <p>
+                            {{ ringkas.divisi || 'Divisi belum dipilih' }}<template v-if="ringkas.departemen"> &middot; {{ ringkas.departemen }}</template>
+                            <template v-if="ringkas.level"> &middot; {{ ringkas.level }}</template>
+                        </p>
+
+                        <div class="mmp-rev__angka">
+                            <div><small>Kuota Target</small><b>{{ ringkas.kuota || 0 }} orang</b></div>
+                            <div><small>Periode Target</small><b>{{ periodeTeks || '—' }}</b></div>
+                            <div><small>Lokasi Penempatan</small><b>{{ ringkas.lokasi || '—' }}</b></div>
+                        </div>
+                    </div>
+
+                    <!-- KELENGKAPAN — yang kurang disebut NAMANYA, dan namanya bisa
+                         ditekan. "Masih ada bidang wajib yang kosong" tanpa menyebut
+                         yang mana memindahkan pencarian ke orang yang membacanya. -->
+                    <div v-if="bidangKurang.length" class="mmp-rev__kurang">
+                        <i class="bi bi-exclamation-triangle-fill"></i>
+                        <div>
+                            <b>{{ bidangKurang.length }} bidang wajib masih kosong.</b>
+                            <span>Tekan namanya untuk melompat ke langkah tempat bidang itu berada.</span>
+                            <div class="mmp-rev__chips">
+                                <button
+                                    v-for="b in bidangKurang"
+                                    :key="b.label"
+                                    type="button"
+                                    class="mmp-rev__chip"
+                                    :title="`Buka Langkah ${b.langkah}`"
+                                    @click="pergiKeLangkah(b.langkah)"
+                                >{{ b.label }}</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div v-else class="mmp-rev__siap">
+                        <i class="bi bi-check-circle-fill"></i>
+                        <div>
+                            <b>Seluruh bidang wajib sudah terisi.</b>
+                            Periksa sekali lagi di bawah — nomor transaksi dibuat otomatis saat disimpan.
+                        </div>
+                    </div>
+
+                    <!-- POKOK TRANSAKSI -->
+                    <div class="mmp-rev__grid">
+                        <div class="mmp-rev__card">
+                            <div class="mmp-rev__cardhead">
+                                <i class="bi bi-building"></i><h5>Struktur &amp; Jabatan</h5>
+                                <button type="button" class="mmp-rev__ubah" @click="pergiKeLangkah(1)">Ubah</button>
+                            </div>
+                            <div class="mmp-rev__row"><span>Divisi</span><b>{{ ringkas.divisi || '—' }}</b></div>
+                            <div class="mmp-rev__row"><span>Departemen</span><b>{{ ringkas.departemen || '—' }}</b></div>
+                            <div class="mmp-rev__row"><span>Level HRIS</span><b>{{ ringkas.level || '—' }}</b></div>
+                            <div class="mmp-rev__row"><span>Jabatan</span><b>{{ ringkas.jabatan || '—' }}</b></div>
+                        </div>
+
+                        <div class="mmp-rev__card">
+                            <div class="mmp-rev__cardhead">
+                                <i class="bi bi-geo-alt-fill"></i><h5>Target &amp; Penanggung Jawab</h5>
+                                <button type="button" class="mmp-rev__ubah" @click="pergiKeLangkah(1)">Ubah</button>
+                            </div>
+                            <div class="mmp-rev__row"><span>Kuota</span><b>{{ ringkas.kuota || 0 }} orang</b></div>
+                            <div class="mmp-rev__row"><span>Periode Target</span><b>{{ periodeTeks || '—' }}</b></div>
+                            <!-- Angka harinya ditulis, bukan cuma rentang tanggalnya:
+                                 rentang yang sama bisa lahir dari janji 30 hari kerja
+                                 maupun 45, tergantung akhir pekan & libur di dalamnya. -->
+                            <div class="mmp-rev__row">
+                                <span>Ketentuan SLA</span>
+                                <b v-if="mtDipilih">Tidak terikat SLA</b>
+                                <b v-else>{{ periodeHari ? `${periodeHari} hari kerja` : '—' }}</b>
+                            </div>
+                            <div class="mmp-rev__row"><span>Lokasi</span><b>{{ ringkas.lokasi || '—' }}</b></div>
+                            <div class="mmp-rev__row"><span>PIC</span><b>{{ ringkas.pic || '—' }}</b></div>
+                        </div>
+
+                        <div class="mmp-rev__card">
+                            <div class="mmp-rev__cardhead">
+                                <i class="bi bi-sliders"></i><h5>Klasifikasi Kerja</h5>
+                                <button type="button" class="mmp-rev__ubah" @click="pergiKeLangkah(2)">Ubah</button>
+                            </div>
+                            <div class="mmp-rev__row"><span>Tipe Kerja</span><b>{{ ringkas.employment || '—' }}</b></div>
+                            <div class="mmp-rev__row"><span>Lokasi Kerja</span><b>{{ ringkas.workplace || '—' }}</b></div>
+                            <div class="mmp-rev__row"><span>Pengalaman</span><b>{{ ringkas.experience || '—' }}</b></div>
+                        </div>
+                    </div>
+
+                    <!-- DESKRIPSI -->
+                    <div class="mmp-rev__card">
+                        <div class="mmp-rev__cardhead">
+                            <i class="bi bi-card-text"></i><h5>Ringkasan Deskripsi Lowongan</h5>
+                            <button type="button" class="mmp-rev__ubah" @click="pergiKeLangkah(2)">Ubah</button>
+                        </div>
+                        <p class="mmp-rev__teks">{{ form.deskripsi || 'Belum diisi.' }}</p>
+                    </div>
+
+                    <!-- TANGGUNG JAWAB & PERSYARATAN -->
+                    <div class="mmp-rev__grid2">
+                        <div class="mmp-rev__card">
+                            <div class="mmp-rev__cardhead">
+                                <i class="bi bi-list-task"></i><h5>Tanggung Jawab</h5>
+                                <span v-if="isiTanggungJawab.length" class="mmp-rev__hitung">{{ isiTanggungJawab.length }}</span>
+                                <button type="button" class="mmp-rev__ubah" @click="pergiKeLangkah(3)">Ubah</button>
+                            </div>
+                            <ul v-if="isiTanggungJawab.length" class="mmp-rev__list">
+                                <li v-for="(t, i) in isiTanggungJawab" :key="i">{{ t }}</li>
+                            </ul>
+                            <p v-else class="mmp-rev__teks">Belum ada butir.</p>
+                        </div>
+
+                        <div class="mmp-rev__card">
+                            <div class="mmp-rev__cardhead">
+                                <i class="bi bi-check2-square"></i><h5>Persyaratan</h5>
+                                <span v-if="isiPersyaratan.length" class="mmp-rev__hitung">{{ isiPersyaratan.length }}</span>
+                                <button type="button" class="mmp-rev__ubah" @click="pergiKeLangkah(3)">Ubah</button>
+                            </div>
+                            <ul v-if="isiPersyaratan.length" class="mmp-rev__list">
+                                <li v-for="(t, i) in isiPersyaratan" :key="i">{{ t }}</li>
+                            </ul>
+                            <p v-else class="mmp-rev__teks">Belum ada butir.</p>
+                        </div>
+                    </div>
+
+                    <!-- SKILL & BENEFIT -->
+                    <div class="mmp-rev__grid2">
+                        <div class="mmp-rev__card">
+                            <div class="mmp-rev__cardhead">
+                                <i class="bi bi-stars"></i><h5>Skill</h5>
+                                <span v-if="ringkas.skills.length" class="mmp-rev__hitung">{{ ringkas.skills.length }}</span>
+                                <button type="button" class="mmp-rev__ubah" @click="pergiKeLangkah(3)">Ubah</button>
+                            </div>
+                            <div v-if="ringkas.skills.length" class="mmp-rev__tags">
+                                <span v-for="(s, i) in ringkas.skills" :key="i" class="mmp-rev__tag2">{{ s }}</span>
+                            </div>
+                            <p v-else class="mmp-rev__teks">Belum ada skill dipilih.</p>
+                        </div>
+
+                        <div class="mmp-rev__card">
+                            <div class="mmp-rev__cardhead">
+                                <i class="bi bi-gift"></i><h5>Benefit</h5>
+                                <span v-if="ringkas.benefits.length" class="mmp-rev__hitung">{{ ringkas.benefits.length }}</span>
+                                <button type="button" class="mmp-rev__ubah" @click="pergiKeLangkah(3)">Ubah</button>
+                            </div>
+                            <div v-if="ringkas.benefits.length" class="mmp-rev__tags">
+                                <span v-for="(b, i) in ringkas.benefits" :key="i" class="mmp-rev__tag2 is-benefit">{{ b }}</span>
+                            </div>
+                            <p v-else class="mmp-rev__teks">Belum ada benefit dipilih.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+
+            <!-- ══ TOMBOL WIZARD — DI KAKI MODAL, BUKAN DI BADAN ══════════════
+                 Sebelumnya bilah tombol duduk di dalam badan yang tergulir, jadi
+                 pada borang sepanjang ini ia ikut hanyat ke luar layar; sementara
+                 kaki modal menampilkan "Simpan Data" bawaan AdminModal yang tidak
+                 tersambung ke apa pun. Satu-satunya tombol yang terlihat justru
+                 yang tidak bekerja.
+
+                 Tiga tombol, dan ketiganya membaca keadaan yang sama:
+                   Kembali  - hanya muncul bila ada langkah sebelumnya
+                   Batal    - selalu ada, satu-satunya jalan keluar selain X
+                   Lanjut   - berubah jadi Simpan HANYA di langkah terakhir
+                              (labelAksi), tidak pernah di tengah. -->
+            <template #footer>
                 <button
                     v-if="modalTab > 1"
                     type="button"
                     class="wca-btn wca-btn--ghost"
-                    @click="modalTab--"
+                    :disabled="modalSibuk"
+                    @click="pergiKeLangkah(modalTab - 1)"
                 >
                     <i class="bi bi-arrow-left"></i> Kembali
                 </button>
 
-                <div class="mmp-tab-foot__right">
-                    <button
-                        v-if="modalTab < 3"
-                        type="button"
-                        class="wca-btn wca-btn--indigo"
-                        @click="modalTab++"
-                    >
-                        Lanjut ke Langkah {{ modalTab + 1 }} <i class="bi bi-arrow-right"></i>
-                    </button>
-                </div>
-            </div>
+                <button
+                    type="button"
+                    class="wca-btn wca-btn--ghost"
+                    :disabled="modalSibuk"
+                    @click="show = false"
+                >
+                    <i class="bi bi-x-lg"></i> Batal
+                </button>
+
+                <button
+                    type="button"
+                    class="wca-btn wca-btn--dark"
+                    :disabled="aksiTerkunci"
+                    :title="judulAksi"
+                    @click="aksiUtama"
+                >
+                    <span v-if="modalSibuk" class="wca-spin" aria-hidden="true"></span>
+                    <i v-else class="bi" :class="langkahAkhir ? 'bi-save' : 'bi-arrow-right'"></i>
+                    {{ labelAksi }}
+                </button>
+            </template>
         </AdminModal>
 
         <ConfirmModal
@@ -1152,6 +1344,20 @@ export default {
             if (!this.punyaRentang) return this.tglPanjang(this.periodeAkhir);
 
             return this.rentangTanggal(this.periodeMulai, this.periodeAkhir);
+        },
+        /**
+         * Butir yang BENAR-BENAR berisi.
+         *
+         * Editor butir menyisakan baris kosong begitu orang menambah lalu batal
+         * mengetik; server memang membuangnya saat menyimpan, tapi pratinjau
+         * dibaca SEBELUM itu — dan daftar yang menampilkan tiga bullet kosong
+         * terbaca seperti data yang hilang.
+         */
+        isiTanggungJawab() {
+            return (this.form.tanggungJawab || []).map((t) => String(t).trim()).filter(Boolean);
+        },
+        isiPersyaratan() {
+            return (this.form.persyaratan || []).map((t) => String(t).trim()).filter(Boolean);
         },
         /** Nama level yang sedang dipilih — untuk kalimat ketentuan SLA. */
         namaLevelTerpilih() {

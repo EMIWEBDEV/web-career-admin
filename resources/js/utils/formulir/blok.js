@@ -187,6 +187,27 @@ export function blokDataDiri(opsi = {}) {
 
     const field = [
         { key: 'nama_lengkap', label: 'Nama Lengkap Sesuai KTP', tipe: 'text', wajib: true, ph: 'Tulis persis seperti tertera di KTP' },
+        // ── NIK DIAMBIL DARI AKUN, TIDAK DIKETIK ULANG ──────────────────────
+        //
+        // Pendaftaran akun sudah mewajibkan NIK tepat 16 digit dan menyimpannya
+        // ke N_WEB_CAREERS_Users.NIK, jadi nilainya selalu ada dan sudah
+        // tervalidasi. Menanyakannya lagi di sini hanya membuka satu cara untuk
+        // salah: kandidat mengetik ulang dari ingatan, meleset beberapa digit,
+        // dan lamarannya membawa NIK yang berbeda dari akun yang mengajukannya.
+        // Dua nomor untuk satu orang, dan tidak ada yang tahu mana yang benar.
+        //
+        // `tipe: 'prefill'` membuatnya TERKUNCI di layar (FieldRenderer
+        // menggambarnya disabled berlabel "otomatis"); `prefill: 'nik'` menunjuk
+        // kunci profil yang dikirim server — kunci yang sama yang sudah dipakai
+        // FRM-MT-KELENGKAPAN-DATA, bukan jalur baru.
+        {
+            key: 'nik',
+            label: 'NIK (Nomor KTP)',
+            tipe: 'prefill',
+            prefill: 'nik',
+            wajib: true,
+            bantuan: 'Diambil dari akun Anda. Bila keliru, perbaiki lewat Profil — bukan di sini.',
+        },
         { key: 'tanggal_lahir', label: 'Tanggal Lahir', tipe: 'date', wajib: true },
         {
             key: 'jenis_kelamin',

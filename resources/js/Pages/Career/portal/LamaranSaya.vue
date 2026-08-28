@@ -4,7 +4,7 @@
      LAMARAN AKTIF + stepper PROGRES SELEKSI (props.lamaran[].tahapan dari DB).
      Riwayat Lamaran juga REAL (props.lamaran) + filter status; rekomendasi & drawer dummy dibuang. -->
 <template>
-    <Head><title>Lamaran Saya - EVO Career</title></Head>
+    <Head title="Lamaran Saya" />
 
     <div class="lms">
         <div class="lms-blob lms-blob--a"></div>

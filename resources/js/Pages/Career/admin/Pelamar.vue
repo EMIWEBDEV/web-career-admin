@@ -3,19 +3,53 @@
      kanban tahap alur, drawer detail kandidat (progress alur, akordeon formulir,
      dokumen + lightbox), aksi Loloskan / Tidak Lolos. Data 100% dari API nyata. -->
 <template>
-    <Head><title>Worklist Pelamar — EVO Career</title></Head>
+    <Head title="Worklist Pelamar" />
 
     <div class="plw">
         <!-- ═══ PANEL PROGRAM (KIRI) ═══ -->
         <aside class="plw-panel">
             <div class="plw-panel__head">
                 <div class="plw-panel__toprow">
-                    <div class="plw-panel__title">DAFTAR PROGRAM</div>
+                    <div class="plw-panel__title">{{ basisLoker ? 'DAFTAR JOB VACANCY' : 'DAFTAR PROGRAM' }}</div>
                     <span class="plw-panel__count">{{ total }} aktif</span>
                 </div>
+
+                <!-- ═══ DASAR DAFTAR — PROGRAM atau JOB VACANCY ═══
+                     Dua pertanyaan yang berbeda atas populasi yang sama:
+
+                       · PROGRAM      "gelombang rekrutmen bulan ini sampai mana?"
+                       · JOB VACANCY  "pencarian posisi ini sampai mana?"
+
+                     Berbasis program, satu MPP yang dibuka ulang di gelombang
+                     berikutnya muncul DUA KALI di daftar ini — di bawah dua nama
+                     program berbeda, masing-masing membawa sebagian pelamarnya.
+                     Untuk menjawab pertanyaan kedua, rekruter harus membuka dua
+                     papan lalu menjumlahkannya sendiri.
+
+                     Bukan diganti, karena pertanyaan pertama juga masih ditanya
+                     tiap hari — yang memilih orang yang sedang bekerja. -->
+                <div class="plw-basis" role="tablist" aria-label="Dasar daftar">
+                    <button
+                        type="button" class="plw-basis__btn" :class="{ 'is-on': basis === 'program' }"
+                        role="tab" :aria-selected="basis === 'program'"
+                        title="Kelompokkan menurut program penyelenggaraan"
+                        @click="setBasis('program')"
+                    >
+                        <i class="bi bi-collection-fill"></i><span>Program</span>
+                    </button>
+                    <button
+                        type="button" class="plw-basis__btn" :class="{ 'is-on': basis === 'loker' }"
+                        role="tab" :aria-selected="basis === 'loker'"
+                        title="Kelompokkan menurut MPP / lowongan — digabung lintas program"
+                        @click="setBasis('loker')"
+                    >
+                        <i class="bi bi-briefcase-fill"></i><span>Job Vacancy</span>
+                    </button>
+                </div>
+
                 <div class="plw-search">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>
-                    <input v-model="q" type="text" placeholder="Cari program..." @input="cariDebounce" />
+                    <input v-model="q" type="text" :placeholder="basisLoker ? 'Cari posisi, MPP, departemen...' : 'Cari program...'" @input="cariDebounce" />
                 </div>
                 <!-- CHIP KATEGORI — isinya mengikuti hak akses, bukan seluruh master.
                      "Semua" hanya berarti bila memang ADA yang bisa dipilih: pada
@@ -30,20 +64,95 @@
             </div>
 
             <div class="plw-panel__list">
-                <div v-if="loadingProg" class="plw-load"><span class="plw-spin"></span> Memuat program…</div>
-                <div v-else-if="!programs.length" class="plw-empty">Tidak ada program</div>
+                <div v-if="loadingProg" class="plw-load"><span class="plw-spin"></span> Memuat {{ basisLoker ? 'job vacancy' : 'program' }}…</div>
+                <div v-else-if="!programs.length" class="plw-empty">Tidak ada {{ basisLoker ? 'job vacancy' : 'program' }}</div>
+                <!-- Program yang lokernya sudah berpindah tangan TIDAK BISA
+                     dipilih. Papannya memang akan kosong — bukan karena gagal
+                     memuat, melainkan karena tidak ada satu kandidat pun yang
+                     jadi urusan akun ini. Membiarkannya diklik hanya menukar
+                     satu kebingungan dengan kebingungan lain yang lebih sulit
+                     ditebak sebabnya. -->
+                <!-- ═══ KARTU JOB VACANCY ═══
+                     Isinya menjawab pertanyaan yang lain dari kartu program:
+                     bukan "gelombang apa ini", melainkan "pekerjaan apa yang
+                     dicari, untuk siapa, berapa kursi". Nomor MPP-nya disebut
+                     karena itulah rujukan yang dipakai di persetujuan dan yang
+                     dicari orang saat menghubungkannya kembali ke HRIS. -->
                 <button
-                    v-for="p in programs"
+                    v-for="v in (basisLoker ? programs : [])"
+                    :key="v.id"
+                    type="button"
+                    class="plw-prog"
+                    :class="{ 'is-on': v.id === selectedId, 'is-lepas': diserahkan(v) }"
+                    :style="{ '--acc': aksen(v) }"
+                    :disabled="diserahkan(v)"
+                    :title="diserahkan(v)
+                        ? `Seluruh ${v.lokerTotal} loker lowongan ini sudah diserahterimakan — tidak ada kandidat yang jadi urusan Anda.`
+                        : ''"
+                    @click="pilihProgram(v)"
+                >
+                    <span class="plw-prog__bar"></span>
+                    <span class="plw-prog__toprow">
+                        <span class="plw-prog__tag" :class="v.kategori === 'MT' ? 'is-mt' : 'is-rek'">{{ katLabel(v.kategori) }}</span>
+                        <span v-if="diserahkan(v)" class="plw-prog__lepas">
+                            <i class="bi bi-arrow-left-right"></i> Diserahkan
+                        </span>
+                        <span class="plw-prog__code">{{ v.mppRef || 'Tanpa MPP' }}</span>
+                    </span>
+                    <span class="plw-prog__title">{{ v.posisi }}</span>
+                    <span class="plw-prog__meta">
+                        <i class="bi bi-diagram-3" style="font-size: 12px; flex: 0 0 auto"></i>
+                        <span class="plw-ell">{{ v.departemen || 'Tanpa departemen' }}<template v-if="v.level"> · {{ v.level }}</template></span>
+                    </span>
+                    <span class="plw-prog__meta">
+                        <i class="bi bi-geo-alt" style="font-size: 12px; flex: 0 0 auto"></i>
+                        <span class="plw-ell">{{ v.lokasi || 'Lokasi belum disetel' }} · {{ v.kuota }} kursi</span>
+                    </span>
+                    <!-- INILAH SEBAB MODE INI ADA: satu lowongan yang dibuka di
+                         lebih dari satu gelombang. Berbasis program ia dua baris
+                         terpisah; di sini satu baris, dan jumlah gelombangnya
+                         disebut supaya tidak ada yang mengira riwayatnya hilang. -->
+                    <span v-if="v.program && v.program.length > 1" class="plw-prog__meta">
+                        <i class="bi bi-collection" style="font-size: 12px; flex: 0 0 auto"></i>
+                        <span class="plw-ell">Dibuka di {{ v.program.length }} program · {{ v.program.join(', ') }}</span>
+                    </span>
+                    <span class="plw-prog__stats">
+                        <span class="plw-prog__stat">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /></svg>
+                            <b style="color: #4f46e5">{{ v.aktif }}</b> aktif
+                        </span>
+                        <span class="plw-prog__stat">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.4"><path d="M20 6L9 17l-5-5" /></svg>
+                            <b style="color: #059669">{{ v.lolos }}</b> lolos
+                        </span>
+                        <span>{{ v.pelamar }} total</span>
+                    </span>
+                    <span v-if="diserahkan(v)" class="plw-prog__nota">
+                        <i class="bi bi-info-circle"></i>
+                        Lokernya dipegang rekruter lain. Minta diserahkan kembali,
+                        atau hubungi admin lewat Master Akun.
+                    </span>
+                </button>
+
+                <button
+                    v-for="p in (basisLoker ? [] : programs)"
                     :key="p.id"
                     type="button"
                     class="plw-prog"
-                    :class="{ 'is-on': p.id === selectedId }"
+                    :class="{ 'is-on': p.id === selectedId, 'is-lepas': diserahkan(p) }"
                     :style="{ '--acc': aksen(p) }"
+                    :disabled="diserahkan(p)"
+                    :title="diserahkan(p)
+                        ? `Seluruh ${p.lokerTotal} loker program ini sudah diserahterimakan — tidak ada kandidat yang jadi urusan Anda.`
+                        : ''"
                     @click="pilihProgram(p)"
                 >
                     <span class="plw-prog__bar"></span>
                     <span class="plw-prog__toprow">
                         <span class="plw-prog__tag" :class="p.kategori === 'MT' ? 'is-mt' : 'is-rek'">{{ katLabel(p.kategori) }}</span>
+                        <span v-if="diserahkan(p)" class="plw-prog__lepas">
+                            <i class="bi bi-arrow-left-right"></i> Diserahkan
+                        </span>
                         <span class="plw-prog__code">{{ p.kode }}</span>
                     </span>
                     <span class="plw-prog__title">{{ p.nama }}</span>
@@ -66,6 +175,15 @@
                         </span>
                         <span>{{ p.pelamar }} total</span>
                     </span>
+                    <!-- Menyebut SEBABNYA di kartu, bukan cuma menyisakan nol.
+                         "0 aktif" saja terbaca sebagai "belum ada yang melamar"
+                         — padahal pelamarnya ada, hanya bukan lagi urusan akun
+                         ini. Dua keadaan itu menuntut tindakan yang berbeda. -->
+                    <span v-if="diserahkan(p)" class="plw-prog__nota">
+                        <i class="bi bi-info-circle"></i>
+                        Lokernya dipegang rekruter lain. Minta diserahkan kembali,
+                        atau hubungi admin lewat Master Akun.
+                    </span>
                 </button>
 
                 <div v-if="totalPage > 1" class="plw-pager">
@@ -84,14 +202,33 @@
             <div class="plw-main__inner">
                 <div class="plw-hgroup">
                     <h1 class="plw-h1">Worklist Pelamar</h1>
-                    <p class="plw-sub">Pilih program di panel kiri, lalu pantau &amp; gerakkan kandidat pada alur seleksinya.</p>
+                    <p class="plw-sub">
+                        {{ basisLoker
+                            ? 'Pilih job vacancy di panel kiri — pelamarnya digabung lintas program, lalu pantau & gerakkan pada alur seleksinya.'
+                            : 'Pilih program di panel kiri, lalu pantau & gerakkan kandidat pada alur seleksinya.' }}
+                    </p>
                 </div>
 
                 <template v-if="detail.program">
                     <div class="plw-progrow">
                         <div style="min-width: 0; flex: 1">
-                            <div class="plw-eyebrow">{{ katLabel(detail.program.kategori).toUpperCase() }}</div>
+                            <div class="plw-eyebrow">
+                                {{ katLabel(detail.program.kategori).toUpperCase() }}<template v-if="lokerInfo && lokerInfo.mppRef"> · {{ lokerInfo.mppRef }}</template>
+                            </div>
                             <div class="plw-progtitle">{{ detail.program.nama }}</div>
+                            <!-- Baris rincian LOWONGAN — hanya pada basis job vacancy.
+                                 Di basis program, hal-hal ini berbeda-beda antar loker
+                                 di dalam satu papan, jadi menyebut salah satunya di
+                                 kepala halaman akan berbohong tentang sisanya. -->
+                            <div v-if="lokerInfo" class="plw-progflow">
+                                <i class="bi bi-diagram-3" style="font-size: 13px; flex: 0 0 auto"></i>
+                                <span class="plw-ell">
+                                    {{ lokerInfo.departemen || 'Tanpa departemen' }}<template v-if="lokerInfo.level"> · {{ lokerInfo.level }}</template>
+                                    · {{ lokerInfo.lokasi || 'Lokasi belum disetel' }}
+                                    · {{ lokerInfo.kuota }} kursi
+                                    <template v-if="lokerInfo.program.length > 1"> · dibuka di {{ lokerInfo.program.length }} program</template>
+                                </span>
+                            </div>
                             <div class="plw-progflow">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex: 0 0 auto"><path d="M6 3v12" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="6" r="3" /><path d="M18 9c0 6-12 3-12 9" /></svg>
                                 <span class="plw-ell">{{ detail.program.alur || 'Belum ada alur' }} · {{ detail.kolom.length }} tahap</span>
@@ -375,6 +512,12 @@
                          isinya" — termasuk kampus & tanggal melamar yang tak muat
                          di kartu kanban. -->
                     <div class="plw-moderow">
+                        <!-- Pemilih tampilan & penyaring alur dikelompokkan di
+                             SATU sisi. Keduanya menjawab pertanyaan yang sama —
+                             "papan ini menggambarkan apa" — sementara teks hasil
+                             di ujung kanan menjawab "isinya berapa". Dipisah
+                             begini, matanya tidak perlu melompat. -->
+                        <div class="plw-moderow__kiri">
                         <div class="plw-modes">
                             <button
                                 type="button" class="plw-mode" :class="{ 'is-on': mode === 'kanban' }"
@@ -389,6 +532,63 @@
                                 <i class="bi bi-list-ul"></i><span>List</span>
                             </button>
                         </div>
+
+                        <!-- ═══ PENYARING ALUR — HANYA BASIS JOB VACANCY ═══
+                             Satu lowongan yang dibuka ulang di gelombang
+                             berikutnya hampir selalu memakai alur yang sudah
+                             diperbarui. Menggabungkan semuanya jadi satu papan
+                             menghasilkan belasan kolom milik dua rombongan yang
+                             tidak pernah bertemu — separuhnya selalu kosong, dan
+                             tak satu pun menjawab "gelombang sekarang di mana".
+
+                             Karena itu alur dipilih SATU, bawaannya yang terbaru
+                             yang sudah punya pelamar. "Semua alur" tetap ada
+                             sebagai pilihan, tapi bukan bawaan: ia bukan
+                             pertanyaan sehari-hari.
+
+                             Baru muncul saat memang ADA yang bisa dipilih —
+                             pemilih berisi satu baris hanya menyita ruang tanpa
+                             menawarkan apa pun. -->
+                        <!-- Kelasnya `plw-alurfil`, BUKAN `plw-alur`: nama yang
+                             kedua sudah dipakai panel progres alur di drawer
+                             kandidat, dan CSS memenangkan definisi terakhir —
+                             penyaring ini sempat mewarisi padding 18px milik
+                             panel itu lalu tampil sebagai kotak gemuk tanpa
+                             teks yang terbaca. -->
+                        <div v-if="basisLoker && alurOpsi.length > 1" class="plw-alurfil">
+                            <span class="plw-alurfil__ico"><i class="bi bi-signpost-split-fill"></i></span>
+                            <span class="plw-alurfil__lbl">Alur</span>
+                            <el-select
+                                v-model="alurPilih" size="small" class="plw-alurfil__sel"
+                                placeholder="Pilih alur" @change="gantiAlur"
+                            >
+                                <!-- Nomor versi disebut HANYA saat papan ini memang
+                                     memuat lebih dari satu versi: versi baru mewarisi
+                                     nama alur lamanya, jadi tanpa nomor itu dua baris
+                                     di sini berbunyi persis sama.
+
+                                     Label ringkas dipakai untuk kotak tertutup,
+                                     dan barisnya sendiri digambar lengkap dengan
+                                     jumlah pelamar — nama alur bisa panjang, dan
+                                     yang terpotong lebih dulu harus keterangannya,
+                                     bukan namanya. -->
+                                <el-option
+                                    v-for="a in alurOpsi" :key="a.id"
+                                    :value="String(a.id)"
+                                    :label="`${a.nama}${a.versi ? ' · v' + a.versi : ''}`"
+                                >
+                                    <span class="plw-alurfil__nama">{{ a.nama }}</span>
+                                    <span v-if="a.versi" class="plw-alurfil__versi">v{{ a.versi }}</span>
+                                    <span class="plw-alurfil__n" :class="{ 'is-nol': !a.pelamar }">{{ a.pelamar }} pelamar</span>
+                                </el-option>
+                                <el-option value="SEMUA" label="Semua alur">
+                                    <span class="plw-alurfil__nama">Semua alur</span>
+                                    <span class="plw-alurfil__n">digabung</span>
+                                </el-option>
+                            </el-select>
+                        </div>
+                        </div>
+
                         <div class="plw-hasil">{{ teksHasil }}</div>
                     </div>
 
@@ -820,7 +1020,7 @@
                         </div>
                     </div>
                 </template>
-                <div v-else class="plw-empty" style="padding: 4rem 0">Pilih program di panel kiri untuk melihat papan seleksi.</div>
+                <div v-else class="plw-empty" style="padding: 4rem 0">Pilih {{ basisLoker ? 'job vacancy' : 'program' }} di panel kiri untuk melihat papan seleksi.</div>
             </div>
         </main>
 
@@ -1052,6 +1252,35 @@
                                         <span v-else class="is-samar">belum ada temuan dicatat</span>
                                         <span v-if="t.butuhPersetujuan" class="plw-test__adj is-warn" title="Tanyakan kesediaan kandidat lebih dulu — biasanya lewat telepon">
                                             <i class="bi bi-shield-exclamation"></i> menunggu jawaban kandidat
+                                        </span>
+                                    </div>
+                                    <!-- SKRINING — keadaan sesi, skor, dan penanda gugur.
+                                         Angkanya sudah tersimpan di kepala sesi, jadi
+                                         menampilkannya di sini tidak menambah satu kueri pun. -->
+                                    <div v-if="t.skrining" class="plw-test__periksa">
+                                        <template v-if="t.skrining.sesi">
+                                            <span
+                                                class="plw-test__adj"
+                                                :class="t.skrining.sesi.status === 'SELESAI' ? 'is-ok' : 'is-warn'"
+                                            >
+                                                <i class="bi" :class="t.skrining.sesi.status === 'SELESAI' ? 'bi-lock-fill' : 'bi-pencil-fill'"></i>
+                                                {{ t.skrining.sesi.status === 'SELESAI' ? 'skrining selesai' : 'skrining berjalan' }}
+                                            </span>
+                                            <span v-if="t.skrining.sesi.skorPersen !== null" class="plw-test__adj">
+                                                <i class="bi bi-speedometer2"></i> {{ t.skrining.sesi.skorPersen }}%
+                                            </span>
+                                            <span v-if="t.skrining.sesi.rekomendasi" class="plw-test__adj" :class="kelasRekomSkr(t.skrining.sesi.rekomendasi)">
+                                                <i class="bi bi-flag-fill"></i> {{ labelRekomSkr(t.skrining.sesi.rekomendasi) }}
+                                            </span>
+                                            <span v-if="t.skrining.sesi.knockout" class="plw-test__adj is-no" :title="t.skrining.sesi.knockoutPesan">
+                                                <i class="bi bi-exclamation-octagon-fill"></i> ditandai gugur
+                                            </span>
+                                        </template>
+                                        <span v-else-if="t.skrining.terikat" class="is-samar">
+                                            kuesioner {{ t.skrining.nama || t.skrining.kode }} siap — belum dimulai
+                                        </span>
+                                        <span v-else class="plw-test__adj is-warn" title="Pasang templatenya di Program Kegiatan">
+                                            <i class="bi bi-plug"></i> belum terikat kuesioner
                                         </span>
                                     </div>
                                     <div v-if="t.jadwal" class="plw-test__jadwalinfo">
@@ -1314,6 +1543,19 @@
                                     </button>
                                 </template>
 
+                                <!-- Berdiri SEBELUM "Catat Hasil" karena itulah urutan
+                                     kerjanya: skrining dijalankan dulu, hasil tahapnya
+                                     dicatat sesudah kesimpulannya ada. -->
+                                <button
+                                    v-if="t.skrining && t.skrining.terikat"
+                                    type="button" class="plw-test__rec plw-test__skr"
+                                    title="Buka kuesioner phone screening"
+                                    @click="bukaSkrining(t)"
+                                >
+                                    <i class="bi bi-telephone-inbound"></i>
+                                    {{ t.skrining.sesi ? 'Buka Skrining' : 'Mulai Skrining' }}
+                                </button>
+
                                 <button
                                     v-if="bisaCatat(t) && bisaCatatKehadiran(t)"
                                     type="button" class="plw-test__rec"
@@ -1398,6 +1640,20 @@
                                  Berkas = lembarannya saja, berfolder. Keduanya
                                  memakai data yang sama persis — yang berganti
                                  hanya sudut pandangnya. -->
+                            <!-- Layar penuh untuk biodata saja.
+                                 Jendela detail memuat tujuh tab; biodata yang
+                                 isinya lima puluh isian membaca dalam kolom
+                                 selebar separuh layar berarti menggulir dua kali
+                                 lebih panjang daripada perlunya, sambil melewati
+                                 tab lain yang sedang tidak dibaca. -->
+                            <button
+                                type="button" class="plw-biofull__btn"
+                                title="Buka biodata di layar penuh"
+                                @click="bioFull = true"
+                            >
+                                <i class="bi bi-arrows-fullscreen"></i>
+                                <span>Layar penuh</span>
+                            </button>
                             <div class="plw-fmview" role="group" aria-label="Cara menampilkan berkas">
                                 <button
                                     type="button" class="plw-fmview__b" :class="{ 'is-on': berkasMode === 'berkas' }"
@@ -1417,6 +1673,12 @@
                                 </button>
                             </div>
                         </div>
+
+                        <!-- SELURUH isi tab dipindahkan ke hamparan layar penuh,
+                             bukan disalin: akordion yang terbuka, folder berkas
+                             yang dipilih, dan gulungan riwayat ikut apa adanya —
+                             lalu kembali seperti semula begitu ditutup. -->
+                        <Teleport to="#plw-biofull-body" :disabled="!bioFull">
 
                         <div v-if="loadingProfil" class="plw-load" style="padding: 1.5rem 0"><span class="plw-spin"></span> Memuat berkas…</div>
                         <div v-else-if="!profil.formulir.length" class="plw-empty" style="padding: 1.5rem 0">Belum ada formulir terisi.</div>
@@ -1515,7 +1777,12 @@
 
                         <div v-else class="plw-forms">
                             <div v-for="(f, i) in profil.formulir" :key="f.no" class="plw-form" :class="{ 'is-open': openForm === i }">
-                                <button type="button" class="plw-form__head" @click="openForm = openForm === i ? -1 : i">
+                                <button
+                                    type="button" class="plw-form__head"
+                                    :class="{ 'is-full': bioFull }"
+                                    :disabled="bioFull"
+                                    @click="openForm = openForm === i ? -1 : i"
+                                >
                                     <span class="plw-form__step" :class="{ 'is-ok': !!f.waktuKirim }">{{ String(i + 1).padStart(2, '0') }}</span>
                                     <span style="flex: 1; min-width: 0">
                                         <span class="plw-form__title">{{ f.label }}</span>
@@ -1524,7 +1791,7 @@
                                     <span class="plw-form__pill" :class="f.waktuKirim ? 'is-ok' : 'is-wait'">{{ f.waktuKirim ? 'Lengkap' : 'Menunggu' }}</span>
                                     <svg class="plw-form__chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2.4" stroke-linecap="round"><path d="M6 9l6 6 6-6" /></svg>
                                 </button>
-                                <div v-if="openForm === i" class="plw-form__body">
+                                <div v-if="openForm === i || bioFull" class="plw-form__body">
                                     <!-- Formulir yang isiannya kosong tapi berkasnya ada
                                          (mis. hanya foto verifikasi) tetap menggambar kisi
                                          ini — kalau syaratnya cuma jawaban, berkasnya ikut
@@ -1539,7 +1806,13 @@
 
                                     <!-- ═══ BIODATA, DIKELOMPOKKAN SEPERTI SAAT DIISI ═══
                                          Judul & ikon kelompok datang dari skema formulir
-                                         (langkah), bukan dari nama kunci. Lihat grupIsian(). -->
+                                         (langkah), bukan dari nama kunci. Lihat grupIsian().
+
+                                         Teleport-nya MEMINDAHKAN node ini ke hamparan layar
+                                         penuh, bukan menyalinnya. Akordion yang sedang
+                                         terbuka, gulungan riwayat, dan uraian yang sudah
+                                         dilebarkan ikut pindah apa adanya — dan kembali
+                                         seperti semula begitu ditutup. -->
                                     <template v-for="g in grupIsian(f)" :key="g.kunci">
                                     <div class="plw-ghead">
                                         <span class="plw-ghead__ico"><i class="bi" :class="g.ikon"></i></span>
@@ -1682,6 +1955,16 @@
                                                  digitnya sendiri untuk tahu ini sembilan juta
                                                  atau sembilan puluh juta — dan itu keliru
                                                  justru saat menawar gaji. -->
+                                            <!-- ══ DAFTAR BUTIR ══
+                                                 "Sebutkan minimal 5 hal" tersimpan sebagai lima
+                                                 jawaban terpisah. Dirangkai koma, kelimanya jadi
+                                                 satu kalimat — "sdfa, fa, fafda, fafa, fa" — dan
+                                                 peninjau tidak lagi bisa melihat mana yang lima
+                                                 gagasan dan mana yang satu gagasan berkoma.
+                                                 Padahal jumlah itulah yang dijaga formulirnya. -->
+                                            <ol v-else-if="isianDaftar(j)" class="plw-field__v plw-butir">
+                                                <li v-for="(butir, bi) in isianDaftar(j)" :key="bi">{{ butir }}</li>
+                                            </ol>
                                             <div v-else class="plw-field__v" :class="{ 'is-rp': isianRupiah(f, j), 'is-mono': selMono(f, j) }">{{ nilaiIsian(f, j) }}</div>
                                         </div>
                                     </div>
@@ -1710,8 +1993,24 @@
                                             :title="d.berkas ? d.berkas.nama : 'Belum diunggah kandidat'"
                                             @click="d.berkas && bukaDok(d.berkas)"
                                         >
-                                            <span class="plw-doc__ico">
-                                                <i v-if="d.berkas" class="bi" :class="d.berkas.isImage ? 'bi-file-earmark-image-fill' : 'bi-file-earmark-pdf-fill'"></i>
+                                            <!-- GAMBAR TAMPIL SEBAGAI GAMBAR.
+                                                 Foto verifikasi wajah sebelumnya hanya
+                                                 berupa ikon berkas abu-abu berikut namanya,
+                                                 "foto_verifikasi-verifikasi.jpg". Pertanyaan
+                                                 yang dibawa peninjau ke kartu itu cuma satu —
+                                                 apakah wajahnya cocok dengan KTP — dan itu
+                                                 tidak bisa dijawab oleh nama berkas. Ia harus
+                                                 membuka lightbox satu per satu hanya untuk
+                                                 melihat apa yang seharusnya langsung terlihat. -->
+                                            <span class="plw-doc__ico" :class="{ 'is-foto': d.berkas && d.berkas.isImage }">
+                                                <img
+                                                    v-if="d.berkas && d.berkas.isImage"
+                                                    :src="d.berkas.url"
+                                                    :alt="d.nama"
+                                                    loading="lazy"
+                                                    @error="(e) => (e.target.style.display = 'none')"
+                                                />
+                                                <i v-else-if="d.berkas" class="bi bi-file-earmark-pdf-fill"></i>
                                                 <i v-else class="bi bi-file-earmark-x"></i>
                                             </span>
                                             <span class="plw-doc__in">
@@ -1726,6 +2025,8 @@
                                 </div>
                             </div>
                         </div>
+
+                        </Teleport>
                     </div>
                 </div>
 
@@ -1840,10 +2141,41 @@
                     </div>
 
                     <!-- Indikator kuota (muncul saat kandidat di tahap akhir & posisi berkuota) -->
-                    <div v-else-if="detailKandidat.diTahapAkhir && detailKandidat.kuota > 0" class="plw-kuota" :class="{ 'is-penuh': detailKandidat.kuotaPenuh }">
+                    <!-- KETERANGAN KUOTA — dua batas, dan keduanya bisa menutup:
+
+                           LOKER  jatah program ini
+                           MPP    rencana yang disetujui, LINTAS program
+
+                         Yang kedua baru ada sejak buku kursi MPP dipasang.
+                         Sebelumnya papan hanya melihat jatah loker, sehingga
+                         pada MPP yang dibuka di dua program tombol Loloskan
+                         tetap hijau di program kedua walau kursinya sudah habis
+                         di program pertama — dan penolakannya baru datang
+                         sesudah alasan diketik dan modal dikirim.
+
+                         Sebabnya disebut, bukan cuma "penuh": menambah jatah
+                         loker dan menambah rencana MPP adalah dua tindakan yang
+                         sama sekali berbeda, dan yang membaca perlu tahu yang
+                         mana. -->
+                    <div v-else-if="detailKandidat.diTahapAkhir && (detailKandidat.kuota > 0 || detailKandidat.mppKuota > 0)" class="plw-kuota" :class="{ 'is-penuh': detailKandidat.kuotaPenuh }">
                         <i class="bi" :class="detailKandidat.kuotaPenuh ? 'bi-lock-fill' : 'bi-people-fill'"></i>
-                        <span v-if="detailKandidat.kuotaPenuh">Kuota penuh ({{ detailKandidat.terisiKuota }}/{{ detailKandidat.kuota }}) — Loloskan dinonaktifkan. Gunakan Talent Pool / Tidak Lolos.</span>
-                        <span v-else>Sisa <b>{{ detailKandidat.sisaKuota }}</b> kursi dari {{ detailKandidat.kuota }} (terisi {{ detailKandidat.terisiKuota }}).</span>
+                        <span v-if="detailKandidat.kuotaSebab === 'MPP'">
+                            Kuota <b>MPP</b> sudah penuh ({{ detailKandidat.mppTerisi }}/{{ detailKandidat.mppKuota }} disetujui) —
+                            termasuk penerimaan di program lain yang memakai MPP yang sama.
+                            Loloskan dinonaktifkan; gunakan Talent Pool / Tidak Lolos, atau minta rencana MPP ditambah.
+                        </span>
+                        <span v-else-if="detailKandidat.kuotaSebab === 'LOKER'">
+                            Kuota posisi penuh ({{ detailKandidat.terisiKuota }}/{{ detailKandidat.kuota }}) — Loloskan dinonaktifkan. Gunakan Talent Pool / Tidak Lolos.
+                        </span>
+                        <span v-else-if="detailKandidat.kuota > 0">
+                            Sisa <b>{{ detailKandidat.sisaKuota }}</b> kursi dari {{ detailKandidat.kuota }} (terisi {{ detailKandidat.terisiKuota }}).
+                            <template v-if="detailKandidat.mppSisa !== null && detailKandidat.mppSisa !== undefined">
+                                MPP: sisa {{ detailKandidat.mppSisa }} dari {{ detailKandidat.mppKuota }}.
+                            </template>
+                        </span>
+                        <span v-else>
+                            MPP: sisa <b>{{ detailKandidat.mppSisa }}</b> kursi dari {{ detailKandidat.mppKuota }} disetujui.
+                        </span>
                     </div>
 
                     <!-- KEPUTUSAN PERUSAHAAN — tombolnya DARI MASTER Hasil
@@ -1996,6 +2328,55 @@
                 </button>
             </template>
         </AdminModal>
+
+        <!-- ══ BIODATA LAYAR PENUH ═══════════════════════════════════════════
+             Jendela detail di belakangnya SENGAJA dibiarkan terbuka: yang
+             dicari orang di sini adalah membaca biodatanya lebih lega, bukan
+             berpindah tempat. Menutupnya berarti kehilangan tab yang sedang
+             dibuka, gulungan yang sudah dicapai, dan konteks keputusannya.
+
+             Isinya bukan salinan — nodenya DIPINDAHKAN ke sini oleh Teleport
+             di dalam tab Berkas & Biodata, lalu dikembalikan saat ditutup.
+             Satu sumber, satu keadaan; tidak ada dua versi yang bisa
+             berselisih. -->
+        <Teleport to="body">
+            <transition name="wca-modal">
+                <div v-show="bioFull" class="plw-biofull" @click.self="bioFull = false">
+                    <div class="plw-biofull__box" role="dialog" aria-modal="true" aria-label="Biodata layar penuh">
+                        <div class="plw-biofull__head">
+                            <span class="plw-biofull__ico"><i class="bi bi-person-vcard"></i></span>
+                            <div class="plw-biofull__t">
+                                <b>Biodata Kandidat</b>
+                                <small>{{ detailKandidat?.pelamar || '' }}<template v-if="detailKandidat?.posisi"> · {{ detailKandidat.posisi }}</template></small>
+                            </div>
+                            <button type="button" class="plw-biofull__x" aria-label="Tutup" @click="bioFull = false">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </div>
+                        <!-- Cap air. Duduk DI BELAKANG isi, bukan di atasnya —
+                             lapisan setransparan apa pun yang menutupi teks tetap
+                             menurunkan ketajamannya, dan biodata dibaca untuk
+                             memutuskan nasib orang.
+
+                             aria-hidden + pointer-events:none: ia hiasan, bukan
+                             gambar yang perlu dibacakan pembaca layar maupun
+                             disentuh. -->
+                        <div class="plw-biofull__cap" aria-hidden="true">
+                            <img src="/logo/EVOGROUP.png" alt="" draggable="false" />
+                        </div>
+
+                        <!-- Sasaran teleport. Ia yang menggulir, bukan halamannya. -->
+                        <div id="plw-biofull-body" class="plw-biofull__body"></div>
+                        <div class="plw-biofull__foot">
+                            <span><i class="bi bi-info-circle"></i> Jendela detail tetap terbuka di belakang — tutup ini untuk kembali.</span>
+                            <button type="button" class="wca-btn wca-btn--ghost" @click="bioFull = false">
+                                <i class="bi bi-x-lg"></i> Tutup
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </transition>
+        </Teleport>
 
         <!-- ═══ LIGHTBOX BERKAS GAMBAR ═══ -->
         <div class="plw-lb" :class="{ 'is-on': !!lightbox }" @click="lightbox = null">
@@ -2858,6 +3239,88 @@
                     <i class="bi bi-info-circle-fill"></i>
                     <span>Tersimpan sebagai riwayat aktivitas ini. Pemeriksaan tidak boleh dijalankan, dan hasilnya tidak bisa disimpulkan bersih.</span>
                 </p>
+            </div>
+        </ConfirmModal>
+
+        <!-- ══ PHONE SCREENING ═══════════════════════════════════════════════
+
+             Jendela SENDIRI, bukan menumpang "Catat Hasil". Dua alasan:
+
+             1. Urutan kerjanya berbeda. Skrining dijalankan SAMBIL menelepon
+                dan berlangsung belasan menit; hasil tahapnya dicatat sesudah
+                kesimpulannya ada. Menyatukan keduanya memaksa orang menutup
+                keputusan tahap padahal wawancaranya baru mulai.
+
+             2. Isinya bisa 50 pertanyaan. Lebar jendela konfirmasi — bahkan
+                yang "lg" — tidak cukup, dan tiap pilihan jadi menumpuk satu
+                per baris. -->
+        <AdminModal
+            :show="skrShow"
+            size="full"
+            icon="bi-telephone-inbound"
+            title="Phone Screening"
+            :subtitle="skrTarget ? `${skrTarget.label} — ${detailKandidat?.pelamar || ''}` : ''"
+            :busy="skrBusy"
+            @close="tutupSkrining"
+        >
+            <PanelSkrining
+                v-if="skrIsi"
+                ref="panelSkr"
+                :key="skrTarget?.id"
+                :sub-tes-id="skrTarget?.id"
+                :isi="skrIsi"
+                :petunjuk="skrIsi.petunjuk || ''"
+                @perbarui="perbaruiSkrining"
+                @selesaikan="mintaSelesaiSkrining"
+                @buka-kunci="skrBukaKunciShow = true"
+            />
+            <div v-else class="plw-skrmuat">Memuat kuesioner…</div>
+
+            <template #footer>
+                <button type="button" class="wca-btn wca-btn--ghost" @click="tutupSkrining">
+                    <i class="bi bi-x-lg"></i> Tutup
+                </button>
+            </template>
+        </AdminModal>
+
+        <!-- Menyelesaikan sesi MENGUNCINYA. Yang dikunci adalah angka yang
+             mungkin sudah dipakai memutuskan nasib orang, jadi konfirmasinya
+             menyebut apa yang terjadi sesudahnya — bukan sekadar "yakin?". -->
+        <ConfirmModal
+            :show="skrSelesaiShow"
+            :danger="false"
+            icon="bi-check2-circle"
+            title="Selesaikan sesi skrining?"
+            confirm-label="Ya, Selesaikan"
+            confirm-icon="bi-check2-circle"
+            note="Skor akhir dihitung lalu sesi dikunci. Sesudah ini aktivitas skriningnya baru bisa ditutup dan tahapnya diputus. Menyuntingnya lagi menuntut buka kunci, dan pembukaannya tercatat di log."
+            :busy="skrBusy"
+            @cancel="skrSelesaiShow = false"
+            @confirm="selesaikanSkrining"
+        />
+
+        <ConfirmModal
+            :show="skrBukaKunciShow"
+            form-mode
+            icon="bi-unlock"
+            title="Buka Kunci Sesi Skrining"
+            subtitle="Alasannya dicatat di log dan tidak bisa dihapus"
+            confirm-label="Buka Kunci"
+            confirm-icon="bi-unlock"
+            :confirm-disabled="skrAlasan.trim().length < 5"
+            :busy="skrBusy"
+            @cancel="skrBukaKunciShow = false; skrAlasan = ''"
+            @confirm="bukaKunciSkrining"
+        >
+            <div class="plw-fld">
+                <label class="plw-fld__lbl">Alasan membuka kunci <small>wajib</small></label>
+                <textarea
+                    v-model="skrAlasan"
+                    class="plw-inp plw-inp--ta"
+                    rows="3"
+                    placeholder="mis. Salah pilih jawaban pertanyaan gaji, kandidat mengoreksi lewat telepon susulan."
+                    maxlength="500"
+                ></textarea>
             </div>
         </ConfirmModal>
 
@@ -4039,6 +4502,7 @@ import AdminModal from '@career/AdminModal.vue';
 import PanelProses from '@career/PanelProses.vue';
 import BerkasAktivitas from '@career/BerkasAktivitas.vue';
 import PanelPemeriksaan from '@career/PanelPemeriksaan.vue';
+import PanelSkrining from '@career/PanelSkrining.vue';
 import ConfirmModal from '@career/ConfirmModal.vue';
 import EditorQuill from '@career/EditorQuill.vue';
 import KontenAman from '@career/KontenAman.vue';
@@ -4106,7 +4570,7 @@ export default {
     // "Extraneous non-props attributes" berhenti — atribut itu memang tidak
     // dipakai sebagai atribut HTML di sini.
     inheritAttrs: false,
-    components: { Head, AdminModal, BerkasAktivitas, ConfirmModal, EditorQuill, KontenAman, PanelPemeriksaan, PanelProses, UraianLipat },
+    components: { Head, AdminModal, BerkasAktivitas, ConfirmModal, EditorQuill, KontenAman, PanelPemeriksaan, PanelProses, PanelSkrining, UraianLipat },
     props: {
         talent: { type: Array, default: () => [] },
         programAwal: { type: Object, default: () => ({ data: [], page: 1, totalPage: 1, total: 0 }) },
@@ -4162,6 +4626,20 @@ export default {
             selectedId: null,
             detail: { program: null, posisi: [], kolom: [], pelamar: [] },
             loadingDetail: false,
+            // ── DASAR DAFTAR PANEL KIRI ─────────────────────────────────────
+            //
+            // 'program' | 'loker'. Disimpan di perangkat, sama seperti `mode`:
+            // ini soal pertanyaan apa yang sedang dikerjakan orangnya, dan
+            // rekruter yang bekerja per lowongan tidak ingin dilempar kembali
+            // ke daftar program setiap kali halaman dimuat ulang.
+            //
+            // Bawaannya tetap 'program' — perilaku yang sudah dikenal tidak
+            // boleh berubah sendiri untuk orang yang tidak meminta apa-apa.
+            basis: localStorage.getItem('plw.basis') === 'loker' ? 'loker' : 'program',
+            // Alur yang sedang dipakai papan pada basis job vacancy.
+            // '' = serahkan pada server (ia memilih bawaan yang benar);
+            // 'SEMUA' = gabungkan; selain itu id alur sebagai teks.
+            alurPilih: '',
             // Bawaan SEMUA, bukan AKTIF. Papan yang menyembunyikan kandidat
             // yang sudah ditutup membuat orang mencarinya di tempat yang salah —
             // dan yang mundur di tahap akhir tampak seolah hilang begitu saja.
@@ -4243,6 +4721,10 @@ export default {
             // yang justru ingin dihindari, dan drawer-nya hanya selebar itu.
             detailTes: null,
             lightbox: null,
+            // Biodata dibaca di layar penuh, jendela detail tetap terbuka di
+            // belakangnya. Lihat hamparan .plw-biofull.
+            bioFull: false,
+            lepasEscBio: null,
             lbSrc: '',
             lbTimer: null,
             lbLoading: false,
@@ -4264,6 +4746,19 @@ export default {
             putusTalentPool: true,
             putusTanggal: '',
             catatShow: false,
+
+            // ── PHONE SCREENING ──────────────────────────────────────────
+            // Isi penuhnya (pertanyaan + jawaban) TIDAK ikut payload worklist:
+            // satu template bisa berisi 50 pertanyaan, dan mengangkutnya untuk
+            // setiap aktivitas di setiap baris berarti ribuan baris yang tidak
+            // satu pun digambar sampai jendelanya dibuka.
+            skrShow: false,
+            skrTarget: null,
+            skrIsi: null,
+            skrBusy: false,
+            skrSelesaiShow: false,
+            skrBukaKunciShow: false,
+            skrAlasan: '',
             catatTarget: null,
             catatHasil: 'LULUS',
             mcuStatus: 'FIT',
@@ -4466,6 +4961,7 @@ export default {
     // Pemantau unduhan hidup di luar siklus Vue — tanpa dibersihkan, ia terus
     // menembak API setelah halaman ditinggalkan.
     beforeUnmount() {
+        if (this.lepasEscBio) window.removeEventListener('keydown', this.lepasEscBio, true);
         this.unduhan.forEach((u) => clearTimeout(u.timer));
         if (this.unduhanRaf) cancelAnimationFrame(this.unduhanRaf);
         this.hentikanPantauBorong();
@@ -4530,6 +5026,25 @@ export default {
         listPer() { this.listPage = 1; },
     },
     computed: {
+        /** Panel kiri sedang berbasis JOB VACANCY (MPP), bukan program. */
+        basisLoker() { return this.basis === 'loker'; },
+        /**
+         * Alur yang hidup di job vacancy terpilih — bahan penyaring alur.
+         *
+         * Selalu dari `detail`, tidak pernah disimpan terpisah: daftar ini
+         * milik lowongan yang sedang dibuka, dan menyalinnya ke state sendiri
+         * berarti satu salinan yang bisa tertinggal saat lowongan berganti —
+         * lalu pemilih menawarkan alur milik lowongan sebelumnya.
+         */
+        alurOpsi() { return this.basisLoker ? (this.detail.alurOpsi || []) : []; },
+        /**
+         * Rincian job vacancy terpilih, atau null pada basis program.
+         *
+         * Null-nya penting: di basis program satu papan memuat banyak loker
+         * yang departemen & lokasinya berbeda-beda, jadi tidak ada satu nilai
+         * yang benar untuk ditulis di kepala halaman.
+         */
+        lokerInfo() { return this.basisLoker ? (this.detail.loker || null) : null; },
         /**
          * Status lamaran yang berarti KANDIDAT SENDIRI yang mengakhiri.
          *
@@ -5684,12 +6199,35 @@ export default {
         },
     },
     async mounted() {
+        // Esc menutup hamparan biodata LEBIH DULU, bukan jendela detail di
+        // belakangnya. Ditangkap pada fase capture supaya sampai sebelum
+        // penangan milik modal — tanpa itu satu ketukan Esc menutup keduanya
+        // sekaligus, dan yang hilang justru konteks yang sedang dipakai membaca.
+        this.lepasEscBio = (e) => {
+            if (e.key === 'Escape' && this.bioFull) {
+                e.stopPropagation();
+                this.bioFull = false;
+            }
+        };
+        window.addEventListener('keydown', this.lepasEscBio, true);
+
         // programAwal dari server dihitung TANPA saringan, jadi kalau URL
         // membawa q/jenis daftarnya diambil ulang dulu — kalau tidak, yang
         // terpilih otomatis adalah program pertama dari daftar penuh, bukan
         // yang ditunjuk tautan Dashboard. Menunggu (await) sebelum memilih,
         // karena muatProgram() sendiri tidak memilih apa pun.
-        if (this.q || this.jenis) {
+        // `programAwal` dari server selalu daftar PROGRAM, dan dihitung TANPA
+        // saringan. Diambil ulang bila salah satu dari dua hal berlaku:
+        //
+        //   · URL membawa q/jenis — kalau tidak, yang terpilih otomatis adalah
+        //     program pertama dari daftar penuh, bukan yang ditunjuk tautan
+        //     Dashboard;
+        //   · basis tersimpan = job vacancy — benih programnya memang bukan
+        //     daftar yang akan digambar.
+        //
+        // Menunggu (await) sebelum memilih, karena muatProgram() sendiri tidak
+        // memilih apa pun.
+        if (this.q || this.jenis || this.basisLoker) {
             this.page = 1;
             await this.muatProgram();
         }
@@ -5704,10 +6242,7 @@ export default {
         // sessionStorage, bukan localStorage: pilihan ini milik SESI kerja
         // yang sedang berjalan. Membuka tab baru untuk program lain tidak
         // boleh mengubah program di tab sebelah.
-        const tersimpan = this.programTersimpan();
-        const pilihan = (tersimpan && this.programs.find((p) => p.id === tersimpan)) || this.programs[0];
-
-        if (pilihan) this.pilihProgram(pilihan);
+        this.pulihkanPilihan();
 
         // Gelombang keputusan yang masih berjalan — dipulihkan di sini juga.
         // Dulu ia punya mounted() sendiri, dan karena satu komponen hanya
@@ -6080,27 +6615,74 @@ export default {
         dokFormulir(f) {
             const peta = this.petaSkema(f);
             const keluar = [];
+            // Satu berkas hanya boleh muncul sekali di seksi ini. Kuncinya URL:
+            // ia unik per baris berkas, sementara `field` berulang persis sama
+            // di tiap baris riwayat (`sert_file` lagi dan lagi).
+            const sudah = new Set();
+
+            const tambah = (id, nama, b, pos) => {
+                if (b) {
+                    if (sudah.has(b.url)) return;
+                    sudah.add(b.url);
+                }
+                keluar.push({ id, nama, berkas: b, pos });
+            };
+
             (f.jawaban || []).forEach((j) => {
                 if (!this.isianBerkas(j)) return;
                 const pos = peta.grup[j.key]?.posisi ?? 100000;
                 const label = this.labelIsian(f, j);
                 const berkas = this.berkasSel(j);
-                if (!berkas.length) { keluar.push({ id: `${f.no}-${j.key}`, nama: label, berkas: null, pos }); return; }
-                berkas.forEach((b, i) => keluar.push({
-                    id: `${f.no}-${j.key}-${i}`,
-                    nama: berkas.length > 1 ? `${label} (${i + 1})` : label,
-                    berkas: b,
-                    pos: pos + i / 100,
+                if (!berkas.length) { tambah(`${f.no}-${j.key}`, label, null, pos); return; }
+                berkas.forEach((b, i) => tambah(
+                    `${f.no}-${j.key}-${i}`,
+                    berkas.length > 1 ? `${label} (${i + 1})` : label,
+                    b,
+                    pos + i / 100,
+                ));
+            });
+
+            // ══ BERKAS DI DALAM BARIS BERULANG ══════════════════════════════
+            //
+            // Sertifikat kursus, piagam organisasi, dan surat pengalaman kerja
+            // diunggah PER BARIS riwayat. Sebelumnya seluruhnya dilewati di sini
+            // dengan alasan "sudah tampil di linimasa" — dan linimasa itu ada di
+            // dalam akordion yang tertutup.
+            //
+            // Akibatnya seksi ini tidak pernah menjadi apa yang namanya
+            // janjikan. Pada kandidat pertama yang diperiksa, "Dokumen
+            // Terlampir" menulis 1/1 sementara kandidatnya mengunggah dua
+            // berkas: foto verifikasi tampil, sertifikat PDF-nya tidak — dan
+            // tidak ada satu pun tanda bahwa ia ada. Peninjau yang memindai
+            // dokumen menyimpulkan kandidat tidak melampirkan sertifikat.
+            //
+            // Sekarang ia ikut, dengan konteks barisnya disebut supaya tiga
+            // sertifikat dari tiga baris berbeda tidak terbaca sebagai satu
+            // nama yang tercetak tiga kali. Tampil di dua tempat memang
+            // disengaja: linimasa menjawab "sertifikat kursus yang mana",
+            // seksi ini menjawab "apa saja yang ia lampirkan".
+            (f.jawaban || []).forEach((j) => {
+                const induk = this.labelIsian(f, j);
+                const pos = peta.grup[j.key]?.posisi ?? peta.bagian[j.key]?.posisi ?? 150000;
+
+                (j.baris || []).forEach((row, ri) => (row || []).forEach((p) => {
+                    this.berkasSel(p).forEach((b, i) => tambah(
+                        `${f.no}-${j.key}-${ri}-${p.label || ''}-${i}`,
+                        (j.baris.length > 1 ? `${p.label || induk} · ${induk} #${ri + 1}` : `${p.label || induk} · ${induk}`),
+                        b,
+                        pos + 0.5 + ri / 100 + i / 10000,
+                    ));
                 }));
             });
-            // Berkas tanpa pertanyaan (foto verifikasi) tak punya tempat di
-            // skema — ia memang bukan jawaban isian mana pun. Ditaruh di akhir.
-            this.berkasLepas(f).forEach((b, i) => keluar.push({
-                id: `${f.no}-x-${b.field}`,
-                nama: this.labelBerkas(b),
-                berkas: b,
-                pos: 200000 + i,
-            }));
+
+            // Berkas tanpa pertanyaan (foto verifikasi pada formulir lama) tak
+            // punya tempat di skema — ia memang bukan jawaban isian mana pun.
+            this.berkasLepas(f).forEach((b, i) => tambah(
+                `${f.no}-x-${b.field}-${i}`,
+                this.labelBerkas(b),
+                b,
+                200000 + i,
+            ));
 
             return keluar.sort((a, b) => a.pos - b.pos);
         },
@@ -6242,8 +6824,24 @@ export default {
             // Isian BERULANG selalu selebar penuh — satu baris riwayat kerja
             // memuat perusahaan, jabatan, periode, dan uraian sekaligus.
             if (isian.baris && isian.baris.length) return true;
+            // Begitu pula daftar butir: lima butir di kolom setengah lebar
+            // terpotong satu per satu.
+            if (this.isianDaftar(isian)) return true;
 
             return String(isian.nilai ?? '').length > 60;
+        },
+        /**
+         * Isian bertipe DAFTAR BUTIR — digambar bernomor, bukan dirangkai koma.
+         *
+         * Dikenali dari DATANYA (`daftar` berisi lebih dari satu butir), bukan
+         * dari tipe di skema: jawaban lama yang terlanjur tersimpan sebagai
+         * larik ikut terbaca benar, dan formulir yang skemanya sudah dihapus
+         * tetap tergambar utuh.
+         */
+        isianDaftar(isian) {
+            const d = (isian.daftar || []).filter((x) => String(x ?? '').trim() !== '');
+
+            return d.length > 1 ? d : null;
         },
         inisial(n) { return (n || '?').split(' ').slice(0, 2).map((s) => s[0]).join('').toUpperCase(); },
         katLabel(k) { return { REKRUTMEN: 'Rekrutmen', MT: 'Management Trainee', INTERNSHIP: 'Internship / Magang' }[k] || k || '—'; },
@@ -6415,10 +7013,46 @@ export default {
             return '';
         },
         /* ── Panel kiri ── */
+        /**
+         * Ganti dasar daftar: program ⇄ job vacancy.
+         *
+         * Papan lama DIKOSONGKAN lebih dulu, bukan dibiarkan sampai muatan baru
+         * datang. `selectedId` dua basis ini bukan hal yang sejenis — hashid
+         * program vs nomor MPP — dan membiarkan papan lama terpampang di bawah
+         * daftar yang sudah berganti isi membuat orang membaca kandidat sebuah
+         * program sambil mengira ia sedang melihat satu lowongan.
+         */
+        async setBasis(b) {
+            if (this.basis === b) return;
+
+            this.basis = b;
+            try { localStorage.setItem('plw.basis', b); } catch (e) { /* peramban menolak menyimpan */ }
+
+            this.selectedId = null;
+            this.detail = { program: null, posisi: [], kolom: [], pelamar: [] };
+            this.alurPilih = '';
+            this.page = 1;
+            // Penyaring papan ikut dibersihkan: pilihan lowongan/tahap/kampus
+            // di dalamnya menunjuk isi papan yang barusan ditinggalkan.
+            this.bersihkanFilter();
+            await this.muatProgram();
+            this.pulihkanPilihan();
+        },
+        /**
+         * Muat daftar panel kiri sesuai basis yang sedang dipakai.
+         *
+         * Namanya dipertahankan walau kini bisa memuat job vacancy: ia dipanggil
+         * dari belasan tempat (pencarian, chip kategori, paginasi, mounted), dan
+         * mengganti namanya di semua itu hanya menambah permukaan salah tanpa
+         * menjelaskan apa pun yang belum dijelaskan komentar ini.
+         */
         async muatProgram() {
             this.loadingProg = true;
             try {
-                const res = await axios.get('/api/v1/karir/lamaran/worklist/program', {
+                const url = this.basisLoker
+                    ? '/api/v1/karir/lamaran/worklist/loker'
+                    : '/api/v1/karir/lamaran/worklist/program';
+                const res = await axios.get(url, {
                     params: { page: this.page, q: this.q || undefined, jenis: this.jenis || undefined },
                     ...CFG,
                 });
@@ -6428,10 +7062,16 @@ export default {
                 this.totalPage = r.totalPage;
                 this.total = r.total;
             } catch (e) {
-                this.notice('Gagal memuat program.', true);
+                this.notice(this.basisLoker ? 'Gagal memuat job vacancy.' : 'Gagal memuat program.', true);
             } finally {
                 this.loadingProg = false;
             }
+        },
+        /** Pilih yang tersimpan bila masih ada di daftar; kalau tidak, yang teratas. */
+        pulihkanPilihan() {
+            const tersimpan = this.programTersimpan();
+            const pilihan = (tersimpan && this.programs.find((p) => p.id === tersimpan)) || this.programs[0];
+            if (pilihan) this.pilihProgram(pilihan);
         },
         cariDebounce() {
             clearTimeout(this.cariTm);
@@ -6440,24 +7080,75 @@ export default {
         setJenis(j) { this.jenis = j; this.page = 1; this.muatProgram(); },
         gotoPage(n) { if (n < 1 || n > this.totalPage) return; this.page = n; this.muatProgram(); },
         /* ── Panel kanan ── */
+        /**
+         * Seluruh loker program ini sudah lepas dari akun ini?
+         *
+         * `lokerTotal > 0` ikut disyaratkan: program yang memang BELUM punya
+         * loker sama sekali juga menghasilkan 0 — tapi itu keadaan yang sama
+         * sekali berbeda, dan menandainya "diserahkan" akan berbohong.
+         *
+         * Nilai `undefined` (tanggapan server lama, sebelum kolom ini ada)
+         * jatuh ke false: lebih baik kartunya bisa diklik seperti dulu
+         * daripada mendadak mati tanpa sebab.
+         */
+        diserahkan(p) {
+            return Number.isFinite(p?.lokerTotal)
+                && p.lokerTotal > 0
+                && Number(p.lokerSaya || 0) === 0;
+        },
         pilihProgram(p) {
+            if (this.diserahkan(p)) return;
+
             this.selectedId = p.id;
             this.statusTab = 'AKTIF';
+            // Alur dilepas setiap berpindah lowongan: alur milik lowongan
+            // sebelumnya belum tentu ada di lowongan ini, dan memaksakannya
+            // membuat server jatuh ke bawaan tanpa pemilihnya ikut berubah —
+            // pemilih lalu menunjuk alur yang tidak sedang digambar papan.
+            this.alurPilih = '';
             this.simpanProgram(p.id);
             this.muatDetail(p.id);
         },
-        /** Program yang sedang dikerjakan — bertahan melewati muat ulang. */
+        /**
+         * Yang sedang dikerjakan — bertahan melewati muat ulang.
+         *
+         * Kuncinya DIPISAH per basis: hashid program dan nomor MPP bukan hal
+         * yang sejenis, dan satu kunci bersama membuat pindah basis mencari
+         * nomor MPP di daftar program (tak pernah ketemu, selalu jatuh ke baris
+         * pertama) — pilihan yang sedang dikerjakan hilang tiap kali berpindah.
+         */
         simpanProgram(id) {
-            try { sessionStorage.setItem('plwProgram', id || ''); } catch (e) { /* peramban menolak menyimpan */ }
+            try { sessionStorage.setItem(`plwPilih:${this.basis}`, id || ''); } catch (e) { /* peramban menolak menyimpan */ }
         },
         programTersimpan() {
-            try { return sessionStorage.getItem('plwProgram') || null; } catch (e) { return null; }
+            try { return sessionStorage.getItem(`plwPilih:${this.basis}`) || null; } catch (e) { return null; }
+        },
+        /** Ganti alur papan (basis job vacancy) lalu muat ulang papannya. */
+        gantiAlur() {
+            if (this.selectedId) this.muatDetail(this.selectedId);
         },
         async muatDetail(id) {
             this.loadingDetail = true;
             try {
-                const res = await axios.get(`/api/v1/karir/lamaran/worklist/program/${id}`, CFG);
+                // Dua bentuk permintaan, satu bentuk jawaban: detailLoker
+                // sengaja memulangkan kunci `program` yang sama, jadi seluruh
+                // papan, drawer, dan penyaring di bawah ini tidak perlu tahu
+                // dari mana lamarannya dikumpulkan.
+                const res = this.basisLoker
+                    ? await axios.get('/api/v1/karir/lamaran/worklist/loker/detail', {
+                        params: { kunci: id, alur: this.alurPilih || undefined },
+                        ...CFG,
+                    })
+                    : await axios.get(`/api/v1/karir/lamaran/worklist/program/${id}`, CFG);
+
                 this.detail = res.data.result;
+                // Pemilih diselaraskan dengan alur yang BENAR-BENAR dipakai
+                // server. Tanpa ini, permintaan pertama (alur kosong = "pilihkan
+                // bawaannya") meninggalkan pemilih dalam keadaan kosong padahal
+                // papannya sudah menggambar satu alur tertentu.
+                if (this.basisLoker) {
+                    this.alurPilih = this.detail.alurAktif ? String(this.detail.alurAktif) : 'SEMUA';
+                }
                 this.segarkanDrawer();
             } catch (e) {
                 this.notice('Gagal memuat papan seleksi.', true);
@@ -6787,6 +7478,134 @@ export default {
                 this.sibuk = false;
             }
         },
+        // ══ PHONE SCREENING ═════════════════════════════════════════════════
+
+        labelRekomSkr(r) {
+            return { LANJUT: 'lanjut', PERTIMBANGAN: 'perlu pertimbangan', TIDAK_LANJUT: 'tidak dilanjutkan' }[r] || r;
+        },
+        kelasRekomSkr(r) {
+            return { LANJUT: 'is-ok', PERTIMBANGAN: 'is-warn', TIDAK_LANJUT: 'is-no' }[r] || '';
+        },
+
+        async bukaSkrining(t) {
+            this.skrTarget = t;
+            this.skrIsi = null;
+            this.skrShow = true;
+            await this.muatSkrining();
+        },
+        /** Ambil isi penuh — pertanyaan, jawaban, keadaan sesi. */
+        async muatSkrining() {
+            if (! this.skrTarget) return;
+
+            try {
+                const { data } = await axios.get(`/api/v1/karir/lamaran/sub-tes/${this.skrTarget.id}/skrining`, CFG);
+                this.skrIsi = data.result || null;
+            } catch (e) {
+                this.notice(e.response?.data?.message || 'Gagal memuat kuesioner.', true);
+                this.skrShow = false;
+            }
+        },
+        /**
+         * Panel menyimpan sendiri, lalu memanggil ini.
+         *
+         * Isi jendela dimuat ulang karena skor dan penanda gugur dihitung
+         * server — panel tidak boleh menebaknya sendiri. Papan aktivitas di
+         * belakang TIDAK ikut dimuat ulang: memuat ulang detail kandidat
+         * mengganti objek yang sedang dipegang jendela, dan isinya berkedip di
+         * tengah orang mengetik. Kenyataan di papan menyusul saat ditutup.
+         */
+        async perbaruiSkrining(galat) {
+            if (galat) {
+                this.notice(galat, true);
+
+                return;
+            }
+
+            await this.muatSkrining();
+        },
+        mintaSelesaiSkrining(kurang) {
+            if (kurang && kurang.length) {
+                this.notice(`Masih ada ${kurang.length} pertanyaan wajib yang kosong.`, true);
+
+                return;
+            }
+
+            this.skrSelesaiShow = true;
+        },
+        async selesaikanSkrining() {
+            const sesi = this.skrIsi?.sesi;
+            if (! sesi) return;
+
+            this.skrBusy = true;
+            try {
+                // Muatan diambil dari panel supaya jawaban yang belum sempat
+                // tersimpan otomatis ikut terkirim — kalau tidak, sentuhan
+                // terakhir sebelum menekan Selesaikan hilang tanpa jejak.
+                const panel = this.$refs.panelSkr;
+                const muatan = panel?.muatan
+                    ? panel.muatan()
+                    : { rekomendasi: sesi.rekomendasi, ringkasanHtml: sesi.ringkasanHtml, jawaban: [] };
+
+                if (! muatan.rekomendasi) {
+                    this.notice('Pilih rekomendasi dulu sebelum menyelesaikan sesi.', true);
+                    this.skrBusy = false;
+                    this.skrSelesaiShow = false;
+
+                    return;
+                }
+
+                const { data } = await axios.post(`/api/v1/karir/lamaran/skrining/${sesi.id}/selesai`, muatan, CFG);
+                this.notice(data.message || 'Sesi selesai.');
+                this.skrSelesaiShow = false;
+                await this.muatSkrining();
+            } catch (e) {
+                this.notice(e.response?.data?.message || 'Gagal menyelesaikan sesi.', true);
+            } finally {
+                this.skrBusy = false;
+            }
+        },
+        async bukaKunciSkrining() {
+            const sesi = this.skrIsi?.sesi;
+            if (! sesi) return;
+
+            this.skrBusy = true;
+            try {
+                const { data } = await axios.post(
+                    `/api/v1/karir/lamaran/skrining/${sesi.id}/buka-kunci`,
+                    { alasan: this.skrAlasan },
+                    CFG,
+                );
+                this.notice(data.message || 'Sesi dibuka kembali.');
+                this.skrBukaKunciShow = false;
+                this.skrAlasan = '';
+                await this.muatSkrining();
+            } catch (e) {
+                this.notice(e.response?.data?.message || 'Gagal membuka kunci.', true);
+            } finally {
+                this.skrBusy = false;
+            }
+        },
+        /**
+         * Papan disegarkan SAAT DITUTUP — bukan tiap kali panel menyimpan.
+         *
+         * Sejak isian skrining tidak lagi tersimpan sendiri, menutup jendela
+         * dengan perubahan yang menggantung berarti membuangnya. Ditanyakan
+         * dulu — dan pertanyaannya menyebut APA yang hilang, bukan "yakin?".
+         */
+        async tutupSkrining() {
+            const panel = this.$refs.panelSkr;
+            if (panel?.kotor && ! window.confirm(
+                'Ada jawaban skrining yang belum disimpan. Tutup dan buang perubahan itu?'
+            )) {
+                return;
+            }
+
+            this.skrShow = false;
+            this.skrTarget = null;
+            this.skrIsi = null;
+            if (this.selectedId) await this.muatDetail(this.selectedId);
+        },
+
         askCatat(t) {
             this.catatTarget = t;
             this.catatHasil = 'LULUS';
@@ -8304,7 +9123,17 @@ export default {
 .plw-panel__toprow { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
 .plw-panel__title { font-size: 12px; font-weight: 900; letter-spacing: 0.1em; color: #0f172a; }
 .plw-panel__count { font-size: 11px; font-weight: 700; color: #8b93a7; background: #eef0f7; border-radius: 999px; padding: 3px 10px; }
-.plw-search { position: relative; display: flex; align-items: center; }
+/* DASAR DAFTAR — program ⇄ job vacancy. Bentuknya sengaja disamakan dengan
+   .plw-modes (pemilih Kanban/List): dua-duanya "cara membaca yang sama-sama
+   sah", bukan penyaring yang mempersempit. Bentuk yang sama untuk peran yang
+   sama membuatnya langsung terbaca tanpa perlu dicoba dulu. */
+.plw-basis { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; padding: 4px; border-radius: 13px; background: #f2f4fb; border: 1px solid #e6e9f3; }
+.plw-basis__btn { appearance: none; border: none; cursor: pointer; font-family: inherit; font-size: 12px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 6px; border-radius: 10px; background: transparent; color: #8792a6; transition: all 0.16s; min-width: 0; }
+.plw-basis__btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plw-basis__btn:hover { color: #4f46e5; }
+.plw-basis__btn.is-on { background: #fff; color: #4f46e5; box-shadow: 0 3px 10px rgba(99, 102, 241, 0.14); }
+
+.plw-search { position: relative; display: flex; align-items: center; margin-top: 11px; }
 .plw-search svg { position: absolute; left: 14px; }
 .plw-search input { width: 100%; padding: 11px 14px 11px 40px; border-radius: 13px; border: 1px solid #e6e9f3; background: #f7f8fc; font-family: inherit; font-size: 13.5px; color: #334155; outline: none; transition: all 0.18s; }
 .plw-search input:focus { border-color: #a5b4fc; background: #fff; box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.12); }
@@ -8339,6 +9168,42 @@ export default {
 
 .plw-prog { position: relative; appearance: none; cursor: pointer; text-align: left; font-family: inherit; width: 100%; padding: 14px 15px 14px 18px; border-radius: 16px; background: #fff; transition: all 0.18s; border: 1px solid #eef0f7; box-shadow: 0 2px 8px rgba(15, 23, 42, 0.03); display: flex; flex-direction: column; }
 .plw-prog:hover { box-shadow: 0 8px 20px rgba(15, 23, 42, 0.07); }
+
+/* ── PROGRAM YANG SUDAH DISERAHTERIMAKAN ─────────────────────────────────────
+   Teredam, bukan disembunyikan. Menghilangkannya dari daftar membuat orang
+   mencari program yang ia tahu ada — dan pencarian itu berakhir di dugaan
+   bahwa sistemnya yang kehilangan data. Yang benar: tetap terlihat, jelas
+   tidak bisa dikerjakan, dan menyebutkan sebabnya. */
+.plw-prog.is-lepas {
+    cursor: not-allowed;
+    background: #fbfcfe;
+    border-style: dashed;
+    border-color: #e2e6f0;
+    box-shadow: none;
+}
+.plw-prog.is-lepas:hover { box-shadow: none; }
+/* Isinya diredam, TAPI penanda & notanya tidak — keduanya justru yang perlu
+   dibaca di kartu ini. */
+.plw-prog.is-lepas > *:not(.plw-prog__nota):not(.plw-prog__toprow) { opacity: .5; }
+.plw-prog.is-lepas .plw-prog__bar { background: #cbd5e1 !important; opacity: .6; }
+
+.plw-prog__lepas {
+    display: inline-flex; align-items: center; gap: 4px;
+    margin-left: auto; margin-right: 6px;
+    padding: 2px 8px; border-radius: 999px;
+    background: rgba(245, 158, 11, .15); color: #b45309;
+    font-size: 9.5px; font-weight: 800; letter-spacing: .03em; text-transform: uppercase;
+    white-space: nowrap;
+}
+.plw-prog__lepas i { font-size: 9px; }
+
+.plw-prog__nota {
+    display: flex; align-items: flex-start; gap: 6px;
+    margin-top: 10px; padding-top: 9px;
+    border-top: 1px dashed #e6eaf3;
+    font-size: 10.5px; line-height: 1.5; color: #94a3b8;
+}
+.plw-prog__nota i { color: #b45309; margin-top: 1px; flex: 0 0 auto; }
 /* AKTIF: SATU PENANDA PER SISI, TIDAK DUA DI SISI YANG SAMA.
    Bilah aksen di kiri sudah menandai program terpilih. Memberi warna aksen
    pada border kiri berarti dua garis berwarna sama berdempetan di tepi yang
@@ -8545,7 +9410,61 @@ export default {
 .plw-mode { appearance: none; border: none; cursor: pointer; font-family: inherit; font-size: 12.5px; font-weight: 800; display: inline-flex; align-items: center; gap: 7px; padding: 8px 14px; border-radius: 10px; background: transparent; color: #94a3b8; transition: all 0.16s; }
 .plw-mode:hover { color: #4f46e5; }
 .plw-mode.is-on { background: linear-gradient(135deg, #8b5cf6, #6366f1); color: #fff; box-shadow: 0 6px 16px rgba(99, 102, 241, 0.28); }
-.plw-hasil { font-size: 12.5px; color: #64748b; }
+/* ── PENYARING ALUR ────────────────────────────────────────────────────────
+   Duduk sebaris dengan pemilih Kanban/List, sebab keduanya menjawab
+   pertanyaan yang sejenis: "papan ini menggambarkan apa".
+
+   NAMANYA `plw-alurfil`, bukan `plw-alur`. Yang kedua sudah dipakai panel
+   progres alur di drawer kandidat (lihat jauh di bawah), dan CSS memenangkan
+   definisi TERAKHIR — penyaring ini sempat mewarisi `padding: 18px 20px`
+   miliknya lalu tampil sebagai kotak gemuk yang teksnya tak terbaca sama
+   sekali. Tabrakan nama kelas tidak memunculkan galat apa pun; ia cuma
+   memberi tampilan milik orang lain. */
+.plw-moderow__kiri { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
+
+.plw-alurfil {
+    display: inline-flex; align-items: center; gap: 8px;
+    /* Tidak boleh menciut: di dalam flex, kotak ini akan diperas lebih dulu
+       daripada tetangganya dan menyisakan panah tanpa teks. */
+    flex: 0 1 auto; min-width: 0;
+    padding: 4px 6px 4px 5px; border-radius: 13px;
+    background: #fff; border: 1px solid #e7e3fb;
+    box-shadow: 0 6px 18px rgba(99, 102, 241, 0.06);
+}
+.plw-alurfil__ico {
+    flex: 0 0 auto; width: 30px; height: 30px; border-radius: 9px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: linear-gradient(135deg, #ede9fe, #e0e7ff); color: #6d28d9; font-size: 14px;
+}
+.plw-alurfil__lbl { flex: 0 0 auto; font-size: 11px; font-weight: 900; letter-spacing: 0.1em; text-transform: uppercase; color: #94a3b8; }
+.plw-alurfil__sel { width: 260px; min-width: 0; }
+/* Menyatu dengan wadahnya — garis di dalam garis membuat kendali ini terlihat
+   seperti dua kontrol yang bertumpuk. */
+.plw-alurfil__sel :deep(.el-select__wrapper) {
+    box-shadow: none !important; background: transparent;
+    padding: 4px 6px; min-height: 30px; font-weight: 800; font-size: 12.5px; color: #4f46e5;
+}
+.plw-alurfil__sel :deep(.el-select__placeholder) { color: #4f46e5; font-weight: 800; }
+
+/* Baris di dalam dropdown: nama alur mengambil sisa ruang, keterangannya
+   menempel di kanan — jadi yang terpotong saat sempit adalah keterangan, bukan
+   nama yang justru dipakai membedakan. */
+.plw-alurfil__nama { font-weight: 700; }
+.plw-alurfil__versi { margin-left: 6px; font-size: 10.5px; font-weight: 800; padding: 1px 6px; border-radius: 999px; background: #ede9fe; color: #6d28d9; }
+.plw-alurfil__n { float: right; margin-left: 14px; font-size: 11.5px; font-weight: 700; color: #64748b; }
+.plw-alurfil__n.is-nol { color: #cbd5e1; }
+
+.plw-hasil { font-size: 12.5px; color: #64748b; margin-left: auto; }
+
+/* Layar sempit: penyaring turun ke barisnya sendiri dan memakai lebar penuh —
+   dipaksa tetap sebaris, kotaknya menyisakan ruang yang tak cukup untuk satu
+   nama alur pun. */
+@media (max-width: 880px) {
+    .plw-moderow__kiri { width: 100%; }
+    .plw-alurfil { flex: 1 1 100%; }
+    .plw-alurfil__sel { width: auto; flex: 1 1 auto; }
+    .plw-hasil { margin-left: 0; }
+}
 
 /* ═══ MODE LIST ═══ */
 .plw-list { background: #fff; border: 1px solid #e7e3fb; border-radius: 16px; box-shadow: 0 6px 18px rgba(99, 102, 241, 0.06); overflow: hidden; }
@@ -9450,6 +10369,23 @@ export default {
    Huruf lebar-tetap membuat selisih satu angka jatuh di kolom yang sama dan
    langsung terlihat. Lihat selMono(). */
 .plw-field__v.is-mono { font-family: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace; font-size: 12.5px; letter-spacing: -0.01em; }
+/* ── DAFTAR BUTIR ── */
+/* Petak ikon dokumen dipakai bersama oleh ikon dan pratinjau gambar. Saat
+   berisi gambar, paddingnya dilepas supaya fotonya memenuhi petak — ikon yang
+   mengambang di tengah bingkai membuat wajahnya jadi terlalu kecil untuk
+   dicocokkan dengan apa pun. */
+.plw-doc__ico.is-foto { padding: 0; overflow: hidden; background: #f1f5f9; }
+.plw-doc__ico.is-foto img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.plw-butir { list-style: none; counter-reset: butir; margin: 5px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.plw-butir li { counter-increment: butir; position: relative; padding: 5px 10px 5px 30px; border-radius: 9px; background: #f8fafc; font-size: 13px; font-weight: 600; color: #1e293b; line-height: 1.5; word-break: break-word; }
+.plw-butir li::before {
+    content: counter(butir);
+    position: absolute; left: 7px; top: 5px;
+    width: 17px; height: 17px; display: grid; place-items: center;
+    border-radius: 999px; background: #e0e7ff; color: #4338ca;
+    font-size: 10px; font-weight: 800;
+}
 
 /* ── ISIAN BERULANG — LINIMASA ────────────────────────────────────────────
    Bentuk lamanya (.plw-rows) memakai flex-wrap: tiap pasangan label-nilai
@@ -9978,6 +10914,189 @@ button.plw-doc:hover { border-color: #a5b4fc; box-shadow: 0 8px 22px rgba(99, 10
     .plw-fm__meter { display: none; }
     .plw-fm__grid { grid-template-columns: repeat(auto-fill, minmax(158px, 1fr)); max-height: none; }
 }
+/* ── BIODATA LAYAR PENUH ─────────────────────────────────────────────────────
+   Benar-benar penuh: tanpa jarak tepi, tanpa sudut membulat, tanpa lebar
+   maksimum pada kotaknya. Yang dicari orang saat menekan "Layar penuh" adalah
+   ruang — hamparan yang menyisakan bingkai di keempat sisinya hanya
+   memindahkan kotak yang sama ke tempat yang sedikit lebih besar.
+
+   Yang TIDAK ikut melebar adalah barisan isinya: di layar 3440px, kisi yang
+   meregang penuh membuat nilai berjarak setengah meter dari labelnya. Kotaknya
+   penuh, isinya berhenti di lebar yang masih bisa dipindai mata. */
+.plw-biofull {
+    position: fixed;
+    inset: 0;
+    z-index: 1400;                 /* di atas .wca-modal-mask (1200) */
+    display: flex;
+    /* ── KENAPA TIDAK ADA backdrop-filter ─────────────────────────────────
+       Dulu ada blur(2px) di sini, dan itulah sebab utama gulirannya patah.
+       Penyaring latar sebesar layar memaksa peramban MEMBLUR ULANG seluruh
+       halaman di belakangnya pada setiap bingkai — termasuk jendela detail
+       yang isinya tujuh tab. Ongkosnya dibayar tiap kali roda tetikus
+       diputar, padahal yang bergerak cuma daftar di depannya.
+
+       Yang menggantikan efeknya cukup: latar gelap sedikit lebih pekat. */
+    background: rgba(15, 23, 42, .62);
+}
+.plw-biofull__box {
+    position: relative;            /* jangkar cap air */
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background: #f7f8fc;
+}
+
+/* ── CAP AIR ─────────────────────────────────────────────────────────────────
+   Diam di tengah sementara isinya bergulir di atasnya — itu yang membuatnya
+   terbaca sebagai cap, bukan sebagai gambar yang kebetulan ada di sana.
+
+   Opasitasnya rendah DAN ia berada di belakang: dua pengaman untuk hal yang
+   sama, karena satu saja tidak cukup. Kartu isian berlatar putih menutupinya
+   sepenuhnya di area padat, jadi ia hanya muncul di sela-sela — persis seperti
+   kop surat. */
+.plw-biofull__cap {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    display: grid;
+    place-items: center;
+    pointer-events: none;
+    user-select: none;
+    overflow: hidden;
+}
+.plw-biofull__cap img {
+    width: min(46vw, 560px);
+    max-width: 80%;
+    height: auto;
+    opacity: .055;
+    filter: grayscale(1);
+    transform: rotate(-8deg);
+}
+@media (max-width: 720px) {
+    .plw-biofull__cap img { width: 78vw; opacity: .045; }
+}
+
+/* Kepala menempel, dan sengaja gelap: ia batas antara "layar penuh" dan
+   jendela detail di belakangnya. Kepala putih membuat keduanya menyatu, dan
+   orang kehilangan jejak sedang berada di lapis yang mana. */
+.plw-biofull__head {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px clamp(16px, 3vw, 40px);
+    color: #fff;
+    background: linear-gradient(115deg, #4338ca 0%, #4f46e5 45%, #6366f1 100%);
+    box-shadow: 0 6px 22px -12px rgba(15, 23, 42, .5);
+}
+.plw-biofull__ico {
+    flex: none; width: 42px; height: 42px; border-radius: 13px;
+    display: grid; place-items: center; font-size: 19px; color: #fff;
+    background: rgba(255, 255, 255, .16);
+    border: 1px solid rgba(255, 255, 255, .22);
+}
+.plw-biofull__t { flex: 1; min-width: 0; line-height: 1.32; }
+.plw-biofull__t b { display: block; font-size: 17px; letter-spacing: -.01em; }
+.plw-biofull__t small {
+    display: block; font-size: 12.5px; color: rgba(255, 255, 255, .78);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.plw-biofull__x {
+    flex: none; width: 38px; height: 38px; border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, .26);
+    background: rgba(255, 255, 255, .12); color: #fff;
+    cursor: pointer; transition: all .16s;
+}
+.plw-biofull__x:hover { background: rgba(255, 255, 255, .24); transform: rotate(90deg); }
+
+/* YANG MENGGULIR ADALAH INI, bukan halamannya. Kepala dan kaki tinggal diam
+   supaya tombol Tutup tak pernah ikut hilang ke bawah pada biodata yang
+   panjangnya lima puluh isian. */
+.plw-biofull__body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: clamp(18px, 2.4vw, 34px) clamp(16px, 3vw, 40px) 48px;
+
+    /* scroll-behavior: smooth DICABUT. Ia membuat SETIAP ketukan roda jadi
+       animasi bergerak sendiri; di daftar sepanjang lima puluh isian, animasi
+       itu belum selesai saat ketukan berikutnya datang, dan hasilnya persis
+       terbaca sebagai "patah-patah dan delay". Guliran bawaan peramban sudah
+       halus — yang perlu dilakukan hanya tidak menghalanginya. */
+
+    /* Guliran berhenti di sini, tidak menular ke jendela di belakangnya.
+       Tanpa ini, mencapai ujung daftar membuat halaman di belakang ikut
+       bergerak — dan itu terasa seperti tersendat, bukan seperti mentok. */
+    overscroll-behavior: contain;
+
+    /* Lapisan sendiri: peramban cukup menggeser hasil gambar yang sudah jadi,
+       bukan menggambar ulang isi di bawahnya tiap bingkai. */
+    transform: translateZ(0);
+    position: relative;
+    z-index: 1;
+}
+/* Pembungkus isi — inilah yang berhenti melebar, bukan kotaknya. */
+.plw-biofull__body > * { max-width: 1680px; margin-left: auto; margin-right: auto; }
+
+/* Kepala kelompok jadi penanda yang benar-benar terbaca saat digulir cepat. */
+/* Kepala kelompok menempel saat digulir — latarnya SOLID, bukan gradien.
+   Gradien pada elemen sticky digambar ulang tiap bingkai selama guliran, dan
+   di daftar sepanjang ini ongkosnya terasa. */
+.plw-biofull__body .plw-ghead {
+    position: sticky;
+    top: calc(clamp(18px, 2.4vw, 34px) * -1);
+    z-index: 2;
+    background: #f7f8fc;
+    padding-top: 14px;
+    padding-bottom: 10px;
+    box-shadow: 0 8px 12px -10px rgba(15, 23, 42, .18);
+}
+
+.plw-biofull__foot {
+    flex: none;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 11px clamp(16px, 3vw, 40px);
+    border-top: 1px solid #e6eaf3;
+    background: #fff;
+    font-size: 11.5px; color: #94a3b8;
+}
+.plw-biofull__foot i { color: #6366f1; }
+
+/* Kolomnya mengikuti lebar yang tersedia. Di layar lebar, empat kolom memakai
+   ruangnya untuk MEMENDEKKAN gulungan — bukan meregangkan tiap barisnya. */
+.plw-biofull__body .plw-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.plw-biofull__body .plw-field.is-panjang { grid-column: 1 / -1; }
+
+@media (min-width: 1600px) {
+    .plw-biofull__body .plw-fields { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@media (max-width: 1100px) {
+    .plw-biofull__body .plw-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 720px) {
+    .plw-biofull__head { padding: 12px 14px; gap: 10px; }
+    .plw-biofull__ico { width: 36px; height: 36px; font-size: 16px; }
+    .plw-biofull__t b { font-size: 15px; }
+    .plw-biofull__body { padding: 14px 14px 40px; }
+    .plw-biofull__body .plw-fields { grid-template-columns: 1fr; }
+    .plw-biofull__foot span { display: none; }
+    .plw-biofull__foot { justify-content: stretch; }
+    .plw-biofull__foot .wca-btn { width: 100%; }
+}
+
+.plw-biofull__btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    border: 1px solid #e2e8f0; background: #fff; color: #475569;
+    border-radius: 10px; padding: 6px 11px;
+    font-family: inherit; font-size: 12px; font-weight: 600;
+    cursor: pointer; transition: all .15s;
+}
+.plw-biofull__btn:hover { border-color: #a5b4fc; color: #4338ca; background: #f8f9ff; }
+.plw-biofull__btn i { font-size: 12px; }
+
 /* Dua kolom biodata butuh ruang nilai yang layak; di bawah 720px keduanya
    menyisakan lebar selebar dua kata dan setiap alamat terpotong tiga baris. */
 @media (max-width: 720px) {
@@ -10224,4 +11343,12 @@ button.plw-doc:hover { border-color: #a5b4fc; box-shadow: 0 8px 22px rgba(99, 10
    karena dua dari tiga jawaban menutup lamaran seketika. */
 .plw-fld__hint.is-tegas { color: #b45309; font-weight: 700; }
 .plw-fld__hint.is-tegas b { color: #92400e; }
+
+/* ── PHONE SCREENING ─────────────────────────────────────────────────────── */
+.plw-test__skr {
+    border-color: rgba(99, 102, 241, 0.35) !important;
+    color: #4338ca !important;
+}
+.plw-test__skr:hover { background: rgba(99, 102, 241, 0.07) !important; }
+.plw-skrmuat { padding: 48px; text-align: center; color: #94a3b8; font-size: 13px; }
 </style>

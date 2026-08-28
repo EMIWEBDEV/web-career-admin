@@ -82,7 +82,7 @@ export default {
     },
     computed: {
         isLogin() { return this.tab === 'login'; },
-        pageTitle() { return this.isLogin ? 'Masuk - EVO Group Career' : 'Daftar - EVO Group Career'; },
+        pageTitle() { return this.isLogin ? 'Masuk' : 'Daftar Akun'; },
         ledeText() {
             return `Satu akun untuk melamar lowongan, mengikuti program Management Trainee, dan memantau progres seleksimu. Silakan ${this.isLogin ? 'masuk' : 'daftar'} untuk melanjutkan.`;
         },

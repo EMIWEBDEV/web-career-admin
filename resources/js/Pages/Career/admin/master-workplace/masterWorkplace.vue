@@ -3,7 +3,7 @@
      master pendamping Detail_MPP dengan skema yang sama persis, jadi admin tidak
      perlu belajar dua tata letak untuk pekerjaan yang sama. -->
 <template>
-    <Head><title>Master Workplace - Web Career</title></Head>
+    <Head title="Master Workplace" />
     <div class="wca">
         <div class="wca-phead">
             <div>

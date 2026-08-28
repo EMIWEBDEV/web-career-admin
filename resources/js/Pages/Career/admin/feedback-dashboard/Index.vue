@@ -1,6 +1,6 @@
 <!-- WEB CAREER â€” Feedback Dashboard: Analitik data feedback kandidat dengan Ultra-Premium KPI cards visual, NPS deep-dive, program comparison leaderboard, analisis Lolos vs Gagal dual power cards, monitoring pengisian, candidate answer drawer interaktif, compact filter bar, rich empty states, shimmer skeleton loaders, sel avatar kandidat horizontal, search multi-select dropdowns (+1, +2), Question Insight Grid Cards rapat tanpa whitespace, NPS Donut Center Overlay, Program Leaderboard Horizontal Flex Alignment (#1 Side-by-Side), dan Kalkulasi NPS Riil dari Backend. Notifikasi Ekspor dikelola secara terpusat oleh Komponen Global ExportNotificationToast.vue. -->
 <template>
-    <Head><title>Feedback Dashboard - Web Career</title></Head>
+    <Head title="Feedback Dashboard" />
     <div class="wca wca-fb-wrapper">
         <!-- â•â•â• HEADER BAR â•â•â• -->
         <div class="wca-phead wca-phead--modern">

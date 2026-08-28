@@ -1,6 +1,6 @@
 <!-- WEB CAREER — Master Kampus/Institusi. PAGINASI + FILTER server-side (data ratusan ribu). -->
 <template>
-    <Head><title>Master Kampus - Web Career</title></Head>
+    <Head title="Master Kampus" />
     <div class="wca">
         <div class="wca-phead">
             <div>

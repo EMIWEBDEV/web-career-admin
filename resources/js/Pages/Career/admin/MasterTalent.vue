@@ -1,6 +1,6 @@
 <!-- WEB CAREER — Admin: Master Talent Acquisition (kelompok/kategori program: Rekrutmen, MT, Internship, dll). -->
 <template>
-    <Head><title>Master Talent Acquisition - Web Career</title></Head>
+    <Head title="Master Talent Acquisition" />
     <div class="wca">
         <div class="wca-phead">
             <div>

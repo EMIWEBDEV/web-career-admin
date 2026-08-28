@@ -2,7 +2,7 @@
      wawancara). Dipakai penjadwalan tatap muka: rekruter MEMILIH lokasi berikut
      titik petanya, bukan mengetik alamat bebas yang tak bisa dibuka kandidat. -->
 <template>
-    <Head><title>Master Lokasi - Web Career</title></Head>
+    <Head title="Master Lokasi" />
     <div class="wca">
         <div class="wca-phead">
             <div>

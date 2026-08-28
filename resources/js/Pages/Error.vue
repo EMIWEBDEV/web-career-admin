@@ -26,12 +26,12 @@ const judulTab = computed(() => {
         404: 'Halaman Tidak Ditemukan', 419: 'Halaman Kedaluwarsa', 429: 'Terlalu Banyak Permintaan',
         500: 'Kesalahan Server', 503: 'Mode Pemeliharaan', offline: 'Tidak Ada Koneksi',
     };
-    return `${peta[String(props.status)] || 'Terjadi Kesalahan'} - EVO Career`;
+    return peta[String(props.status)] || 'Terjadi Kesalahan';
 });
 </script>
 
 <template>
-    <Head><title>{{ judulTab }}</title></Head>
+    <Head :title="judulTab" />
 
     <div class="err-page">
         <!-- Latar: aurora, grid, awan, partikel (sesuai desain) -->

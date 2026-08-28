@@ -138,26 +138,108 @@ export function scrollToId(id, offset = 84) {
     animateScroll(y);
 }
 
-// Reveal-on-scroll bersama: amati semua .wc-reveal, tandai saat masuk viewport.
-// Dipakai landing & halaman detail. Aman bila IntersectionObserver tak tersedia.
-//
-// Penandanya ATRIBUT `data-in`, bukan kelas. Kelas yang dipasang dari luar Vue
-// akan lenyap begitu elemen yang sama punya :class dinamis lalu dirender ulang —
-// Vue menimpa className elemen itu seutuhnya. Uraiannya di evo-theme.css.
+/**
+ * REVEAL-ON-SCROLL BERSAMA — tandai `.wc-reveal` begitu masuk layar.
+ *
+ * Penandanya ATRIBUT `data-in`, bukan kelas. Kelas yang dipasang dari luar Vue
+ * akan lenyap begitu elemen yang sama punya :class dinamis lalu dirender ulang —
+ * Vue menimpa className elemen itu seutuhnya. Uraiannya di evo-theme.css.
+ *
+ * ══ KENAPA IKUT MENGAMATI ELEMEN YANG LAHIR BELAKANGAN ══════════════════════
+ *
+ * Versi sebelumnya memindai DOM SEKALI, saat dipanggil. Itu cukup selama
+ * seluruh isi halaman sudah ada sejak awal — dan tidak cukup begitu ada bagian
+ * yang muncul menyusul.
+ *
+ * Kegagalannya nyata dan sulit dilacak: section Management Trainee digambar
+ * `v-if="programMt.length"`. Saat landing dibuka sementara belum ada program MT
+ * terbit, section itu tidak ada di DOM, jadi tidak pernah ikut diamati. Begitu
+ * admin menerbitkan program MT dan Inertia memperbarui props tanpa memuat ulang
+ * halaman, section-nya MUNCUL di DOM — tapi tidak ada yang memberinya `data-in`.
+ * Ia berdiri di sana dengan `opacity: 0`: memakan tinggi, tidak terlihat sedikit
+ * pun. Di layar hasilnya adalah CELAH KOSONG di antara dua section — dan yang
+ * dilaporkan orang adalah "program MT-nya hilang", bukan "tidak muncul", sebab
+ * dari luar keduanya memang tidak bisa dibedakan.
+ *
+ * Sekarang MutationObserver menjaga pintunya: apa pun yang menyusul masuk DOM
+ * ikut diamati.
+ *
+ * ══ ISI TIDAK BOLEH TERSANDERA ANIMASINYA ══════════════════════════════════
+ *
+ * Bila IntersectionObserver tidak ada, versi lama memulangkan null — dan tidak
+ * ada satu pun yang pernah menandai `data-in`. Seluruh halaman tetap pada
+ * `opacity: 0`: kosong total, tanpa galat, tanpa petunjuk. Animasi adalah
+ * hiasan; ketiadaannya tidak boleh menghapus isinya. Karena itu, bila
+ * pengamatnya tak tersedia — atau pembacanya minta gerak dikurangi — seluruh
+ * elemen langsung ditandai tampil.
+ *
+ * @returns {{disconnect: () => void}} penutup untuk onUnmounted.
+ */
 export function observeReveal(selector = '.wc-reveal') {
-    if (typeof window === 'undefined' || !('IntersectionObserver' in window)) return null;
-    const obs = new IntersectionObserver(
+    const kosong = { disconnect() {} };
+    if (typeof window === 'undefined' || typeof document === 'undefined') return kosong;
+
+    const tampilkan = (el) => el.setAttribute('data-in', '');
+    const semua = () => document.querySelectorAll(selector);
+
+    // Gerak dikurangi = tampilkan apa adanya. Menganimasikannya tetap berarti
+    // mengabaikan setelan sistem yang dipasang orang justru karena gerakan
+    // membuatnya pusing.
+    const diamSaja = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+
+    if (!('IntersectionObserver' in window) || !('MutationObserver' in window) || diamSaja) {
+        semua().forEach(tampilkan);
+
+        // Tetap pasang penjaga sederhana untuk yang menyusul, supaya bagian yang
+        // lahir belakangan tidak ikut tertinggal tak terlihat.
+        if ('MutationObserver' in window) {
+            const mo = new MutationObserver(() => semua().forEach(tampilkan));
+            mo.observe(document.body, { childList: true, subtree: true });
+
+            return { disconnect: () => mo.disconnect() };
+        }
+
+        return kosong;
+    }
+
+    const io = new IntersectionObserver(
         (entries) =>
             entries.forEach((e) => {
                 if (e.isIntersecting) {
-                    e.target.setAttribute('data-in', '');
-                    obs.unobserve(e.target);
+                    tampilkan(e.target);
+                    io.unobserve(e.target);
                 }
             }),
         { threshold: 0.12 },
     );
-    document.querySelectorAll(selector).forEach((el) => obs.observe(el));
-    return obs;
+
+    // `data-in` dipakai sebagai penanda "sudah diurus", jadi memanggil ini
+    // berkali-kali pada elemen yang sama tidak menumpuk pengamatan.
+    const amati = (el) => {
+        if (!el.hasAttribute('data-in')) io.observe(el);
+    };
+
+    semua().forEach(amati);
+
+    const mo = new MutationObserver((mutasi) => {
+        mutasi.forEach((m) => {
+            m.addedNodes.forEach((n) => {
+                if (n.nodeType !== 1) return;
+                if (n.matches?.(selector)) amati(n);
+                // Section yang baru muncul membawa anak-anaknya sekaligus —
+                // simpulnya sendiri belum tentu ber-.wc-reveal.
+                n.querySelectorAll?.(selector).forEach(amati);
+            });
+        });
+    });
+    mo.observe(document.body, { childList: true, subtree: true });
+
+    return {
+        disconnect() {
+            io.disconnect();
+            mo.disconnect();
+        },
+    };
 }
 
 export function goToSection(id) {

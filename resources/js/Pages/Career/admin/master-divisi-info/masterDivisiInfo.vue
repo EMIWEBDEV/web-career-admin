@@ -1,7 +1,7 @@
 <!-- WEB CAREER — Master Info Divisi. Konten landing page per divisi/departemen (HRIS).
      DATA via web route + ResponseHelper (axios), bukan props Inertia. -->
 <template>
-    <Head><title>Master Info Divisi - Web Career</title></Head>
+    <Head title="Master Info Divisi" />
     <div class="wca">
         <!-- ═══════════ LIST VIEW ═══════════ -->
         <template v-if="!detail">

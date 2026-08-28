@@ -1,6 +1,6 @@
 <!-- WEB CAREER — Admin: Master Jenis Tes (CAT via HCLearn vs Manual). Durasi/skor diatur di HCLearn, bukan di sini. -->
 <template>
-    <Head><title>Master Jenis Tes - Web Career</title></Head>
+    <Head title="Master Jenis Tes" />
     <div class="wca">
         <div class="wca-phead">
             <div>

@@ -1,6 +1,6 @@
 <!-- WEB CAREER — Master Kemitraan / MoU (per-modul). DATA via web route + ResponseHelper (axios), bukan props Inertia. -->
 <template>
-    <Head><title>Master Kemitraan / MoU - Web Career</title></Head>
+    <Head title="Master Kemitraan / MoU" />
     <div class="wca">
         <div class="wca-phead">
             <div>

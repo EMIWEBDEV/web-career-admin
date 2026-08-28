@@ -343,6 +343,16 @@ const greetIcon = computed(() => (now.value.getHours() < 19 && now.value.getHour
     background: #ef4444;
     border: 1.5px solid #fff;
 }
+/* ══ WARNANYA INDIGO, BUKAN HIJAU ═══════════════════════════════════════════
+ *
+ * Diambil dari rancangan `EVO Career Login Redesign` — nilai warnanya disalin
+ * apa adanya, bukan dikira-kira dari tangkapan layar.
+ *
+ * Hijau emerald yang lama membuat badge ini jadi satu-satunya benda hijau di
+ * seluruh panel: sidebar, tombol utama, kartu, grafik — semuanya indigo. Warna
+ * yang berdiri sendiri di pojok kanan atas terbaca sebagai peringatan atau
+ * penanda status, padahal ia cuma identitas akun.
+ */
 .evt-badge {
     appearance: none;
     cursor: pointer;
@@ -352,21 +362,21 @@ const greetIcon = computed(() => (now.value.getHours() < 19 && now.value.getHour
     gap: 10px;
     padding: 6px 10px;
     border-radius: 14px;
-    background: rgba(16, 185, 129, 0.07);
-    border: 1px solid rgba(16, 185, 129, 0.22);
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.08));
+    border: 1px solid rgba(99, 102, 241, 0.22);
     flex: 0 0 auto;
     transition: all 0.16s;
 }
 .evt-badge:hover,
 .evt-badge.is-open {
-    background: rgba(16, 185, 129, 0.13);
-    border-color: rgba(16, 185, 129, 0.34);
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.17), rgba(139, 92, 246, 0.13));
+    border-color: rgba(99, 102, 241, 0.36);
 }
 .evt-badge__ico {
     width: 34px;
     height: 34px;
     border-radius: 10px;
-    background: linear-gradient(135deg, #34d399, #10b981);
+    background: linear-gradient(135deg, #818cf8, #4f46e5);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -383,8 +393,11 @@ const greetIcon = computed(() => (now.value.getHours() < 19 && now.value.getHour
     display: block;
     font-size: 10px;
     font-weight: 800;
-    letter-spacing: 0.14em;
-    color: #059669;
+    letter-spacing: 0.16em;
+    /* Abu, bukan berwarna: ini kicker — penanda konteks yang dibaca sesudah
+       namanya, bukan sebelum. Mewarnainya membuatnya bersaing dengan nama
+       penggunanya sendiri. */
+    color: #94a3b8;
 }
 .evt-badge__name {
     display: block;
@@ -396,15 +409,18 @@ const greetIcon = computed(() => (now.value.getHours() < 19 && now.value.getHour
     overflow: hidden;
     text-overflow: ellipsis;
 }
+/* Pil peran: tinta pekat berteks putih, sesuai rancangan. Ia satu-satunya
+   benda bernada gelap di badge ini — dan memang itu yang harus terbaca lebih
+   dulu saat orang memeriksa "saya masuk sebagai siapa". */
 .evt-badge__role {
     display: inline-block;
-    font-size: 9px;
+    font-size: 8.5px;
     font-weight: 800;
-    letter-spacing: 0.08em;
-    color: #059669;
-    background: rgba(16, 185, 129, 0.14);
-    border-radius: 6px;
-    padding: 3px 7px;
+    letter-spacing: 0.1em;
+    color: #ffffff;
+    background: #0f172a;
+    border-radius: 7px;
+    padding: 3px 8px;
 }
 
 /* ═══ POPOVER JALUR NAVIGASI (gaya sama dgn shell lama) ═══ */

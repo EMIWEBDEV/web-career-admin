@@ -5,6 +5,7 @@ use App\Http\Controllers\Career\Dashboard\DashboardController;
 use App\Http\Controllers\Career\Lamaran\FormulirDrafController;
 use App\Http\Controllers\Career\Lamaran\LamaranController;
 use App\Http\Controllers\Career\Monitoring\MonitoringController;
+use App\Http\Controllers\Career\Lamaran\SkriningSesiController;
 use App\Http\Controllers\Career\Pemeriksaan\PemeriksaanController;
 use App\Http\Controllers\Career\TalentPool\TalentPoolController;
 use Illuminate\Support\Facades\Route;
@@ -76,6 +77,15 @@ Route::prefix('api/v1/karir')
         // Worklist admin: daftar program (panel kiri) + kanban seleksi (panel kanan) & ketuk palu.
         Route::get('/lamaran/worklist/program', [LamaranController::class, 'worklistProgram'])->name('lamaran.worklist.program')->middleware('career.permission:pelamarPage,VIEW');
         Route::get('/lamaran/worklist/program/{id}', [LamaranController::class, 'worklistDetail'])->name('lamaran.worklist.detail')->middleware('career.permission:pelamarPage,VIEW');
+        // Cara kedua membaca populasi yang sama: per JOB VACANCY (MPP), lintas
+        // program. Izinnya sama persis dengan mode program — yang berubah cuma
+        // cara mengelompokkan, bukan siapa yang boleh melihat.
+        //
+        // Kunci job vacancy lewat QUERY, bukan segmen URL: nomor MPP boleh
+        // memuat garis miring, dan garis miring di tengah path akan dibaca
+        // router sebagai pemisah segmen — permintaannya tidak pernah sampai.
+        Route::get('/lamaran/worklist/loker', [LamaranController::class, 'worklistLoker'])->name('lamaran.worklist.loker')->middleware('career.permission:pelamarPage,VIEW');
+        Route::get('/lamaran/worklist/loker/detail', [LamaranController::class, 'worklistLokerDetail'])->name('lamaran.worklist.loker.detail')->middleware('career.permission:pelamarPage,VIEW');
         Route::get('/lamaran/pengisian/{id}', [LamaranController::class, 'lihatPengisian'])->name('lamaran.pengisian')->middleware('career.permission:pelamarPage,VIEW');
         Route::get('/lamaran/berkas/{id}', [LamaranController::class, 'worklistBerkas'])->name('lamaran.berkas')->middleware('career.permission:pelamarPage,VIEW');
         Route::get('/lamaran/berkas/file/{id}', [LamaranController::class, 'berkasFile'])->name('lamaran.berkas.file')->middleware('career.permission:pelamarPage,VIEW');
@@ -133,6 +143,22 @@ Route::prefix('api/v1/karir')
         Route::post('/lamaran/sub-tes/{id}/referensi', [PemeriksaanController::class, 'simpanReferensi'])->name('lamaran.subtes.referensi')->middleware('career.permission:pelamarPage,EDIT');
         Route::delete('/lamaran/sub-tes/{id}/referensi/{refId}', [PemeriksaanController::class, 'hapusReferensi'])->name('lamaran.subtes.referensi.hapus')->middleware('career.permission:pelamarPage,EDIT');
 
+        // ── PHONE SCREENING ─────────────────────────────────────────────
+        //
+        // Sepola pemeriksaan di atas: panel berdiri sendiri di dalam aktivitas,
+        // bukan menempel pada endpoint "catat hasil" yang sekali tembak. Sesi
+        // skrining berlangsung selama satu telepon dan sering putus di tengah,
+        // jadi tiap potongannya harus bisa disimpan sendiri.
+        //
+        // Membuka kunci sesi yang sudah selesai memakai APPROVE, bukan EDIT:
+        // yang diubahnya adalah angka yang mungkin sudah dipakai memutuskan
+        // nasib seseorang, dan itu bukan sekadar menyunting isian.
+        Route::get('/lamaran/sub-tes/{id}/skrining', [SkriningSesiController::class, 'show'])->name('lamaran.subtes.skrining')->middleware('career.permission:pelamarPage,VIEW');
+        Route::post('/lamaran/sub-tes/{id}/skrining', [SkriningSesiController::class, 'mulai'])->name('lamaran.subtes.skrining.mulai')->middleware('career.permission:pelamarPage,EDIT');
+        Route::put('/lamaran/skrining/{id}', [SkriningSesiController::class, 'simpan'])->name('lamaran.skrining.simpan')->middleware('career.permission:pelamarPage,EDIT');
+        Route::post('/lamaran/skrining/{id}/selesai', [SkriningSesiController::class, 'selesaikan'])->name('lamaran.skrining.selesai')->middleware('career.permission:pelamarPage,EDIT');
+        Route::post('/lamaran/skrining/{id}/buka-kunci', [SkriningSesiController::class, 'bukaKunci'])->name('lamaran.skrining.buka')->middleware('career.permission:pelamarPage,APPROVE');
+
         // Jadwal wawancara / tes tatap muka + undangan email ke kandidat.
         Route::patch('/lamaran/sub-tes/{id}/jadwal', [LamaranController::class, 'subTesJadwal'])->name('lamaran.subtes.jadwal')->middleware('career.permission:pelamarPage,EDIT');
         // JADWAL MASSAL — seratus kandidat sekaligus, serentak atau bergiliran.
@@ -183,6 +209,8 @@ Route::prefix('api/v1/karir')
 
         // Monitoring Rekrutmen — read-only; permission ikut key lama hasilTesPage.
         Route::get('/monitoring/live', [MonitoringController::class, 'live'])->name('monitoring.live')->middleware('career.permission:hasilTesPage,VIEW');
+        // Jejak serah terima PIC lintas program — kendali mutu, read-only.
+        Route::get('/monitoring/riwayat-pic', [MonitoringController::class, 'riwayatPic'])->name('monitoring.riwayat.pic')->middleware('career.permission:hasilTesPage,VIEW');
         Route::get('/monitoring/program/{id}/papan', [MonitoringController::class, 'papan'])->name('monitoring.papan')->middleware('career.permission:hasilTesPage,VIEW');
         Route::get('/monitoring/program/{id}/tahap/{urutan}/detail', [MonitoringController::class, 'stageDetail'])->name('monitoring.tahap.detail')->middleware('career.permission:hasilTesPage,VIEW');
         Route::get('/monitoring/pelamar/{id}', [MonitoringController::class, 'detail'])->name('monitoring.pelamar.detail')->middleware('career.permission:hasilTesPage,VIEW');

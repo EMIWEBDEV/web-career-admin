@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Career\MasterAlur;
 
 use App\Helpers\ResponseHelper;
 use App\Http\Controllers\Controller;
+use App\Support\Career\AksesService;
 use App\Support\Career\KodeUnik;
 use App\Support\Career\LamaranService;
+use App\Support\Career\VersiAlur;
 use App\Support\CareerShell;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -20,6 +22,9 @@ use Vinkla\Hashids\Facades\Hashids;
  */
 class MasterAlurController extends Controller
 {
+    /** Kunci halaman untuk hak akses — sama dengan yang dipakai middleware rute. */
+    private const PAGE = 'masterAlurPage';
+
     public function index()
     {
         return Inertia::render('Career/admin/master-alur/masterAlur', CareerShell::props('/master-alur', 'Master Tahapan Seleksi'));
@@ -31,13 +36,26 @@ class MasterAlurController extends Controller
             // FILTER SERVER-SIDE — dipanggil Filter Panel di halaman (bukan saring
             // di browser): q (nama/kode/deskripsi), kategori, status, rentang tanggal.
             $q = trim((string) $request->query('q', ''));
-            $kategori = trim((string) $request->query('kategori', ''));
             $status = strtoupper(trim((string) $request->query('status', '')));
             $dari = $request->query('dari');
             $sampai = $request->query('sampai');
 
+            // ── GERBANG KATEGORI ────────────────────────────────────────────
+            //
+            // NULL = pengguna tidak dibatasi. Ini penjaga yang sebenarnya; chip di
+            // layar cuma mengikutinya. Tanpa baris ini admin yang dijatah MT saja
+            // tetap bisa membaca — dan menyunting — alur Rekrutmen hanya dengan
+            // memanggil ?kategori=REKRUTMEN sendiri.
+            $izin = AksesService::kategoriDiizinkan(self::PAGE);
+
+            // Kategori yang DIMINTA disaring ke jatahnya: permintaan di luar jatah
+            // jatuh kembali ke "semua yang boleh", bukan ditolak dengan galat —
+            // yang mengetiknya umumnya tautan lama, bukan penyerang.
+            $kategori = AksesService::kategoriDiminta(self::PAGE, $request->query('kategori'));
+
             $alur = DB::table('N_WEB_CAREERS_Master_Alur as a')
                 ->leftJoin('N_WEB_CAREERS_Users as u', 'u.Id_Users', '=', 'a.Created_By_Id')
+                ->when($izin, fn ($w) => $w->whereIn('a.Kategori', $izin))
                 ->when($q !== '', fn ($w) => $w->where(function ($x) use ($q) {
                     $x->where('a.Nama', 'like', "%{$q}%")
                         ->orWhere('a.Kode', 'like', "%{$q}%")
@@ -47,7 +65,11 @@ class MasterAlurController extends Controller
                 ->when(in_array($status, ['AKTIF', 'NONAKTIF'], true), fn ($w) => $w->where('a.Flag_Aktif', $status === 'AKTIF' ? 'Y' : 'N'))
                 ->when($dari, fn ($w) => $w->whereDate('a.Created_At', '>=', $dari))
                 ->when($sampai, fn ($w) => $w->whereDate('a.Created_At', '<=', $sampai))
-                ->orderBy('a.Id_Master_Alur')
+                // TERBARU DI ATAS. Alur yang baru disusun adalah yang sedang
+                // dikerjakan orang; menaruhnya di dasar daftar berarti ia harus
+                // digulir dicari setiap kali, sementara alur lama yang jarang
+                // disentuh menempati layar pertama.
+                ->orderByDesc('a.Id_Master_Alur')
                 ->select('a.*', 'u.Nama as Pembuat')
                 ->get();
 
@@ -126,12 +148,37 @@ class MasterAlurController extends Controller
                 ];
             })->values();
 
-            return ResponseHelper::success($rows, 'Data alur dimuat');
+            // Kategori yang boleh dilihat pengguna ini — dipakai layar untuk
+            // memutuskan apakah penyaring kategori perlu digambar sama sekali.
+            // Diambil dari master, bukan dari data yang kebetulan ada: kategori
+            // yang belum punya satu pun alur tetap harus bisa dipilih.
+            return ResponseHelper::success([
+                'data' => $rows,
+                'kategori' => AksesService::tabKategori(self::PAGE),
+            ], 'Data alur dimuat');
         } catch (\Throwable $e) {
             Log::channel('web_career')->error('Gagal memuat alur: '.$e->getMessage());
 
             return ResponseHelper::error('Gagal memuat data alur', 500);
         }
+    }
+
+    /**
+     * Kategori ini di luar jatah pengguna? — balasan galat, atau null.
+     *
+     * Dipakai store() dan update(). Ditulis sekali karena keduanya harus menjawab
+     * sama: gerbang yang berbeda antara "buat" dan "ubah" berarti apa yang tidak
+     * bisa dibuat langsung, bisa dibuat dalam dua langkah.
+     */
+    private function galatKategori(?string $kategori)
+    {
+        $izin = AksesService::kategoriDiizinkan(self::PAGE);
+
+        if ($izin && ! in_array((string) $kategori, $izin, true)) {
+            return ResponseHelper::error('Kategori ini di luar jatah akses Anda.', 403);
+        }
+
+        return null;
     }
 
     /** Mode pengumuman AKTIF: [Kode => butuhJeda(bool)]. Sumber tunggal master. */
@@ -343,6 +390,10 @@ class MasterAlurController extends Controller
             'kategori' => 'required|string|max:20',
             'deskripsi' => 'nullable|string|max:500',
             'stages' => 'nullable|array',
+            // IDENTITAS tahap yang sudah ada. Dikirim balik oleh builder supaya
+            // baris bisa dicocokkan lewat kode, bukan lewat nomor urut — lihat
+            // simpanTahap(). Kosong / tidak dikenal = tahap baru.
+            'stages.*.kode' => 'nullable|string|max:30',
             'stages.*.label' => 'required|string|max:120',
             // Tipe divalidasi terhadap Master Tipe Tahap yang AKTIF. Bila master
             // kosong (belum di-seed), jangan menolak semuanya — cukup batasi
@@ -421,12 +472,127 @@ class MasterAlurController extends Controller
             ->pluck('Id_Master_Alur_Tahap')
             ->all();
 
-        if (! $sisa) {
+        $this->buangTahap($sisa);
+    }
+
+    /**
+     * Buang tahap yang TIDAK dipakai penyimpanan barusan.
+     *
+     * Menggantikan penghapusan berbasis nomor urut pada jalur simpan. Sejak
+     * baris dicocokkan lewat KODE, sebuah tahap boleh berpindah posisi tanpa
+     * berganti baris — dan "hapus semua yang urutannya melampaui jumlah baru"
+     * akan ikut membuang baris yang barusan dipakai ulang, memutus rujukan
+     * lamaran yang sedang berjalan di tahap itu.
+     *
+     * Daftar kosong sengaja TIDAK diartikan "hapus semua": alur yang disimpan
+     * tanpa satu tahap pun ditolak lebih dulu oleh validasi, jadi daftar kosong
+     * di sini hanya bisa berarti ada yang tidak beres — dan menghapus seluruh
+     * tahap atas dasar itu jauh lebih mahal daripada tidak menghapus apa pun.
+     *
+     * @param  int[]  $idTerpakai
+     */
+    private function hapusTahapTakTerpakai(int $alurId, array $idTerpakai): void
+    {
+        if (! $idTerpakai) {
             return;
         }
 
-        DB::table('N_WEB_CAREERS_Master_Alur_Tahap_Tes')->whereIn('Master_Alur_Tahap_Id', $sisa)->delete();
-        DB::table('N_WEB_CAREERS_Master_Alur_Tahap')->whereIn('Id_Master_Alur_Tahap', $sisa)->delete();
+        $sisa = DB::table('N_WEB_CAREERS_Master_Alur_Tahap')
+            ->where('Master_Alur_Id', $alurId)
+            ->whereNotIn('Id_Master_Alur_Tahap', $idTerpakai)
+            ->pluck('Id_Master_Alur_Tahap')
+            ->all();
+
+        $this->buangTahap($sisa);
+    }
+
+    /** @param  int[]  $ids */
+    private function buangTahap(array $ids): void
+    {
+        if (! $ids) {
+            return;
+        }
+
+        DB::table('N_WEB_CAREERS_Master_Alur_Tahap_Tes')->whereIn('Master_Alur_Tahap_Id', $ids)->delete();
+        DB::table('N_WEB_CAREERS_Master_Alur_Tahap')->whereIn('Id_Master_Alur_Tahap', $ids)->delete();
+    }
+
+    /**
+     * Kode identitas untuk satu tahap yang sedang disimpan.
+     *
+     * URUTAN KEPUTUSANNYA, dari yang paling mengikat:
+     *
+     *   1. Kode kiriman yang MEMANG ADA di alur ini  → dipakai, barisnya juga
+     *      dipakai ulang. Inilah yang membuat mengganti label tidak memindahkan
+     *      kandidat yang sedang menjalaninya.
+     *
+     *   2. Kode kiriman yang belum ada di alur ini   → tetap dipakai, sebagai
+     *      baris baru. Dua hal bergantung pada ini:
+     *        · MENDUPLIKASI alur — dua alur yang sama-sama punya "PSIKOTES"
+     *          sengaja digambar sebagai satu kolom di papan (AlurKolom::susun);
+     *        · MELAHIRKAN VERSI BARU — v2 harus memakai kode yang sama dengan
+     *          v1, sebab pemetaan migrasi kandidat berdiri di atas kode itu.
+     *      Tetap dinormalkan dan tetap dijamin tidak kembar: kode adalah
+     *      pengenal internal, bukan teks bebas.
+     *
+     *   3. Tidak ada kiriman → diturunkan dari labelnya, sekali seumur hidup.
+     *
+     * Dijamin tidak kembar di dalam satu alur: indeks UNIQUE (Master_Alur_Id,
+     * Kode) menolak yang kedua, dan tanpa penomoran di sini yang terjadi bukan
+     * pesan yang bisa dibaca admin melainkan galat SQL mentah.
+     *
+     * @param  array<string, bool>  $terpakai  kode yang diklaim pada simpan ini
+     * @param  array<string, int>   $lama      kode yang sudah ada di alur ini
+     */
+    private static function kodeTahap(?string $kiriman, string $label, int $i, array $terpakai, array $lama): string
+    {
+        $kiriman = trim((string) $kiriman);
+
+        if ($kiriman !== '' && isset($lama[$kiriman]) && ! isset($terpakai[$kiriman])) {
+            return $kiriman;
+        }
+
+        if ($kiriman !== '') {
+            $bersih = substr(trim(preg_replace('/[^A-Z0-9]+/', '_', strtoupper($kiriman)), '_'), 0, 30);
+            if ($bersih !== '' && ! isset($terpakai[$bersih]) && ! isset($lama[$bersih])) {
+                return $bersih;
+            }
+        }
+
+        return self::kodeTahapBaru($label, $i, $terpakai, $lama);
+    }
+
+    /**
+     * Kode yang diturunkan dari label — untuk tahap yang benar-benar baru.
+     *
+     * @param  array<string, bool>  $terpakai
+     * @param  array<string, int>   $lama
+     */
+    private static function kodeTahapBaru(string $label, int $i, array $terpakai, array $lama): string
+    {
+        $dasar = trim(preg_replace('/[^A-Z0-9]+/', '_', strtoupper($label)), '_') ?: ('TAHAP_'.($i + 1));
+        $dasar = substr($dasar, 0, 30);
+
+        $bentrok = fn ($k) => isset($terpakai[$k]) || isset($lama[$k]);
+
+        if (! $bentrok($dasar)) {
+            return $dasar;
+        }
+
+        // Akhiran dipotong DARI DASARNYA, bukan ditambahkan di ujung: kolomnya
+        // VARCHAR(30), dan menambah "_2" pada kode yang sudah 30 karakter akan
+        // terpotong diam-diam kembali menjadi kode yang sama.
+        for ($n = 2; $n <= 99; $n++) {
+            $akhiran = '_'.$n;
+            $kode = substr($dasar, 0, 30 - strlen($akhiran)).$akhiran;
+            if (! $bentrok($kode)) {
+                return $kode;
+            }
+        }
+
+        // Sembilan puluh delapan tahap berlabel sama dalam satu alur bukan
+        // keadaan yang perlu dilayani — tapi juga tidak boleh menabrak indeks.
+        return substr($dasar, 0, 22).'_'.substr(strtoupper(bin2hex(random_bytes(4))), 0, 7);
     }
 
     /**
@@ -487,8 +653,45 @@ class MasterAlurController extends Controller
 
         $tuntasTerpakai = false;
 
+        /*
+        |─────────────────────────────────────────────────────────────────────
+        | KODE TAHAP = IDENTITAS, BUKAN TURUNAN LABEL
+        |─────────────────────────────────────────────────────────────────────
+        |
+        | Dulu Kode dibangkitkan ULANG dari label pada SETIAP penyimpanan.
+        | Akibatnya memperbaiki satu kata di judul tahap diam-diam mengganti
+        | identitasnya: snapshot kandidat (Lamaran_Tahap.Kode) tidak lagi cocok
+        | kolom mana pun, dan seluruh rombongan yang sedang berjalan di tahap
+        | itu jatuh ke kolom cadangan "Tahap di luar alur" — di papan yang
+        | dipakai mengambil keputusan, tanpa satu galat pun.
+        |
+        | Sekarang: kode yang SUDAH ADA dipertahankan, dan barisnya dicari
+        | LEWAT KODE ITU — bukan lewat nomor urut. Bedanya terasa saat tahap
+        | dipindah urutannya: identitas ikut pindah bersama tahapnya, sehingga
+        | kandidat tetap berdiri di kolom yang benar. Pencocokan lewat nomor
+        | (perilaku lama) akan menukar arti dua baris sekaligus.
+        |
+        | Kode baru hanya dibangkitkan untuk tahap yang memang baru, dan
+        | dijamin tidak kembar DI DALAM SATU ALUR — indeks UNIQUE
+        | (Master_Alur_Id, Kode) menegakkannya di basis data, dan menabraknya
+        | akan memunculkan galat SQL mentah di hadapan admin. Dijaga di sini
+        | supaya yang terjadi bukan galat, melainkan kode kedua yang sah.
+        */
+        $barisLama = DB::table('N_WEB_CAREERS_Master_Alur_Tahap')
+            ->where('Master_Alur_Id', $alurId)
+            ->get(['Id_Master_Alur_Tahap', 'Urutan', 'Kode']);
+
+        $idPerKode = $barisLama->filter(fn ($r) => (string) $r->Kode !== '')
+            ->pluck('Id_Master_Alur_Tahap', 'Kode')->all();
+        $idPerUrutan = $barisLama->pluck('Id_Master_Alur_Tahap', 'Urutan')->all();
+
+        $kodeTerpakai = [];   // kode yang sudah diklaim pada penyimpanan ini
+        $idTerpakai = [];     // baris yang dipakai ulang / baru dibuat
+
         foreach (array_values($stages) as $i => $s) {
-            $kode = trim(preg_replace('/[^A-Z0-9]+/', '_', strtoupper($s['label'])), '_') ?: ('TAHAP_'.($i + 1));
+            $kode = self::kodeTahap($s['kode'] ?? null, $s['label'] ?? '', $i, $kodeTerpakai, $idPerKode);
+
+            $kodeTerpakai[$kode] = true;
 
             // ── TIPE MELEKAT PADA AKTIVITAS, BUKAN PADA TAHAP ──────────────────
             //
@@ -632,12 +835,23 @@ class MasterAlurController extends Controller
                 'Updated_At' => $now, 'Updated_By' => $userName, 'Updated_By_Id' => $userId,
             ];
 
-            // PAKAI ULANG baris yang sudah ada pada urutan ini — id-nya dipegang
-            // lamaran yang sedang berjalan, jadi tidak boleh berganti.
-            $tahapId = DB::table('N_WEB_CAREERS_Master_Alur_Tahap')
-                ->where('Master_Alur_Id', $alurId)
-                ->where('Urutan', $i + 1)
-                ->value('Id_Master_Alur_Tahap');
+            // PAKAI ULANG baris yang sudah ada — id-nya dipegang lamaran yang
+            // sedang berjalan (Lamaran_Tahap.Master_Alur_Tahap_Id), jadi tidak
+            // boleh berganti.
+            //
+            // Dicari LEWAT KODE lebih dulu; nomor urut hanya cadangan untuk
+            // baris lama yang kodenya tak dikenali. Urutan sebagai kunci utama
+            // adalah sumber kekeliruan yang lama: memindahkan tahap ke posisi
+            // lain menukar arti dua baris sekaligus, dan snapshot kandidat ikut
+            // salah tempat tanpa ada yang menyadarinya.
+            $tahapId = $idPerKode[$kode] ?? ($idPerUrutan[$i + 1] ?? null);
+
+            // Baris cadangan-per-urutan bisa saja sudah diklaim tahap lain pada
+            // penyimpanan yang sama. Menimpanya dua kali akan membuat dua tahap
+            // berbagi satu baris — yang kedua menghapus yang pertama.
+            if ($tahapId && in_array($tahapId, $idTerpakai, true)) {
+                $tahapId = null;
+            }
 
             if ($tahapId) {
                 DB::table('N_WEB_CAREERS_Master_Alur_Tahap')->where('Id_Master_Alur_Tahap', $tahapId)->update($isi);
@@ -647,6 +861,8 @@ class MasterAlurController extends Controller
                     'Id_Master_Alur_Tahap',
                 );
             }
+
+            $idTerpakai[] = (int) $tahapId;
 
             // Sub-tes diperlakukan sama: dipakai ulang per urutan, sisanya dibuang.
             $tesLama = DB::table('N_WEB_CAREERS_Master_Alur_Tahap_Tes')
@@ -759,7 +975,11 @@ class MasterAlurController extends Controller
                 ->delete();
         }
 
-        $this->hapusTahapSisa($alurId, count($stages));
+        // Sisa dibuang menurut BARIS YANG TIDAK TERPAKAI, bukan menurut nomor
+        // urut. Sejak baris dicocokkan lewat kode, tahap yang dipindah ke posisi
+        // lebih awal tetap memakai barisnya yang lama — dan penghapusan
+        // "Urutan > jumlah" akan ikut membuang baris yang barusan dipakai ulang.
+        $this->hapusTahapTakTerpakai($alurId, $idTerpakai);
 
         // ATURAN PENGUMPULAN ikut berlaku bagi yang SEDANG BERJALAN.
         //
@@ -777,6 +997,14 @@ class MasterAlurController extends Controller
     {
         try {
             $data = $request->validate($this->rules());
+
+            // Menyimpan BUKAN membaca: di sini kategori di luar jatah ditolak
+            // tegas, tidak dialihkan diam-diam seperti pada penyaring. Menyimpan
+            // ke kategori yang salah membuat alur muncul pada program orang lain,
+            // dan pemiliknya tidak akan pernah tahu dari mana ia datang.
+            if ($galat = $this->galatKategori($data['kategori'])) {
+                return $galat;
+            }
             $userId = session('career_auth.id');
             $userName = session('career_auth.nama', 'ADMIN');
             $now = now();
@@ -818,38 +1046,149 @@ class MasterAlurController extends Controller
                 return ResponseHelper::error('Data tidak ditemukan', 404);
             }
             $data = $request->validate($this->rules());
+
+            // Menyimpan BUKAN membaca: di sini kategori di luar jatah ditolak
+            // tegas, tidak dialihkan diam-diam seperti pada penyaring. Menyimpan
+            // ke kategori yang salah membuat alur muncul pada program orang lain,
+            // dan pemiliknya tidak akan pernah tahu dari mana ia datang.
+            if ($galat = $this->galatKategori($data['kategori'])) {
+                return $galat;
+            }
             $userId = session('career_auth.id');
             $userName = session('career_auth.nama', 'ADMIN');
 
-            $ikut = DB::transaction(function () use ($data, $realId, $userId, $userName) {
-                DB::table('N_WEB_CAREERS_Master_Alur')->where('Id_Master_Alur', $realId)->update([
-                    'Nama' => $data['nama'],
-                    'Kategori' => $data['kategori'],
-                    'Deskripsi' => $data['deskripsi'] ?? null,
-                    'Updated_At' => now(), 'Updated_By' => $userName, 'Updated_By_Id' => $userId,
-                ]);
+            // ── MENYUNTING ALUR YANG SEDANG DIPAKAI = MELAHIRKAN VERSI ──────
+            //
+            // Selama alur belum pernah dijalani siapa pun, ia ditimpa apa adanya
+            // (perilaku lama, dan memang benar: tidak ada rombongan untuk
+            // dilindungi). Begitu ada satu lamaran saja di atasnya, menimpanya
+            // berarti mengubah papan yang sedang dipakai mengambil keputusan.
+            //
+            // `migrasi` menentukan nasib yang SEDANG BERJALAN:
+            //   'TIDAK' (bawaan) → tetap di versi lama sampai selesai
+            //   'SEMUA'          → yang layak dipindahkan ke versi baru
+            //
+            // Keputusannya per-kandidat; lihat VersiAlur::nilaiKelayakan().
+            $berversi = VersiAlur::siap() && VersiAlur::terpakai((int) $realId);
+            $migrasi = strtoupper((string) $request->input('migrasi', 'TIDAK')) === 'SEMUA';
 
-                // TIDAK dihapus lebih dulu: simpanTahap() memakai ulang baris per
-                // urutan dan membuang sisanya sendiri, supaya id tahap tetap sama
-                // bagi lamaran yang sedang berjalan di alur ini.
-                return $this->simpanTahap($realId, $data['stages'] ?? [], $userId, $userName);
+            $hasil = DB::transaction(function () use ($data, $realId, $userId, $userName, $berversi, $migrasi) {
+                if (! $berversi) {
+                    DB::table('N_WEB_CAREERS_Master_Alur')->where('Id_Master_Alur', $realId)->update([
+                        'Nama' => $data['nama'],
+                        'Kategori' => $data['kategori'],
+                        'Deskripsi' => $data['deskripsi'] ?? null,
+                        'Updated_At' => now(), 'Updated_By' => $userName, 'Updated_By_Id' => $userId,
+                    ]);
+
+                    // TIDAK dihapus lebih dulu: simpanTahap() memakai ulang baris
+                    // lewat kodenya dan membuang sisanya sendiri, supaya id tahap
+                    // tetap sama bagi lamaran yang sedang berjalan di alur ini.
+                    return ['versi' => false, 'ikut' => $this->simpanTahap($realId, $data['stages'] ?? [], $userId, $userName)];
+                }
+
+                $baruId = VersiAlur::lahirkan((int) $realId, $data, $userId, $userName);
+
+                // Tahap versi baru disusun dari kiriman layar — yang membawa
+                // KODE tahap lama, sehingga identitasnya terjaga dan pemetaan
+                // migrasi berdiri di atasnya.
+                $this->simpanTahap($baruId, $data['stages'] ?? [], $userId, $userName);
+
+                // Program, syarat gugur, jadwal — dibawa serta. Tanpa ini
+                // syarat gugur berhenti berlaku tanpa satu galat pun.
+                $rujukan = VersiAlur::pindahkanRujukan((int) $realId, $baruId, $userId, $userName);
+
+                // Tanpa migrasi, yang "tidak ikut" adalah SELURUH lamaran yang
+                // masih berjalan di versi lama — dihitung supaya pesannya
+                // menyebut angka sebenarnya, bukan nol yang menyesatkan.
+                $pindah = $migrasi
+                    ? VersiAlur::migrasikan((int) $realId, $baruId, $userId, $userName)
+                    : [
+                        'ikut' => 0,
+                        'tidak' => DB::table('N_WEB_CAREERS_Lamaran')
+                            ->where('Master_Alur_Id', $realId)->where('Status', 'BERJALAN')->count(),
+                    ];
+
+                return ['versi' => true, 'baruId' => $baruId, 'rujukan' => $rujukan, 'pindah' => $pindah];
             });
 
-            Log::channel('web_career')->info("Master alur #{$realId} diperbarui"
-                .($ikut ? " — {$ikut} aktivitas kandidat berjalan ikut menyesuaikan aturan pengumpulannya" : ''));
+            // Akibatnya DIKATAKAN, tidak diam-diam: menyunting alur yang sedang
+            // dipakai orang bukan perbuatan sepele, dan admin berhak tahu
+            // seberapa jauh dampaknya sebelum menutup halaman.
+            if (empty($hasil['versi'])) {
+                $ikut = (int) $hasil['ikut'];
+                Log::channel('web_career')->info("Master alur #{$realId} diperbarui"
+                    .($ikut ? " — {$ikut} aktivitas kandidat berjalan ikut menyesuaikan aturan pengumpulannya" : ''));
 
-            // Jumlah yang ikut DIKATAKAN, tidak diam-diam: menyunting alur yang
-            // sedang dipakai orang bukan perbuatan sepele, dan admin berhak tahu
-            // seberapa jauh akibatnya sebelum menutup halaman.
-            return ResponseHelper::success(null, $ikut
-                ? "Alur diperbarui — {$ikut} aktivitas kandidat yang sedang berjalan ikut menyesuaikan aturan unggahannya."
-                : 'Alur diperbarui');
+                return ResponseHelper::success(null, $ikut
+                    ? "Alur diperbarui — {$ikut} aktivitas kandidat yang sedang berjalan ikut menyesuaikan aturan unggahannya."
+                    : 'Alur diperbarui');
+            }
+
+            $p = $hasil['pindah'];
+            $r = $hasil['rujukan'];
+            Log::channel('web_career')->info(
+                "Master alur #{$realId} melahirkan versi #{$hasil['baruId']} — "
+                ."{$r['program']} program diarahkan, {$r['syarat']} syarat & {$r['jadwal']} jadwal dibawa, "
+                ."migrasi: {$p['ikut']} ikut / {$p['tidak']} tidak."
+            );
+
+            return ResponseHelper::success(
+                ['versiBaruId' => Hashids::encode($hasil['baruId'])] + $p,
+                $migrasi
+                    ? "Versi baru dibuat. {$p['ikut']} kandidat berjalan dipindahkan; {$p['tidak']} tetap di versi lama."
+                    : "Versi baru dibuat dan dipakai program mulai sekarang. {$p['tidak']} kandidat yang sedang berjalan tetap menyelesaikan versi lama."
+            );
         } catch (\Illuminate\Validation\ValidationException $e) {
             return ResponseHelper::error(collect($e->errors())->flatten()->first() ?? 'Data tidak valid', 422);
         } catch (\Throwable $e) {
             Log::channel('web_career')->error("Gagal update alur #{$id}: ".$e->getMessage());
 
             return ResponseHelper::error('Gagal memperbarui data', 500);
+        }
+    }
+
+    /**
+     * GET .../master-alur/{id}/dampak — apa yang terjadi bila alur ini disimpan.
+     *
+     * Dipanggil layar SEBELUM menyimpan, supaya tombol "terapkan ke yang sedang
+     * berjalan" bisa menyebutkan akibatnya lebih dulu — bukan sesudahnya, saat
+     * sudah tidak bisa dibatalkan.
+     *
+     * Kode tahap versi baru dikirim layar apa adanya (`kode[]`): itulah yang
+     * menentukan siapa masih punya tempat di versi baru dan siapa tidak.
+     */
+    public function dampak(Request $request, $id)
+    {
+        try {
+            $realId = Hashids::decode($id)[0] ?? null;
+            if (! $realId || ! DB::table('N_WEB_CAREERS_Master_Alur')->where('Id_Master_Alur', $realId)->exists()) {
+                return ResponseHelper::error('Data tidak ditemukan', 404);
+            }
+
+            if (! VersiAlur::siap()) {
+                return ResponseHelper::success(['berversi' => false], 'Versi alur belum aktif di basis data ini');
+            }
+
+            $terpakai = VersiAlur::terpakai((int) $realId);
+            if (! $terpakai) {
+                return ResponseHelper::success(
+                    ['berversi' => false, 'ikut' => 0, 'tidak' => 0, 'rincian' => []],
+                    'Alur ini belum dipakai lamaran mana pun — disimpan apa adanya.'
+                );
+            }
+
+            $kode = collect((array) $request->input('kode', []))
+                ->map(fn ($k) => trim((string) $k))->filter()->values()->all();
+
+            return ResponseHelper::success(
+                ['berversi' => true] + VersiAlur::pratinjau((int) $realId, $kode),
+                'Dampak penyimpanan'
+            );
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->error("Gagal menghitung dampak alur #{$id}: ".$e->getMessage());
+
+            return ResponseHelper::error('Gagal menghitung dampak', 500);
         }
     }
 

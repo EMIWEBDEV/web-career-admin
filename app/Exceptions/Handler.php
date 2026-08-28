@@ -120,6 +120,11 @@ class Handler extends ExceptionHandler
                     ->error("[ERR-{$referensi}] {$status} {$request->fullUrl()} — " . $e->getMessage());
             }
 
+            // Judul tab halaman galat disamakan dengan yang nanti dipasang
+            // Error.vue, supaya tidak berkedip dari judul default ke judul
+            // galat begitu Vue hidup.
+            \App\Support\Seo\Seo::set(['title' => $this->errorTitleFor($status)]);
+
             return Inertia::render('Error', [
                 'status' => $status,
                 'message' => $this->errorMessageFor($status),
@@ -149,6 +154,25 @@ class Handler extends ExceptionHandler
      * Pesan generik (Bahasa Indonesia) per status. TIDAK memakai $e->getMessage()
      * agar detail/stacktrace tidak bocor ke pengguna di produksi.
      */
+    /**
+     * Judul tab per status — cermin peta `judulTab` di resources/js/Pages/Error.vue.
+     * Keduanya harus sama persis; kalau salah satu diubah, ubah juga yang lain.
+     */
+    private function errorTitleFor(int $status): string
+    {
+        return match ($status) {
+            400 => 'Permintaan Tidak Valid',
+            401 => 'Sesi Berakhir',
+            403 => 'Akses Ditolak',
+            404 => 'Halaman Tidak Ditemukan',
+            419 => 'Halaman Kedaluwarsa',
+            429 => 'Terlalu Banyak Permintaan',
+            500 => 'Kesalahan Server',
+            503 => 'Mode Pemeliharaan',
+            default => 'Terjadi Kesalahan',
+        };
+    }
+
     private function errorMessageFor(int $status): string
     {
         return match ($status) {

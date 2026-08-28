@@ -7,7 +7,7 @@
      "Dipakai" di sini = jumlah LOWONGAN yang memasang benefit ini, dibaca dari
      tabel jembatan N_WEB_CAREERS_Detail_Benefit_MPP. -->
 <template>
-    <Head><title>Master Benefit - Web Career</title></Head>
+    <Head title="Master Benefit" />
     <div class="wca">
         <div class="wca-phead">
             <div>

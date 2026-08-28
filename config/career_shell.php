@@ -41,6 +41,11 @@ return [
     */
     'props_tambahan' => [
         // App\Support\Career\Shell\Tambahan\ContohProps::class,
+
+        // Menyalin judul modul ke <title> yang dicetak server, supaya judul
+        // tab halaman admin tidak berkedip dari default ke judul aslinya saat
+        // Vue selesai dimuat. Lihat App\Support\Seo\PropsSeo.
+        App\Support\Seo\PropsSeo::class,
     ],
 
     /** Menit cache daftar menu master. Pendek — perubahan menu harus cepat terasa. */

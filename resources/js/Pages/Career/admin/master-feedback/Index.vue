@@ -1,6 +1,6 @@
 <!-- WEB CAREER — Master Feedback Form (induk-detail: Form + Pertanyaan). DATA dari DB via /api/v1/karir/master-feedback. -->
 <template>
-    <Head><title>Master Feedback Form - Web Career</title></Head>
+    <Head title="Master Feedback Form" />
     <div class="wca">
         <div class="pkg-head">
             <div class="pkg-head__l">

@@ -2,6 +2,7 @@
 
 namespace App\Support\Career;
 
+use App\Support\Career\KursiPosisi;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -266,16 +267,67 @@ class LamaranService
         return is_string($v) && filter_var(trim($v), FILTER_VALIDATE_EMAIL) !== false;
     }
 
-    /** Nilai pertama yang berisi menurut urutan kunci di master. */
+    /**
+     * Nilai pertama yang berisi menurut urutan kunci di master.
+     *
+     * ── KENAPA IKUT MELIHAT KE DALAM REPEATER ──────────────────────────────
+     *
+     * Formulir rekrutmen tidak menyimpan kampus sebagai isian datar. Ia ada di
+     * dalam `pendidikan_formal`, sebuah daftar berulang:
+     *
+     *     "pendidikan_formal": [
+     *         { "jenjang": "S1", "nama_institusi": "…", "jurusan": "…", … }
+     *     ]
+     *
+     * `nama_institusi` memang sudah terdaftar sebagai kunci KAMPUS, tapi
+     * pencarian yang cuma melihat tingkat teratas tidak akan pernah
+     * menemukannya — dan kolom Kampus di worklist kosong untuk SETIAP pelamar
+     * yang mengisi formulir rekrutmen, tanpa satu pun galat yang menjelaskan
+     * kenapa. Hal yang sama berlaku untuk jurusan, jenjang, IPK, dan tahun
+     * lulus; keempatnya tinggal di daftar yang sama.
+     *
+     * ── KENAPA BARIS PERTAMA ───────────────────────────────────────────────
+     *
+     * Formulirnya sendiri meminta "mulai dari jenjang terakhir", jadi baris
+     * pertama adalah pendidikan tertinggi — persis yang dimaksud orang saat
+     * bertanya "kampusnya mana".
+     */
     private static function dariKunci(array $jawaban, string $kode): ?string
     {
-        foreach (self::kunciIdentitas($kode) as $k) {
+        $kunci = self::kunciIdentitas($kode);
+
+        // 1 · Isian datar. Didahulukan: kalau formulirnya memang menyediakan
+        //     isian tersendiri, itulah jawaban yang paling disengaja.
+        foreach ($kunci as $k) {
             $v = $jawaban[$k] ?? null;
             if (is_array($v)) {
                 $v = implode(', ', array_filter($v, 'is_scalar'));
             }
             if ($v !== null && trim((string) $v) !== '') {
                 return trim((string) $v);
+            }
+        }
+
+        // 2 · Di dalam daftar berulang. Hanya daftar yang benar-benar memuat
+        //     kuncinya yang cocok — baris keluarga memakai kel_utama_nama,
+        //     riwayat kerja memakai nama_perusahaan, jadi tidak ada yang
+        //     saling tertukar.
+        foreach ($jawaban as $isi) {
+            if (! is_array($isi)) {
+                continue;
+            }
+
+            foreach ($isi as $baris) {
+                if (! is_array($baris)) {
+                    continue;
+                }
+
+                foreach ($kunci as $k) {
+                    $v = $baris[$k] ?? null;
+                    if ($v !== null && ! is_array($v) && trim((string) $v) !== '') {
+                        return trim((string) $v);
+                    }
+                }
             }
         }
 
@@ -824,6 +876,8 @@ class LamaranService
                 if (! $adaBerikut) {
                     $lam = DB::table('N_WEB_CAREERS_Lamaran')->where('Id_Lamaran', $tahap->Lamaran_Id)->first();
                     if ($lam && $lam->Program_Posisi_Id) {
+                        // ── GERBANG 1: JATAH LOKER INI ──────────────────────
+                        //
                         // BARIS POSISINYA DIKUNCI, bukan sekadar dibaca.
                         //
                         // Hitung-lalu-putuskan tanpa kunci adalah lomba yang
@@ -833,17 +887,47 @@ class LamaranService
                         // lolos gerbang ini. Kursinya jadi sebelas. Kunci di
                         // sini membuat yang kedua menunggu sampai yang pertama
                         // selesai, lalu membaca angka yang sudah benar.
-                        $kuota = (int) DB::table('N_WEB_CAREERS_Program_Posisi')
+                        $posisi = DB::table('N_WEB_CAREERS_Program_Posisi')
                             ->where('Id_Program_Posisi', $lam->Program_Posisi_Id)
                             ->lockForUpdate()
-                            ->value('Kuota');
+                            ->first(['Kuota', 'Mpp_Ref']);
+
+                        $potong = HasilKeputusan::kodePotongKuota() ?: ['LULUS'];
+                        $kuota = (int) ($posisi->Kuota ?? 0);
+
                         if ($kuota > 0) {
                             $terisi = DB::table('N_WEB_CAREERS_Lamaran')
                                 ->where('Program_Posisi_Id', $lam->Program_Posisi_Id)
-                                ->where('Status', 'LULUS')->count();
+                                ->whereIn('Status', $potong)->count();
                             if ($terisi >= $kuota) {
                                 return ['ok' => false, 'pesan' => "Kuota posisi sudah penuh ({$terisi}/{$kuota}). Pilih \"Tidak Lolos\" atau \"Masuk Talent Pool\"."];
                             }
+                        }
+
+                        // ── GERBANG 2: RENCANA MPP, LINTAS PROGRAM ──────────
+                        //
+                        // Gerbang di atas hanya menjaga JATAH SATU LOKER. Satu
+                        // MPP boleh dibuka di beberapa program — dan memang
+                        // harus, karena satu program cuma sanggup memegang satu
+                        // alur. Tanpa gerbang kedua, MPP berencana 15 yang
+                        // dibuka di dua program membolehkan 15 penerimaan di
+                        // masing-masing: tiga puluh orang diterima atas
+                        // persetujuan yang menyebut lima belas, tanpa satu
+                        // peringatan pun.
+                        //
+                        // Kuncinya SATU BARIS ledger MPP, diambil SESUDAH baris
+                        // loker. Urutan itu tetap sama di seluruh jalur, jadi
+                        // dua rekruter di dua program berbeda antre — bukan
+                        // saling tunggu. Mengunci seluruh baris loker MPP ini
+                        // sebagai gantinya justru membuka pintu deadlock.
+                        $mpp = KursiMpp::kunciDanHitung($posisi->Mpp_Ref ?? null);
+                        if ($mpp && $mpp['penuh']) {
+                            return ['ok' => false, 'pesan' => sprintf(
+                                'Kuota MPP %s sudah penuh (%d dari %d disetujui) — termasuk penerimaan di program lain '
+                                .'yang memakai MPP yang sama. Pilih "Tidak Lolos" atau "Masuk Talent Pool", '
+                                .'atau minta rencana MPP-nya ditambah lebih dulu.',
+                                $posisi->Mpp_Ref, $mpp['terisi'], $mpp['kuota']
+                            )];
                         }
                     }
                 }
@@ -1111,6 +1195,13 @@ class LamaranService
             Log::channel('web_career')->info(
                 "Lamaran #{$tahap->Lamaran_Id} DITERIMA di tahap tuntas '{$tahap->Label}' (urutan {$tahap->Urutan})."
             );
+
+            // KURSINYA DIBUKUKAN SERENTAK. Bukan diantrekan: posisi yang kursinya
+            // sudah terisi tapi masih tertulis "BUKA" akan menerima pendaftaran
+            // untuk kursi yang tak ada, dan jendela itu tidak boleh pernah
+            // terbuka walau sedetik. Penutupan MPP-nya yang diantrekan — lihat
+            // KursiPosisi::untukLamaran().
+            KursiPosisi::untukLamaran((int) $tahap->Lamaran_Id);
         }
 
         if ($berikut) {
@@ -1165,6 +1256,11 @@ class LamaranService
                 'Waktu_Selesai' => $now,
                 'Updated_At' => $now, 'Updated_By' => $nama, 'Updated_By_Id' => $adminId,
             ]);
+
+            // Jalur kedua menuju DITERIMA — pembukuannya harus sama. Kalau hanya
+            // salah satu yang membukukan, kursi yang terisi lewat jalur yang
+            // terlupa tidak pernah terhitung, dan kuotanya bocor diam-diam.
+            KursiPosisi::untukLamaran((int) $tahap->Lamaran_Id);
         }
     }
 
@@ -1471,12 +1567,43 @@ class LamaranService
             ->orderBy('Urutan')
             ->get();
 
+        // ── ASAL KUESIONER SKRINING ─────────────────────────────────────────
+        //
+        // Template phone screening menempel PER LOKER, jadi pembekuannya perlu
+        // tahu lamaran ini melamar ke posisi mana. Ditelusuri di sini, bukan
+        // dioper lewat tanda tangan metode, supaya ketiga pemanggilnya (daftar
+        // biasa, tarik dari talent pool, dan penyelarasan sistem) tidak perlu
+        // disentuh satu per satu.
+        //
+        // Kuerinya hanya dijalankan bila tahap ini MEMANG memuat aktivitas
+        // skrining — pada alur biasa yang tidak memakainya, tidak ada satu pun
+        // kueri tambahan.
+        $adaSkrining = Skrining::siap() && $tes->contains(
+            fn ($x) => Skrining::untuk($x->Tipe_Tahap_Kode ?? null)
+        );
+
+        $asal = $adaSkrining
+            ? DB::table('N_WEB_CAREERS_Lamaran_Tahap as lt')
+                ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'lt.Lamaran_Id')
+                ->where('lt.Id_Lamaran_Tahap', $lamaranTahapId)
+                ->first(['l.Program_Id', 'l.Program_Posisi_Id'])
+            : null;
+
         foreach ($tes as $x) {
             DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')->insert([
                 'Lamaran_Tahap_Id' => $lamaranTahapId,
                 'Master_Alur_Tahap_Tes_Id' => $x->Id_Master_Alur_Tahap_Tes,
                 'Urutan' => $x->Urutan,
                 'Jenis_Tes_Kode' => $x->Jenis_Tes_Kode,
+                // Template skrining DIBEKUKAN di sini — kode + versinya, sepola
+                // Formulir_Kode + Formulir_Versi. Mengubah pengikatan besok
+                // tidak menggeser kandidat yang sudah berjalan.
+                ...Skrining::bekukan(
+                    $asal->Program_Id ?? null,
+                    $asal->Program_Posisi_Id ?? null,
+                    (int) $x->Id_Master_Alur_Tahap_Tes,
+                    $x->Tipe_Tahap_Kode ?? null
+                ),
                 // Tipe aktivitas ikut dibekukan: alur boleh berubah nanti, tapi
                 // yang dijalani kandidat ini harus tetap seperti saat ia melamar.
                 'Tipe_Tahap_Kode' => $x->Tipe_Tahap_Kode,

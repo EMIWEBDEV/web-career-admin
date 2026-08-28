@@ -1,6 +1,6 @@
 <!-- WEB CAREER — Master Jadwal Kegiatan (induk-detail: Jadwal + Agenda). DATA dari DB via /api/v1/master-jadwal. -->
 <template>
-    <Head><title>Master Jadwal Kegiatan - Web Career</title></Head>
+    <Head title="Master Jadwal Kegiatan" />
     <div class="wca">
         <div class="pkg-head">
             <div class="pkg-head__l">
@@ -11,6 +11,72 @@
                 <p>Timeline satu gelombang: aktivitas pendukung (rapat, campaign, evaluasi) <b>+ tahapan seleksi</b>. Tiap agenda bertanggal.</p>
             </div>
             <button class="pkg-newbtn" @click="openCreate"><i class="bi bi-plus-lg"></i> Jadwal Baru</button>
+        </div>
+
+        <!-- FILTER PANEL — seluruh saringan dikirim ke backend, bukan disaring di
+             browser. Menyaring di layar berarti jadwal kategori lain tetap sampai
+             ke peramban lebih dulu, lalu "disembunyikan" oleh kode yang bisa
+             dibaca siapa saja. -->
+        <div v-if="sheetOpen" class="jdw-sheetbg" @click="sheetOpen = false"></div>
+        <div class="jdw-filter" :class="{ 'is-open': sheetOpen }">
+            <div class="jdw-filter__head">
+                <span class="jdw-filter__title"><i class="bi bi-funnel"></i> Filter Panel</span>
+                <div class="jdw-filter__act">
+                    <button v-if="adaFilter" class="jdw-filter__reset" type="button" @click="resetFilter"><i class="bi bi-arrow-counterclockwise"></i> Reset</button>
+                    <button class="jdw-filter__close" type="button" aria-label="Tutup filter" @click="sheetOpen = false"><i class="bi bi-x-lg"></i></button>
+                </div>
+            </div>
+            <div class="jdw-filter__grid">
+                <div>
+                    <label class="wca-field-lbl">Cari</label>
+                    <el-input v-model="filters.q" placeholder="Nama kegiatan / kode / alur" clearable @input="cariDebounce">
+                        <template #prefix><i class="bi bi-search"></i></template>
+                    </el-input>
+                </div>
+                <!-- Penyaring kategori hanya berarti bila ADA yang bisa disaring.
+                     Pengguna yang dijatah satu kategori melihat kotak berisi satu
+                     pilihan yang sudah pasti terpilih — kendali yang tak bisa
+                     mengubah apa pun, dan menyisakan pertanyaan apa gunanya. -->
+                <div v-if="kategoriOpsi.length > 1">
+                    <label class="wca-field-lbl">Kategori</label>
+                    <el-select v-model="filters.kategori" placeholder="Semua kategori" clearable filterable style="width:100%">
+                        <el-option v-for="k in kategoriOpsi" :key="k.kode" :label="k.label" :value="k.kode" />
+                    </el-select>
+                </div>
+                <div>
+                    <label class="wca-field-lbl">Status</label>
+                    <el-select v-model="filters.status" placeholder="Semua status" clearable style="width:100%" @change="load">
+                        <el-option label="Aktif" value="AKTIF" />
+                        <el-option label="Nonaktif" value="NONAKTIF" />
+                    </el-select>
+                </div>
+                <div>
+                    <label class="wca-field-lbl">Tanggal Dibuat</label>
+                    <el-date-picker
+                        v-model="filters.rentang" type="daterange" value-format="YYYY-MM-DD"
+                        start-placeholder="Dari" end-placeholder="Sampai" range-separator="&mdash;"
+                        style="width:100%" @change="load"
+                    />
+                </div>
+            </div>
+        </div>
+
+        <!-- FAB filter (mobile) -->
+        <button class="jdw-fab" type="button" aria-label="Buka filter" @click="sheetOpen = true">
+            <i class="bi bi-funnel-fill"></i>
+            <span v-if="jumlahFilter" class="jdw-fab__badge">{{ jumlahFilter }}</span>
+        </button>
+
+        <!-- Daftar kosong DIBEDAKAN dari daftar yang tersaring habis: yang pertama
+             perlu tombol "Jadwal Baru", yang kedua perlu tombol "Reset". Satu
+             kalimat untuk keduanya akan menyuruh orang membuat jadwal yang
+             sebenarnya sudah ada, hanya sedang tersembunyi oleh saringannya. -->
+        <div v-if="!loading && !list.length" class="jdw-kosong">
+            <i class="bi" :class="adaFilter ? 'bi-funnel' : 'bi-calendar3-range'"></i>
+            <b>{{ adaFilter ? 'Tidak ada jadwal yang cocok' : 'Belum ada jadwal kegiatan' }}</b>
+            <span v-if="adaFilter">Saringan yang sedang aktif menutup seluruh data. Longgarkan salah satunya, atau kembalikan ke semula.</span>
+            <span v-else>Satu jadwal menampung agenda satu gelombang &mdash; rapat, campaign, evaluasi, dan tahapan seleksinya.</span>
+            <button v-if="adaFilter" class="jdw-filter__reset" type="button" @click="resetFilter"><i class="bi bi-arrow-counterclockwise"></i> Kembalikan saringan</button>
         </div>
 
         <div v-loading="loading" class="pkg-list">
@@ -71,10 +137,29 @@
                 <div class="wca-form">
                     <div class="wca-frow">
                         <div><label class="wca-field-lbl">Nama Kegiatan</label><el-input v-model="form.kegiatan" placeholder="mis. Rekrutmen Reguler Q3" /></div>
-                        <div><label class="wca-field-lbl">Kategori</label><RefSelect type="talent" v-model="form.kategori" placeholder="Pilih kategori" /></div>
+                        <div><label class="wca-field-lbl">Kategori</label>
+                            <el-select v-if="!kategoriTunggal" v-model="form.kategori" placeholder="Pilih kategori" filterable style="width:100%">
+                                <el-option v-for="k in kategoriOpsi" :key="k.kode" :label="k.label" :value="k.kode" />
+                            </el-select>
+                            <!-- Satu-satunya kategori yang boleh: nilainya sudah
+                                 dipasang saat borang dibuka, jadi yang tersisa cuma
+                                 keterangan agar admin tahu jadwal ini masuk ke mana. -->
+                            <div v-else class="jdw-kat-tetap">
+                                <span class="pkg-pill pkg-pill--violet"><i class="bi bi-tags"></i> {{ kategoriTunggal.label }}</span>
+                                <small><i class="bi bi-lock-fill"></i> satu-satunya kategori yang menjadi hak akses Anda</small>
+                            </div>
+                        </div>
                     </div>
                     <div class="wca-frow">
-                        <div><label class="wca-field-lbl">Alur Seleksi</label><RefSelect type="alur" v-model="form.alur" placeholder="Pilih alur" clearable /></div>
+                        <div><label class="wca-field-lbl">Alur Seleksi</label>
+                            <!-- Dipersempit ke kategori yang sedang dipilih. Tanpa
+                                 :params, daftarnya memuat SELURUH alur — termasuk
+                                 milik kategori yang tak boleh diakses pengguna ini,
+                                 dan jadwal MT bisa berakhir menunjuk alur Rekrutmen
+                                 tanpa satu pun peringatan. Pola yang sama sudah
+                                 dipakai modal Duplikat di bawah. -->
+                            <RefSelect type="alur" v-model="form.alur" :params="{ kategori: form.kategori }" placeholder="Pilih alur" no-data-text="Belum ada alur untuk kategori ini" clearable />
+                        </div>
                     </div>
                     <!-- Status tidak ditanyakan: jadwal yang baru dibuat pasti aktif,
                          dan mematikannya sudah tersedia lewat toggle di daftar. -->
@@ -197,6 +282,13 @@ export default {
             list: [],
             loading: false,
             open: null,
+            // Saringan dikirim ke server; daftar yang kembali sudah bersih.
+            filters: { q: '', kategori: null, status: null, rentang: null },
+            cariTimer: null,
+            sheetOpen: false,
+            // Kategori yang BOLEH dilihat pengguna ini — datang dari server bersama
+            // daftar jadwalnya, bukan dari master lengkap.
+            kategoriOpsi: [],
             show: false,
             editingId: null,
             form: { kegiatan: '', kategori: '', alur: '', agenda: [] },
@@ -216,6 +308,21 @@ export default {
             tm: null,
             fokusId: new URLSearchParams(window.location.search).get('fokus'),
         };
+    },
+    computed: {
+        /** Tepat satu kategori yang boleh -> tidak ada yang perlu dipilih. */
+        kategoriTunggal() {
+            return this.kategoriOpsi.length === 1 ? this.kategoriOpsi[0] : null;
+        },
+        adaFilter() {
+            return !!(this.filters.q || this.filters.kategori || this.filters.status || (this.filters.rentang && this.filters.rentang.length));
+        },
+        jumlahFilter() {
+            return [this.filters.q, this.filters.kategori, this.filters.status, this.filters.rentang?.length ? 1 : null].filter(Boolean).length;
+        },
+    },
+    watch: {
+        'filters.kategori'() { this.load(); },
     },
     mounted() {
         this.load();
@@ -245,11 +352,30 @@ export default {
             const dt = new Date(String(d).replace(' ', 'T'));
             return isNaN(dt.getTime()) ? d : dt.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
         },
+        /** Ketik di kolom cari -> tunggu 400ms lalu minta ke server sekali saja. */
+        cariDebounce() {
+            if (this.cariTimer) clearTimeout(this.cariTimer);
+            this.cariTimer = setTimeout(() => this.load(), 400);
+        },
+        resetFilter() {
+            this.filters = { q: '', kategori: null, status: null, rentang: null };
+            this.sheetOpen = false;
+            this.load();
+        },
         async load() {
             this.loading = true;
             try {
-                const res = await axios.get(API, CFG);
-                this.list = res.data.result || [];
+                const params = {
+                    q: this.filters.q || undefined,
+                    kategori: this.filters.kategori || undefined,
+                    status: this.filters.status || undefined,
+                    dari: this.filters.rentang?.[0] || undefined,
+                    sampai: this.filters.rentang?.[1] || undefined,
+                };
+                const res = await axios.get(API, { ...CFG, params });
+                const r = res.data.result || {};
+                this.list = r.data || [];
+                this.kategoriOpsi = r.kategori || [];
                 if (this.fokusId && this.list.some((j) => j.id === this.fokusId)) {
                     this.open = this.fokusId;
                     this.$nextTick(() => document.getElementById(`jadwal-${this.fokusId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
@@ -263,6 +389,11 @@ export default {
         openCreate() {
             this.editingId = null;
             this.form = { kegiatan: '', kategori: '', alur: '', agenda: [] };
+            // Hak akses cuma satu kategori -> langsung dipasang. Tanpa ini borang
+            // menampilkan pil terkunci berisi namanya, tapi nilainya tetap kosong —
+            // dan penyimpanan ditolak "Kategori wajib dipilih" untuk pilihan yang
+            // memang tidak pernah ditawarkan kepadanya.
+            if (this.kategoriTunggal) this.form.kategori = this.kategoriTunggal.kode;
             this.show = true;
         },
         openEdit(j) {
@@ -362,6 +493,47 @@ export default {
 </script>
 
 <style scoped>
+/* ── FILTER PANEL — card di desktop, bottom-sheet via FAB di mobile.
+   Bentuknya sengaja sama persis dengan Master Alur: keduanya daftar master
+   yang dikerjakan orang yang sama berselang beberapa menit, dan dua panel
+   saringan yang berbeda rupa akan terbaca sebagai dua aturan berbeda. ── */
+.jdw-filter { background: #fff; border: 1px solid rgba(15, 23, 42, .08); border-radius: 16px; padding: .9rem 1rem 1rem; margin-bottom: 1rem; box-shadow: 0 8px 24px rgba(15, 23, 42, .04); }
+.jdw-filter__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: .65rem; }
+.jdw-filter__title { display: inline-flex; align-items: center; gap: .45rem; font-size: 12px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #4338ca; }
+.jdw-filter__act { display: inline-flex; align-items: center; gap: .4rem; }
+.jdw-filter__reset { display: inline-flex; align-items: center; gap: .3rem; border: 1px solid rgba(79, 70, 229, .25); background: #eef2ff; color: #4338ca; font-size: 11.5px; font-weight: 700; border-radius: 9px; padding: 4px 10px; cursor: pointer; }
+.jdw-filter__reset:hover { background: #e0e7ff; }
+.jdw-filter__close { display: none; border: none; background: transparent; color: #64748b; font-size: 15px; cursor: pointer; padding: 4px; }
+.jdw-filter__grid { display: grid; grid-template-columns: minmax(200px, 1.4fr) 1fr 1fr 1.4fr; gap: .7rem; align-items: end; }
+@media (max-width: 960px) { .jdw-filter__grid { grid-template-columns: 1fr 1fr; } }
+
+/* FAB — hanya mobile */
+.jdw-fab { display: none; position: fixed; right: 18px; bottom: 20px; z-index: 70; width: 52px; height: 52px; border-radius: 50%; border: none; background: linear-gradient(135deg, #8b5cf6, #6366f1); color: #fff; font-size: 19px; cursor: pointer; box-shadow: 0 12px 28px rgba(99, 102, 241, .45); }
+.jdw-fab__badge { position: absolute; top: -4px; right: -4px; min-width: 19px; height: 19px; border-radius: 999px; background: #ef4444; color: #fff; font-size: 10.5px; font-weight: 800; display: grid; place-items: center; padding: 0 5px; border: 2px solid #fff; }
+.jdw-sheetbg { display: none; }
+
+@media (max-width: 640px) {
+    .jdw-filter { display: none; }
+    .jdw-filter.is-open { display: block; position: fixed; left: 0; right: 0; bottom: 0; z-index: 80; margin: 0; border-radius: 18px 18px 0 0; box-shadow: 0 -18px 40px rgba(15, 23, 42, .25); max-height: 78vh; overflow-y: auto; }
+    .jdw-filter__grid { grid-template-columns: 1fr; }
+    .jdw-filter__close { display: inline-flex; }
+    .jdw-fab { display: grid; place-items: center; }
+    .jdw-sheetbg { display: block; position: fixed; inset: 0; z-index: 75; background: rgba(15, 23, 42, .45); }
+}
+
+/* Daftar kosong — kalimatnya berbeda antara "belum ada" dan "tersaring habis". */
+.jdw-kosong { display: flex; flex-direction: column; align-items: center; gap: .5rem; padding: 2.6rem 1.2rem; text-align: center; background: #fff; border: 1px dashed rgba(15, 23, 42, .12); border-radius: 16px; }
+.jdw-kosong > i { font-size: 26px; color: #a5b4fc; }
+.jdw-kosong b { font-size: 14px; color: #334155; }
+.jdw-kosong span { font-size: 12.5px; line-height: 1.65; color: #64748b; max-width: 34rem; }
+.jdw-kosong .jdw-filter__reset { margin-top: .3rem; }
+
+/* Kategori yang sudah pasti — KETERANGAN, bukan kendali. Sengaja tidak
+   menyerupai kotak input: bingkai kosong berisi satu nilai terbaca sebagai
+   input mati, dan orang mencoba mengkliknya. */
+.jdw-kat-tetap { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; padding: .15rem 0; }
+.jdw-kat-tetap small { display: inline-flex; align-items: center; gap: .3rem; font-size: .72rem; font-weight: 700; color: var(--muted); }
+
 .mjd-statusnote { display: flex; align-items: center; gap: .45rem; font-size: 12.5px; color: #047857; background: rgba(16,185,129,.1); border: 1px solid rgba(16,185,129,.25); border-radius: 10px; padding: .55rem .7rem; }
 
 /* Ringkasan "yang ikut tersalin" pada modal duplikat — supaya admin tahu

@@ -8,7 +8,7 @@
      JANGAN tertukar dengan Master Lokasi (/master-lokasi) — itu kantor & vendor
      untuk penjadwalan wawancara/MCU, tabel dan kegunaannya berbeda. -->
 <template>
-    <Head><title>Master Lokasi Kerja - Web Career</title></Head>
+    <Head title="Master Lokasi Kerja" />
     <div class="wca">
         <div class="wca-phead">
             <div>

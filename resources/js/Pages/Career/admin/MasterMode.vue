@@ -1,6 +1,6 @@
 <!-- WEB CAREER — Admin: Master Mode Pelaksanaan (referensi cara program berjalan terhadap waktu). -->
 <template>
-    <Head><title>Master Mode Pelaksanaan - Web Career</title></Head>
+    <Head title="Master Mode Pelaksanaan" />
     <div class="wca">
         <div class="wca-phead">
             <div>

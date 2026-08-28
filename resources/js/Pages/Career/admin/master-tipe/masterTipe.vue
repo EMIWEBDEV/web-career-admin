@@ -1,6 +1,6 @@
 <!-- WEB CAREER — Master Tipe Tahap (per-modul). DATA via web route + ResponseHelper (axios), bukan props Inertia. -->
 <template>
-    <Head><title>Master Tipe Tahap - Web Career</title></Head>
+    <Head title="Master Tipe Tahap" />
     <div class="wca">
         <div class="wca-phead">
             <div>

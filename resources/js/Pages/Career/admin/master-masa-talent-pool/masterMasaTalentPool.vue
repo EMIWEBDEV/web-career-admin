@@ -1,7 +1,7 @@
 <!-- WEB CAREER — Master Masa Berlaku Talent Pool. Menentukan lama kartu Talent Pool
      berlaku sebelum kedaluwarsa (HARI/BULAN/TAHUN). Hanya SATU yang aktif. -->
 <template>
-    <Head><title>Master Masa Berlaku Talent Pool - Web Career</title></Head>
+    <Head title="Master Masa Berlaku Talent Pool" />
     <div class="wca">
         <div class="pkg-head">
             <div class="pkg-head__l">

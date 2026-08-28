@@ -7,7 +7,7 @@
      Fixed Mobile Filter Drawer (Vue <Teleport to="body">), Ultra-Compact Mobile Density,
      Floating Bottom Action Bar, Touch-Swipeable Keyword Chips, dan Compact Toolbar 36px. -->
 <template>
-    <Head><title>Semua Lowongan - EVO Career</title></Head>
+    <Head title="Semua Lowongan" />
 
     <CareerLayout :has-mt="hasMt" :offices="offices">
         <div class="sl">

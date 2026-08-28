@@ -1,6 +1,6 @@
 <!-- WEB CAREER — Admin: Master Akun (Users). Tabs Pengguna/Pelamar vs Admin/Superadmin, CRUD via modal. -->
 <template>
-    <Head><title>Master Akun - Web Career</title></Head>
+    <Head title="Master Akun" />
     <div class="wca">
         <div class="wca-phead">
             <div>

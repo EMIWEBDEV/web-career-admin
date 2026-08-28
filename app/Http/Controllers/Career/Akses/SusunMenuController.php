@@ -53,6 +53,7 @@ class SusunMenuController extends Controller
     /** Kolom timpaan per akun. NULL = ikut master menu. */
     private const KOLOM_TIMPA = [
         'Nama_Header_Custom',
+        'Nama_Grup_Custom',
         'Sub_Header_Custom',
         'Nama_Menu_Custom',
         'Icon_Menu_Custom',
@@ -95,7 +96,9 @@ class SusunMenuController extends Controller
                 ->get([
                     'pa.Id_Page_Access', 'pa.Jenis_Page', 'pa.Urutan_Menu',
                     'pa.Nama_Header_Custom', 'pa.Sub_Header_Custom', 'pa.Nama_Menu_Custom', 'pa.Icon_Menu_Custom',
+                    'pa.Nama_Grup_Custom',
                     'm.Nama_Menu', 'm.Nama_Header', 'm.Sub_Header', 'm.Icon_Menu', 'm.Url_Menu', 'm.Untuk_Role', 'm.Flag_Aktif',
+                    'm.Nama_Grup',
                 ]);
 
             $pageIds = $rows->pluck('Id_Page_Access')->all() ?: [0];
@@ -128,6 +131,10 @@ class SusunMenuController extends Controller
                     'ikonMaster' => $r->Icon_Menu ?: 'bi bi-dot',
                     'ikonCustom' => $r->Icon_Menu_Custom,
 
+                    'grup' => $r->Nama_Grup_Custom ?: $r->Nama_Grup,
+                    'grupMaster' => $r->Nama_Grup,
+                    'grupCustom' => $r->Nama_Grup_Custom,
+
                     'subHeader' => $r->Sub_Header_Custom ?: $r->Sub_Header,
                     'subHeaderMaster' => $r->Sub_Header,
                     'subHeaderCustom' => $r->Sub_Header_Custom,
@@ -159,7 +166,7 @@ class SusunMenuController extends Controller
                 ->where('Untuk_Role', $peran)
                 ->whereNotIn('Jenis_Page', $sudah ?: [''])
                 ->orderBy('Nama_Header')->orderBy('Urutan')
-                ->get(['Jenis_Page', 'Nama_Menu', 'Nama_Header', 'Sub_Header', 'Icon_Menu', 'Url_Menu', 'Untuk_Role'])
+                ->get(['Jenis_Page', 'Nama_Menu', 'Nama_Header', 'Sub_Header', 'Icon_Menu', 'Url_Menu', 'Untuk_Role', 'Nama_Grup'])
                 ->map(fn ($m) => [
                     'jenisPage' => $m->Jenis_Page,
                     'label' => $m->Nama_Menu,
@@ -167,6 +174,8 @@ class SusunMenuController extends Controller
                     'header' => $m->Nama_Header ?: 'Menu',
                     'headerMaster' => $m->Nama_Header ?: 'Menu',
                     'subHeaderMaster' => $m->Sub_Header,
+                    'grup' => $m->Nama_Grup,
+                    'grupMaster' => $m->Nama_Grup,
                     'ikon' => $m->Icon_Menu ?: 'bi bi-dot',
                     'ikonMaster' => $m->Icon_Menu ?: 'bi bi-dot',
                     'url' => $m->Url_Menu,
@@ -218,6 +227,7 @@ class SusunMenuController extends Controller
                 'grup.*.items.*.labelCustom' => 'nullable|string|max:150',
                 'grup.*.items.*.ikonCustom' => 'nullable|string|max:80',
                 'grup.*.items.*.subHeaderCustom' => 'nullable|string|max:100',
+                'grup.*.items.*.grupCustom' => 'nullable|string|max:60',
                 'hapus' => 'nullable|array|max:300',
                 'hapus.*' => 'string|max:60',
             ]);
@@ -273,6 +283,7 @@ class SusunMenuController extends Controller
                         // NULL = ikut master. Nilai yang sama dengan master ikut
                         // dinormalkan jadi NULL supaya perubahan master tetap menular.
                         'Nama_Header_Custom' => $this->timpa($judul, $m->Nama_Header ?: 'Menu'),
+                        'Nama_Grup_Custom' => $this->timpa($it['grupCustom'] ?? null, $m->Nama_Grup),
                         'Sub_Header_Custom' => $this->timpa($it['subHeaderCustom'] ?? null, $m->Sub_Header),
                         'Nama_Menu_Custom' => $this->timpa($it['labelCustom'] ?? null, $m->Nama_Menu),
                         'Icon_Menu_Custom' => $this->timpa($it['ikonCustom'] ?? null, $m->Icon_Menu),
@@ -313,6 +324,7 @@ class SusunMenuController extends Controller
                     $isi = [
                         'Urutan_Menu' => $r['urutan'],
                         'Nama_Header_Custom' => $r['Nama_Header_Custom'],
+                        'Nama_Grup_Custom' => $r['Nama_Grup_Custom'],
                         'Sub_Header_Custom' => $r['Sub_Header_Custom'],
                         'Nama_Menu_Custom' => $r['Nama_Menu_Custom'],
                         'Icon_Menu_Custom' => $r['Icon_Menu_Custom'],

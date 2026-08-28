@@ -1,6 +1,6 @@
 <!-- WEB CAREER — Master Talent Acquisition (per-modul). DATA via web route + ResponseHelper (axios), bukan props Inertia. -->
 <template>
-    <Head><title>Master Talent Acquisition - Web Career</title></Head>
+    <Head title="Master Talent Acquisition" />
     <div class="wca">
         <div class="wca-phead">
             <div>

@@ -55,6 +55,7 @@
         "file-saver": "^2.0.5",
         "floating-vue": "^5.2.2",
         "frappe-gantt": "^1.0.3",
+        "highcharts": "^13.0.1",
         "jquery": "^3.7.1",
         "js-sha256": "^0.11.1",
         "marked": "^15.0.12",

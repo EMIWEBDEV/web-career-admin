@@ -1,6 +1,6 @@
 <!-- WEB CAREER — Master Employment (jenis ikatan kerja). Data via web route + ResponseHelper (axios). -->
 <template>
-    <Head><title>Master Employment - Web Career</title></Head>
+    <Head title="Master Employment" />
     <div class="wca">
         <div class="wca-phead">
             <div>

@@ -1,6 +1,6 @@
 <!-- WEB CAREER — Admin: Master Kemitraan / MoU (payung kerja sama institusi untuk kategori Internship). -->
 <template>
-    <Head><title>Master Kemitraan / MoU - Web Career</title></Head>
+    <Head title="Master Kemitraan / MoU" />
     <div class="wca">
         <div class="wca-phead">
             <div>

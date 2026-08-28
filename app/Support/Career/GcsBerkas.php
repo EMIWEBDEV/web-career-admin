@@ -23,7 +23,17 @@ class GcsBerkas
 
     public const MAKS_BYTE = 2 * 1024 * 1024; // 2 MB
 
-    public const EKSTENSI_DIIZINKAN = ['pdf', 'jpg', 'jpeg'];
+    /**
+     * PNG IKUT DITERIMA sejak 22 Agu 2026.
+     *
+     * Sebelumnya daftar ini hanya pdf/jpg sementara layar menjanjikan
+     * "JPG / PNG" pada Pas Foto — kandidat memilih berkas yang persis seperti
+     * yang diminta, lalu ditolak dengan kalimat yang menyebut format lain.
+     * Yang salah labelnya atau daftarnya harus dipilih salah satu; dipilih
+     * daftarnya, sebab PNG memang format pas foto yang wajar dan tidak ada satu
+     * pun pemrosesan di sini yang mengandaikan JPEG.
+     */
+    public const EKSTENSI_DIIZINKAN = ['pdf', 'jpg', 'jpeg', 'png'];
 
     /** Path folder dasar kandidat pada tanggal tertentu. */
     public function folderKandidat(string $tahun, string $bulan, string $tanggal, string $namaKandidat): string
@@ -195,8 +205,8 @@ class GcsBerkas
     /** Validasi ekstensi & ukuran; lempar bila melanggar. */
     public function validasi(string $namaBerkas, string $ext, int $ukuran): void
     {
-        if (! in_array($this->normalkanExt($ext), ['pdf', 'jpg'], true)) {
-            throw new \RuntimeException("Berkas {$namaBerkas}: hanya PDF & JPG yang diperbolehkan.");
+        if (! in_array($this->normalkanExt($ext), ['pdf', 'jpg', 'png'], true)) {
+            throw new \RuntimeException("Berkas {$namaBerkas}: hanya PDF, JPG, atau PNG yang diperbolehkan.");
         }
         if ($ukuran > self::MAKS_BYTE) {
             throw new \RuntimeException("Berkas {$namaBerkas}: melebihi 2 MB.");

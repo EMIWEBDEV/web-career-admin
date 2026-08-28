@@ -4,9 +4,7 @@
      Semua data dummy dari CareerLandingController (tanpa DB).
      ══════════════════════════════════════════════════════════ -->
 <template>
-    <Head>
-        <title>Karir - EVO Group | Bangun Karirmu Bersama Kami</title>
-    </Head>
+    <Head title="Karier Bersama EVO Group" />
 
     <CareerLayout :has-mt="hasMt" :offices="offices">
         <HeroSection :benefits="benefits" :has-mt="hasMt" :hero-slides="heroSlides" :offices="offices" />
@@ -34,7 +32,7 @@ import LokasiSection from './sections/LokasiSection.vue';
 import FaqSection from './sections/FaqSection.vue';
 import CtaSection from './sections/CtaSection.vue';
 import StickyApplyBar from './components/StickyApplyBar.vue';
-import { scrollToId } from '@utils/career/data';
+import { observeReveal, scrollToId } from '@utils/career/data';
 
 defineOptions({ layout: null });
 
@@ -59,28 +57,21 @@ const heroSlides = computed(() => props.heroSlides || []);
 const faq = computed(() => props.faq || []);
 const hasMt = computed(() => programMt.value.length > 0);
 
-// Reveal-on-scroll untuk seluruh elemen .wc-reveal di semua section
+// Reveal-on-scroll dipinjam dari @utils/career/data — SATU pelaksana untuk
+// seluruh halaman karir.
+//
+// Salinan buatan tangan yang dulu berdiri di sini memindai DOM sekali saja,
+// dan itu yang membuat section Management Trainee tak pernah tampil: ia
+// digambar `v-if="programMt.length"`, jadi saat landing dibuka sebelum ada
+// program MT terbit, section-nya belum ada untuk diamati. Begitu programnya
+// terbit dan Inertia memperbarui props, section-nya muncul di DOM dengan
+// `opacity: 0` dan tidak pernah ditandai — terlihat sebagai celah kosong di
+// antara Tim dan Lokasi.
 let revealObserver = null;
-function initReveal() {
-    revealObserver = new IntersectionObserver(
-        (entries) =>
-            entries.forEach((e) => {
-                if (e.isIntersecting) {
-                    // Atribut, bukan classList — lihat catatan .wc-reveal[data-in]
-                    // di evo-theme.css: kelas yang dipasang dari luar Vue akan
-                    // terhapus saat elemennya punya :class dinamis dan dirender ulang.
-                    e.target.setAttribute('data-in', '');
-                    revealObserver.unobserve(e.target);
-                }
-            }),
-        { threshold: 0.15 },
-    );
-    document.querySelectorAll('.wc-reveal').forEach((el) => revealObserver.observe(el));
-}
 
 onMounted(() => {
     nextTick(() => {
-        initReveal();
+        revealObserver = observeReveal();
         // Jika datang dari halaman lain (mis. detail) yang minta scroll ke section
         try {
             const target = sessionStorage.getItem('wcScrollTarget');

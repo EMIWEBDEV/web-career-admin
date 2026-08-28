@@ -3,7 +3,7 @@
   Ber-tab per kategori (Rekrutmen / Magang / MT).
 -->
 <template>
-    <Head><title>Dashboard Admin - Web Career</title></Head>
+    <Head title="Dashboard Admin" />
 
     <div class="wca wcd">
         <!-- ══════════════ KEPALA DOK / BANNER ══════════════ -->

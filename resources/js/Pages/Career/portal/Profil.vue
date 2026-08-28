@@ -1,11 +1,18 @@
-<!-- WEB CAREER — Portal Kandidat: Profil Saya (data akun REAL dari DB/sesi). -->
+<!-- WEB CAREER — Profil Saya. SATU halaman untuk kandidat, admin, & superadmin.
+
+     Seluruh isinya datang dari prop `user` (App\Support\Career\ProfilPengguna),
+     dibaca ulang dari DB setiap halaman dibuka. Tidak ada lagi cadangan dari
+     sessionStorage: sumber itu peninggalan masa prototipe tanpa DB, dan sejak
+     akun benar-benar hidup di N_WEB_CAREERS_Users ia hanya sanggup memunculkan
+     angka yang salah (selalu 0, dan berbeda tiap peramban). Kalau server tidak
+     mengirim `user`, artinya memang belum login — dan itu yang ditampilkan. -->
 <template>
-    <Head><title>Profil Saya - EVO Career</title></Head>
+    <Head title="Profil Saya" />
     <div class="wca">
         <div class="wca-phead">
             <div>
                 <h1>Profil Saya</h1>
-                <p>Informasi akun &amp; ringkasan lamaranmu di EVO Group.</p>
+                <p>{{ me?.adalahAdmin ? 'Informasi akun & hak akses Anda di panel Web Career.' : 'Informasi akun &amp; ringkasan lamaranmu di EVO Group.' }}</p>
             </div>
         </div>
 
@@ -18,52 +25,99 @@
         </div>
 
         <div v-else class="wca-grid wca-grid--2">
-            <!-- Data Akun -->
+            <!-- ══ DATA AKUN ══ -->
             <div class="wca-card">
                 <div class="wca-card__head"><h3><i class="bi bi-person-vcard"></i> Data Akun</h3></div>
                 <div class="wca-card__body">
                     <div class="wca-prof__id">
                         <span class="wca-avatar wca-prof__av">{{ initials(me.nama) }}</span>
                         <div>
-                            <div class="wca-prof__nama">{{ me.nama }}</div>
+                            <div class="wca-prof__nama">{{ me.nama || '—' }}</div>
                             <div class="wca-prof__badges">
-                                <span class="wca-badge" :class="me.role === 'ADMIN' ? 'wca-b--gold' : 'wca-b--sky'">{{ me.role === 'ADMIN' ? 'Admin' : 'Kandidat' }}</span>
-                                <span class="wca-badge" :class="me.status === 'NONAKTIF' ? 'wca-b--red' : 'wca-b--green'"><i class="bi" :class="me.status === 'NONAKTIF' ? 'bi-x-circle' : 'bi-check-circle'"></i> {{ me.status === 'NONAKTIF' ? 'Nonaktif' : 'Aktif' }}</span>
+                                <span class="wca-badge" :class="peranWarna"><i class="bi" :class="peranIkon"></i> {{ me.roleLabel }}</span>
+                                <span class="wca-badge" :class="aktif ? 'wca-b--green' : 'wca-b--red'">
+                                    <i class="bi" :class="aktif ? 'bi-check-circle' : 'bi-x-circle'"></i> {{ aktif ? 'Aktif' : 'Nonaktif' }}
+                                </span>
+                                <span class="wca-badge" :class="me.emailVerified ? 'wca-b--indigo' : 'wca-b--amber'">
+                                    <i class="bi" :class="me.emailVerified ? 'bi-patch-check' : 'bi-exclamation-triangle'"></i>
+                                    {{ me.emailVerified ? 'Email terverifikasi' : 'Email belum diverifikasi' }}
+                                </span>
                             </div>
                         </div>
                     </div>
+
                     <div class="wca-dinfo">
-                        <div><small>Email</small><b>{{ me.email }}</b></div>
+                        <div><small>Email</small><b>{{ me.email || '—' }}</b></div>
                         <div><small>No. HP</small><b>{{ me.no_hp || '—' }}</b></div>
-                        <div><small>Klasifikasi Akun</small><b>{{ klasLabel }}</b></div>
+                        <!-- KTP hanya untuk akun yang memang punya (kandidat mendaftar
+                             dengan NIK; akun admin dibuat lewat Master Akun tanpa itu). -->
+                        <div v-if="me.nik"><small>No. KTP</small><b>{{ me.nik }}</b></div>
+                        <div v-if="me.kode_calon"><small>Kode Calon</small><b>{{ me.kode_calon }}</b></div>
+                        <div><small>Klasifikasi Akun</small><b>{{ me.klasifikasiLabel || '—' }}</b></div>
                         <div><small>Masa Berlaku</small><b>{{ masaBerlaku }}</b></div>
-                        <div><small>Terdaftar</small><b>{{ fmt(me.mulai_berlaku) }}</b></div>
+                        <div><small>Terdaftar</small><b>{{ fmt(me.mulai_berlaku || me.terdaftarSejak) }}</b></div>
                         <div><small>Login Terakhir</small><b>{{ fmtDT(me.last_login_at) }}</b></div>
+                        <!-- Jembatan akun → karyawan HRIS. Hanya tampil bila memang
+                             tertaut; kosong pada akun yang belum dipasangkan. -->
+                        <div v-if="me.kodeKaryawan"><small>Kode Karyawan</small><b>{{ me.karyawanNama ? `${me.karyawanNama} (${me.kodeKaryawan})` : me.kodeKaryawan }}</b></div>
                     </div>
-                    <div v-if="expiringSoon" class="wca-note wca-note--warn" style="margin-top:1rem"><i class="bi bi-hourglass-split"></i><span>Masa berlaku akun tinggal <b>{{ sisaHari }} hari</b>. Perpanjang bila diperlukan.</span></div>
+
+                    <div v-if="expiringSoon" class="wca-note wca-note--warn" style="margin-top: 1rem">
+                        <i class="bi bi-hourglass-split"></i>
+                        <span>Masa berlaku akun tinggal <b>{{ sisaHari }} hari</b>. Perpanjang bila diperlukan.</span>
+                    </div>
                 </div>
             </div>
 
             <div>
-                <!-- Ringkasan Lamaran -->
-                <div class="wca-card" style="margin-bottom:1.25rem">
+                <!-- ══ RINGKASAN LAMARAN — KANDIDAT ══ -->
+                <div v-if="me.ringkasan" class="wca-card" style="margin-bottom: 1.25rem">
                     <div class="wca-card__head"><h3><i class="bi bi-bar-chart"></i> Ringkasan Lamaran</h3></div>
                     <div class="wca-card__body">
                         <div class="wca-dinfo">
-                            <div><small>Total Terkirim</small><b>{{ ringkasan.total }}</b></div>
-                            <div><small>Sedang Berjalan</small><b>{{ ringkasan.berjalan }}</b></div>
-                            <div><small>Selesai</small><b>{{ ringkasan.selesai }}</b></div>
+                            <div><small>Total Terkirim</small><b>{{ me.ringkasan.total }}</b></div>
+                            <div><small>Sedang Berjalan</small><b>{{ me.ringkasan.berjalan }}</b></div>
+                            <div><small>Lulus</small><b>{{ me.ringkasan.lulus }}</b></div>
+                            <div><small>Tidak Lanjut</small><b>{{ me.ringkasan.gugur }}</b></div>
                         </div>
-                        <Link href="/kandidat/portal" class="wca-btn wca-btn--soft" style="width:100%;margin-top:1rem"><i class="bi bi-file-earmark-text"></i> Lihat Lamaran Saya</Link>
+                        <Link href="/kandidat/portal" class="wca-btn wca-btn--soft" style="width: 100%; margin-top: 1rem"><i class="bi bi-file-earmark-text"></i> Lihat Lamaran Saya</Link>
                     </div>
                 </div>
 
-                <!-- Keamanan -->
+                <!-- ══ AKSES & PERAN — ADMIN / SUPERADMIN ══
+                     Admin tidak melamar, jadi kartu "Ringkasan Lamaran" untuknya
+                     adalah tiga angka nol permanen. Yang berguna baginya adalah
+                     seberapa luas panel yang boleh ia buka. -->
+                <div v-else-if="me.akses" class="wca-card" style="margin-bottom: 1.25rem">
+                    <div class="wca-card__head"><h3><i class="bi bi-person-lock"></i> Akses &amp; Peran</h3></div>
+                    <div class="wca-card__body">
+                        <div class="wca-dinfo">
+                            <div><small>Peran</small><b>{{ me.roleLabel }}</b></div>
+                            <div><small>Halaman Dapat Dibuka</small><b>{{ me.akses.halaman }}</b></div>
+                            <div><small>Izin Aksi</small><b>{{ me.akses.aksi }}</b></div>
+                        </div>
+                        <!-- Angka di atas berasal dari paket sesi, bukan dibaca ulang
+                             dari DB: paket itulah yang benar-benar berlaku sampai
+                             login berikutnya. Catatannya ditulis supaya pemiliknya
+                             tidak menyangka menunya rusak saat aksesnya baru diubah. -->
+                        <div class="wca-note wca-note--info" style="margin-top: 1rem">
+                            <i class="bi bi-info-circle"></i>
+                            <span>Hak akses yang baru diubah admin lain berlaku setelah Anda masuk kembali.</span>
+                        </div>
+                        <Link href="/karir" class="wca-btn wca-btn--soft" style="width: 100%; margin-top: 1rem"><i class="bi bi-speedometer2"></i> Buka Dashboard</Link>
+                    </div>
+                </div>
+
+                <!-- ══ KEAMANAN — semua peran ══ -->
                 <div class="wca-card">
                     <div class="wca-card__head"><h3><i class="bi bi-shield-check"></i> Keamanan</h3></div>
                     <div class="wca-card__body">
-                        <Link :href="'/ganti-sandi?email=' + encodeURIComponent(me.email || '')" class="wca-btn wca-btn--ghost" style="width:100%;margin-bottom:.6rem"><i class="bi bi-key"></i> Ganti Kata Sandi</Link>
-                        <a href="/logout" class="wca-btn wca-btn--danger" style="width:100%"><i class="bi bi-box-arrow-right"></i> Keluar</a>
+                        <div class="wca-dinfo" style="margin-bottom: 1rem">
+                            <div><small>Verifikasi Email</small><b>{{ me.emailVerified ? fmtDT(me.emailVerifiedAt) : 'Belum diverifikasi' }}</b></div>
+                            <div><small>Sandi Terakhir Diubah</small><b>{{ fmtDT(me.pwdChangedAt) }}</b></div>
+                        </div>
+                        <Link :href="'/ganti-sandi?email=' + encodeURIComponent(me.email || '')" class="wca-btn wca-btn--ghost" style="width: 100%; margin-bottom: 0.6rem"><i class="bi bi-key"></i> Ganti Kata Sandi</Link>
+                        <a href="/logout" class="wca-btn wca-btn--danger" style="width: 100%"><i class="bi bi-box-arrow-right"></i> Keluar</a>
                     </div>
                 </div>
             </div>
@@ -73,37 +127,22 @@
 
 <script setup>
 import { Head, Link } from '@inertiajs/vue3';
-import { computed, onMounted, ref } from 'vue';
+import { computed } from 'vue';
 import { initials } from '@utils/career/admin';
-import { getApps, getSession } from '@utils/career/session';
 
 const props = defineProps({
     user: { type: Object, default: null },
 });
 
-const sessUser = ref(null);
-const apps = ref([]);
-onMounted(() => {
-    sessUser.value = getSession();
-    apps.value = getApps();
-});
+const me = computed(() => props.user);
+const aktif = computed(() => (me.value?.status || 'AKTIF') === 'AKTIF');
 
-// Prioritas: user real dari server (DB); fallback ke sesi klien (demo).
-const me = computed(() => {
-    if (props.user) return props.user;
-    if (sessUser.value) return { nama: sessUser.value.nama, email: sessUser.value.email, role: sessUser.value.role || 'KANDIDAT', status: 'AKTIF' };
-    return null;
-});
-
-const finals = computed(() => apps.value.filter((a) => a.status === 'FINAL'));
-const ringkasan = computed(() => ({
-    total: finals.value.length,
-    berjalan: finals.value.filter((a) => (a.result || 'BERJALAN') === 'BERJALAN').length,
-    selesai: finals.value.filter((a) => a.result === 'LULUS' || a.result === 'GAGAL').length,
-}));
-
-const KLAS = { PERMANEN: 'Permanen', TRIAL_3_MINGGU: 'Trial 3 Minggu', TRIAL_3_BULAN: 'Trial 3 Bulan', TRIAL_6_BULAN: 'Trial 6 Bulan' };
-const klasLabel = computed(() => KLAS[me.value?.klasifikasi] || me.value?.klasifikasi || '—');
+// Warna badge peran. Superadmin sengaja dibedakan dari admin: dua peran itu
+// tidak sama besarnya, dan sebelumnya keduanya jatuh ke label "Kandidat".
+const PERAN_WARNA = { SUPERADMIN: 'wca-b--gold', ADMIN: 'wca-b--violet', KANDIDAT: 'wca-b--sky' };
+const PERAN_IKON = { SUPERADMIN: 'bi-shield-lock', ADMIN: 'bi-person-gear', KANDIDAT: 'bi-person-badge' };
+const peranWarna = computed(() => PERAN_WARNA[me.value?.role] || 'wca-b--slate');
+const peranIkon = computed(() => PERAN_IKON[me.value?.role] || 'bi-person');
 
 const BULAN = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
 function fmt(v) {
@@ -118,6 +157,7 @@ function fmtDT(v) {
     if (isNaN(d.getTime())) return v;
     return `${d.getDate()} ${BULAN[d.getMonth()]} ${d.getFullYear()} · ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
+
 const masaBerlaku = computed(() => (me.value?.valid_until ? `s/d ${fmt(me.value.valid_until)}` : 'Permanen (tanpa batas)'));
 const sisaHari = computed(() => {
     if (!me.value?.valid_until) return null;

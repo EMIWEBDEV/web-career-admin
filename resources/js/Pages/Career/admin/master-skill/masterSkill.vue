@@ -12,7 +12,7 @@
      "Dipakai" = jumlah LOWONGAN yang mensyaratkan skill (tabel jembatan
      N_WEB_CAREERS_Detail_Skill_MPP). Di tab Kategori, "Dipakai" = jumlah SKILL. -->
 <template>
-    <Head><title>Master Skill - Web Career</title></Head>
+    <Head title="Master Skill" />
     <div class="wca">
         <div class="wca-phead">
             <div>

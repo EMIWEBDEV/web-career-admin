@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Career;
 
 use App\Http\Controllers\Controller;
 use App\Support\Career\KatalogPrefill;
+use App\Support\Seo\Seo;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -55,6 +56,19 @@ class CareerLandingController extends Controller
         $lowongan = $this->visibleLowongan();
         $programMt = $this->programMt();
 
+        // Halaman depan adalah halaman berperingkat tertinggi situs ini, dan
+        // sebelumnya ia satu-satunya yang tidak membawa data terstruktur apa
+        // pun di luar Organization/WebSite.
+        //
+        // ItemList-nya penting justru DI SINI: inilah halaman yang paling
+        // sering dikunjungi perayap, jadi lowongan baru paling cepat
+        // ditemukan lewat halaman ini.
+        Seo::set([
+            'jsonLd' => array_filter([
+                $this->daftarLowonganLd($lowongan, $programMt),
+            ]),
+        ]);
+
         // Props lowongan/departments/locations DIHAPUS — LandingPage.vue tidak
         // lagi mendeklarasikannya sejak redesign (job list pindah ke /karir/lowongan).
         return Inertia::render('Career/LandingPage', [
@@ -74,9 +88,29 @@ class CareerLandingController extends Controller
     /** /karir/lowongan — halaman KUMPULAN SELURUH lowongan (rekrutmen + MT). */
     public function semuaLowongan()
     {
+        $lowongan = $this->visibleLowongan();
+        $mt = $this->programMt();
+
+        // ── ItemList: jalan pintas penemuan ──────────────────────────────
+        //
+        // Google menemukan halaman lewat tautan, dan daftar lowongan di sini
+        // dirender Vue — perayap yang tidak menjalankan JavaScript tidak
+        // melihat satu pun tautannya. ItemList menyebut seluruh URL detail
+        // langsung di HTML mentah, jadi lowongan baru ditemukan dari SATU
+        // kunjungan ke halaman ini alih-alih menunggu peta situs dibaca ulang.
+        Seo::set([
+            'jsonLd' => array_filter([
+                $this->daftarLowonganLd($lowongan, $mt),
+                \App\Support\Seo\RemahRoti::dari([
+                    ['Karier EVO Group', url('/')],
+                    ['Semua Lowongan', null],
+                ]),
+            ]),
+        ]);
+
         return Inertia::render('Career/SemuaLowongan', [
-            'lowongan' => $this->visibleLowongan(),
-            'programMt' => $this->programMt(),
+            'lowongan' => $lowongan,
+            'programMt' => $mt,
             'offices' => $this->offices(),
             // Kartu tim (Master Info Divisi + rekap lowongan) → sidebar filter
             // divisi & pengelompokan daftar posisi per tim.
@@ -153,7 +187,12 @@ class CareerLandingController extends Controller
 
         // ID asing/kedaluwarsa tidak boleh membuka formulir generik yang seolah
         // berhasil tetapi tidak pernah mempunyai target lamaran di database.
-        abort_unless($this->cariKartuPosisi($id), 404);
+        $kartu = $this->cariKartuPosisi($id);
+        abort_unless($kartu, 404);
+
+        // Bentuknya disamakan persis dengan judul di ApplyForm.vue supaya judul
+        // tab tidak berganti begitu Vue selesai dimuat.
+        Seo::set(['title' => 'Lamar — ' . $kartu['posisi']]);
 
         return Inertia::render(
             'Career/ApplyForm',
@@ -576,7 +615,10 @@ class CareerLandingController extends Controller
                         'label' => 'KTP',
                         'required' => true,
                         'accept' => '.pdf,.jpg,.jpeg,.png',
-                        'hint' => 'PDF / JPG',
+                        // Petunjuknya menyebut SELURUH yang diterima. Menyebut
+                        // sebagian membuat kandidat mengubah berkasnya tanpa
+                        // perlu — atau lebih buruk, menyangka berkasnya salah.
+                        'hint' => 'PDF / JPG / PNG',
                     ],
                     [
                         'key' => 'ijazah',
@@ -953,6 +995,55 @@ class CareerLandingController extends Controller
     }
 
     /**
+     * schema.org/ItemList untuk halaman daftar lowongan.
+     *
+     * Dibatasi 100 butir: ItemList raksasa tidak menaikkan apa pun, dan yang
+     * ke-101 tetap ditemukan lewat sitemap.xml.
+     */
+    private function daftarLowonganLd(array $lowongan, array $mt): ?array
+    {
+        $butir = [];
+        $n = 0;
+
+        foreach ($lowongan as $l) {
+            if (empty($l['id'])) {
+                continue;
+            }
+            $butir[] = [
+                '@type' => 'ListItem',
+                'position' => ++$n,
+                'url' => route('career.lowongan.detail', ['id' => $l['id']]),
+                'name' => (string) ($l['posisi'] ?? ''),
+            ];
+        }
+
+        foreach ($mt as $m) {
+            if (empty($m['id'])) {
+                continue;
+            }
+            $butir[] = [
+                '@type' => 'ListItem',
+                'position' => ++$n,
+                'url' => route('career.mt.detail', ['id' => $m['id']]),
+                'name' => (string) ($m['nama'] ?? ''),
+            ];
+        }
+
+        if (! $butir) {
+            return null;
+        }
+
+        $butir = array_slice($butir, 0, 100);
+
+        return [
+            '@type' => 'ItemList',
+            'name' => 'Lowongan Kerja EVO Group',
+            'numberOfItems' => count($butir),
+            'itemListElement' => $butir,
+        ];
+    }
+
+    /**
      * Halaman detail lowongan (punya route sendiri, memakai CareerLayout).
      * Melayani lowongan rekrutmen DAN posisi di dalam program MT — keduanya
      * kartu posisi yang sama, hanya yang MT membawa `induk` untuk remah-roti.
@@ -961,6 +1052,34 @@ class CareerLandingController extends Controller
     {
         $job = $this->cariKartuPosisi($id);
         abort_unless($job, 404);
+
+        // Kartu pratinjau WhatsApp untuk tautan lowongan menyebut POSISI-nya,
+        // bukan nama situs. Inilah tautan yang paling sering dibagikan kandidat
+        // ke grup teman, jadi ia yang paling layak dapat judul spesifik.
+        Seo::set([
+            'title' => $job['posisi'],
+            'description' => $this->ringkasUntukBagikan($job),
+            'type' => 'article',
+            // schema.org/JobPosting — yang membuat lowongan ini masuk GOOGLE
+            // JOBS, bukan sekadar satu baris biru. Gaji sengaja tidak ikut;
+            // lihat alasannya di JobPostingLd.
+            'jsonLd' => array_filter([
+                \App\Support\Seo\JobPostingLd::dari(
+                    $job,
+                    url()->current(),
+                    (string) config('seo.organization_name', 'EVO Group'),
+                    asset((string) config('seo.organization_logo', 'logo/EVOGROUP.png')),
+                ),
+                // Baris jalur di bawah judul hasil Google. Tanpa ini yang
+                // tampil adalah URL mentah berisi hashid — tidak berarti apa
+                // pun bagi orang yang sedang memilih satu dari sepuluh hasil.
+                \App\Support\Seo\RemahRoti::dari([
+                    ['Karier EVO Group', url('/')],
+                    ['Lowongan', route('career.lowongan.semua')],
+                    [$job['posisi'] ?? 'Lowongan', null],
+                ]),
+            ]),
+        ]);
 
         return Inertia::render(
             'Career/DetailLowongan',
@@ -976,6 +1095,50 @@ class CareerLandingController extends Controller
         $mt = collect($this->programMt())->firstWhere('id', $id);
         abort_unless($mt, 404);
 
+        Seo::set([
+            'title' => $mt['nama'],
+            'description' => trim(
+                ($mt['tagline'] ?: 'Program Management Trainee EVO Group.')
+                . ($mt['batch'] ? ' Batch ' . $mt['batch'] . '.' : '')
+                . ($mt['penempatan'] ? ' Penempatan: ' . $mt['penempatan'] . '.' : '')
+                . (($mt['jumlahPosisi'] ?? 0) > 0 ? ' ' . $mt['jumlahPosisi'] . ' posisi dibuka.' : ''),
+            ),
+            'type' => 'article',
+            // Program MT dipetakan ke bentuk kartu lowongan lebih dulu: field
+            // MT bernama lain (nama/kriteria/penempatan), dan JobPostingLd
+            // sengaja cuma mengenal SATU bentuk supaya tidak ada dua aturan
+            // yang harus dijaga tetap sama.
+            'jsonLd' => array_filter([
+                \App\Support\Seo\JobPostingLd::dari(
+                [
+                    'id' => $mt['id'] ?? null,
+                    'posisi' => $mt['nama'] ?? null,
+                    'deskripsi' => $mt['deskripsi'] ?? $mt['ringkasan'] ?? $mt['tagline'] ?? null,
+                    // Penempatan lebih tepat daripada lokasi kantor: itulah
+                    // kota yang dicari pelamar, dan itu pula yang tertulis di
+                    // kontraknya kelak.
+                    'lokasi' => $mt['penempatan'] ?? $mt['lokasi'] ?? null,
+                    'departemen' => 'Management Trainee',
+                    'level' => 'Management Trainee',
+                    'tipeKerja' => 'Full-time',
+                    'tempatKerja' => 'On-site',
+                    'persyaratan' => $mt['kriteria'] ?? [],
+                    'benefit' => $mt['benefit'] ?? [],
+                    'dibuka' => $mt['tanggalBuka'] ?? null,
+                    'tanggalTutup' => $mt['tanggalTutup'] ?? null,
+                ],
+                url()->current(),
+                (string) config('seo.organization_name', 'EVO Group'),
+                asset((string) config('seo.organization_logo', 'logo/EVOGROUP.png')),
+                ),
+                \App\Support\Seo\RemahRoti::dari([
+                    ['Karier EVO Group', url('/')],
+                    ['Management Trainee', route('career.lowongan.semua')],
+                    [$mt['nama'] ?? 'Management Trainee', null],
+                ]),
+            ]),
+        ]);
+
         return Inertia::render(
             'Career/DetailMt',
             array_merge($this->layoutShared(), [
@@ -987,6 +1150,15 @@ class CareerLandingController extends Controller
     /** Daftar seluruh tim / fungsi perusahaan — data dari Master Info Divisi. */
     public function semuaTim()
     {
+        Seo::set([
+            'jsonLd' => array_filter([
+                \App\Support\Seo\RemahRoti::dari([
+                    ['Karier EVO Group', url('/')],
+                    ['Fungsi Perusahaan', null],
+                ]),
+            ]),
+        ]);
+
         return Inertia::render(
             'Career/SemuaTim',
             array_merge($this->layoutShared(), [
@@ -1027,6 +1199,12 @@ class CareerLandingController extends Controller
         $props = array_merge($this->layoutShared(), ['slug' => $slug]);
 
         if ($tim) {
+            Seo::set([
+                'title' => 'Tim ' . $tim['nama'],
+                'description' => $tim['deskripsi'] ?: $tim['deskripsiDetail'] ?: null,
+                'type' => 'article',
+            ]);
+
             $jobs = collect($this->dbLowonganCards())
                 ->filter(fn ($c) => ($c['timSlug'] ?? null) === $slug)
                 ->values();
@@ -1048,6 +1226,20 @@ class CareerLandingController extends Controller
             ];
             $props['subFungsi'] = $sub;
             $props['lowonganTim'] = $jobs->all();
+
+            // Halaman tim adalah pintu masuk untuk pencarian "kerja di bagian
+            // produksi Palembang" — ia perlu jalurnya sendiri, dan daftar
+            // lowongan timnya supaya perayap menemukan tiap detail dari sini.
+            Seo::set([
+                'jsonLd' => array_filter([
+                    $this->daftarLowonganLd($jobs->all(), []),
+                    \App\Support\Seo\RemahRoti::dari([
+                        ['Karier EVO Group', url('/')],
+                        ['Fungsi Perusahaan', route('career.tim.semua')],
+                        ['Tim '.$tim['nama'], null],
+                    ]),
+                ]),
+            ]);
         }
 
         return Inertia::render('Career/DetailTim', $props);
@@ -1258,6 +1450,27 @@ class CareerLandingController extends Controller
      * detail, alur lamar, dan katalog portal supaya ketiganya tidak pernah
      * berbeda pendapat tentang posisi mana yang dimaksud.
      */
+    /**
+     * Deskripsi satu kalimat untuk kartu pratinjau tautan lowongan.
+     *
+     * Fakta yang paling dicari kandidat ditaruh di DEPAN (tipe kerja, lokasi),
+     * karena WhatsApp memotong deskripsi di sekitar dua baris — kalimat
+     * pemasaran yang panjang akan terpotong sebelum sampai ke informasinya.
+     */
+    private function ringkasUntukBagikan(array $job): string
+    {
+        $fakta = array_values(array_filter([
+            $job['tipeKerja'] ?? null,
+            ($job['lokasi'] ?? '—') !== '—' ? $job['lokasi'] : null,
+            ($job['departemen'] ?? '—') !== '—' ? $job['departemen'] : null,
+        ]));
+
+        $depan = $fakta ? implode(' · ', $fakta) . ' di EVO Group.' : 'Lowongan di EVO Group.';
+        $isi = trim((string) ($job['ringkasan'] ?? $job['deskripsi'] ?? ''));
+
+        return trim($depan . ' ' . $isi);
+    }
+
     private function cariKartuPosisi(string $id): ?array
     {
         $lo = collect($this->lowongan())->firstWhere('id', $id);
@@ -1274,6 +1487,37 @@ class CareerLandingController extends Controller
         }
 
         return null;
+    }
+
+    /**
+     * Kartu lowongan + program MT yang layak masuk peta situs.
+     *
+     * SeoPublikController memakai ini alih-alih menyusun kueri & id-nya
+     * sendiri. Sempat begitu, dan akibatnya persis yang bisa diduga: peta
+     * situs membangun id dengan Hashids sementara halaman detail memakai
+     * bentuk "PB-{kode}-{id}" — ketujuh URL lowongan di sitemap menjawab 404,
+     * dan tidak ada yang tahu sampai ada yang benar-benar membukanya satu per
+     * satu. Selama id-nya lahir dari SATU tempat, hal itu tidak bisa terulang.
+     *
+     * @return array<int, array{0: string, 1: string}> [url-relatif, jenis]
+     */
+    public function petaLowongan(): array
+    {
+        $out = [];
+
+        foreach ($this->visibleLowongan() as $l) {
+            if (! empty($l['id'])) {
+                $out[] = [route('career.lowongan.detail', ['id' => $l['id']], false), 'LOWONGAN'];
+            }
+        }
+
+        foreach ($this->programMt() as $m) {
+            if (! empty($m['id'])) {
+                $out[] = [route('career.mt.detail', ['id' => $m['id']], false), 'MT'];
+            }
+        }
+
+        return $out;
     }
 
     private function visibleLowongan(): array
@@ -1337,6 +1581,16 @@ class CareerLandingController extends Controller
                 : DB::table('N_WEB_CAREERS_Program_Posisi')
                     ->whereIn('Program_Id', $ids)
                     ->where('Status', 'BUKA')
+                    // ── LOKER YANG SENGAJA DIMATIKAN TIDAK IKUT TERBIT ──────
+                    //
+                    // Status = kursinya masih ada (dihitung mesin).
+                    // Flag_Aktif = kami masih mau memasangnya (diputuskan orang).
+                    // Keduanya harus benar; satu saja tidak cukup.
+                    //
+                    // ISNULL, bukan = 'Y': baris yang dibuat sebelum kolomnya ada
+                    // — atau lewat jalur yang belum mengisinya — tidak boleh
+                    // menghilang dari landing tanpa ada yang memutuskannya.
+                    ->whereRaw("ISNULL(Flag_Aktif, 'Y') = 'Y'")
                     ->get()
                     ->groupBy('Program_Id');
 

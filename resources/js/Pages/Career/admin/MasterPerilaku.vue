@@ -1,6 +1,6 @@
 <!-- WEB CAREER — Admin: Master Perilaku (cara tahap dijalankan/diputuskan; dipakai Master Tipe Tahap). -->
 <template>
-    <Head><title>Master Perilaku - Web Career</title></Head>
+    <Head title="Master Perilaku" />
     <div class="wca">
         <div class="wca-phead">
             <div>

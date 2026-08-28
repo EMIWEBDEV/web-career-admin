@@ -89,7 +89,7 @@ export default defineConfig({
                     if (id.includes("@fullcalendar")) return "vendor-calendar";
                     if (id.includes("pdfjs-dist")) return "vendor-pdf";
                     if (id.includes("exceljs")) return "vendor-excel";
-                    if (id.includes("apexcharts") || id.includes("chart.js")) return "vendor-charts";
+                    if (id.includes("apexcharts") || id.includes("chart.js") || id.includes("highcharts")) return "vendor-charts";
                     if (id.includes("datatables.net") || id.includes("jquery")) return "vendor-tables";
                     if (id.includes("primevue") || id.includes("@primeuix") || id.includes("element-plus")) return "vendor-ui";
                     if (id.includes("@formkit") || id.includes("vee-validate") || id.includes("yup")) return "vendor-forms";

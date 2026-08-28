@@ -50,3 +50,5 @@ require base_path('routes/career/MasterExperienceLevel/MasterExperienceLevelWeb.
 require base_path('routes/career/MasterMpp/MasterMppWeb.php');
 require base_path('routes/career/MasterSlaMpp/MasterSlaMppWeb.php');
 require base_path('routes/career/MasterJenisVerifikasi/MasterJenisVerifikasiWeb.php');
+require base_path('routes/career/MasterSkrining/MasterSkriningWeb.php');
+require base_path('routes/career/MasterPertanyaan/MasterPertanyaanWeb.php');

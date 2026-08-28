@@ -4,9 +4,7 @@
      lengket + sidebar filter + grid kartu, memakai token visual yang SAMA
      (metrik .sl-* dari SemuaLowongan.vue) supaya keduanya terasa satu produk. -->
 <template>
-    <Head>
-        <title>{{ mt.nama }} - EVO Group Career</title>
-    </Head>
+    <Head :title="mt.nama" />
 
     <CareerLayout :has-mt="hasMt" :offices="offices">
         <div class="mtd">

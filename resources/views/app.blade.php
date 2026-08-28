@@ -1,8 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ str_replace('_', '-', config('seo.locale', 'id_ID')) }}">
 <head>
-    <meta name="csrf-token" content="{{ csrf_token() }}">
+    {{-- header memuat charset + <title> + seluruh meta sosial; dipanggil paling
+         awal supaya <title> jadi tag judul pertama di dokumen. --}}
     @include('components.header')
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     @vite('resources/js/app.js')
     @inertiaHead

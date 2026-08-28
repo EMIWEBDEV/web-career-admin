@@ -2,6 +2,7 @@
 
 namespace App\Support\Career\Shell;
 
+use App\Support\Career\AksesService;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -37,19 +38,39 @@ class NavigasiShell
      */
     public static function untukPenggunaSaatIni(): array
     {
-        // SUMBER UTAMA: paket hak akses di sesi (dibangun dari master menu +
+        // SUMBER UTAMA: paket hak akses (dibangun dari master menu +
         // Page_Access user). Hanya menu yang ia punya izin VIEW-nya yang muncul.
-        $dariAkses = session('career_akses.menu');
+        //
+        // Disegarkan lebih dulu — lihat AksesService::segarkanSesi(). Membaca
+        // `session('career_akses.menu')` langsung membuat susunan menu membeku
+        // pada keadaan saat login: perbaikan menu apa pun baru terlihat setelah
+        // pemiliknya keluar-masuk, dan sampai itu terjadi ia melihat sidebar
+        // yang sudah tidak lagi ada padanannya di Master Menu.
+        //
+        // Gagal menyegarkan memulangkan null, dan salinan lama di sesi dipakai
+        // apa adanya — sidebar tidak pernah kosong hanya karena DB sedang sibuk.
+        $dariAkses = AksesService::segarkanSesi()['menu'] ?? session('career_akses.menu');
         if (is_array($dariAkses) && $dariAkses) {
+            $bersih = fn ($it) => [
+                'key' => $it['key'],
+                'label' => $it['label'],
+                'icon' => $it['icon'],
+                'url' => $it['url'],
+            ];
+
             return array_map(fn ($g) => [
                 'id' => $g['id'],
                 'title' => $g['title'],
-                'items' => array_map(fn ($it) => [
-                    'key' => $it['key'],
-                    'label' => $it['label'],
-                    'icon' => $it['icon'],
-                    'url' => $it['url'],
-                ], $g['items']),
+                'items' => array_map($bersih, $g['items']),
+                // Sesi lama (dibuat sebelum kolom sub-grup ada) tidak punya
+                // kunci ini. Dibiarkan kosong, bukan dianggap galat: menunya
+                // tetap tergambar rata seperti sebelumnya sampai sesinya
+                // diperbarui sendiri saat login berikutnya.
+                'subs' => array_map(fn ($s) => [
+                    'id' => $s['id'],
+                    'title' => $s['title'],
+                    'items' => array_map($bersih, $s['items']),
+                ], $g['subs'] ?? []),
             ], $dariAkses);
         }
 
@@ -93,29 +114,57 @@ class NavigasiShell
                     ->where('Untuk_Role', $role)
                     ->where('Flag_Aktif', 'Y')
                     ->orderBy('Urutan')
-                    ->get(['Jenis_Page', 'Nama_Menu', 'Nama_Header', 'Icon_Menu', 'Url_Menu', 'Urutan'])
+                    ->get([
+                        'Jenis_Page', 'Nama_Menu', 'Nama_Header', 'Icon_Menu', 'Url_Menu', 'Urutan',
+                        'Nama_Grup', 'Urutan_Grup',
+                    ])
             );
         } catch (\Throwable $e) {
             return []; // tabel belum ada / DB bermasalah → pakai daftar darurat
         }
 
+        // Dua tingkat: header → sub-grup → menu. Menu tanpa sub-grup tetap
+        // duduk langsung di bawah headernya, jadi baris lama yang Nama_Grup-nya
+        // masih NULL tergambar persis seperti sebelum kolom itu ada.
         $grup = [];
         foreach ($rows as $r) {
             $header = $r->Nama_Header ?: 'Menu';
-            $grup[$header] ??= [];
-            $grup[$header][] = [
+            $grup[$header] ??= ['items' => [], 'subs' => []];
+
+            $item = [
                 'key' => $r->Jenis_Page,
                 'label' => $r->Nama_Menu,
                 'icon' => $r->Icon_Menu ?: 'bi bi-dot',
                 'url' => $r->Url_Menu ?: '#',
             ];
+
+            $sub = $r->Nama_Grup ?: null;
+            if (! $sub) {
+                $grup[$header]['items'][] = $item;
+
+                continue;
+            }
+
+            $grup[$header]['subs'][$sub] ??= [
+                'id' => Str::slug($header.'-'.$sub),
+                'title' => $sub,
+                'items' => [],
+                'urutan' => $r->Urutan_Grup !== null ? (int) $r->Urutan_Grup : (int) $r->Urutan,
+            ];
+            $grup[$header]['subs'][$sub]['items'][] = $item;
         }
 
-        return array_map(fn ($header, $items) => [
-            'id' => Str::slug($header),
-            'title' => $header,
-            'items' => $items,
-        ], array_keys($grup), $grup);
+        return array_map(function ($header, $isi) {
+            $subs = array_values($isi['subs']);
+            usort($subs, fn ($a, $b) => $a['urutan'] <=> $b['urutan']);
+
+            return [
+                'id' => Str::slug($header),
+                'title' => $header,
+                'items' => $isi['items'],
+                'subs' => $subs,
+            ];
+        }, array_keys($grup), $grup);
     }
 
     /** Buang cache menu master — dipanggil setiap Master Menu berubah. */

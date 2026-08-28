@@ -13,6 +13,8 @@
     bergantung pada gaya bawaan pustaka.
 -->
 <template>
+    <Head title="Penjadwalan Tes" />
+
     <div class="pjd">
         <span class="pjd-blob pjd-blob--a"></span>
         <span class="pjd-blob pjd-blob--b"></span>
@@ -27,7 +29,7 @@
                         </span>
                         <h1>Penjadwalan Tes</h1>
                     </div>
-                    <p>Susun sesi tes online untuk kandidat — pilih program, paket tes, jendela waktu, lalu kirim token akses secara otomatis.</p>
+                    <p>Susun sesi tes online untuk kandidat — pilih lowongan atau program, paket tes, jendela waktu, lalu kirim token akses secara otomatis.</p>
                 </div>
 
                 <div class="pjd-head__r">
@@ -120,8 +122,100 @@
                             </div>
                         </div>
 
-                        <!-- Program -->
+                        <!-- ═══ SASARAN SESI: LOWONGAN atau PROGRAM ═══
+                             Yang dijadwalkan admin hampir selalu satu lowongan —
+                             40 pelamar Operator Produksi, bukan 180 pelamar seisi
+                             program. Dengan basis program, 140 nama yang tidak ia
+                             maksud tetap ikut tampil di langkah berikutnya, dan
+                             "Pilih semua" berubah jadi jebakan.
+
+                             Basis program TIDAK dihapus: satu sesi untuk seisi
+                             program tetap sah, dan kadang memang itu yang dimau.
+                             Yang berubah cuma bawaannya. -->
                         <div>
+                            <label class="pjd-lbl">Sesi Ini Untuk</label>
+                            <div class="pjd-basis">
+                                <button
+                                    type="button" class="pjd-basis__b"
+                                    :class="{ 'is-on': basisLoker }"
+                                    @click="gantiBasis('LOKER')"
+                                >
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" /><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" /></svg>
+                                    Satu Lowongan
+                                </button>
+                                <button
+                                    type="button" class="pjd-basis__b"
+                                    :class="{ 'is-on': !basisLoker }"
+                                    @click="gantiBasis('PROGRAM')"
+                                >
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z" /></svg>
+                                    Seluruh Program
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Lowongan (MPP) -->
+                        <div v-if="basisLoker">
+                            <label class="pjd-lbl">Lowongan</label>
+                            <el-select
+                                v-model="form.posisiId"
+                                filterable
+                                placeholder="Pilih lowongan / MPP"
+                                class="pjd-select"
+                                @change="onLoker"
+                            >
+                                <el-option
+                                    v-for="l in lokerKategori"
+                                    :key="l.id"
+                                    :label="`${l.posisi} — ${l.programNama}`"
+                                    :value="l.id"
+                                >
+                                    <span class="pjd-lokopt">
+                                        <span class="pjd-lokopt__n">{{ l.posisi }}</span>
+                                        <span class="pjd-lokopt__m">{{ l.programNama }}<template v-if="l.mppRef"> · {{ l.mppRef }}</template></span>
+                                    </span>
+                                    <!-- Yang menentukan ada tidaknya pekerjaan di
+                                         sini, jadi ia tampil sejak daftar dibuka —
+                                         bukan setelah lokernya dipilih. -->
+                                    <span class="pjd-opttag" :class="{ 'is-wait': l.menunggu > 0 }">{{ l.menunggu }} menunggu</span>
+                                </el-option>
+                            </el-select>
+
+                            <div v-if="lokerTerpilih" class="pjd-lokinfo">
+                                <span class="pjd-lokinfo__b">
+                                    <em>Program</em>
+                                    <b>{{ lokerTerpilih.programNama }}</b>
+                                </span>
+                                <span v-if="lokerTerpilih.mppRef" class="pjd-lokinfo__b">
+                                    <em>MPP</em>
+                                    <b class="pjd-mono">{{ lokerTerpilih.mppRef }}</b>
+                                </span>
+                                <span class="pjd-lokinfo__b">
+                                    <em>Kuota</em>
+                                    <b>{{ lokerTerpilih.terisi }} / {{ lokerTerpilih.kuota || 'tanpa batas' }}</b>
+                                </span>
+                                <span v-if="lokerTerpilih.lokasi" class="pjd-lokinfo__b">
+                                    <em>Lokasi</em>
+                                    <b>{{ lokerTerpilih.lokasi }}</b>
+                                </span>
+                                <span class="pjd-lokinfo__b">
+                                    <em>Alur</em>
+                                    <b>{{ lokerTerpilih.alurNama || 'belum diatur' }}</b>
+                                </span>
+                            </div>
+
+                            <div v-if="lokerTerpilih && !lokerTerpilih.alurId" class="pjd-note pjd-note--warn">
+                                <i class="bi bi-exclamation-triangle"></i>
+                                Program lowongan ini belum terhubung ke alur seleksi. Atur dulu di Program Kegiatan.
+                            </div>
+                            <div v-else-if="lokerTerpilih && !lokerTerpilih.menunggu" class="pjd-note">
+                                <i class="bi bi-info-circle"></i>
+                                Tidak ada kandidat lowongan ini yang sedang menunggu jadwal ujian online.
+                            </div>
+                        </div>
+
+                        <!-- Program -->
+                        <div v-else>
                             <label class="pjd-lbl">Program</label>
                             <el-select
                                 v-model="form.programId"
@@ -320,13 +414,72 @@
                                     <svg v-if="semuaTercentang" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
                                     <i v-else-if="sebagianTercentang"></i>
                                 </span>
-                                Pilih semua
+                                <!-- Kalimatnya menyebut CAKUPANNYA. "Pilih semua"
+                                     saat pencarian menyala dulu terbaca sebagai
+                                     seluruh kandidat, padahal yang tercentang
+                                     hanya hasil pencariannya. -->
+                                {{ cariKandidat ? 'Pilih semua hasil' : 'Pilih semua' }}
                             </button>
                             <div class="pjd-field pjd-field--grow">
                                 <svg class="pjd-field__ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>
                                 <input v-model="cariKandidat" type="text" class="pjd-input" placeholder="Cari nama / posisi…" @input="debounceKandidat">
                             </div>
-                            <span class="pjd-count">{{ form.peserta.length }} / {{ kandidat.length }}</span>
+                            <span class="pjd-count">{{ form.peserta.length }} / {{ kandTotal || kandidat.length }}</span>
+                        </div>
+
+                        <!-- ══ GELOMBANG ══
+                             Satu sesi = satu ruangan = jumlah kursi yang tetap.
+                             Tanpa baris ini, menyusun 250 orang menjadi gelombang
+                             75-an berarti mencentang lewat 13 halaman, dan yang
+                             benar-benar terjadi adalah "Pilih semua" lalu 175
+                             orang ikut terjadwal ke ruangan yang tak memuat
+                             mereka. -->
+                        <div v-if="kandidat.length" class="pjd-gel">
+                            <span class="pjd-gel__l">Ambil per gelombang</span>
+                            <input
+                                v-model.number="gelombang"
+                                type="number" min="1" :max="kandBatas || 1000"
+                                class="pjd-gel__n"
+                                @change="simpanGelombang"
+                            >
+                            <button
+                                type="button" class="pjd-gel__b"
+                                :disabled="!sisaTampil.length || form.peserta.length >= gelombangSah"
+                                :onClick="!sisaTampil.length || form.peserta.length >= gelombangSah ? null : ambilGelombang"
+                            >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
+                                Ambil {{ gelombangSah }}
+                            </button>
+                            <span v-if="perkiraanGelombang > 1" class="pjd-gel__e">
+                                {{ kandTotal || kandidat.length }} menunggu · {{ gelombangSah }} per sesi → <b>{{ perkiraanGelombang }} gelombang</b>
+                            </span>
+                            <span v-else-if="form.peserta.length >= gelombangSah" class="pjd-gel__e">Kuota gelombang ini sudah penuh.</span>
+                        </div>
+
+                        <!-- ══ CENTANG YANG SEDANG TERTUTUP PENCARIAN ══
+                             Pencariannya dijalankan server, jadi mengetik satu nama
+                             mengganti seluruh isi daftar. Yang sudah tercentang
+                             tetap dibawa — tapi kalau tak disebutkan, hitungan
+                             "3 / 40" terbaca sebagai kehilangan, dan admin
+                             mengulang pencentangan yang sebenarnya masih ada. -->
+                        <div v-if="pesertaTersembunyi.length" class="pjd-simpan">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
+                            <span>
+                                <b>{{ pesertaTersembunyi.length }} kandidat</b> yang sudah kamu pilih tidak tampil di hasil sekarang — mereka tetap ikut terjadwal.
+                            </span>
+                            <button type="button" class="pjd-simpan__x" @click="kosongkanPeserta">Kosongkan semua</button>
+                        </div>
+
+                        <!-- ══ DAFTARNYA TERPOTONG ══
+                             Satu sesi menampung sebanyak batas peserta. Kalau yang
+                             menunggu lebih banyak, itu harus tertulis — bukan
+                             berhenti diam-diam di baris terakhir. -->
+                        <div v-if="kandTerpotong" class="pjd-warn pjd-warn--info">
+                            <i class="bi bi-layers-half"></i>
+                            <div>
+                                <b>{{ kandTotal }} kandidat menunggu, {{ kandidat.length }} yang bisa masuk satu sesi.</b>
+                                Jadwalkan bergelombang — sisanya tetap menunggu di sini dan bisa dibuatkan sesi berikutnya. Menyaring per lowongan biasanya sudah cukup memecahnya.
+                            </div>
                         </div>
 
                         <!-- Kosong itu wajar; yang tidak boleh adalah kosong tanpa sebab.
@@ -352,13 +505,13 @@
                                 :key="k.kode"
                                 type="button"
                                 class="pjd-cand"
-                                :class="{ 'is-on': form.peserta.includes(k.kode) }"
+                                :class="{ 'is-on': pesertaSet.has(k.kode) }"
                                 @click="toggleKandidat(k.kode)"
                             >
-                                <span class="pjd-box" :class="{ 'is-on': form.peserta.includes(k.kode) }">
-                                    <svg v-if="form.peserta.includes(k.kode)" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
+                                <span class="pjd-box" :class="{ 'is-on': pesertaSet.has(k.kode) }">
+                                    <svg v-if="pesertaSet.has(k.kode)" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
                                 </span>
-                                <span class="pjd-ava" :class="{ 'is-on': form.peserta.includes(k.kode) }">{{ inisial(k.nama) }}</span>
+                                <span class="pjd-ava" :class="{ 'is-on': pesertaSet.has(k.kode) }">{{ inisial(k.nama) }}</span>
                                 <span class="pjd-cand__in">
                                     <span class="pjd-cand__nama">{{ k.nama }}</span>
                                     <span class="pjd-cand__meta">{{ k.posisi || '—' }} · <span class="pjd-mono">{{ k.kode }}</span></span>
@@ -413,6 +566,14 @@
                         </div>
 
                         <div class="pjd-tinjau__grid">
+                            <!-- Lowongan lebih dulu bila memang itu sasarannya:
+                                 dua sesi pada program yang sama dibedakan justru
+                                 oleh lokernya, bukan oleh nama programnya. -->
+                            <div v-if="lokerTerpilih" class="pjd-tinjau__box">
+                                <span class="pjd-tinjau__k">LOWONGAN</span>
+                                <span class="pjd-tinjau__v">{{ lokerTerpilih.posisi }}</span>
+                                <span class="pjd-tinjau__e">{{ lokerTerpilih.mppRef || 'tanpa MPP' }}</span>
+                            </div>
                             <div class="pjd-tinjau__box">
                                 <span class="pjd-tinjau__k">PROGRAM</span>
                                 <span class="pjd-tinjau__v">{{ programTerpilih ? programTerpilih.nama : '—' }}</span>
@@ -1235,6 +1396,7 @@
 </template>
 
 <script>
+import { Head } from '@inertiajs/vue3';
 import axios from 'axios';
 import AdminModal from '@career/AdminModal.vue';
 import PanelAntrean from '@career/PanelAntrean.vue';
@@ -1242,7 +1404,7 @@ import { ingatModal } from '@utils/ingatModal';
 
 export default {
     name: 'Penjadwalan',
-    components: { AdminModal, PanelAntrean },
+    components: { AdminModal, Head, PanelAntrean },
     // Modal di halaman ini selamat dari refresh — lihat @utils/ingatModal.
     mixins: [ingatModal('admin/penjadwalan/penjadwalan')],
     data() {
@@ -1253,12 +1415,54 @@ export default {
             memuatTes: false,
             menyimpan: false,
             kategori: '',
-            opsi: { talent: [], program: [] },
+            opsi: { talent: [], program: [], loker: [] },
             paket: [],
+            /**
+             * SESI DISUSUN ATAS APA — lowongan (bawaan) atau program.
+             *
+             * Yang dijadwalkan admin hampir selalu satu lowongan: 40 pelamar
+             * Operator Produksi, bukan 180 pelamar seisi program. Dengan basis
+             * program, 140 nama yang tidak ia maksud tetap ikut tampil dan
+             * "Pilih semua" menjadi jebakan.
+             *
+             * Basis PROGRAM tidak dihapus — satu sesi untuk seisi program tetap
+             * sah dan kadang memang itu yang diinginkan. Pilihannya diingat per
+             * peramban, sama seperti tata letak daftar sesi.
+             */
+            basis: localStorage.getItem('pjd.basis') === 'PROGRAM' ? 'PROGRAM' : 'LOKER',
             // Tes/tahap yang bisa dijadwalkan pada alur program terpilih.
             tesAlur: [],
             alasanTes: '',
             kandidat: [],
+            /**
+             * Kandidat terpilih yang SEDANG TIDAK tampil di daftar.
+             *
+             * Pencarian kandidat dijalankan di server: mengetik satu nama
+             * mengganti seluruh isi `kandidat`. Dulu pilihan ikut dipangkas ke
+             * hasil pencarian itu — admin yang sudah mencentang 400 orang lalu
+             * mencari satu nama kehilangan keempat ratusnya, tanpa satu pun
+             * pesan. Sejak sekarang yang tercentang disimpan di sini, dan
+             * hanya dilepas ketika RUANGNYA berganti (lowongan/program/tahap).
+             */
+            pesertaInfo: {},
+            /**
+             * UKURAN SATU GELOMBANG.
+             *
+             * 250 orang menunggu, ruang tesnya memuat 75. Tanpa kendali ini
+             * pilihannya cuma dua: mencentang 75 nama satu per satu lewat 13
+             * halaman, atau "Pilih semua" lalu melepas 175 — dan yang kedua
+             * itulah yang biasanya terjadi, sampai ada yang sadar ruangannya
+             * tidak cukup.
+             *
+             * Diingat per peramban: ukuran gelombang adalah sifat ruangan dan
+             * kebiasaan tim, bukan sifat satu sesi.
+             */
+            gelombang: Number(localStorage.getItem('pjd.gelombang')) || 75,
+            // Berapa yang benar-benar menunggu di server (bisa lebih banyak
+            // daripada yang muat dikirim — lihat kandTerpotong).
+            kandTotal: 0,
+            kandBatas: 0,
+            kandTerpotong: false,
             // Penjelasan dari server saat daftar kandidat kosong.
             alasanKandidat: '',
             // Halaman daftar kandidat (dipotong di klien; servernya sudah
@@ -1337,7 +1541,7 @@ export default {
             // Hanya bagian JAM yang dipakai Element Plus; tanggalnya diabaikan.
             jamMulaiBawaan: new Date(2000, 0, 1, 8, 0, 0),
             jamAkhirBawaan: new Date(2000, 0, 1, 23, 59, 0),
-            form: { programId: null, tahapUrutan: null, tahapKode: null, tesUrutan: null, tesId: null, idMasterUjian: null, namaUjian: '', waktuMulai: '', waktuAkhir: '', peserta: [] },
+            form: { programId: null, posisiId: null, tahapUrutan: null, tahapKode: null, tesUrutan: null, tesId: null, idMasterUjian: null, namaUjian: '', waktuMulai: '', waktuAkhir: '', peserta: [] },
 
             /**
              * Gelombang yang dipantau paksa oleh panel antrean.
@@ -1363,6 +1567,71 @@ export default {
         programTerpilih() {
             return this.opsi.program.find((p) => p.id === this.form.programId) || null;
         },
+        basisLoker() {
+            return this.basis === 'LOKER';
+        },
+        /**
+         * Yang tercentang, sebagai Set.
+         *
+         * Bukan kerapian: baris kandidat memanggilnya sekali per baris, dan
+         * `Array.includes` pada 250–1.000 kode berarti puluhan ribu sampai
+         * sejuta perbandingan setiap kali satu centang berubah. Itu terasa
+         * sebagai layar yang tersendat justru pada gelombang besar — keadaan
+         * yang paling membutuhkannya lancar.
+         */
+        pesertaSet() {
+            return new Set(this.form.peserta);
+        },
+        /** Yang tampil dan BELUM tercentang — bahan gelombang berikutnya. */
+        sisaTampil() {
+            return this.kandidat.filter((k) => !this.pesertaSet.has(k.kode));
+        },
+        /** Berapa sesi yang dibutuhkan untuk menghabiskan antrean, pada ukuran ini. */
+        perkiraanGelombang() {
+            const n = Number(this.gelombang) || 0;
+
+            return n > 0 ? Math.ceil((this.kandTotal || this.kandidat.length) / n) : 0;
+        },
+        /**
+         * Lowongan yang boleh dipilih — kategori yang sedang aktif saja.
+         *
+         * Yang berisi orang menunggu didahulukan, lalu diurutkan per program.
+         * Daftar ini bisa panjang (satu program membuka lima loker), dan yang
+         * dicari admin saat membukanya selalu yang sama: mana yang ada
+         * pekerjaannya hari ini.
+         */
+        lokerKategori() {
+            return (this.opsi.loker || [])
+                .filter((l) => !this.kategori || l.kategori === this.kategori)
+                .slice()
+                .sort((a, b) => (b.menunggu || 0) - (a.menunggu || 0)
+                    || (a.programNama || '').localeCompare(b.programNama || '')
+                    || (a.posisi || '').localeCompare(b.posisi || ''));
+        },
+        lokerTerpilih() {
+            return (this.opsi.loker || []).find((l) => l.id === this.form.posisiId) || null;
+        },
+        /**
+         * Terpilih tapi tidak sedang tampil — tertutup pencarian.
+         *
+         * Angkanya disebut di layar supaya "12 dari 40" tidak terbaca sebagai
+         * kehilangan. Tanpa itu admin mengulang pencentangan yang sudah ada.
+         */
+        pesertaTersembunyi() {
+            const tampak = new Set(this.kandidat.map((k) => k.kode));
+
+            return this.form.peserta.filter((k) => !tampak.has(k));
+        },
+        /** Ukuran gelombang yang benar-benar dipakai tombol — dijaga masuk akal. */
+        gelombangSah() {
+            const n = Math.floor(Number(this.gelombang) || 0);
+
+            return Math.min(Math.max(n, 1), this.kandBatas || 1000);
+        },
+        /** Seluruh yang SEDANG TAMPIL sudah tercentang? */
+        semuaTercentangHalaman() {
+            return this.kandidat.length > 0 && this.kandidat.every((k) => this.pesertaSet.has(k.kode));
+        },
         tesTerpilihKey() {
             // Kunci memakai KODE tahap bila ada. Dengan hadirnya baris
             // "rombongan alur lama", dua baris bisa bernomor urut sama —
@@ -1372,7 +1641,7 @@ export default {
                 : '';
         },
         semuaTercentang() {
-            return this.kandidat.length > 0 && this.kandidat.every((k) => this.form.peserta.includes(k.kode));
+            return this.semuaTercentangHalaman;
         },
         sebagianTercentang() {
             return this.form.peserta.length > 0 && !this.semuaTercentang;
@@ -1439,14 +1708,23 @@ export default {
             return t.multi ? `${t.tahapLabel} › ${t.tesLabel}` : t.tahapLabel;
         },
         /** Objek kandidat yang tercentang, untuk disebut namanya di tinjauan. */
+        /**
+         * Nama-nama yang akan dikirim — dibaca dari CATATAN, bukan dari daftar
+         * yang kebetulan sedang tampil.
+         *
+         * Bentuk lama menyaring `kandidat`, jadi admin yang menyisakan pencarian
+         * menyala saat menekan Lanjut membaca "40 peserta" di kepala kartu dan
+         * tiga nama di bawahnya. Layar yang tugasnya membacakan kembali keputusan
+         * justru jadi tempat yang paling tidak boleh menyembunyikan apa pun.
+         */
         pesertaTerpilih() {
-            return this.kandidat.filter((k) => this.form.peserta.includes(k.kode));
+            return this.form.peserta.map((kode) => this.pesertaInfo[kode] || { kode, nama: kode, posisi: null });
         },
         /**
          * Definisi langkah + apa yang SUDAH terisi di masing-masing.
          *
          * `nilai` membuat bilah langkah berguna setelah dilewati: tanpa itu ia
-         * hanya lima angka, dan admin harus mundur satu per satu cuma untuk
+         * hanya tiga angka, dan admin harus mundur satu per satu cuma untuk
          * memastikan paket mana yang tadi dipilih.
          */
         wizSteps() {
@@ -1458,7 +1736,7 @@ export default {
                 {
                     no: 1,
                     judul: 'Ujian',
-                    hint: 'Program, aktivitas, paket soal',
+                    hint: this.basisLoker ? 'Lowongan, aktivitas, paket soal' : 'Program, aktivitas, paket soal',
                     nilai: [this.ringkasAktivitas, f.namaUjian].filter(Boolean).join(' · '),
                     bisa: !!(f.programId && f.tahapUrutan && f.idMasterUjian),
                 },
@@ -1490,7 +1768,7 @@ export default {
 
             const f = this.form;
             if (this.wizLangkah === 1) {
-                if (!f.programId) return 'Pilih program dulu.';
+                if (!f.programId) return this.basisLoker ? 'Pilih lowongan dulu.' : 'Pilih program dulu.';
                 if (!f.tahapUrutan) return 'Pilih aktivitas yang dijadwalkan.';
 
                 return 'Pilih satu paket tes dari HCLearn.';
@@ -1506,12 +1784,16 @@ export default {
         },
         /** Subjudul modal — konteks yang sudah dipilih, terbaca di tiap langkah. */
         wizSub() {
+            const l = this.lokerTerpilih;
             const bagian = [
-                this.programTerpilih ? this.programTerpilih.nama : '',
+                // Lowongan lebih dulu bila memang itu sasarannya: nama program
+                // sudah ikut di belakangnya, dan yang membedakan dua sesi pada
+                // program yang sama justru lokernya.
+                l ? `${l.posisi} · ${l.programNama}` : (this.programTerpilih ? this.programTerpilih.nama : ''),
                 this.ringkasAktivitas,
             ].filter(Boolean);
 
-            return bagian.length ? bagian.join(' · ') : 'Susun sesi tes online dalam lima langkah';
+            return bagian.length ? bagian.join(' · ') : 'Susun sesi tes online dalam tiga langkah';
         },
     },
     watch: {
@@ -1638,7 +1920,8 @@ export default {
         async muatOpsi() {
             try {
                 const res = await axios.get('/api/v1/penjadwalan/opsi', { headers: { Accept: 'application/json' } });
-                this.opsi = res.data.result || { talent: [], program: [] };
+                this.opsi = res.data.result || { talent: [], program: [], loker: [] };
+                if (!this.opsi.loker) this.opsi.loker = [];
                 if (!this.kategori && this.opsi.talent.length) this.kategori = this.opsi.talent[0].kode;
             } catch (e) {
                 this.beritahu('Gagal memuat opsi program', 'error');
@@ -1647,11 +1930,43 @@ export default {
         gantiKategori(kode) {
             this.kategori = kode;
             this.form.programId = null;
+            this.form.posisiId = null;
             this.lupakanTes();
             this.muatTesAlur(); // tanpa program → daftar tes ikut dikosongkan
         },
+        /**
+         * Pindah basis: lowongan ↔ program.
+         *
+         * Yang ditinggalkan dikosongkan seluruhnya, bukan disisakan. Membiarkan
+         * `posisiId` lama bertahan saat basis berpindah ke program berarti sesi
+         * yang admin kira mencakup seisi program diam-diam tersaring ke satu
+         * loker — dan tak ada satu pun tulisan di layar yang menyebutkannya.
+         */
+        gantiBasis(b) {
+            if (this.basis === b) return;
+            this.basis = b;
+            try { localStorage.setItem('pjd.basis', b); } catch (e) { /* mode privat */ }
+            this.form.programId = null;
+            this.form.posisiId = null;
+            this.lupakanTes();
+            this.muatTesAlur();
+        },
+        /**
+         * Lowongan dipilih — programnya ikut, tanpa ditanya lagi.
+         *
+         * Loker membawa Program_Id sendiri, dan alur/tahap tetap milik program.
+         * Jadi yang berubah cuma cara admin menyebut sasarannya, bukan bentuk
+         * data di bawahnya.
+         */
+        onLoker() {
+            const l = this.lokerTerpilih;
+            this.form.programId = l ? l.programId : null;
+            this.lupakanTes();
+            this.muatTesAlur();
+        },
         onProgram() {
             // Ganti program = ganti alur, jadi pilihan tes lama tidak berlaku lagi.
+            this.form.posisiId = null;
             this.lupakanTes();
             this.muatTesAlur();
         },
@@ -1662,15 +1977,24 @@ export default {
             this.form.tesUrutan = null;
             this.form.tesId = null;
             this.form.peserta = [];
+            // Ruangnya berganti — di sinilah pilihan MEMANG harus dilepas.
+            // Bandingkan dengan muatKandidat(), yang tidak boleh melepasnya.
+            this.pesertaInfo = {};
             this.kandidat = [];
+            this.kandTotal = 0;
+            this.kandTerpotong = false;
             this.alasanKandidat = '';
         },
         async muatTesAlur() {
             if (!this.form.programId) { this.tesAlur = []; this.alasanTes = ''; return; }
             this.memuatTes = true;
             try {
+                const params = { programId: this.form.programId };
+                // Angka "N menunggu" pada tiap baris tes ikut lowongan yang
+                // dipilih — lihat PenjadwalanController::hitungMenunggu().
+                if (this.form.posisiId) params.posisiId = this.form.posisiId;
                 const res = await axios.get('/api/v1/penjadwalan/tes', {
-                    params: { programId: this.form.programId },
+                    params,
                     headers: { Accept: 'application/json' },
                 });
                 this.tesAlur = res.data.result || [];
@@ -1712,7 +2036,10 @@ export default {
             // sedangkan yang dicocokkan di server adalah snapshot milik kandidat;
             // keduanya berselisih begitu urutan aktivitas di Master Alur disunting.
             this.form.tesId = t.tesId || null;
-            this.form.peserta = [];
+            // Ganti aktivitas = ganti orang yang menunggunya. Centang lama tidak
+            // boleh ikut — lihat kosongkanPeserta() untuk alasan pemisahannya
+            // dari pemangkasan saat mencari.
+            this.kosongkanPeserta();
             this.muatKandidat();
         },
         async muatPaket() {
@@ -1744,19 +2071,47 @@ export default {
             // Kandidat = pelamar NYATA program terpilih yang punya SUB-TES pihak
             // ke-3 menunggu jadwal. Satu tahap bisa berisi beberapa tes, jadi
             // orang yang sama bisa muncul lagi untuk tes berikutnya di tahap itu.
-            if (!this.form.programId || !this.form.tahapUrutan) { this.kandidat = []; this.form.peserta = []; this.alasanKandidat = ''; return; }
+            // Belum ada sasaran/aktivitas → daftarnya dikosongkan, TAPI pilihan
+            // tahap tidak ikut dibuang: yang memanggil di sini kadang justru
+            // sedang menyusunnya (lihat lupakanTes(), yang memang membuangnya).
+            if (!this.form.programId || !this.form.tahapUrutan) {
+                this.kandidat = [];
+                this.kandTotal = 0;
+                this.kandTerpotong = false;
+                this.kosongkanPeserta();
+                this.alasanKandidat = '';
+
+                return;
+            }
             this.memuatKandidat = true;
             try {
                 const params = { programId: this.form.programId, tahapUrutan: this.form.tahapUrutan };
+                if (this.form.posisiId) params.posisiId = this.form.posisiId;
                 if (this.form.tahapKode) params.tahapKode = this.form.tahapKode;
                 if (this.form.tesUrutan) params.tesUrutan = this.form.tesUrutan;
                 if (this.form.tesId) params.tesId = this.form.tesId;
                 if (this.cariKandidat) params.q = this.cariKandidat;
                 const res = await axios.get('/api/v1/penjadwalan/kandidat', { params, headers: { Accept: 'application/json' } });
-                this.kandidat = res.data.result || [];
-                this.alasanKandidat = this.kandidat.length ? '' : (res.data.message || '');
-                // Buang peserta terpilih yang tak lagi ada di daftar terbaru.
-                this.form.peserta = this.form.peserta.filter((k) => this.kandidat.some((c) => c.kode === k));
+                const hasil = res.data.result || {};
+                this.kandidat = hasil.items || [];
+                this.kandTotal = hasil.total || this.kandidat.length;
+                this.kandBatas = hasil.batas || 0;
+                this.kandTerpotong = !!hasil.terpotong;
+                this.alasanKandidat = this.kandidat.length ? (this.kandTerpotong ? (res.data.message || '') : '') : (res.data.message || '');
+
+                // ══ PILIHAN TIDAK DIPANGKAS DI SINI ══════════════════════════
+                //
+                // Baris yang dulu berdiri di tempat ini membuang setiap kode
+                // yang tak ada di daftar TERBARU. Selama daftar itu selalu
+                // seluruh kandidat, ia tak pernah salah. Tapi pencariannya
+                // dijalankan server: mengetik "budi" membuat daftar terbaru
+                // berisi satu orang, dan 400 centang yang sudah dikumpulkan
+                // admin lenyap seketika — tanpa pesan, tanpa cara memulihkan.
+                //
+                // Yang dicatat sekarang justru sebaliknya: rincian orang yang
+                // tercentang disimpan supaya ia tetap bisa disebut namanya di
+                // layar Tinjau walau daftarnya sedang menampilkan yang lain.
+                this.ingatPeserta(this.kandidat);
             } catch (e) {
                 this.beritahu('Gagal memuat kandidat', 'error');
             } finally {
@@ -1767,13 +2122,80 @@ export default {
             clearTimeout(this.timerKandidat);
             this.timerKandidat = setTimeout(() => this.muatKandidat(), 400);
         },
+        /** Simpan rincian kandidat yang tercentang, supaya selamat dari pencarian. */
+        ingatPeserta(daftar) {
+            const catat = { ...this.pesertaInfo };
+            daftar.forEach((k) => {
+                if (this.form.peserta.includes(k.kode)) catat[k.kode] = k;
+            });
+            this.pesertaInfo = catat;
+        },
         toggleKandidat(kode) {
             const i = this.form.peserta.indexOf(kode);
-            if (i >= 0) this.form.peserta.splice(i, 1);
-            else this.form.peserta.push(kode);
+            if (i >= 0) {
+                this.form.peserta.splice(i, 1);
+                delete this.pesertaInfo[kode];
+            } else {
+                this.form.peserta.push(kode);
+                const k = this.kandidat.find((c) => c.kode === kode);
+                if (k) this.pesertaInfo[kode] = k;
+            }
         },
+        /**
+         * "Pilih semua" bekerja pada YANG SEDANG TAMPIL, dan MENAMBAH.
+         *
+         * Bentuk lama menimpa seluruh pilihan dengan isi daftar saat itu. Dengan
+         * pencarian di server itu berarti: cari "produksi", pilih semua, cari
+         * "gudang", pilih semua — dan yang tersisa hanya gudang. Menambah
+         * membuat penyaringan bertahap jadi cara yang sah untuk menyusun
+         * gelombang, bukan jebakan.
+         *
+         * Melepasnya pun hanya melepas yang tampil; centang di luar hasil
+         * pencarian tidak ikut terbawa. Untuk mengosongkan semuanya ada
+         * tombolnya sendiri (kosongkanPeserta).
+         */
         toggleSemua() {
-            this.form.peserta = this.semuaTercentang ? [] : this.kandidat.map((k) => k.kode);
+            const tampil = this.kandidat.map((k) => k.kode);
+
+            if (this.semuaTercentangHalaman) {
+                const buang = new Set(tampil);
+                this.form.peserta = this.form.peserta.filter((k) => !buang.has(k));
+                buang.forEach((k) => delete this.pesertaInfo[k]);
+
+                return;
+            }
+
+            this.form.peserta = [...new Set([...this.form.peserta, ...tampil])];
+            this.ingatPeserta(this.kandidat);
+        },
+        /**
+         * AMBIL SATU GELOMBANG — N nama pertama yang belum tercentang.
+         *
+         * Urutannya mengikuti daftar apa adanya (nama A–Z dari server), jadi
+         * gelombang berikutnya melanjutkan dari tempat yang sama dan tidak ada
+         * orang yang terus-menerus kebagian gelombang terakhir.
+         *
+         * MENAMBAH, tidak menimpa: admin yang sudah menandai lima orang tertentu
+         * lalu menekan tombol ini mendapat lima itu plus sisanya — bukan
+         * kehilangan kelimanya.
+         */
+        ambilGelombang() {
+            const n = this.gelombangSah;
+            const ambil = this.sisaTampil.slice(0, Math.max(0, n - this.form.peserta.length));
+
+            if (! ambil.length) return;
+
+            this.form.peserta = [...this.form.peserta, ...ambil.map((k) => k.kode)];
+            this.ingatPeserta(ambil);
+        },
+        simpanGelombang() {
+            this.gelombang = this.gelombangSah;
+            try { localStorage.setItem('pjd.gelombang', String(this.gelombang)); } catch (e) { /* mode privat */ }
+        },
+        /** Lepas SELURUH centang — termasuk yang sedang tertutup pencarian. */
+        kosongkanPeserta() {
+            this.form.peserta = [];
+            this.pesertaInfo = {};
         },
         async muat() {
             this.memuat = true;
@@ -1814,7 +2236,7 @@ export default {
                 // pertama itulah yang paling menuntut kepastian.
                 const idBaru = res.data?.result?.id;
                 if (idBaru) this.antreanIds = [...new Set([...this.antreanIds, idBaru])];
-                this.form.peserta = [];
+                this.kosongkanPeserta();
                 // Sesi sudah terbit — wizard ditutup dan dikembalikan ke langkah
                 // pertama. Membiarkannya terbuka di layar Tinjau yang isinya
                 // sudah tidak berlaku membuat tombol Generate tampak masih bisa
@@ -2357,6 +2779,80 @@ export default {
 .pjd-note { display: flex; gap: 7px; align-items: flex-start; font-size: 12px; line-height: 1.55; color: #8792a6; margin: 8px 0 10px; }
 .pjd-note--warn { color: #b45309; }
 .pjd-opttag { float: right; color: #a2a9ba; font-size: 11.5px; margin-left: 1rem; }
+.pjd-opttag.is-wait { color: #b45309; font-weight: 800; }
+
+/* ── SASARAN SESI: LOWONGAN / PROGRAM ──
+   Dua tombol berdampingan, bukan dropdown: pilihannya cuma dua dan keduanya
+   harus terbaca sekaligus — yang tersembunyi di dalam dropdown tidak pernah
+   dicoba orang yang tidak tahu ia ada. */
+.pjd-basis { display: inline-flex; gap: 4px; padding: 4px; border-radius: 13px; background: #f4f5fb; border: 1px solid #eef0f7; }
+.pjd-basis__b {
+    appearance: none; font-family: inherit; display: inline-flex; align-items: center; gap: 7px;
+    padding: 8px 14px; border: none; border-radius: 10px; background: transparent; cursor: pointer;
+    font-size: 12.5px; font-weight: 700; color: #64748b; transition: all .16s;
+}
+.pjd-basis__b:hover { color: #4338ca; }
+.pjd-basis__b.is-on { background: #fff; color: #4338ca; box-shadow: 0 3px 10px rgba(15, 23, 42, .07); }
+.pjd-basis__b svg { flex: 0 0 auto; }
+
+/* Baris opsi lowongan di dalam dropdown — nama loker di atas, program & MPP
+   sebagai baris kecil di bawahnya. Satu baris datar membuat "Operator Produksi"
+   pada tiga program berbeda terlihat sebagai tiga baris kembar. */
+.pjd-lokopt { display: inline-flex; flex-direction: column; min-width: 0; line-height: 1.35; }
+.pjd-lokopt__n { font-weight: 700; color: #1e293b; }
+.pjd-lokopt__m { font-size: 11px; color: #94a3b8; }
+
+/* Keterangan lowongan terpilih — yang menerangkan sasaran sesi sebelum admin
+   melangkah ke jendela waktu. */
+.pjd-lokinfo { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.pjd-lokinfo__b {
+    display: inline-flex; flex-direction: column; gap: 2px; min-width: 0;
+    padding: 8px 12px; border-radius: 12px; background: #fbfbfe; border: 1px solid #eef0f7;
+}
+.pjd-lokinfo__b em { font-style: normal; font-size: 9.5px; font-weight: 800; letter-spacing: .09em; color: #a2a9ba; }
+.pjd-lokinfo__b b { font-size: 12.5px; font-weight: 800; color: #334155; }
+
+/* Centang yang sedang tertutup pencarian — kabar baik, jadi hijau, bukan
+   kuning peringatan: tidak ada yang hilang, hanya tidak sedang tampil. */
+.pjd-simpan {
+    display: flex; align-items: center; gap: 9px; margin: 10px 0 0; padding: 9px 13px;
+    border-radius: 13px; background: #f0fdf4; border: 1px solid #bbf7d0;
+    font-size: 12.5px; line-height: 1.5; color: #166534;
+}
+.pjd-simpan svg { flex: 0 0 auto; color: #16a34a; }
+.pjd-simpan span { min-width: 0; flex: 1; }
+.pjd-simpan__x {
+    appearance: none; font-family: inherit; flex: 0 0 auto; border: 1px solid #bbf7d0;
+    background: #fff; border-radius: 9px; padding: 5px 11px; cursor: pointer;
+    font-size: 11.5px; font-weight: 800; color: #15803d; transition: all .16s;
+}
+.pjd-simpan__x:hover { background: #dcfce7; }
+
+/* ── GELOMBANG ── */
+.pjd-gel { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; margin-top: 10px; padding: 9px 13px; border-radius: 13px; background: #fbfbfe; border: 1px solid #eef0f7; }
+.pjd-gel__l { font-size: 11.5px; font-weight: 800; letter-spacing: .02em; color: #64748b; }
+.pjd-gel__n {
+    appearance: textfield; font-family: inherit; width: 74px; padding: 6px 9px;
+    border: 1px solid #e6e9f0; border-radius: 9px; background: #fff;
+    font-size: 12.5px; font-weight: 800; color: #1e293b; text-align: center;
+}
+.pjd-gel__n:focus { outline: none; border-color: #a5b4fc; box-shadow: 0 0 0 3px rgba(99, 102, 241, .12); }
+.pjd-gel__b {
+    appearance: none; font-family: inherit; display: inline-flex; align-items: center; gap: 6px;
+    padding: 7px 13px; border-radius: 10px; border: none; cursor: pointer;
+    font-size: 12px; font-weight: 800; color: #fff;
+    background: linear-gradient(135deg, #8b5cf6, #6366f1); transition: all .16s;
+}
+.pjd-gel__b:hover:not(:disabled) { filter: brightness(1.06); }
+.pjd-gel__b:disabled { background: #e6e9f0; color: #a2a9ba; cursor: not-allowed; }
+.pjd-gel__e { font-size: 11.5px; color: #8792a6; margin-left: auto; }
+.pjd-gel__e b { color: #4338ca; }
+
+/* Varian KETERANGAN dari .pjd-warn — bentuk yang sama, nada yang tidak
+   menuduh: daftar yang terpotong bukan kesalahan admin. */
+.pjd-warn--info { background: #eff6ff; border-color: #bfdbfe; color: #1e40af; }
+.pjd-warn--info .bi { color: #3b82f6; }
+.pjd-warn--info b { color: #1e3a8a; }
 
 /* ── DAFTAR TAHAP/UJIAN ── */
 .pjd-stages { display: flex; flex-direction: column; gap: 10px; }

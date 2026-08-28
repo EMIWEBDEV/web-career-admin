@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Career\CareerLandingController;
+use App\Http\Controllers\Career\SeoPublikController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -9,6 +10,20 @@ use Illuminate\Support\Facades\Route;
 |--------------------------------------------------------------------------
 | Dummy, tanpa middleware auth/DB. Situs karir + halaman detail + auth kandidat.
 */
+
+/*
+| MESIN PENCARI
+|--------------------------------------------------------------------------
+| Dibangkitkan, bukan berkas statis di public/ — sitemap harus memuat lowongan
+| yang dibuka HARI INI, dan robots harus menutup seluruh situs saat staging.
+| Keduanya membaca host dari permintaan, jadi tidak ada domain yang ditulis.
+|
+| DI LUAR seluruh middleware karier: perayap datang tanpa sesi, dan satu
+| pengalihan ke halaman masuk sudah cukup membuat Google mencatat situs ini
+| tidak punya peta situs sama sekali.
+*/
+Route::get('/robots.txt', [SeoPublikController::class, 'robots'])->name('seo.robots');
+Route::get('/sitemap.xml', [SeoPublikController::class, 'sitemap'])->name('seo.sitemap');
 
 Route::get('/karir/landing-page', [CareerLandingController::class, 'index'])->name('career.landing');
 

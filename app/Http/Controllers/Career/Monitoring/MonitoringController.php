@@ -400,6 +400,135 @@ class MonitoringController extends Controller
      * penempatannya (siapa ada di tahap mana). Satu payload untuk seluruh papan
      * → tidak ada fetch per kolom, filter per tahap dikerjakan di client.
      */
+    /**
+     * GET .../monitoring/riwayat-pic — JEJAK SELURUH SERAH TERIMA LOKER.
+     *
+     * ── KENAPA ADA DI MONITORING, BUKAN DI HALAMAN PROGRAM ──────────────────
+     *
+     * Riwayat per loker sudah bisa dibaca dari lokernya sendiri. Yang TIDAK
+     * bisa dijawab dari sana adalah pertanyaan yang justru penting bagi kendali
+     * mutu, dan semuanya berbentuk lintas-program:
+     *
+     *   · loker mana yang berpindah tangan berkali-kali dalam sebulan
+     *   · siapa yang terus-menerus melepas pekerjaannya
+     *   · berapa kandidat yang berganti penanggung jawab di tengah proses
+     *   · perpindahan mana yang dilakukan admin tanpa sepengetahuan pemiliknya
+     *
+     * Membaca itu satu per satu dari 40 loker bukan pemeriksaan, melainkan
+     * penggalian. Di sini seluruhnya berbaris dalam satu daftar yang bisa
+     * disaring.
+     *
+     * READ-ONLY. Halaman ini tidak pernah mengubah apa pun — termasuk tidak
+     * menyediakan tombol membatalkan serah terima, sebab membatalkan adalah
+     * serah terima BARU yang juga harus punya alasannya sendiri.
+     */
+    public function riwayatPic(Request $request)
+    {
+        try {
+            $q = trim((string) $request->query('q', ''));
+            $sumber = strtoupper(trim((string) $request->query('sumber', '')));
+            $dari = $request->query('dari');
+            $sampai = $request->query('sampai');
+            $limit = min(500, max(20, (int) $request->query('limit', 200)));
+
+            $rows = DB::table('N_WEB_CAREERS_Posisi_Pic_Riwayat as r')
+                ->leftJoin('N_WEB_CAREERS_Program_Posisi as pp', 'pp.Id_Program_Posisi', '=', 'r.Program_Posisi_Id')
+                ->leftJoin('N_WEB_CAREERS_Program as pr', 'pr.Id_Program', '=', 'r.Program_Id')
+                ->when($q !== '', fn ($w) => $w->where(function ($x) use ($q) {
+                    $x->where('r.Dari_Nama', 'like', "%{$q}%")
+                        ->orWhere('r.Ke_Nama', 'like', "%{$q}%")
+                        ->orWhere('r.Dari_Kode', 'like', "%{$q}%")
+                        ->orWhere('r.Ke_Kode', 'like', "%{$q}%")
+                        ->orWhere('r.Alasan', 'like', "%{$q}%")
+                        ->orWhere('pp.Posisi', 'like', "%{$q}%")
+                        ->orWhere('pr.Nama', 'like', "%{$q}%");
+                }))
+                ->when(in_array($sumber, ['SENDIRI', 'ADMIN'], true), fn ($w) => $w->where('r.Sumber', $sumber))
+                ->when($dari, fn ($w) => $w->whereDate('r.Created_At', '>=', $dari))
+                ->when($sampai, fn ($w) => $w->whereDate('r.Created_At', '<=', $sampai))
+                ->orderByDesc('r.Id_Posisi_Pic_Riwayat')
+                ->limit($limit)
+                ->get([
+                    'r.Id_Posisi_Pic_Riwayat', 'r.Program_Posisi_Id', 'r.Dari_Kode', 'r.Dari_Nama',
+                    'r.Ke_Kode', 'r.Ke_Nama', 'r.Alasan', 'r.Sumber', 'r.Jml_Kandidat',
+                    'r.Created_At', 'r.Created_By',
+                    'pp.Posisi', 'pp.Mpp_Ref', 'pr.Nama as ProgramNama', 'pr.Kategori',
+                ]);
+
+            $data = $rows->map(fn ($r) => [
+                'id' => (int) $r->Id_Posisi_Pic_Riwayat,
+                'posisiId' => (int) $r->Program_Posisi_Id,
+                // Loker bisa saja sudah dihapus sesudah perpindahannya. Jejaknya
+                // tetap berdiri — itulah gunanya nama dibekukan di barisnya.
+                'posisi' => $r->Posisi ?: '(loker sudah dihapus)',
+                'program' => $r->ProgramNama ?: '—',
+                'kategori' => $r->Kategori,
+                'mppRef' => $r->Mpp_Ref,
+                'dari' => $r->Dari_Nama ?: ($r->Dari_Kode ?: null),
+                'dariKode' => $r->Dari_Kode,
+                'ke' => $r->Ke_Nama ?: $r->Ke_Kode,
+                'keKode' => $r->Ke_Kode,
+                'alasan' => $r->Alasan,
+                'sumber' => $r->Sumber,
+                'kandidat' => (int) $r->Jml_Kandidat,
+                'at' => $r->Created_At,
+                'oleh' => $r->Created_By,
+            ])->values();
+
+            // ── ANGKA KENDALI MUTU ──────────────────────────────────────────
+            //
+            // Dihitung dari SELURUH riwayat yang cocok penyaring, bukan dari
+            // $limit baris yang kebetulan tampil — ringkasan yang hanya
+            // menghitung satu halaman akan berubah setiap kali orang menggulir,
+            // dan angka yang berubah sendiri tidak bisa dipakai memutuskan apa
+            // pun.
+            $dasar = fn () => DB::table('N_WEB_CAREERS_Posisi_Pic_Riwayat as r')
+                ->when(in_array($sumber, ['SENDIRI', 'ADMIN'], true), fn ($w) => $w->where('r.Sumber', $sumber))
+                ->when($dari, fn ($w) => $w->whereDate('r.Created_At', '>=', $dari))
+                ->when($sampai, fn ($w) => $w->whereDate('r.Created_At', '<=', $sampai));
+
+            $ringkas = [
+                'total' => (int) $dasar()->count(),
+                'kandidat' => (int) $dasar()->sum('r.Jml_Kandidat'),
+                'olehAdmin' => (int) $dasar()->where('r.Sumber', 'ADMIN')->count(),
+                'lokerTersentuh' => (int) $dasar()->distinct()->count('r.Program_Posisi_Id'),
+            ];
+
+            // LOKER YANG BERPINDAH LEBIH DARI DUA KALI — sinyal, bukan hiasan.
+            // Satu loker yang terus berpindah tangan biasanya berarti tidak ada
+            // yang benar-benar merasa memegangnya, dan itulah keadaan tempat
+            // kandidat paling sering tertinggal tanpa ada yang menyadari.
+            $sering = DB::table('N_WEB_CAREERS_Posisi_Pic_Riwayat as r')
+                ->leftJoin('N_WEB_CAREERS_Program_Posisi as pp', 'pp.Id_Program_Posisi', '=', 'r.Program_Posisi_Id')
+                ->leftJoin('N_WEB_CAREERS_Program as pr', 'pr.Id_Program', '=', 'r.Program_Id')
+                ->groupBy('r.Program_Posisi_Id', 'pp.Posisi', 'pr.Nama')
+                ->havingRaw('COUNT(*) > 2')
+                ->orderByRaw('COUNT(*) DESC')
+                ->limit(10)
+                ->get([
+                    'r.Program_Posisi_Id',
+                    'pp.Posisi',
+                    'pr.Nama as ProgramNama',
+                    DB::raw('COUNT(*) as Jml'),
+                ])
+                ->map(fn ($r) => [
+                    'posisi' => $r->Posisi ?: '(dihapus)',
+                    'program' => $r->ProgramNama ?: '—',
+                    'jml' => (int) $r->Jml,
+                ]);
+
+            return ResponseHelper::success([
+                'data' => $data,
+                'ringkas' => $ringkas,
+                'sering' => $sering,
+            ], 'Riwayat serah terima dimuat');
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->error('Gagal memuat riwayat PIC: '.$e->getMessage());
+
+            return ResponseHelper::error('Gagal memuat riwayat serah terima', 500);
+        }
+    }
+
     public function papan(string $id)
     {
         try {

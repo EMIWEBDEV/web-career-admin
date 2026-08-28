@@ -75,12 +75,91 @@ class PenjadwalanController extends Controller
                     'a.Id_Master_Alur as alurId', 'a.Nama as alurNama',
                 ]);
 
-            return ResponseHelper::success(compact('talent', 'program'), 'Opsi dimuat');
+            // ══ LOWONGAN (MPP), BUKAN CUMA PROGRAM ══════════════════════════
+            //
+            // Satu program bisa membuka beberapa lowongan sekaligus, dan yang
+            // dijadwalkan admin hampir selalu satu di antaranya — bukan seisi
+            // program. Memilih program lalu mencentang manual 40 dari 180 nama
+            // adalah pekerjaan yang datanya sudah tahu jawabannya.
+            //
+            // Lokernya membawa Program_Id sendiri, jadi memilih lowongan sudah
+            // menentukan programnya tanpa ditanya lagi. Yang di bawah tetap
+            // dikerjakan atas program itu — alur, tahap, dan baris penjadwalan
+            // memang milik program (lihat Penjadwalan.Program_Id).
+            //
+            // Disaring dua kali: kategori (tab yang dipegang pengguna) dan PIC
+            // loker. Gerbang kedua sama dengan yang menjaga daftar kandidat —
+            // menjadwalkan loker orang lain berarti mengerjakannya atas namanya.
+            $menungguLoker = $this->menungguPerLoker();
+
+            $loker = DB::table('N_WEB_CAREERS_Program_Posisi as pos')
+                ->join('N_WEB_CAREERS_Program as p', 'p.Id_Program', '=', 'pos.Program_Id')
+                ->leftJoin('N_WEB_CAREERS_Master_Alur as a', 'a.Kode', '=', 'p.Alur_Kode')
+                ->tap(fn ($qb) => AksesService::saringKategori($qb, self::PAGE, 'p.Kategori'))
+                ->tap(fn ($qb) => AksesService::saringPicLoker($qb, self::PAGE, 'pos.Pic_Kode_Karyawan'))
+                ->orderBy('p.Nama')
+                ->orderBy('pos.Posisi')
+                ->get([
+                    'pos.Id_Program_Posisi as id', 'pos.Posisi as posisi', 'pos.Mpp_Ref as mppRef',
+                    'pos.Lokasi as lokasi', 'pos.Departemen as departemen', 'pos.Kuota as kuota',
+                    'pos.Terisi as terisi', 'pos.Status as status', 'pos.Flag_Aktif as aktif',
+                    'p.Id_Program as programId', 'p.Nama as programNama', 'p.Kategori as kategori',
+                    'p.Warna as warna', 'p.Status as programStatus',
+                    'a.Id_Master_Alur as alurId', 'a.Nama as alurNama',
+                ])
+                ->map(fn ($r) => [
+                    'id' => (int) $r->id,
+                    'posisi' => $r->posisi,
+                    'mppRef' => $r->mppRef,
+                    'lokasi' => $r->lokasi,
+                    'departemen' => $r->departemen,
+                    'kuota' => (int) $r->kuota,
+                    'terisi' => (int) $r->terisi,
+                    'status' => $r->status,
+                    'aktif' => ($r->aktif ?? 'Y') === 'Y',
+                    'programId' => (int) $r->programId,
+                    'programNama' => $r->programNama,
+                    'kategori' => $r->kategori,
+                    'warna' => $r->warna,
+                    'programStatus' => $r->programStatus,
+                    'alurId' => $r->alurId ? (int) $r->alurId : null,
+                    'alurNama' => $r->alurNama,
+                    // Berapa orang di lowongan ini yang SEKARANG menunggu jadwal
+                    // ujian online. Inilah satu-satunya angka yang menentukan
+                    // ada tidaknya pekerjaan di sini, jadi ia ikut sejak daftar
+                    // dibuka — bukan setelah lokernya dipilih.
+                    'menunggu' => (int) ($menungguLoker[(int) $r->id] ?? 0),
+                ])
+                ->values();
+
+            return ResponseHelper::success(compact('talent', 'program', 'loker'), 'Opsi dimuat');
         } catch (\Throwable $e) {
             Log::channel('web_career')->error('Gagal memuat opsi penjadwalan: '.$e->getMessage());
 
             return ResponseHelper::error('Gagal memuat opsi', 500);
         }
+    }
+
+    /**
+     * Berapa kandidat yang menunggu jadwal ujian online, PER LOWONGAN.
+     *
+     * Satu kueri agregat untuk seluruh loker yang boleh dilihat pengguna —
+     * bukan satu kueri per baris. Aturan "siapa yang menunggu" dipinjam utuh
+     * dari kueriKandidat(): kalau keduanya menghitung dengan cara berbeda,
+     * angka di daftar lowongan dan isi daftar kandidat akan berselisih, dan
+     * yang dipercaya admin adalah yang pertama ia lihat.
+     *
+     * @return array<int,int> [Id_Program_Posisi => jumlah]
+     */
+    private function menungguPerLoker(): array
+    {
+        return $this->kueriKandidat(null, null, null)
+            ->whereNotNull('l.Program_Posisi_Id')
+            ->groupBy('l.Program_Posisi_Id')
+            ->select('l.Program_Posisi_Id as posisiId', DB::raw('COUNT(*) as jml'))
+            ->get()
+            ->mapWithKeys(fn ($r) => [(int) $r->posisiId => (int) $r->jml])
+            ->all();
     }
 
     /**
@@ -153,9 +232,27 @@ class PenjadwalanController extends Controller
     public function tesAlur(Request $request)
     {
         try {
+            // ── LOWONGAN MENENTUKAN PROGRAMNYA SENDIRI ──
+            //
+            // Layar boleh mengirim salah satu: lowongan (jalur baru) atau
+            // program (jalur lama, dan tetap sah — satu sesi untuk seisi
+            // program). Yang tidak boleh adalah menuntut keduanya: lokernya
+            // sudah membawa Program_Id, dan menanyakannya lagi membuka peluang
+            // dua jawaban berbeda untuk satu pertanyaan.
+            $posisiId = (int) $request->query('posisiId', 0) ?: null;
             $programId = (int) $request->query('programId', 0);
+
+            if ($posisiId) {
+                $posisi = DB::table('N_WEB_CAREERS_Program_Posisi')
+                    ->where('Id_Program_Posisi', $posisiId)->first(['Program_Id']);
+                if (! $posisi) {
+                    return ResponseHelper::error('Lowongan tidak ditemukan.', 404);
+                }
+                $programId = (int) $posisi->Program_Id;
+            }
+
             if (! $programId) {
-                return ResponseHelper::success([], 'Pilih program terlebih dahulu.');
+                return ResponseHelper::success([], 'Pilih lowongan atau program terlebih dahulu.');
             }
 
             $program = DB::table('N_WEB_CAREERS_Program')->where('Id_Program', $programId)->first();
@@ -180,7 +277,11 @@ class PenjadwalanController extends Controller
                 ->groupBy('Master_Alur_Tahap_Id');
 
             $cat = $this->tipeCat();
-            $menunggu = $this->hitungMenunggu($programId);
+            // Angka "N menunggu" mengikuti LOWONGAN yang dipilih. Kalau ia tetap
+            // menghitung seisi program, admin membaca 180 lalu menemukan 40 nama
+            // di layar berikutnya — dan yang ia curigai adalah daftarnya, bukan
+            // lencananya.
+            $menunggu = $this->hitungMenunggu($programId, $posisiId);
 
             $namaTipe = DB::table('N_WEB_CAREERS_Master_Tipe_Tahap')->pluck('Nama', 'Kode');
 
@@ -306,9 +407,9 @@ class PenjadwalanController extends Controller
      *
      * @return array<string, array{jml:int, tahapUrutan:int, tahapLabel:?string}>
      */
-    private function hitungMenunggu(int $programId): array
+    private function hitungMenunggu(int $programId, ?int $posisiId = null): array
     {
-        return $this->kueriKandidat($programId, null, null)
+        return $this->kueriKandidat($programId, null, null, '', null, null, $posisiId)
             ->groupBy('t.Kode', 't.Urutan', 't.Label', 'st.Urutan', 'st.Label', 'st.Master_Alur_Tahap_Tes_Id')
             ->select('t.Kode as tahapKode', 't.Urutan as tahapUrutan', 't.Label as tahapLabel',
                 'st.Urutan as tesUrutan', 'st.Label as tesLabel',
@@ -420,24 +521,42 @@ class PenjadwalanController extends Controller
     {
         try {
             $programId = (int) $request->query('programId', 0);
+            $posisiId = (int) $request->query('posisiId', 0) ?: null;
             $tahapUrutan = (int) $request->query('tahapUrutan', 0) ?: null;
             $tesUrutan = (int) $request->query('tesUrutan', 0) ?: null;
             $tahapKode = trim((string) $request->query('tahapKode', '')) ?: null;
             $tesId = (int) $request->query('tesId', 0) ?: null;
             $cari = trim((string) $request->query('q', ''));
 
-            if (! $programId) {
-                return ResponseHelper::success([], 'Pilih program terlebih dahulu.');
-            }
-            if (! $tahapUrutan && ! $tahapKode) {
-                return ResponseHelper::success([], 'Pilih tes/tahap yang mau dijadwalkan.');
+            if ($posisiId && ! $programId) {
+                $programId = (int) DB::table('N_WEB_CAREERS_Program_Posisi')
+                    ->where('Id_Program_Posisi', $posisiId)->value('Program_Id');
             }
 
-            $rows = $this->kueriKandidat($programId, $tahapUrutan, $tesUrutan, $cari, $tahapKode, $tesId)
+            if (! $programId) {
+                return ResponseHelper::success(self::kosongKandidat(), 'Pilih lowongan atau program terlebih dahulu.');
+            }
+            if (! $tahapUrutan && ! $tahapKode) {
+                return ResponseHelper::success(self::kosongKandidat(), 'Pilih tes/tahap yang mau dijadwalkan.');
+            }
+
+            $batas = (int) config('hclearn.maks_peserta', 1000);
+            $dasar = fn () => $this->kueriKandidat($programId, $tahapUrutan, $tesUrutan, $cari, $tahapKode, $tesId, $posisiId);
+
+            // ══ BERAPA SEBENARNYA YANG MENUNGGU ══════════════════════════════
+            //
+            // Dihitung SEBELUM dipotong. Dulu daftarnya diam-diam berhenti di
+            // batas: 1.240 orang menunggu, 1.000 yang tampil, dan admin yang
+            // menekan "Pilih semua" percaya ia menjadwalkan semuanya. 240 orang
+            // tertinggal tanpa satu baris pun yang menyebutkannya — dan yang
+            // pertama tahu adalah mereka, saat harinya tiba tanpa token.
+            $total = $dasar()->count();
+
+            $rows = $dasar()
                 ->orderBy('u.Nama')
                 // Angka yang sama dengan batas validasi penjadwalan — daftar
                 // tidak boleh menawarkan orang yang nanti ditolak saat dikirim.
-                ->limit((int) config('hclearn.maks_peserta', 1000))
+                ->limit($batas)
                 ->get([
                     'l.Kode as kode', 'u.Nama as nama', 'u.No_Hp as hp', 'u.Email as email',
                     'pos.Posisi as posisi', 't.Label as tahap', 't.Urutan as urutanTahap',
@@ -457,9 +576,22 @@ class PenjadwalanController extends Controller
                 ])
                 ->values();
 
+            $terpotong = $total > $rows->count();
+
             return ResponseHelper::success(
-                $rows,
-                $rows->isEmpty() ? $this->alasanKosong($programId, $tahapUrutan, $tesUrutan, $tahapKode, $tesId) : 'Kandidat dimuat'
+                [
+                    'items' => $rows,
+                    // Yang benar-benar menunggu, bukan yang muat di layar.
+                    'total' => $total,
+                    'batas' => $batas,
+                    'terpotong' => $terpotong,
+                ],
+                $rows->isEmpty()
+                    ? $this->alasanKosong($programId, $tahapUrutan, $tesUrutan, $tahapKode, $tesId, $posisiId)
+                    : ($terpotong
+                        ? "Menampilkan {$rows->count()} dari {$total} kandidat yang menunggu — satu sesi menampung {$batas} peserta. "
+                            .'Jadwalkan bergelombang, atau persempit dengan lowongan/pencarian.'
+                        : 'Kandidat dimuat')
             );
         } catch (\Throwable $e) {
             Log::channel('web_career')->error('Gagal memuat kandidat: '.$e->getMessage());
@@ -468,13 +600,44 @@ class PenjadwalanController extends Controller
         }
     }
 
+    /**
+     * Judul sesi: "Paket — Program · Lowongan", dipotong agar muat 200 karakter.
+     *
+     * Yang dikorbankan lebih dulu bagian yang paling bisa ditebak dari
+     * konteksnya. Nama paket ujian dipertahankan utuh selama mungkin — itu yang
+     * dicari admin saat memindai daftar sesi; nama program dan lowongan sudah
+     * tertulis lagi di kolom-kolomnya sendiri.
+     */
+    private static function namaSesi(string $paket, string $program, ?string $posisi = null): string
+    {
+        $batas = 200;
+        $ekor = ' — '.$program.($posisi ? ' · '.$posisi : '');
+
+        // Ekornya sendiri kepanjangan: program + lowongan saja sudah melewati
+        // batas. Dipotong dari ekor, bukan dari paketnya.
+        if (mb_strlen($ekor) > $batas - 20) {
+            $ekor = mb_substr($ekor, 0, $batas - 20 - 1).'…';
+        }
+
+        $sisa = $batas - mb_strlen($ekor);
+        $kepala = mb_strlen($paket) > $sisa ? mb_substr($paket, 0, $sisa - 1).'…' : $paket;
+
+        return $kepala.$ekor;
+    }
+
+    /** Bentuk balasan kosong `kandidat()` — supaya layar tak pernah menerima dua bentuk. */
+    private static function kosongKandidat(): array
+    {
+        return ['items' => [], 'total' => 0, 'batas' => (int) config('hclearn.maks_peserta', 1000), 'terpotong' => false];
+    }
+
     /** Kueri dasar kandidat: sub-tes yang butuh jadwal pihak ke-3 & belum punya. */
     /**
      * @param  string|null  $tahapKode  identitas tahap. Bila diisi, INI yang
      *                                  dipakai menyaring dan $tahapUrutan cuma
      *                                  cadangan untuk baris lama tanpa Kode.
      */
-    private function kueriKandidat(int $programId, ?int $tahapUrutan, ?int $tesUrutan, string $cari = '', ?string $tahapKode = null, ?int $tesId = null)
+    private function kueriKandidat(?int $programId, ?int $tahapUrutan, ?int $tesUrutan, string $cari = '', ?string $tahapKode = null, ?int $tesId = null, ?int $posisiId = null)
     {
         $cat = $this->tipeCat();
 
@@ -486,7 +649,20 @@ class PenjadwalanController extends Controller
             ->join('N_WEB_CAREERS_Lamaran_Tahap_Tes as st', 'st.Lamaran_Tahap_Id', '=', 't.Id_Lamaran_Tahap')
             ->join('N_WEB_CAREERS_Users as u', 'u.Id_Users', '=', 'l.Id_Users')
             ->leftJoin('N_WEB_CAREERS_Program_Posisi as pos', 'pos.Id_Program_Posisi', '=', 'l.Program_Posisi_Id')
-            ->where('l.Program_Id', $programId)
+            // GERBANG PIC LOKER. Menjadwalkan kandidat orang lain sama saja
+            // dengan mengerjakannya: token ujian terbit atas namanya, dan
+            // pemegang lokernya baru tahu saat jadwalnya sudah terkunci.
+            ->tap(fn ($qb) => AksesService::saringPicLoker($qb, self::PAGE, 'pos.Pic_Kode_Karyawan'))
+            // Program boleh kosong — dipakai menungguPerLoker(), yang menyapu
+            // seluruh loker yang boleh dilihat pengguna sekaligus.
+            ->when($programId, fn ($q) => $q->where('l.Program_Id', $programId))
+            // ── SATU LOWONGAN SAJA ──
+            //
+            // Penyaring inilah yang membuat penjadwalan "by job vacancy" bukan
+            // sekadar tampilan: yang dikirim ke HCLearn benar-benar hanya
+            // pelamar loker itu, bahkan bila programnya memuat lima lowongan
+            // lain yang tahapnya kebetulan sama.
+            ->when($posisiId, fn ($q) => $q->where('l.Program_Posisi_Id', $posisiId))
             ->where('l.Status', 'BERJALAN')
             ->where('t.Status', 'BERJALAN')
             // Butuh jadwal HCLearn bila TIPE AKTIVITAS itu ujian online. Aktivitas
@@ -532,16 +708,27 @@ class PenjadwalanController extends Controller
      * atau semuanya memang sudah dijadwalkan. Ditelusuri bertingkat dari yang
      * paling umum ke paling khusus.
      */
-    private function alasanKosong(int $programId, ?int $tahapUrutan, ?int $tesUrutan, ?string $tahapKode = null, ?int $tesId = null): string
+    private function alasanKosong(int $programId, ?int $tahapUrutan, ?int $tesUrutan, ?string $tahapKode = null, ?int $tesId = null, ?int $posisiId = null): string
     {
+        // SEBUTKAN LOWONGANNYA, bukan cuma programnya.
+        //
+        // Sejak sesi bisa disusun per lowongan, "belum ada pelamar berjalan di
+        // program ini" bisa keliru dua kali sekaligus: programnya ramai, yang
+        // sepi lokernya. Admin lalu mencari kesalahan di tempat yang salah.
+        $sebut = $posisiId
+            ? 'lowongan ini'
+            : 'program ini';
+
         $berjalan = DB::table('N_WEB_CAREERS_Lamaran')
-            ->where('Program_Id', $programId)->where('Status', 'BERJALAN')->count();
+            ->where('Program_Id', $programId)->where('Status', 'BERJALAN')
+            ->when($posisiId, fn ($q) => $q->where('Program_Posisi_Id', $posisiId))
+            ->count();
         if ($berjalan === 0) {
-            return 'Belum ada pelamar berjalan di program ini.';
+            return "Belum ada pelamar berjalan di {$sebut}.";
         }
 
         // Abaikan saringan tahap → apakah ada yang menunggu jadwal sama sekali?
-        $tanpaTahap = $this->kueriKandidat($programId, null, null)->count();
+        $tanpaTahap = $this->kueriKandidat($programId, null, null, '', null, null, $posisiId)->count();
         if ($tanpaTahap > 0 && ($tahapUrutan || $tahapKode)) {
             return "Ada {$tanpaTahap} kandidat menunggu jadwal, tetapi bukan di tahap ini. Pilih tes/tahap lain di daftar sebelah.";
         }
@@ -552,6 +739,7 @@ class PenjadwalanController extends Controller
                 ->on('t.Lamaran_Id', '=', 'l.Id_Lamaran')->on('t.Urutan', '=', 'l.Urutan_Tahap'))
             ->join('N_WEB_CAREERS_Lamaran_Tahap_Tes as st', 'st.Lamaran_Tahap_Id', '=', 't.Id_Lamaran_Tahap')
             ->where('l.Program_Id', $programId)->where('l.Status', 'BERJALAN')
+            ->when($posisiId, fn ($q) => $q->where('l.Program_Posisi_Id', $posisiId))
             ->whereNotNull('st.Penjadwalan_Tahap_Id')
             ->when($tahapKode, fn ($q) => $q->where('t.Kode', $tahapKode))
             ->when(! $tahapKode && $tahapUrutan, fn ($q) => $q->where('t.Urutan', $tahapUrutan))
@@ -570,6 +758,7 @@ class PenjadwalanController extends Controller
             ->join('N_WEB_CAREERS_Lamaran_Tahap as t', fn ($j) => $j
                 ->on('t.Lamaran_Id', '=', 'l.Id_Lamaran')->on('t.Urutan', '=', 'l.Urutan_Tahap'))
             ->where('l.Program_Id', $programId)->where('l.Status', 'BERJALAN')
+            ->when($posisiId, fn ($q) => $q->where('l.Program_Posisi_Id', $posisiId))
             ->select('t.Label', DB::raw('COUNT(*) as n'))
             ->groupBy('t.Label')->orderByDesc(DB::raw('COUNT(*)'))->limit(3)->get();
 
@@ -1018,6 +1207,10 @@ class PenjadwalanController extends Controller
         try {
             $data = $request->validate([
                 'programId' => 'required|integer',
+                // LOWONGAN yang disasar sesi ini. Nullable: satu sesi untuk
+                // seisi program tetap sah, dan permintaan lama tidak mengenal
+                // medan ini sama sekali.
+                'posisiId' => 'nullable|integer|min:1',
                 // Tahap yang dijadwalkan — acuan urutan di alur program, bukan
                 // jenis tes. tesUrutan hanya perlu bila tahapnya multi-aktivitas.
                 'tahapUrutan' => 'required|integer|min:1',
@@ -1056,6 +1249,26 @@ class PenjadwalanController extends Controller
             $program = DB::table('N_WEB_CAREERS_Program')->where('Id_Program', $data['programId'])->first();
             if (! $program) {
                 return ResponseHelper::error('Program tidak ditemukan.', 422);
+            }
+
+            // ── LOWONGAN HARUS MILIK PROGRAM INI ────────────────────────────
+            //
+            // Layar mengirim keduanya, dan keduanya bisa berselisih bila admin
+            // mengganti lowongan lalu menekan Generate dari tab yang basi.
+            // Tanpa gerbang ini, penyaring loker menyapu nol orang dan sesinya
+            // lahir kosong — tanpa satu pun galat yang menerangkan kenapa.
+            $posisiId = (int) ($data['posisiId'] ?? 0) ?: null;
+            $posisi = null;
+            if ($posisiId) {
+                $posisi = DB::table('N_WEB_CAREERS_Program_Posisi')
+                    ->where('Id_Program_Posisi', $posisiId)->first(['Program_Id', 'Posisi', 'Mpp_Ref']);
+
+                if (! $posisi) {
+                    return ResponseHelper::error('Lowongan tidak ditemukan.', 422);
+                }
+                if ((int) $posisi->Program_Id !== (int) $program->Id_Program) {
+                    return ResponseHelper::error("Lowongan '{$posisi->Posisi}' bukan milik program '{$program->Nama}'. Muat ulang halaman lalu pilih ulang.", 422);
+                }
             }
 
             $alur = DB::table('N_WEB_CAREERS_Master_Alur')->where('Kode', $program->Alur_Kode)->first();
@@ -1169,13 +1382,23 @@ class PenjadwalanController extends Controller
                 ->flatMap(fn ($sepotong) => DB::table('N_WEB_CAREERS_Lamaran as l')
                     ->join('N_WEB_CAREERS_Users as u', 'u.Id_Users', '=', 'l.Id_Users')
                     ->leftJoin('N_WEB_CAREERS_Program_Posisi as pos', 'pos.Id_Program_Posisi', '=', 'l.Program_Posisi_Id')
+            // GERBANG PIC LOKER. Menjadwalkan kandidat orang lain sama saja
+            // dengan mengerjakannya: token ujian terbit atas namanya, dan
+            // pemegang lokernya baru tahu saat jadwalnya sudah terkunci.
+            ->tap(fn ($qb) => AksesService::saringPicLoker($qb, self::PAGE, 'pos.Pic_Kode_Karyawan'))
                     ->whereIn('l.Kode', $sepotong->values()->all())
                     ->where('l.Program_Id', $program->Id_Program)
+                    // Sesi per lowongan: yang bukan pelamar loker itu tidak
+                    // dikenali di sini, lalu ditolak jelas-jelas di bawah
+                    // sebagai "bukan pelamar" — bukan diam-diam ikut terkirim.
+                    ->when($posisiId, fn ($q) => $q->where('l.Program_Posisi_Id', $posisiId))
                     ->get(['l.Kode', 'l.Id_Lamaran', 'u.Id_Users', 'u.Kode_Calon', 'u.Nama', 'u.Email', 'u.No_Hp', 'pos.Posisi']))
                 ->keyBy('Kode');
             $tidakDikenal = array_diff($data['peserta'], $kandidat->keys()->all());
             if ($tidakDikenal) {
-                return ResponseHelper::error('Kandidat tidak dikenal / bukan pelamar program ini: '.implode(', ', array_slice($tidakDikenal, 0, 5)), 422);
+                $ruang = $posisi ? "lowongan '{$posisi->Posisi}'" : 'program ini';
+
+                return ResponseHelper::error("Kandidat tidak dikenal / bukan pelamar {$ruang}: ".implode(', ', array_slice($tidakDikenal, 0, 5)), 422);
             }
 
             // Semua peserta WAJIB punya Kode_Calon (identitas HCLearn dari register).
@@ -1202,6 +1425,7 @@ class PenjadwalanController extends Controller
                 '',
                 $tahapTes->Kode ?: null,
                 $tesIdMaster,
+                $posisiId,
             )->pluck('l.Kode')->all();
 
             // ── GERBANG "INI UJIAN ONLINE?" ─────────────────────────────────
@@ -1243,7 +1467,7 @@ class PenjadwalanController extends Controller
             // dicari nomor bebas berikutnya dan diverifikasi belum ada.
             $kode = $this->kodeBaru();
 
-            $ids = DB::transaction(function () use ($data, $program, $alur, $semuaTahap, $tahapTes, $tesUrutan, $tesIdMaster, $tahapKodeDipakai, $kandidat, $kode, $userId, $userName, $now) {
+            $ids = DB::transaction(function () use ($data, $program, $posisi, $alur, $semuaTahap, $tahapTes, $tesUrutan, $tesIdMaster, $tahapKodeDipakai, $kandidat, $kode, $userId, $userName, $now) {
                 // Penyaring tahap milik kandidat — Kode bila ada, nomor urut hanya
                 // untuk baris pra-mesin yang memang tak punya Kode. Ditulis sekali
                 // di sini lalu dipakai dua kali di bawah, supaya mustahil berselisih.
@@ -1253,7 +1477,13 @@ class PenjadwalanController extends Controller
 
                 $penjadwalanId = DB::table('N_WEB_CAREERS_Penjadwalan')->insertGetId([
                     'Kode' => $kode,
-                    'Nama' => $data['namaUjian'].' — '.$program->Nama,
+                    // NAMA SESI — dipendekkan agar muat, bukan kolomnya yang
+                    // dilebarkan. Nama_Ujian dari HCLearn boleh 255 karakter
+                    // sementara kolom ini varchar(200); ditambah nama program
+                    // (dan kini nama lowongan), sesi berjudul panjang ditolak
+                    // SQL Server dengan "string or binary data would be
+                    // truncated" — galat yang tak menyebut kolomnya sama sekali.
+                    'Nama' => self::namaSesi($data['namaUjian'], $program->Nama, $posisi->Posisi ?? null),
                     'Program_Id' => $program->Id_Program,
                     'Master_Alur_Id' => $alur->Id_Master_Alur,
                     'Tanggal_Mulai' => substr($data['waktuMulai'], 0, 10),
@@ -1429,6 +1659,25 @@ class PenjadwalanController extends Controller
             $jml = count($data['peserta']);
             Log::channel('web_career')->info("Penjadwalan {$kode} dibuat oleh {$userName} — {$jml} peserta diantrekan ke {$antrean}.");
 
+            // ══ ANTREANNYA BENAR-BENAR ANTREAN? ══════════════════════════════
+            //
+            // Dengan QUEUE_CONNECTION=sync job di atas TIDAK diantrekan — ia
+            // dijalankan di dalam permintaan ini juga. Untuk 15 orang tak ada
+            // bedanya; untuk 500 orang itu berarti 25 panggilan HTTP ke CAT di
+            // dalam satu permintaan web, dan yang terjadi adalah habis waktu di
+            // tengah jalan lalu admin menekan Generate lagi.
+            //
+            // Tidak ditolak — lingkungan uji memang sengaja memakai sync. Yang
+            // dilakukan cuma menyebutnya, sekali, di tempat yang pasti terbaca.
+            $sinkron = config('queue.default') === 'sync';
+            if ($sinkron && $jml > (int) config('hclearn.chunk_peserta', 20)) {
+                Log::channel('web_career')->warning(
+                    "[ANTREAN] {$kode} dibuat untuk {$jml} peserta sementara QUEUE_CONNECTION=sync — "
+                    .'token diterbitkan di dalam permintaan web, bukan di latar belakang. '
+                    .'Setel QUEUE_CONNECTION=webcareers (atau cloudtasks) dan jalankan worker.'
+                );
+            }
+
             return ResponseHelper::success(
                 [
                     // Id-nya ikut dikembalikan supaya panel antrean bisa
@@ -1438,7 +1687,9 @@ class PenjadwalanController extends Controller
                     'id' => Hashids::encode($ids['penjadwalan']),
                     'kode' => $kode, 'jumlahPeserta' => $jml, 'status' => 'DIANTRIKAN',
                 ],
-                "Penjadwalan {$kode} dibuat — token untuk {$jml} kandidat sedang diterbitkan di latar belakang. Segarkan daftar sebentar lagi untuk melihat hasilnya.",
+                $sinkron
+                    ? "Penjadwalan {$kode} dibuat — token untuk {$jml} kandidat diterbitkan langsung (antrean lingkungan ini disetel 'sync')."
+                    : "Penjadwalan {$kode} dibuat — token untuk {$jml} kandidat sedang diterbitkan di latar belakang. Segarkan daftar sebentar lagi untuk melihat hasilnya.",
                 201
             );
         } catch (\Illuminate\Validation\ValidationException $e) {

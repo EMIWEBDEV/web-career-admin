@@ -38,6 +38,8 @@ import AppShell from './Layouts/AppShell.vue';
 // Refresh CSRF single-flight dipusatkan di utils/csrf agar dipakai bersama
 // interceptor axios (di bawah) dan wrapper fetch (di bootstrap.js).
 import { refreshCsrfToken } from './utils/csrf';
+// Akhiran judul tab ("... | Careers Evo Group") — satu format untuk semua halaman.
+import { judulHalaman } from './utils/judulHalaman';
 
 // Bersihkan SEMUA jejak token CSRF lama dari sebuah request config sebelum
 // retry. Laravel memeriksa token dengan urutan: body `_token` -> header
@@ -140,6 +142,11 @@ axios.interceptors.response.use(
 );
 
 createInertiaApp({
+    // SATU tempat yang menentukan bentuk judul tab untuk SELURUH halaman.
+    // Halaman cukup menulis <Head title="Master Kampus" />, Inertia yang
+    // menempelkan " | Careers Evo Group". Halaman tanpa <Head> tetap dapat
+    // judul default, bukan URL mentah seperti sebelumnya.
+    title: judulHalaman,
     progress: {
         color: '#4f46e5',
         delay: 150,

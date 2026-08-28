@@ -91,7 +91,7 @@ export default {
 
 <template>
     <AuthShell
-        page-title="Verifikasi Email - EVO Group Career"
+        page-title="Verifikasi Email"
         eyebrow="Verifikasi Akun"
         title="Konfirmasi"
         title-accent="Email."

@@ -2,7 +2,7 @@
      DATA via web route + ResponseHelper (axios), bukan props Inertia.
      Dua entitas dalam satu halaman: PERTANYAAN dan KATEGORI. -->
 <template>
-    <Head><title>Master FAQ - Web Career</title></Head>
+    <Head title="Master FAQ" />
     <div class="wca">
         <div class="wca-phead">
             <div>

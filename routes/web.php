@@ -18,6 +18,10 @@ use Inertia\Inertia;
 | Semua rute berjalan di grup middleware "web" (session, CSRF, Inertia).
 */
 
+// robots.txt DINAMIS — menggantikan berkas statis public/robots.txt yang dulu
+// berisi "Disallow: /" dan ikut terbawa ke produksi. Lihat RobotsController.
+Route::get('/robots.txt', \App\Http\Controllers\RobotsController::class)->name('robots');
+
 // Root = halaman utama situs karir (landing).
 Route::get('/', [CareerLandingController::class, 'index'])->name('career.home');
 

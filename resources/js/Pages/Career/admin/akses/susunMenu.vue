@@ -5,7 +5,7 @@
      Tidak ada yang tersimpan sebelum tombol "Simpan Susunan" ditekan, dan
      pencabutan halaman ditahan dulu di baki "Akan dicabut" supaya bisa dibatalkan. -->
 <template>
-    <Head><title>Susun Menu - Web Career</title></Head>
+    <Head title="Susun Menu" />
     <div class="wca sm-page">
         <!-- ░░ KEPALA ░░ -->
         <div class="sm-head">
@@ -108,14 +108,31 @@
                                     placeholder="Nama grup (header sidebar)" maxlength="100"
                                 />
                                 <span class="sm-grp__n">{{ g.items.length }} menu</span>
+                                <span v-if="jmlSub(g)" class="sm-grp__sub">{{ jmlSub(g) }} sub-grup</span>
+                                <!-- Sidebar mengelompokkan menurut NILAI sub-grupnya, bukan
+                                     menurut posisi di daftar ini. Selama urutannya
+                                     berselang-seling, apa yang terlihat di sini tidak sama
+                                     dengan apa yang digambar sidebar — dan tombol inilah
+                                     yang menyamakan keduanya. -->
+                                <button v-if="perluRapi(g)" class="sm-mini sm-mini--rapi" type="button" title="Urutkan menu supaya sesuai tampilan sidebar" @click="rapikan(g)">
+                                    <i class="bi bi-sort-down"></i>
+                                </button>
                                 <button class="sm-mini sm-mini--danger" type="button" :title="g.items.length ? 'Kosongkan dulu grupnya' : 'Hapus grup'" :disabled="!!g.items.length" :onClick="!!g.items.length ? null : () => hapusGrup(gi)">
                                     <i class="bi bi-trash"></i>
                                 </button>
                             </div>
 
                             <draggable v-model="g.items" item-key="_k" :group="{ name: 'menu-item' }" handle=".sm-item__drag" ghost-class="sm-ghost" animation="160" class="sm-items">
-                                <template #item="{ element: it }">
+                                <template #item="{ element: it, index: ii }">
                                     <div class="sm-item" :class="{ 'is-open': terbuka === it._k, 'is-new': !it.idPageAccess, 'is-warn': it.yatim || it.nonaktifMaster }">
+                                        <!-- Pita hanya muncul saat sub-grupnya BERGANTI dari
+                                             baris sebelumnya. Menggambarnya di setiap baris
+                                             mengubah daftar jadi deretan judul, dan judul yang
+                                             berulang berhenti jadi penanda. -->
+                                        <div v-if="pisahSub(g, ii)" class="sm-band">
+                                            <span class="sm-band__t">{{ pisahSub(g, ii) }}</span>
+                                            <span class="sm-band__l"></span>
+                                        </div>
                                         <div class="sm-item__row">
                                             <span class="sm-item__drag" title="Geser item"><i class="bi bi-grip-vertical"></i></span>
                                             <span class="sm-item__ico"><i class="bi" :class="ikonKelas(it.ikon)"></i></span>
@@ -128,6 +145,9 @@
                                             <span v-else-if="!it.punyaView" class="sm-tag sm-tag--warn" title="Tanpa aksi VIEW menu ini tidak muncul di sidebar">tanpa VIEW</span>
                                             <span v-if="it.yatim" class="sm-tag sm-tag--danger" title="Master menunya sudah dihapus">yatim</span>
                                             <span v-else-if="it.nonaktifMaster" class="sm-tag sm-tag--warn" title="Menu dinonaktifkan di Master Menu">nonaktif</span>
+                                            <span v-if="it.grup" class="sm-tag sm-tag--sub" :title="`Sub-grup: ${it.grup}`">
+                                                <i class="bi bi-diagram-2"></i>{{ it.grup }}
+                                            </span>
                                             <span v-if="ditimpa(it)" class="sm-tag sm-tag--custom" title="Tampilannya ditimpa khusus akun ini">ditimpa</span>
 
                                             <button class="sm-mini" type="button" title="Ubah tampilan" @click="terbuka = terbuka === it._k ? null : it._k">
@@ -143,6 +163,17 @@
                                                 <div>
                                                     <label class="wca-field-lbl">Label di sidebar</label>
                                                     <el-input v-model="it.label" size="small" :placeholder="it.labelMaster" maxlength="150" />
+                                                </div>
+                                                <div>
+                                                    <label class="wca-field-lbl">Sub-grup</label>
+                                                    <el-select
+                                                        v-model="it.grup" size="small"
+                                                        filterable allow-create default-first-option clearable
+                                                        :placeholder="it.grupMaster || 'Tanpa sub-grup'"
+                                                        style="width:100%"
+                                                    >
+                                                        <el-option v-for="sg in subPilihan(g)" :key="sg" :label="sg" :value="sg" />
+                                                    </el-select>
                                                 </div>
                                                 <div>
                                                     <label class="wca-field-lbl">Sub-header</label>
@@ -248,6 +279,7 @@ export default {
                         labelCustom: this.bedaMaster(it.label, it.labelMaster),
                         ikonCustom: this.bedaMaster(this.ikonKelas(it.ikon), this.ikonKelas(it.ikonMaster)) ? it.ikon : null,
                         subHeaderCustom: this.bedaMaster(it.subHeader, it.subHeaderMaster),
+                        grupCustom: this.bedaMaster(it.grup, it.grupMaster),
                     })),
                 })),
                 hapus: this.dicabut.map((d) => d.idPageAccess),
@@ -290,12 +322,76 @@ export default {
         ditimpa(it) {
             return !!(this.bedaMaster(it.label, it.labelMaster)
                 || this.bedaMaster(this.ikonKelas(it.ikon), this.ikonKelas(it.ikonMaster))
-                || this.bedaMaster(it.subHeader, it.subHeaderMaster));
+                || this.bedaMaster(it.subHeader, it.subHeaderMaster)
+                || this.bedaMaster(it.grup, it.grupMaster));
         },
         kembalikanKeMaster(it) {
             it.label = it.labelMaster;
             it.ikon = it.ikonMaster;
             it.subHeader = it.subHeaderMaster || '';
+            it.grup = it.grupMaster || '';
+        },
+
+        /* ── SUB-GRUP ───────────────────────────────────────────────────────
+           Sub-grup di sini bukan wadah yang bisa diseret, melainkan NILAI yang
+           menempel di tiap menu — persis seperti label dan ikonnya. Itu bukan
+           penyederhanaan: sidebar memang mengelompokkan menurut nilai, jadi
+           wadah yang bisa diseret di layar ini akan menjanjikan sesuatu yang
+           tidak dijamin hasil akhirnya. Yang digambar di sini hanya pita
+           penanda, supaya nilai itu tetap terlihat tanpa berpura-pura jadi
+           wadah. */
+
+        /** Sub-grup yang sudah dipakai di grup ini — ditawarkan saat menyunting. */
+        subPilihan(g) {
+            const dari = (g?.items || []).map((x) => (x.grup || '').trim()).filter(Boolean);
+            const master = (this.tersedia || []).map((x) => (x.grupMaster || '').trim()).filter(Boolean);
+
+            return [...new Set([...dari, ...master])].sort((a, b) => a.localeCompare(b, 'id'));
+        },
+        jmlSub(g) {
+            return new Set((g.items || []).map((x) => (x.grup || '').trim()).filter(Boolean)).size;
+        },
+        /** Judul pita bila baris ke-i memulai rentetan sub-grup baru. */
+        pisahSub(g, i) {
+            const kini = (g.items[i]?.grup || '').trim();
+            if (!kini) return '';
+
+            const sebelum = i > 0 ? (g.items[i - 1]?.grup || '').trim() : '';
+
+            return kini === sebelum ? '' : kini;
+        },
+        /** Sub-grup yang sama muncul di dua tempat terpisah = urutannya belum rapi. */
+        perluRapi(g) {
+            const urut = (g.items || []).map((x) => (x.grup || '').trim());
+            const lihat = new Set();
+            let lalu = null;
+            for (const k of urut) {
+                if (k !== lalu) {
+                    if (lihat.has(k)) return true;
+                    lihat.add(k);
+                    lalu = k;
+                }
+            }
+
+            return false;
+        },
+        /**
+         * Kumpulkan menu yang sesub-grup jadi berdekatan, tanpa mengubah urutan
+         * di dalamnya maupun urutan kemunculan sub-grupnya. Menu tanpa sub-grup
+         * naik ke atas — di sidebar pun ia digambar sebelum sub-grup pertama.
+         */
+        rapikan(g) {
+            const urutSub = [];
+            for (const it of g.items) {
+                const k = (it.grup || '').trim();
+                if (k && !urutSub.includes(k)) urutSub.push(k);
+            }
+
+            const lepas = g.items.filter((it) => !(it.grup || '').trim());
+            const berkelompok = urutSub.flatMap((k) => g.items.filter((it) => (it.grup || '').trim() === k));
+
+            g.items = [...lepas, ...berkelompok];
+            this.notice('Urutan disamakan dengan tampilan sidebar.');
         },
 
         async muat() {
@@ -307,7 +403,11 @@ export default {
                 this.grup = (r.struktur || []).map((g) => ({
                     _k: kunci(),
                     judul: g.judul,
-                    items: (g.items || []).map((it) => ({ ...it, _k: kunci(), subHeader: it.subHeader || '' })),
+                    items: (g.items || []).map((it) => ({
+                        ...it, _k: kunci(),
+                        subHeader: it.subHeader || '',
+                        grup: it.grup || '',
+                    })),
                 }));
                 this.dicabut = [];
                 this.pilihan = [];
@@ -337,6 +437,7 @@ export default {
                     label: m.label, labelMaster: m.labelMaster,
                     ikon: m.ikon, ikonMaster: m.ikonMaster,
                     subHeader: m.subHeaderMaster || '', subHeaderMaster: m.subHeaderMaster,
+                    grup: m.grupMaster || '', grupMaster: m.grupMaster,
                     headerMaster: m.headerMaster,
                     url: m.url, role: m.role,
                     yatim: false, nonaktifMaster: false,
@@ -372,6 +473,7 @@ export default {
             return {
                 jenisPage: it.jenisPage, label: it.labelMaster, labelMaster: it.labelMaster,
                 header: it.headerMaster, headerMaster: it.headerMaster, subHeaderMaster: it.subHeaderMaster,
+                grup: it.grupMaster, grupMaster: it.grupMaster,
                 ikon: it.ikonMaster, ikonMaster: it.ikonMaster, url: it.url, role: it.role,
             };
         },
@@ -509,17 +611,57 @@ export default {
 .sm-tag--warn { background: #fef3c7; color: #b45309; }
 .sm-tag--danger { background: #fee2e2; color: #b91c1c; }
 .sm-tag--custom { background: #ede9fe; color: #6d28d9; }
+/* Keping sub-grup dibuat TENANG, bukan berwarna seperti keping keadaan di
+   sebelahnya. "baru" dan "yatim" menuntut tindakan; sub-grup cuma menyatakan
+   di mana menu ini akan duduk — dan keping seterang tetangganya membuat mata
+   menganggap keduanya sama penting. */
+.sm-tag--sub {
+    display: inline-flex; align-items: center; gap: 4px;
+    max-width: 160px;
+    background: #f1f3fa; color: #64748b;
+    text-transform: none; letter-spacing: 0; font-size: 10px; font-weight: 700;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sm-tag--sub i { font-size: 9px; color: #a5b4fc; }
 
 .sm-mini { flex: none; border: 1px solid rgba(15,23,42,.1); background: #fff; color: #475569; border-radius: 8px; width: 26px; height: 26px; cursor: pointer; font-size: 11px; }
 .sm-mini:hover:not(:disabled) { background: #f1f5f9; }
 .sm-mini:disabled { opacity: .35; cursor: not-allowed; }
 .sm-mini--danger { border-color: #fecaca; color: #b91c1c; }
 .sm-mini--danger:hover:not(:disabled) { background: #fef2f2; }
+.sm-mini--rapi { border-color: #c7d2fe; color: #4338ca; background: #f5f6ff; }
+.sm-mini--rapi:hover:not(:disabled) { background: #eef2ff; }
 
 .sm-item__edit { border-top: 1px dashed rgba(15,23,42,.1); padding: .6rem .6rem .55rem; background: #fbfcfe; border-radius: 0 0 9px 9px; }
-.sm-edit__grid { display: grid; grid-template-columns: 1.2fr 1fr auto; gap: .55rem; align-items: end; }
+.sm-edit__grid { display: grid; grid-template-columns: 1.15fr 1fr 1fr auto; gap: .55rem; align-items: end; }
 .sm-edit__foot { display: flex; align-items: center; justify-content: space-between; gap: .6rem; margin-top: .5rem; }
 .sm-edit__note { font-size: 10.5px; color: #94a3b8; }
+
+/* ── PITA SUB-GRUP ───────────────────────────────────────────────────────────
+   Setipis mungkin. Ia penanda tempat, bukan baris yang bisa dipilih — kalau
+   setinggi item, daftar sepuluh menu terlihat seperti daftar enam belas. */
+.sm-band {
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 6px 3px;
+}
+.sm-band__t {
+    flex: 0 0 auto;
+    font-size: 9.5px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase;
+    color: #7c86a8;
+}
+.sm-band__l {
+    flex: 1; height: 1px;
+    background: linear-gradient(90deg, rgba(99,102,241,.28), rgba(99,102,241,0));
+}
+/* Item pertama sesudah pita tidak perlu jarak ganda. */
+.sm-item:first-child .sm-band { padding-top: 2px; }
+
+.sm-grp__sub {
+    flex: none;
+    font-size: 10px; font-weight: 700;
+    color: #4338ca; background: rgba(99,102,241,.1);
+    border-radius: 6px; padding: 2px 7px;
+}
 
 .sm-newgrp { display: inline-flex; align-items: center; gap: .4rem; margin-top: .7rem; border: 1px dashed rgba(79,70,229,.4); background: #f8f9ff; color: #4338ca; font-size: 12px; font-weight: 700; border-radius: 10px; padding: .5rem .85rem; cursor: pointer; }
 .sm-newgrp:hover { background: #eef2ff; }
@@ -529,6 +671,9 @@ export default {
     .sm-body { grid-template-columns: 1fr; }
     .sm-left { position: static; max-height: none; }
     .sm-left__list { max-height: 40vh; }
+    .sm-edit__grid { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 620px) {
     .sm-edit__grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 640px) {

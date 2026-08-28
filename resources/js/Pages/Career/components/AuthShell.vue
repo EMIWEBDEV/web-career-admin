@@ -172,7 +172,9 @@
 import { Head, Link } from '@inertiajs/vue3';
 
 defineProps({
-    pageTitle: { type: String, default: 'EVO Group Career' },
+    // Akhiran " | Careers Evo Group" ditempel otomatis oleh createInertiaApp
+    // (lihat utils/judulHalaman.js) — jangan ditulis ulang di sini.
+    pageTitle: { type: String, default: 'Portal Kandidat' },
     eyebrow: { type: String, default: 'Portal Career' },
     title: { type: String, default: 'Karier Impian' },
     titleAccent: { type: String, default: 'Dimulai di Sini.' },

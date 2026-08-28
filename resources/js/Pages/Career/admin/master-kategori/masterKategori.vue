@@ -1,6 +1,6 @@
 <!-- WEB CAREER — Master Kategori (per-modul, pola Master Siklus). DATA via web route + ResponseHelper (axios), bukan props Inertia. -->
 <template>
-    <Head><title>Master Kategori - Web Career</title></Head>
+    <Head title="Master Kategori" />
     <div class="wca">
         <div class="wca-phead">
             <div>

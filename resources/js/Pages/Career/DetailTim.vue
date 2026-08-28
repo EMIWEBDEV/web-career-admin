@@ -7,9 +7,7 @@
      (lihat TimSection.vue), bukan url() di CSS.
      ══════════════════════════════════════════════════════════ -->
 <template>
-    <Head>
-        <title>{{ judulTab }}</title>
-    </Head>
+    <Head :title="judulTab" />
 
     <CareerLayout :has-mt="hasMt" :offices="offices">
         <div class="dt">
@@ -361,7 +359,7 @@ function getGalleryBadgeTitle(index) {
 }
 
 const namaTim = computed(() => props.tim?.nama || 'Information Technology');
-const judulTab = computed(() => `Tim ${namaTim.value} - EVO Group Career`);
+const judulTab = computed(() => `Tim ${namaTim.value}`);
 
 function scrollToLowongan() {
     const el = document.getElementById('section-lowongan');

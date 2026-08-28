@@ -4,7 +4,6 @@ namespace App\Support\Career;
 
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 
 /**
  * WEB CAREERS — BATAS WAKTU (SLA) SEBUAH MPP, DIHITUNG DALAM HARI KERJA.
@@ -51,7 +50,7 @@ class SlaMpp
     {
         static $ada = null;
 
-        return $ada ??= Schema::hasTable(self::TABEL);
+        return $ada ??= Skema::adaTabel(self::TABEL);
     }
 
     /** Kolom snapshot sudah ada di transaksi MPP? */
@@ -59,7 +58,7 @@ class SlaMpp
     {
         static $ada = null;
 
-        return $ada ??= Schema::hasColumn('N_WEB_CAREERS_Detail_MPP', 'Sla_Hari_Kerja');
+        return $ada ??= Skema::adaKolom('N_WEB_CAREERS_Detail_MPP', 'Sla_Hari_Kerja');
     }
 
     /**
@@ -203,7 +202,7 @@ class SlaMpp
      */
     private static function hariLibur(Carbon $dari, Carbon $sampai): array
     {
-        if (! Schema::hasTable('HRIS_Hari_Libur')) {
+        if (! Skema::adaTabel('HRIS_Hari_Libur')) {
             return [];
         }
 

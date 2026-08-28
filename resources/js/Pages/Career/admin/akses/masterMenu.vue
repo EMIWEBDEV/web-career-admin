@@ -1,6 +1,6 @@
 <!-- WEB CAREERS — Master Menu (daftar halaman yang bisa diberi hak akses). -->
 <template>
-    <Head><title>Master Menu - Web Career</title></Head>
+    <Head title="Master Menu" />
     <div class="wca">
         <div class="pkg-head">
             <div class="pkg-head__l">
@@ -125,6 +125,33 @@
                             </el-select>
                         </div>
                     </div>
+                    <!-- Tingkat kedua sidebar. Dibiarkan kosong = menu duduk
+                         langsung di bawah headernya, seperti sebelum kolom ini
+                         ada — jadi mengabaikannya tidak merusak apa pun.
+
+                         Ditawarkan sebagai pilihan dari sub-grup yang sudah
+                         dipakai header yang sama, tapi tetap bisa diketik baru:
+                         mengetik ulang "Lowongan & MPP" dengan spasi berbeda
+                         menghasilkan dua sub-grup yang terlihat kembar. -->
+                    <div class="wca-frow">
+                        <div>
+                            <label class="wca-field-lbl">Sub-grup</label>
+                            <el-select
+                                v-model="form.grup"
+                                filterable allow-create default-first-option clearable
+                                placeholder="Kosongkan bila tanpa sub-grup"
+                                style="width:100%"
+                            >
+                                <el-option v-for="g in grupPilihan" :key="g" :label="g" :value="g" />
+                            </el-select>
+                            <small class="mm-hint">Tingkat kedua di dalam grup, mis. “Phone Screening”.</small>
+                        </div>
+                        <div>
+                            <label class="wca-field-lbl">Urutan Sub-grup</label>
+                            <el-input-number v-model="form.urutanGrup" :min="0" :max="999" controls-position="right" style="width:100%" />
+                            <small class="mm-hint">Urutan sub-grupnya sendiri, bukan menunya.</small>
+                        </div>
+                    </div>
                     <div class="wca-frow">
                         <div><label class="wca-field-lbl">URL</label><el-input v-model="form.url" placeholder="/master-alur" /></div>
                         <div><label class="wca-field-lbl">Urutan</label><el-input-number v-model="form.urutan" :min="0" :max="9999" controls-position="right" style="width:100%" /></div>
@@ -155,7 +182,7 @@ import { ingatModal } from '@utils/ingatModal';
 
 const API = '/api/v1/master-menu';
 const CFG = { headers: { Accept: 'application/json' } };
-const KOSONG = { jenisPage: '', nama: '', header: '', subHeader: '', ikon: '', url: '', role: 'ADMIN', urutan: 0 };
+const KOSONG = { jenisPage: '', nama: '', header: '', subHeader: '', grup: '', urutanGrup: null, ikon: '', url: '', role: 'ADMIN', urutan: 0 };
 
 export default {
     components: { Head, AdminModal, ConfirmModal, IconPicker },
@@ -173,6 +200,22 @@ export default {
     computed: {
         adaFilter() { return !!(this.filters.q || this.filters.role || this.filters.status); },
         jumlahFilter() { return [this.filters.q, this.filters.role, this.filters.status].filter(Boolean).length; },
+        /**
+         * Sub-grup yang sudah dipakai HEADER yang sedang dipilih.
+         *
+         * Dipersempit ke headernya, bukan seluruh daftar: "Talent Pool" milik
+         * Seleksi tidak ada gunanya ditawarkan saat headernya Master Data, dan
+         * menawarkannya justru mengundang sub-grup bernama sama muncul di dua
+         * tempat yang tidak berhubungan.
+         */
+        grupPilihan() {
+            const h = (this.form.header || '').trim().toLowerCase();
+            const cocok = this.list.filter(
+                (m) => m.grup && (!h || (m.header || '').trim().toLowerCase() === h),
+            );
+
+            return [...new Set(cocok.map((m) => m.grup))].sort((a, b) => a.localeCompare(b, 'id'));
+        },
     },
     mounted() { this.load(); },
     methods: {
@@ -190,7 +233,11 @@ export default {
         openCreate() { this.editingId = null; this.form = { ...KOSONG }; this.show = true; },
         openEdit(m) {
             this.editingId = m.id;
-            this.form = { jenisPage: m.jenisPage, nama: m.nama, header: m.header || '', subHeader: m.subHeader || '', ikon: m.ikon || '', url: m.url || '', role: m.role, urutan: m.urutan };
+            this.form = {
+                jenisPage: m.jenisPage, nama: m.nama, header: m.header || '', subHeader: m.subHeader || '',
+                grup: m.grup || '', urutanGrup: m.urutanGrup ?? null,
+                ikon: m.ikon || '', url: m.url || '', role: m.role, urutan: m.urutan,
+            };
             this.show = true;
         },
         async save() {

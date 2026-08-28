@@ -1,6 +1,6 @@
 <!-- WEB CAREERS — Manajemen Hak Akses (WordPress style: accordion pengguna → halaman → centang aksi & kategori). -->
 <template>
-    <Head><title>Manajemen Hak Akses - Web Career</title></Head>
+    <Head title="Manajemen Hak Akses" />
     <div class="wca ha-page">
         <!-- ░░ STATISTIK ░░ -->
         <div class="ha-stats">
@@ -135,6 +135,47 @@
                             </div>
                             <p class="ha-chk-note">Kosong = tidak dibatasi kategori pada halaman ini.</p>
                         </div>
+
+                        <!-- ══ LINGKUP PENANGGUNG JAWAB MPP ═══════════════════
+                             Hanya untuk halaman yang memang memakai MPP. Menaruh
+                             pilihan ini di setiap halaman berarti menawarkan
+                             pengaturan yang tidak berpengaruh pada 40-an halaman
+                             lain — dan orang akan mengubahnya lalu bertanya kenapa
+                             tidak terjadi apa-apa.
+
+                             PILIHAN TUNGGAL, bukan centang: ketiganya saling
+                             meniadakan, dan centang akan mengundang orang
+                             menyalakan dua sekaligus. -->
+                        <div v-if="HALAMAN_PIC.includes(h.jenisPage)" class="ha-chk-block">
+                            <div class="ha-chk-lbl">
+                                <i class="bi bi-person-badge-fill"></i> Lingkup Penanggung Jawab MPP
+                            </div>
+                            <div class="ha-chks">
+                                <label
+                                    v-for="l in LINGKUP"
+                                    :key="l.value"
+                                    class="ha-chk ha-chk--lingkup"
+                                    :class="{ on: (h.lingkupPic || 'SEMUA') === l.value }"
+                                    :title="l.desc"
+                                >
+                                    <input
+                                        type="radio"
+                                        :name="`lingkup-${h.idPageAccess}`"
+                                        :value="l.value"
+                                        :checked="(h.lingkupPic || 'SEMUA') === l.value"
+                                        @change="ubahLingkup(u, h, l.value)"
+                                    />
+                                    <span><i class="bi" :class="l.ikon"></i> {{ l.label }}</span>
+                                </label>
+                            </div>
+                            <p class="ha-chk-note">
+                                {{ (LINGKUP.find((x) => x.value === (h.lingkupPic || 'SEMUA')) || {}).desc }}
+                                <b v-if="(h.lingkupPic || 'SEMUA') !== 'SEMUA' && !u.kodeKaryawan">
+                                    — akun ini belum ditautkan ke karyawan, jadi ia akan melihat nol MPP sampai
+                                    Kode Karyawan diisi di Master Akun.
+                                </b>
+                            </p>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -226,6 +267,29 @@ export default {
             list: [], loading: false, loadingSum: true,
             sum: { total_user: 0, total_config: 0, total_aksi: 0, total_konten: 0 },
             ref: { aksi: [], menu: [], kategori: [], pengguna: [] },
+            // Ditulis sebagai data supaya keterangannya hidup bersama pilihannya.
+            // Tiga kalimat ini adalah satu-satunya tempat arti tiap lingkup
+            // dijelaskan kepada orang yang memilihnya.
+            // Halaman yang benar-benar memakai lingkup PIC. Ditulis sebagai
+            // daftar, bukan disebar jadi beberapa perbandingan string: menambah
+            // halaman ber-PIC nanti cukup satu baris di sini, dan tidak ada
+            // salinan yang bisa ketinggalan.
+            //
+            //   programPage      memilih MPP saat membuka lowongan
+            //   pelamarPage      mengerjakan kandidat lokernya
+            //   penjadwalanPage  menjadwalkan peserta lokernya
+            //
+            // hasilTesPage (Monitoring) SENGAJA TIDAK di sini: halaman itu belum
+            // digerbangi PIC di server. Menawarkan pilihannya berarti memasang
+            // kendali yang tidak berbuat apa-apa — dan pengaturan yang tampak
+            // aktif tapi tidak menegakkan apa pun lebih berbahaya daripada tidak
+            // ada sama sekali, sebab orang berhenti memeriksanya.
+            HALAMAN_PIC: ['programPage', 'pelamarPage', 'penjadwalanPage'],
+            LINGKUP: [
+                { value: 'SENDIRI', label: 'Sendiri', ikon: 'bi-person-fill', desc: 'Hanya MPP yang penanggung jawabnya dirinya sendiri.' },
+                { value: 'TIM', label: 'Tim', ikon: 'bi-people-fill', desc: 'MPP milik siapa pun yang satu divisi/sub-divisi dengannya — untuk saling menutup.' },
+                { value: 'SEMUA', label: 'Semua', ikon: 'bi-globe2', desc: 'Seluruh MPP, siapa pun penanggung jawabnya.' },
+            ],
             filters: { q: '', role: null, limit: 10 },
             pag: { page: 1, limit: 10, total: 0, totalPage: 1 },
             buka: null, sheetOpen: false, cariTimer: null,
@@ -292,6 +356,24 @@ export default {
                 await axios.post(`${API}/toggle-konten`, { idPageAccess: h.idPageAccess, kategori: k.kode, aktif }, CFG);
                 this.loadSummary();
             } catch (e) { h.kategori = sebelum; this.notice(e.response?.data?.message || 'Gagal memperbarui kategori.', true); }
+        },
+        /**
+         * Ubah lingkup PIC — optimistis, dikembalikan bila server menolak.
+         *
+         * Pola yang sama dengan toggleKonten di atas: layar berubah lebih dulu
+         * supaya terasa seketika, dan hanya dikembalikan bila benar-benar gagal.
+         */
+        async ubahLingkup(u, h, lingkup) {
+            const sebelum = h.lingkupPic;
+            if (sebelum === lingkup) return;
+
+            h.lingkupPic = lingkup;
+            try {
+                await axios.post(`${API}/ubah-lingkup`, { idPageAccess: h.idPageAccess, lingkup }, CFG);
+            } catch (e) {
+                h.lingkupPic = sebelum;
+                this.notice(e.response?.data?.message || 'Gagal mengubah lingkup PIC.', true);
+            }
         },
         async bulk(u, h, jenis, aktif) {
             try {
@@ -458,4 +540,11 @@ export default {
     .ha-sheetbg { display: block; position: fixed; inset: 0; z-index: 75; background: rgba(15,23,42,.45); }
     .ha-stats__bar { grid-template-columns: 1fr 1fr; }
 }
+
+/* Pilihan lingkup — bentuknya mengikuti .ha-chk lain supaya terbaca sebagai
+   keluarga kendali yang sama, tapi warnanya amber: ini SATU pilihan yang
+   meniadakan dua lainnya, bukan centang yang bisa menumpuk. */
+.ha-chk--lingkup.on { border-color: #f59e0b; background: #fffbeb; color: #92400e; }
+.ha-chk--lingkup span { display: inline-flex; align-items: center; gap: .3rem; }
+.ha-chk--lingkup .bi { font-size: 11px; }
 </style>

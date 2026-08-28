@@ -1,6 +1,6 @@
 <!-- WEB CAREER — Portal Kandidat: Cari Lowongan. Posisi BUKA dari program BERJALAN. -->
 <template>
-    <Head><title>Cari Lowongan - EVO Career</title></Head>
+    <Head title="Cari Lowongan" />
     <div class="wca">
         <div class="wca-phead">
             <div>

@@ -3,14 +3,13 @@
 namespace App\Support\Career;
 
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 
 class FormulirSchema
 {
     public static function punyaTabelVersi(): bool
     {
         try {
-            return Schema::hasTable('N_WEB_CAREERS_Master_Formulir_Versi');
+            return Skema::adaTabel('N_WEB_CAREERS_Master_Formulir_Versi');
         } catch (\Throwable $e) {
             return false;
         }
@@ -19,7 +18,7 @@ class FormulirSchema
     public static function punyaKolomPengisianSnapshot(): bool
     {
         try {
-            return Schema::hasColumn('N_WEB_CAREERS_Formulir_Pengisian', 'Schema_Snapshot_Json');
+            return Skema::adaKolom('N_WEB_CAREERS_Formulir_Pengisian', 'Schema_Snapshot_Json');
         } catch (\Throwable $e) {
             return false;
         }
@@ -28,7 +27,7 @@ class FormulirSchema
     public static function punyaKolomDrafSnapshot(): bool
     {
         try {
-            return Schema::hasColumn('N_WEB_CAREERS_Formulir_Draf', 'Schema_Snapshot_Json');
+            return Skema::adaKolom('N_WEB_CAREERS_Formulir_Draf', 'Schema_Snapshot_Json');
         } catch (\Throwable $e) {
             return false;
         }

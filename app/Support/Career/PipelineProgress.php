@@ -282,13 +282,41 @@ class PipelineProgress
      * Sadar-kuota: kursi terisi (LULUS) vs kuota MPP posisi. Loloskan hanya
      * dibatasi bila kandidat berada di TAHAP TERAKHIR (LULUS = diterima).
      */
-    public static function infoKuota(int $kuota, int $terisi, int $urutanAktif, int $totalTahap): array
+    /**
+     * @param  array{kuota:int, terisi:int, sisa:int|null, penuh:bool}|null  $mpp
+     *         keadaan buku kursi MPP loker ini — lihat KursiMpp. Null = tidak
+     *         diketahui, dan gerbangnya diam seperti sebelum fitur ini ada.
+     */
+    public static function infoKuota(int $kuota, int $terisi, int $urutanAktif, int $totalTahap, ?array $mpp = null): array
     {
+        $lokerPenuh = $kuota > 0 && $terisi >= $kuota;
+        $mppPenuh = (bool) ($mpp['penuh'] ?? false);
+
         return [
             'kuota' => $kuota,
             'terisiKuota' => $terisi,
             'sisaKuota' => $kuota > 0 ? max(0, $kuota - $terisi) : null,
-            'kuotaPenuh' => $kuota > 0 && $terisi >= $kuota,
+            // ── PENUH BILA SALAH SATUNYA PENUH ──────────────────────────────
+            //
+            // Dua batas yang berbeda artinya, dan keduanya nyata:
+            //   loker  jatah program ini
+            //   MPP    rencana yang disetujui, lintas seluruh program
+            //
+            // Sampai perbaikan ini hanya yang pertama dilihat layar. Akibatnya
+            // pada MPP yang dibuka di dua program, tombol Loloskan tetap hijau
+            // di program kedua walau seluruh kursinya sudah terisi di program
+            // pertama — dan penolakannya baru datang SESUDAH alasan diketik
+            // dan modal dikirim. Yang membacanya tidak punya cara menebak
+            // sebabnya, sebab papan yang ia lihat bilang kursinya kosong.
+            'kuotaPenuh' => $lokerPenuh || $mppPenuh,
+            // Dipakai layar untuk MENYEBUTKAN batas mana yang menutup — dua
+            // sebab ini menuntut tindakan yang berbeda: yang pertama diselesaikan
+            // dengan menambah jatah loker, yang kedua hanya dengan menambah
+            // rencana MPP-nya.
+            'kuotaSebab' => $lokerPenuh ? 'LOKER' : ($mppPenuh ? 'MPP' : null),
+            'mppKuota' => $mpp['kuota'] ?? null,
+            'mppTerisi' => $mpp['terisi'] ?? null,
+            'mppSisa' => $mpp['sisa'] ?? null,
             'diTahapAkhir' => $urutanAktif > 0 && $urutanAktif >= $totalTahap,
         ];
     }

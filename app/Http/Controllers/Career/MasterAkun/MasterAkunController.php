@@ -4,6 +4,9 @@ namespace App\Http\Controllers\Career\MasterAkun;
 
 use App\Helpers\ResponseHelper;
 use App\Http\Controllers\Controller;
+use App\Support\Career\AksesService;
+use App\Support\Career\PenerimaSerahTerima;
+use App\Support\Career\SerahTerimaPic;
 use App\Support\CareerShell;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -23,6 +26,16 @@ class MasterAkunController extends Controller
     /** Umur tautan verifikasi. Disamakan dengan AuthController::VERIF_BERLAKU_MENIT. */
     private const VERIF_BERLAKU_MENIT = 30;
 
+    /**
+     * Perusahaan yang dilayani modul Web Careers.
+     *
+     * Tabel Karyawan berkunci komposit (Kode_Perusahaan + Kode_Karyawan), jadi
+     * mencarinya tanpa ini bisa memulangkan karyawan perusahaan lain yang
+     * kebetulan berkode sama — dan akun admin akan tertaut ke orang yang keliru.
+     * Nilainya sama dengan yang dipakai MasterMppController.
+     */
+    private const KODE_PERUSAHAAN = '001';
+
     public function index()
     {
         return Inertia::render('Career/admin/master-akun/masterAkun', CareerShell::props('/master-akun', 'Master Akun'));
@@ -33,14 +46,27 @@ class MasterAkunController extends Controller
         try {
             $rows = DB::table('N_WEB_CAREERS_Users as u')
                 ->leftJoin('N_WEB_CAREERS_Users as c', 'c.Id_Users', '=', 'u.Created_By_Id')
+                // Nama karyawannya ikut dibaca, bukan hanya kodenya. 'A1' tidak
+                // memberi tahu siapa pun apa-apa; yang perlu terbaca di layar
+                // adalah "Frans Bachtiar (A1)" — dan mengambilnya di sini jauh
+                // lebih murah daripada satu permintaan tambahan per baris.
+                ->leftJoin('Karyawan as k', function ($j) {
+                    $j->on('k.Kode_Karyawan', '=', 'u.Kode_Karyawan')
+                        ->where('k.Kode_Perusahaan', '=', self::KODE_PERUSAHAAN);
+                })
                 ->orderByDesc('u.Id_Users')
-                ->select('u.*', 'c.Nama as Pembuat')
+                ->select('u.*', 'c.Nama as Pembuat', 'k.Nama as KaryawanNama')
                 ->get()
                 ->map(fn ($r) => [
                     'id' => Hashids::encode($r->Id_Users),
                     'nama' => $r->Nama,
                     'email' => $r->Email,
                     'phone' => $r->No_Hp,
+                    // Jembatan akun -> karyawan. Inilah yang membuat "MPP siapa
+                    // yang boleh saya buka" punya jawaban; tanpa terisi, akun ini
+                    // tidak bisa dikenali sebagai penanggung jawab MPP mana pun.
+                    'kodeKaryawan' => $r->Kode_Karyawan,
+                    'karyawanNama' => $r->KaryawanNama,
                     'role' => $r->Role,
                     'klasifikasi' => $r->Klasifikasi,
                     'status' => $r->Status,
@@ -84,6 +110,144 @@ class MasterAkunController extends Controller
         return null;
     }
 
+    /** '' dan '   ' sama-sama berarti KOSONG, dan kosong ditulis NULL. */
+    private function kodeKaryawanBersih(?string $kode): ?string
+    {
+        $kode = trim((string) $kode);
+
+        return $kode === '' ? null : $kode;
+    }
+
+    /**
+     * GET .../master-akun/{id}/pekerjaan — LOKER YANG SEDANG DIPEGANG AKUN INI.
+     *
+     * Inilah jawaban atas "orang ini masuk rumah sakit — ia memegang apa saja?".
+     * Dibuka dari akunnya, bukan dari salah satu programnya, karena yang jadi
+     * titik tolak adalah ORANGNYA.
+     */
+    public function pekerjaan(string $id)
+    {
+        $realId = Hashids::decode($id)[0] ?? null;
+        if (! $realId) {
+            return ResponseHelper::error('Akun tidak valid.', 422);
+        }
+
+        $u = DB::table('N_WEB_CAREERS_Users')
+            ->where('Id_Users', $realId)
+            ->first(['Id_Users', 'Nama', 'Kode_Karyawan']);
+
+        if (! $u) {
+            return ResponseHelper::error('Akun tidak ditemukan.', 404);
+        }
+
+        // Akun tanpa kode karyawan tidak bisa memegang loker apa pun — bukan
+        // kekurangan data yang perlu ditutupi, melainkan jawaban yang benar.
+        return ResponseHelper::success([
+            'nama' => $u->Nama,
+            'kodeKaryawan' => $u->Kode_Karyawan,
+            'loker' => $u->Kode_Karyawan ? SerahTerimaPic::pekerjaan($u->Kode_Karyawan) : [],
+        ]);
+    }
+
+    /**
+     * GET .../master-akun/opsi/penerima — CALON PENERIMA SERAH TERIMA.
+     *
+     * Kuerinya ada di App\Support\Career\PenerimaSerahTerima, dipakai bersama
+     * halaman Program Kegiatan lewat rutenya sendiri. Yang tinggal di sini
+     * hanya pembacaan parameter dan gerbangnya.
+     */
+    public function opsiPenerima(Request $request)
+    {
+        $untukPenerima = $request->query('untuk') === 'penerima';
+
+        $page = in_array($request->query('page'), ['programPage', 'masterAkunPage'], true)
+            ? $request->query('page')
+            : 'masterAkunPage';
+
+        return ResponseHelper::success(
+            PenerimaSerahTerima::daftar(
+                $request->query('q'),
+                $untukPenerima,
+                PenerimaSerahTerima::batas($page, $untukPenerima),
+            ),
+            'Opsi penerima',
+        );
+    }
+
+    /**
+     * POST .../master-akun/serah-terima — PINDAHKAN LOKER KE ORANG LAIN.
+     *
+     * Dijaga aksi SERAH_TERIMA, bukan EDIT: menyunting akun dan memindahkan
+     * beban kerja orang adalah dua kewenangan yang berbeda, dan tidak semua
+     * yang boleh melakukan yang pertama boleh melakukan yang kedua.
+     */
+    public function serahTerima(Request $request)
+    {
+        try {
+            $data = $request->validate([
+                'posisiIds' => 'required|array|min:1|max:200',
+                'posisiIds.*' => 'required|integer',
+                'keKode' => 'required|string|max:20',
+                'alasan' => 'required|string|min:5|max:500',
+            ], [
+                'posisiIds.required' => 'Pilih dulu loker yang akan diserahkan.',
+                'keKode.required' => 'Pilih penerima serah terima.',
+                'alasan.required' => 'Alasan serah terima wajib diisi.',
+                'alasan.min' => 'Alasan terlalu pendek — tuliskan sebabnya (mis. cuti sakit s/d 5 Sept).',
+            ]);
+
+            // Penerima harus punya AKUN AKTIF di sini — bukan sekadar kode yang
+            // benar. Loker yang diserahkan ke kode tanpa akun tidak pernah bisa
+            // dikerjakan siapa pun, dan kandidatnya menggantung tanpa ada yang
+            // merasa memegangnya.
+            $punyaAkun = DB::table('N_WEB_CAREERS_Users')
+                ->where('Kode_Karyawan', $data['keKode'])
+                ->whereIn('Role', ['ADMIN', 'SUPERADMIN'])
+                ->where('Status', 'AKTIF')
+                ->exists();
+
+            if (! $punyaAkun) {
+                return ResponseHelper::error(
+                    "Tidak ada akun internal aktif dengan kode karyawan \"{$data['keKode']}\". "
+                    .'Penerima serah terima harus punya akun yang bisa masuk.',
+                    422
+                );
+            }
+
+            $hasil = SerahTerimaPic::jalankan(
+                posisiIds: $data['posisiIds'],
+                keKode: $data['keKode'],
+                alasan: $data['alasan'],
+                admin: [
+                    'id' => session('career_auth.id'),
+                    'nama' => session('career_auth.nama', 'ADMIN'),
+                ],
+                sumber: SerahTerimaPic::SUMBER_ADMIN,
+            );
+
+            if (! $hasil['jml']) {
+                return ResponseHelper::error(
+                    $hasil['dilewati']
+                        ? 'Seluruh loker yang dipilih sudah dipegang orang itu.'
+                        : 'Tidak ada loker yang berpindah.',
+                    422
+                );
+            }
+
+            return ResponseHelper::success($hasil, sprintf(
+                '%d loker (%d kandidat) berpindah.%s',
+                $hasil['jml'], $hasil['kandidat'],
+                $hasil['dilewati'] ? " {$hasil['dilewati']} dilewati karena sudah dipegang orang itu." : ''
+            ));
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return ResponseHelper::error(collect($e->errors())->flatten()->first() ?? 'Data tidak valid', 422);
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->error('Gagal serah terima: '.$e->getMessage());
+
+            return ResponseHelper::error('Gagal melakukan serah terima', 500);
+        }
+    }
+
     private function rules(bool $create = true): array
     {
         return [
@@ -94,7 +258,52 @@ class MasterAkunController extends Controller
             'role' => 'required|in:KANDIDAT,ADMIN,SUPERADMIN',
             'klasifikasi' => 'required|string|max:40',
             'status' => 'required|in:AKTIF,NONAKTIF',
+            // Boleh kosong, dan itu bukan kelonggaran: 395 dari 400 akun adalah
+            // KANDIDAT, yang memang bukan karyawan. Yang wajib justru sebaliknya —
+            // bila diisi, kodenya harus benar-benar ada dan belum dipakai akun
+            // lain; keduanya diperiksa galatKodeKaryawan().
+            'kodeKaryawan' => 'nullable|string|max:20',
         ];
+    }
+
+    /**
+     * Kode karyawan yang dikirim sah? — balasan galat, atau null.
+     *
+     * ── KEBERADAANNYA TIDAK LAGI DITUNTUT ───────────────────────────────────
+     *
+     * Dulu kode diperiksa harus ada di tabel Karyawan. Pemeriksaan itu dicabut:
+     * sumber data kepegawaian yang dipakai berbeda dari tabel tersebut, jadi
+     * menuntut kecocokan berarti menolak kode yang justru benar — dan admin
+     * tidak punya cara membuktikan sistemnya yang keliru.
+     *
+     * Yang TETAP dijaga cuma satu, dan itu yang benar-benar berbahaya:
+     *
+     *   BELUM DIPAKAI AKUN LAIN. Dua akun yang mengaku karyawan yang sama
+     *   membuat "loker ini milik siapa" punya dua jawaban. Indeks unik di
+     *   database menahannya juga, tapi sebagai galat SQL yang tidak bisa dibaca
+     *   admin; di sini ia jadi kalimat yang menyebut akun mana yang memakainya.
+     *
+     * Salah ketik karena itu TIDAK tertangkap di sini — akibatnya pemiliknya
+     * melihat daftar loker kosong. Itu keadaan yang terlihat dan bisa
+     * diperbaiki, jauh lebih ringan daripada menolak kode yang sah.
+     */
+    private function galatKodeKaryawan(?string $kode, ?int $kecualiId = null)
+    {
+        $kode = trim((string) $kode);
+        if ($kode === '') {
+            return null;
+        }
+
+        $dipakai = DB::table('N_WEB_CAREERS_Users')
+            ->where('Kode_Karyawan', $kode)
+            ->when($kecualiId, fn ($w) => $w->where('Id_Users', '!=', $kecualiId))
+            ->value('Nama');
+
+        if ($dipakai) {
+            return ResponseHelper::error("Kode karyawan \"{$kode}\" sudah dipakai akun {$dipakai}.", 422);
+        }
+
+        return null;
     }
 
     public function store(Request $request)
@@ -103,6 +312,9 @@ class MasterAkunController extends Controller
             $data = $request->validate($this->rules(true));
             if (DB::table('N_WEB_CAREERS_Users')->where('Email', $data['email'])->exists()) {
                 return ResponseHelper::error('Email sudah digunakan akun lain.', 422);
+            }
+            if ($galat = $this->galatKodeKaryawan($data['kodeKaryawan'] ?? null)) {
+                return $galat;
             }
             $now = now();
             $userId = session('career_auth.id');
@@ -116,6 +328,10 @@ class MasterAkunController extends Controller
                 'Role' => $data['role'],
                 'Klasifikasi' => $data['klasifikasi'],
                 'Status' => $data['status'],
+                // Kosong ditulis NULL, bukan string kosong: indeks uniknya
+                // tersaring pada IS NOT NULL, dan '' adalah nilai — akun kedua
+                // yang kosong akan ditolak database.
+                'Kode_Karyawan' => $this->kodeKaryawanBersih($data['kodeKaryawan'] ?? null),
                 'Mulai_Berlaku' => $now->toDateString(),
                 'Valid_Until' => $this->hitungValidUntil($data['klasifikasi'], $now),
                 'Created_At' => $now, 'Created_By' => $userName, 'Created_By_Id' => $userId,
@@ -146,6 +362,9 @@ class MasterAkunController extends Controller
             if (DB::table('N_WEB_CAREERS_Users')->where('Email', $data['email'])->where('Id_Users', '!=', $realId)->exists()) {
                 return ResponseHelper::error('Email sudah digunakan akun lain.', 422);
             }
+            if ($galat = $this->galatKodeKaryawan($data['kodeKaryawan'] ?? null, (int) $realId)) {
+                return $galat;
+            }
             $now = now();
             $mulai = $row->Mulai_Berlaku ? Carbon::parse($row->Mulai_Berlaku) : $now;
             $update = [
@@ -155,6 +374,7 @@ class MasterAkunController extends Controller
                 'Role' => $data['role'],
                 'Klasifikasi' => $data['klasifikasi'],
                 'Status' => $data['status'],
+                'Kode_Karyawan' => $this->kodeKaryawanBersih($data['kodeKaryawan'] ?? null),
                 'Valid_Until' => $this->hitungValidUntil($data['klasifikasi'], $mulai),
                 'Updated_At' => $now, 'Updated_By' => session('career_auth.nama', 'ADMIN'), 'Updated_By_Id' => session('career_auth.id'),
             ];

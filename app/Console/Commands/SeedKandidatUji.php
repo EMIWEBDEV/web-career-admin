@@ -43,6 +43,7 @@ use Illuminate\Support\Str;
  *   php artisan karir:seed-kandidat --program=20 --jumlah=120
  *   php artisan karir:seed-kandidat --program=20 --jumlah=100 --tahap=2 --slug=psikotes
  *   php artisan karir:seed-kandidat --program=25 --jumlah=40 --slug=squad
+ *   php artisan karir:seed-kandidat --program=43 --loker=104 --jumlah=250 --tahap=2 --slug=mt250
  *   php artisan karir:seed-kandidat --program=20 --bersihkan
  */
 class SeedKandidatUji extends Command
@@ -51,6 +52,7 @@ class SeedKandidatUji extends Command
         {--program= : Id program (lihat daftar bila dikosongkan)}
         {--jumlah=60 : Berapa kandidat dibuat (1–500)}
         {--slug=uji : Penanda kumpulan — dipakai email & Kode_Calon, dan dipakai --bersihkan}
+        {--loker= : Id lowongan (Program_Posisi). Kosong = disebar rata ke seluruh lowongan program}
         {--tahap= : Parkir SEMUA kandidat di tahap ini (1-based). Kosong = sebaran corong}
         {--bersihkan : Hapus kandidat uji ber-slug ini, jangan membuat yang baru}
         {--seed=2026 : Benih pengacak; nilai sama menghasilkan sebaran yang sama}';
@@ -135,6 +137,30 @@ class SeedKandidatUji extends Command
             return self::FAILURE;
         }
 
+        /*
+         * --loker: SATU LOWONGAN SAJA.
+         *
+         * Tanpa ini kandidat disebar rata ke seluruh lowongan program, dan
+         * pengujian yang butuh perbandingan timpang — 250 pelamar di satu
+         * lowongan, 100 di lowongan sebelahnya — tidak bisa disusun sama
+         * sekali. Justru bentuk timpang itulah yang menguji penjadwalan per
+         * lowongan: kalau semua sama banyak, saringannya bisa saja tidak
+         * bekerja tanpa ada yang menyadarinya.
+         */
+        $lokerId = (int) $this->option('loker');
+        if ($lokerId) {
+            $pilih = $posisi->firstWhere('Id_Program_Posisi', $lokerId);
+            if (! $pilih) {
+                $this->error("Lowongan #{$lokerId} bukan milik program '{$program->Nama}'. Yang ada:");
+                foreach ($posisi as $x) {
+                    $this->line("  #{$x->Id_Program_Posisi}  {$x->Posisi}".($x->Mpp_Ref ? "  ({$x->Mpp_Ref})" : ''));
+                }
+
+                return self::FAILURE;
+            }
+            $posisi = collect([$pilih]);
+        }
+
         $alur = DB::table('N_WEB_CAREERS_Master_Alur')->where('Kode', $program->Alur_Kode)->first();
         $tahapAlur = $alur
             ? DB::table('N_WEB_CAREERS_Master_Alur_Tahap')->where('Master_Alur_Id', $alur->Id_Master_Alur)->orderBy('Urutan')->get()
@@ -147,6 +173,9 @@ class SeedKandidatUji extends Command
         }
 
         $this->info("Program : {$program->Nama} (#{$programId})");
+        $this->info('Lowongan: '.($lokerId
+            ? $posisi->first()->Posisi." (#{$lokerId})"
+            : $posisi->count().' lowongan, disebar rata'));
         $this->info("Alur    : ".($alur->Nama ?? '-').' — '.$tahapAlur->count().' tahap');
         $this->info("Membuat : {$jumlah} kandidat, penanda '{$slug}'");
 

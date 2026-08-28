@@ -89,6 +89,39 @@
             @update:model-value="ubah"
         />
 
+        <!-- ══ TANGGAL — DIKETIK, BUKAN DIKLIK ════════════════════════════════
+             Kalender bagus untuk tanggal yang DICARI ("Senin depan tanggal
+             berapa?"). Tanggal lahir tidak dicari — ia sudah diingat, dan
+             memilihnya lewat kalender menuntut orang menggulir puluhan tahun ke
+             belakang demi angka yang sejak awal ada di kepalanya.
+
+             Yang tersimpan TETAP 'YYYY-MM-DD', sama persis dengan keluaran
+             el-date-picker. Yang berubah cuma cara memasukkannya.
+
+             Kalendernya masih bisa diminta per field lewat `kalender: true` —
+             untuk tanggal yang memang lebih enak dipilih (jadwal, tenggat). -->
+        <div v-else-if="field.tipe === 'date' && !field.kalender" class="fr__tgl">
+            <el-input
+                :model-value="tglTeks"
+                :disabled="disabled"
+                :placeholder="field.ph || 'hh/bb/tttt'"
+                inputmode="numeric"
+                maxlength="10"
+                @update:model-value="ketikTanggal"
+                @blur="rapikanTanggal"
+            >
+                <template #prefix><i class="bi bi-calendar-event"></i></template>
+            </el-input>
+            <small v-if="tglGalat" class="fr__tglgalat">{{ tglGalat }}</small>
+            <!-- Bacaan panjangnya ditampilkan balik sebagai penegasan: '02/05/1998'
+                 dan '05/02/1998' sama-sama sah, dan satu-satunya cara orang
+                 menyadari ia tertukar adalah membacanya dalam bentuk yang tak
+                 mungkin ambigu. -->
+            <small v-else-if="tglPanjang" class="fr__tglbaca">
+                <i class="bi bi-check-circle-fill"></i> {{ tglPanjang }}
+            </small>
+        </div>
+
         <el-date-picker
             v-else-if="field.tipe === 'date'"
             :model-value="nilai"
@@ -312,6 +345,44 @@
         </template>
 
 
+        <!-- ══ DAFTAR BUTIR ═══════════════════════════════════════════════════
+             Tiap gagasan punya kotaknya sendiri. Kandidat melihat berapa yang
+             masih kurang sebelum menulis, bukan sesudah ditolak. -->
+        <div v-else-if="field.tipe === 'daftar'" class="fr__daftar">
+            <div v-for="(butir, i) in daftarButir" :key="i" class="fr__daftar-baris">
+                <span class="fr__daftar-no">{{ i + 1 }}</span>
+                <el-input
+                    :model-value="butir"
+                    :disabled="disabled"
+                    :placeholder="field.ph || `Hal ke-${i + 1}`"
+                    @update:model-value="(v) => ubahButir(i, v)"
+                />
+                <button
+                    v-if="!disabled && daftarButir.length > minButir"
+                    type="button"
+                    class="fr__daftar-buang"
+                    title="Hapus baris ini"
+                    @click="buangButir(i)"
+                ><i class="bi bi-x-lg"></i></button>
+            </div>
+
+            <div class="fr__daftar-kaki">
+                <button
+                    v-if="!disabled && (!maksButir || daftarButir.length < maksButir)"
+                    type="button"
+                    class="fr__daftar-tambah"
+                    @click="tambahButir"
+                ><i class="bi bi-plus-lg"></i> Tambah</button>
+
+                <!-- Hitungannya ditulis apa adanya. "Minimal 5" di label saja
+                     memaksa orang menghitung sendiri kotak yang sudah terisi. -->
+                <small class="fr__daftar-hitung" :class="{ 'is-kurang': butirTerisi < minButir }">
+                    {{ butirTerisi }} dari {{ minButir }} terisi
+                    <template v-if="maksButir"> &middot; maks {{ maksButir }}</template>
+                </small>
+            </div>
+        </div>
+
         <!-- Foto verifikasi dari kamera. Yang tersimpan di jawaban hanya nama
              berkasnya (seperti tipe `file`); gambarnya sendiri dikirim ke induk
              lewat event `berkas` supaya ikut jalur unggah yang sama. -->
@@ -346,6 +417,7 @@ import { computed, ref, watch } from 'vue';
 import { ambilOpsi, benderaDiingat, tunda } from '@utils/formulir/referensi';
 import { syaratTerpenuhi } from '@utils/formulir/aturan';
 import { kunciBerkas } from '@utils/formulir/berkasBaris';
+import { masker as maskerTgl, keTampilan as tglKeTampilan, keIso as tglKeIso, galat as tglGalatPesan } from '@utils/formulir/tanggalKetik';
 import TeleponNegara from '@career/TeleponNegara.vue';
 import AmbilFoto from './AmbilFoto.vue';
 
@@ -371,6 +443,104 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue', 'berkas']);
 
 const nilai = computed(() => props.modelValue);
+
+// ── DAFTAR BUTIR ────────────────────────────────────────────────────────────
+const minButir = computed(() => Math.max(1, Number(props.field?.min_butir) || 1));
+const maksButir = computed(() => Number(props.field?.maks_butir) || 0);
+
+/**
+ * Baris yang DIGAMBAR — selalu setidaknya sebanyak minimalnya.
+ *
+ * Kotak kosongnya sengaja sudah berdiri sejak awal: lima kotak menunggu
+ * memberi tahu berapa yang diminta tanpa satu kalimat pun, sementara satu
+ * kotak dengan tombol "tambah" menyembunyikan tuntutannya sampai orang
+ * menekan Lanjut dan ditolak.
+ */
+const daftarButir = computed(() => {
+    const isi = Array.isArray(nilai.value) ? nilai.value.map((x) => String(x ?? '')) : [];
+    while (isi.length < minButir.value) isi.push('');
+
+    return isi;
+});
+
+const butirTerisi = computed(() => daftarButir.value.filter((x) => String(x).trim() !== '').length);
+
+function simpanButir(arr) {
+    // Butir kosong di EKOR dibuang sebelum disimpan; yang di tengah dibiarkan
+    // supaya nomor urut yang sedang dilihat kandidat tidak melompat saat ia
+    // mengosongkan satu baris untuk menulis ulang.
+    const bersih = [...arr];
+    while (bersih.length && String(bersih[bersih.length - 1]).trim() === '') bersih.pop();
+    ubah(bersih);
+}
+
+function ubahButir(i, v) {
+    const arr = [...daftarButir.value];
+    arr[i] = v;
+    simpanButir(arr);
+}
+
+function tambahButir() {
+    simpanButir([...daftarButir.value, ' ']);
+}
+
+function buangButir(i) {
+    const arr = [...daftarButir.value];
+    arr.splice(i, 1);
+    simpanButir(arr);
+}
+
+// ── TANGGAL YANG DIKETIK ────────────────────────────────────────────────────
+//
+// Teks yang TAMPAK disimpan terpisah dari nilai yang TERSIMPAN. Keduanya tidak
+// bisa satu: selama '02/05/19' belum lengkap, tidak ada tanggal sah yang bisa
+// ditulis ke jawaban — tapi apa yang sudah diketik harus tetap terlihat.
+const tglTeks = ref(tglKeTampilan(props.modelValue));
+const tglGalat = ref('');
+
+// Nilai bisa berubah dari luar (draf dipulihkan, prefill datang belakangan).
+// Tanpa pengamat ini kolomnya tetap kosong walau jawabannya sudah ada.
+watch(() => props.modelValue, (baru) => {
+    const tampak = tglKeTampilan(baru);
+    if (tampak && tampak !== tglTeks.value) {
+        tglTeks.value = tampak;
+        tglGalat.value = '';
+    }
+    if (!baru && !tglGalat.value) tglTeks.value = tglTeks.value || '';
+});
+
+/** '2 Mei 1998' — penegasan yang tak mungkin terbaca terbalik. */
+const tglPanjang = computed(() => {
+    const iso = tglKeIso(tglTeks.value);
+    if (!iso) return '';
+    const d = new Date(`${iso}T00:00:00`);
+
+    return isNaN(d) ? '' : d.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+});
+
+function ketikTanggal(v) {
+    tglTeks.value = maskerTgl(v);
+    tglGalat.value = '';
+
+    // Jawaban ditulis HANYA saat tanggalnya utuh dan nyata. Menulis nilai
+    // separuh jadi akan tersimpan sebagai jawaban yang tak bisa dibaca siapa
+    // pun — dan tersimpan diam-diam, sebab draf menyimpan apa adanya.
+    const iso = tglKeIso(tglTeks.value);
+    ubah(iso ?? null);
+}
+
+/**
+ * Galat baru diperiksa saat kolomnya DITINGGALKAN.
+ *
+ * Memeriksanya tiap ketukan berarti '0' langsung dinyatakan salah — dan pesan
+ * merah yang muncul sebelum orang selesai mengetik melatihnya mengabaikan
+ * pesan merah.
+ */
+function rapikanTanggal() {
+    tglGalat.value = tglGalatPesan(tglTeks.value, {
+        maksHariIni: props.field?.maks_hari_ini !== false,
+    }) || '';
+}
 
 // URL objek berkas yang baru dipilih (belum terkirim) + apakah ia gambar.
 const pratinjau = ref('');
@@ -898,4 +1068,38 @@ function pilihBerkas(uf) {
     font-size: 13px;
     line-height: 15px;
 }
+
+/* ── TANGGAL DIKETIK ── */
+.fr__tgl { display: flex; flex-direction: column; gap: .25rem; }
+.fr__tglgalat { font-size: 11.5px; line-height: 1.5; color: #b91c1c; }
+/* Bacaan panjang sengaja tenang — ia penegasan, bukan peringatan. */
+/* Centangnya ikon di markup, BUKAN `content` ber-escape CSS.
+   Escape heksadesimal di CSS mudah rusak saat berkasnya disunting alat lain —
+   dan yang muncul di layar bukan galat, melainkan sampah yang terbaca sebagai
+   data ("¹3�a05 Mei 1999"). Ikon biasa tidak punya cara gagal seperti itu. */
+.fr__tglbaca { display: inline-flex; align-items: center; gap: .25rem; font-size: 11.5px; color: #64748b; }
+.fr__tglbaca .bi { color: #059669; font-size: 11px; }
+
+/* ── DAFTAR BUTIR ── */
+.fr__daftar { display: flex; flex-direction: column; gap: .4rem; }
+.fr__daftar-baris { display: flex; align-items: center; gap: .5rem; }
+.fr__daftar-no {
+    flex: none; display: grid; place-items: center;
+    width: 1.5rem; height: 1.5rem; border-radius: .45rem;
+    background: #eef2ff; color: #4338ca; font-size: 11px; font-weight: 800;
+}
+.fr__daftar-buang { flex: none; border: none; background: none; color: #cbd5e1; font-size: 12px; cursor: pointer; padding: .25rem; }
+.fr__daftar-buang:hover { color: #dc2626; }
+.fr__daftar-kaki { display: flex; align-items: center; justify-content: space-between; gap: .6rem; flex-wrap: wrap; margin-top: .15rem; }
+.fr__daftar-tambah {
+    display: inline-flex; align-items: center; gap: .3rem;
+    border: 1px dashed #c7d2fe; background: #fff; color: #4338ca;
+    font: inherit; font-size: 11.5px; font-weight: 700;
+    border-radius: .5rem; padding: .3rem .65rem; cursor: pointer;
+}
+.fr__daftar-tambah:hover { background: #eef2ff; }
+.fr__daftar-hitung { margin-left: auto; font-size: 11.5px; font-weight: 700; color: #059669; }
+/* Merah hanya saat KURANG — bukan sejak awal. Kolom yang merah sebelum
+   disentuh melatih orang mengabaikan warna merah. */
+.fr__daftar-hitung.is-kurang { color: #b45309; }
 </style>

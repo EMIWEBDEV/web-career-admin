@@ -1,8 +1,6 @@
 <!-- WEB CAREER — Kandidat: Formulir Lamaran. Memakai CareerLayout (navbar+footer+bg) seperti landing. -->
 <template>
-    <Head
-        ><title>Lamar — {{ flow.lowongan.posisi }}</title></Head
-    >
+    <Head :title="`Lamar — ${flow.lowongan.posisi}`" />
     <CareerLayout :has-mt="hasMt" :offices="offices">
         <main class="wc-af">
             <div class="wc-af__inner">
@@ -1541,11 +1539,15 @@ const MAKS_BERKAS_MB = 2; // wajib maks 2 MB untuk SEMUA berkas
 function processFile(key, file, f) {
     uploadErr.value = '';
     if (!file) return;
-    // Sistem hanya menerima pdf & jpg — apa pun accept field, dibatasi ke dua ini.
+    // Dibatasi ke format yang BENAR-BENAR diterima server (GcsBerkas::
+    // EKSTENSI_DIIZINKAN). Daftar ini harus sama persis dengan yang di sana:
+    // begitu keduanya berbeda, kandidat memilih berkas yang lolos di layar lalu
+    // ditolak saat mengirim — atau sebaliknya, ditolak di layar untuk format
+    // yang sebenarnya diterima. Yang kedua itulah yang sempat terjadi pada PNG.
     const izin = (f.accept || '.pdf,.jpg')
         .split(',')
         .map((s) => s.trim().replace(/^\./, '').toLowerCase())
-        .filter((x) => ['pdf', 'jpg', 'jpeg'].includes(x));
+        .filter((x) => ['pdf', 'jpg', 'jpeg', 'png'].includes(x));
     const ext = (file.name.split('.').pop() || '').toLowerCase();
     if (!izin.includes(ext)) {
         uploadErr.value = `${f.label}: hanya ${izin.map((x) => '.' + x).join(' / ')} yang diperbolehkan.`;

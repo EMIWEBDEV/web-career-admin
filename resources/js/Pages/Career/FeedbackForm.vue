@@ -1,4 +1,6 @@
 <template>
+  <Head title="Masukan Kandidat" />
+
   <CareerLayout>
       <div class="fb-ambient" aria-hidden="true">
         <span class="aurora aurora--a"></span>
@@ -166,6 +168,7 @@
 
 <script setup>
 import { ref, computed } from 'vue'; import axios from 'axios'
+import { Head } from '@inertiajs/vue3'
 import CareerLayout from './Layouts/CareerLayout.vue'; import FeedbackFormWizard from './FeedbackFormWizard.vue'
 import './components/AuthShell.vue'; // load global .authx CSS
 defineOptions({ layout: null })

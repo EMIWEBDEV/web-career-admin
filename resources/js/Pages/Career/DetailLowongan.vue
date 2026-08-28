@@ -1,8 +1,6 @@
 <!-- WEB CAREER — Halaman Detail Lowongan (route: /karir/landing-page/lowongan/{id}) -->
 <template>
-    <Head>
-        <title>{{ job.posisi }} - EVO Group Career</title>
-    </Head>
+    <Head :title="job.posisi" />
 
     <CareerLayout :has-mt="hasMt" :offices="offices">
         <section class="wc-detail">

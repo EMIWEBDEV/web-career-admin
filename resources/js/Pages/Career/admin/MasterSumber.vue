@@ -1,6 +1,6 @@
 <!-- WEB CAREER — Admin: Master Sumber Kandidat (channel/audience pembukaan; dipakai Pembukaan Program). -->
 <template>
-    <Head><title>Master Sumber Kandidat - Web Career</title></Head>
+    <Head title="Master Sumber Kandidat" />
     <div class="wca">
         <div class="wca-phead">
             <div>

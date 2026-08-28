@@ -1,5 +1,5 @@
 <template>
-    <Head><title>Master Jenis Verifikasi - Web Career</title></Head>
+    <Head title="Master Jenis Verifikasi" />
     <div class="wca">
         <div class="wca-phead">
             <div>

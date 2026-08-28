@@ -1,6 +1,6 @@
 <!-- WEB CAREER — Master Experience Level (tingkat pengalaman). Data via web route + ResponseHelper (axios). -->
 <template>
-    <Head><title>Master Experience Level - Web Career</title></Head>
+    <Head title="Master Experience Level" />
     <div class="wca">
         <div class="wca-phead">
             <div>

@@ -1,6 +1,6 @@
 <!-- WEB CAREER — Master Tahapan Seleksi / Alur (induk-detail: Alur + Tahap/Stages). DATA dari DB via /api/v1/master-alur. -->
 <template>
-    <Head><title>Master Tahapan Seleksi - Web Career</title></Head>
+    <Head title="Master Tahapan Seleksi" />
     <div class="wca">
         <div class="pkg-head">
             <div class="pkg-head__l">
@@ -30,9 +30,15 @@
                         <template #prefix><i class="bi bi-search"></i></template>
                     </el-input>
                 </div>
-                <div>
+                <!-- Penyaring kategori hanya berarti bila ADA yang bisa disaring.
+                     Pengguna yang dijatah satu kategori melihat kotak berisi satu
+                     pilihan yang sudah pasti terpilih — kendali yang tidak bisa
+                     mengubah apa pun, dan menyisakan pertanyaan apa gunanya. -->
+                <div v-if="kategoriOpsi.length > 1">
                     <label class="wca-field-lbl">Kategori</label>
-                    <RefSelect type="talent" v-model="filters.kategori" placeholder="Semua kategori" clearable />
+                    <el-select v-model="filters.kategori" placeholder="Semua kategori" clearable filterable style="width:100%">
+                        <el-option v-for="k in kategoriOpsi" :key="k.kode" :label="k.label" :value="k.kode" />
+                    </el-select>
                 </div>
                 <div>
                     <label class="wca-field-lbl">Status</label>
@@ -171,8 +177,20 @@
                 <div class="wca-fsection__label"><i class="bi bi-signpost-split"></i> Detail Alur</div>
                 <div class="wca-form">
                     <div><label class="wca-field-lbl">Untuk Kategori (kelompok)</label>
-                        <RefSelect type="talent" v-model="form.kategori" placeholder="Pilih kelompok" />
-                        <small style="display:block;margin-top:.3rem;color:var(--muted);font-weight:700;font-size:.72rem">Menentukan alur ini muncul untuk kategori mana saat buat program.</small>
+                        <el-select v-if="!kategoriTunggal" v-model="form.kategori" placeholder="Pilih kelompok" filterable style="width:100%">
+                            <el-option v-for="k in kategoriOpsi" :key="k.kode" :label="k.label" :value="k.kode" />
+                        </el-select>
+
+                        <!-- Satu-satunya kategori yang boleh: tidak ada yang perlu
+                             dipilih. Nilainya sudah dipasang saat borang dibuka;
+                             yang tersisa cuma keterangan agar admin tahu alur ini
+                             akan muncul di mana. -->
+                        <div v-else class="alr-kat-tetap">
+                            <span class="pkg-pill pkg-pill--violet"><i class="bi bi-tags"></i> {{ kategoriTunggal.label }}</span>
+                            <small><i class="bi bi-lock-fill"></i> satu-satunya kategori yang menjadi hak akses Anda</small>
+                        </div>
+
+                        <small v-if="!kategoriTunggal" style="display:block;margin-top:.3rem;color:var(--muted);font-weight:700;font-size:.72rem">Menentukan alur ini muncul untuk kategori mana saat buat program.</small>
                     </div>
                     <div class="wca-frow">
                         <div><label class="wca-field-lbl">Nama Alur</label><el-input v-model="form.nama" placeholder="mis. Alur Rekrutmen Ekspres" /></div>
@@ -666,6 +684,56 @@
             Yakin ingin menghapus alur <strong>{{ delTarget?.nama }}</strong>?
         </ConfirmModal>
 
+        <!-- ═══ NASIB ROMBONGAN YANG SEDANG BERJALAN ═══════════════════════
+             Muncul HANYA bila alur ini memang sudah dipakai lamaran. Alur yang
+             belum pernah dijalani siapa pun tersimpan langsung seperti dulu —
+             tidak ada rombongan untuk dilindungi, jadi tidak ada yang perlu
+             ditanyakan.
+
+             Dua tombol, dan angkanya disebutkan LEBIH DULU. Tanpa pratinjau,
+             pilihan "terapkan ke yang berjalan" adalah pertaruhan: admin baru
+             tahu berapa orang yang ikut sesudah ia menekan, saat sudah tidak
+             bisa dibatalkan. -->
+        <AdminModal v-if="dampakShow" :show="dampakShow" title="Alur ini sedang dipakai" size="md" @close="dampakShow = false">
+            <div class="wca-note wca-note--info" style="margin-bottom: 1rem">
+                <i class="bi bi-info-circle"></i>
+                <span>
+                    Menyimpan akan membuat <b>versi baru</b> dari alur ini. Versi lama tetap utuh
+                    supaya papan seleksi rombongan yang sedang berjalan tidak berubah, dan program
+                    diarahkan ke versi baru mulai sekarang.
+                </span>
+            </div>
+
+            <div class="wca-dinfo" style="margin-bottom: 1rem">
+                <div><small>Masih punya tempat di versi baru</small><b>{{ dampak?.ikut ?? 0 }} kandidat</b></div>
+                <div><small>Tetap di versi lama</small><b>{{ dampak?.tidak ?? 0 }} kandidat</b></div>
+            </div>
+
+            <!-- Yang TIDAK ikut disebut satu per satu beserta sebabnya. Angka
+                 ringkas saja akan meninggalkan pertanyaan "yang mana, dan
+                 kenapa" — pertanyaan yang justru paling sering ditanyakan. -->
+            <div v-if="dampakTidakIkut.length" class="mal-dampak">
+                <div class="mal-dampak__ttl">Tidak ikut pindah</div>
+                <div v-for="r in dampakTidakIkut" :key="r.kode" class="mal-dampak__baris">
+                    <b>{{ r.nama || r.kode }}</b>
+                    <small>{{ r.sebab }}</small>
+                </div>
+            </div>
+
+            <template #footer>
+                <button type="button" class="wca-btn wca-btn--ghost" :disabled="saving" @click="dampakShow = false">
+                    Batal
+                </button>
+                <button type="button" class="wca-btn wca-btn--soft" :disabled="saving" @click="simpanDenganPilihan('TIDAK')">
+                    <i class="bi bi-people"></i> Simpan — yang berjalan pakai alur lama
+                </button>
+                <button type="button" class="wca-btn wca-btn--primary" :disabled="saving || !dampak?.ikut" @click="simpanDenganPilihan('SEMUA')">
+                    <i class="bi bi-arrow-right-circle"></i>
+                    Simpan + pindahkan {{ dampak?.ikut ?? 0 }} kandidat
+                </button>
+            </template>
+        </AdminModal>
+
         <transition name="wca-toast"><div v-if="toast" class="wca-toast"><i class="bi bi-check-circle-fill"></i> {{ toast }}</div></transition>
     </div>
 </template>
@@ -705,6 +773,10 @@ export default {
             duplikatDari: null,
             // Filter Panel — semua nilai dikirim ke backend saat berubah.
             filters: { q: '', kategori: null, status: null, rentang: null },
+            // Kategori yang BOLEH dilihat pengguna ini — datang dari server bersama
+            // daftar alurnya, bukan dari master lengkap. Menentukan dua hal:
+            // penyaring digambar atau tidak, dan pilihan apa saja di borang.
+            kategoriOpsi: [],
             sheetOpen: false,
             cariTimer: null,
             // Mode pengumuman AKTIF dari Master Mode Pengumuman (bukan hardcode).
@@ -729,6 +801,13 @@ export default {
             form: { nama: '', kategori: '', deskripsi: '', stages: [], talentPoolMulai: 0, tuntasTahap: 0 },
             delShow: false,
             delTarget: null,
+            // ── PILIHAN NASIB ROMBONGAN YANG SEDANG BERJALAN ────────────────
+            // Terisi hanya saat alur yang disimpan MEMANG sudah dipakai
+            // lamaran. `dampak` membawa hitungan dari server; `dampakPayload`
+            // menahan muatan yang siap dikirim sampai admin memilih.
+            dampakShow: false,
+            dampak: null,
+            dampakPayload: null,
             deleting: false,
             saving: false,
             toast: '',
@@ -760,6 +839,10 @@ export default {
         this.loadTipeTahap();
     },
     computed: {
+        /** Yang TIDAK ikut pindah — disebut satu per satu beserta sebabnya. */
+        dampakTidakIkut() {
+            return (this.dampak?.rincian || []).filter((r) => !r.ikut);
+        },
         // Tiga keadaan modal, bukan dua. Duplikat memang MEMBUAT alur baru,
         // tapi menyebutnya "Buat Alur Seleksi" saat layarnya sudah penuh isi
         // salinan membuat orang mengira ia sedang menyunting yang lama.
@@ -776,6 +859,10 @@ export default {
             const map = {};
             this.modePengumuman.forEach((m) => { map[m.value] = m; });
             return map;
+        },
+        /** Tepat satu kategori yang boleh -> tidak ada yang perlu dipilih. */
+        kategoriTunggal() {
+            return this.kategoriOpsi.length === 1 ? this.kategoriOpsi[0] : null;
         },
         adaFilter() {
             return !!(this.filters.q || this.filters.kategori || this.filters.status || (this.filters.rentang && this.filters.rentang.length));
@@ -1202,7 +1289,9 @@ export default {
                     sampai: this.filters.rentang?.[1] || undefined,
                 };
                 const res = await axios.get(API, { ...CFG, params });
-                this.list = res.data.result || [];
+                const r = res.data.result || {};
+                this.list = r.data || [];
+                this.kategoriOpsi = r.kategori || [];
             } catch (e) {
                 this.notice('Gagal memuat data alur.');
             } finally {
@@ -1232,6 +1321,11 @@ export default {
             this.editingId = null;
             this.duplikatDari = null;
             this.form = { nama: '', kategori: '', deskripsi: '', stages: [], talentPoolMulai: 0, tuntasTahap: 0 };
+            // Hak akses cuma satu kategori -> langsung dipasang. Tanpa ini borang
+            // menampilkan pil terkunci berisi nama kategorinya, tapi nilainya tetap
+            // kosong — dan penyimpanan ditolak "Kategori wajib dipilih" untuk
+            // pilihan yang memang tidak pernah ditawarkan kepadanya.
+            if (this.kategoriTunggal) this.form.kategori = this.kategoriTunggal.kode;
             this.show = true;
         },
         /**
@@ -1245,6 +1339,19 @@ export default {
          */
         formDariAlur(a) {
             const stages = (a.stages || []).map((s) => ({
+                // IDENTITAS TAHAP — dibawa pulang-pergi, tidak pernah ditampilkan.
+                //
+                // Inilah yang membuat mengganti judul tahap TIDAK memindahkan
+                // kandidat yang sedang menjalaninya. Server mencocokkan baris
+                // lewat kode ini; tanpa dikirim balik, ia jatuh ke pencocokan
+                // nomor urut — dan memindahkan urutan tahap akan menukar arti
+                // dua baris sekaligus.
+                //
+                // Pada DUPLIKAT alur kode ini ikut terbawa, dan itu memang
+                // diinginkan: dua alur yang sama-sama punya "PSIKOTES" digambar
+                // sebagai satu kolom di papan worklist (lihat AlurKolom::susun),
+                // sebab bagi tim rekrutmen itu memang satu tahap yang sama.
+                kode: s.kode || null,
                 label: s.label,
                 tipe: s.tipe,
                 mode: s.mode || 'MANUAL_REVIEW',
@@ -1409,6 +1516,10 @@ export default {
                 kategori: this.form.kategori,
                 deskripsi: this.form.deskripsi,
                 stages: this.form.stages.map((s, i) => ({
+                    // Identitas tahap — lihat formDariAlur(). Tahap yang baru
+                    // ditambahkan di layar tidak punya kode, dan server yang
+                    // membangkitkannya.
+                    kode: s.kode || null,
                     label: s.label,
                     tipe: s.tipe,
                     mode: s.mode || null,
@@ -1453,6 +1564,24 @@ export default {
             };
             try {
                 if (this.editingId) {
+                    // ── ALUR YANG SEDANG DIPAKAI = LAHIR VERSI BARU ─────────
+                    //
+                    // Ditanyakan DULU ke server: berapa kandidat berjalan yang
+                    // masih punya tempat di susunan baru, dan siapa yang tidak
+                    // beserta sebabnya. Menyimpan lebih dulu lalu memberi tahu
+                    // akibatnya sesudahnya berarti memberitahu saat sudah tidak
+                    // bisa dibatalkan.
+                    const dampak = await this.hitungDampak(payload.stages);
+
+                    if (dampak?.berversi) {
+                        this.dampak = dampak;
+                        this.dampakPayload = payload;
+                        this.dampakShow = true;
+                        this.saving = false;
+
+                        return; // dilanjutkan simpanDenganPilihan()
+                    }
+
                     await axios.put(`${API}/${this.editingId}`, payload, CFG);
                     this.notice('Alur diperbarui.');
                 } else {
@@ -1461,6 +1590,47 @@ export default {
                         ? `Salinan dibuat — "${this.form.nama}". Alur "${this.duplikatDari}" tidak berubah.`
                         : 'Alur ditambahkan.');
                 }
+                this.tutupModal();
+                await this.load();
+            } catch (e) {
+                this.notice(e.response?.data?.message || 'Gagal menyimpan.');
+            } finally {
+                this.saving = false;
+            }
+        },
+        /**
+         * Berapa kandidat berjalan yang ikut pindah bila susunan ini disimpan.
+         *
+         * Gagal menghitung TIDAK menghentikan penyimpanan: server tetap
+         * memutuskan sendiri apakah versi baru perlu dilahirkan. Yang hilang
+         * cuma pratinjaunya — dan menahan pekerjaan admin karena satu panel
+         * keterangan tak bisa dimuat jauh lebih merugikan.
+         */
+        async hitungDampak(stages) {
+            try {
+                const res = await axios.get(`${API}/${this.editingId}/dampak`, {
+                    ...CFG,
+                    params: { kode: stages.map((s) => s.kode).filter(Boolean) },
+                });
+
+                return res.data.result || null;
+            } catch (e) {
+                return null;
+            }
+        },
+        /** Simpan sesudah admin memilih nasib rombongan yang sedang berjalan. */
+        async simpanDenganPilihan(migrasi) {
+            if (this.saving || !this.dampakPayload) return;
+            this.saving = true;
+            try {
+                const res = await axios.put(
+                    `${API}/${this.editingId}`,
+                    { ...this.dampakPayload, migrasi },
+                    CFG,
+                );
+                this.dampakShow = false;
+                this.dampakPayload = null;
+                this.notice(res.data.message || 'Alur diperbarui.');
                 this.tutupModal();
                 await this.load();
             } catch (e) {
@@ -1504,6 +1674,14 @@ export default {
 
 <style scoped>
 .alr-head-act { display: inline-flex; align-items: center; gap: .4rem; margin-left: auto; }
+
+/* Kategori yang sudah pasti — KETERANGAN, bukan kendali.
+   Sengaja tidak menyerupai kotak input: bingkai kosong dengan satu nilai di
+   dalamnya terbaca sebagai input yang mati, dan orang mencoba mengkliknya.
+   Pilnya dibuat sama dengan pil kategori di daftar alur supaya sekali lihat
+   sudah terbaca sebagai hal yang sama. */
+.alr-kat-tetap { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; padding: .15rem 0; }
+.alr-kat-tetap small { display: inline-flex; align-items: center; gap: .3rem; font-size: .72rem; font-weight: 700; color: var(--muted); }
 
 /* ── FILTER PANEL — card di desktop, bottom-sheet via FAB di mobile ── */
 .alr-filter { background: #fff; border: 1px solid rgba(15, 23, 42, .08); border-radius: 16px; padding: .9rem 1rem 1rem; margin-bottom: 1rem; box-shadow: 0 8px 24px rgba(15, 23, 42, .04); }
@@ -1724,6 +1902,15 @@ export default {
 .alr-up.is-on .alr-tp__ico { background: #c7d2fe; color: #3730a3; }
 .alr-up__ctl { display: inline-flex; align-items: center; gap: .7rem; flex: none; }
 .alr-up__wajib { display: inline-flex; align-items: center; gap: .3rem; font-size: 11.5px; font-weight: 700; color: #4338ca; white-space: nowrap; }
+/* Daftar "tidak ikut pindah" — sengaja bergaya catatan, bukan tabel: isinya
+   kalimat sebab, bukan angka yang perlu dibandingkan berkolom. */
+.mal-dampak { border: 1px solid #fde68a; background: #fffbeb; border-radius: 12px; padding: 10px 12px; }
+.mal-dampak__ttl { font-size: 11.5px; font-weight: 800; letter-spacing: .04em; color: #92400e; margin-bottom: 6px; text-transform: uppercase; }
+.mal-dampak__baris { display: flex; flex-direction: column; gap: 1px; padding: 6px 0; border-top: 1px solid #fef3c7; }
+.mal-dampak__baris:first-of-type { border-top: none; }
+.mal-dampak__baris b { font-size: 13px; color: #1e293b; }
+.mal-dampak__baris small { font-size: 12px; color: #92400e; }
+
 @media (max-width: 560px) {
     .wca-frow { grid-template-columns: 1fr; }
 }

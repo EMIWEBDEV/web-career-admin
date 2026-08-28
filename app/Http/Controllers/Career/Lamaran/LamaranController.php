@@ -150,9 +150,16 @@ class LamaranController extends Controller
         }
 
         // Posisi BUKA per program, dikelompokkan agar tidak query berulang.
+        //
+        // PINTU KEDUA YANG MENGHADAP KANDIDAT. /kandidat/loker menyusun daftarnya
+        // sendiri, tidak lewat landing — jadi penyaring loker-yang-dimatikan
+        // harus ditulis di sini juga. Menyaringnya di satu tempat saja berarti
+        // loker yang sudah dimatikan hilang dari beranda tapi tetap berdiri di
+        // katalog portal, lengkap dengan tombol lamarnya.
         $posisi = DB::table('N_WEB_CAREERS_Program_Posisi')
             ->whereIn('Program_Id', $pembukaan->pluck('Program_Id')->unique())
             ->where('Status', 'BUKA')
+            ->whereRaw("ISNULL(Flag_Aktif, 'Y') = 'Y'")
             ->get()
             ->groupBy('Program_Id');
 
@@ -759,6 +766,15 @@ class LamaranController extends Controller
                     // terbit: berkas jawaban tes offline baru masuk akal diminta
                     // sesudah kandidat tahu kapan dan di mana tesnya dikerjakan.
                     'perluJadwal' => ($ti->Flag_Jadwal ?? 'T') === 'Y',
+                    // TIPE INI MENEMPELKAN FORMULIR — Master_Tipe_Tahap.Flag_Formulir.
+                    //
+                    // Yang ditunggu aktivitas ini adalah ISIAN KANDIDAT, bukan
+                    // jadwal dari tim. Tanpa penanda ini portal tidak punya cara
+                    // membedakan "Formulir" dari "Background Check": keduanya
+                    // MANUAL dan sama-sama tak berjadwal, jadi keduanya dilencanai
+                    // "Menunggu jadwal" — janji yang tidak akan pernah ditepati
+                    // untuk yang satu, dan salah alamat untuk yang lain.
+                    'berformulir' => ($ti->Flag_Formulir ?? 'T') === 'Y',
                     'jadwal' => $s->Jadwal_Mulai ? [
                         'mode' => $s->Jadwal_Mode,
                         'daring' => strtoupper((string) $s->Jadwal_Mode) === 'DARING',
@@ -1155,6 +1171,8 @@ class LamaranController extends Controller
                         'label' => ucwords(str_replace(['_', '-'], ' ', $k)),
                         'nilai' => $isi['nilai'],
                         'baris' => $isi['baris'],
+                        // Butir daftar dibawa apa adanya — lihat nilaiIsian().
+                        'daftar' => $isi['daftar'],
                         'berkas' => $b ? [
                             'field' => $b['field'],
                             'nama' => $b['nama'],
@@ -1379,11 +1397,11 @@ class LamaranController extends Controller
     private static function nilaiIsian(mixed $v, int $dalam = 0, ?\Closure $cariBerkas = null): array
     {
         if ($v === null) {
-            return ['nilai' => '', 'baris' => []];
+            return ['nilai' => '', 'baris' => [], 'daftar' => []];
         }
 
         if (is_bool($v)) {
-            return ['nilai' => $v ? 'Ya' : 'Tidak', 'baris' => []];
+            return ['nilai' => $v ? 'Ya' : 'Tidak', 'baris' => [], 'daftar' => []];
         }
 
         if ($v instanceof \stdClass) {
@@ -1391,7 +1409,7 @@ class LamaranController extends Controller
         }
 
         if (! is_array($v)) {
-            return ['nilai' => trim((string) $v), 'baris' => []];
+            return ['nilai' => trim((string) $v), 'baris' => [], 'daftar' => []];
         }
 
         // Pagar kedalaman: jawaban formulir tak pernah bersarang sedalam ini,
@@ -1399,7 +1417,7 @@ class LamaranController extends Controller
         // sampai kehabisan memori — kegagalan yang jauh lebih sulit dilacak
         // daripada nilai yang sekadar tidak tampil.
         if ($dalam > 3) {
-            return ['nilai' => '…', 'baris' => []];
+            return ['nilai' => '…', 'baris' => [], 'daftar' => []];
         }
 
         $bersarang = false;
@@ -1420,7 +1438,20 @@ class LamaranController extends Controller
                 }
             }
 
-            return ['nilai' => implode(', ', $isi), 'baris' => []];
+            // BUTIRNYA IKUT DIKIRIM, bukan cuma hasil gabungannya.
+            //
+            // Jawaban tipe `daftar` ("sebutkan minimal 5 hal") disimpan sebagai
+            // larik — lima gagasan terpisah. Digabung dengan koma, kelimanya
+            // jadi satu kalimat panjang tanpa batas yang terlihat: "sdfa, fa,
+            // fafda, fafa, fa". Yang dibaca peninjau bukan lima jawaban lagi,
+            // melainkan satu jawaban yang kebetulan berkoma — dan tuntutan
+            // "minimal 5" yang dijaga formulir jadi mustahil diperiksa ulang
+            // dengan mata.
+            //
+            // `nilai` TETAP berisi gabungannya: dipakai ekspor, pencarian, dan
+            // layar lama. Yang ditambahkan cuma bentuk aslinya, supaya layar
+            // yang mau menggambarnya bernomor bisa melakukannya.
+            return ['nilai' => implode(', ', $isi), 'baris' => [], 'daftar' => $isi];
         }
 
         // ── BERULANG: satu objek per baris ───────────────────────────────────
@@ -1496,7 +1527,7 @@ class LamaranController extends Controller
             $ringkas[] = count($baris) > 1 ? ($i + 1).') '.$isi : $isi;
         }
 
-        return ['nilai' => implode(' | ', $ringkas), 'baris' => $baris];
+        return ['nilai' => implode(' | ', $ringkas), 'baris' => $baris, 'daftar' => []];
     }
 
     /**
@@ -2861,6 +2892,426 @@ class LamaranController extends Controller
         return ResponseHelper::success($this->detailProgram((int) $realId), 'Detail program');
     }
 
+    // ══════════════════════════════════════════════════════════════════════
+    //  WORKLIST BERBASIS JOB VACANCY (MPP)
+    // ══════════════════════════════════════════════════════════════════════
+    //
+    //  KENAPA ADA CARA KEDUA, BUKAN MENGGANTI YANG PERTAMA
+    //
+    //  Panel kiri worklist selama ini berbasis PROGRAM. Program adalah wadah
+    //  penyelenggaraan ("LOKER BULAN 6", "LOKER BULAN 8"), bukan pekerjaan yang
+    //  sedang dicari. Satu MPP yang belum terpenuhi dibuka lagi di program
+    //  berikutnya — dan di panel kiri lowongan yang SAMA muncul dua kali, di
+    //  bawah dua nama program yang berbeda, masing-masing membawa sebagian
+    //  pelamarnya. Untuk menjawab "sudah sampai mana pencarian STAFF ACCOUNTING
+    //  EMI?" rekruter harus membuka dua papan lalu menjumlahkannya sendiri.
+    //
+    //  Berbasis MPP, lowongan itu satu baris dengan seluruh pelamarnya —
+    //  lintas program, lintas batch.
+    //
+    //  Keduanya dipertahankan karena keduanya menjawab pertanyaan yang berbeda:
+    //  program menjawab "bagaimana gelombang rekrutmen bulan ini berjalan",
+    //  job vacancy menjawab "bagaimana pencarian posisi ini berjalan". Yang
+    //  memilih adalah orang yang sedang bekerja, bukan kode ini.
+
+    /** Berapa job vacancy per halaman di panel kiri (paginasi muncul bila lebih). */
+    private const LOKER_PER_HALAMAN = 10;
+
+    /**
+     * GET panel kiri — daftar JOB VACANCY (MPP) yang sedang berjalan.
+     */
+    public function worklistLoker(Request $request)
+    {
+        return ResponseHelper::success(
+            $this->daftarJobVacancy(
+                max(1, (int) $request->query('page', 1)),
+                self::LOKER_PER_HALAMAN,
+                trim((string) $request->query('q', '')),
+                (string) $request->query('jenis', '')
+            ),
+            'Daftar job vacancy'
+        );
+    }
+
+    /**
+     * GET panel kanan — papan seleksi satu job vacancy.
+     *
+     * Kuncinya lewat QUERY, bukan segmen URL: nomor MPP boleh memuat garis
+     * miring (lihat pola di DetailMppLoker), dan garis miring di tengah path
+     * akan dibaca router sebagai pemisah segmen — permintaannya tidak pernah
+     * sampai ke sini, dan yang terlihat di layar cuma 404 tanpa sebab.
+     */
+    public function worklistLokerDetail(Request $request)
+    {
+        $kunci = trim((string) $request->query('kunci', ''));
+        if ($kunci === '') {
+            return ResponseHelper::error('Job vacancy tidak valid.', 422);
+        }
+
+        return ResponseHelper::success(
+            $this->detailLoker($kunci, (string) $request->query('alur', '')),
+            'Detail job vacancy'
+        );
+    }
+
+    /**
+     * Kunci satu JOB VACANCY dari satu baris loker.
+     *
+     * Nomor MPP-nya bila ada. Loker tanpa nomor MPP TIDAK dibuang melainkan
+     * berdiri sebagai job vacancy-nya sendiri: lowongan yang tidak terlihat
+     * tidak akan pernah dikerjakan siapa pun, dan itu kegagalan yang jauh
+     * lebih mahal daripada satu baris yang tampak sendirian di daftar.
+     */
+    private static function kunciLoker(object $x): string
+    {
+        $mpp = trim((string) ($x->Mpp_Ref ?? ''));
+
+        return $mpp !== '' ? $mpp : 'POS-'.$x->Id_Program_Posisi;
+    }
+
+    /**
+     * PANEL KIRI — job vacancy berjalan, paginasi.
+     *
+     * Dikelompokkan DI PHP, bukan lewat GROUP BY.
+     *
+     * Kuncinya bukan satu kolom melainkan "nomor MPP, atau id loker bila nomor
+     * MPP kosong" — dan mengungkapkannya sebagai ekspresi SQL berarti ekspresi
+     * yang sama harus diulang di setiap agregat, di setiap whereIn, dan di
+     * klausa ORDER BY paginasinya. Himpunan yang dikelompokkan di sini adalah
+     * "loker aktif pada program yang sedang berjalan" — puluhan baris, bukan
+     * puluhan ribu — jadi harga membacanya sekaligus jauh lebih murah daripada
+     * harga menduplikasi definisi kunci di lima tempat.
+     *
+     * @return array{data:array, page:int, perPage:int, total:int, totalPage:int}
+     */
+    private function daftarJobVacancy(int $page, int $perPage, string $q, string $jenis): array
+    {
+        $base = DB::table('N_WEB_CAREERS_Program_Posisi as x')
+            ->join('N_WEB_CAREERS_Program as p', 'p.Id_Program', '=', 'x.Program_Id')
+            ->where('p.Status', 'BERJALAN')
+            ->where('x.Flag_Aktif', 'Y');
+
+        // BATAS KATEGORI — dipasang di kueri, sama seperti daftarProgram().
+        // Chip hanya rupa; `?jenis=` tetap bisa dikarang sendiri.
+        AksesService::saringKategori($base, self::PAGE, 'p.Kategori');
+
+        // Dicari di tiga kolom sekaligus. Yang diingat orang tentang sebuah
+        // lowongan berbeda-beda: nama posisinya, nomor MPP-nya yang tertera di
+        // persetujuan, atau departemen yang memintanya.
+        if ($q !== '') {
+            $base->where(fn ($w) => $w
+                ->where('x.Posisi', 'like', "%{$q}%")
+                ->orWhere('x.Mpp_Ref', 'like', "%{$q}%")
+                ->orWhere('x.Departemen', 'like', "%{$q}%"));
+        }
+
+        $jenis = AksesService::kategoriDiminta(self::PAGE, $jenis);
+        if ($jenis !== '') {
+            $base->where('p.Kategori', $jenis);
+        }
+
+        // TERBARU DI ATAS — id loker menurun. Karena baris sudah urut, kemunculan
+        // PERTAMA tiap kunci adalah lokernya yang paling baru, dan urutan
+        // penyisipan ke $grup langsung jadi urutan tampil yang benar.
+        $rows = $base->orderByDesc('x.Id_Program_Posisi')
+            ->select('x.*', 'p.Nama as ProgramNama', 'p.Kategori', 'p.Warna')
+            ->get();
+
+        // NULL = lingkup SEMUA, tanpa batas. Larik KOSONG berbeda artinya:
+        // "dibatasi, dan tidak ada yang cocok".
+        $picBoleh = AksesService::picDiizinkan(self::PAGE);
+        $milikSaya = fn ($x) => $picBoleh === null
+            || in_array((string) $x->Pic_Kode_Karyawan, $picBoleh, true);
+
+        // Pelamar per LOKER. Disaring belakangan di PHP menurut loker mana yang
+        // memang di tangan akun ini — supaya angka di kartu tidak pernah lebih
+        // besar daripada isi papan yang akan dibukanya.
+        $hitung = $rows->isEmpty() ? collect() : DB::table('N_WEB_CAREERS_Lamaran')
+            ->whereIn('Program_Posisi_Id', $rows->pluck('Id_Program_Posisi')->all())
+            ->select('Program_Posisi_Id',
+                DB::raw('COUNT(*) as total'),
+                DB::raw("SUM(CASE WHEN Status NOT IN ('GUGUR','TALENT_POOL') THEN 1 ELSE 0 END) as aktif"),
+                DB::raw("SUM(CASE WHEN Status = 'LULUS' THEN 1 ELSE 0 END) as lolos"))
+            ->groupBy('Program_Posisi_Id')
+            ->get()
+            ->keyBy('Program_Posisi_Id');
+
+        $grup = [];
+        foreach ($rows as $x) {
+            $kunci = self::kunciLoker($x);
+            $punya = $milikSaya($x);
+            $h = $hitung[$x->Id_Program_Posisi] ?? null;
+
+            $grup[$kunci] ??= [
+                'id' => $kunci,
+                'kunci' => $kunci,
+                'mppRef' => trim((string) ($x->Mpp_Ref ?? '')) ?: null,
+                'posisi' => $x->Posisi,
+                'departemen' => $x->Departemen,
+                'lokasi' => $x->Lokasi,
+                'level' => $x->Level,
+                'kategori' => $x->Kategori,
+                'warna' => $x->Warna,
+                'kuota' => 0,
+                'terisi' => 0,
+                'program' => [],
+                'lokerSaya' => 0,
+                'lokerTotal' => 0,
+                'pelamar' => 0,
+                'aktif' => 0,
+                'lolos' => 0,
+            ];
+
+            $grup[$kunci]['kuota'] += (int) ($x->Kuota ?? 0);
+            $grup[$kunci]['terisi'] += (int) ($x->Terisi ?? 0);
+            $grup[$kunci]['lokerTotal']++;
+            if (! in_array($x->ProgramNama, $grup[$kunci]['program'], true)) {
+                $grup[$kunci]['program'][] = $x->ProgramNama;
+            }
+
+            if (! $punya) {
+                continue;
+            }
+
+            $grup[$kunci]['lokerSaya']++;
+            $grup[$kunci]['pelamar'] += (int) ($h->total ?? 0);
+            $grup[$kunci]['aktif'] += (int) ($h->aktif ?? 0);
+            $grup[$kunci]['lolos'] += (int) ($h->lolos ?? 0);
+        }
+
+        $semua = array_values($grup);
+        $total = count($semua);
+
+        return [
+            'data' => array_slice($semua, ($page - 1) * $perPage, $perPage),
+            'page' => $page,
+            'perPage' => $perPage,
+            'total' => $total,
+            'totalPage' => (int) ceil($total / max(1, $perPage)),
+        ];
+    }
+
+    /**
+     * PANEL KANAN — papan seleksi satu job vacancy, lintas program.
+     *
+     * ── KENAPA ALUR JADI PENYARING, BUKAN GABUNGAN ────────────────────────
+     *
+     * Satu MPP yang dibuka ulang di program berikutnya hampir selalu memakai
+     * alur yang sudah diperbarui. Menggabungkan seluruh alurnya jadi satu papan
+     * — yang dilakukan mode program, dan memang benar di sana — menghasilkan
+     * deretan kolom milik dua rombongan yang tidak pernah bertemu: rekruter
+     * membaca papan berisi belasan kolom yang separuhnya selalu kosong, dan
+     * tidak satu pun kolom menjawab "gelombang yang sekarang sampai di mana".
+     *
+     * Karena itu di sini alur dipilih SATU, bawaannya yang terbaru, dan sisanya
+     * tetap bisa dibuka lewat penyaring di sebelah pemilih tampilan. Gabungan
+     * seluruh alur tetap tersedia sebagai pilihan — kadang memang itu yang
+     * dicari — tapi ia bukan bawaan, karena bukan pertanyaan sehari-hari.
+     *
+     * @param  string  $kunci      nomor MPP, atau 'POS-{id}' untuk loker tanpa MPP
+     * @param  string  $alurMinta  id alur, 'SEMUA', atau '' (pakai bawaan)
+     */
+    private function detailLoker(string $kunci, string $alurMinta): array
+    {
+        $kosong = ['program' => null, 'loker' => null, 'alurOpsi' => [], 'alurAktif' => null, 'posisi' => [], 'kolom' => [], 'pelamar' => []];
+
+        $base = DB::table('N_WEB_CAREERS_Program_Posisi as x')
+            ->join('N_WEB_CAREERS_Program as p', 'p.Id_Program', '=', 'x.Program_Id')
+            ->where('p.Status', 'BERJALAN')
+            ->where('x.Flag_Aktif', 'Y');
+
+        if (str_starts_with($kunci, 'POS-')) {
+            $base->where('x.Id_Program_Posisi', (int) substr($kunci, 4));
+        } else {
+            $base->where('x.Mpp_Ref', $kunci);
+        }
+
+        $lokers = $base
+            ->orderByDesc('x.Id_Program_Posisi')
+            ->select('x.*', 'p.Id_Program', 'p.Nama as ProgramNama', 'p.Kategori', 'p.Alur_Kode')
+            ->get();
+
+        if ($lokers->isEmpty()) {
+            return $kosong;
+        }
+
+        // Menyaring daftar di panel kiri saja belum menutup apa pun: kunci job
+        // vacancy ada di URL, dan panel kanan inilah yang memuat seluruh pelamar
+        // berikut nilainya. Di luar jatah kategori dijawab sama seperti yang
+        // tidak ada — tidak membocorkan bahwa ia ada.
+        $izin = AksesService::kategoriDiizinkan(self::PAGE);
+        if ($izin) {
+            $lokers = $lokers->filter(fn ($x) => in_array($x->Kategori, $izin, true))->values();
+            if ($lokers->isEmpty()) {
+                Log::channel('web_career')->warning(
+                    'Akses ditolak: user #'.session('career_auth.id')." membuka job vacancy {$kunci} di luar jatah kategorinya."
+                );
+
+                return $kosong;
+            }
+        }
+
+        $lokerIds = $lokers->pluck('Id_Program_Posisi')->all();
+        $wakil = $lokers->first();
+
+        // ── ALUR MANA SAJA YANG HIDUP DI LOWONGAN INI ───────────────────────
+        //
+        // Dua sumber, dan keduanya perlu:
+        //   · alur yang BENAR-BENAR dijalani pelamarnya (dibekukan per lamaran)
+        //   · alur yang sekarang menempel di programnya — supaya lowongan yang
+        //     belum punya satu pelamar pun tetap menggambarkan tahapannya, bukan
+        //     papan tanpa kolom yang terbaca seperti alurnya belum disetel.
+        $alurPelamar = DB::table('N_WEB_CAREERS_Lamaran')
+            ->whereIn('Program_Posisi_Id', $lokerIds)
+            ->whereNotNull('Master_Alur_Id')
+            ->select('Master_Alur_Id', DB::raw('COUNT(*) as J'))
+            ->groupBy('Master_Alur_Id')
+            ->pluck('J', 'Master_Alur_Id');
+
+        $alurProgram = DB::table('N_WEB_CAREERS_Master_Alur')
+            ->whereIn('Kode', $lokers->pluck('Alur_Kode')->filter()->unique()->all() ?: ['__tidak_ada__'])
+            ->pluck('Id_Master_Alur');
+
+        $semuaAlurId = collect($alurPelamar->keys())
+            ->merge($alurProgram)
+            ->map(fn ($v) => (int) $v)
+            ->unique()
+            ->values();
+
+        // TERBARU DI ATAS — dan itu pula yang jadi bawaan.
+        //
+        // NOMOR VERSI ikut disebut. Menyunting alur yang sedang dipakai
+        // melahirkan versi baru yang MEWARISI NAMANYA — jadi tanpa nomor itu
+        // penyaring ini menawarkan dua baris berbunyi persis sama, dan yang
+        // memilih tidak punya cara tahu mana rombongan yang mana.
+        $punyaVersi = \App\Support\Career\VersiAlur::siap();
+
+        $alurOpsi = $semuaAlurId->isEmpty() ? [] : DB::table('N_WEB_CAREERS_Master_Alur')
+            ->whereIn('Id_Master_Alur', $semuaAlurId->all())
+            ->orderByDesc('Created_At')
+            ->orderByDesc('Id_Master_Alur')
+            ->get(array_merge(['Id_Master_Alur', 'Kode', 'Nama'], $punyaVersi ? ['Versi', 'Induk_Id'] : []))
+            ->map(fn ($a) => [
+                'id' => (int) $a->Id_Master_Alur,
+                'kode' => $a->Kode,
+                'nama' => $a->Nama,
+                'versi' => $punyaVersi ? (int) ($a->Versi ?: 1) : null,
+                'pelamar' => (int) ($alurPelamar[$a->Id_Master_Alur] ?? 0),
+            ])->values()->all();
+
+        // Nomor versi hanya BERARTI bila memang ada lebih dari satu versi dari
+        // keluarga yang sama di papan ini. Menempelkan "v1" pada alur yang tidak
+        // pernah diversikan cuma menambah istilah tanpa menjawab apa pun.
+        $adaBeberapaVersi = collect($alurOpsi)->pluck('versi')->filter()->unique()->count() > 1;
+        if (! $adaBeberapaVersi) {
+            $alurOpsi = array_map(fn ($a) => ['versi' => null] + $a, $alurOpsi);
+        }
+
+        // ── ALUR YANG DIPAKAI PAPAN ─────────────────────────────────────────
+        //
+        // Bawaannya alur terbaru YANG SUDAH PUNYA PELAMAR, bukan sekadar yang
+        // paling baru dibuat. Program yang baru diarahkan ke alur baru belum
+        // punya satu kandidat pun di sana; membuka papannya di alur itu berarti
+        // menyambut rekruter dengan papan kosong padahal pekerjaannya menumpuk
+        // satu pilihan di sebelahnya. Bila memang belum ada pelamar sama sekali,
+        // barulah alur terbaru dipakai — di situ papan kosong memang jujur.
+        $alurAktif = null;
+        if ($alurMinta !== 'SEMUA') {
+            $diminta = (int) $alurMinta;
+            $sah = collect($alurOpsi)->firstWhere('id', $diminta);
+            $alurAktif = $sah
+                ? $diminta
+                : (collect($alurOpsi)->first(fn ($a) => $a['pelamar'] > 0)['id'] ?? ($alurOpsi[0]['id'] ?? null));
+        }
+
+        $kolom = $alurAktif
+            ? AlurKolom::susun([$alurAktif], $alurAktif)
+            : AlurKolom::susun($semuaAlurId->all());
+
+        // ── GERBANG PIC LOKER ───────────────────────────────────────────────
+        // Sama seperti detailProgram: kandidat menempel ke LOKER, bukan ke
+        // wadah yang menaunginya.
+        $picBoleh = AksesService::picDiizinkan(self::PAGE);
+
+        $lamaran = DB::table('N_WEB_CAREERS_Lamaran as l')
+            ->leftJoin('N_WEB_CAREERS_Users as u', 'u.Id_Users', '=', 'l.Id_Users')
+            ->leftJoin('N_WEB_CAREERS_Program_Posisi as x', 'x.Id_Program_Posisi', '=', 'l.Program_Posisi_Id')
+            ->when($picBoleh !== null, fn ($w) => $w->whereIn('x.Pic_Kode_Karyawan', $picBoleh ?: ['__tidak_ada__']))
+            ->whereIn('l.Program_Posisi_Id', $lokerIds)
+            // Penyaring alur. Tanpa ini papan satu alur akan tetap memuat
+            // kandidat alur lain, lalu melemparkan mereka ke kolom cadangan
+            // "di luar alur" — terbaca seperti data rusak, padahal cuma
+            // rombongan sebelumnya yang memang tidak sedang dilihat.
+            ->when($alurAktif !== null, fn ($w) => $w->where('l.Master_Alur_Id', $alurAktif))
+            ->orderByDesc('l.Id_Lamaran')
+            ->select('l.*', 'u.Nama as Pelamar', 'u.Email as Email', 'u.No_Hp as NoHp',
+                'x.Posisi', 'x.Departemen', 'x.Lokasi', 'x.Level', 'x.Mpp_Ref')
+            ->get();
+
+        $papan = $this->papanPelamar($lamaran, $kolom);
+        $pelamar = $papan['pelamar'];
+
+        // Loker penyusun job vacancy ini + jumlah pelamarnya. Label programnya
+        // ikut disebut: di sini dua baris bisa sama-sama bernama "STAFF
+        // ACCOUNTING EMI", dan yang membedakannya justru program tempat ia
+        // dibuka — persis hal yang membuat mode program membingungkan, dan yang
+        // harus tetap bisa dilihat begitu seseorang perlu memisahkannya lagi.
+        $rekap = collect($pelamar)->groupBy('posisiId');
+        $posisi = $lokers->map(function ($x) use ($rekap) {
+            $isi = $rekap->get(Hashids::encode($x->Id_Program_Posisi), collect());
+
+            return [
+                'id' => Hashids::encode($x->Id_Program_Posisi),
+                'posisi' => $x->Posisi.' · '.$x->ProgramNama,
+                'level' => $x->Level ?? null,
+                'departemen' => $x->Departemen ?? null,
+                'lokasi' => $x->Lokasi ?? null,
+                'mppRef' => $x->Mpp_Ref ?? null,
+                'kuota' => (int) ($x->Kuota ?? 0),
+                'status' => $x->Status ?? null,
+                'pelamar' => $isi->count(),
+                'berjalan' => $isi->where('statusLamaran', 'BERJALAN')->count(),
+                'lolos' => $isi->where('statusLamaran', 'LULUS')->count(),
+                'gugur' => $isi->where('statusLamaran', 'GUGUR')->count(),
+            ];
+        })->values();
+
+        $namaAlurAktif = $alurAktif
+            ? (collect($alurOpsi)->firstWhere('id', $alurAktif)['nama'] ?? null)
+            : 'Semua alur';
+
+        return [
+            // Bentuk `program` DIPERTAHANKAN supaya seluruh papan, drawer, dan
+            // penyaring di layar tetap membaca kunci yang sama seperti mode
+            // program. Yang berubah cuma apa yang mengisinya: di sini judulnya
+            // pekerjaan yang dicari, bukan gelombang penyelenggaraannya.
+            'program' => [
+                'id' => $kunci,
+                'nama' => $wakil->Posisi,
+                'kategori' => $wakil->Kategori,
+                'alur' => $namaAlurAktif,
+            ],
+            // Rincian job vacancy — dipakai kepala panel kanan.
+            'loker' => [
+                'kunci' => $kunci,
+                'mppRef' => trim((string) ($wakil->Mpp_Ref ?? '')) ?: null,
+                'posisi' => $wakil->Posisi,
+                'departemen' => $wakil->Departemen,
+                'lokasi' => $wakil->Lokasi,
+                'level' => $wakil->Level,
+                'kuota' => (int) $lokers->sum(fn ($x) => (int) ($x->Kuota ?? 0)),
+                'terisi' => (int) $lokers->sum(fn ($x) => (int) ($x->Terisi ?? 0)),
+                'program' => $lokers->pluck('ProgramNama')->unique()->values()->all(),
+            ],
+            'alurOpsi' => $alurOpsi,
+            'alurAktif' => $alurAktif,
+            'posisi' => $posisi,
+            'kolom' => $papan['kolom'],
+            'pelamar' => $pelamar,
+            'kampusBendera' => $this->benderaKampus($papan['kampusPer']->values()->all()),
+        ];
+    }
+
     /** Tab filter jenis = Master Talent Acquisition aktif. */
     private function talentTabs(): array
     {
@@ -2915,15 +3366,46 @@ class LamaranController extends Controller
             ->select('p.*', 'a.Nama as AlurNama')
             ->get();
 
-        // Hitung pelamar per program (total, aktif = belum gugur, lolos = LULUS).
-        $hitung = DB::table('N_WEB_CAREERS_Lamaran')
-            ->select('Program_Id',
+        // ── HITUNGAN KARTU IKUT GERBANG PIC ─────────────────────────────
+        //
+        // Dulu baris ini menghitung SELURUH pelamar program, sementara papan
+        // di sebelah kanan menyaringnya menurut loker yang dipegang akun ini.
+        // Akibatnya kartu berbunyi "2 aktif · 2 total" lalu papannya kosong —
+        // dan yang membaca mengira papannya gagal memuat, bukan mengira
+        // lokernya memang bukan miliknya lagi.
+        //
+        // Aturannya kini satu, sama persis dengan worklistDetail(): NULL =
+        // tanpa batas; larik kosong = dibatasi dan tidak ada yang cocok, jadi
+        // memang harus nol.
+        $picBoleh = AksesService::picDiizinkan(self::PAGE);
+
+        $hitung = DB::table('N_WEB_CAREERS_Lamaran as l')
+            ->leftJoin('N_WEB_CAREERS_Program_Posisi as x', 'x.Id_Program_Posisi', '=', 'l.Program_Posisi_Id')
+            ->when($picBoleh !== null, fn ($w) => $w->whereIn('x.Pic_Kode_Karyawan', $picBoleh ?: ['__tidak_ada__']))
+            ->select('l.Program_Id',
                 DB::raw('COUNT(*) as total'),
-                DB::raw("SUM(CASE WHEN Status NOT IN ('GUGUR','TALENT_POOL') THEN 1 ELSE 0 END) as aktif"),
-                DB::raw("SUM(CASE WHEN Status = 'LULUS' THEN 1 ELSE 0 END) as lolos"))
-            ->groupBy('Program_Id')
+                DB::raw("SUM(CASE WHEN l.Status NOT IN ('GUGUR','TALENT_POOL') THEN 1 ELSE 0 END) as aktif"),
+                DB::raw("SUM(CASE WHEN l.Status = 'LULUS' THEN 1 ELSE 0 END) as lolos"))
+            ->groupBy('l.Program_Id')
             ->get()
             ->keyBy('Program_Id');
+
+        // ── LOKER YANG MEMANG DI TANGAN AKUN INI ────────────────────────
+        //
+        // Dipakai kartu untuk membedakan dua keadaan yang di layar tampak
+        // sama-sama nol: "belum ada yang melamar" dan "lokernya sudah
+        // diserahterimakan". Yang pertama menunggu; yang kedua tidak akan
+        // pernah berubah sampai lokernya dikembalikan.
+        $lokerSaya = DB::table('N_WEB_CAREERS_Program_Posisi')
+            ->when($picBoleh !== null, fn ($w) => $w->whereIn('Pic_Kode_Karyawan', $picBoleh ?: ['__tidak_ada__']))
+            ->select('Program_Id', DB::raw('COUNT(*) as c'))
+            ->groupBy('Program_Id')
+            ->pluck('c', 'Program_Id');
+
+        $lokerSemua = DB::table('N_WEB_CAREERS_Program_Posisi')
+            ->select('Program_Id', DB::raw('COUNT(*) as c'))
+            ->groupBy('Program_Id')
+            ->pluck('c', 'Program_Id');
 
         // Jumlah tahap per alur (untuk keterangan kartu).
         $jmlTahap = DB::table('N_WEB_CAREERS_Master_Alur_Tahap as t')
@@ -2944,6 +3426,10 @@ class LamaranController extends Controller
             'pelamar' => (int) ($hitung[$p->Id_Program]->total ?? 0),
             'aktif' => (int) ($hitung[$p->Id_Program]->aktif ?? 0),
             'lolos' => (int) ($hitung[$p->Id_Program]->lolos ?? 0),
+            // Berapa loker program ini yang dipegang akun ini, dari berapa
+            // seluruhnya. 0 dari sekian = seluruhnya sudah pindah tangan.
+            'lokerSaya' => (int) ($lokerSaya[$p->Id_Program] ?? 0),
+            'lokerTotal' => (int) ($lokerSemua[$p->Id_Program] ?? 0),
         ])->all();
 
         return [
@@ -3001,10 +3487,23 @@ class LamaranController extends Controller
             $alurProgramId,
         );
 
+        // ── GERBANG PIC LOKER ───────────────────────────────────────────────
+        //
+        // Kandidat menempel ke LOKER, bukan ke program. Karena itu penyaringnya
+        // di sini, bukan di daftar program: seorang rekruter bisa saja memegang
+        // satu dari tiga loker sebuah program — ia berhak melihat programnya,
+        // tapi hanya kandidat lokernya sendiri.
+        //
+        // NULL = lingkup SEMUA, tanpa batas. Larik KOSONG berbeda artinya:
+        // "dibatasi, dan tidak ada yang cocok" — dan itu memang harus
+        // memulangkan nol baris, bukan seluruhnya.
+        $picBoleh = AksesService::picDiizinkan(self::PAGE);
+
         // Pelamar program ini + tahap-tahapnya.
         $lamaran = DB::table('N_WEB_CAREERS_Lamaran as l')
             ->leftJoin('N_WEB_CAREERS_Users as u', 'u.Id_Users', '=', 'l.Id_Users')
             ->leftJoin('N_WEB_CAREERS_Program_Posisi as x', 'x.Id_Program_Posisi', '=', 'l.Program_Posisi_Id')
+            ->when($picBoleh !== null, fn ($w) => $w->whereIn('x.Pic_Kode_Karyawan', $picBoleh ?: ['__tidak_ada__']))
             ->where('l.Program_Id', $programId)
             ->orderByDesc('l.Id_Lamaran')
             // Rincian lowongan ikut dibawa: worklist perlu menyaring & menampilkan
@@ -3013,6 +3512,77 @@ class LamaranController extends Controller
                 'x.Posisi', 'x.Departemen', 'x.Lokasi', 'x.Level', 'x.Mpp_Ref')
             ->get();
 
+        // Sisa penyusunan papan TIDAK bergantung pada dari mana lamaran ini
+        // dikumpulkan — lihat papanPelamar().
+        $papan = $this->papanPelamar($lamaran, $kolom);
+        $kolom = $papan['kolom'];
+        $pelamar = $papan['pelamar'];
+        $kampusPer = $papan['kampusPer'];
+
+        // Lowongan/posisi program ini + jumlah pelamarnya — dipakai penyaring
+        // worklist dan kartu ringkas, sepola dengan tampilan di landing page.
+        $rekap = collect($pelamar)->groupBy('posisiId');
+        $posisi = DB::table('N_WEB_CAREERS_Program_Posisi')
+            ->where('Program_Id', $programId)
+            ->orderBy('Id_Program_Posisi')
+            ->get()
+            ->map(function ($x) use ($rekap) {
+                $isi = $rekap->get(Hashids::encode($x->Id_Program_Posisi), collect());
+
+                return [
+                    'id' => Hashids::encode($x->Id_Program_Posisi),
+                    'posisi' => $x->Posisi,
+                    'level' => $x->Level ?? null,
+                    'departemen' => $x->Departemen ?? null,
+                    'lokasi' => $x->Lokasi ?? null,
+                    'mppRef' => $x->Mpp_Ref ?? null,
+                    'kuota' => (int) ($x->Kuota ?? 0),
+                    'status' => $x->Status ?? null,
+                    // Angka yang paling sering ditanya HR: berapa yang masih
+                    // jalan, berapa diterima, berapa gugur — per lowongan.
+                    'pelamar' => $isi->count(),
+                    'berjalan' => $isi->where('statusLamaran', 'BERJALAN')->count(),
+                    'lolos' => $isi->where('statusLamaran', 'LULUS')->count(),
+                    'gugur' => $isi->where('statusLamaran', 'GUGUR')->count(),
+                ];
+            })->values();
+
+        return [
+            'program' => [
+                'id' => Hashids::encode($program->Id_Program),
+                'nama' => $program->Nama,
+                'kategori' => $program->Kategori,
+                'alur' => $alur->Nama ?? null,
+            ],
+            'posisi' => $posisi,
+            'kolom' => $kolom,
+            'pelamar' => $pelamar,
+            // Bendera per NAMA kampus, untuk penyaring "Kampus" di worklist —
+            // bentuk yang sama dengan pemilih kampus di formulir pendaftaran.
+            'kampusBendera' => $this->benderaKampus($kampusPer->values()->all()),
+        ];
+    }
+
+    /**
+     * BAGIAN PAPAN YANG SAMA, DARI MANA PUN LAMARANNYA DIKUMPULKAN.
+     *
+     * Papan worklist bisa dikumpulkan dua cara: per PROGRAM (detailProgram)
+     * atau per JOB VACANCY/MPP (detailLoker). Yang berbeda hanya cara memilih
+     * baris lamaran dan cara menyusun kolomnya; segala sesudah itu — rapor
+     * sub-tes, kuota, berkas, badge, penempatan kartu, jaring pengaman kolom
+     * cadangan — identik.
+     *
+     * Dipisah ke sini supaya penambahan cara kedua tidak berarti menyalin 280
+     * baris aturan penilaian. Salinan seperti itu tidak pernah tinggal diam:
+     * satu sisi diperbaiki, sisi lain tertinggal, dan dua papan yang membaca
+     * populasi sama mulai menjawab berbeda — tanpa satu galat pun.
+     *
+     * @param  \Illuminate\Support\Collection  $lamaran  baris lamaran yang SUDAH tersaring
+     * @param  array<int, array<string, mixed>>  $kolom  kolom papan
+     * @return array{kolom: array, pelamar: array, kampusPer: \Illuminate\Support\Collection}
+     */
+    private function papanPelamar(\Illuminate\Support\Collection $lamaran, array $kolom): array
+    {
         // BERPOTONG — lihat MetrikRekrutmen::potongIn(). Satu program bisa
         // berisi ribuan pelamar, dan whereIn menerbitkan satu parameter per id.
         $tahapPer = \App\Support\Career\MetrikRekrutmen::potongIn(
@@ -3030,13 +3600,34 @@ class LamaranController extends Controller
             $tahapPer->flatten(1)->pluck('Id_Lamaran_Tahap')->all()
         );
 
-        // Kuota MPP per posisi + kursi TERISI (LULUS) — untuk tombol sadar-kuota.
+        // Kuota loker + kursi TERISI — untuk tombol sadar-kuota.
+        //
+        // Status mana yang memotong kuota dibaca dari MASTER, sama dengan
+        // gerbang di LamaranService dan pembukuan di KursiPosisi. Ditulis
+        // 'LULUS' di sini, layar akan menampilkan angka yang berbeda dari yang
+        // dipakai gerbangnya sendiri begitu ada satu hasil lain dicentang.
+        $potongKuota = \App\Support\Career\HasilKeputusan::kodePotongKuota() ?: ['LULUS'];
+
         $posisiIds = $lamaran->pluck('Program_Posisi_Id')->filter()->unique()->all();
         $kuotaPosisi = $posisiIds ? DB::table('N_WEB_CAREERS_Program_Posisi')->whereIn('Id_Program_Posisi', $posisiIds)->pluck('Kuota', 'Id_Program_Posisi') : collect();
         $terisiKuota = $posisiIds
-            ? DB::table('N_WEB_CAREERS_Lamaran')->whereIn('Program_Posisi_Id', $posisiIds)->where('Status', 'LULUS')
+            ? DB::table('N_WEB_CAREERS_Lamaran')->whereIn('Program_Posisi_Id', $posisiIds)->whereIn('Status', $potongKuota)
                 ->select('Program_Posisi_Id', DB::raw('COUNT(*) as J'))->groupBy('Program_Posisi_Id')->pluck('J', 'Program_Posisi_Id')
             : collect();
+
+        // ── BUKU KURSI MPP, LINTAS PROGRAM ──────────────────────────────────
+        //
+        // Kuota loker hanya menjawab "jatah program ini". Yang menutup
+        // penerimaan sesungguhnya adalah rencana MPP — dan itu menyeberang
+        // program. Dibaca SEKALI untuk seluruh papan, bukan per kandidat.
+        // DISEGARKAN, bukan sekadar dibaca. Baris ledger hanya ditulis ulang
+        // pada peristiwa yang menyentuhnya (penerimaan & jalur baliknya);
+        // membuka program baru atas MPP yang sama atau menonaktifkan program
+        // tidak melewati jalur itu. Membacanya apa adanya membuat kartu
+        // menyebut angka yang tidak dipakai gerbang mana pun.
+        $mppKursi = \App\Support\Career\KursiMpp::segarkanBanyak(
+            $lamaran->pluck('Mpp_Ref')->filter()->unique()->all()
+        );
 
         // Jumlah berkas hasil (MCU/Interview) per tahap — untuk gate wajib-upload.
         $tahapIdsAll = $tahapPer->flatten(1)->pluck('Id_Lamaran_Tahap')->all();
@@ -3108,7 +3699,7 @@ class LamaranController extends Controller
             $lamaran->pluck('Id_Lamaran')->all(),
         )->pluck('J', 'Lamaran_Id');
 
-        $pelamar = $lamaran->map(function ($l) use ($tahapPer, $subPer, $kuotaPosisi, $terisiKuota, $berkasCount, $berkasSub, $berkasKandidat, $alasanHold, $kolom, $namaResmi, $kampusPer, $berkasFormulir) { // NOSONAR
+        $pelamar = $lamaran->map(function ($l) use ($tahapPer, $subPer, $kuotaPosisi, $terisiKuota, $mppKursi, $berkasCount, $berkasSub, $berkasKandidat, $alasanHold, $kolom, $namaResmi, $kampusPer, $berkasFormulir) { // NOSONAR
             $tahapList = collect($tahapPer->get($l->Id_Lamaran, []));
 
             // Aturan penempatan + badge + kuota dipusatkan di PipelineProgress
@@ -3127,7 +3718,11 @@ class LamaranController extends Controller
                 (int) ($kuotaPosisi[$l->Program_Posisi_Id] ?? 0),
                 (int) ($terisiKuota[$l->Program_Posisi_Id] ?? 0),
                 (int) ($tAktif->Urutan ?? 0),
-                (int) $l->Total_Tahap
+                (int) $l->Total_Tahap,
+                // Batas kedua: rencana MPP, lintas program. Null bila lokernya
+                // memang tidak menempel MPP mana pun — gerbangnya lalu diam,
+                // persis seperti sebelum fitur ini ada.
+                $mppKursi[trim((string) $l->Mpp_Ref)] ?? null,
             );
 
             $badge = PipelineProgress::badge($l, $st, $tAktif);
@@ -3179,6 +3774,12 @@ class LamaranController extends Controller
                 'terisiKuota' => $ku['terisiKuota'],
                 'sisaKuota' => $ku['sisaKuota'],
                 'kuotaPenuh' => $ku['kuotaPenuh'],
+                // Batas mana yang menutup — 'LOKER' atau 'MPP'. Keduanya
+                // menuntut tindakan yang berbeda, jadi layar harus menyebutnya.
+                'kuotaSebab' => $ku['kuotaSebab'],
+                'mppKuota' => $ku['mppKuota'],
+                'mppTerisi' => $ku['mppTerisi'],
+                'mppSisa' => $ku['mppSisa'],
                 'diTahapAkhir' => $ku['diTahapAkhir'],
                 // Berkas hasil pada tahap aktif (untuk unggah/preview + gate wajib).
                 'jmlBerkas' => (int) ($tAktif ? ($berkasCount[$tAktif->Id_Lamaran_Tahap] ?? 0) : 0),
@@ -3300,48 +3901,7 @@ class LamaranController extends Controller
             }
         }
 
-        // Lowongan/posisi program ini + jumlah pelamarnya — dipakai penyaring
-        // worklist dan kartu ringkas, sepola dengan tampilan di landing page.
-        $rekap = collect($pelamar)->groupBy('posisiId');
-        $posisi = DB::table('N_WEB_CAREERS_Program_Posisi')
-            ->where('Program_Id', $programId)
-            ->orderBy('Id_Program_Posisi')
-            ->get()
-            ->map(function ($x) use ($rekap) {
-                $isi = $rekap->get(Hashids::encode($x->Id_Program_Posisi), collect());
-
-                return [
-                    'id' => Hashids::encode($x->Id_Program_Posisi),
-                    'posisi' => $x->Posisi,
-                    'level' => $x->Level ?? null,
-                    'departemen' => $x->Departemen ?? null,
-                    'lokasi' => $x->Lokasi ?? null,
-                    'mppRef' => $x->Mpp_Ref ?? null,
-                    'kuota' => (int) ($x->Kuota ?? 0),
-                    'status' => $x->Status ?? null,
-                    // Angka yang paling sering ditanya HR: berapa yang masih
-                    // jalan, berapa diterima, berapa gugur — per lowongan.
-                    'pelamar' => $isi->count(),
-                    'berjalan' => $isi->where('statusLamaran', 'BERJALAN')->count(),
-                    'lolos' => $isi->where('statusLamaran', 'LULUS')->count(),
-                    'gugur' => $isi->where('statusLamaran', 'GUGUR')->count(),
-                ];
-            })->values();
-
-        return [
-            'program' => [
-                'id' => Hashids::encode($program->Id_Program),
-                'nama' => $program->Nama,
-                'kategori' => $program->Kategori,
-                'alur' => $alur->Nama ?? null,
-            ],
-            'posisi' => $posisi,
-            'kolom' => $kolom,
-            'pelamar' => $pelamar,
-            // Bendera per NAMA kampus, untuk penyaring "Kampus" di worklist —
-            // bentuk yang sama dengan pemilih kampus di formulir pendaftaran.
-            'kampusBendera' => $this->benderaKampus($kampusPer->values()->all()),
-        ];
+        return ['kolom' => $kolom, 'pelamar' => $pelamar, 'kampusPer' => $kampusPer];
     }
 
     /**
@@ -3586,6 +4146,17 @@ class LamaranController extends Controller
          * "Catat Hasil" di keadaan itu mengundang petugas mengisi temuan atas
          * pemeriksaan yang belum boleh dijalankan. */
         $periksa = Pemeriksaan::bentuk($x);
+
+        /* PHONE SCREENING — ringkasan saja di daftar aktivitas.
+         *
+         * Bentuk ringkas (tanpa argumen kedua): kode template, keadaan sesi,
+         * skor. Pertanyaan dan jawabannya TIDAK ikut di sini — satu template
+         * bisa berisi 50 pertanyaan, dan menyertakannya untuk setiap aktivitas
+         * di setiap baris worklist berarti mengangkut ribuan baris yang tidak
+         * satu pun digambar sampai panelnya dibuka.
+         *
+         * Isi penuhnya diambil layar lewat endpoint sub-tes/{id}/skrining. */
+        $skrining = \App\Support\Career\Skrining::bentuk($x);
         $butuhSetuju = $periksa !== null
             && ! (($periksa['persetujuan']['ada'] ?? false) || ($periksa['persetujuan']['ditolak'] ?? false));
 
@@ -3827,6 +4398,10 @@ class LamaranController extends Controller
             // pemanggil menambah lebih banyak yang bisa salah daripada yang
             // dihemat.
             'pemeriksaan' => $periksa,
+            // Null untuk aktivitas biasa — sepola 'pemeriksaan' di atas, layar
+            // cukup memeriksa satu kunci untuk tahu perlu menggambar panel
+            // skrining atau tidak.
+            'skrining' => $skrining,
             // MENUNGGU JAWABAN KANDIDAT.
             //
             // Selama belum dijawab, barisnya hanya menawarkan Setuju / Tidak
@@ -3973,6 +4548,14 @@ class LamaranController extends Controller
             return empty($x->Mcu_Status) ? 'hasil MCU belum dicatat' : null;
         }
 
+        // SKRINING: kuesionernya HARUS terisi sebelum aktivitas ini dianggap
+        // beres. Diperiksa sebelum $dicatatTim karena alasannya lebih tepat —
+        // "hasil belum dicatat" tidak memberi tahu bahwa yang kurang adalah
+        // kuesioner telepon, dan rekruter akan mencarinya di kotak catatan.
+        if ($sisaSkrining = \App\Support\Career\Skrining::belumTuntas($x)) {
+            return $sisaSkrining;
+        }
+
         if ($dicatatTim) {
             return 'hasil belum dicatat';
         }
@@ -3987,11 +4570,80 @@ class LamaranController extends Controller
      * keputusan sendiri yang lepas dari nasib tahapnya, jadi keduanya dikirim
      * dalam satu permintaan — mustahil ada keputusan tanpa hasil kesehatannya.
      */
+    /**
+     * TAHAP-TAHAP INI MILIK LOKER YANG BOLEH SAYA KERJAKAN? — galat, atau null.
+     *
+     * Menerima id LAMARAN_TAHAP (bukan lamaran), karena itulah yang dibawa
+     * seluruh titik tulis worklist: putus, hold, ulang, unggah berkas.
+     *
+     * ── KENAPA GERBANG INI ADA, PADAHAL DAFTARNYA SUDAH DISARING ────────────
+     *
+     * Worklist memang hanya menampilkan kandidat loker sendiri. Tapi daftar
+     * yang tersaring bukan gerbang: id-nya bisa datang dari tab yang sudah
+     * terbuka sebelum lokernya diserahterimakan, dari tautan yang dibagikan
+     * rekan, atau langsung tanpa lewat layar sama sekali. Yang menentukan
+     * boleh-tidaknya sebuah keputusan diketuk adalah baris ini.
+     *
+     * Pemegang LINTAS_PIC dilewatkan — itulah gunanya aksi itu ada — dan
+     * terobosannya dicatat, bukan didiamkan.
+     *
+     * @param  array<int, int>|int  $tahapIds
+     */
+    private function galatPicTahap($tahapIds)
+    {
+        $ids = array_values(array_unique(array_filter(array_map('intval', (array) $tahapIds))));
+        if (! $ids) {
+            return null;
+        }
+
+        $boleh = AksesService::picDiizinkan(self::PAGE);
+        if ($boleh === null) {
+            return null;   // lingkup SEMUA
+        }
+
+        $luar = DB::table('N_WEB_CAREERS_Lamaran_Tahap as t')
+            ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 't.Lamaran_Id')
+            ->leftJoin('N_WEB_CAREERS_Program_Posisi as x', 'x.Id_Program_Posisi', '=', 'l.Program_Posisi_Id')
+            ->whereIn('t.Id_Lamaran_Tahap', $ids)
+            ->where(function ($w) use ($boleh) {
+                $w->whereNull('x.Pic_Kode_Karyawan')
+                    ->orWhereNotIn('x.Pic_Kode_Karyawan', $boleh ?: ['__tidak_ada__']);
+            })
+            ->distinct()
+            ->pluck('l.Kode');
+
+        if ($luar->isEmpty()) {
+            return null;
+        }
+
+        if (AksesService::boleh(self::PAGE, 'LINTAS_PIC')) {
+            Log::channel('web_career')->info(sprintf(
+                '[LINTAS_PIC] %s mengerjakan kandidat di luar lokernya: %s',
+                session('career_auth.nama', 'ADMIN'),
+                $luar->take(10)->implode(', ')
+            ));
+
+            return null;
+        }
+
+        return ResponseHelper::error(
+            'Kandidat berikut berada di loker yang bukan tanggung jawab Anda: '
+            .$luar->take(5)->implode(', ')
+            .($luar->count() > 5 ? ' (dan '.($luar->count() - 5).' lainnya)' : '')
+            .'. Minta pemegang lokernya, atau minta serah terima ke admin.',
+            403
+        );
+    }
+
     public function putus(Request $request, string $id)
     {
         $realId = Hashids::decode($id)[0] ?? null;
         if (! $realId) {
             return ResponseHelper::error('Tahap tidak valid.', 422);
+        }
+
+        if ($galat = $this->galatPicTahap($realId)) {
+            return $galat;
         }
 
         $data = $request->validate([
@@ -4390,6 +5042,16 @@ class LamaranController extends Controller
             'catatAktivitas' => 'nullable|boolean',
         ]);
 
+        // Gerbang PIC untuk SELURUH gelombang sekaligus, sebelum satu pun
+        // diproses. Memeriksanya per baris di dalam gelung akan meloloskan
+        // sebagian lalu menolak sisanya — dan gelombang keputusan yang separuh
+        // jalan adalah keadaan yang paling sulit dibereskan.
+        if ($galat = $this->galatPicTahap(
+            collect($data['item'])->map(fn ($it) => Hashids::decode($it['tahapId'])[0] ?? null)->filter()->all()
+        )) {
+            return $galat;
+        }
+
         $catatAktivitas = (bool) ($data['catatAktivitas'] ?? false);
 
         // Kode gelombang: waktu + acak pendek. Waktunya di depan supaya kode
@@ -4728,6 +5390,9 @@ class LamaranController extends Controller
     public function hold(Request $request, string $id)
     {
         $realId = Hashids::decode($id)[0] ?? null;
+        if ($realId && ($galat = $this->galatPicTahap($realId))) {
+            return $galat;
+        }
         if (! $realId) {
             return ResponseHelper::error('Tahap tidak valid.', 422);
         }
@@ -4871,6 +5536,13 @@ class LamaranController extends Controller
             return ResponseHelper::error('Tahap tidak ditemukan.', 404);
         }
 
+        // Gerbang PIC: mengulang tahap membatalkan keputusan yang sudah
+        // diketuk, jadi ia menuntut kepemilikan loker yang sama dengan
+        // mengetuknya. Lihat galatPicTahap().
+        if ($galat = $this->galatPicTahap((int) $realId)) {
+            return $galat;
+        }
+
         // MENUNGGU dan BELUM sama-sama berarti "belum pernah dijalani". Keduanya
         // harus ditolak: mengulang tahap yang tak pernah terjadi akan mengarsipkan
         // baris kosong lalu menggeser kandidat MUNDUR ke tahap yang belum ia capai.
@@ -4976,6 +5648,16 @@ class LamaranController extends Controller
             'item.*.catatan' => 'nullable|string',
             'item.*.catatanHtml' => 'nullable|string',
         ]);
+
+        // Gerbang PIC untuk SELURUH gelombang sekaligus, sebelum satu pun
+        // diproses. Memeriksanya per baris di dalam gelung akan meloloskan
+        // sebagian lalu menolak sisanya — dan gelombang yang separuh diputus
+        // adalah keadaan yang paling sulit dibereskan.
+        if ($galat = $this->galatPicTahap(
+            collect($data['item'])->map(fn ($it) => Hashids::decode($it['tahapId'])[0] ?? null)->filter()->all()
+        )) {
+            return $galat;
+        }
 
         $menahan = (bool) $data['hold'];
         $berhasil = [];
@@ -7232,6 +7914,29 @@ class LamaranController extends Controller
                 );
             }
 
+            // ── GERBANG KUESIONER SKRINING ──────────────────────────────
+            //
+            // Aktivitas skrining yang terikat kuesioner TIDAK BISA ditutup
+            // sebelum kuesionernya diselesaikan. Inilah inti fiturnya: tanpa
+            // gerbang ini, "Catat Hasil" tetap bisa ditekan dan seluruh
+            // pertanyaan yang sudah disusun di Master Template tidak pernah
+            // benar-benar ditanyakan — sementara datanya terlihat lengkap.
+            //
+            // Ditegakkan DI SINI, bukan cukup dengan mematikan tombolnya:
+            // layar bisa basi, dan pintu ini bisa diketuk langsung.
+            //
+            // "Tidak hadir" tetap jadi jalan keluarnya — kandidat yang tidak
+            // mengangkat telepon memang tidak punya jawaban untuk diisi, dan
+            // itu ditempuh lewat pintu kehadiran, bukan pintu ini.
+            if ($sisaSkrining = \App\Support\Career\Skrining::belumTuntas($sub)) {
+                return ResponseHelper::error(
+                    "\"{$sub->Label}\" belum bisa ditutup — {$sisaSkrining}. "
+                    .'Buka kuesionernya di baris aktivitas ini, isi jawabannya, lalu tekan Selesaikan. '
+                    .'Bila kandidat tidak bisa dihubungi sama sekali, tandai "Tidak hadir".',
+                    422
+                );
+            }
+
             // Nilainya milik HCLearn; admin hanya menyatakan lulus/tidaknya.
             if ($adminYangMemutuskan && empty($data['hasil'])) {
                 return ResponseHelper::error(
@@ -7530,6 +8235,8 @@ class LamaranController extends Controller
                         'label' => ucwords(str_replace(['_', '-'], ' ', $k)),
                         'nilai' => $isi['nilai'],
                         'baris' => $isi['baris'],
+                        // Butir daftar dibawa apa adanya — lihat nilaiIsian().
+                        'daftar' => $isi['daftar'],
                         'berkas' => $lampiran[0] ?? null,
                         'berkasList' => $lampiran,
                     ];

@@ -299,13 +299,73 @@ class MasterFormulirController extends Controller
                 return ResponseHelper::error("Formulir masih dipakai {$dipakaiAlur} tahap alur seleksi.", 422);
             }
 
-            DB::table('N_WEB_CAREERS_Master_Formulir')->where('Id_Master_Formulir', $realId)->delete();
+            // Penjadwalan & syarat program menyimpan kode formulir juga. Keduanya
+            // tidak diperiksa sebelumnya, sehingga formulir yang masih dirujuk
+            // dari sana bisa terhapus dan meninggalkan tahap yang menunjuk
+            // formulir hilang — jalan buntu yang baru ketahuan saat kandidat
+            // membukanya.
+            $dipakaiJadwal = DB::table('N_WEB_CAREERS_Penjadwalan_Tahap')
+                ->where('Formulir_Kode', $row->Kode)->count();
+            if ($dipakaiJadwal) {
+                return ResponseHelper::error("Formulir masih dipakai {$dipakaiJadwal} tahap penjadwalan yang sudah terbit.", 422);
+            }
+
+            $dipakaiSyarat = DB::table('N_WEB_CAREERS_Program_Syarat')
+                ->where('Formulir_Kode', $row->Kode)->count();
+            if ($dipakaiSyarat) {
+                return ResponseHelper::error("Formulir masih dipakai {$dipakaiSyarat} syarat auto-gugur di Program Kegiatan.", 422);
+            }
+
+            // ── VERSINYA DIBUANG DULU ───────────────────────────────────────
+            //
+            // Master_Formulir_Versi menunjuk tabel ini lewat foreign key
+            // sungguhan (FK_FormulirVersi_Master). Menghapus induknya lebih dulu
+            // ditolak SQL Server, dan admin hanya melihat "Gagal menghapus data"
+            // tanpa satu pun petunjuk kenapa — galat aslinya cuma sampai ke log.
+            //
+            // Draf yang menempel ke versi-versi itu ikut dibuang: ia salinan
+            // setengah jalan milik kandidat pada formulir yang sudah tidak ada,
+            // dan tidak bisa dibuka oleh siapa pun setelah ini.
+            //
+            // SATU TRANSAKSI. Versi terhapus lalu induknya gagal akan
+            // meninggalkan formulir tanpa satu pun versi — tampak utuh di
+            // daftar, tapi tidak bisa dirender sama sekali.
+            DB::transaction(function () use ($realId) {
+                $versiIds = DB::table('N_WEB_CAREERS_Master_Formulir_Versi')
+                    ->where('Master_Formulir_Id', $realId)
+                    ->pluck('Id_Master_Formulir_Versi');
+
+                if ($versiIds->isNotEmpty()) {
+                    DB::table('N_WEB_CAREERS_Formulir_Draf')
+                        ->whereIn('Master_Formulir_Versi_Id', $versiIds)
+                        ->delete();
+                }
+
+                DB::table('N_WEB_CAREERS_Master_Formulir_Versi')
+                    ->where('Master_Formulir_Id', $realId)
+                    ->delete();
+
+                DB::table('N_WEB_CAREERS_Master_Formulir')
+                    ->where('Id_Master_Formulir', $realId)
+                    ->delete();
+            });
+
+            Log::channel('web_career')->info(
+                "Formulir {$row->Kode} ({$row->Nama}) dihapus oleh ".session('career_auth.nama', 'ADMIN')
+            );
 
             return ResponseHelper::success(null, 'Formulir dihapus');
         } catch (\Throwable $e) {
             Log::channel('web_career')->error("Gagal hapus formulir #{$id}: " . $e->getMessage());
 
-            return ResponseHelper::error('Gagal menghapus data', 500);
+            // Penolakan foreign key disebutkan apa adanya. "Gagal menghapus
+            // data" memaksa admin menebak — dan yang bisa ia lakukan cuma
+            // mencoba lagi, yang pasti gagal lagi dengan cara yang sama.
+            $pesan = str_contains($e->getMessage(), 'REFERENCE constraint')
+                ? 'Formulir tidak bisa dihapus karena masih ada data lain yang menunjuknya. Nonaktifkan saja formulirnya.'
+                : 'Gagal menghapus data';
+
+            return ResponseHelper::error($pesan, 500);
         }
     }
 

@@ -92,7 +92,7 @@ class HakAksesController extends Controller
                 ->when(in_array($role, ['ADMIN', 'SUPERADMIN', 'KANDIDAT'], true), fn ($w) => $w->where('u.Role', $role));
 
             $total = (clone $userQ)->count();
-            $users = $userQ->orderBy('u.Nama')->forPage($page, $limit)->get(['u.Id_Users', 'u.Nama', 'u.Email', 'u.Role', 'u.Klasifikasi']);
+            $users = $userQ->orderBy('u.Nama')->forPage($page, $limit)->get(['u.Id_Users', 'u.Nama', 'u.Email', 'u.Role', 'u.Klasifikasi', 'u.Kode_Karyawan']);
 
             $ids = $users->pluck('Id_Users')->all() ?: [0];
 
@@ -100,7 +100,7 @@ class HakAksesController extends Controller
                 ->leftJoin('N_WEB_CAREERS_Menu as m', 'm.Jenis_Page', '=', 'pa.Jenis_Page')
                 ->whereIn('pa.Id_Users', $ids)
                 ->orderBy('pa.Urutan_Menu')
-                ->get(['pa.Id_Page_Access', 'pa.Id_Users', 'pa.Jenis_Page', 'pa.Urutan_Menu', 'm.Nama_Menu', 'm.Nama_Header', 'm.Icon_Menu', 'm.Untuk_Role'])
+                ->get(['pa.Id_Page_Access', 'pa.Id_Users', 'pa.Jenis_Page', 'pa.Urutan_Menu', 'pa.Lingkup_Pic', 'm.Nama_Menu', 'm.Nama_Header', 'm.Icon_Menu', 'm.Untuk_Role'])
                 ->groupBy('Id_Users');
 
             $pageIds = $pages->flatten(1)->pluck('Id_Page_Access')->all() ?: [0];
@@ -123,11 +123,21 @@ class HakAksesController extends Controller
                         'kategori' => collect($konten->get($p->Id_Page_Access, []))
                             ->filter(fn ($k) => $k->Flag_Diizinkan === 'Y')
                             ->pluck('Kategori')->values(),
+                        // Lingkup penanggung jawab MPP untuk halaman ini.
+                        // Kosong dibaca 'SEMUA' — sama dengan yang ditegakkan
+                        // AksesService::lingkupPic(), supaya layar dan gerbangnya
+                        // tidak bisa menampilkan dua jawaban berbeda.
+                        'lingkupPic' => $p->Lingkup_Pic ?: 'SEMUA',
                     ];
                 })->values();
 
                 return [
                     'id' => Hashids::encode($u->Id_Users),
+                    // Dipakai layar untuk memperingatkan: lingkup SENDIRI/TIM pada
+                    // akun yang belum ditautkan ke karyawan berarti nol MPP, dan
+                    // itu harus terbaca SEBELUM lingkupnya diubah — bukan sebagai
+                    // laporan "daftar MPP saya kosong" beberapa hari kemudian.
+                    'kodeKaryawan' => $u->Kode_Karyawan ?? null,
                     'nama' => $u->Nama,
                     'email' => $u->Email,
                     'role' => $u->Role,
@@ -251,6 +261,52 @@ class HakAksesController extends Controller
             Log::channel('web_career')->error('Gagal toggle aksi: ' . $e->getMessage());
 
             return ResponseHelper::error('Gagal memperbarui hak akses', 500);
+        }
+    }
+
+    /**
+     * Ubah LINGKUP PIC satu halaman untuk satu pengguna.
+     *
+     * Terpisah dari toggleAksi/toggleKonten karena bentuknya memang berbeda:
+     * aksi dan kategori itu centang (banyak boleh menyala), lingkup itu pilihan
+     * tunggal — tiga nilai yang saling meniadakan.
+     */
+    public function ubahLingkup(Request $request)
+    {
+        try {
+            $data = $request->validate([
+                'idPageAccess' => 'required|string',
+                'lingkup' => 'required|in:SENDIRI,TIM,SEMUA',
+            ]);
+
+            $pageId = Hashids::decode($data['idPageAccess'])[0] ?? null;
+            if (! $pageId) {
+                return ResponseHelper::error('Halaman tidak valid.', 422);
+            }
+
+            $terpengaruh = DB::table($this->tPage)
+                ->where('Id_Page_Access', $pageId)
+                ->update(['Lingkup_Pic' => $data['lingkup']]);
+
+            if (! $terpengaruh) {
+                return ResponseHelper::error('Baris akses tidak ditemukan.', 404);
+            }
+
+            // Paket akses dibuang dari cache supaya perubahannya terasa pada
+            // permintaan berikutnya, bukan sepuluh menit lagi. Tanpa ini admin
+            // mengubah lingkup, mencobanya, dan menyimpulkan tombolnya rusak.
+            $idUsers = (int) DB::table($this->tPage)->where('Id_Page_Access', $pageId)->value('Id_Users');
+            if ($idUsers) {
+                AksesService::lupakan($idUsers);
+            }
+
+            return ResponseHelper::success(null, 'Lingkup PIC diperbarui.');
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return ResponseHelper::error(collect($e->errors())->flatten()->first() ?? 'Data tidak valid', 422);
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->error('Gagal mengubah lingkup PIC: ' . $e->getMessage());
+
+            return ResponseHelper::error('Gagal mengubah lingkup PIC', 500);
         }
     }
 
@@ -429,6 +485,7 @@ class HakAksesController extends Controller
                             // kalau tidak, hasil duplikat kehilangan tata letak sidebar
                             // yang sudah disusun di /hak-akses/susun/{user}.
                             'Nama_Header_Custom' => $s->Nama_Header_Custom,
+                            'Nama_Grup_Custom' => $s->Nama_Grup_Custom,
                             'Sub_Header_Custom' => $s->Sub_Header_Custom,
                             'Nama_Menu_Custom' => $s->Nama_Menu_Custom,
                             'Icon_Menu_Custom' => $s->Icon_Menu_Custom,

@@ -540,7 +540,18 @@ class AuthController extends Controller
 
         DB::table($this->table)->where('Id_Users', $row->Id_Users)->update(['Last_Login_At' => Carbon::now()]);
 
-        $user = ['id' => $row->Id_Users, 'nama' => $row->Nama, 'email' => $row->Email, 'role' => $row->Role, 'klasifikasi' => $row->Klasifikasi, 'valid_until' => $row->Valid_Until, 'pwd_epoch' => $row->Pwd_Changed_At];
+        $user = [
+            'id' => $row->Id_Users, 'nama' => $row->Nama, 'email' => $row->Email,
+            'role' => $row->Role, 'klasifikasi' => $row->Klasifikasi,
+            'valid_until' => $row->Valid_Until, 'pwd_epoch' => $row->Pwd_Changed_At,
+            // Jembatan ke MPP: penanggung jawabnya disimpan sebagai kode karyawan,
+            // bukan sebagai akun. Dibawa di sesi supaya penyaring lingkup PIC
+            // tidak perlu menanyakannya ke database pada setiap permintaan.
+            //
+            // Ikut kedaluwarsa bersama sesinya: kode yang diubah admin baru
+            // berlaku setelah pemiliknya masuk lagi — sama seperti perannya.
+            'kode_karyawan' => $row->Kode_Karyawan ?? null,
+        ];
         $request->session()->put('career_auth', $user);
 
         // Paket hak akses (permissions / label menu / kategori) — pola cat-evo.

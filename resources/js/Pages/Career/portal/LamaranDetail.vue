@@ -4,7 +4,7 @@
      Mulai Tes, ATAU formulir tahap), timeline tahap, akordeon Formulir & Berkas
      Saya + lightbox. Data 100% nyata; fungsi akses tes & kirim formulir utuh. -->
 <template>
-    <Head><title>Detail Lamaran - EVO Career</title></Head>
+    <Head title="Detail Lamaran" />
 
     <div class="ld">
         <div class="ld-blob ld-blob--a"></div>
@@ -943,12 +943,20 @@
                             <div class="ld-profil__sub">Dikirim {{ fmtWaktu(profilKandidat.waktuKirim) }}</div>
                         </div>
                     </div>
-                    <div class="ld-profil__grid">
+                    <div v-if="profilKandidat.data.length" class="ld-profil__grid">
                         <div v-for="d in profilKandidat.data" :key="d.key" class="ld-profil__item">
                             <span class="ld-profil__lbl">{{ d.label }}</span>
                             <span class="ld-profil__val">{{ d.nilai }}</span>
                         </div>
                     </div>
+                    <!-- Selebihnya ada di bawah, utuh. Dikatakan terang-terangan:
+                         kartu yang berhenti di delapan baris tanpa penjelasan
+                         terbaca seperti data yang hilang. -->
+                    <p class="ld-profil__kaki">
+                        <i class="bi bi-info-circle"></i>
+                        Seluruh jawaban Anda — termasuk riwayat, keluarga, dan berkas —
+                        ada lengkap di <b>Formulir &amp; Berkas</b> di bawah.
+                    </p>
                 </div>
 
                 <!-- ── Formulir & Berkas Saya ── -->
@@ -1010,21 +1018,48 @@
                                 </svg>
                             </button>
                             <div v-if="openForm === fi" class="ld-form__body">
-                                <div v-if="f.jawaban.length" class="ld-fields">
+                                <!-- Dikelompokkan per LANGKAH, urut seperti
+                                     formulirnya sendiri. Deretan kotak tanpa jeda
+                                     memaksa kandidat mencari sendiri di mana satu
+                                     bagian berakhir dan bagian lain dimulai. -->
+                                <template v-for="(grup, gi) in kelompokIsian(f)" :key="gi">
+                                <div class="ld-ghead">
+                                    <span class="ld-ghead__ico"><i class="bi" :class="grup.ikon"></i></span>
+                                    <span class="ld-ghead__lbl">{{ grup.judul }}</span>
+                                    <span class="ld-ghead__garis"></span>
+                                </div>
+                                <div class="ld-fields">
                                     <div
-                                        v-for="j in f.jawaban"
+                                        v-for="j in grup.items"
                                         :key="j.key"
                                         class="ld-field"
-                                        :class="{ 'is-panjang': isianPanjang(j) }"
+                                        :class="{ 'is-panjang': isianPanjang(f, j) }"
                                     >
-                                        <div class="ld-field__k">{{ labelIsian(j) }}</div>
+                                        <div class="ld-field__k">{{ labelIsian(f, j) }}</div>
                                         <!-- ISIAN BERUPA BERKAS = LENCANA, bukan nama file +
                                                  tombol Lihat. Berkasnya sendiri — berikut ukuran,
                                                  status verifikasi, dan pratinjau — sudah ada di
                                                  "Dokumen & Verifikasi" tepat di bawah. Di daftar
                                                  isian yang perlu dijawab cuma satu: ADA atau TIDAK. -->
-                                        <div v-if="isianBerkas(j)" class="ld-field__v">
-                                            <span class="ld-badge" :class="j.berkas ? 'is-ada' : 'is-kosong'">
+                                        <div v-if="isianBerkas(f, j)" class="ld-field__v">
+                                            <!-- GAMBAR TAMPIL SEBAGAI GAMBAR.
+                                                 Foto verifikasi wajah sebelumnya terbaca
+                                                 "foto_verifikasi-verifikasi.jpg" — nama berkas
+                                                 di layar milik orang yang wajahnya ada di
+                                                 dalamnya. Yang ingin dipastikan kandidat cuma
+                                                 satu: fotonya benar terkirim dan benar dirinya.
+                                                 Itu hanya bisa dijawab oleh fotonya sendiri. -->
+                                            <button
+                                                v-if="j.berkas && j.berkas.isImage"
+                                                type="button"
+                                                class="ld-field__thumb"
+                                                :title="j.berkas.nama"
+                                                @click="bukaDok(j.berkas)"
+                                            >
+                                                <img :src="j.berkas.url" :alt="labelIsian(f, j)" loading="lazy" />
+                                                <span><i class="bi bi-zoom-in"></i> Lihat</span>
+                                            </button>
+                                            <span v-else class="ld-badge" :class="j.berkas ? 'is-ada' : 'is-kosong'">
                                                 <i
                                                     class="bi"
                                                     :class="j.berkas ? 'bi-check-circle-fill' : 'bi-dash-circle'"
@@ -1087,9 +1122,20 @@
                                                 </div>
                                             </div>
                                         </div>
-                                        <div v-else class="ld-field__v">{{ j.nilai || '—' }}</div>
+                                        <!-- ══ DAFTAR BUTIR ══
+                                             "Sebutkan minimal 5 hal" disimpan sebagai lima
+                                             jawaban terpisah. Dirangkai koma, kelimanya jadi
+                                             satu kalimat panjang tanpa batas yang terlihat —
+                                             dan aturan "minimal 5" yang dijaga formulir
+                                             mustahil diperiksa ulang dengan mata. Bernomor,
+                                             jumlahnya terbaca sekali lihat. -->
+                                        <ol v-else-if="isianDaftar(j)" class="ld-field__v ld-butir">
+                                            <li v-for="(butir, bi) in isianDaftar(j)" :key="bi">{{ butir }}</li>
+                                        </ol>
+                                        <div v-else class="ld-field__v">{{ nilaiTampil(f, j) }}</div>
                                     </div>
                                 </div>
+                                </template>
                                 <div v-if="f.berkas.length" class="ld-docs">
                                     <div class="ld-docs__label">DOKUMEN &amp; VERIFIKASI</div>
                                     <!-- Kunci dari URL berkas (unik per baris
@@ -1295,7 +1341,16 @@
 <script>
 import axios from 'axios';
 import { Head, Link, router } from '@inertiajs/vue3';
-import { FORMULIR, komponenFormulir, skemaFormulir, jawabanAwal } from '@career/formulir';
+import {
+    FORMULIR,
+    komponenFormulir,
+    skemaFormulir,
+    jawabanAwal,
+    grupBagian,
+    grupField,
+    labelField,
+    tipeField,
+} from '@career/formulir';
 import DynamicForm from '@career/formulir/DynamicForm.vue';
 import { kunciBerkas } from '@utils/formulir/berkasBaris';
 import JadwalKartu from '@career/JadwalKartu.vue';
@@ -1323,8 +1378,61 @@ const LABEL_FIELD = (() => {
     return peta;
 })();
 
+// Peta skema per formulir, dihitung sekali. WeakMap: kuncinya objek formulir
+// itu sendiri, jadi tidak perlu dibersihkan saat lamaran lain dibuka.
+const PETA_SKEMA = new WeakMap();
+
+/**
+ * Singkatan yang memang huruf kapital.
+ *
+ * Tanpa daftar ini tebakan-dari-kunci menghasilkan "Nik" dan "Ktp" — kata yang
+ * tidak pernah ditulis siapa pun, dan langsung terbaca sebagai kesalahan
+ * sistem oleh orang yang melihatnya di layar sendiri.
+ */
+const AKRONIM = new Set(['nik', 'ktp', 'kk', 'npwp', 'cv', 'wa', 'hp', 'ipk', 'sim', 'no', 'sk', 'pt', 'bpjs', 'nisn', 'npsn']);
+
+/**
+ * RINGKASAN IDENTITAS — kunci yang boleh naik ke kepala halaman.
+ *
+ * Sengaja SEDIKIT dan sengaja berupa pola, bukan daftar kunci mati: tiap
+ * formulir memberi nama kuncinya sendiri (`tgl_lahir`, `tanggal_lahir`,
+ * `v_tgl_lahir`), dan daftar mati akan diam-diam kosong begitu formulirnya
+ * berganti versi.
+ *
+ * Yang di luar ini TIDAK hilang — seluruhnya tetap terbaca lengkap di
+ * "Formulir & Berkas" di bawah. Yang dihapus cuma penggandaannya.
+ */
+const RINGKAS_IDENTITAS = [
+    { slot: 'posisi', pola: /^(posisi|jabatan)(_dilamar)?$/i, label: 'Posisi Dilamar' },
+    { slot: 'nik', pola: /^(v_)?nik$|^no_?ktp$/i, label: 'NIK' },
+    { slot: 'lahir', pola: /^tempat_lahir$|(tempat).*(lahir)/i, label: 'Tempat Lahir' },
+    { slot: 'tgl', pola: /(tgl|tanggal)_?lahir/i, label: 'Tanggal Lahir' },
+    { slot: 'jk', pola: /^(v_)?(jk|jenis_kelamin|gender)$/i, label: 'Jenis Kelamin' },
+    { slot: 'hp', pola: /^(v_)?(hp|no_?hp|telp|telepon|wa|no_?wa)$/i, label: 'Nomor HP / WA' },
+    // DOMISILI DULU, KTP BELAKANGAN — dan keduanya berbagi satu slot.
+    //
+    // Formulir kerap memuat dua alamat. Yang menjawab "di mana orang ini
+    // sekarang" adalah domisilinya; alamat KTP menjawab pertanyaan lain.
+    // Tanpa urutan ini pencarian berhenti di kunci yang kebetulan tersimpan
+    // lebih dulu — biasanya alamat_ktp — dan ringkasan mengatakan hal yang
+    // tidak ditanyakan siapa pun.
+    { slot: 'alamat', pola: /(domisili|alamat_sekarang|alamat_tinggal|^alamat$)/i, label: 'Alamat Domisili' },
+    { slot: 'alamat', pola: /alamat/i, label: 'Alamat' },
+    { slot: 'pendidikan', pola: /^pendidikan(_terakhir)?$/i, label: 'Pendidikan' },
+    { slot: 'jurusan', pola: /^(jurusan|prodi|program_studi)$/i, label: 'Jurusan' },
+];
+
+/**
+ * Nama kandidat di kepala kartu — dicari lewat POLA, bukan kunci `nama` mati.
+ *
+ * Formulir yang dipakai sekarang menamainya `nama_lengkap`. Selama pencarian
+ * berhenti di kunci `nama` persis, kepala kartu menampilkan "—" pada halaman
+ * milik kandidat itu sendiri — data yang jelas-jelas ada, tepat di bawahnya.
+ */
+const POLA_NAMA = /^(v_)?nama(_lengkap|_kandidat|_pelamar)?$/i;
+
 // Sudah tampil di kepala kartu profil — tidak perlu diulang di daftar.
-const PROFIL_SEMBUNYI = ['nama', 'email'];
+const POLA_SEMBUNYI = /^(v_)?(nama(_lengkap|_kandidat|_pelamar)?|email)$/i;
 
 const CFG = { headers: { Accept: 'application/json' } };
 const ST = {
@@ -1506,6 +1614,18 @@ export default {
         // Seluruh aktivitas tahap aktif, apa pun tipenya.
         aktivitas() {
             return this.tahapAktif?.tes || [];
+        },
+        /**
+         * Tahap ini masih menunggu ISIAN kandidat?
+         *
+         * `tugas` hanya dikirim server untuk tahap BERJALAN yang formulirnya
+         * belum terisi (lihat LamaranController: `whereNull Formulir_Pengisian_Id`),
+         * jadi keberadaannya sudah menjawab pertanyaannya. Id-nya tetap
+         * dicocokkan supaya lencana aktivitas tidak ikut menyala bila yang
+         * menunggu isian ternyata tahap lain.
+         */
+        isianTertunda() {
+            return !! this.tugas && this.tugas.tahapId === this.tahapAktif?.id;
         },
         // Aktivitas ujian online saja — hanya inilah yang punya token & jendela
         // waktu. Wawancara/tes manual di tahap yang sama TIDAK ikut ke sini.
@@ -1724,6 +1844,31 @@ export default {
                     ikon: 'bi-calendar-check-fill',
                     judul: 'Kamu sudah dijadwalkan',
                     pesan: 'Rincian waktu dan tempatnya ada di bawah. Undangan yang sama juga dikirim ke emailmu — mohon hadir tepat waktu.',
+                };
+            }
+
+            // ══ TAK SATU PUN SISANYA MENUNGGU JADWAL ══
+            //
+            // Kartu keadaan dan lencana aktivitas di bawahnya membaca sumber
+            // yang sama (Master_Tipe_Tahap.Flag_Jadwal, lihat keadaanAktivitas).
+            // Tanpa cabang ini keduanya berselisih di satu layar: lencananya
+            // berbunyi "Menunggu isianmu" sementara kalimat besar di atasnya
+            // menyuruh kandidat menunggu jadwal yang tidak akan pernah terbit.
+            if (belum.every((x) => ! x.perluJadwal)) {
+                if (this.isianTertunda && belum.some((x) => x.berformulir)) {
+                    return {
+                        nada: 'aksi',
+                        ikon: 'bi-pencil-square',
+                        judul: 'Ada yang perlu kamu lengkapi',
+                        pesan: 'Isi formulir pada kartu di halaman ini lalu kirim — tahap berikutnya terbuka setelah isianmu masuk.',
+                    };
+                }
+
+                return {
+                    nada: 'tinjau',
+                    ikon: 'bi-hourglass-split',
+                    judul: 'Sedang diproses tim rekrutmen',
+                    pesan: 'Tahap ini tidak dijadwalkan — tim yang mengerjakannya. Tidak ada yang perlu kamu lakukan sekarang; perkembangannya muncul di halaman ini.',
                 };
             }
 
@@ -2000,7 +2145,28 @@ export default {
             const n = (this.profilKandidat?.nama || '').trim();
             return n ? n.charAt(0).toUpperCase() : '?';
         },
-        /** Ringkasan data kandidat dari formulir pendaftaran yang sudah dikirim. */
+        /**
+         * RINGKASAN identitas kandidat — bukan salinan seluruh formulir.
+         *
+         * ══ KENAPA DIPERPENDEK ══
+         *
+         * Kartu ini dulu menuangkan SETIAP jawaban formulir pendaftaran apa
+         * adanya, sebagai pasangan label-nilai datar. Dua akibatnya sama-sama
+         * buruk, dan keduanya terlihat di layar kandidat sendiri:
+         *
+         *   1. Jawaban berulang — keluarga, riwayat kerja, organisasi — punya
+         *      bentuk baris, tapi yang digambar cuma ringkasan teksnya. Satu
+         *      kotak berisi "Utama Hubungan: Ayah, Utama Nama: …, Utama Jk: L,
+         *      Utama Usia: …" berdempet tanpa jeda: kalimat mesin, bukan data
+         *      yang bisa dibaca orang.
+         *
+         *   2. Seluruh isinya SUDAH ada di "Formulir & Berkas" tepat di bawah,
+         *      dalam bentuk yang benar. Jadi yang di atas bukan sekadar jelek —
+         *      ia versi rusak dari sesuatu yang di bawahnya sudah betul.
+         *
+         * Sekarang: identitas pokok saja, dipilih lewat pola kunci, dan hanya
+         * yang berupa satu nilai tunggal. Sisanya dibaca di bawah — utuh.
+         */
         profilKandidat() {
             const f = this.formulir.find((x) => x.sumber === 'PENDAFTARAN') || this.formulir[0];
             if (!f) return null;
@@ -2008,11 +2174,36 @@ export default {
             const gambar = (f.berkas || []).filter((b) => b.isImage);
             const foto = gambar.find((b) => /foto/i.test(b.field || '')) || gambar[0] || null;
 
-            const data = (f.jawaban || [])
-                .filter((j) => !PROFIL_SEMBUNYI.includes(j.key) && j.nilai !== null && j.nilai !== '')
-                .map((j) => ({ ...j, label: LABEL_FIELD[j.key] || j.label }));
+            const jawaban = f.jawaban || [];
+            const dipakai = new Set();
+            const slotTerisi = new Set();
+            const data = [];
 
-            const nama = (f.jawaban || []).find((j) => j.key === 'nama')?.nilai || '';
+            RINGKAS_IDENTITAS.forEach((r) => {
+                if (slotTerisi.has(r.slot)) return;
+
+                const j = jawaban.find(
+                    (x) =>
+                        !dipakai.has(x.key) &&
+                        !POLA_SEMBUNYI.test(x.key || '') &&
+                        r.pola.test(x.key || '') &&
+                        // Hanya nilai TUNGGAL. Baris berulang, daftar butir, dan
+                        // berkas punya bentuknya sendiri di bawah; dipaksa masuk
+                        // ke kotak sesempit ini, semuanya kembali jadi teks
+                        // berdempet yang justru sedang diperbaiki.
+                        !(x.baris || []).length &&
+                        !(x.daftar || []).length &&
+                        !x.berkas &&
+                        String(x.nilai ?? '').trim() !== '',
+                );
+                if (!j) return;
+
+                dipakai.add(j.key);
+                slotTerisi.add(r.slot);
+                data.push({ key: j.key, label: r.label, nilai: this.nilaiTampil(f, j) });
+            });
+
+            const nama = jawaban.find((j) => POLA_NAMA.test(j.key || ''))?.nilai || '';
 
             return { foto, nama, data, waktuKirim: f.waktuKirim };
         },
@@ -2291,15 +2482,135 @@ export default {
          * jadi aturan Mode Pengumuman tetap dihormati di sini.
          */
         /**
-         * Label isian dari SKEMA formulir, bukan turunan nama key.
+         * Peta label + tipe + kelompok satu formulir, dihitung sekali.
          *
-         * Server hanya bisa menebak dari key-nya, sehingga keluar "V Nama",
-         * "Dok Cv", "Setuju Data Benar". Pertanyaan aslinya ada di skema —
-         * satu-satunya sumber yang benar — dan key yang tidak ditemukan di sana
-         * tetap memakai tebakan server sebagai cadangan.
+         * Sumbernya SKEMA BEKU milik pengisian itu (Schema_Snapshot_Json);
+         * kode komponen hanya cadangan untuk formulir bawaan lama.
+         *
+         * ══ KENAPA INI YANG DIPAKAI, BUKAN LABEL_FIELD ══
+         *
+         * LABEL_FIELD disusun dari formulir BAWAAN saja. Formulir yang dirakit
+         * lewat Master Formulir — dan sekarang semuanya begitu — tidak ada di
+         * sana, jadi setiap kuncinya meleset dan jatuh ke tebakan server:
+         * "V Nama", "Dok Cv", "Utama Hubungan". Kandidat membaca nama kolom
+         * basis data sebagai ganti pertanyaan yang baru saja ia jawab sendiri.
+         *
+         * Layar admin sudah membaca snapshot sejak awal; sisi kandidatnya yang
+         * tertinggal — dan justru dialah pemilik datanya.
          */
-        labelIsian(j) {
-            return LABEL_FIELD[j.key] || j.label;
+        petaSkema(f) {
+            if (!f) return { label: {}, tipe: {}, grup: {}, bagian: {} };
+
+            let peta = PETA_SKEMA.get(f);
+            if (peta) return peta;
+
+            const sumber = f.skema || f.komponen || null;
+            peta = {
+                label: labelField(sumber),
+                tipe: tipeField(sumber),
+                grup: grupField(sumber),
+                bagian: grupBagian(sumber),
+            };
+            PETA_SKEMA.set(f, peta);
+
+            return peta;
+        },
+        /** Label isian: skema beku dulu, lalu tebakan, lalu apa pun dari server. */
+        labelIsian(f, j) {
+            const peta = this.petaSkema(f);
+
+            return (
+                peta.label[j.key] ||
+                peta.bagian[j.key]?.label ||
+                LABEL_FIELD[j.key] ||
+                this.labelTebakan(j.key) ||
+                j.label
+            );
+        },
+        /**
+         * Label cadangan dari nama kunci — HANYA bila skemanya tak memuatnya.
+         *
+         * Awalan sependek satu-dua huruf dibuang: `v_nama` berarti "nama pada
+         * langkah validasi" bagi yang menulis skemanya, tapi bagi yang
+         * membacanya di layar "V Nama" cuma huruf nyasar di depan kata.
+         */
+        labelTebakan(key) {
+            const potong = String(key || '').split(/[_-]+/).filter(Boolean);
+            if (!potong.length) return '';
+            if (potong.length > 1 && potong[0].length <= 2) potong.shift();
+
+            return potong
+                .map((w) => (AKRONIM.has(w.toLowerCase()) ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1)))
+                .join(' ');
+        },
+        /**
+         * Nilai satu isian dalam bentuk yang dibaca ORANG.
+         *
+         * Nominal rupiah tampil sebagai uang. "9500000" memaksa pembacanya
+         * menghitung digit sendiri untuk tahu ini sembilan juta atau sembilan
+         * puluh juta — dan kandidat pun perlu memastikan angka yang ia tulis
+         * memang terbaca benar.
+         */
+        nilaiTampil(f, j) {
+            const teks = String(j.nilai ?? '').trim();
+            if (teks === '') return '—';
+
+            if (this.petaSkema(f).tipe[j.key] === 'currency' && /^\d+$/.test(teks)) {
+                return 'Rp ' + Number(teks).toLocaleString('id-ID');
+            }
+
+            return teks;
+        },
+        /**
+         * Isian bertipe DAFTAR BUTIR — digambar bernomor, bukan dirangkai koma.
+         *
+         * Bentuknya dikenali dari datanya sendiri (`daftar` berisi lebih dari
+         * satu butir), bukan dari tipe di skema: jawaban lama yang terlanjur
+         * tersimpan sebagai larik pun ikut terbaca benar, dan formulir yang
+         * skemanya sudah tidak ada tetap tergambar utuh.
+         */
+        isianDaftar(j) {
+            const d = (j.daftar || []).filter((x) => String(x ?? '').trim() !== '');
+
+            return d.length > 1 ? d : null;
+        },
+        /**
+         * Isian formulir dikelompokkan per LANGKAH, urut seperti formulirnya.
+         *
+         * Tanpa ini, tiga puluh kotak label-nilai berderet tanpa jeda dalam
+         * urutan penyimpanan — urutan yang tidak pernah dijanjikan sama dengan
+         * urutan pertanyaan. Yang hilang bukan cuma kerapian: "Kesesuaian Data:
+         * Sesuai" hanya punya arti di sebelah nama dan kontak yang divalidasinya.
+         *
+         * Kunci yang tidak ada di skema TIDAK dibuang — ia masuk kelompok
+         * "Isian Lain" di akhir. Menyembunyikannya berarti jawaban yang pernah
+         * diberikan kandidat lenyap dari layarnya tanpa satu pun tanda.
+         */
+        kelompokIsian(f) {
+            const peta = this.petaSkema(f);
+            const kel = new Map();
+
+            (f.jawaban || []).forEach((j) => {
+                const info = peta.grup[j.key] || peta.bagian[j.key] || null;
+                const kunci = info ? `${info.urutan}|${info.judul}` : 'zz|lain';
+
+                if (!kel.has(kunci)) {
+                    kel.set(kunci, {
+                        judul: info?.judul || 'Isian Lain',
+                        ikon: info?.ikon || 'bi-list-ul',
+                        urutan: info ? info.urutan : 9999,
+                        items: [],
+                    });
+                }
+                kel.get(kunci).items.push({ isian: j, posisi: info?.posisi ?? 9999 });
+            });
+
+            return [...kel.values()]
+                .sort((a, b) => a.urutan - b.urutan)
+                .map((g) => ({
+                    ...g,
+                    items: g.items.sort((a, b) => a.posisi - b.posisi).map((x) => x.isian),
+                }));
         },
         /**
          * Isian ini memang berupa berkas?
@@ -2309,12 +2620,21 @@ export default {
          * terbaca sebagai isian teks biasa lalu tampil "—". Padahal justru
          * kekosongan itu yang perlu terbaca sebagai "Belum ada".
          */
-        isianBerkas(j) {
+        isianBerkas(f, j) {
+            // Tipe dari SKEMA didahulukan. Tanpa itu, pertanyaan dokumen yang
+            // BELUM diunggah tidak dikenali sebagai dokumen sama sekali — ia
+            // terbaca sebagai isian teks kosong dan tampil "—", padahal justru
+            // kekosongan itulah yang perlu terbaca "Belum ada".
+            if (['file', 'foto', 'signature'].includes(this.petaSkema(f).tipe[j.key])) return true;
+
             return !!j.berkas || /^(dok|file|berkas|upload)_/i.test(j.key || '');
         },
         /** Jawaban panjang (alamat, uraian) memakai satu baris penuh. */
-        isianPanjang(j) {
-            if (this.isianBerkas(j)) return false;
+        isianPanjang(f, j) {
+            if (this.isianBerkas(f, j)) return false;
+            // Daftar butir selalu selebar penuh: lima butir di setengah kolom
+            // terpotong satu per satu, dan yang tersisa cuma potongan kata.
+            if (this.isianDaftar(j)) return true;
             // Isian BERULANG selalu memakai lebar penuh: satu baris riwayat
             // kerja saja sudah memuat perusahaan, jabatan, periode, dan uraian
             // — dijejalkan ke setengah kolom, semuanya terpotong.
@@ -2611,6 +2931,25 @@ export default {
             if (this.unggahSiap(a) && ! a.unggah.terkirim) return { nada: 'aksi', label: 'Menunggu berkasmu' };
             if (a.unggah?.terkirim) return { nada: 'proses', label: 'Berkas terkirim' };
             if (a.jadwal) return { nada: 'jadwal', label: 'Sudah dijadwalkan' };
+
+            // ══ TIPE YANG MEMANG TIDAK PERNAH DIJADWALKAN ══
+            //
+            // Formulir, screening berkas, background check, reference check,
+            // phone screening: Master_Tipe_Tahap.Flag_Jadwal = 'T'. Tak satu
+            // pun akan pernah punya tanggal, jadi lencana "Menunggu jadwal"
+            // menjanjikan kabar yang tidak akan datang — dan pada aktivitas
+            // BERFORMULIR ia sekaligus bertolak belakang dengan isi bloknya
+            // sendiri, yang tepat di bawahnya berbunyi "Lengkapi formulir yang
+            // diminta di bawah". Satu blok, dua cerita.
+            //
+            // Yang berformulir menunggu KANDIDAT — selama isiannya belum masuk
+            // (`tugas` masih dikirim server untuk tahap ini). Sisanya memang
+            // sedang dikerjakan tim, dan itulah yang disebut apa adanya.
+            if (! a.perluJadwal) {
+                return a.berformulir && this.isianTertunda
+                    ? { nada: 'aksi', label: 'Menunggu isianmu' }
+                    : { nada: 'tinjau', label: 'Sedang diproses tim' };
+            }
 
             return { nada: 'tunggu', label: 'Menunggu jadwal' };
         },
@@ -4324,6 +4663,11 @@ TQVA5K0T) — ia dibaca
 .ld-akt.is-kirim { border-left-color: #8b5cf6; }
 .ld-akt.is-proses .ld-akt__badge,
 .ld-akt.is-kirim .ld-akt__badge { background: #f3e8ff; color: #6b21a8; }
+/* Sedang diproses tim — ungu tenang, sama dengan `is-tinjau` pada kartu
+   keadaan tahap. Sengaja BUKAN kuning "menunggu": tidak ada jadwal yang
+   sedang ditunggu di sini. */
+.ld-akt.is-tinjau { border-left-color: #7c3aed; }
+.ld-akt.is-tinjau .ld-akt__badge { background: #ede9fe; color: #5b21b6; }
 .ld-akt.is-selesai { border-left-color: #10b981; }
 .ld-akt.is-selesai .ld-akt__badge { background: #d1fae5; color: #047857; }
 .ld-akt.is-lewat { border-left-color: #ef4444; }
@@ -4649,6 +4993,26 @@ TQVA5K0T) — ia dibaca
     color: #1e293b;
     margin-top: 3px;
     word-break: break-word;
+}
+.ld-profil__kaki {
+    display: flex;
+    align-items: flex-start;
+    gap: 7px;
+    margin: 14px 0 0;
+    padding: 9px 12px;
+    border-radius: 11px;
+    background: #f6f7fb;
+    font-size: 12px;
+    line-height: 1.55;
+    color: #64748b;
+}
+.ld-profil__kaki .bi {
+    flex: none;
+    margin-top: 1px;
+    color: #94a3b8;
+}
+.ld-profil__kaki b {
+    color: #475569;
 }
 
 @media (max-width: 640px) {
@@ -5075,6 +5439,15 @@ TQVA5K0T) — ia dibaca
 /* DUA KOLOM HANYA BILA MUAT. `1fr 1fr` yang dipatok memaksa dua kolom sesempit
    apa pun layarnya — di ponsel, alamat dan uraian terjepit jadi kolom setipis
    dua kata. auto-fit + minmax menurunkannya sendiri jadi satu kolom. */
+/* ── JUDUL KELOMPOK (satu langkah formulir) ── */
+.ld-ghead { display: flex; align-items: center; gap: 8px; margin: 16px 0 0; }
+.ld-ghead:first-child { margin-top: 4px; }
+.ld-ghead__ico { flex: none; width: 24px; height: 24px; display: grid; place-items: center; border-radius: 8px; background: #eef2ff; color: #4f46e5; font-size: 12px; }
+.ld-ghead__lbl { font-size: 11.5px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: #475569; }
+.ld-ghead__garis { flex: 1; height: 1px; background: linear-gradient(90deg, #e2e8f0, transparent); }
+
+/* auto-fit + minmax: satu kolom di ponsel, dua-tiga di layar lebar — tanpa
+   satu pun titik henti media query yang harus dijaga selaras. */
 .ld-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 1px; background: #eef0f7; border: 1px solid #eef0f7; border-radius: 14px; overflow: hidden; margin-top: 8px; }
 .ld-field { background: #fff; padding: 11px 14px; min-width: 0; }
 .ld-field.is-panjang { grid-column: 1 / -1; }
@@ -5088,6 +5461,23 @@ TQVA5K0T) — ia dibaca
 /* ── ISIAN BERULANG: tiap baris berdiri sendiri ──────────────────────────────
    Bernomor hanya bila lebih dari satu — nomor "1" tunggal cuma menambah bunyi
    pada baris yang sudah jelas berdiri sendirian. */
+/* Gambar jawaban — pratinjau kecil yang bisa diperbesar. */
+.ld-field__thumb { appearance: none; display: inline-flex; align-items: center; gap: 9px; margin-top: 5px; padding: 5px 10px 5px 5px; border: 1px solid #e6e8f2; border-radius: 12px; background: #fff; font: inherit; font-size: 12px; font-weight: 700; color: #4f46e5; cursor: zoom-in; transition: border-color .16s, background .16s; max-width: 100%; }
+.ld-field__thumb:hover { border-color: #a5b4fc; background: #f5f3ff; }
+.ld-field__thumb img { flex: none; width: 54px; height: 54px; border-radius: 9px; object-fit: cover; background: #f1f5f9; }
+.ld-field__thumb span { display: inline-flex; align-items: center; gap: 4px; }
+
+/* ── DAFTAR BUTIR ── */
+.ld-butir { list-style: none; counter-reset: butir; margin: 5px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.ld-butir li { counter-increment: butir; position: relative; padding: 5px 10px 5px 30px; border-radius: 9px; background: #f8fafc; font-size: 13px; font-weight: 600; color: #1e293b; line-height: 1.5; word-break: break-word; }
+.ld-butir li::before {
+    content: counter(butir);
+    position: absolute; left: 7px; top: 5px;
+    width: 17px; height: 17px; display: grid; place-items: center;
+    border-radius: 999px; background: #e0e7ff; color: #4338ca;
+    font-size: 10px; font-weight: 800;
+}
+
 .ld-rows { display: flex; flex-direction: column; gap: 6px; margin-top: 5px; }
 .ld-row { display: flex; gap: 8px; align-items: flex-start; background: #f8fafc; border: 1px solid #e8eef6; border-radius: 9px; padding: 7px 9px; }
 .ld-row__no { flex: none; min-width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; background: #e0e7ff; color: #4338ca; border-radius: 999px; font-size: 10.5px; font-weight: 800; margin-top: 1px; }
@@ -5547,8 +5937,26 @@ TQVA5K0T) — ia dibaca
     }
     .ld-cred,
     .ld-fields,
+    .ld-profil__grid,
     .ld-benefits {
         grid-template-columns: 1fr;
+    }
+    /* Di ponsel kepala kartu ditumpuk: foto 62px di samping nama panjang
+       menyisakan lebar tak cukup untuk satu kata pun. */
+    .ld-profil__head {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+    }
+    .ld-profil__grid {
+        gap: 0;
+    }
+    .ld-ghead {
+        margin-top: 14px;
+    }
+    .ld-field__thumb img {
+        width: 46px;
+        height: 46px;
     }
     .ld-hero__in {
         padding: 18px;
