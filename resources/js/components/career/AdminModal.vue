@@ -15,7 +15,7 @@
                     class="wca-modal"
                     :class="[
                         `wca-modal--${ukuran}`,
-                        { 'is-busy': busy, 'is-nudge': nudge },
+                        { 'is-busy': busy, 'is-nudge': nudge, 'has-aside-slot': !! $slots.aside },
                     ]"
                     role="dialog" aria-modal="true" :aria-busy="busy"
                 >
@@ -46,28 +46,56 @@
                          atas bilah. Dengan padding dipindah ke dalam, bilahnya duduk
                          di koordinat nol scrollport tanpa satu angka pun yang perlu
                          dicocokkan. -->
-                    <div class="wca-modal__body" :class="{ 'has-sticky': !! $slots.sticky }">
-                        <div v-if="$slots.sticky" class="wca-modal__stickybar"><slot name="sticky" /></div>
-                        <div class="wca-modal__bodyin"><slot /></div>
-                    </div>
+                    <!-- ISI + KOLOM PENDAMPING.
+                         Tanpa slot `aside`, pembungkus ini transparan: satu
+                         kolom, persis seperti sebelumnya.
 
-                    <div class="wca-modal__foot" :class="{ 'wca-modal__foot--blok': footBlok }">
-                        <div v-if="footNote" class="wca-modal__footnote">
-                            <i class="bi" :class="busy ? 'bi-hourglass-split' : 'bi-shield-check'"></i>
-                            <span>{{ busy ? busyLabel : footNote }}</span>
+                         Dengan `aside`, modalnya jadi DUA KOLOM setinggi penuh
+                         — kepala di atas keduanya, kaki di bawah keduanya.
+                         Kolom pendamping SENGAJA berada di luar area gulir isi:
+                         yang ditaruh di sana adalah pratinjau yang harus
+                         terlihat utuh sepanjang pekerjaan (mis. lembar berkas
+                         kandidat di Worklist), dan apa pun yang duduk di dalam
+                         area gulir pasti terpotong kaki modal begitu isinya
+                         lebih panjang dari satu layar. -->
+                    <div class="wca-modal__split" :class="{ 'has-aside': !! $slots.aside }">
+                        <!-- KOLOM KIRI: isi yang menggulir + kaki modal.
+                             Kaki ikut MASUK ke kolom ini, tidak lagi berdiri
+                             selebar modal. Sebabnya: kaki berisi tombol
+                             keputusan milik panel kiri, dan kaki yang membentang
+                             penuh memotong kolom kanan — pratinjau berkasnya
+                             berhenti beberapa ratus piksel di atas dasar jendela
+                             dan tertutup deretan tombol yang bukan miliknya. -->
+                        <div class="wca-modal__col">
+                            <div class="wca-modal__body" :class="{ 'has-sticky': !! $slots.sticky }">
+                                <div v-if="$slots.sticky" class="wca-modal__stickybar"><slot name="sticky" /></div>
+                                <div class="wca-modal__bodyin"><slot /></div>
+                            </div>
+
+                            <div class="wca-modal__foot" :class="{ 'wca-modal__foot--blok': footBlok }">
+                                <div v-if="footNote" class="wca-modal__footnote">
+                                    <i class="bi" :class="busy ? 'bi-hourglass-split' : 'bi-shield-check'"></i>
+                                    <span>{{ busy ? busyLabel : footNote }}</span>
+                                </div>
+                                <div class="wca-modal__footbtns">
+                                    <slot name="footer">
+                                        <button class="wca-btn wca-btn--ghost" type="button" :disabled="busy" :onClick="busy ? null : tutup">
+                                            <i class="bi bi-x-lg"></i> {{ cancelLabel }}
+                                        </button>
+                                        <button class="wca-btn wca-btn--dark" type="button" :disabled="busy || saveDisabled" :onClick="busy || saveDisabled ? null : () => $emit('save')">
+                                            <span v-if="busy" class="wca-spin" aria-hidden="true"></span>
+                                            <i v-else class="bi bi-save"></i>
+                                            {{ busy ? busyLabel : saveLabel }}
+                                        </button>
+                                    </slot>
+                                </div>
+                            </div>
                         </div>
-                        <div class="wca-modal__footbtns">
-                            <slot name="footer">
-                                <button class="wca-btn wca-btn--ghost" type="button" :disabled="busy" :onClick="busy ? null : tutup">
-                                    <i class="bi bi-x-lg"></i> {{ cancelLabel }}
-                                </button>
-                                <button class="wca-btn wca-btn--dark" type="button" :disabled="busy || saveDisabled" :onClick="busy || saveDisabled ? null : () => $emit('save')">
-                                    <span v-if="busy" class="wca-spin" aria-hidden="true"></span>
-                                    <i v-else class="bi bi-save"></i>
-                                    {{ busy ? busyLabel : saveLabel }}
-                                </button>
-                            </slot>
-                        </div>
+
+                        <!-- KOLOM KANAN: setinggi penuh, dari bawah kepala modal
+                             sampai dasar jendela — melewati kaki, bukan di
+                             atasnya. -->
+                        <aside v-if="$slots.aside" class="wca-modal__aside"><slot name="aside" /></aside>
                     </div>
                 </div>
             </div>
@@ -94,7 +122,7 @@ const props = defineProps({
     size: {
         type: String,
         default: '',
-        validator: (v) => ['', 'sm', 'md', 'lg', 'xl', 'full'].includes(v),
+        validator: (v) => ['', 'sm', 'md', 'lg', 'xl', 'wide', 'full'].includes(v),
     },
     lg: { type: Boolean, default: false },
     xl: { type: Boolean, default: false },

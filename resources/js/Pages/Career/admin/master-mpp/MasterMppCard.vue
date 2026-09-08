@@ -42,6 +42,39 @@
                     <span class="mmp-status-flag__dot"></span>
                     Selesai
                 </span>
+                <!-- Lencana SLA — lihat catatan di <script>. -->
+                <span
+                    v-if="diperpanjang"
+                    class="mmp-sla-tag is-panjang"
+                    :title="`Tenggat SLA sudah diperpanjang ${diperpanjang} kali. Tenggat asli ${formatTanggal(mpp.sla?.batasAwal)}.`"
+                >
+                    <i class="bi bi-calendar-plus"></i> Diperpanjang {{ diperpanjang }}&times;
+                </span>
+                <span
+                    v-if="slaLewat"
+                    class="mmp-sla-tag is-lewat"
+                    :title="`Tenggat SLA (${formatTanggal(slaBatas)}) sudah lewat ${Math.abs(sisaHari)} hari.`"
+                >
+                    <i class="bi bi-exclamation-triangle-fill"></i> Lewat SLA
+                </span>
+                <span
+                    v-else-if="slaSegera"
+                    class="mmp-sla-tag is-segera"
+                    :title="`Tenggat SLA ${formatTanggal(slaBatas)} — tinggal ${sisaHari} hari lagi.`"
+                >
+                    <i class="bi bi-hourglass-split"></i>
+                    {{ sisaHari === 0 ? 'Jatuh tempo hari ini' : `${sisaHari} hari lagi` }}
+                </span>
+                <!-- MASIH LONGGAR pun tetap menyebut sisanya. Kartu yang diam
+                     saat semuanya aman membuat "tidak ada lencana" punya dua
+                     arti sekaligus: aman, atau tidak punya tenggat sama sekali. -->
+                <span
+                    v-else-if="sisaHari !== null"
+                    class="mmp-sla-tag is-aman"
+                    :title="`Tenggat SLA ${formatTanggal(slaBatas)} — ${sisaHari} hari lagi.`"
+                >
+                    <i class="bi bi-calendar3"></i> {{ sisaHari }} hari lagi
+                </span>
             </div>
         </div>
 
@@ -66,6 +99,39 @@
                     <i class="bi" :class="adaRentang ? 'bi-calendar-range' : 'bi-calendar-check'"></i>
                     {{ rentangPendek(mpp.sla?.mulai, mpp.tanggalPeriode) }}
                 </span>
+            </div>
+
+            <!-- ── BILAH SLA ─────────────────────────────────────────────────
+                 SELALU ada selama MPP-nya punya tenggat — bukan hanya saat
+                 hampir/lewat. Inilah yang menjawab "kapan harus diperpanjang"
+                 tanpa perlu membuka panel detail: ketentuan levelnya berapa hari
+                 kerja, tenggatnya kapan, dan tinggal berapa lama lagi.
+
+                 Bilah kemajuannya memakai PORSI WAKTU YANG SUDAH TERPAKAI, bukan
+                 sisa: yang dibaca sekali lihat adalah seberapa jauh MPP ini sudah
+                 berjalan terhadap janjinya. -->
+            <div v-if="adaSla" class="mmp-slabar" :class="kelasSla">
+                <div class="mmp-slabar__top">
+                    <span class="mmp-slabar__ket">
+                        <i class="bi bi-stopwatch"></i>
+                        SLA {{ mpp.sla.hari }} hari kerja
+                    </span>
+                    <span class="mmp-slabar__tgl" :title="judulSla">
+                        <template v-if="diperpanjang">
+                            <s>{{ formatTanggal(mpp.sla.batasAwal) }}</s>
+                        </template>
+                        {{ formatTanggal(slaBatas) }}
+                    </span>
+                </div>
+
+                <div class="mmp-slabar__rel"><span :style="{ width: pakaiPersen + '%' }"></span></div>
+
+                <div class="mmp-slabar__kaki">
+                    <span>{{ tekstSisa }}</span>
+                    <button class="mmp-slabar__btn" type="button" @click.stop="$emit('perpanjang', mpp)">
+                        <i class="bi bi-calendar-plus"></i> Perpanjang
+                    </button>
+                </div>
             </div>
 
             <div class="mmp-card__tags" v-if="allTags.length">
@@ -118,6 +184,14 @@
                     <i class="bi" :class="mpp.selesai ? 'bi-arrow-counterclockwise' : 'bi-check2-circle'"></i>
                 </button>
                 <button
+                    v-if="bolehPerpanjang"
+                    class="wca-iconbtn mmp-iconbtn--sla"
+                    :title="slaLewat ? 'Perpanjang tenggat SLA (sudah lewat)' : 'Perpanjang tenggat SLA'"
+                    @click.stop="$emit('perpanjang', mpp)"
+                >
+                    <i class="bi bi-calendar-plus"></i>
+                </button>
+                <button
                     v-if="mpp.status === 'AKTIF'"
                     class="wca-iconbtn wca-iconbtn--danger"
                     title="Batalkan transaksi"
@@ -144,9 +218,128 @@ import { formatTanggal, initials, statusBadge, statusLabel, jenisProgramLabel } 
 import { punyaRentang, rentangPendek } from '@utils/rentangTanggal';
 
 const props = defineProps({ mpp: { type: Object, required: true } });
-defineEmits(['open', 'edit', 'toggle-selesai', 'batalkan', 'aktifkan']);
+defineEmits(['open', 'edit', 'toggle-selesai', 'batalkan', 'aktifkan', 'perpanjang']);
 
 const adaRentang = computed(() => punyaRentang(props.mpp.sla?.mulai, props.mpp.tanggalPeriode));
+
+/* ── PENANDA SLA DI KARTU ────────────────────────────────────────────────────
+ *
+ * Tiga keadaan yang perlu terlihat TANPA membuka panel, sebab ketiganya menuntut
+ * tindakan yang berbeda dari orang yang sedang memindai daftar:
+ *
+ *   diperpanjang  tenggatnya sudah pernah digeser — angkanya ("2x") ikut, sebab
+ *                 "pernah diperpanjang" dan "diperpanjang tiga kali" adalah dua
+ *                 kabar yang sama sekali berbeda.
+ *   lewat         tenggatnya sudah terlampaui dan MPP-nya masih berjalan. Inilah
+ *                 yang mencari tombol Perpanjang.
+ *   segera        tenggatnya tinggal seminggu kerja lagi — peringatan dini,
+ *                 supaya perpanjangan tidak selalu terjadi sesudah terlambat.
+ *
+ * MPP yang sudah selesai/dibatalkan tidak ikut ditandai: tenggat yang lewat pada
+ * pekerjaan yang sudah tuntas bukan kabar, cuma bunyi.
+ */
+/* TENGGAT SLA — null berarti MPP ini memang TIDAK PUNYA tenggat.
+ *
+ * Dulu di sini ada jatuh-tempo ke `tanggalPeriode`, dan itu salah pada satu
+ * kasus yang justru paling sering terlihat: program MT. MT tidak terikat SLA
+ * sama sekali, `sla`-nya null, dan `tanggalPeriode`-nya adalah TANGGAL MPP
+ * DIBUAT — yang menurut definisinya selalu sudah lewat. Akibatnya setiap kartu
+ * MT memakai lencana merah "Lewat SLA" untuk tenggat yang tidak pernah ada.
+ *
+ * MPP lama (lahir sebelum snapshot SLA ada) ikut tersaring lewat syarat yang
+ * sama, dan itu memang benar: tanpa angka hari kerja yang tersimpan, tidak ada
+ * ketentuan yang bisa dinyatakan terlampaui.
+ */
+const slaBatas = computed(() => {
+    if (props.mpp.jenisProgram === 'MT' || !props.mpp.sla?.hari) return null;
+
+    return props.mpp.sla.batas || props.mpp.tanggalPeriode || null;
+});
+
+const diperpanjang = computed(() => Number(props.mpp.sla?.perpanjanganKe || 0));
+
+const sisaHari = computed(() => {
+    if (!slaBatas.value || props.mpp.selesai || props.mpp.status !== 'AKTIF') return null;
+
+    const b = new Date(`${slaBatas.value}T00:00:00`);
+    if (Number.isNaN(b.getTime())) return null;
+
+    const kini = new Date();
+    kini.setHours(0, 0, 0, 0);
+
+    return Math.round((b - kini) / 86400000);
+});
+
+const slaLewat = computed(() => sisaHari.value !== null && sisaHari.value < 0);
+const slaSegera = computed(() => sisaHari.value !== null && sisaHari.value >= 0 && sisaHari.value <= 7);
+
+/* Bilah SLA ditampilkan? — hanya butuh tenggat yang memang ada. Sengaja TIDAK
+ * menuntut MPP-nya masih berjalan: pada MPP yang sudah selesai, bilah ini justru
+ * jadi catatan "tuntas 12 hari sebelum tenggat", dan itu kabar yang berguna. */
+const adaSla = computed(() => props.mpp.jenisProgram !== 'MT' && !!props.mpp.sla?.hari && !!slaBatas.value);
+
+/* Porsi waktu yang SUDAH TERPAKAI, dari hari MPP dibuat sampai tenggatnya.
+ * Dipatok 0–100 supaya yang sudah lewat tidak menggambar bilah melewati kotaknya. */
+const pakaiPersen = computed(() => {
+    const mulai = props.mpp.sla?.mulai;
+    if (!mulai || !slaBatas.value) return 0;
+
+    const a = new Date(`${mulai}T00:00:00`).getTime();
+    const b = new Date(`${slaBatas.value}T00:00:00`).getTime();
+    if (Number.isNaN(a) || Number.isNaN(b) || b <= a) return 0;
+
+    const kini = new Date().setHours(0, 0, 0, 0);
+
+    return Math.min(100, Math.max(0, Math.round(((kini - a) / (b - a)) * 100)));
+});
+
+const tekstSisa = computed(() => {
+    if (props.mpp.selesai) return 'Sudah ditandai selesai';
+    if (sisaHari.value === null) return formatTanggal(slaBatas.value);
+    if (sisaHari.value < 0) return `Lewat ${Math.abs(sisaHari.value)} hari`;
+    if (sisaHari.value === 0) return 'Jatuh tempo hari ini';
+
+    return `Tinggal ${sisaHari.value} hari`;
+});
+
+const kelasSla = computed(() => ({
+    'is-lewat': slaLewat.value,
+    'is-segera': slaSegera.value,
+    'is-panjang': !!diperpanjang.value,
+}));
+
+const judulSla = computed(() =>
+    diperpanjang.value
+        ? `Tenggat asli ${formatTanggal(props.mpp.sla?.batasAwal)}, diperpanjang ${diperpanjang.value}x menjadi ${formatTanggal(slaBatas.value)}.`
+        : `Tenggat SLA: ${formatTanggal(slaBatas.value)}`,
+);
+
+
+/* Tombol Perpanjang ADA SELAMA MPP-nya PUNYA TENGGAT.
+ *
+ * Dulu di sini ada syarat tambahan "hanya bila sudah lewat atau tinggal ≤7
+ * hari". Niatnya menjaga perpanjangan tetap terasa sebagai pengecualian —
+ * tapi akibatnya tombolnya tidak pernah terlihat pada MPP yang tenggatnya
+ * masih sebulan lagi, dan admin yang memang perlu memperpanjang lebih awal
+ * tidak punya jalan sama sekali. Menyembunyikan tombol bukan cara menegakkan
+ * kebijakan; yang menegakkannya adalah alasan tertulis yang dituntut modalnya.
+ *
+ * Yang tersisa cuma syarat yang memang membuat tombolnya mustahil berguna:
+ *   MT             tidak terikat SLA — tidak ada tenggat untuk digeser.
+ *   dibatalkan     bukan MPP berjalan.
+ *   selesai        pekerjaannya sudah tuntas.
+ *   tanpa sla.hari lahir sebelum SLA dicatat; tak ada angka untuk menambah.
+ *
+ * Sisanya — penuh/tidak, jatah habis/belum — diputuskan server dan dijelaskan
+ * di dalam modal. Lebih baik tombolnya terlihat lalu modalnya menerangkan
+ * kenapa belum bisa, daripada tombol yang hilang tanpa sebab yang bisa dibaca.
+ */
+const bolehPerpanjang = computed(
+    () => props.mpp.jenisProgram !== 'MT'
+        && props.mpp.status === 'AKTIF'
+        && !props.mpp.selesai
+        && !!props.mpp.sla?.hari,
+);
 
 const judulPeriode = computed(() =>
     adaRentang.value
@@ -317,6 +510,157 @@ const allTags = computed(() => {
 
 .mmp-status-flag.is-done .mmp-status-flag__dot {
     background: #22c55e;
+}
+
+/* ── Lencana SLA ────────────────────────────────────────────────────────────
+ *
+ * Tiga warna untuk tiga tingkat mendesak, dan urutannya disengaja: merah untuk
+ * yang sudah lewat, kuning untuk yang hampir, ungu untuk yang sudah pernah
+ * diperpanjang. Yang terakhir sengaja TIDAK merah — ia bukan masalah yang
+ * menuntut tindakan, melainkan keterangan tentang bagaimana tenggat ini sampai
+ * di tanggalnya sekarang.
+ */
+.mmp-sla-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.15rem 0.45rem;
+    border-radius: 999px;
+    font-size: 0.68rem;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.mmp-sla-tag.is-lewat {
+    color: #b91c1c;
+    background: #fee2e2;
+}
+
+.mmp-sla-tag.is-segera {
+    color: #b45309;
+    background: #fef3c7;
+}
+
+.mmp-sla-tag.is-panjang {
+    color: #6d28d9;
+    background: #ede9fe;
+}
+
+.mmp-sla-tag.is-aman {
+    color: #475569;
+    background: #f1f5f9;
+}
+
+/* ── Bilah SLA ──────────────────────────────────────────────────────────────
+ *
+ * Netral secara bawaan (abu), berubah warna hanya saat memang perlu dilihat.
+ * Kartu yang seluruh MPP-nya berwarna sama dengan yang mendesak membuat warna
+ * berhenti berarti apa pun.
+ */
+.mmp-slabar {
+    margin-top: 0.55rem;
+    padding: 0.5rem 0.6rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.6rem;
+    background: #f8fafc;
+}
+
+.mmp-slabar__top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.mmp-slabar__ket {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.28rem;
+    font-size: 0.68rem;
+    font-weight: 800;
+    color: #475569;
+}
+
+.mmp-slabar__tgl {
+    font-size: 0.7rem;
+    font-weight: 800;
+    color: #0f172a;
+    white-space: nowrap;
+}
+
+/* Tenggat asli dicoret dan dikecilkan — ia keterangan, bukan yang berlaku. */
+.mmp-slabar__tgl s { margin-right: 0.2rem; font-weight: 700; font-size: 0.64rem; color: #94a3b8; }
+
+.mmp-slabar__rel {
+    height: 0.3rem;
+    margin: 0.4rem 0 0.35rem;
+    border-radius: 999px;
+    background: #e2e8f0;
+    overflow: hidden;
+}
+
+.mmp-slabar__rel > span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: #64748b;
+    transition: width 0.3s ease;
+}
+
+.mmp-slabar__kaki {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: #64748b;
+}
+
+/* Tombol perpanjang di dalam bilahnya sendiri — di sinilah orang berada saat
+   pertanyaannya muncul, jadi jawabannya tidak perlu dicari di tempat lain. */
+.mmp-slabar__btn {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.18rem 0.45rem;
+    border: 1px solid rgba(124, 58, 237, 0.3);
+    border-radius: 0.4rem;
+    font-size: 0.66rem;
+    font-weight: 800;
+    color: #7c3aed;
+    background: rgba(124, 58, 237, 0.08);
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.mmp-slabar__btn:hover { color: #fff; background: #7c3aed; border-color: #7c3aed; }
+
+.mmp-slabar.is-segera { border-color: #fde68a; background: #fffbeb; }
+.mmp-slabar.is-segera .mmp-slabar__rel > span { background: #f59e0b; }
+.mmp-slabar.is-segera .mmp-slabar__kaki { color: #b45309; }
+
+.mmp-slabar.is-lewat { border-color: #fecaca; background: #fef2f2; }
+.mmp-slabar.is-lewat .mmp-slabar__rel > span { background: #dc2626; }
+.mmp-slabar.is-lewat .mmp-slabar__kaki { color: #b91c1c; }
+
+.mmp-slabar.is-panjang { border-color: #ddd6fe; background: #faf9ff; }
+.mmp-slabar.is-panjang .mmp-slabar__rel > span { background: #7c3aed; }
+
+/* Tombol perpanjang: dibedakan dari Ubah/Selesai/Batalkan yang selalu ada.
+   Ia muncul hanya saat memang dibutuhkan, jadi ia harus terlihat sebagai
+   sesuatu yang BARU muncul — bukan ikon keempat yang seragam. */
+.mmp-iconbtn--sla {
+    color: #7c3aed;
+    border-color: rgba(124, 58, 237, 0.35);
+    background: rgba(124, 58, 237, 0.08);
+}
+
+.mmp-iconbtn--sla:hover {
+    color: #fff;
+    background: #7c3aed;
+    border-color: #7c3aed;
 }
 
 /* 2. Body */

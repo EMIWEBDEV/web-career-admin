@@ -195,6 +195,30 @@
                 </div>
             </section>
 
+            <!-- ══════════════ TENGGAT SLA MPP ══════════════
+                 Hanya muncul untuk REKRUTMEN — server memulangkan daftar kosong
+                 untuk MT, dan seksi ini ikut menghilang. MT direkrut seangkatan
+                 mengikuti jadwal program, bukan mengejar tenggat pemenuhan
+                 kursi per MPP. -->
+            <section v-if="slaAda" :id="`wcd-sla`" class="wcd-sec" :class="{ 'is-tutup': tutup.has('sla') }">
+                <button type="button" class="wcd-sec__hd" @click="lipat('sla')">
+                    <div class="wcd-sec__ic wcd-sec__ic--rose">
+                        <i class="bi bi-hourglass-split"></i>
+                    </div>
+                    <div class="wcd-sec__title">
+                        <h2>Tenggat Pemenuhan MPP</h2>
+                        <span class="wcd-sec__sub">Sisa waktu tiap MPP dalam hari kerja — libur nasional &amp; cuti bersama sudah dikecualikan</span>
+                    </div>
+                    <i class="bi wcd-sec__chev" :class="tutup.has('sla') ? 'bi-chevron-down' : 'bi-chevron-up'"></i>
+                </button>
+                <div v-show="!tutup.has('sla')" class="wcd-sec__bd" :class="{ 'wcd-basi': zona.analitik.segar }">
+                    <SlaPanel
+                        :ringkas="zona.analitik.data.sla.ringkas"
+                        :baris="zona.analitik.data.sla.baris"
+                    />
+                </div>
+            </section>
+
             <!-- ══════════════ ZONA D — SEKSI KHAS ══════════════ -->
             <section :id="`wcd-khas`" ref="refKhas" class="wcd-sec" :class="{ 'is-tutup': tutup.has('khas') }">
                 <button type="button" class="wcd-sec__hd" @click="lipat('khas')">
@@ -253,6 +277,7 @@ import AntreanAksi from './panels/AntreanAksi.vue';
 import FunnelPanel from './panels/FunnelPanel.vue';
 import TrenPanel from './panels/TrenPanel.vue';
 import KesehatanPanel from './panels/KesehatanPanel.vue';
+import SlaPanel from './panels/SlaPanel.vue';
 import CalendarCommandCenter from './panels/CalendarCommandCenter.vue';
 import EkstraPanel from './panels/EkstraPanel.vue';
 import RekrutmenPanel from './tabs/RekrutmenPanel.vue';
@@ -309,6 +334,16 @@ const namaAdmin = computed(
     () => halaman.props?.auth?.user?.name || halaman.props?.careerAuth?.nama || 'Admin',
 );
 const tabAktif = computed(() => props.tabs.find((t) => t.kode === kategori.value) || props.tabs[0] || null);
+
+/**
+ * Seksi tenggat SLA ditampilkan?
+ *
+ * Server memulangkan daftar kosong untuk MT (tenggat pemenuhan kursi bukan
+ * ukuran di sana) dan untuk kategori yang belum punya MPP ber-SLA. Seksi yang
+ * isinya pasti kosong lebih baik tidak muncul daripada muncul kosong — yang
+ * kedua terbaca seperti data gagal dimuat.
+ */
+const slaAda = computed(() => (zona.analitik.data?.sla?.baris?.length ?? 0) > 0);
 const aksen = computed(() => tabAktif.value?.warna || '#6366f1');
 
 const sapaan = computed(() => {

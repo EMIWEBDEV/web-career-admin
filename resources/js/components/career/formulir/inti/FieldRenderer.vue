@@ -15,11 +15,11 @@
              diulang dua kali dengan kata-kata berbeda). -->
         <label v-if="field.tipe === 'consent'" class="fr__lbl fr__lbl--consent">
             <i class="bi bi-shield-check fr__consent-ico"></i> Pernyataan Persetujuan
-            <span v-if="field.wajib" class="fr__wajib">*</span>
+            <span v-if="wajibSekarang" class="fr__wajib">*</span>
         </label>
         <label v-else class="fr__lbl">
             {{ field.label }}
-            <span v-if="field.wajib && !prefillTerkunci" class="fr__wajib">*</span>
+            <span v-if="wajibSekarang && !prefillTerkunci" class="fr__wajib">*</span>
             <span v-if="prefillTerkunci" class="fr__auto"><i class="bi bi-magic"></i> otomatis</span>
             <span v-else-if="field.tipe === 'prefill'" class="fr__ubah"><i class="bi bi-pencil-fill"></i> dapat diubah</span>
         </label>
@@ -415,9 +415,9 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
 import { ambilOpsi, benderaDiingat, tunda } from '@utils/formulir/referensi';
-import { syaratTerpenuhi } from '@utils/formulir/aturan';
+import { syaratTerpenuhi, wajibKini } from '@utils/formulir/aturan';
 import { kunciBerkas } from '@utils/formulir/berkasBaris';
-import { masker as maskerTgl, keTampilan as tglKeTampilan, keIso as tglKeIso, galat as tglGalatPesan } from '@utils/formulir/tanggalKetik';
+import { masker as maskerTgl, keTampilan as tglKeTampilan, keIso as tglKeIso, galat as tglGalatPesan, batasHariIni as tglBatasHariIni } from '@utils/formulir/tanggalKetik';
 import TeleponNegara from '@career/TeleponNegara.vue';
 import AmbilFoto from './AmbilFoto.vue';
 
@@ -518,6 +518,21 @@ const tglPanjang = computed(() => {
     return isNaN(d) ? '' : d.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
 });
 
+/**
+ * Bintang merah mengikuti keadaan jawaban SAAT INI, bukan hanya flag `wajib`.
+ *
+ * Sebuah field bisa wajib hanya pada kondisi tertentu (`wajib_jika`) - mis.
+ * "Nama Pasangan" yang baru mengikat setelah status pernikahan dijawab
+ * "Menikah". Kalau bintangnya tetap statis, label dan pemeriksa berbicara dua
+ * hal berbeda: kandidat melihat kolom bertanda wajib yang ternyata boleh
+ * kosong, atau - yang jauh lebih buruk - kolom tanpa bintang yang menahannya
+ * saat menekan Lanjut tanpa pernah menjelaskan kenapa.
+ *
+ * Sumber aturannya SATU dengan validator (wajibKini di aturan.js), jadi
+ * keduanya mustahil berselisih.
+ */
+const wajibSekarang = computed(() => wajibKini(props.field, props.jawabanKonteks));
+
 function ketikTanggal(v) {
     tglTeks.value = maskerTgl(v);
     tglGalat.value = '';
@@ -537,8 +552,13 @@ function ketikTanggal(v) {
  * pesan merah.
  */
 function rapikanTanggal() {
+    // Arah waktunya ditentukan per PERTANYAAN, bukan seragam sekali untuk
+    // semua. Dulu barisnya berbunyi `props.field?.maks_hari_ini !== false`:
+    // benar untuk tanggal lahir, tapi karena tidak ada satu pun tempat yang
+    // pernah MENULIS `maks_hari_ini`, hasilnya selalu true - dan setiap kolom
+    // tanggal ikut memakai aturan tanggal lahir. Lihat batasHariIni().
     tglGalat.value = tglGalatPesan(tglTeks.value, {
-        maksHariIni: props.field?.maks_hari_ini !== false,
+        maksHariIni: tglBatasHariIni(props.field),
     }) || '';
 }
 

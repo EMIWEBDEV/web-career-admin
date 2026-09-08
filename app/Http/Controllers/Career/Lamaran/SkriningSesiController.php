@@ -141,7 +141,22 @@ class SkriningSesiController extends Controller
                     'Nama_Snapshot' => $pakai['nama'],
                     'Status' => 'DRAF',
                     'Metode' => $data['metode'] ?? 'TELEPON',
-                    'Kontak_Nomor' => $data['kontakNomor'] ?? null,
+                    // NOMOR BAWAAN DARI AKUN KANDIDAT.
+                    //
+                    // Nomor yang hendak dihubungi rekruter praktis selalu nomor
+                    // yang didaftarkan kandidat sendiri. Membiarkannya kosong
+                    // memaksa rekruter membuka tab lain, menyalin, lalu
+                    // menempelkannya — setiap sesi, untuk data yang sudah ada di
+                    // baris yang sama. Dan nomor yang diketik ulang adalah nomor
+                    // yang bisa salah ketik.
+                    //
+                    // Tetap BISA DIGANTI: yang diisi cuma nilai awal, bukan
+                    // kunci. Kandidat kerap memberi nomor lain saat dihubungi
+                    // ("pakai nomor kantor saja"), dan nomor itulah yang benar
+                    // dicatat sebagai yang dihubungi.
+                    //
+                    // Yang dikirim layar tetap didahulukan bila ada.
+                    'Kontak_Nomor' => $data['kontakNomor'] ?? $this->nomorAkun((int) $sub->Lamaran_Id),
                     'Percobaan' => 0,
                     'Waktu_Mulai' => now(),
                     'Petugas' => session('career_auth.nama', 'ADMIN'),
@@ -270,6 +285,50 @@ class SkriningSesiController extends Controller
                     'Dikunci_At' => now(),
                 ] + $this->capUbah());
 
+                // ── AKTIVITASNYA IKUT DITUTUP ───────────────────────────
+                //
+                // Dulu yang ditutup hanya SESI-nya. Aktivitas di worklist tetap
+                // berstatus BELUM, sehingga tombol "Catat Hasil" masih berdiri
+                // di sebelah lencana "skrining selesai" — menawarkan mencatat
+                // ulang sesuatu yang barusan dicatat lewat kuesionernya sendiri.
+                // Lebih buruk lagi, tahapnya tidak pernah dievaluasi: rekomendasi
+                // sudah ada, knockout sudah kena, tapi mesin keputusan tidak
+                // pernah diberi tahu bahwa aktivitas ini rampung.
+                //
+                // Rekomendasi dipetakan ke hasil aktivitas dengan aturan yang
+                // sama seperti "Catat Hasil":
+                //   TIDAK_LANJUT / knockout -> GAGAL
+                //   LANJUT / PERTIMBANGAN   -> LULUS
+                // PERTIMBANGAN sengaja TIDAK menggugurkan: artinya "perlu dibahas",
+                // bukan "tidak lolos", dan palunya tetap di tangan admin lewat
+                // keputusan tahap.
+                //
+                // Aktivitas INFORMATIF tidak diberi verdict — sepola pintu
+                // "Catat Hasil": perannya bahan pertimbangan, bukan penentu.
+                $sub = DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')
+                    ->where('Id_Lamaran_Tahap_Tes', $sesi->Lamaran_Tahap_Tes_Id)
+                    ->first();
+
+                if ($sub && $sub->Flag_Selesai !== 'Y') {
+                    $gagal = $data['rekomendasi'] === 'TIDAK_LANJUT' || ($hasil['knockout']['kena'] ?? false);
+
+                    DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')
+                        ->where('Id_Lamaran_Tahap_Tes', $sub->Id_Lamaran_Tahap_Tes)
+                        ->update([
+                            'Status' => 'SELESAI',
+                            'Hasil' => $sub->Peran === 'INFORMATIF' ? null : ($gagal ? 'GAGAL' : 'LULUS'),
+                            // Skor kuesioner ikut tersimpan sebagai nilai aktivitas,
+                            // supaya rapor tes menampilkan angka yang sama dengan
+                            // yang terbaca di panel skrining.
+                            'Nilai' => $hasil['persen'] ?? $sub->Nilai,
+                            'Flag_Selesai' => 'Y',
+                            'Waktu_Selesai' => now(),
+                        ] + $this->capUbah());
+
+                    $hasil['outcome'] = app(\App\Support\Career\LamaranService::class)
+                        ->evaluasiTahap((int) $sub->Lamaran_Tahap_Id, (int) session('career_auth.id'))['outcome'] ?? null;
+                }
+
                 return $hasil;
             });
 
@@ -340,6 +399,28 @@ class SkriningSesiController extends Controller
     }
 
     // ═══════════════════════════ PENOLONG ═══════════════════════════
+
+    /**
+     * Nomor HP dari AKUN kandidat — nilai awal kolom "Nomor dihubungi".
+     *
+     * Tersimpan di N_WEB_CAREERS_Users.No_Hp sudah berawalan kode negara
+     * ("62812..."), bentuk yang sama dengan yang dipakai komponen TeleponNegara
+     * di layar, jadi tidak perlu diolah lagi.
+     *
+     * Mengembalikan null bila akunnya belum mengisi nomor — kolomnya lalu
+     * tampil kosong seperti sebelumnya, dan rekruter mengetiknya sendiri.
+     */
+    private function nomorAkun(int $lamaranId): ?string
+    {
+        $nomor = DB::table('N_WEB_CAREERS_Lamaran as l')
+            ->join('N_WEB_CAREERS_Users as u', 'u.Id_Users', '=', 'l.Id_Users')
+            ->where('l.Id_Lamaran', $lamaranId)
+            ->value('u.No_Hp');
+
+        $nomor = trim((string) $nomor);
+
+        return $nomor !== '' ? $nomor : null;
+    }
 
     /** Aktivitas + tahapnya + lamarannya, dalam satu baris. */
     private function aktivitas(int $tesId): ?object

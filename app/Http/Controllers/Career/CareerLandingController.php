@@ -77,7 +77,16 @@ class CareerLandingController extends Controller
             'achievements' => $this->achievements(),
             'offices' => $this->offices(),
             'benefits' => $this->benefits(),
-            'tim' => $this->timCards(),
+            // HANYA divisi yang sedang membuka lowongan.
+            //
+            // Beranda adalah etalase, bukan bagan organisasi. Sembilan kartu
+            // yang semuanya berbunyi "Belum ada lowongan" mengajari pengunjung
+            // bahwa bagian ini tidak perlu dilihat — dan pelajaran itu melekat,
+            // termasuk pada hari ketika ada lowongan yang benar-benar dibuka.
+            //
+            // Struktur organisasi lengkapnya tetap ada di /karir/tim, dan
+            // tombol "Lihat semua tim" di kaki bagian ini mengantar ke sana.
+            'tim' => $this->timCards(hanyaAdaLowongan: true),
             'heroSlides' => $this->heroSlides(),
             // FAQ dari Master FAQ — hanya yang ditandai admin untuk landing.
             // Seluruh pertanyaan ada di halaman /karir/faq.
@@ -1345,7 +1354,24 @@ class CareerLandingController extends Controller
      * Rekap lowongan dihitung dari kartu lowongan yang SAMA dengan yang tampil
      * di /karir/lowongan (dbLowonganCards) sehingga angkanya selalu konsisten.
      */
-    private function timCards(): array
+    /**
+     * Kartu tim/divisi berikut rekap lowongannya.
+     *
+     * @param  bool  $hanyaAdaLowongan  Buang divisi yang sedang tidak membuka
+     *                                  lowongan sama sekali.
+     *
+     * Bawaannya FALSE — halaman yang memang bertugas menampilkan seluruh
+     * struktur organisasi (SemuaTim, sidebar filter di daftar lowongan) tetap
+     * butuh divisi yang sedang kosong: di sanalah pengunjung menelusuri
+     * "departemen apa saja yang ada di EVO", bukan "apa yang sedang dibuka".
+     *
+     * LANDING PAGE memakai TRUE. Alasannya beda tujuan: bagian "Tim yang
+     * menjalankan Evo" di beranda adalah etalase, dan etalase yang sembilan
+     * dari sembilan kartunya berbunyi "Belum ada lowongan" justru mengajari
+     * pengunjung bahwa tidak ada yang perlu dilihat — padahal mungkin ada satu
+     * yang sedang membuka.
+     */
+    private function timCards(bool $hanyaAdaLowongan = false): array
     {
         $info = $this->timInfoRows();
         if (! $info) {
@@ -1366,16 +1392,37 @@ class CareerLandingController extends Controller
                     'deskripsi' => $t['deskripsi'],
                     'img' => $t['img']['header'],
                     'lowongan' => $jobs->count(),
+                    // NAMA POSISI yang sedang dibuka — bukan cuma cacahnya.
+                    //
+                    // "2 lowongan" tidak memberi tahu apa pun tentang apakah
+                    // lowongannya relevan bagi yang membaca; "STAFF IT SUPPORT"
+                    // memberi tahu seketika. Kartu MT sudah lama memakai pola
+                    // ini (lihat MtSection), dan kartu tim ikut menyamakannya.
+                    //
+                    // Dikirim UTUH, tidak dipotong di sini: layar yang tahu
+                    // berapa chip yang muat, dan ia perlu jumlah seluruhnya
+                    // untuk menghitung lencana "+N".
+                    'posisi' => $jobs->pluck('posisi')->filter()->unique()->values()->all(),
                     // TANPA 'kuota'/'kuotaTerisi' — kartu tim cukup memberi tahu
                     // BERAPA lowongan yang dibuka, bukan berapa kursi tersedia.
                     'pelamar' => (int) $jobs->sum('pelamar'),
                     'skill' => $jobs->flatMap(fn ($j) => $j['skill'] ?? [])->unique()->values()->all(),
                     'lokasi' => $jobs->pluck('lokasi')->filter(fn ($l) => $l && $l !== '—')->unique()->implode(' / ') ?: null,
+                    // Tenggat TERDEKAT di antara lowongan divisi ini.
+                    //
+                    // Yang paling awal ditutup, bukan yang paling akhir: kartu
+                    // memberi tahu "kapan kesempatan mulai hilang", dan tanggal
+                    // terjauh akan membuat orang mengira masih punya waktu untuk
+                    // lowongan yang sebenarnya tutup pekan depan.
+                    'tanggalTutup' => $jobs->pluck('tanggalTutup')->filter()->sort()->first(),
                     'tempatKerja' => $jobs->pluck('tempatKerja')->filter()->unique()->implode(' / ') ?: null,
                     'pengalaman' => $jobs->pluck('pengalaman')->filter()->first(),
                     'benefit' => $jobs->flatMap(fn ($j) => $j['benefit'] ?? [])->filter()->unique()->take(3)->implode(' + ') ?: null,
                 ];
             })
+            // Disaring SESUDAH dipetakan, bukan sebelumnya: jumlah lowongan
+            // baru diketahui setelah kartunya dirakit.
+            ->when($hanyaAdaLowongan, fn ($c) => $c->filter(fn ($t) => $t['lowongan'] > 0))
             // Divisi yang sedang membuka lowongan tampil lebih dulu.
             ->sortBy([['lowongan', 'desc'], ['nama', 'asc']])
             ->values()
@@ -1612,9 +1659,38 @@ class CareerLandingController extends Controller
             $alurKode = $pembukaan->pluck('Alur_Kode')->filter()->unique();
             $tahap = collect();
             if ($alurKode->isNotEmpty()) {
+                // TAHAP YANG DISEMBUNYIKAN DARI KANDIDAT TIDAK IKUT TERBIT.
+                //
+                // Penandanya `Tampil_Kandidat` di Master_Alur_Tahap_Tes — admin
+                // memakainya untuk tahap yang memang bukan urusan pelamar:
+                // Background Check, Reference Check, Negosiasi internal.
+                //
+                // Portal kandidat sudah lama menghormatinya (lihat
+                // LamaranController baris ~8130), tapi HALAMAN LOWONGAN PUBLIK
+                // belum: ia menerbitkan seluruh tahap apa adanya. Akibatnya
+                // pelamar yang belum melamar pun membaca "5. Background Check"
+                // di daftar tahapan — padahal begitu ia melamar, tahap itu tidak
+                // pernah muncul di portalnya. Dua layar menceritakan proses
+                // seleksi yang berbeda untuk lowongan yang sama.
+                //
+                // NOT EXISTS, bukan JOIN: satu tahap bisa punya beberapa
+                // aktivitas. Tahap disembunyikan hanya bila TIDAK ADA SATU PUN
+                // aktivitasnya yang boleh dilihat kandidat; selama masih ada
+                // satu yang tampil, tahapnya tetap terbit.
+                //
+                // Tahap TANPA aktivitas sama sekali tetap terbit (bawaannya
+                // tampil) — alur lama banyak yang begitu, dan menyembunyikannya
+                // akan mengosongkan daftar tahapan tanpa ada yang meminta.
                 $tahap = DB::table('N_WEB_CAREERS_Master_Alur_Tahap as t')
                     ->join('N_WEB_CAREERS_Master_Alur as al', 'al.Id_Master_Alur', '=', 't.Master_Alur_Id')
                     ->whereIn('al.Kode', $alurKode)
+                    ->where(function ($q) {
+                        $q->whereNotExists(fn ($x) => $x->from('N_WEB_CAREERS_Master_Alur_Tahap_Tes as st')
+                            ->whereColumn('st.Master_Alur_Tahap_Id', 't.Id_Master_Alur_Tahap'))
+                            ->orWhereExists(fn ($x) => $x->from('N_WEB_CAREERS_Master_Alur_Tahap_Tes as st')
+                                ->whereColumn('st.Master_Alur_Tahap_Id', 't.Id_Master_Alur_Tahap')
+                                ->where(fn ($w) => $w->whereNull('st.Tampil_Kandidat')->orWhere('st.Tampil_Kandidat', 'Y')));
+                    })
                     ->orderBy('t.Urutan')
                     ->select('al.Kode as AlurKode', 't.Label', 't.Tipe_Tahap_Kode', 't.Provider')
                     ->get()

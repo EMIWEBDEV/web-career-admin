@@ -65,6 +65,43 @@ export function syaratTerpenuhi(syarat, jawaban) {
     }
 }
 
+/**
+ * WAJIB YANG BERGANTUNG PADA JAWABAN LAIN.
+ *
+ * `wajib` menyatakan "selalu wajib". `wajib_jika` menyatakan "wajib HANYA bila
+ * syarat ini terpenuhi" - bentuk syaratnya sama persis dengan `tampil_jika`,
+ * jadi admin tidak perlu menghafal dua tata cara.
+ *
+ *   wajib_jika: { field: 'status_pernikahan', operator: '=', nilai: 'Menikah' }
+ *
+ * ── KENAPA BUKAN CUKUP DENGAN `tampil_jika` ────────────────────────────────
+ *
+ * `tampil_jika` menyembunyikan kolomnya sama sekali. Itu benar untuk isian yang
+ * memang tidak berlaku (nama pasangan bagi yang lajang), tapi salah untuk isian
+ * yang tetap boleh diisi namun baru MENGIKAT pada jawaban tertentu - mis. nomor
+ * NPWP yang opsional bagi pelamar magang tapi wajib bagi pelamar tetap.
+ * Menyembunyikannya membuang jawaban yang sebenarnya berguna; memaksanya selalu
+ * wajib menahan kandidat yang memang tidak punya.
+ *
+ * Keduanya bisa dipasang bersamaan: yang tersembunyi tidak pernah divalidasi
+ * (lihat periksaLangkah), jadi `wajib_jika` hanya berlaku selagi kolomnya
+ * benar-benar terlihat.
+ *
+ * Tanpa `wajib_jika`, nilainya jatuh ke `wajib` - jadi seluruh formulir lama
+ * berperilaku persis seperti sebelumnya.
+ */
+export function wajibKini(f, jawaban) {
+    if (!f) {
+        return false;
+    }
+
+    if (f.wajib_jika && f.wajib_jika.field) {
+        return syaratTerpenuhi(f.wajib_jika, jawaban);
+    }
+
+    return !!f.wajib;
+}
+
 /** Field yang lolos syarat tampil pada kondisi jawaban saat ini. */
 export function fieldTampil(field, jawaban) {
     return (field || []).filter((f) => syaratTerpenuhi(f.tampil_jika, jawaban));
@@ -217,7 +254,10 @@ export function periksaLangkah(langkah, jawaban) {
             const baris = jawaban[kunciBagian(B)] || [];
             baris.forEach((r, i) => {
                 fieldTampil(B.field, r).forEach((f) => {
-                    if (f.wajib && kosong(r[f.key])) {
+                    // Syarat dinilai terhadap BARIS ini, bukan jawaban global:
+                    // di bagian berulang, "menikah" pada baris ke-2 tidak boleh
+                    // mewajibkan kolom di baris ke-1.
+                    if (wajibKini(f, r) && kosong(r[f.key])) {
                         galat.push(`${B.judul} baris ${i + 1}: "${f.label}" wajib diisi.`);
                         return;
                     }
@@ -233,7 +273,7 @@ export function periksaLangkah(langkah, jawaban) {
             // sistem). Begitu dibuka untuk disunting, ia jadi isian biasa —
             // termasuk boleh dinyatakan wajib dan dicek format teleponnya.
             if (f.tipe === 'prefill' && !syaratTerpenuhi(f.buka_jika, jawaban)) return;
-            if (f.wajib && kosong(jawaban[f.key])) {
+            if (wajibKini(f, jawaban) && kosong(jawaban[f.key])) {
                 galat.push(
                     f.tipe === 'consent' ? `Anda harus menyetujui: "${f.label}".` : `"${f.label}" wajib diisi.`,
                 );

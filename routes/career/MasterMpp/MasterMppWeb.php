@@ -23,6 +23,20 @@ Route::prefix('api/v1')->name('career.api.master-mpp.')->group(function () {
     Route::patch('/master-mpp/{no}/batalkan', [MasterMppController::class, 'batalkan'])->name('batalkan')->middleware('career.permission:masterMppPage,EDIT');
     Route::patch('/master-mpp/{no}/selesai', [MasterMppController::class, 'selesai'])->name('selesai')->middleware('career.permission:masterMppPage,EDIT');
 
+    // PERPANJANG SLA — menggeser tenggat, dengan alasan yang wajib ditulis.
+    // Izinnya EDIT, sama dengan Batalkan/Selesai: ketiganya mengubah keadaan MPP
+    // yang sudah ada, bukan membuat yang baru.
+    Route::post('/master-mpp/{no}/perpanjang-sla', [MasterMppController::class, 'perpanjang'])->name('perpanjang-sla')->middleware('career.permission:masterMppPage,EDIT');
+
+    // Kandidat yang sudah DITERIMA pada sebuah MPP — tab "Kandidat" di panel
+    // kanan. Didefinisikan SEBELUM route {no} agar tidak tertangkap sebagai detail.
+    Route::get('/master-mpp/{no}/kandidat', [MasterMppController::class, 'kandidat'])->name('kandidat')->middleware('career.permission:masterMppPage,VIEW');
+
+    // Profil kandidat — BACA SAJA. Tanpa tombol aksi apa pun; keputusan
+    // kandidat tetap milik worklist. Lihat MasterMppController::kandidatDetail().
+    Route::get('/master-mpp/{no}/kandidat/{id}', [MasterMppController::class, 'kandidatDetail'])->name('kandidat.detail')->middleware('career.permission:masterMppPage,VIEW');
+    Route::get('/master-mpp/{no}/berkas/{id}', [MasterMppController::class, 'berkasKandidat'])->name('kandidat.berkas')->middleware('career.permission:masterMppPage,VIEW');
+
     // Opsi dropdown — folder sendiri, tidak menyentuh CareerAdminController::options().
     // DIDEFINISIKAN SEBELUM route {no} agar segmen 'opsi' tidak tertangkap sebagai detail.
     Route::prefix('/master-mpp/opsi')->name('opsi.')->group(function () {

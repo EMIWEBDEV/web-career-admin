@@ -109,15 +109,38 @@ function normalisasiLebarJika(aturan) {
     };
 }
 
+/**
+ * PANJANG MAKSIMAL SEBUAH KEY.
+ *
+ * Bukan angka pilihan rasa: `Field_Key` di N_WEB_CAREERS_Formulir_Berkas dan
+ * N_WEB_CAREERS_Formulir_Jawaban_Index bertipe varchar(60). Key yang lebih
+ * panjang tidak ditolak saat formulir disimpan — skema tersimpan sebagai JSON,
+ * yang tidak punya batas — melainkan jauh kemudian, saat KANDIDAT mengunggah
+ * berkas, dalam bentuk galat mentah SQL Server:
+ *
+ *   "String or binary data would be truncated in table ... column 'Field_Key'"
+ *
+ * Kandidat yang melihatnya tidak melakukan kesalahan apa pun dan tidak bisa
+ * berbuat apa-apa. Jadi batasnya ditegakkan di HULU, saat key dibuat.
+ *
+ * Angkanya 56, bukan 60: keyUnik() menambahkan akhiran '_2', '_3' ketika ada
+ * key kembar, dan akhiran itu harus tetap muat. Tanpa sisa ruang ini, key
+ * sepanjang tepat 60 karakter berubah jadi 62 begitu ada duplikat — dan itulah
+ * yang terjadi pada 'dokumen_pendukung_e_g_sio_forklift_loader_boiler_excavator_s'.
+ */
+export const MAKS_PANJANG_KEY = 56;
+
 export function slugKey(s) {
-    return (
-        String(s || 'field')
-            .trim()
-            .toLowerCase()
-            .replace(/[^a-z0-9_]+/g, '_')
-            .replace(/^[0-9]+/g, '')
-            .replace(/^_+|_+$/g, '') || 'field'
-    );
+    const rapi = String(s || 'field')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9_]+/g, '_')
+        .replace(/^[0-9]+/g, '')
+        .replace(/^_+|_+$/g, '');
+
+    // Dipotong SESUDAH dirapikan, lalu garis bawah sisa di ujung dibuang -
+    // pemotongan di tengah kata kerap menyisakan 'excavator_' yang menggantung.
+    return rapi.slice(0, MAKS_PANJANG_KEY).replace(/_+$/g, '') || 'field';
 }
 
 export function buatFieldId() {

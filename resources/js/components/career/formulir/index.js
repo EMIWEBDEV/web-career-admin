@@ -325,4 +325,4 @@ export {
     periksaLangkah,
 } from '@utils/formulir/aturan';
 
-export { normalisasiSkema, skemaKosong, validasiSkema, slugKey, buatFieldId } from '@utils/formulir/schema';
+export { normalisasiSkema, skemaKosong, validasiSkema, slugKey, buatFieldId, MAKS_PANJANG_KEY } from '@utils/formulir/schema';

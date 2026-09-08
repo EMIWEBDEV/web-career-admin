@@ -195,6 +195,19 @@ Route::prefix('api/v1/karir')
         Route::get('/lamaran/{id}/laporan/opsi', [LamaranController::class, 'laporanOpsi'])->name('lamaran.laporan.opsi')->middleware('career.permission:pelamarPage,VIEW');
         Route::post('/lamaran/{id}/laporan', [LamaranController::class, 'laporanBuat'])->name('lamaran.laporan.buat')->middleware('career.permission:pelamarPage,VIEW');
 
+        // EXPORT STUDIO — BERKAS SELEKSI KANDIDAT.
+        // Status & unduhnya MEMAKAI ULANG rute laporan di atas: keduanya
+        // menulis ke N_WEB_CAREERS_Export_Log dan dibedakan Export_Type, jadi
+        // laporanStatus/laporanUnduh sudah melayani keduanya apa adanya.
+        Route::get('/lamaran/{id}/berkas-seleksi/opsi', [LamaranController::class, 'berkasSeleksiOpsi'])->name('lamaran.berkas.opsi')->middleware('career.permission:pelamarPage,VIEW');
+        Route::post('/lamaran/{id}/berkas-seleksi/pratinjau', [LamaranController::class, 'berkasSeleksiPratinjau'])->name('lamaran.berkas.pratinjau')->middleware('career.permission:pelamarPage,VIEW');
+        Route::post('/lamaran/{id}/berkas-seleksi/halaman', [LamaranController::class, 'berkasSeleksiHalaman'])->name('lamaran.berkas.halaman')->middleware('career.permission:pelamarPage,VIEW');
+        // Pratinjau disajikan INLINE lewat rute sendiri, bukan lewat
+        // laporan.unduh: yang terakhir memasang Content-Disposition
+        // attachment, dan bingkai pratinjau berakhir kosong.
+        Route::get('/berkas-seleksi/pratinjau/{id}', [LamaranController::class, 'berkasSeleksiLihat'])->name('lamaran.berkas.lihat')->middleware('career.permission:pelamarPage,VIEW');
+        Route::post('/lamaran/{id}/berkas-seleksi', [LamaranController::class, 'berkasSeleksiBuat'])->name('lamaran.berkas.buat')->middleware('career.permission:pelamarPage,VIEW');
+
         // Gambar yang ditanam DI DALAM catatan berformat (Quill). Bentuk URL-nya
         // dikunci App\Support\Career\HtmlBersih — mengubah pola rute ini akan
         // membuat seluruh gambar lama dibuang saat catatannya disunting ulang.

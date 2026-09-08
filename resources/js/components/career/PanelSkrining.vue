@@ -407,6 +407,17 @@ export default {
         isi: { type: Object, required: true },
         /** Petunjuk template — ditampilkan sebelum pertanyaan dimulai. */
         petunjuk: { type: String, default: '' },
+        /**
+         * Nomor HP dari akun kandidat — CADANGAN untuk kolom "Nomor dihubungi".
+         *
+         * Sesi baru sudah diisi nomor ini oleh server. Prop ini melayani sesi
+         * LAMA yang dibuka sebelum perilaku itu ada, dan kolomnya masih kosong:
+         * tanpa cadangan ini rekruter tetap harus menyalin nomornya sendiri.
+         *
+         * Hanya dipakai saat kolomnya benar-benar kosong; nomor yang sudah
+         * tercatat tidak pernah ditimpa.
+         */
+        nomorAkun: { type: String, default: '' },
     },
     emits: ['perbarui', 'selesaikan', 'buka-kunci'],
     data() {
@@ -525,7 +536,7 @@ export default {
             if (s) {
                 this.kepala = {
                     metode: s.metode || 'TELEPON',
-                    kontakNomor: s.kontakNomor || '',
+                    kontakNomor: s.kontakNomor || this.nomorAkun || '',
                     percobaan: s.percobaan ?? 0,
                     hasilKontak: s.hasilKontak,
                     durasiMenit: s.durasiMenit,

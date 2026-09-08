@@ -36,6 +36,13 @@ export const PROPERTI_UNIVERSAL = [
     'lebar_persen',
     'lebar_jika',
     'tampil_jika',
+    // Wajib bersyarat. Universal seperti `tampil_jika` karena pertanyaannya
+    // sama untuk tipe apa pun: "kapan isian ini mengikat?"
+    'wajib_jika',
+    // Penanda bahwa key-nya DIKETIK SENDIRI oleh admin, bukan turunan label.
+    // Tanpa ini key hasil ketikan tertimpa lagi pada ketukan berikutnya di
+    // kotak Label — lihat sinkronKey() di masterFormulir.vue.
+    'key_manual',
 ];
 
 /** Batas bawah > batas atas: satu pemeriksa dipakai number dan currency. */

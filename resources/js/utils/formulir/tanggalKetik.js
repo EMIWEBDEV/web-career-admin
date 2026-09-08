@@ -112,7 +112,12 @@ export function keIso(teks) {
 
     const dua = (n) => String(n).padStart(2, '0');
 
-    return `${tahun}-${dua(bulan)}-${dua(hari)}`;
+    // Tahun ikut dipadkan jadi empat digit. Tanpa ini tahun 998 menghasilkan
+    // '998-05-02', dan pembacaan tahun di galat() (`+iso.slice(0, 4)`) memungut
+    // '998-' yang bernilai NaN -- sementara `NaN < 1900` bernilai false, jadi
+    // penahan tahun terlalu lampau itu lolos begitu saja. Bentuk keluarannya
+    // tetap 'YYYY-MM-DD' seperti el-date-picker.
+    return `${String(tahun).padStart(4, '0')}-${dua(bulan)}-${dua(hari)}`;
 }
 
 /** Sudah 8 digit? Dipakai membedakan "masih mengetik" dari "salah". */
@@ -121,13 +126,84 @@ export function lengkap(teks) {
 }
 
 /**
+ * ARAH WAKTU YANG WAJAR UNTUK SEBUAH PERTANYAAN.
+ *
+ * Dipakai ketika skema tidak menyebutkan arahnya sendiri. Tanpa ini, seluruh
+ * kolom tanggal memakai aturan tanggal lahir — dan pertanyaan yang jawabannya
+ * MEMANG di masa depan ("Tanggal Dapat Mulai Bekerja", yang praktis selalu
+ * sebulan ke depan karena one month notice) dimerahi tepat ketika kandidat
+ * menjawabnya dengan benar.
+ *
+ * Pesan merah yang menyalahkan jawaban yang benar lebih buruk daripada tidak
+ * ada pemeriksaan sama sekali: ia melatih orang mengabaikan warna merah, dan
+ * pemeriksaan yang benar-benar penting ikut terabaikan.
+ *
+ * Yang dibaca LABELNYA, bukan kuncinya: kunci dibuat admin dan bisa berbunyi
+ * apa saja (`tgl_1`, `field_7`), sementara label adalah kalimat yang dibaca
+ * kandidat — dan itulah yang menyatakan maksud pertanyaannya.
+ */
+const KATA_DEPAN = [
+    'mulai bekerja', 'mulai kerja', 'dapat mulai', 'siap mulai', 'kesiapan',
+    'bergabung', 'onboarding', 'masuk kerja', 'efektif',
+    'rencana', 'target', 'jadwal', 'tenggat', 'batas',
+    'kedaluwarsa', 'kadaluarsa', 'berlaku sampai', 'masa berlaku', 'expired',
+    'wawancara', 'tes', 'seleksi', 'janji temu',
+];
+
+const KATA_BELAKANG = [
+    'lahir', 'kelahiran',
+    'terbit', 'diterbitkan', 'dikeluarkan', 'penerbitan',
+    'lulus', 'kelulusan', 'wisuda', 'ijazah',
+    'masuk sekolah', 'mulai sekolah',
+    'resign', 'berhenti', 'keluar dari',
+];
+
+/**
+ * Arah waktu sebuah kolom: true bila jawabannya tidak boleh melewati hari ini.
+ *
+ * Urutannya disengaja — yang eksplisit selalu menang atas tebakan:
+ *
+ *   1. `maks_hari_ini` di skema, bila perancang formulir menyebutkannya;
+ *   2. label yang jelas menyebut masa depan  — boleh ke depan;
+ *   3. label yang jelas menyebut masa lalu   — tidak boleh ke depan;
+ *   4. tidak ada petunjuk sama sekali        — TIDAK dibatasi.
+ *
+ * Bawaan terakhir itu longgar dengan sengaja. Menolak tanggal yang sebenarnya
+ * sah adalah kesalahan yang menghentikan pekerjaan orang; menerima salah ketik
+ * tahun sesekali adalah kesalahan yang masih bisa diperbaiki verifikator.
+ * Ketika ragu, yang lebih murah adalah tidak menghalangi.
+ */
+export function batasHariIni(field) {
+    if (!field) {
+        return false;
+    }
+
+    if (typeof field.maks_hari_ini === 'boolean') {
+        return field.maks_hari_ini;
+    }
+
+    const teks = `${field.label ?? ''} ${field.ph ?? ''}`.toLowerCase();
+
+    if (KATA_DEPAN.some((k) => teks.includes(k))) {
+        return false;
+    }
+
+    return KATA_BELAKANG.some((k) => teks.includes(k));
+}
+
+/**
  * Pesan galat, atau null bila tidak apa-apa.
  *
- * Tahun dibatasi 1900–hari ini. Batas atasnya bukan kerewelan: tanggal lahir di
- * masa depan hampir selalu salah ketik tahun (2026 jadi 2062), dan tanpa
- * penahan itu ia lolos sampai ke berkas resmi.
+ * Batas bawahnya tetap tahun 1900 untuk semua kolom — tahun tiga digit selalu
+ * salah ketik, apa pun pertanyaannya.
+ *
+ * Batas ATASNYA menyesuaikan arah pertanyaan; lihat batasHariIni(). Dulu ia
+ * selalu menyala, karena penulis pertamanya hanya memikirkan tanggal lahir:
+ * di sana tahun di masa depan hampir selalu salah ketik (2026 jadi 2062) dan
+ * pantas ditahan sebelum masuk berkas resmi. Alasan itu tidak berlaku untuk
+ * tanggal yang memang belum terjadi.
  */
-export function galat(teks, { maksHariIni = true } = {}) {
+export function galat(teks, { maksHariIni = false } = {}) {
     if (!teks) {
         return null;
     }

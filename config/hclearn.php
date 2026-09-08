@@ -51,6 +51,35 @@ return [
 
     'prefix' => 'api/v1/web-careers',
 
+    /*
+    |--------------------------------------------------------------------------
+    | LAPORAN HASIL TES — jalan untuk mencetak, bukan untuk memutuskan
+    |--------------------------------------------------------------------------
+    |
+    | Callback hasil (callback_path di bawah) membawa vonis agregat: nilai,
+    | ambang, lulus/tidak. Itu cukup untuk menggerakkan alur seleksi, dan
+    | sengaja tidak lebih — mesin keputusan tidak perlu tahu skor per aspek.
+    |
+    | Berkas Seleksi Kandidat perlu tahu. Rincian TIU per domain, profil DISC,
+    | 20 aspek PAPI, dan norma Kraeplin hanya ada di CAT, jadi diambil saat
+    | dicetak lewat jalan ini — bukan disalin ke sini setiap kali ada hasil
+    | masuk. Salinan berarti dua tempat menyimpan angka yang sama, dan
+    | perbaikan penilaian di CAT tidak akan pernah sampai ke berkas yang
+    | terlanjur tercetak dari salinan.
+    |
+    | Nomor yang dikirim adalah Id_Penjadwalan_Peserta MILIK KITA — CAT
+    | menyimpannya di kolom Id_WC_Penjadwalan_Peserta. Bukan nomor token CAT:
+    | nomor token pernah terpakai ulang setelah reset, dan itu persis kelas
+    | kesalahan yang tidak boleh terulang di jalur cetak.
+    */
+    'laporan_tes_path' => env('HCLEARN_LAPORAN_TES_PATH', 'laporan-tes'),
+
+    // Anggaran waktu satu panggilan laporan. Lebih longgar dari `timeout` di
+    // bawah: CAT menggambar grafik (donat DISC, jaring PAPI, lajur Kraeplin)
+    // sebelum menjawab, dan itu memang butuh waktu lebih lama daripada
+    // sekadar menerbitkan token.
+    'laporan_timeout' => (int) env('HCLEARN_LAPORAN_TIMEOUT', 60),
+
     // ── CALLBACK HASIL (CAT → Web Careers) ──
     // URL publik Web Careers yang bisa dijangkau CAT untuk push hasil tes.
     // Dikirim sebagai Url_Callback saat penjadwalan; CAT memanggilnya saat tes

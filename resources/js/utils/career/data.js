@@ -50,19 +50,50 @@ export function typeClass(type) {
     return 'wc-badge--full';
 }
 
+/**
+ * Kode tipe tahap — kalimat yang dibaca PELAMAR.
+ *
+ * Daftarnya harus memuat SELURUH kode di Master Tipe Tahap. Sebelumnya hanya
+ * delapan yang terdaftar, sementara masternya berisi empat belas; enam sisanya
+ * jatuh ke cadangan `|| tipe` dan tercetak apa adanya di halaman publik:
+ * "PHONE_SCREEN", "BACKGROUND_CHECK", "NEGOTIATION". Kode internal bergaris
+ * bawah bukan keterangan — ia terbaca seperti kebocoran sistem, tepat di
+ * halaman yang seharusnya meyakinkan orang untuk melamar.
+ *
+ * Cadangannya sekarang MERAPIKAN, bukan menampilkan mentah: kode yang belum
+ * terdaftar di sini muncul sebagai "Phone Screen", bukan "PHONE_SCREEN".
+ * Dengan begitu tipe baru yang ditambahkan lewat master tetap terbaca wajar
+ * sebelum sempat diterjemahkan di sini.
+ */
 export function stageTypeLabel(tipe) {
-    return (
-        {
-            FORM: 'Pengisian formulir & dokumen',
-            ADMIN_SCREENING: 'Seleksi administrasi',
-            HCLEARN_TEST: 'Tes online (HCLearn)',
-            INTERVIEW: 'Wawancara',
-            DOCUMENT: 'Kelengkapan dokumen',
-            DECISION: 'Keputusan & pengumuman',
-            OFFERING: 'Penawaran kerja',
-            ONBOARDING: 'Onboarding',
-        }[tipe] || tipe
-    );
+    const peta = {
+        FORM: 'Pengisian formulir & dokumen',
+        ADMIN_SCREENING: 'Seleksi administrasi',
+        HCLEARN_TEST: 'Tes online (HCLearn)',
+        INTERVIEW: 'Wawancara',
+        DOCUMENT: 'Kelengkapan dokumen',
+        DECISION: 'Keputusan & pengumuman',
+        OFFERING: 'Penawaran kerja',
+        ONBOARDING: 'Onboarding',
+        PHONE_SCREEN: 'Wawancara telepon',
+        TES_OFFLINE_MANUAL: 'Tes tertulis (luring)',
+        MCU: 'Pemeriksaan kesehatan',
+        REFERENCE_CHECK: 'Pengecekan referensi',
+        BACKGROUND_CHECK: 'Verifikasi latar belakang',
+        NEGOTIATION: 'Pembahasan penawaran',
+        CONTRACT_SIGNING: 'Penandatanganan kontrak',
+    };
+
+    if (peta[tipe]) return peta[tipe];
+    if (!tipe) return '';
+
+    // BACKGROUND_CHECK -> "Background Check"
+    return String(tipe)
+        .toLowerCase()
+        .split('_')
+        .filter(Boolean)
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(' ');
 }
 
 /*

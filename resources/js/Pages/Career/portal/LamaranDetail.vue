@@ -497,10 +497,10 @@
                          supaya dua aktivitas yang dijadwalkan bersamaan tetap
                          terbaca sebagai dua hal terpisah. -->
                     <section
-                        v-for="a in aktivitasTampil"
+                        v-for="a in aktivitasKartu"
                         :key="a.id"
                         class="ld-akt"
-                        :class="[`is-${a.keadaan.nada}`, { 'is-kunci': a.terkunci }]"
+                        :class="`is-${a.keadaan.nada}`"
                     >
                         <header class="ld-akt__head">
                             <span class="ld-akt__no">{{ a.nomor }}</span>
@@ -512,247 +512,241 @@
                         </header>
 
                         <div class="ld-akt__body">
-                            <!-- BELUM GILIRANNYA — diberi keterangan, bukan
-                                 sekadar dimatikan. "Terkunci" tanpa sebab
-                                 terbaca sebagai kesalahan sistem, dan kandidat
-                                 menghubungi tim untuk sesuatu yang memang sudah
-                                 semestinya. Nama penghalangnya hanya disebut
-                                 bila aktivitas itu memang terlihat olehnya. -->
-                            <div v-if="a.terkunci" class="ld-antre">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>
-                                <span>
-                                    <b>Belum gilirannya</b>
-                                    <template v-if="a.menunggu"> — menunggu <b>{{ a.menunggu }}</b> selesai lebih dulu.</template>
-                                    <template v-else> — tahap ini dikerjakan berurutan.</template>
+                            <!-- Blok "Belum gilirannya" beserta pembungkusnya
+                                 DIHAPUS: aktivitas yang belum gilirannya tidak
+                                 lagi dirender sama sekali, jadi tidak ada lagi
+                                 dua cabang yang perlu dipisahkan. Lihat
+                                 aktivitasKartu().
+
+                                 Pembungkusnya WAJIB ikut dibuang: tag template
+                                 tanpa direktif (v-if / v-for / #slot) tidak
+                                 merender isinya sama sekali di Vue 3 -- ia
+                                 menelan seluruh isi kartu, termasuk jadwal
+                                 dan petanya. -->
+                            <!-- ══ SUDAH BERAKHIR — DIDAHULUKAN DARI KEADAAN MANA PUN ══
+                                 Dikerjakan kandidat atau ditutup tim, dua-duanya sama:
+                                 tak ada yang tersisa untuk ia kerjakan, dan tak satu pun
+                                 cabang di bawah boleh menyuruhnya menunggu apa pun selain
+                                 hasil. Urutan ketiga cabang ini bukan selera — lihat
+                                 blokAktivitas(). -->
+                            <div v-if="blokAktivitas(a) === 'selesai'" class="ld-notice ld-notice--done">
+                                <span class="ld-nico ld-nico--done" aria-hidden="true">
+                                    <svg viewBox="0 0 44 44" width="34" height="34">
+                                        <circle class="ld-nico__halo" cx="22" cy="22" r="17" />
+                                        <!-- Cincin gema: berdenyut keluar dua kali lalu diam. Yang
+                                             membedakan "selesai" dari sekadar centang statis. -->
+                                        <circle class="ld-nico__gema" cx="22" cy="22" r="13.5" />
+                                        <circle class="ld-nico__ring" cx="22" cy="22" r="13.5" />
+                                        <path class="ld-nico__check" d="M15.8 22.3l4.3 4.3 8.1-8.9" />
+                                    </svg>
                                 </span>
+                                <div>
+                                    <b>{{ judulSelesai(a) }}</b>
+                                    <p>{{ pesanSetelahTes }}</p>
+                                </div>
+                            </div>
+
+                            <!-- UJIAN ONLINE YANG BELUM PUNYA SESI.
+                                 Keadaan MILIK AKTIVITAS INI saja — tidak lagi
+                                 menutupi aktivitas lain di tahap yang sama. -->
+                            <div v-else-if="blokAktivitas(a) === 'jadwal'" class="ld-notice ld-notice--wait">
+                                <span class="ld-nico ld-nico--wait" aria-hidden="true">
+                                    <svg viewBox="0 0 44 44" width="34" height="34">
+                                        <circle class="ld-nico__halo" cx="22" cy="22" r="17" />
+                                        <g class="ld-nico__glass">
+                                            <path class="ld-nico__stroke" d="M14.5 12.5h15l-7.5 9.5zM14.5 31.5h15l-7.5-9.5z" />
+                                            <line class="ld-nico__stroke" x1="13.5" y1="12.5" x2="30.5" y2="12.5" />
+                                            <line class="ld-nico__stroke" x1="13.5" y1="31.5" x2="30.5" y2="31.5" />
+                                        </g>
+                                        <circle class="ld-nico__sand" cx="22" cy="22" r="1.4" />
+                                    </svg>
+                                </span>
+                                <div>
+                                    <b>Menunggu dijadwalkan</b>
+                                    <p>
+                                        Tim rekrutmen sedang menyiapkan jadwalnya — token, kode OTP, dan waktu
+                                        pengerjaan akan muncul di sini begitu terbit, dan kamu diberi tahu lewat
+                                        email.
+                                    </p>
+                                </div>
                             </div>
 
                             <template v-else>
-                                <!-- ══ SUDAH BERAKHIR — DIDAHULUKAN DARI KEADAAN MANA PUN ══
-                                     Dikerjakan kandidat atau ditutup tim, dua-duanya sama:
-                                     tak ada yang tersisa untuk ia kerjakan, dan tak satu pun
-                                     cabang di bawah boleh menyuruhnya menunggu apa pun selain
-                                     hasil. Urutan ketiga cabang ini bukan selera — lihat
-                                     blokAktivitas(). -->
-                                <div v-if="blokAktivitas(a) === 'selesai'" class="ld-notice ld-notice--done">
-                                    <span class="ld-nico ld-nico--done" aria-hidden="true">
-                                        <svg viewBox="0 0 44 44" width="34" height="34">
-                                            <circle class="ld-nico__halo" cx="22" cy="22" r="17" />
-                                            <!-- Cincin gema: berdenyut keluar dua kali lalu diam. Yang
-                                                 membedakan "selesai" dari sekadar centang statis. -->
-                                            <circle class="ld-nico__gema" cx="22" cy="22" r="13.5" />
-                                            <circle class="ld-nico__ring" cx="22" cy="22" r="13.5" />
-                                            <path class="ld-nico__check" d="M15.8 22.3l4.3 4.3 8.1-8.9" />
-                                        </svg>
-                                    </span>
-                                    <div>
-                                        <b>{{ judulSelesai(a) }}</b>
-                                        <p>{{ pesanSetelahTes }}</p>
+                                <!-- KREDENSIAL — hanya ada di cabang ini, jadi ia
+                                     hilang sendiri begitu tesnya berakhir: token yang
+                                     tak bisa dipakai lagi membuat kandidat mengira
+                                     masih ada yang harus dibuka. -->
+                                <div v-if="a.eksternal" class="ld-cred">
+                                    <div class="ld-cred__item">
+                                        <span class="ld-cred__lbl">TOKEN AKSES</span>
+                                        <span class="ld-cred__val ld-mono">{{ a.ujian.token || '—' }}</span>
+                                    </div>
+                                    <div class="ld-cred__item">
+                                        <span class="ld-cred__lbl">KODE OTP</span>
+                                        <span class="ld-cred__val ld-mono">{{ a.ujian.otp || '—' }}</span>
+                                    </div>
+                                    <div class="ld-cred__item">
+                                        <span class="ld-cred__lbl">WAKTU MULAI</span>
+                                        <span class="ld-cred__val">{{ fmtWaktu(a.ujian.waktuMulai) }}</span>
+                                    </div>
+                                    <div class="ld-cred__item">
+                                        <span class="ld-cred__lbl">WAKTU BERAKHIR</span>
+                                        <span class="ld-cred__val">{{ fmtWaktu(a.ujian.waktuSelesai) }}</span>
                                     </div>
                                 </div>
 
-                                <!-- UJIAN ONLINE YANG BELUM PUNYA SESI.
-                                     Keadaan MILIK AKTIVITAS INI saja — tidak lagi
-                                     menutupi aktivitas lain di tahap yang sama. -->
-                                <div v-else-if="blokAktivitas(a) === 'jadwal'" class="ld-notice ld-notice--wait">
-                                    <span class="ld-nico ld-nico--wait" aria-hidden="true">
-                                        <svg viewBox="0 0 44 44" width="34" height="34">
-                                            <circle class="ld-nico__halo" cx="22" cy="22" r="17" />
-                                            <g class="ld-nico__glass">
-                                                <path class="ld-nico__stroke" d="M14.5 12.5h15l-7.5 9.5zM14.5 31.5h15l-7.5-9.5z" />
-                                                <line class="ld-nico__stroke" x1="13.5" y1="12.5" x2="30.5" y2="12.5" />
-                                                <line class="ld-nico__stroke" x1="13.5" y1="31.5" x2="30.5" y2="31.5" />
-                                            </g>
-                                            <circle class="ld-nico__sand" cx="22" cy="22" r="1.4" />
-                                        </svg>
-                                    </span>
-                                    <div>
-                                        <b>Menunggu dijadwalkan</b>
-                                        <p>
-                                            Tim rekrutmen sedang menyiapkan jadwalnya — token, kode OTP, dan waktu
-                                            pengerjaan akan muncul di sini begitu terbit, dan kamu diberi tahu lewat
-                                            email.
-                                        </p>
-                                    </div>
+                                <!-- JADWAL TATAP MUKA (wawancara / tes offline / MCU). -->
+                                <div v-if="a.jadwal" class="ld-jdwwrap">
+                                    <JadwalKartu :jadwal="{ label: a.label, ...a.jadwal }" />
                                 </div>
 
-                                <template v-else>
-                                    <!-- KREDENSIAL — hanya ada di cabang ini, jadi ia
-                                         hilang sendiri begitu tesnya berakhir: token yang
-                                         tak bisa dipakai lagi membuat kandidat mengira
-                                         masih ada yang harus dibuka. -->
-                                    <div v-if="a.eksternal" class="ld-cred">
-                                        <div class="ld-cred__item">
-                                            <span class="ld-cred__lbl">TOKEN AKSES</span>
-                                            <span class="ld-cred__val ld-mono">{{ a.ujian.token || '—' }}</span>
-                                        </div>
-                                        <div class="ld-cred__item">
-                                            <span class="ld-cred__lbl">KODE OTP</span>
-                                            <span class="ld-cred__val ld-mono">{{ a.ujian.otp || '—' }}</span>
-                                        </div>
-                                        <div class="ld-cred__item">
-                                            <span class="ld-cred__lbl">WAKTU MULAI</span>
-                                            <span class="ld-cred__val">{{ fmtWaktu(a.ujian.waktuMulai) }}</span>
-                                        </div>
-                                        <div class="ld-cred__item">
-                                            <span class="ld-cred__lbl">WAKTU BERAKHIR</span>
-                                            <span class="ld-cred__val">{{ fmtWaktu(a.ujian.waktuSelesai) }}</span>
-                                        </div>
-                                    </div>
+                                <!-- BERKAS YANG HARUS KANDIDAT UNGGAH.
+                                     Dikirim sebagai daftar berisi SATU aktivitas
+                                     — komponennya memang menerima daftar, dan
+                                     dengan begitu tombol unggahnya berdiri di
+                                     dalam blok aktivitas yang memintanya, bukan
+                                     di tumpukan terpisah di dasar kartu.
+                                
+                                     Syaratnya lihat unggahSiap(): kotak ini menunggu
+                                     jadwalnya terbit dulu untuk aktivitas yang memang
+                                     dijadwalkan tim. -->
+                                <UnggahAktivitas
+                                    v-if="unggahSiap(a)"
+                                    :daftar="[{ key: a.urutan, id: a.id, label: a.label, ...a.unggah }]"
+                                    :berkas="berkasTes" :unggah-di="unggahDi" :kirim-di="kirimDi"
+                                    @pilih="unggahBerkasTes" @hapus="hapusBerkasTes"
+                                    @buka="bukaDok" @kirim="kirimBerkasTes"
+                                />
 
-                                    <!-- JADWAL TATAP MUKA (wawancara / tes offline / MCU). -->
-                                    <div v-if="a.jadwal" class="ld-jdwwrap">
-                                        <JadwalKartu :jadwal="{ label: a.label, ...a.jadwal }" />
-                                    </div>
-
-                                    <!-- BERKAS YANG HARUS KANDIDAT UNGGAH.
-                                         Dikirim sebagai daftar berisi SATU aktivitas
-                                         — komponennya memang menerima daftar, dan
-                                         dengan begitu tombol unggahnya berdiri di
-                                         dalam blok aktivitas yang memintanya, bukan
-                                         di tumpukan terpisah di dasar kartu.
-                                    
-                                         Syaratnya lihat unggahSiap(): kotak ini menunggu
-                                         jadwalnya terbit dulu untuk aktivitas yang memang
-                                         dijadwalkan tim. -->
-                                    <UnggahAktivitas
-                                        v-if="unggahSiap(a)"
-                                        :daftar="[{ key: a.urutan, id: a.id, label: a.label, ...a.unggah }]"
-                                        :berkas="berkasTes" :unggah-di="unggahDi" :kirim-di="kirimDi"
-                                        @pilih="unggahBerkasTes" @hapus="hapusBerkasTes"
-                                        @buka="bukaDok" @kirim="kirimBerkasTes"
-                                    />
-
-                                    <!-- ── KEADAAN UJIAN ONLINE ──
-                                         Seluruhnya dilewati bila aktivitasnya
-                                         sudah tuntas: tak ada token yang masih
-                                         berlaku, tak ada tombol yang masih boleh
-                                         ditekan, dan lencana di kepala blok sudah
-                                         berbunyi "Selesai". -->
-                                    <template v-if="a.eksternal">
-                                        <div v-if="belumMulai(a)" class="ld-notice ld-notice--wait">
-                                            <span class="ld-nico ld-nico--wait" aria-hidden="true">
-                                                <svg viewBox="0 0 44 44" width="34" height="34">
-                                                    <circle class="ld-nico__halo" cx="22" cy="22" r="17" />
-                                                    <circle class="ld-nico__ring" cx="22" cy="22" r="13.5" />
-                                                    <line class="ld-nico__hand ld-nico__hand--h" x1="22" y1="22" x2="22" y2="16" />
-                                                    <line class="ld-nico__hand ld-nico__hand--m" x1="22" y1="22" x2="26.5" y2="22" />
-                                                    <circle class="ld-nico__pin" cx="22" cy="22" r="1.6" />
-                                                </svg>
-                                            </span>
-                                            <div>
-                                                <b>Tes belum dibuka</b>
-                                                <p>
-                                                    Tombol akan aktif otomatis saat waktu mulai tiba{{
-                                                        hitungMundur(a) ? ' — ' + hitungMundur(a) : ''
-                                                    }}.
-                                                </p>
-                                            </div>
-                                        </div>
-                                        <div v-else-if="sudahLewat(a)" class="ld-notice ld-notice--err">
-                                            <span class="ld-nico ld-nico--err" aria-hidden="true">
-                                                <svg viewBox="0 0 44 44" width="34" height="34">
-                                                    <circle class="ld-nico__halo" cx="22" cy="22" r="17" />
-                                                    <path class="ld-nico__tri" d="M22 12.2 33.2 31.2H10.8z" />
-                                                    <line class="ld-nico__bang" x1="22" y1="19.6" x2="22" y2="24.4" />
-                                                    <circle class="ld-nico__dot" cx="22" cy="27.6" r="1.4" />
-                                                </svg>
-                                            </span>
-                                            <div>
-                                                <b>Waktu tes berakhir</b>
-                                                <p>Jendela pengerjaan sudah lewat. Hubungi tim rekrutmen bila ada kendala.</p>
-                                            </div>
-                                        </div>
-
-                                        <!-- LAYAR ANTARA — kandidat tahu ia sedang
-                                             dipindahkan, bukan halaman yang tiba-tiba
-                                             hilang. Terikat pada AKTIVITAS INI lewat
-                                             `menujuId`: tanpa itu, hitungan mundurnya
-                                             muncul serentak di semua blok ujian. -->
-                                        <div v-if="menujuUjian && menujuId === a.id" class="ld-pindah">
-                                            <span class="ld-pindah__ring" aria-hidden="true">
-                                                <svg viewBox="0 0 48 48" width="34" height="34" fill="none">
-                                                    <circle class="ld-pindah__jalur" cx="24" cy="24" r="19" />
-                                                    <circle class="ld-pindah__isi" cx="24" cy="24" r="19" />
-                                                </svg>
-                                                <b>{{ hitungPindah }}</b>
-                                            </span>
-                                            <div class="ld-pindah__teks">
-                                                <b>Menyiapkan ruang ujian…</b>
-                                                <p>Kamu akan dipindahkan ke halaman ujian dalam {{ hitungPindah }} detik. Jangan tutup halaman ini.</p>
-                                            </div>
-                                            <button type="button" class="ld-pindah__batal" @click="batalKeUjian">Batal</button>
-                                        </div>
-                                        <!-- BARU PULANG DARI RUANG UJIAN, hasilnya
-                                             belum sampai. Menggantikan tombol, tidak
-                                             sekadar mematikannya: tombol mati pun masih
-                                             terbaca sebagai "tesnya masih menungguku",
-                                             padahal ia sudah menekan kirim semenit
-                                             yang lalu. -->
-                                        <div v-else-if="tesDitunggu && tesDitunggu.id === a.id" class="ld-terkirim">
-                                            <span class="ld-terkirim__ring" aria-hidden="true">
-                                                <svg viewBox="0 0 44 44" width="32" height="32" fill="none">
-                                                    <circle class="ld-terkirim__halo" cx="22" cy="22" r="17" />
-                                                    <path class="ld-terkirim__pesawat" d="M31 13.5L12.5 21l7.2 2.5 2.5 7.2z" />
-                                                </svg>
-                                            </span>
-                                            <div class="ld-terkirim__teks">
-                                                <b>Jawabanmu sudah terkirim</b>
-                                                <p>Hasilnya sedang diterima sistem. Halaman ini memperbarui dirinya sendiri — tidak perlu kamu muat ulang.</p>
-                                            </div>
-                                        </div>
-                                        <!-- Tombolnya hanya ada di cabang ini, dan cabang ini
-                                             hanya dimasuki ujian yang BELUM berakhir — yang
-                                             sudah dikerjakan berhenti di cabang teratas.
-                                             Menampilkan tombol mati pun mengesankan tes bisa
-                                             diulang. -->
-                                        <button
-                                            v-else
-                                            class="ld-btn-tes"
-                                            :disabled="!bisaAkses(a)"
-                                            :onClick="!bisaAkses(a) ? null : () => bukaTes(a)"
-                                        >
-                                            <svg v-if="bisaAkses(a)" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-                                                <path d="M15 3h6v6M10 14L21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                                <!-- ── KEADAAN UJIAN ONLINE ──
+                                     Seluruhnya dilewati bila aktivitasnya
+                                     sudah tuntas: tak ada token yang masih
+                                     berlaku, tak ada tombol yang masih boleh
+                                     ditekan, dan lencana di kepala blok sudah
+                                     berbunyi "Selesai". -->
+                                <template v-if="a.eksternal">
+                                    <div v-if="belumMulai(a)" class="ld-notice ld-notice--wait">
+                                        <span class="ld-nico ld-nico--wait" aria-hidden="true">
+                                            <svg viewBox="0 0 44 44" width="34" height="34">
+                                                <circle class="ld-nico__halo" cx="22" cy="22" r="17" />
+                                                <circle class="ld-nico__ring" cx="22" cy="22" r="13.5" />
+                                                <line class="ld-nico__hand ld-nico__hand--h" x1="22" y1="22" x2="22" y2="16" />
+                                                <line class="ld-nico__hand ld-nico__hand--m" x1="22" y1="22" x2="26.5" y2="22" />
+                                                <circle class="ld-nico__pin" cx="22" cy="22" r="1.6" />
                                             </svg>
-                                            <svg v-else width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
-                                                <rect x="4" y="11" width="16" height="10" rx="2" />
-                                                <path d="M8 11V7a4 4 0 0 1 8 0v4" />
-                                            </svg>
-                                            {{ bisaAkses(a) ? 'Mulai Tes Sekarang' : 'Tes Terkunci' }}
-                                        </button>
-                                    </template>
-
-                                    <!-- AKTIVITAS TIM YANG BELUM PUNYA APA PUN untuk
-                                         ditampilkan: belum dijadwalkan, tak menuntut
-                                         berkas, bukan ujian. Tanpa baris ini bloknya
-                                         berdiri kosong dan terbaca seperti kartu yang
-                                         gagal dimuat. -->
-                                    <div v-else-if="!a.jadwal && !a.mcu && !unggahSiap(a)" class="ld-akt__sunyi">
-                                        {{ a.pesan || 'Belum ada yang perlu kamu kerjakan di aktivitas ini. Jadwal atau instruksinya muncul di sini begitu tersedia.' }}
+                                        </span>
+                                        <div>
+                                            <b>Tes belum dibuka</b>
+                                            <p>
+                                                Tombol akan aktif otomatis saat waktu mulai tiba{{
+                                                    hitungMundur(a) ? ' — ' + hitungMundur(a) : ''
+                                                }}.
+                                            </p>
+                                        </div>
                                     </div>
+                                    <div v-else-if="sudahLewat(a)" class="ld-notice ld-notice--err">
+                                        <span class="ld-nico ld-nico--err" aria-hidden="true">
+                                            <svg viewBox="0 0 44 44" width="34" height="34">
+                                                <circle class="ld-nico__halo" cx="22" cy="22" r="17" />
+                                                <path class="ld-nico__tri" d="M22 12.2 33.2 31.2H10.8z" />
+                                                <line class="ld-nico__bang" x1="22" y1="19.6" x2="22" y2="24.4" />
+                                                <circle class="ld-nico__dot" cx="22" cy="27.6" r="1.4" />
+                                            </svg>
+                                        </span>
+                                        <div>
+                                            <b>Waktu tes berakhir</b>
+                                            <p>Jendela pengerjaan sudah lewat. Hubungi tim rekrutmen bila ada kendala.</p>
+                                        </div>
+                                    </div>
+
+                                    <!-- LAYAR ANTARA — kandidat tahu ia sedang
+                                         dipindahkan, bukan halaman yang tiba-tiba
+                                         hilang. Terikat pada AKTIVITAS INI lewat
+                                         `menujuId`: tanpa itu, hitungan mundurnya
+                                         muncul serentak di semua blok ujian. -->
+                                    <div v-if="menujuUjian && menujuId === a.id" class="ld-pindah">
+                                        <span class="ld-pindah__ring" aria-hidden="true">
+                                            <svg viewBox="0 0 48 48" width="34" height="34" fill="none">
+                                                <circle class="ld-pindah__jalur" cx="24" cy="24" r="19" />
+                                                <circle class="ld-pindah__isi" cx="24" cy="24" r="19" />
+                                            </svg>
+                                            <b>{{ hitungPindah }}</b>
+                                        </span>
+                                        <div class="ld-pindah__teks">
+                                            <b>Menyiapkan ruang ujian…</b>
+                                            <p>Kamu akan dipindahkan ke halaman ujian dalam {{ hitungPindah }} detik. Jangan tutup halaman ini.</p>
+                                        </div>
+                                        <button type="button" class="ld-pindah__batal" @click="batalKeUjian">Batal</button>
+                                    </div>
+                                    <!-- BARU PULANG DARI RUANG UJIAN, hasilnya
+                                         belum sampai. Menggantikan tombol, tidak
+                                         sekadar mematikannya: tombol mati pun masih
+                                         terbaca sebagai "tesnya masih menungguku",
+                                         padahal ia sudah menekan kirim semenit
+                                         yang lalu. -->
+                                    <div v-else-if="tesDitunggu && tesDitunggu.id === a.id" class="ld-terkirim">
+                                        <span class="ld-terkirim__ring" aria-hidden="true">
+                                            <svg viewBox="0 0 44 44" width="32" height="32" fill="none">
+                                                <circle class="ld-terkirim__halo" cx="22" cy="22" r="17" />
+                                                <path class="ld-terkirim__pesawat" d="M31 13.5L12.5 21l7.2 2.5 2.5 7.2z" />
+                                            </svg>
+                                        </span>
+                                        <div class="ld-terkirim__teks">
+                                            <b>Jawabanmu sudah terkirim</b>
+                                            <p>Hasilnya sedang diterima sistem. Halaman ini memperbarui dirinya sendiri — tidak perlu kamu muat ulang.</p>
+                                        </div>
+                                    </div>
+                                    <!-- Tombolnya hanya ada di cabang ini, dan cabang ini
+                                         hanya dimasuki ujian yang BELUM berakhir — yang
+                                         sudah dikerjakan berhenti di cabang teratas.
+                                         Menampilkan tombol mati pun mengesankan tes bisa
+                                         diulang. -->
+                                    <button
+                                        v-else
+                                        class="ld-btn-tes"
+                                        :disabled="!bisaAkses(a)"
+                                        :onClick="!bisaAkses(a) ? null : () => bukaTes(a)"
+                                    >
+                                        <svg v-if="bisaAkses(a)" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                                            <path d="M15 3h6v6M10 14L21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                                        </svg>
+                                        <svg v-else width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+                                            <rect x="4" y="11" width="16" height="10" rx="2" />
+                                            <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+                                        </svg>
+                                        {{ bisaAkses(a) ? 'Mulai Tes Sekarang' : 'Tes Terkunci' }}
+                                    </button>
                                 </template>
 
-                                <!-- HASIL MCU — DI LUAR ketiga cabang di atas.
-                                     Menyangkut kesehatan kandidat sendiri, jadi ia berhak
-                                     tahu — tapi hanya kesimpulannya, bukan rincian medis.
-                                     Berdiri di luar karena hasil MCU justru terbit ketika
-                                     aktivitasnya sudah SELESAI. Di dalam cabang "masih
-                                     berjalan", hasil yang sudah keluar akan ikut hilang
-                                     begitu tim menutup aktivitasnya. -->
-                                <div v-if="a.mcu" class="ld-mcu" :class="'is-' + a.mcu.status.toLowerCase()">
-                                    <span class="ld-mcu__ico"><i class="bi bi-heart-pulse-fill"></i></span>
-                                    <div style="min-width: 0; flex: 1">
-                                        <div class="ld-eyebrow">HASIL PEMERIKSAAN KESEHATAN</div>
-                                        <div class="ld-mcu__judul">{{ a.mcu.label }}</div>
-                                        <div class="ld-mcu__meta">
-                                            <span v-if="a.mcu.penyedia">{{ a.mcu.penyedia }}</span>
-                                            <span v-if="a.mcu.tanggal">{{ fmtWaktu(a.mcu.tanggal) }}</span>
-                                        </div>
-                                        <p v-if="a.mcu.catatan" class="ld-mcu__cat">{{ a.mcu.catatan }}</p>
-                                    </div>
+                                <!-- AKTIVITAS TIM YANG BELUM PUNYA APA PUN untuk
+                                     ditampilkan: belum dijadwalkan, tak menuntut
+                                     berkas, bukan ujian. Tanpa baris ini bloknya
+                                     berdiri kosong dan terbaca seperti kartu yang
+                                     gagal dimuat. -->
+                                <div v-else-if="!a.jadwal && !a.mcu && !unggahSiap(a)" class="ld-akt__sunyi">
+                                    {{ a.pesan || 'Belum ada yang perlu kamu kerjakan di aktivitas ini. Jadwal atau instruksinya muncul di sini begitu tersedia.' }}
                                 </div>
                             </template>
+
+                            <!-- HASIL MCU — DI LUAR ketiga cabang di atas.
+                                 Menyangkut kesehatan kandidat sendiri, jadi ia berhak
+                                 tahu — tapi hanya kesimpulannya, bukan rincian medis.
+                                 Berdiri di luar karena hasil MCU justru terbit ketika
+                                 aktivitasnya sudah SELESAI. Di dalam cabang "masih
+                                 berjalan", hasil yang sudah keluar akan ikut hilang
+                                 begitu tim menutup aktivitasnya. -->
+                            <div v-if="a.mcu" class="ld-mcu" :class="'is-' + a.mcu.status.toLowerCase()">
+                                <span class="ld-mcu__ico"><i class="bi bi-heart-pulse-fill"></i></span>
+                                <div style="min-width: 0; flex: 1">
+                                    <div class="ld-eyebrow">HASIL PEMERIKSAAN KESEHATAN</div>
+                                    <div class="ld-mcu__judul">{{ a.mcu.label }}</div>
+                                    <div class="ld-mcu__meta">
+                                        <span v-if="a.mcu.penyedia">{{ a.mcu.penyedia }}</span>
+                                        <span v-if="a.mcu.tanggal">{{ fmtWaktu(a.mcu.tanggal) }}</span>
+                                    </div>
+                                    <p v-if="a.mcu.catatan" class="ld-mcu__cat">{{ a.mcu.catatan }}</p>
+                                </div>
+                            </div>
                         </div>
                     </section>
 
@@ -786,12 +780,21 @@
                         </div>
                     </div>
 
-                    <!-- TAHAP TANPA SATU PUN AKTIVITAS YANG TERLIHAT KANDIDAT —
-                         background check, negosiasi penawaran, verifikasi
-                         referensi. Tanpa kalimat ini kartunya berdiri kosong dan
-                         kandidat tidak tahu sedang menunggu apa. Pada tahap
-                         penawaran tidak diulang: kartu di atas sudah menjelaskan. -->
-                    <div v-if="!aktivitasTampil.length && !tugas && !tahapAktif.penawaran" class="ld-notice ld-notice--wait">
+                    <!-- TAHAP TANPA SATU PUN KARTU — dua sebab, satu akibat.
+                         (1) Tak ada aktivitas yang terlihat kandidat sama
+                             sekali: background check, negosiasi penawaran,
+                             verifikasi referensi.
+                         (2) Semuanya belum gilirannya — penghalangnya aktivitas
+                             INTERNAL yang sengaja disembunyikan, jadi yang
+                             terlihat kandidat semuanya terkunci.
+
+                         Diperiksa lewat `aktivitasKartu`, bukan
+                         `aktivitasTampil`: yang kedua ikut menghitung kartu
+                         yang tidak dirender, sehingga kasus (2) lolos dari
+                         penjagaan ini dan halaman berdiri kosong tanpa satu
+                         kalimat pun. Pada tahap penawaran tidak diulang: kartu
+                         di atas sudah menjelaskan. -->
+                    <div v-if="!aktivitasKartu.length && !tugas && !tahapAktif.penawaran" class="ld-notice ld-notice--wait">
                         <span class="ld-nico ld-nico--wait" aria-hidden="true">
                             <svg viewBox="0 0 44 44" width="34" height="34">
                                 <circle class="ld-nico__halo" cx="22" cy="22" r="17" />
@@ -1654,10 +1657,47 @@ export default {
          * sudah mengirimnya menaik; diurutkan lagi di sini supaya tampilan tidak
          * bergantung pada urutan kueri yang bisa berubah kapan saja.
          */
-        aktivitasTampil() {
+        /**
+         * Seluruh aktivitas tahap ini, terurut & bernomor.
+         *
+         * TERMASUK yang belum gilirannya — dipakai menghitung nomor urut,
+         * kalimat tahap, dan penentuan mode berurutan. Yang DITAMPILKAN
+         * sebagai kartu adalah `aktivitasKartu`.
+         */
+        aktivitasSemua() {
             return [...this.aktivitas]
                 .sort((a, b) => (a.urutan || 0) - (b.urutan || 0))
                 .map((a, i) => ({ ...a, nomor: i + 1, keadaan: this.keadaanAktivitas(a) }));
+        },
+        /**
+         * Nama lama, dipertahankan supaya seluruh pemanggil lain tidak berubah
+         * artinya: yang mereka maksud memang "semua aktivitas tahap ini".
+         */
+        aktivitasTampil() {
+            return this.aktivitasSemua;
+        },
+        /**
+         * Kartu yang benar-benar dirender.
+         *
+         * ── BERURUTAN: SATU KARTU SAJA ────────────────────────────────────
+         *
+         * Aktivitas yang belum gilirannya TIDAK ditampilkan. Ia tidak bisa
+         * dikerjakan, jadwalnya belum ada, dan satu-satunya yang bisa
+         * dikatakan tentangnya adalah "tunggu yang di atas" — kalimat yang
+         * sudah disampaikan kartu di atasnya. Menampilkannya sebagai kartu
+         * penuh berarti dua blok besar yang menjelaskan satu kenyataan yang
+         * sama, dan itulah yang membuat halaman terbaca sebagai informasi
+         * ganda.
+         *
+         * Begitu aktivitas pertama tuntas dan giliran berpindah, server
+         * membuka kuncinya dan kartunya muncul dengan sendirinya — itu inti
+         * dari mode berurutan.
+         *
+         * Pada tahap BERSAMAAN tidak ada yang terkunci, jadi seluruhnya tetap
+         * tampil — dan memang harus: semuanya bisa ia kerjakan sekarang.
+         */
+        aktivitasKartu() {
+            return this.aktivitasSemua.filter((x) => !x.terkunci);
         },
         /**
          * Tahap ini dikerjakan BERURUTAN?
@@ -1738,7 +1778,32 @@ export default {
             // Itu kabar yang lebih baru daripada jejak kita, jadi jejaknya kalah.
             if (!t) return null;
 
-            return this.sudahSelesai(t) || t.selesai ? null : t;
+            if (this.sudahSelesai(t) || t.selesai) return null;
+
+            // ── HARUS ADA BUKTI DARI SERVER, BUKAN CUMA JEJAK KLIK ──────────
+            //
+            // Jejaknya ditulis saat kandidat MENEKAN "Mulai Tes", bukan saat ia
+            // mengirim jawaban — pada saat itu belum ada satu pun jawaban yang
+            // dikirim. Kandidat yang menekan tombolnya, sampai di HCLearn, lalu
+            // kembali TANPA login atau mengerjakan apa pun, akan disambut
+            // "Jawabanmu sudah terkirim" untuk tes yang belum ia sentuh.
+            //
+            // Bagi kandidat itu bukan sekadar keliru, tapi menyesatkan: ia
+            // mengira tesnya sudah beres dan tidak perlu dikerjakan lagi.
+            //
+            // Jadi jejaknya hanya boleh dipercaya bila server SETUJU bahwa ada
+            // sesuatu yang sedang berjalan: entah ujiannya sudah tidak bisa
+            // diakses lagi (`bisaAkses` false, artinya CAT sudah menutupnya),
+            // atau statusnya memang sudah bergerak dari BELUM.
+            //
+            // Selama server masih menawarkan tesnya, yang benar adalah tombol
+            // "Mulai Tes Sekarang" — bukan ucapan terima kasih.
+            const status = String(t.ujian?.statusPengerjaan || '').toLowerCase();
+            const dikerjakan = status !== '' && status !== 'belum';
+
+            if (t.ujian?.bisaAkses && !dikerjakan) return null;
+
+            return t;
         },
         keadaanTahap() {
             const akt = this.aktivitas || [];
@@ -3157,12 +3222,26 @@ export default {
                     return null;
                 }
 
-                // Jejak basi dibuang. Batasnya longgar (12 jam) karena satu sesi
-                // tes bisa berjam-jam, tapi tetap ada supaya tab yang dibiarkan
-                // menganggur berhari-hari tidak menyambut kandidat dengan kabar
-                // tes yang sudah lama selesai.
-                if (Date.now() - (isi.at || 0) > 12 * 60 * 60 * 1000) {
+                // Jejak basi dibuang.
+                //
+                // Batasnya 15 MENIT, bukan 12 jam seperti dulu. Yang diukur
+                // bukan lamanya mengerjakan tes — jejak ini baru ditulis saat
+                // kandidat MENINGGALKAN halaman menuju ruang ujian, dan yang
+                // ditunggu sesudahnya cuma callback hasil, yang datangnya dalam
+                // hitungan detik sampai beberapa menit.
+                //
+                // Dengan batas 12 jam, kandidat yang tesnya gagal terkirim akan
+                // terus disambut "Jawabanmu sudah terkirim" sepanjang sisa hari
+                // itu — melewati muat ulang dan logout-login, sebab
+                // sessionStorage tidak ikut dibersihkan keduanya. Kartu tes yang
+                // sebenarnya masih harus dikerjakan tertutup kabar yang keliru,
+                // dan satu-satunya jalan keluarnya membersihkan data peramban.
+                //
+                // Lima belas menit jauh lebih panjang daripada jeda callback
+                // yang wajar, tapi cukup pendek untuk tidak menyandera kandidat.
+                if (Date.now() - (isi.at || 0) > 15 * 60 * 1000) {
                     this.lupakanPergiTes();
+
                     return null;
                 }
 
@@ -3296,10 +3375,23 @@ export default {
                 // Berhenti setelah ~3 menit. Callback yang belum juga sampai
                 // sesudah itu bukan lagi soal jeda antrean, dan menyegarkan
                 // halaman tanpa akhir hanya membebani server tanpa mengubah
-                // apa pun. Keterangannya tetap tampil — yang berhenti hanya
-                // pemeriksaannya.
+                // apa pun.
+                //
+                // JEJAKNYA IKUT DIBUANG, bukan cuma pemeriksaannya dihentikan.
+                //
+                // Dulu keterangan "Jawabanmu sudah terkirim" dibiarkan tetap
+                // tampil sesudah pemantauan berhenti. Niatnya menenangkan, tapi
+                // akibatnya kebalikannya: jejaknya hidup 12 jam di
+                // sessionStorage, jadi keterangan itu bertahan melewati muat
+                // ulang, melewati logout-login, dan menutupi kartu tes yang
+                // SEBENARNYA masih harus dikerjakan — sampai kandidat
+                // membersihkan data peramban sendiri.
+                //
+                // Sesudah tiga menit, yang jujur bukan "hasilnya sedang
+                // diterima" melainkan keadaan tes yang sebenarnya. Jejak dibuang
+                // supaya kartunya kembali bercerita apa adanya.
                 if (++this.pulangCek > 12) {
-                    this.hentikanPantauHasil();
+                    this.lupakanPergiTes();
 
                     return;
                 }

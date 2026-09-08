@@ -5344,11 +5344,34 @@ h6,
        melompat naik-turun setiap kali tab ditekan. */
     max-height: min(94vh, 960px);
 }
+/* `wide` — satu anak tangga di antara xl dan full, untuk jendela yang isinya
+   DUA panel bersebelahan (mis. peninjauan kandidat: rapor di kiri, berkas di
+   kanan). Pada xl kedua panel saling menghimpit; pada full jendela kehilangan
+   bingkainya dan tak lagi terbaca sebagai lapisan di atas papan — latar yang
+   masih terlihat di tepi itulah yang memberi tahu peninjau bahwa papan
+   seleksinya belum ditinggalkan. */
+.wca-modal--wide {
+    width: min(1560px, 94vw);
+    height: min(93vh, 1000px);
+    max-height: 94vh;
+}
 .wca-modal--full,
 .wca-modal--xxl {
     width: min(1480px, 96vw);
     height: min(92vh, 920px);
     max-height: 94vh;
+}
+/* Layar kerja penuh — dipakai jendela yang isinya DUA kolom dan salah satunya
+   pembaca dokumen. Batas 1480px/920px di atas benar untuk formulir (baris teks
+   yang terlalu lebar jadi susah diikuti mata), tapi salah untuk halaman A4 dan
+   hasil pindai: di sana tiap piksel yang disisakan sebagai latar adalah piksel
+   yang tidak dipakai membaca. Bingkai tipis di tepi tetap disisakan supaya
+   jendelanya masih terbaca sebagai lapisan di atas papan, bukan sebagai
+   halaman baru yang menggantikannya. */
+.wca-modal--full.has-aside-slot {
+    width: 98vw;
+    height: 96vh;
+    max-height: 96vh;
 }
 @keyframes wcaPop {
     from {
@@ -6984,6 +7007,67 @@ h6,
     background: #fff;
     color: #1e1b4b;
     transform: rotate(90deg);
+}
+/* ── ISI + KOLOM PENDAMPING (slot `aside` di AdminModal) ────────────────────
+   Tanpa `aside` pembungkus ini tidak melakukan apa pun: satu kolom, sama
+   persis seperti sebelum slotnya ada.
+
+   Dengan `aside`, modalnya jadi dua kolom SETINGGI PENUH di antara kepala dan
+   kaki. Kolom kanan berada di luar area gulir isi dengan sengaja — pratinjau
+   berkas harus terlihat utuh sepanjang pekerjaan, dan apa pun yang duduk di
+   dalam area gulir pasti terpotong kaki modal begitu isinya melewati satu
+   layar. Itulah yang terjadi ketika panelnya masih jadi kolom biasa di dalam
+   isi: pratinjaunya ada, tapi tak pernah benar-benar terlihat. */
+.wca-modal__split {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+.wca-modal__split.has-aside {
+    flex-direction: row;
+    align-items: stretch;
+}
+/* Kolom kiri: isi menggulir + kaki modal, bertumpuk. Kaki berada DI DALAM
+   kolom ini supaya deretan tombolnya berhenti di batas kolom dan tidak
+   memotong pratinjau di kolom kanan. */
+.wca-modal__col {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+/* Kira-kira col-7 / col-5. Kolom kanan boleh melar sampai 680px: isinya
+   sekarang lembar berkas ukuran penuh — halaman A4 dan hasil pindai KTP — dan
+   pada 340px keduanya terbaca sebagai gambar kecil, bukan sebagai dokumen yang
+   bisa diperiksa. Batas atasnya tetap ada supaya panel kiri, yang memuat kisi
+   biodata dan linimasa riwayat, tidak ikut menyempit di layar besar. */
+.wca-modal__aside {
+    flex: 0 0 clamp(380px, 40%, 680px);
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    border-left: 1px solid var(--line, #e6e9f3);
+    background: #fbfbfe;
+    overflow: hidden;
+}
+/* Di bawah lebar ini dua kolom berdampingan menyisakan keduanya terlalu sempit
+   untuk dipakai, jadi kolom pendamping turun ke bawah dan modalnya kembali
+   menggulir sebagai satu kolom. Tinggi pendampingnya dibatasi supaya isi utama
+   tidak terdorong sepenuhnya keluar layar. */
+@media (max-width: 1180px) {
+    .wca-modal__split.has-aside {
+        flex-direction: column;
+        overflow-y: auto;
+    }
+    .wca-modal__aside {
+        flex: 0 0 auto;
+        height: 60vh;
+        border-left: 0;
+        border-top: 1px solid var(--line, #e6e9f3);
+    }
 }
 .wca-modal__body {
     /* Satu-satunya sumber angka padding isi modal. Bilah menempel di dalamnya

@@ -56,8 +56,7 @@ class AuthController extends Controller
      */
     private function autoVerifikasiEmailAktif(): bool
     {
-        return app()->environment(['local', 'testing'])
-            && (bool) config('career_auth.auto_verify_email', false);
+        return app()->environment(['local', 'testing']) && (bool) config('career_auth.auto_verify_email', false);
     }
 
     /** Nilai kolom verifikasi untuk akun yang di-auto-verify saat development. */
@@ -82,14 +81,16 @@ class AuthController extends Controller
             $token = Str::random(64); // dikirim utuh di magic link
             $now = Carbon::now();
 
-            DB::table($this->table)->where('Id_Users', $userId)->update([
-                'Flag_Email_Verified' => 'T',
-                'Email_Verified_At' => null,
-                'Email_Verif_Token' => hash('sha256', $token),
-                'Email_Verif_Expired_At' => $now->copy()->addMinutes(self::VERIF_BERLAKU_MENIT),
-                'Email_Verif_Attempt' => DB::raw('ISNULL(Email_Verif_Attempt, 0) + 1'),
-                'Updated_At' => $now,
-            ]);
+            DB::table($this->table)
+                ->where('Id_Users', $userId)
+                ->update([
+                    'Flag_Email_Verified' => 'T',
+                    'Email_Verified_At' => null,
+                    'Email_Verif_Token' => hash('sha256', $token),
+                    'Email_Verif_Expired_At' => $now->copy()->addMinutes(self::VERIF_BERLAKU_MENIT),
+                    'Email_Verif_Attempt' => DB::raw('ISNULL(Email_Verif_Attempt, 0) + 1'),
+                    'Updated_At' => $now,
+                ]);
 
             WcSyncEmailJob::kirim(WcSyncEmailJob::JENIS_VERIFIKASI, $userId, ['token' => $token]);
 
@@ -108,19 +109,23 @@ class AuthController extends Controller
      */
     public function cekKtp(Request $request)
     {
-        $data = $request->validate([
-            'nik' => 'required|digits:16',
-        ], [
-            'nik.required' => 'Nomor KTP (NIK) wajib diisi.',
-            'nik.digits' => 'Nomor KTP harus tepat 16 digit angka.',
-        ]);
+        $data = $request->validate(
+            [
+                'nik' => 'required|digits:16',
+            ],
+            [
+                'nik.required' => 'Nomor KTP (NIK) wajib diisi.',
+                'nik.digits' => 'Nomor KTP harus tepat 16 digit angka.',
+            ],
+        );
 
         $pemilik = DB::table($this->table)->where('NIK', $data['nik'])->first();
         if ($pemilik) {
             return ResponseHelper::error(
-                'Nomor KTP ini sudah terdaftar pada akun dengan email ' . $this->maskEmail($pemilik->Email)
-                    . '. Satu KTP hanya untuk satu akun — silakan masuk memakai akun tersebut.',
-                422
+                'Nomor KTP ini sudah terdaftar pada akun dengan email ' .
+                    $this->maskEmail($pemilik->Email) .
+                    '. Satu KTP hanya untuk satu akun — silakan masuk memakai akun tersebut.',
+                422,
             );
         }
 
@@ -129,28 +134,31 @@ class AuthController extends Controller
 
     public function register(Request $request)
     {
-        $data = $request->validate([
-            'nama' => 'required|string|max:150',
-            'email' => 'required|email|max:150',
-            // NOMOR HP: ANGKA SAJA, 8–15 digit termasuk kode negara (batas E.164).
-            //
-            // Ditegakkan DI SERVER, bukan cukup di layar. Aturan yang hanya hidup
-            // di browser bukan aturan: pintu ini bisa diketuk langsung, dan huruf
-            // yang lolos masuk akan mendarat di HRIS Rekrutmen lewat sinkron
-            // biodata — lalu ada yang mencoba menelepon nomor yang tak bisa
-            // ditelepon siapa pun.
-            //
-            // Awalan '62' SENGAJA tidak dituntut: negaranya dipilih kandidat,
-            // dan memaksa +62 menutup pintu bagi pelamar luar negeri.
-            'phone' => ['nullable', 'string', 'regex:/^[0-9]{8,15}$/'],
-            // KTP/NIK: WAJIB tepat 16 digit (tidak boleh kurang / lebih).
-            'nik' => 'required|digits:16',
-            'password' => 'required|string|min:6',
-        ], [
-            'phone.regex' => 'No. HP hanya boleh angka (8–15 digit termasuk kode negara).',
-            'nik.required' => 'Nomor KTP (NIK) wajib diisi.',
-            'nik.digits' => 'Nomor KTP harus tepat 16 digit angka.',
-        ]);
+        $data = $request->validate(
+            [
+                'nama' => 'required|string|max:150',
+                'email' => 'required|email|max:150',
+                // NOMOR HP: ANGKA SAJA, 8–15 digit termasuk kode negara (batas E.164).
+                //
+                // Ditegakkan DI SERVER, bukan cukup di layar. Aturan yang hanya hidup
+                // di browser bukan aturan: pintu ini bisa diketuk langsung, dan huruf
+                // yang lolos masuk akan mendarat di HRIS Rekrutmen lewat sinkron
+                // biodata — lalu ada yang mencoba menelepon nomor yang tak bisa
+                // ditelepon siapa pun.
+                //
+                // Awalan '62' SENGAJA tidak dituntut: negaranya dipilih kandidat,
+                // dan memaksa +62 menutup pintu bagi pelamar luar negeri.
+                'phone' => ['nullable', 'string', 'regex:/^[0-9]{8,15}$/'],
+                // KTP/NIK: WAJIB tepat 16 digit (tidak boleh kurang / lebih).
+                'nik' => 'required|digits:16',
+                'password' => 'required|string|min:6',
+            ],
+            [
+                'phone.regex' => 'No. HP hanya boleh angka (8–15 digit termasuk kode negara).',
+                'nik.required' => 'Nomor KTP (NIK) wajib diisi.',
+                'nik.digits' => 'Nomor KTP harus tepat 16 digit angka.',
+            ],
+        );
 
         $now = Carbon::now();
         $autoVerifikasi = $this->autoVerifikasiEmailAktif();
@@ -163,18 +171,20 @@ class AuthController extends Controller
             ->first();
         if ($pemilikNik) {
             return ResponseHelper::error(
-                'Nomor KTP ini sudah terdaftar pada akun dengan email ' . $this->maskEmail($pemilikNik->Email)
-                    . '. Satu KTP hanya untuk satu akun — silakan masuk memakai akun tersebut.',
-                422
+                'Nomor KTP ini sudah terdaftar pada akun dengan email ' .
+                    $this->maskEmail($pemilikNik->Email) .
+                    '. Satu KTP hanya untuk satu akun — silakan masuk memakai akun tersebut.',
+                422,
             );
         }
 
         // Masa berlaku registrasi diambil dari tabel config (TIDAK hardcode).
         $klas = DB::table($this->klasTable)->where('Is_Default_Register', 'Y')->where('Flag_Aktif', 'Y')->first();
         $kode = $klas->Kode ?? 'PERMANEN';
-        $validUntil = ($klas && $klas->Durasi_Hari !== null)
-            ? $now->copy()->addDays((int) $klas->Durasi_Hari)->toDateString()
-            : null;
+        $validUntil =
+            $klas && $klas->Durasi_Hari !== null
+                ? $now->copy()->addDays((int) $klas->Durasi_Hari)->toDateString()
+                : null;
 
         $existing = DB::table($this->table)->where('Email', $data['email'])->first();
 
@@ -182,14 +192,23 @@ class AuthController extends Controller
             $terverifikasi = ($existing->Flag_Email_Verified ?? 'T') === 'Y';
             // Masa berlaku pendaftaran mengikuti KLASIFIKASI akun (mis. trial
             // 6 bulan → Valid_Until = tanggal daftar + Durasi_Hari klasifikasi).
-            $masihBerlaku = $existing->Status === 'AKTIF'
-                && ($existing->Valid_Until === null || Carbon::parse($existing->Valid_Until)->startOfDay()->greaterThanOrEqualTo($now->copy()->startOfDay()));
+            $masihBerlaku =
+                $existing->Status === 'AKTIF' &&
+                ($existing->Valid_Until === null ||
+                    Carbon::parse($existing->Valid_Until)
+                        ->startOfDay()
+                        ->greaterThanOrEqualTo($now->copy()->startOfDay()));
 
             // Ditolak HANYA bila akun terverifikasi DAN masih dalam masa berlaku.
             if ($terverifikasi && $masihBerlaku) {
-                $sampai = $existing->Valid_Until ? ' hingga ' . Carbon::parse($existing->Valid_Until)->format('d M Y') : '';
+                $sampai = $existing->Valid_Until
+                    ? ' hingga ' . Carbon::parse($existing->Valid_Until)->format('d M Y')
+                    : '';
 
-                return ResponseHelper::error("Email sudah terdaftar dan masih aktif{$sampai}. Silakan langsung masuk.", 422);
+                return ResponseHelper::error(
+                    "Email sudah terdaftar dan masih aktif{$sampai}. Silakan langsung masuk.",
+                    422,
+                );
             }
 
             // Dua kasus yang BOLEH daftar ulang (akun di-klaim ulang):
@@ -219,7 +238,13 @@ class AuthController extends Controller
             DB::table($this->table)->where('Id_Users', $existing->Id_Users)->update($perubahan);
 
             // Sinkron identitas ke HCLearn via API (buat/lengkapi calon).
-            $this->daftarkanHrisRekrutmen((int) $existing->Id_Users, $data['nama'], $data['email'], $data['phone'] ?? $existing->No_Hp, $data['nik']);
+            $this->daftarkanHrisRekrutmen(
+                (int) $existing->Id_Users,
+                $data['nama'],
+                $data['email'],
+                $data['phone'] ?? $existing->No_Hp,
+                $data['nik'],
+            );
 
             if ($autoVerifikasi) {
                 Log::info("[EMAIL] auto-verifikasi development untuk user #{$existing->Id_Users} ({$data['email']}).");
@@ -230,7 +255,7 @@ class AuthController extends Controller
             if ($autoVerifikasi) {
                 return ResponseHelper::success(
                     ['email' => $data['email'], 'perlu_verifikasi' => false],
-                    'Pendaftaran berhasil. Email otomatis terverifikasi dalam mode development; silakan masuk.'
+                    'Pendaftaran berhasil. Email otomatis terverifikasi dalam mode development; silakan masuk.',
                 );
             }
 
@@ -239,10 +264,7 @@ class AuthController extends Controller
                 : 'Email ini pernah didaftarkan namun belum diverifikasi. Data kamu diperbarui — cek email untuk tautan verifikasi yang baru.';
 
             // TIDAK auto-login: sesi baru dibuat setelah email terverifikasi + login.
-            return ResponseHelper::success(
-                ['email' => $data['email'], 'perlu_verifikasi' => true],
-                $pesan
-            );
+            return ResponseHelper::success(['email' => $data['email'], 'perlu_verifikasi' => true], $pesan);
         }
 
         $akunBaru = [
@@ -277,7 +299,7 @@ class AuthController extends Controller
             return ResponseHelper::success(
                 ['email' => $data['email'], 'perlu_verifikasi' => false],
                 'Registrasi berhasil. Email otomatis terverifikasi dalam mode development; silakan masuk.',
-                201
+                201,
             );
         }
 
@@ -286,8 +308,10 @@ class AuthController extends Controller
         // TIDAK auto-login: kandidat wajib verifikasi email dulu baru bisa masuk.
         return ResponseHelper::success(
             ['email' => $data['email'], 'perlu_verifikasi' => true],
-            'Registrasi berhasil! Kami telah mengirim tautan verifikasi ke email kamu (berlaku ' . self::VERIF_BERLAKU_MENIT . ' menit). Setelah verifikasi, silakan masuk.',
-            201
+            'Registrasi berhasil! Kami telah mengirim tautan verifikasi ke email kamu (berlaku ' .
+                self::VERIF_BERLAKU_MENIT .
+                ' menit). Setelah verifikasi, silakan masuk.',
+            201,
         );
     }
 
@@ -305,24 +329,32 @@ class AuthController extends Controller
     private function daftarkanHrisRekrutmen(int $idUsers, string $nama, string $email, ?string $hp, string $nik): void
     {
         try {
-            $hasil = app(HclClient::class)->post('kandidat', [
-                'Id_WC_Users' => $idUsers,
-                'Nama' => $nama,
-                'Email' => $email,
-                'HP' => $hp,
-                'NIK' => $nik,
-            ], [
-                'Jenis_Event' => 'REGISTRASI_KANDIDAT',
-            ]);
+            $hasil = app(HclClient::class)->post(
+                'kandidat',
+                [
+                    'Id_WC_Users' => $idUsers,
+                    'Nama' => $nama,
+                    'Email' => $email,
+                    'HP' => $hp,
+                    'NIK' => $nik,
+                ],
+                [
+                    'Jenis_Event' => 'REGISTRASI_KANDIDAT',
+                ],
+            );
 
             $kodeCalon = $hasil['result']['Kode_Calon'] ?? null;
-            if (! $hasil['sukses'] || ! $kodeCalon) {
-                Log::channel('web_career')->error("Registrasi kandidat #{$idUsers} ke HCLearn gagal: " . ($hasil['message'] ?? 'tanpa pesan'));
+            if (!$hasil['sukses'] || !$kodeCalon) {
+                Log::channel('web_career')->error(
+                    "Registrasi kandidat #{$idUsers} ke HCLearn gagal: " . ($hasil['message'] ?? 'tanpa pesan'),
+                );
 
                 return;
             }
 
-            DB::table($this->table)->where('Id_Users', $idUsers)->update(['Kode_Calon' => $kodeCalon]);
+            DB::table($this->table)
+                ->where('Id_Users', $idUsers)
+                ->update(['Kode_Calon' => $kodeCalon]);
             Log::channel('web_career')->info("Kandidat #{$idUsers} terdaftar di HCLearn: {$kodeCalon}");
         } catch (\Throwable $e) {
             Log::channel('web_career')->error("Gagal daftarkan kandidat #{$idUsers} ke HCLearn: " . $e->getMessage());
@@ -386,10 +418,28 @@ class AuthController extends Controller
         $hasil = $this->terapkanVerifikasiToken(trim((string) ($data['email'] ?? '')), trim($data['token']));
 
         return match ($hasil['status']) {
-            'sukses' => ResponseHelper::success(['status' => 'sukses', 'email' => $hasil['email']], 'Email berhasil diverifikasi.'),
-            'sudah' => ResponseHelper::success(['status' => 'sudah', 'email' => $hasil['email']], 'Email kamu memang sudah terverifikasi.'),
-            'kadaluarsa' => response()->json(['success' => false, 'status' => 410, 'code' => 'KADALUARSA', 'message' => 'Tautan sudah kedaluwarsa. Silakan kirim ulang email verifikasi.', 'result' => ['email' => $hasil['email']]], 410),
-            default => ResponseHelper::error('Tautan / token tidak dikenali. Salin utuh tautan dari email terbaru kamu.', 422),
+            'sukses' => ResponseHelper::success(
+                ['status' => 'sukses', 'email' => $hasil['email']],
+                'Email berhasil diverifikasi.',
+            ),
+            'sudah' => ResponseHelper::success(
+                ['status' => 'sudah', 'email' => $hasil['email']],
+                'Email kamu memang sudah terverifikasi.',
+            ),
+            'kadaluarsa' => response()->json(
+                [
+                    'success' => false,
+                    'status' => 410,
+                    'code' => 'KADALUARSA',
+                    'message' => 'Tautan sudah kedaluwarsa. Silakan kirim ulang email verifikasi.',
+                    'result' => ['email' => $hasil['email']],
+                ],
+                410,
+            ),
+            default => ResponseHelper::error(
+                'Tautan / token tidak dikenali. Salin utuh tautan dari email terbaru kamu.',
+                422,
+            ),
         };
     }
 
@@ -399,7 +449,7 @@ class AuthController extends Controller
         $data = $request->validate(['email' => 'required|email']);
 
         $row = DB::table($this->table)->where('Email', $data['email'])->first();
-        if (! $row) {
+        if (!$row) {
             return ResponseHelper::error('Email tidak terdaftar.', 404);
         }
 
@@ -423,11 +473,11 @@ class AuthController extends Controller
         if ($email !== '') {
             $row = DB::table($this->table)->where('Email', $email)->first();
         }
-        if (! $row) {
+        if (!$row) {
             $row = DB::table($this->table)->where('Email_Verif_Token', hash('sha256', $token))->first();
         }
 
-        if (! $row) {
+        if (!$row) {
             return ['status' => 'invalid', 'email' => null];
         }
 
@@ -436,7 +486,7 @@ class AuthController extends Controller
             return ['status' => 'sudah', 'email' => $row->Email];
         }
 
-        if (! $row->Email_Verif_Token || ! hash_equals($row->Email_Verif_Token, hash('sha256', $token))) {
+        if (!$row->Email_Verif_Token || !hash_equals($row->Email_Verif_Token, hash('sha256', $token))) {
             return ['status' => 'invalid', 'email' => null];
         }
 
@@ -445,13 +495,15 @@ class AuthController extends Controller
         }
 
         // Sukses → tandai verified + hapus token (sekali pakai).
-        DB::table($this->table)->where('Id_Users', $row->Id_Users)->update([
-            'Flag_Email_Verified' => 'Y',
-            'Email_Verified_At' => Carbon::now(),
-            'Email_Verif_Token' => null,
-            'Email_Verif_Expired_At' => null,
-            'Updated_At' => Carbon::now(),
-        ]);
+        DB::table($this->table)
+            ->where('Id_Users', $row->Id_Users)
+            ->update([
+                'Flag_Email_Verified' => 'Y',
+                'Email_Verified_At' => Carbon::now(),
+                'Email_Verif_Token' => null,
+                'Email_Verif_Expired_At' => null,
+                'Updated_At' => Carbon::now(),
+            ]);
 
         Log::channel('web_career')->info("[EMAIL] user #{$row->Id_Users} ({$row->Email}) terverifikasi.");
 
@@ -464,7 +516,7 @@ class AuthController extends Controller
         $data = $request->validate(['email' => 'required|email']);
 
         $row = DB::table($this->table)->where('Email', $data['email'])->first();
-        if (! $row) {
+        if (!$row) {
             return ResponseHelper::error('Email tidak terdaftar.', 404);
         }
 
@@ -472,26 +524,37 @@ class AuthController extends Controller
             return ResponseHelper::error('Email sudah terverifikasi. Silakan langsung masuk.', 422);
         }
 
-        if ($row->Email_Verif_Sent_At && Carbon::parse($row->Email_Verif_Sent_At)->diffInMinutes(Carbon::now()) < self::VERIF_THROTTLE_MENIT) {
-            return ResponseHelper::error('Email verifikasi baru saja dikirim. Mohon tunggu beberapa menit lalu cek kotak masuk/spam.', 429);
+        if (
+            $row->Email_Verif_Sent_At &&
+            Carbon::parse($row->Email_Verif_Sent_At)->diffInMinutes(Carbon::now()) < self::VERIF_THROTTLE_MENIT
+        ) {
+            return ResponseHelper::error(
+                'Email verifikasi baru saja dikirim. Mohon tunggu beberapa menit lalu cek kotak masuk/spam.',
+                429,
+            );
         }
 
         $this->kirimEmailVerifikasi((int) $row->Id_Users);
 
-        return ResponseHelper::success(null, 'Email verifikasi telah dikirim ulang. Silakan cek kotak masuk atau folder spam.');
+        return ResponseHelper::success(
+            null,
+            'Email verifikasi telah dikirim ulang. Silakan cek kotak masuk atau folder spam.',
+        );
     }
 
     /** Verifikasi token Cloudflare Turnstile ke server siteverify. Return true bila valid. */
     private function verifyTurnstile(string $secret, string $token, ?string $ip): bool
     {
         try {
-            $res = Http::asForm()->timeout(6)->post('https://challenges.cloudflare.com/turnstile/v0/siteverify', [
-                'secret' => $secret,
-                'response' => $token,
-                'remoteip' => $ip,
-            ]);
+            $res = Http::asForm()
+                ->timeout(6)
+                ->post('https://challenges.cloudflare.com/turnstile/v0/siteverify', [
+                    'secret' => $secret,
+                    'response' => $token,
+                    'remoteip' => $ip,
+                ]);
 
-            return $res->ok() && ($res->json('success') === true);
+            return $res->ok() && $res->json('success') === true;
         } catch (\Throwable $e) {
             return false;
         }
@@ -506,16 +569,16 @@ class AuthController extends Controller
 
         // Turnstile (opsional): bila secret dikonfigurasi, token WAJIB & harus lolos verifikasi.
         $secret = config('services.cloudflare.turnstile_secret');
-        if (! empty($secret)) {
+        if (!empty($secret)) {
             $token = (string) $request->input('turnstile_token', '');
-            if ($token === '' || ! $this->verifyTurnstile($secret, $token, $request->ip())) {
+            if ($token === '' || !$this->verifyTurnstile($secret, $token, $request->ip())) {
                 return ResponseHelper::error('Verifikasi keamanan gagal. Selesaikan captcha lalu coba lagi.', 400);
             }
         }
 
         $row = DB::table($this->table)->where('Email', $data['email'])->first();
 
-        if (! $row || ! Hash::check($data['password'], $row->Password)) {
+        if (!$row || !Hash::check($data['password'], $row->Password)) {
             return ResponseHelper::error('Email atau kata sandi salah.', 401);
         }
 
@@ -526,24 +589,42 @@ class AuthController extends Controller
         // Wajib verifikasi email dulu sebelum bisa masuk. Kirim `code` khusus
         // supaya frontend bisa menampilkan tombol "kirim ulang verifikasi".
         if (($row->Flag_Email_Verified ?? 'T') !== 'Y') {
-            return response()->json([
-                'success' => false,
-                'status' => 403,
-                'code' => 'BELUM_VERIFIKASI',
-                'message' => 'Email kamu belum diverifikasi. Silakan cek kotak masuk/spam, atau kirim ulang tautan verifikasi.',
-            ], 403);
+            return response()->json(
+                [
+                    'success' => false,
+                    'status' => 403,
+                    'code' => 'BELUM_VERIFIKASI',
+                    'message' =>
+                        'Email kamu belum diverifikasi. Silakan cek kotak masuk/spam, atau kirim ulang tautan verifikasi.',
+                ],
+                403,
+            );
         }
 
-        if ($row->Valid_Until !== null && Carbon::parse($row->Valid_Until)->startOfDay()->lessThan(Carbon::now()->startOfDay())) {
-            return ResponseHelper::error('Masa berlaku akun Anda telah berakhir pada ' . Carbon::parse($row->Valid_Until)->format('d M Y') . '.', 403);
+        if (
+            $row->Valid_Until !== null &&
+            Carbon::parse($row->Valid_Until)
+                ->startOfDay()
+                ->lessThan(Carbon::now()->startOfDay())
+        ) {
+            return ResponseHelper::error(
+                'Masa berlaku akun Anda telah berakhir pada ' . Carbon::parse($row->Valid_Until)->format('d M Y') . '.',
+                403,
+            );
         }
 
-        DB::table($this->table)->where('Id_Users', $row->Id_Users)->update(['Last_Login_At' => Carbon::now()]);
+        DB::table($this->table)
+            ->where('Id_Users', $row->Id_Users)
+            ->update(['Last_Login_At' => Carbon::now()]);
 
         $user = [
-            'id' => $row->Id_Users, 'nama' => $row->Nama, 'email' => $row->Email,
-            'role' => $row->Role, 'klasifikasi' => $row->Klasifikasi,
-            'valid_until' => $row->Valid_Until, 'pwd_epoch' => $row->Pwd_Changed_At,
+            'id' => $row->Id_Users,
+            'nama' => $row->Nama,
+            'email' => $row->Email,
+            'role' => $row->Role,
+            'klasifikasi' => $row->Klasifikasi,
+            'valid_until' => $row->Valid_Until,
+            'pwd_epoch' => $row->Pwd_Changed_At,
             // Jembatan ke MPP: penanggung jawabnya disimpan sebagai kode karyawan,
             // bukan sebagai akun. Dibawa di sesi supaya penyaring lingkup PIC
             // tidak perlu menanyakannya ke database pada setiap permintaan.
@@ -557,11 +638,9 @@ class AuthController extends Controller
         // Paket hak akses (permissions / label menu / kategori) — pola cat-evo.
         // Kandidat yang belum punya baris akses di-provision otomatis dari cetakan
         // klasifikasinya di dalam AksesService, jadi tidak perlu disentuh admin.
-        $request->session()->put('career_akses', AksesService::paket(
-            (int) $row->Id_Users,
-            (string) $row->Role,
-            $row->Klasifikasi
-        ));
+        $request
+            ->session()
+            ->put('career_akses', AksesService::paket((int) $row->Id_Users, (string) $row->Role, $row->Klasifikasi));
 
         return ResponseHelper::success($user, 'Login berhasil.');
     }
@@ -578,8 +657,13 @@ class AuthController extends Controller
      * Sengaja dibungkus try/catch: kegagalan audit TIDAK boleh menggagalkan
      * alur reset. `Keterangan` TIDAK PERNAH memuat OTP atau kata sandi.
      */
-    private function catatAuditReset(Request $request, string $event, ?int $userId, ?string $email, ?string $ket = null): void
-    {
+    private function catatAuditReset(
+        Request $request,
+        string $event,
+        ?int $userId,
+        ?string $email,
+        ?string $ket = null,
+    ): void {
         try {
             DB::table($this->auditTable)->insert([
                 'Id_Users' => $userId,
@@ -611,19 +695,23 @@ class AuthController extends Controller
             $row = DB::table($this->table)->where('Id_Users', $userId)->first();
 
             // Window rate-limit dihitung di PHP (tanpa ISNULL/T-SQL) agar portabel.
-            $windowMasihBerlaku = $row && $row->Reset_Otp_Window_At
-                && Carbon::parse($row->Reset_Otp_Window_At)->diffInMinutes($now) < self::RESET_OTP_WINDOW_MENIT;
-            $kirimCount = $windowMasihBerlaku ? ((int) ($row->Reset_Otp_Kirim_Count ?? 0) + 1) : 1;
+            $windowMasihBerlaku =
+                $row &&
+                $row->Reset_Otp_Window_At &&
+                Carbon::parse($row->Reset_Otp_Window_At)->diffInMinutes($now) < self::RESET_OTP_WINDOW_MENIT;
+            $kirimCount = $windowMasihBerlaku ? (int) ($row->Reset_Otp_Kirim_Count ?? 0) + 1 : 1;
             $windowAt = $windowMasihBerlaku ? $row->Reset_Otp_Window_At : $now;
 
-            DB::table($this->table)->where('Id_Users', $userId)->update([
-                'Reset_Otp_Hash' => hash('sha256', $otp),
-                'Reset_Otp_Expired_At' => $now->copy()->addMinutes(self::RESET_OTP_BERLAKU_MENIT),
-                'Reset_Otp_Attempt' => 0,
-                'Reset_Otp_Kirim_Count' => $kirimCount,
-                'Reset_Otp_Window_At' => $windowAt,
-                'Updated_At' => $now,
-            ]);
+            DB::table($this->table)
+                ->where('Id_Users', $userId)
+                ->update([
+                    'Reset_Otp_Hash' => hash('sha256', $otp),
+                    'Reset_Otp_Expired_At' => $now->copy()->addMinutes(self::RESET_OTP_BERLAKU_MENIT),
+                    'Reset_Otp_Attempt' => 0,
+                    'Reset_Otp_Kirim_Count' => $kirimCount,
+                    'Reset_Otp_Window_At' => $windowAt,
+                    'Updated_At' => $now,
+                ]);
 
             WcSyncEmailJob::kirim(WcSyncEmailJob::JENIS_RESET_OTP, $userId, [
                 'otp' => $otp,
@@ -656,18 +744,26 @@ class AuthController extends Controller
             // kirim-ulang saat kode lama masih hidup). Bila OTP sudah hangus
             // (terkunci karena salah berkali-kali / sudah terpakai), user berhak
             // langsung minta kode baru — cukup dibatasi kuota per jam.
-            $kenaCooldown = $row->Reset_Otp_Hash
-                && $row->Reset_Otp_Sent_At
-                && Carbon::parse($row->Reset_Otp_Sent_At)->diffInMinutes($now) < self::RESET_OTP_THROTTLE_MENIT;
+            $kenaCooldown =
+                $row->Reset_Otp_Hash &&
+                $row->Reset_Otp_Sent_At &&
+                Carbon::parse($row->Reset_Otp_Sent_At)->diffInMinutes($now) < self::RESET_OTP_THROTTLE_MENIT;
 
-            $windowMasihBerlaku = $row->Reset_Otp_Window_At
-                && Carbon::parse($row->Reset_Otp_Window_At)->diffInMinutes($now) < self::RESET_OTP_WINDOW_MENIT;
+            $windowMasihBerlaku =
+                $row->Reset_Otp_Window_At &&
+                Carbon::parse($row->Reset_Otp_Window_At)->diffInMinutes($now) < self::RESET_OTP_WINDOW_MENIT;
             $kenaKuota = $windowMasihBerlaku && (int) ($row->Reset_Otp_Kirim_Count ?? 0) >= self::RESET_OTP_MAX_KIRIM;
 
             if ($kenaCooldown || $kenaKuota) {
                 // Diam-diam tidak mengirim ulang (tetap balas generik) — jangan
                 // munculkan 429 yang bisa dipakai membedakan email terdaftar.
-                $this->catatAuditReset($request, 'REQUEST', (int) $row->Id_Users, $row->Email, $kenaCooldown ? 'cooldown' : 'kuota window');
+                $this->catatAuditReset(
+                    $request,
+                    'REQUEST',
+                    (int) $row->Id_Users,
+                    $row->Email,
+                    $kenaCooldown ? 'cooldown' : 'kuota window',
+                );
             } else {
                 $this->kirimOtpReset((int) $row->Id_Users);
                 $this->catatAuditReset($request, 'REQUEST', (int) $row->Id_Users, $row->Email);
@@ -679,7 +775,9 @@ class AuthController extends Controller
 
         return ResponseHelper::success(
             ['email' => $data['email']],
-            'Jika email terdaftar, kami telah mengirim kode OTP 6 digit (berlaku ' . self::RESET_OTP_BERLAKU_MENIT . ' menit). Silakan cek kotak masuk atau folder spam.'
+            'Jika email terdaftar, kami telah mengirim kode OTP 6 digit (berlaku ' .
+                self::RESET_OTP_BERLAKU_MENIT .
+                ' menit). Silakan cek kotak masuk atau folder spam.',
         );
     }
 
@@ -696,19 +794,27 @@ class AuthController extends Controller
         $emailAudit = $row?->Email ?? $email;
 
         // Tidak ada akun / tidak ada OTP aktif → generik "invalid" (anti-enumerasi).
-        if (! $row || ! $row->Reset_Otp_Hash) {
-            $this->catatAuditReset($request, 'WRONG', $row ? (int) $row->Id_Users : null, $emailAudit, 'tanpa OTP aktif');
+        if (!$row || !$row->Reset_Otp_Hash) {
+            $this->catatAuditReset(
+                $request,
+                'WRONG',
+                $row ? (int) $row->Id_Users : null,
+                $emailAudit,
+                'tanpa OTP aktif',
+            );
 
             return 'invalid';
         }
 
         // Kedaluwarsa → hanguskan.
         if ($row->Reset_Otp_Expired_At && Carbon::parse($row->Reset_Otp_Expired_At)->isPast()) {
-            DB::table($this->table)->where('Id_Users', $row->Id_Users)->update([
-                'Reset_Otp_Hash' => null,
-                'Reset_Otp_Expired_At' => null,
-                'Updated_At' => Carbon::now(),
-            ]);
+            DB::table($this->table)
+                ->where('Id_Users', $row->Id_Users)
+                ->update([
+                    'Reset_Otp_Hash' => null,
+                    'Reset_Otp_Expired_At' => null,
+                    'Updated_At' => Carbon::now(),
+                ]);
             $this->catatAuditReset($request, 'EXPIRED', (int) $row->Id_Users, $row->Email);
 
             return 'expired';
@@ -716,28 +822,38 @@ class AuthController extends Controller
 
         // Sudah mencapai batas percobaan → terkunci.
         if ((int) ($row->Reset_Otp_Attempt ?? 0) >= self::RESET_OTP_MAX_ATTEMPT) {
-            DB::table($this->table)->where('Id_Users', $row->Id_Users)->update([
-                'Reset_Otp_Hash' => null,
-                'Reset_Otp_Expired_At' => null,
-                'Updated_At' => Carbon::now(),
-            ]);
+            DB::table($this->table)
+                ->where('Id_Users', $row->Id_Users)
+                ->update([
+                    'Reset_Otp_Hash' => null,
+                    'Reset_Otp_Expired_At' => null,
+                    'Updated_At' => Carbon::now(),
+                ]);
             $this->catatAuditReset($request, 'LOCKED', (int) $row->Id_Users, $row->Email);
 
             return 'locked';
         }
 
         // Salah → tambah counter (di PHP); bila mencapai batas, hanguskan OTP.
-        if (! hash_equals($row->Reset_Otp_Hash, hash('sha256', $otp))) {
+        if (!hash_equals($row->Reset_Otp_Hash, hash('sha256', $otp))) {
             $percobaan = (int) ($row->Reset_Otp_Attempt ?? 0) + 1;
             $mencapaiBatas = $percobaan >= self::RESET_OTP_MAX_ATTEMPT;
 
-            DB::table($this->table)->where('Id_Users', $row->Id_Users)->update([
-                'Reset_Otp_Attempt' => $percobaan,
-                'Reset_Otp_Hash' => $mencapaiBatas ? null : $row->Reset_Otp_Hash,
-                'Reset_Otp_Expired_At' => $mencapaiBatas ? null : $row->Reset_Otp_Expired_At,
-                'Updated_At' => Carbon::now(),
-            ]);
-            $this->catatAuditReset($request, $mencapaiBatas ? 'LOCKED' : 'WRONG', (int) $row->Id_Users, $row->Email, "attempt {$percobaan}/" . self::RESET_OTP_MAX_ATTEMPT);
+            DB::table($this->table)
+                ->where('Id_Users', $row->Id_Users)
+                ->update([
+                    'Reset_Otp_Attempt' => $percobaan,
+                    'Reset_Otp_Hash' => $mencapaiBatas ? null : $row->Reset_Otp_Hash,
+                    'Reset_Otp_Expired_At' => $mencapaiBatas ? null : $row->Reset_Otp_Expired_At,
+                    'Updated_At' => Carbon::now(),
+                ]);
+            $this->catatAuditReset(
+                $request,
+                $mencapaiBatas ? 'LOCKED' : 'WRONG',
+                (int) $row->Id_Users,
+                $row->Email,
+                "attempt {$percobaan}/" . self::RESET_OTP_MAX_ATTEMPT,
+            );
 
             return $mencapaiBatas ? 'locked' : 'invalid';
         }
@@ -749,9 +865,33 @@ class AuthController extends Controller
     private function responsOtpGagal(string $status)
     {
         return match ($status) {
-            'expired' => response()->json(['success' => false, 'status' => 410, 'code' => 'OTP_EXPIRED', 'message' => 'Kode OTP sudah kedaluwarsa. Silakan minta kode baru.'], 410),
-            'locked' => response()->json(['success' => false, 'status' => 429, 'code' => 'OTP_LOCKED', 'message' => 'Terlalu banyak percobaan. Silakan minta kode OTP baru.'], 429),
-            default => response()->json(['success' => false, 'status' => 422, 'code' => 'OTP_INVALID', 'message' => 'Kode OTP salah atau sudah tidak berlaku.'], 422),
+            'expired' => response()->json(
+                [
+                    'success' => false,
+                    'status' => 410,
+                    'code' => 'OTP_EXPIRED',
+                    'message' => 'Kode OTP sudah kedaluwarsa. Silakan minta kode baru.',
+                ],
+                410,
+            ),
+            'locked' => response()->json(
+                [
+                    'success' => false,
+                    'status' => 429,
+                    'code' => 'OTP_LOCKED',
+                    'message' => 'Terlalu banyak percobaan. Silakan minta kode OTP baru.',
+                ],
+                429,
+            ),
+            default => response()->json(
+                [
+                    'success' => false,
+                    'status' => 422,
+                    'code' => 'OTP_INVALID',
+                    'message' => 'Kode OTP salah atau sudah tidak berlaku.',
+                ],
+                422,
+            ),
         };
     }
 
@@ -807,15 +947,17 @@ class AuthController extends Controller
         // Pwd_Changed_At sebagai "session epoch" → seluruh sesi aktif otomatis
         // keluar pada permintaan berikutnya (dibaca ulang di CareerAuth).
         $now = Carbon::now();
-        DB::table($this->table)->where('Id_Users', $row->Id_Users)->update([
-            'Password' => Hash::make($data['password']),
-            'Reset_Otp_Hash' => null,
-            'Reset_Otp_Expired_At' => null,
-            'Reset_Otp_Attempt' => 0,
-            'Pwd_Changed_At' => $now,
-            'Updated_At' => $now,
-            'Updated_By' => $row->Email,
-        ]);
+        DB::table($this->table)
+            ->where('Id_Users', $row->Id_Users)
+            ->update([
+                'Password' => Hash::make($data['password']),
+                'Reset_Otp_Hash' => null,
+                'Reset_Otp_Expired_At' => null,
+                'Reset_Otp_Attempt' => 0,
+                'Pwd_Changed_At' => $now,
+                'Updated_At' => $now,
+                'Updated_By' => $row->Email,
+            ]);
 
         WcSyncEmailJob::kirim(WcSyncEmailJob::JENIS_RESET_SELESAI, (int) $row->Id_Users);
 

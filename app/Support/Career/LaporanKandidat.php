@@ -28,9 +28,20 @@ class LaporanKandidat
      * FORMULIR MANA YANG BOLEH DICETAK.
      *
      * Satu lamaran bisa punya beberapa pengisian: MT mengumpulkan data dua kali
-     * (pendaftaran, lalu kelengkapan data diri di tahap berikutnya). Yang
-     * terbaru dikembalikan lebih dulu dan ditandai `utama` — itulah yang paling
-     * sering dimaksud "cetak datanya".
+     * (pendaftaran, lalu kelengkapan data diri di tahap berikutnya).
+     *
+     * ── URUTANNYA KRONOLOGIS: TERLAMA DULU ────────────────────────────────
+     *
+     * Formulir pendaftaran diisi lebih dulu dan memuat identitas; formulir
+     * tahap lanjutan menambah dan memperbarui. Dibaca dari yang terbaru,
+     * dokumen membuka dengan pembaruan lalu mundur ke identitas dasar —
+     * urutan yang memaksa pembaca melompat-lompat. Kronologi juga yang
+     * dilihat admin saat menyusun ulang lewat drag: yang di atas memang yang
+     * lebih dulu terjadi.
+     *
+     * SEMUANYA ditandai `utama` — bawaannya seluruh formulir ikut tercetak,
+     * dan admin mematikan yang tidak perlu. Sebelumnya hanya yang terbaru,
+     * dan itu diam-diam menyembunyikan jawaban pendaftaran dari dokumen.
      *
      * Hanya yang SUDAH DIKIRIM yang masuk: draf belum tentu benar, dan mencetak
      * setengah jawaban sebagai dokumen resmi lebih buruk daripada tidak mencetak.
@@ -39,23 +50,37 @@ class LaporanKandidat
     {
         $rows = DB::table('N_WEB_CAREERS_Formulir_Pengisian as fp')
             ->leftJoin('N_WEB_CAREERS_Lamaran_Tahap as t', 't.Id_Lamaran_Tahap', '=', 'fp.Lamaran_Tahap_Id')
+            // Nama formulir yang SEBENARNYA — lihat catatan pada 'label'.
+            ->leftJoin('N_WEB_CAREERS_Master_Formulir as mf', 'mf.Id_Master_Formulir', '=', 'fp.Master_Formulir_Id')
             ->where('fp.Lamaran_Id', $lamaranId)
             ->whereNotNull('fp.Waktu_Kirim')
-            ->orderByDesc('fp.Waktu_Kirim')
+            ->orderBy('fp.Waktu_Kirim')
             ->select('fp.Id_Formulir_Pengisian', 'fp.Sumber', 'fp.Komponen_Kode', 'fp.Waktu_Kirim',
-                't.Urutan as TahapUrutan', 't.Label as TahapLabel')
+                't.Urutan as TahapUrutan', 't.Label as TahapLabel', 'mf.Nama as NamaFormulir')
             ->get();
 
-        return $rows->values()->map(fn ($r, $i) => [
+        return $rows->values()->map(fn ($r) => [
             'id' => Hashids::encode($r->Id_Formulir_Pengisian),
-            'label' => $r->TahapLabel ?: ($r->Sumber === 'PENDAFTARAN' ? 'Formulir Pendaftaran' : 'Formulir Tahap'),
+            // ── NAMA FORMULIR, BUKAN NAMA TAHAP ──────────────────────────
+            //
+            // Dulu label diambil dari Lamaran_Tahap.Label, sehingga formulir
+            // pendaftaran tercetak sebagai "Seleksi Administrasi" — itu nama
+            // TAHAP tempat formulirnya dipakai, bukan nama formulirnya.
+            // Kandidat yang mengisinya melihat "Formulir MT Pendaftaran" di
+            // layar, dan berkas resmi yang menyebutnya lain membuat dua
+            // dokumen tentang hal yang sama tidak bisa dicocokkan.
+            //
+            // Nama tahap tetap dibawa terpisah sebagai `tahap` — halaman
+            // formulir memakainya sebagai keterangan kecil, karena "formulir
+            // ini dikirim pada tahap apa" tetap informasi yang berguna.
+            'label' => $r->NamaFormulir
+                ?: ($r->TahapLabel ?: ($r->Sumber === 'PENDAFTARAN' ? 'Formulir Pendaftaran' : 'Formulir Tahap')),
+            'tahap' => (string) ($r->TahapLabel ?? ''),
             'sumber' => $r->Sumber,
             'komponen' => $r->Komponen_Kode,
             'tahapUrutan' => (int) ($r->TahapUrutan ?? 0),
             'waktuKirim' => (string) $r->Waktu_Kirim,
-            // Terbaru = pilihan bawaan. Ditandai di sini, bukan disimpulkan
-            // layar dari urutan array — urutan gampang berubah tanpa sengaja.
-            'utama' => $i === 0,
+            'utama' => true,
         ])->all();
     }
 
@@ -65,6 +90,45 @@ class LaporanKandidat
      * @param  int[]  $pengisianIds  formulir yang diminta; kosong = yang terbaru.
      */
     public static function rakit(int $lamaranId, array $pengisianIds = []): ?array
+    {
+        // ── SINGGAHAN SATU PERMINTAAN ─────────────────────────────────────
+        //
+        // Satu permintaan pratinjau memanggil rakit() dua kali dengan argumen
+        // yang sama: sekali lewat petaHalaman() untuk panel Tata letak, sekali
+        // lagi lewat jalankan() untuk merender. Tiap panggilan ~1,8 detik di
+        // basis data — dan keduanya menanyakan hal yang persis sama.
+        //
+        // Kuncinya memuat DAFTAR PENGISIAN, bukan nomor lamaran saja: dua
+        // pemanggil dengan pilihan formulir berbeda adalah dua pertanyaan
+        // berbeda, dan menyinggahkannya pada nomor lamaran saja akan
+        // memulangkan formulir yang salah untuk pemanggil kedua.
+        //
+        // Statis per proses: hidup selama satu permintaan HTTP / satu job
+        // antrean, lalu ikut mati. Tidak ada basi yang bisa bertahan ke
+        // permintaan berikutnya.
+        static $singgah = [];
+
+        $ids = array_values(array_unique(array_map('intval', $pengisianIds)));
+        sort($ids);
+        $kunciSinggah = $lamaranId . ':' . implode(',', $ids);
+
+        if (array_key_exists($kunciSinggah, $singgah)) {
+            return $singgah[$kunciSinggah];
+        }
+
+        $hasil = self::rakitSungguhan($lamaranId, $pengisianIds);
+
+        // Batasi: satu job antrean bisa mencetak banyak lamaran berturut-turut,
+        // dan tiap hasil rakit membawa foto kandidat beserta seluruh jawaban.
+        if (count($singgah) > 8) {
+            $singgah = [];
+        }
+
+        return $singgah[$kunciSinggah] = $hasil;
+    }
+
+    /** Isi sebenarnya rakit() — lihat singgahan di pemanggilnya. */
+    private static function rakitSungguhan(int $lamaranId, array $pengisianIds = []): ?array
     {
         $lamaran = DB::table('N_WEB_CAREERS_Lamaran as l')
             ->leftJoin('N_WEB_CAREERS_Users as u', 'u.Id_Users', '=', 'l.Id_Users')
@@ -86,7 +150,7 @@ class LaporanKandidat
         $profil = LamaranService::dataKandidatEmail($lamaranId);
         $foto = self::fotoKandidat($lamaranId, $profil['fotoPath'] ?? null);
 
-        return [
+        $hasil = [
             'kandidat' => [
                 // NAMA RESMI dari formulir lebih dulu, nama akun cadangan —
                 // aturan yang sama dengan kartu worklist. Nama akun diketik
@@ -138,6 +202,115 @@ class LaporanKandidat
             'tahap' => self::tahap($lamaranId),
             'formulir' => self::formulir($lamaranId, $pengisianIds),
             'dicetak' => now()->format('d M Y H:i'),
+        ];
+
+        // Jawaban formulir yang dipanen untuk halaman Data Kandidat. Dikerjakan
+        // SESUDAH formulir dirakit supaya keduanya membaca sumber yang sama —
+        // dan supaya panen tidak perlu menyentuh basis data lagi.
+        $hasil['panen'] = self::panen($hasil['formulir']);
+
+        return $hasil;
+    }
+
+    /**
+     * Panen jawaban formulir untuk halaman DATA KANDIDAT.
+     *
+     * ── KENAPA DIPANEN, BUKAN DIBACA DARI KOLOM ──────────────────────────
+     *
+     * NIK, agama, status pernikahan, alamat, kontak darurat, dan kesiapan
+     * kerja tidak punya kolomnya sendiri di tabel mana pun — semuanya jawaban
+     * formulir yang dirancang lewat layar. Rancangan halaman 03 menampilkan
+     * semuanya; tanpa dipanen, halaman itu hanya terisi sepertiga dan sisanya
+     * kosong melompong.
+     *
+     * ── DICOCOKKAN DARI LABELNYA, DAN ITU DISENGAJA ──────────────────────
+     *
+     * Kunci field ditentukan perancang formulir dan berbeda antar program
+     * ('nik', 'v_nik', 'identitas_nik'). Labelnya jauh lebih stabil karena ia
+     * yang dibaca kandidat — "NIK" tetap "NIK" di formulir mana pun. Yang
+     * tidak tertebak tidak hilang: ia tetap tercetak di halaman formulirnya
+     * sendiri.
+     *
+     * @param  array  $formulir  hasil self::formulir()
+     */
+    private static function panen(array $formulir): array
+    {
+        // Seluruh isian dari semua formulir, didatarkan jadi label => nilai.
+        $isian = [];
+
+        foreach ($formulir as $f) {
+            foreach ($f['bagian'] ?? [] as $b) {
+                foreach ($b['isian'] ?? [] as $i) {
+                    if (! empty($i['berkas']) || ! empty($i['baris'])) {
+                        continue;
+                    }
+
+                    $nilai = trim((string) $i['nilai']);
+
+                    if ($nilai === '') {
+                        continue;
+                    }
+
+                    // Yang PERTAMA menang: formulir pendaftaran diisi lebih
+                    // dulu dan memuat identitas; formulir tahap lanjutan
+                    // umumnya mengulang sebagian pertanyaannya.
+                    $isian[] = ['label' => (string) $i['label'], 'nilai' => $nilai, 'bagian' => (string) ($b['judul'] ?? '')];
+                }
+            }
+        }
+
+        $cari = function (array $kata, array $lewati = []) use ($isian) {
+            foreach ($isian as $i) {
+                $l = mb_strtolower($i['label']);
+
+                foreach ($lewati as $x) {
+                    if (str_contains($l, $x)) {
+                        continue 2;
+                    }
+                }
+
+                foreach ($kata as $k) {
+                    if (str_contains($l, $k)) {
+                        return $i['nilai'];
+                    }
+                }
+            }
+
+            return null;
+        };
+
+        // Deret pertanyaan kesediaan — dikenali dari kata kerjanya, bukan dari
+        // judul bagiannya, supaya formulir yang menamai bagiannya lain tetap
+        // terbaca.
+        $kesiapan = collect($isian)
+            ->filter(fn ($i) => preg_match('/^(bersedia|sanggup|siap)\b/i', $i['label']))
+            ->map(fn ($i) => ['label' => $i['label'], 'nilai' => $i['nilai']])
+            ->values()
+            ->all();
+
+        // Pertanyaan ya/tidak lain yang bukan kesediaan — mis. "Apakah
+        // memiliki buta warna?". Dipisahkan supaya kartu kesiapan tidak
+        // tercampur pertanyaan medis.
+        $tambahan = collect($isian)
+            ->filter(fn ($i) => str_starts_with(mb_strtolower($i['label']), 'apakah')
+                && in_array(mb_strtolower($i['nilai']), ['ya', 'tidak'], true))
+            ->map(fn ($i) => ['label' => $i['label'], 'nilai' => $i['nilai']])
+            ->values()
+            ->all();
+
+        return [
+            'nik' => $cari(['nik', 'nomor induk kependudukan']),
+            'agama' => $cari(['agama']),
+            'pernikahan' => $cari(['status pernikahan', 'status perkawinan']),
+            'alamatKtp' => $cari(['alamat lengkap', 'alamat ktp', 'alamat sesuai']),
+            'alamatDomisili' => $cari(['alamat domisili', 'domisili saat ini']),
+            'daruratNama' => $cari(['nama kontak darurat', 'kontak darurat']),
+            'daruratHubungan' => $cari(['hubungan dengan peserta', 'hubungan kontak']),
+            'daruratHp' => $cari(['no handphone kontak darurat', 'telepon kontak darurat', 'hp kontak darurat']),
+            'mulaiKerja' => $cari(['ketersediaan mulai', 'mulai bekerja', 'kesiapan mulai']),
+            'ekspektasiGaji' => $cari(['ekspektasi gaji', 'gaji yang diharapkan', 'harapan gaji']),
+            'kesiapan' => $kesiapan,
+            'tambahan' => $tambahan,
         ];
     }
 
@@ -217,9 +390,11 @@ class LaporanKandidat
     {
         $q = DB::table('N_WEB_CAREERS_Formulir_Pengisian as fp')
             ->leftJoin('N_WEB_CAREERS_Lamaran_Tahap as t', 't.Id_Lamaran_Tahap', '=', 'fp.Lamaran_Tahap_Id')
+            // Nama formulir dari master — lihat catatan pada daftarFormulir().
+            ->leftJoin('N_WEB_CAREERS_Master_Formulir as mf', 'mf.Id_Master_Formulir', '=', 'fp.Master_Formulir_Id')
             ->where('fp.Lamaran_Id', $lamaranId)
             ->whereNotNull('fp.Waktu_Kirim')
-            ->select('fp.*', 't.Urutan as TahapUrutan', 't.Label as TahapLabel');
+            ->select('fp.*', 't.Urutan as TahapUrutan', 't.Label as TahapLabel', 'mf.Nama as NamaFormulir');
 
         if ($pengisianIds) {
             // Dipilih admin → dicetak menurut KRONOLOGI, supaya jawaban lama
@@ -287,16 +462,21 @@ class LaporanKandidat
                         // Isian berupa berkas dicetak sebagai ADA/TIDAK, bukan
                         // nama file — nama berkas tidak berarti apa pun di
                         // atas kertas, dan berkasnya sendiri tidak ikut tercetak.
-                        'berkas' => $b ? [
-                            'nama' => $b->Nama_Asli,
-                            'status' => $b->Status_Verifikasi,
-                            'tautan' => self::tautanBerkas($lamaranId, (int) $b->Id_Formulir_Berkas),
-                        ] : null,
+                        'berkas' => $b ? self::berkasRingkas($b, $lamaranId) : null,
                     ];
                 })->values()->all();
 
             return [
-                'label' => $fp->TahapLabel ?: ($fp->Sumber === 'PENDAFTARAN' ? 'Formulir Pendaftaran' : 'Formulir Tahap'),
+                // Id pengisiannya ikut dibawa supaya pemanggil bisa mencocokkan
+                // hasil rakitan ini dengan pilihan yang dikirim layar — daftar
+                // formulir memakai hashid dari id yang sama. Tanpa ini
+                // pencocokannya terpaksa lewat label, yang tidak unik: satu
+                // lamaran bisa punya dua pengisian berlabel "Formulir Tahap".
+                'pengisianId' => (int) $fp->Id_Formulir_Pengisian,
+                // Nama FORMULIR, bukan nama tahap — lihat daftarFormulir().
+                'label' => $fp->NamaFormulir
+                    ?: ($fp->TahapLabel ?: ($fp->Sumber === 'PENDAFTARAN' ? 'Formulir Pendaftaran' : 'Formulir Tahap')),
+                'tahap' => (string) ($fp->TahapLabel ?? ''),
                 'komponen' => $fp->Komponen_Kode,
                 'waktuKirim' => (string) $fp->Waktu_Kirim,
                 // Datar — dipakai ekspor Excel, yang memang ingin satu baris
@@ -305,7 +485,16 @@ class LaporanKandidat
                 // Berbabak — dipakai PDF. Judulnya diambil dari BAGIAN formulir
                 // itu sendiri, jadi dokumen ikut berubah begitu perancang
                 // menambah atau menamai ulang sebuah bagian.
-                'bagian' => self::bagi($isian, $peta['bagian']),
+                //
+                // Tiap bagian membawa KUNCI yang sama dengan yang dipakai
+                // Export Studio ('formulir.<hashid>.<md5 judul>') — itulah
+                // pegangan yang menghubungkan pilihan admin di layar dengan
+                // bagian yang dicetak di sini.
+                'bagian' => self::bagi(
+                    $isian,
+                    $peta['bagian'],
+                    'formulir.' . Hashids::encode((int) $fp->Id_Formulir_Pengisian) . '.',
+                ),
                 'dokumen' => $berkasIni->map(fn ($b) => [
                     'field' => $b->Field_Key,
                     // LABEL ASLI pertanyaannya, bukan kunci yang dirapikan.
@@ -320,10 +509,8 @@ class LaporanKandidat
                         $label[$b->Field_Key] ?? ucwords(str_replace(['_', '-'], ' ', (string) $b->Field_Key)),
                         $b->Baris_Index !== null ? (int) $b->Baris_Index : null,
                     ),
-                    'nama' => $b->Nama_Asli,
-                    'status' => $b->Status_Verifikasi,
                     // Bisa diklik langsung dari dalam PDF — lihat tautanBerkas().
-                    'tautan' => self::tautanBerkas($lamaranId, (int) $b->Id_Formulir_Berkas),
+                    ...self::berkasRingkas($b, $lamaranId),
                 ])->values()->all(),
             ];
         })->values()->all();
@@ -394,6 +581,8 @@ class LaporanKandidat
         }
 
         foreach ($skema['langkah'] ?? [] as $langkah) {
+            $judulLangkah = trim((string) ($langkah['judul'] ?? ''));
+
             foreach ($langkah['bagian'] ?? [] as $bagian) {
                 $keys = [];
 
@@ -433,7 +622,7 @@ class LaporanKandidat
 
                 if ($keys) {
                     $peta['bagian'][] = [
-                        'judul' => trim((string) ($bagian['judul'] ?? '')),
+                        'judul' => self::judulBagian($judulLangkah, $bagian),
                         'berulang' => ! empty($bagian['berulang']),
                         'keys' => $keys,
                     ];
@@ -442,6 +631,55 @@ class LaporanKandidat
         }
 
         return $peta;
+    }
+
+    /**
+     * Judul yang benar-benar dilihat kandidat saat mengisi.
+     *
+     * ── KENAPA BUKAN $bagian['judul'] SAJA ────────────────────────────────
+     *
+     * Formulir dinamis bersusun DUA tingkat: langkah → bagian. Yang tampil di
+     * layar sebagai judul besar adalah LANGKAH ("Data Diri", "Status
+     * Pendidikan", "Pendidikan", "Kesediaan", "Verifikasi"); "Bagian 1" hanya
+     * nama bawaan wadah di dalamnya, dan perancang formulir tidak pernah
+     * mengubahnya karena memang tidak pernah terlihat.
+     *
+     * Berkas seleksi dulu mengambil judul bagian itu apa adanya, sehingga
+     * dokumen resmi mencetak "BAGIAN 1" empat kali berturut-turut — pembaca
+     * tidak punya cara tahu bahwa keempatnya adalah data diri, status
+     * pendidikan, pendidikan, dan kesediaan.
+     *
+     * Aturannya:
+     *   • judul bagian BAWAAN ("Bagian 1", kosong) → judul LANGKAH
+     *   • judul bagian punya nama sendiri          → judul BAGIAN apa adanya
+     *
+     * "Bawaan" dikenali dari polanya ("Bagian 1", "Section 2", kosong), bukan
+     * dari daftar judul terlarang: perancang bebas menamainya apa saja, dan
+     * yang ingin dibuang justru nama yang TIDAK pernah ia pilih sendiri.
+     */
+    private static function judulBagian(string $judulLangkah, array $bagian): string
+    {
+        $judulBagian = trim((string) ($bagian['judul'] ?? ''));
+
+        if ($judulLangkah === '') {
+            return $judulBagian;
+        }
+
+        $bawaan = $judulBagian === ''
+            || (bool) preg_match('/^(bagian|section|grup|group)\s*\d*$/iu', $judulBagian);
+
+        // Judul bagian yang bawaan tidak menerangkan apa pun — judul langkah
+        // yang dipakai, dan itu justru yang dilihat kandidat di layar.
+        if ($bawaan) {
+            return $judulLangkah;
+        }
+
+        // Judul bagian yang PUNYA nama sendiri dipakai apa adanya, tanpa
+        // ditempeli judul langkahnya. "Identitas & Pengalaman · B. Identitas"
+        // dua kali lebih panjang tanpa menerangkan apa pun yang belum
+        // dikatakan "B. Identitas" — dan judul panjang di dokumen cetak
+        // memakan lebar yang seharusnya jadi ruang jawaban.
+        return $judulBagian;
     }
 
     /**
@@ -455,10 +693,21 @@ class LaporanKandidat
      * @param  list<array>  $isian
      * @param  list<array{judul:string,berulang:bool,keys:list<string>}>  $bagian
      */
-    private static function bagi(array $isian, array $bagian): array
+    private static function bagi(array $isian, array $bagian, string $awalanKunci = ''): array
     {
         $sisa = collect($isian)->keyBy('key');
         $hasil = [];
+
+        // Nomor urut bagian ikut membentuk kunci, BUKAN judulnya saja.
+        //
+        // Perancang formulir tidak wajib memberi judul yang unik — formulir
+        // pendaftaran di produksi punya EMPAT bagian yang semuanya berjudul
+        // "Bagian 1". Kunci berbasis judul membuat keempatnya berbagi kunci
+        // yang sama, sehingga mencentang satu mematikan semuanya sekaligus.
+        //
+        // Indeksnya stabil selama skema yang dibekukan tidak berubah — dan
+        // skema itu memang dibekukan saat kandidat mengirim.
+        $urut = 0;
 
         foreach ($bagian as $b) {
             $ambil = [];
@@ -471,12 +720,24 @@ class LaporanKandidat
             // Bagian yang seluruh pertanyaannya tidak terjawab (mis. tertutup
             // syarat "tampil_jika") tidak dicetak sebagai judul kosong.
             if ($ambil) {
-                $hasil[] = ['judul' => $b['judul'], 'berulang' => $b['berulang'], 'isian' => $ambil];
+                $hasil[] = [
+                    'judul' => $b['judul'],
+                    'berulang' => $b['berulang'],
+                    'isian' => $ambil,
+                    'kunci' => $awalanKunci . md5($urut . '|' . (string) $b['judul']),
+                ];
             }
+
+            $urut++;
         }
 
         if ($sisa->isNotEmpty()) {
-            $hasil[] = ['judul' => '', 'berulang' => false, 'isian' => $sisa->values()->all()];
+            $hasil[] = [
+                'judul' => '',
+                'berulang' => false,
+                'isian' => $sisa->values()->all(),
+                'kunci' => $awalanKunci . md5($urut . '|'),
+            ];
         }
 
         return $hasil;
@@ -767,6 +1028,36 @@ class LaporanKandidat
     }
 
     /**
+     * Keterangan satu berkas untuk PEMBACA DI LAYAR, bukan cuma untuk PDF.
+     *
+     * Dulu yang dikirim hanya nama, status, dan tautan — cukup bagi dokumen
+     * cetak, yang tidak pernah menampilkan berkasnya sendiri. Panel berkas di
+     * layar butuh dua hal lagi sebelum bisa menggambar apa pun: apakah ini
+     * gambar (ditaruh di <img>) atau PDF (ditaruh di <iframe>), dan berapa
+     * besarnya. Tanpa keduanya panel hanya bisa menawarkan tautan unduh —
+     * persis keluhan yang membuat berkas "tidak muncul" padahal ada.
+     *
+     * Tautannya bertanda tangan dan TANPA SESI, jadi bisa langsung dipasang
+     * sebagai src; lihat tautanBerkas().
+     */
+    private static function berkasRingkas(object $b, int $lamaranId): array
+    {
+        $ext = ltrim(strtolower((string) ($b->Ekstensi ?: pathinfo((string) $b->Path_File, PATHINFO_EXTENSION))), '.');
+        $mime = strtolower(trim((string) ($b->Mime ?? '')));
+
+        return [
+            'nama' => $b->Nama_Asli,
+            'status' => $b->Status_Verifikasi,
+            'tautan' => self::tautanBerkas($lamaranId, (int) $b->Id_Formulir_Berkas),
+            'ext' => strtoupper($ext),
+            'isImage' => self::berkasGambar($b),
+            'isPdf' => $mime === 'application/pdf' || $ext === 'pdf',
+            'ukuran' => (int) ($b->Ukuran_Byte ?? 0),
+            'waktu' => (string) ($b->Waktu_Unggah ?? ''),
+        ];
+    }
+
+    /**
      * Berkas ini gambar atau bukan.
      *
      * `Mime` yang menentukan bila terisi — nama berkas datang dari kandidat dan
@@ -1013,13 +1304,90 @@ class LaporanKandidat
         }
     }
 
-    /** Logo perusahaan sebagai data URI — alasan sama dengan foto di atas. */
+    /**
+     * Logo perusahaan sebagai data URI — alasan sama dengan foto di atas.
+     *
+     * DIPERKECIL DULU, DAN ITU BUKAN SOAL UKURAN BERKAS.
+     *
+     * Berkas aslinya 3051×2998 piksel; di dokumen ia tampil setinggi 46 poin.
+     * dompdf tidak peduli seberapa kecil ia digambar — seluruh piksel tetap
+     * diurai untuk setiap kemunculan. Satu halaman sampul yang memuatnya
+     * memakan 8 detik, dan halaman pemisah bab memuatnya lagi.
+     *
+     * Hasil perkecilannya disimpan di cache proses: satu dokumen memakai logo
+     * yang sama di sampul, tiap pemisah bab, dan penutup.
+     */
     public static function logoDataUri(): ?string
     {
+        static $cache = null;
+
+        if ($cache !== null) {
+            return $cache ?: null;
+        }
+
         $file = public_path('logo/EVOGROUP.png');
 
-        return is_file($file)
-            ? 'data:image/png;base64,' . base64_encode(file_get_contents($file))
-            : null;
+        if (! is_file($file)) {
+            return $cache = '';
+        }
+
+        $asli = file_get_contents($file);
+        $kecil = self::kecilkan($asli, 320);
+
+        return $cache = 'data:image/png;base64,' . base64_encode($kecil ?: $asli);
+    }
+
+    /**
+     * Perkecil PNG ke lebar tertentu, dengan latar transparan dipertahankan.
+     *
+     * Null bila GD tidak tersedia atau gambarnya gagal dibaca — pemanggil
+     * memakai berkas aslinya. Logo yang berat jauh lebih baik daripada
+     * dokumen tanpa logo.
+     */
+    private static function kecilkan(string $isi, int $lebarTarget): ?string
+    {
+        if (! function_exists('imagecreatefromstring')) {
+            return null;
+        }
+
+        try {
+            $sumber = @imagecreatefromstring($isi);
+
+            if (! $sumber) {
+                return null;
+            }
+
+            $lebar = imagesx($sumber);
+            $tinggi = imagesy($sumber);
+
+            if ($lebar <= $lebarTarget) {
+                imagedestroy($sumber);
+
+                return null;
+            }
+
+            $tinggiTarget = max(1, (int) round($tinggi * ($lebarTarget / $lebar)));
+            $tujuan = imagecreatetruecolor($lebarTarget, $tinggiTarget);
+
+            // Tanpa dua baris ini latar transparan logo berubah jadi hitam
+            // pekat — dan logo itu dicetak di atas kertas putih.
+            imagealphablending($tujuan, false);
+            imagesavealpha($tujuan, true);
+
+            imagecopyresampled($tujuan, $sumber, 0, 0, 0, 0, $lebarTarget, $tinggiTarget, $lebar, $tinggi);
+
+            ob_start();
+            imagepng($tujuan, null, 9);
+            $hasil = ob_get_clean();
+
+            imagedestroy($sumber);
+            imagedestroy($tujuan);
+
+            return $hasil ?: null;
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->warning('[LAPORAN] logo gagal diperkecil: ' . $e->getMessage());
+
+            return null;
+        }
     }
 }

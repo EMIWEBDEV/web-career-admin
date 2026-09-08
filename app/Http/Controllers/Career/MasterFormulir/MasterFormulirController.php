@@ -563,6 +563,28 @@ class MasterFormulirController extends Controller
                     if (! preg_match('/^[a-z][a-z0-9_]*$/', $key)) {
                         return ['ok' => false, 'pesan' => "Key field \"{$key}\" hanya boleh huruf kecil, angka, dan underscore; harus diawali huruf."];
                     }
+                    // Batas kolom, ditegakkan SAAT MENYIMPAN.
+                    //
+                    // Skema disimpan sebagai JSON yang tidak punya batas panjang,
+                    // jadi key sepanjang apa pun lolos di sini dan baru meledak
+                    // jauh kemudian — di layar KANDIDAT, saat berkasnya diunggah
+                    // ke Formulir_Berkas.Field_Key yang cuma varchar(60):
+                    // "String or binary data would be truncated". Yang melihat
+                    // galat itu bukan orang yang membuat key-nya, dan ia tidak
+                    // bisa berbuat apa-apa.
+                    //
+                    // Yang diperiksa key MENTAH, bukan hasil slugKey() — sebab
+                    // slugKey sudah memotongnya sendiri. Memotong diam-diam saja
+                    // tidak cukup: dua label panjang yang 56 huruf pertamanya
+                    // sama akan menyusut jadi satu key yang sama, dan jawaban
+                    // field kedua menimpa yang pertama tanpa satu pun peringatan.
+                    // Lebih baik ditolak di depan orang yang bisa menamainya ulang.
+                    $keyMentah = trim((string) ($field['key'] ?? ''));
+                    if ($keyMentah !== '' && strlen($this->slugKeyTanpaPotong($keyMentah)) > self::MAKS_PANJANG_KEY) {
+                        $n = strlen($this->slugKeyTanpaPotong($keyMentah));
+
+                        return ['ok' => false, 'pesan' => "Key field \"{$keyMentah}\" terlalu panjang ({$n} karakter, batas ".self::MAKS_PANJANG_KEY.'). Persingkat key-nya — label boleh tetap panjang.'];
+                    }
                     if (isset($keys[$key])) {
                         return ['ok' => false, 'pesan' => "Key field \"{$key}\" dipakai lebih dari sekali."];
                     }
@@ -642,10 +664,18 @@ class MasterFormulirController extends Controller
      */
     private function galatRujukan(array $field, string $label, string $key, array $posisi, int $urut): ?string
     {
-        $acuan = $field['tampil_jika']['field'] ?? null;
-        if ($acuan) {
+        // `tampil_jika` dan `wajib_jika` diperiksa dengan aturan yang sama:
+        // keduanya syarat yang dinilai SAAT kandidat mengisi, jadi acuan yang
+        // letaknya di belakang sama-sama mustahil terpenuhi. Bedanya cuma
+        // akibatnya - yang satu menyembunyikan kolom, yang satu mewajibkannya.
+        foreach (['tampil_jika' => 'tampil jika', 'wajib_jika' => 'wajib jika'] as $prop => $sebutan) {
+            $acuan = $field[$prop]['field'] ?? null;
+            if (! $acuan) {
+                continue;
+            }
+
             if (! isset($posisi[$acuan])) {
-                return "Field \"{$label}\" (tampil jika) menunjuk key \"{$acuan}\" yang tidak ada di formulir ini.";
+                return "Field \"{$label}\" ({$sebutan}) menunjuk key \"{$acuan}\" yang tidak ada di formulir ini.";
             }
             if ($posisi[$acuan] >= $urut) {
                 return "Field \"{$label}\" bersyarat pada \"{$acuan}\", yang letaknya sesudah field ini — syaratnya tidak akan pernah terpenuhi.";
@@ -702,6 +732,23 @@ class MasterFormulirController extends Controller
 
             $keyLama = (string) ($publishedById[$fieldId]['key'] ?? '');
             $keyBaru = (string) ($field['key'] ?? '');
+
+            // KEY YANG MELEBIHI LEBAR KOLOM adalah pengecualian gembok ini.
+            //
+            // Gembok ada karena key yang sudah dipublish tertulis di setiap
+            // baris jawaban dan berkas kandidat; menggantinya membuat data lama
+            // jadi yatim. Alasan itu tidak berlaku untuk key yang lebih panjang
+            // dari Field_Key (varchar(60)): justru KARENA kepanjangan, tidak
+            // pernah ada satu pun baris yang berhasil tersimpan — setiap
+            // unggahan berkasnya mati dengan "String or binary data would be
+            // truncated". Tidak ada data yang bisa jadi yatim.
+            //
+            // Menguncinya malah menjebak: formulirnya sudah live, kandidat
+            // tidak bisa mengunggah, dan admin tidak diberi jalan memperbaiki.
+            if ($keyLama !== $keyBaru && strlen($keyLama) > self::MAKS_PANJANG_KEY) {
+                continue;
+            }
+
             if ($keyLama !== $keyBaru) {
                 $label = (string) ($field['label'] ?? $keyLama);
                 return "Key field \"{$label}\" sudah dipublish sebagai \"{$keyLama}\" dan tidak boleh diubah.";
@@ -742,12 +789,40 @@ class MasterFormulirController extends Controller
         return $fields;
     }
 
+    /**
+     * Sepadan dengan MAKS_PANJANG_KEY di resources/js/utils/formulir/schema.js.
+     *
+     * 56, bukan 60: pembuat key di sisi layar menambahkan akhiran '_2' saat ada
+     * key kembar, dan akhiran itu harus tetap muat di varchar(60).
+     */
+    private const MAKS_PANJANG_KEY = 56;
+
+    /**
+     * slugKey tanpa pemotongan — dipakai HANYA untuk mengukur panjang aslinya,
+     * supaya key yang memang kepanjangan bisa ditolak alih-alih dipotong diam-diam.
+     */
+    private function slugKeyTanpaPotong(string $value): string
+    {
+        $key = strtolower(trim($value));
+        $key = preg_replace('/[^a-z0-9_]+/', '_', $key) ?: 'field';
+        $key = preg_replace('/^[0-9]+/', '', $key) ?: 'field';
+
+        return trim($key, '_');
+    }
+
     private function slugKey(string $value): string
     {
         $key = strtolower(trim($value));
         $key = preg_replace('/[^a-z0-9_]+/', '_', $key) ?: 'field';
         $key = preg_replace('/^[0-9]+/', '', $key) ?: 'field';
         $key = trim($key, '_');
+
+        // Dipotong dengan aturan yang SAMA PERSIS dengan slugKey() di
+        // resources/js/utils/formulir/schema.js. Kalau dibiarkan lebih panjang,
+        // layar sudah mengirim key yang benar (56 karakter) tapi pemeriksa di
+        // sini merapikan ulang labelnya jadi 62 lalu menolak simpanan yang
+        // sebenarnya sah — formulir jadi mustahil disimpan sama sekali.
+        $key = rtrim(substr($key, 0, self::MAKS_PANJANG_KEY), '_');
 
         return $key !== '' ? $key : 'field';
     }

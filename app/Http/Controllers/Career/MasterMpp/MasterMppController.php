@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Career\MasterMpp;
 
 use App\Helpers\ResponseHelper;
 use App\Http\Controllers\Controller;
+use App\Support\Career\KursiMpp;
+use App\Support\Career\PerpanjangSla;
 use App\Support\Career\SlaMpp;
 use App\Support\CareerShell;
 use Illuminate\Http\Request;
@@ -76,9 +78,23 @@ class MasterMppController extends Controller
         $sla = SlaMpp::siapSnapshot()
             ? [
                 DB::raw('CONVERT(varchar(10), d.Sla_Mulai, 23) as sla_mulai'),
+                DB::raw('CONVERT(varchar(10), d.Sla_Batas, 23) as sla_batas'),
                 'd.Sla_Hari_Kerja as sla_hari',
             ]
             : [];
+
+        // Penanda perpanjangan — dibaca dari kolom turunan di Detail_MPP, BUKAN
+        // dengan menggabung tabel riwayat. Daftar ini menggambar puluhan kartu
+        // sekaligus; join ke riwayat hanya demi angka "2x" pada segelintir baris
+        // membuat seluruh halaman membayar ongkos yang cuma dipakai sebagian.
+        $panjang = SlaMpp::siapPanjang()
+            ? [
+                'd.Sla_Perpanjangan_Ke as sla_panjang_ke',
+                DB::raw('CONVERT(varchar(10), d.Sla_Batas_Awal, 23) as sla_batas_awal'),
+            ]
+            : [];
+
+        $sla = array_merge($sla, $panjang);
 
         return array_merge($sla, [
             'g.No_Transaksi as no_transaksi',
@@ -111,6 +127,17 @@ class MasterMppController extends Controller
             'mw.Nama_Workplace as workplace_type',
             'd.Experience_Level as experience_level_id',
             'mx.Nama_Experience_Level as experience_level',
+            // JEJAK PEMBUATAN — siapa yang MENGINPUT, dan kapan.
+            //
+            // Beda dengan Penanggung Jawab, dan perbedaan itu justru sering jadi
+            // pertanyaan: PJ adalah orang yang memegang lowongannya (kode
+            // karyawan HRIS), sedangkan ini akun yang benar-benar mengetik
+            // barisnya. Keduanya kerap bukan orang yang sama — admin rekrutmen
+            // menginput MPP atas nama PJ di divisi lain.
+            DB::raw("CONVERT(varchar(19), d.Created_At, 120) as dibuat_pada"),
+            DB::raw("CONVERT(varchar(19), d.Updated_At, 120) as diubah_pada"),
+            'ub.Nama as dibuat_oleh',
+            'uu.Nama as diubah_oleh',
         ]);
     }
 
@@ -159,6 +186,13 @@ class MasterMppController extends Controller
 
             $rows = collect($result['rows'])->map(fn ($r) => $this->baris($r))->values();
 
+            // KEADAAN KURSI ditempel SEKALIGUS untuk seluruh halaman — satu kueri,
+            // bukan satu per kartu. Panel split menampilkan bilah keterisian di
+            // setiap baris daftar; menanyakannya per baris membuat halaman yang
+            // seluruh gunanya "lihat semuanya" justru paling lambat saat paling
+            // dipakai. Sepola KursiMpp::keadaanBanyak() di papan worklist.
+            $rows = $this->tempelKursi($rows);
+
             return ResponseHelper::successWithPagination($rows, $page, $perPage, (int) $result['total'], 'Data MPP dimuat');
         } catch (\Throwable $e) {
             Log::channel('web_career')->error('Gagal memuat master MPP: ' . $e->getMessage());
@@ -205,6 +239,15 @@ class MasterMppController extends Controller
                     ->get(['mb.Id_Benefit as id', 'mb.Nama_Benefit as nama']);
 
                 return array_merge($this->baris($head), [
+                    // Keadaan perpanjangan: dipakai panel detail untuk memutuskan
+                    // tombolnya muncul/terkunci, DAN untuk menggambar riwayatnya.
+                    // Sumbernya sama persis dengan yang dipakai pintu simpan —
+                    // lihat PerpanjangSla::keadaan().
+                    'perpanjangan' => PerpanjangSla::keadaan($no),
+                    // Disegarkan, bukan sekadar dibaca: membuka/menonaktifkan
+                    // program tidak melewati jalur yang menulis ledger, jadi
+                    // angka `Dialokasikan` bisa tertinggal. Lihat KursiMpp.
+                    'kursi' => KursiMpp::segarkanBanyak([$no])[$no] ?? KursiMpp::keadaan($no),
                     'tanggungJawab' => $points->where('Section', 'responsibility')->pluck('Content')->values()->all(),
                     'persyaratan' => $points->where('Section', 'requirement')->pluck('Content')->values()->all(),
                     'skill' => $skill->map(fn ($r) => $this->barisSkill($r))->values()->all(),
@@ -245,8 +288,33 @@ class MasterMppController extends Controller
                     ->selectRaw("SUM(CASE WHEN g.Status = 'Y' THEN 1 ELSE 0 END) as dibatalkan")
                     ->first();
 
+                // ── PIC: opsi penyaring bertumpuk di panel split ──────────────
+                //
+                // Dibaca dari MPP yang ADA, bukan dari seluruh master karyawan:
+                // daftar ratusan nama yang 99%-nya tidak pernah memegang MPP
+                // membuat penyaringnya lebih lambat dipakai daripada tidak ada.
+                $pic = collect(
+                    $this->baseQuery()
+                        ->whereNotNull('g.User_Penganggung_Jawab')
+                        ->selectRaw('g.User_Penganggung_Jawab as kode, MAX(k.Nama) as nama')
+                        ->groupBy('g.User_Penganggung_Jawab')
+                        ->get()
+                )->map(fn ($r) => ['value' => $r->kode, 'label' => $r->nama ?: $r->kode])
+                    ->sortBy('label', SORT_NATURAL | SORT_FLAG_CASE)
+                    ->values();
+
+                // ── RINGKASAN KURSI & SLA untuk bilah atas ────────────────────
+                //
+                // Dihitung LINTAS SELURUH MPP, bukan dari halaman yang sedang
+                // terlihat: bilah yang menyebut "3 lewat SLA" padahal maksudnya
+                // "3 di halaman ini" adalah angka yang menyesatkan justru pada
+                // hal yang paling dipakai untuk mengambil tindakan.
+                $ring = $this->ringkasKursiSla();
+
                 return [
                     'periode' => $periode->all(),
+                    'pic' => $pic->all(),
+                    'ringkas' => $ring,
                     'stats' => [
                         'total' => (int) ($s->total ?? 0),
                         'aktif' => (int) ($s->aktif ?? 0),
@@ -261,6 +329,52 @@ class MasterMppController extends Controller
             Log::channel('web_career')->error('Gagal memuat opsi filter master MPP: ' . $e->getMessage());
 
             return ResponseHelper::error('Gagal memuat opsi filter', 500);
+        }
+    }
+
+    /**
+     * Ringkasan kursi & SLA untuk bilah atas — kuota, terisi, sisa, lewat SLA.
+     *
+     * "Lewat SLA" dihitung DI SQL terhadap tanggal hari ini, bukan di PHP atas
+     * seluruh baris: jumlah MPP boleh tumbuh, dan yang dibutuhkan bilah cuma
+     * empat angka. Hanya MPP yang MASIH BERJALAN yang dihitung — tenggat lewat
+     * pada MPP yang sudah selesai atau dibatalkan bukan kabar, cuma bunyi.
+     *
+     * @return array{kuota:int, terisi:int, sisa:int, lewat:int}
+     */
+    private function ringkasKursiSla(): array
+    {
+        $kosong = ['kuota' => 0, 'terisi' => 0, 'sisa' => 0, 'lewat' => 0];
+
+        try {
+            $q = $this->baseQuery()
+                ->whereRaw("ISNULL(g.Status, '') <> 'Y'")
+                ->where('g.Flag_Selesai', '<>', 'Y');
+
+            $kuota = (int) (clone $q)->sum('g.Jumlah_Rekruitmen');
+
+            $lewat = SlaMpp::siapSnapshot()
+                ? (int) (clone $q)->whereNotNull('d.Sla_Batas')->whereRaw('d.Sla_Batas < CAST(GETDATE() AS DATE)')->count()
+                : 0;
+
+            // Terisi dibaca dari ledger kursi, sumber yang sama dengan kartu —
+            // bukan dihitung ulang dengan aturan sendiri di sini.
+            $terisi = KursiMpp::siap()
+                ? (int) DB::table('N_WEB_CAREERS_Mpp_Kursi')
+                    ->whereIn('No_Transaksi_MPP', (clone $q)->pluck('g.No_Transaksi'))
+                    ->sum('Terisi')
+                : 0;
+
+            return [
+                'kuota' => $kuota,
+                'terisi' => $terisi,
+                'sisa' => max(0, $kuota - $terisi),
+                'lewat' => $lewat,
+            ];
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->warning('Ringkasan kursi/SLA MPP gagal: '.$e->getMessage());
+
+            return $kosong;
         }
     }
 
@@ -288,8 +402,26 @@ class MasterMppController extends Controller
             'experienceLevel' => $r->experience_level_id ? ['id' => $r->experience_level_id, 'nama' => $r->experience_level] : null,
             // Ketentuan yang DIBEKUKAN pada MPP ini — null bila MPP-nya lahir
             // sebelum fitur SLA ada, dan borangnya memang harus tahu itu.
+            // Jejak input — dipakai panel detail. Dibedakan dari penanggungJawab.
+            'dibuat' => ['pada' => $r->dibuat_pada ?? null, 'oleh' => $r->dibuat_oleh ?? null],
+            'diubah' => ['pada' => $r->diubah_pada ?? null, 'oleh' => $r->diubah_oleh ?? null],
             'sla' => isset($r->sla_hari) && $r->sla_hari
-                ? ['mulai' => $r->sla_mulai, 'hari' => (int) $r->sla_hari]
+                ? [
+                    'mulai' => $r->sla_mulai,
+                    'hari' => (int) $r->sla_hari,
+                    // Tenggat yang BERLAKU — sudah termasuk perpanjangan bila ada.
+                    'batas' => $r->sla_batas ?? null,
+                    // Tenggat ASLI. Dikirim terpisah supaya layar bisa menulis
+                    // "seharusnya 02 Okt, diperpanjang jadi 13 Nov" — kalimat yang
+                    // tidak bisa disusun kalau yang sampai ke layar cuma satu tanggal.
+                    'batasAwal' => $r->sla_batas_awal ?? ($r->sla_batas ?? null),
+                    'perpanjanganKe' => (int) ($r->sla_panjang_ke ?? 0),
+                    // Sisa hari KERJA + nada peringatannya, dihitung di satu
+                    // tempat (SlaMpp::keadaan) supaya kartu MPP, worklist, dan
+                    // dashboard tidak pernah menyebut angka yang berbeda untuk
+                    // MPP yang sama.
+                    'keadaan' => \App\Support\Career\SlaMpp::keadaan($r->sla_batas ?? null),
+                ]
                 : null,
         ];
     }
@@ -425,7 +557,14 @@ class MasterMppController extends Controller
             // sudah beku di barisnya, bukan dari hari ini: kalau tidak, menyunting
             // deskripsi sebuah MPP lama akan memperpanjang tenggatnya sendiri.
             $bekuLama = $this->slaTersimpan($no);
-            if ($galat = $this->galatSla($data, $bekuLama->mulai ?? null)) {
+
+            // Dihitung SEKALI di sini, lalu dipakai tiga kali di bawah: gerbang
+            // tanggal, Tanggal_Periode, dan Sla_Batas. Ketiganya harus menjawab
+            // dari penanda yang sama — kalau salah satunya menyimpulkan sendiri,
+            // ia akan berbeda pendapat dengan dua yang lain pada MPP yang sama.
+            $diperpanjang = $this->pernahDiperpanjang($no);
+
+            if ($galat = $this->galatSla($data, $bekuLama->mulai ?? null, false, $diperpanjang)) {
                 return ResponseHelper::error($galat, 422);
             }
 
@@ -444,6 +583,16 @@ class MasterMppController extends Controller
             // MT: periodenya tanggal baris ini DIBUAT, bukan hari penyuntingan.
             $periode = $this->periodeMpp($data, $row->Tanggal ?? null);
 
+            // Alasan yang sama dengan Sla_Batas di bawah: pada MPP yang sudah
+            // diperpanjang, Tanggal_Periode-nya sudah mengikuti tenggat hasil
+            // perpanjangan. Borang Ubah mengirim tanggal hasil hitungan polos —
+            // dan menerimanya berarti menarik mundur tenggat yang sudah
+            // disetujui, lewat layar yang tidak pernah menyebut kata
+            // "perpanjangan" sama sekali.
+            if ($diperpanjang) {
+                $periode = substr((string) ($row->Tanggal_Periode ?? $periode), 0, 10);
+            }
+
             // SNAPSHOT DIBEKUKAN ULANG BILA LEVELNYA BERGANTI — ATAU BILA
             // JENIS PROGRAMNYA BERGANTI.
             //
@@ -459,6 +608,26 @@ class MasterMppController extends Controller
                     $bekuLama->mulai ?? now()->toDateString(),
                     $mtBaru
                 );
+
+            // ══ TENGGAT YANG SUDAH DIPERPANJANG TIDAK BOLEH DIHITUNG ULANG ═══
+            //
+            // Di atas, berganti level membekukan ulang seluruh kolom Sla_* —
+            // termasuk Sla_Batas. Pada MPP yang PERNAH DIPERPANJANG, itu diam-
+            // diam mengembalikan tenggatnya ke hasil hitungan polos dan
+            // MENGHAPUS perpanjangan yang sudah disetujui, sementara baris
+            // riwayatnya tetap ada. Yang tersisa: riwayat yang menjanjikan
+            // tenggat 28 Des, dan kolom yang menyebut 23 Okt — dan tidak ada
+            // yang tahu mana yang berlaku.
+            //
+            // Tenggat HANYA boleh bergeser lewat pintu perpanjangan, yang
+            // menuntut alasan tertulis. Menyunting level MPP bukan pintu itu.
+            //
+            // Yang lain tetap dibekukan ulang: angka hari & master-nya memang
+            // harus mengikuti level yang baru, sebab itulah yang dinilai
+            // laporan. Yang ditahan cuma TANGGAL BATASnya.
+            if ($kolomSla && $diperpanjang) {
+                unset($kolomSla['Sla_Batas']);
+            }
 
             DB::transaction(function () use ($data, $no, $userId, $idDetail, $periode, $kolomSla) {
                 DB::table(self::TABEL_G)->where('No_Transaksi', $no)->update([
@@ -554,6 +723,346 @@ class MasterMppController extends Controller
             Log::channel('web_career')->error("Gagal mengubah flag selesai MPP {$no}: " . $e->getMessage());
 
             return ResponseHelper::error('Gagal mengubah status selesai', 500);
+        }
+    }
+
+    /**
+     * PERPANJANG SLA sebuah MPP — tenggatnya digeser, alasannya dicatat.
+     *
+     * ── KENAPA ENDPOINT SENDIRI, BUKAN LEWAT update() ───────────────────────
+     *
+     * update() menyimpan ISI MPP: deskripsi, skill, kuota. Perpanjangan tidak
+     * mengubah satu pun dari itu — yang bergerak cuma tenggatnya, dan ia
+     * bergerak menurut aturan yang tidak boleh bisa disetir borang (panjangnya
+     * dari snapshot, titik mulainya dari tenggat lama).
+     *
+     * Menggabungkannya ke update() berarti "tanggal periode" jadi bidang yang
+     * bisa dikirim bebas lagi — persis penyuntingan diam-diam yang fitur ini ada
+     * untuk menggantikan.
+     *
+     * ── YANG DIPUTUSKAN DI SINI: TIDAK ADA ──────────────────────────────────
+     *
+     * Seluruh syarat, hitungan, dan penulisannya milik PerpanjangSla. Controller
+     * ini hanya memeriksa bentuk permintaannya, memanggilnya, lalu mencatat.
+     * Alasannya sama dengan gerbang SLA: jawaban yang sama dibutuhkan layar
+     * (untuk memutuskan tombolnya hidup) dan pintu ini — dua tempat yang
+     * menjawab sendiri-sendiri cepat atau lambat berbeda.
+     */
+    public function perpanjang(Request $request, string $no)
+    {
+        if (! SlaMpp::siapPanjang()) {
+            return ResponseHelper::error(
+                'Fitur perpanjangan SLA belum dipasang. Jalankan docs/02-09-2026/01-memperpanjangsql.sql lebih dulu.',
+                503,
+            );
+        }
+
+        try {
+            $data = $request->validate([
+                'alasan' => 'required|string|min:'.PerpanjangSla::MIN_ALASAN.'|max:'.PerpanjangSla::MAKS_ALASAN,
+            ], [
+                'alasan.required' => 'Alasan perpanjangan wajib diisi.',
+                'alasan.min' => 'Alasan terlalu pendek (minimal '.PerpanjangSla::MIN_ALASAN.' huruf) — tulis sebabnya, '
+                    .'ini satu-satunya keterangan yang bisa dibaca kembali saat MPP ini ditinjau.',
+                'alasan.max' => 'Alasan terlalu panjang (maksimal '.PerpanjangSla::MAKS_ALASAN.' huruf).',
+            ]);
+
+            $nama = session('career_auth.nama', 'ADMIN');
+
+            $hasil = PerpanjangSla::simpan($no, $data['alasan'], $nama, session('career_auth.id'));
+
+            if ($hasil['galat']) {
+                return ResponseHelper::error($hasil['galat'], 422);
+            }
+
+            $r = $hasil['hasil'];
+
+            // ALASANNYA IKUT DICATAT KE LOG, bukan cuma ke tabelnya.
+            //
+            // Bukan penggandaan yang sia-sia: log inilah yang dibaca saat yang
+            // dipertanyakan bukan MPP-nya melainkan ORANGNYA ("siapa yang
+            // memperpanjang apa bulan lalu"), dan pertanyaan itu tidak punya
+            // baris untuk ditelusuri di tabel yang tersusun per MPP.
+            Log::channel('web_career')->info(sprintf(
+                '[SLA MPP] %s diperpanjang ke-%d: %s → %s (+%d hari kerja), oleh %s. Alasan: %s',
+                $no, $r['ke'], $r['batasLama'], $r['batasBaru'], $r['hari'], $nama, $data['alasan'],
+            ));
+
+            return ResponseHelper::success($r, sprintf(
+                'SLA diperpanjang %d hari kerja — tenggat baru %s.',
+                $r['hari'], $r['batasBaru'],
+            ));
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return ResponseHelper::error(collect($e->errors())->flatten()->first() ?? 'Data tidak valid', 422);
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->error("Gagal memperpanjang SLA MPP {$no}: ".$e->getMessage());
+
+            return ResponseHelper::error('Gagal memperpanjang SLA', 500);
+        }
+    }
+
+    /**
+     * KANDIDAT YANG SUDAH DITERIMA pada sebuah MPP.
+     *
+     * ── KENAPA DIBACA DARI LAMARAN, BUKAN DARI ANGKA `Terisi` ───────────────
+     *
+     * Ledger kursi (KursiMpp) menyimpan JUMLAHnya, dan itu cukup untuk gerbang
+     * keputusan. Yang ditanyakan layar ini berbeda: SIAPA saja orangnya. Angka
+     * tidak bisa dipecah kembali menjadi nama, jadi daftarnya harus dibaca dari
+     * sumber yang sama dengan yang menghasilkan angka itu — kalau tidak, kartu
+     * bisa menyebut "3 terisi" sementara daftarnya memuat empat baris, dan tidak
+     * ada yang tahu mana yang benar.
+     *
+     * Karena itu penyaringnya PERSIS sama dengan KursiMpp::hitungDariSumber():
+     * status yang memotong kuota, lewat Program_Posisi.Mpp_Ref — termasuk
+     * program yang sudah dinonaktifkan. Orang yang sudah diterima tidak berhenti
+     * diterima hanya karena programnya ditutup.
+     */
+    /**
+     * GET /api/v1/karir/master-mpp/{no}/kandidat/{id} — PROFIL KANDIDAT, BACA SAJA.
+     *
+     * ── KENAPA ADA DI SINI, BUKAN MEMAKAI ENDPOINT WORKLIST ───────────────
+     *
+     * Worklist punya endpoint serupa (LamaranController::worklistBerkas), tapi
+     * ia berpagar izin `pelamarPage`. Orang yang memegang halaman MPP belum
+     * tentu memegang worklist — dan memaksa mereka lewat sana berarti membuka
+     * seluruh papan pelamar hanya untuk melihat satu profil.
+     *
+     * ── PENJAGAAN KEPEMILIKAN ─────────────────────────────────────────────
+     *
+     * Nomor MPP-nya ikut diperiksa, bukan cuma id lamarannya. Tanpa itu siapa
+     * pun yang boleh membuka SATU MPP bisa menebak id lamaran lain dan membaca
+     * profil kandidat dari MPP yang bukan haknya — dan datanya berisi NIK,
+     * alamat, serta berkas pribadi.
+     *
+     * ── BACA SAJA, TANPA SATU PUN TOMBOL AKSI ─────────────────────────────
+     *
+     * Tidak ada tahapan, tidak ada kirim email, tidak ada unggah. Halaman MPP
+     * menjawab "kursi ini diisi siapa" — memutuskan nasib kandidat adalah
+     * pekerjaan worklist, dan menaruh tombolnya di dua tempat membuat dua orang
+     * bisa memutuskan hal yang sama tanpa saling tahu.
+     */
+    public function kandidatDetail(string $no, string $id)
+    {
+        if (! preg_match('#^[A-Za-z0-9\-/]{1,50}$#', $no)) {
+            return ResponseHelper::error('No transaksi tidak valid', 422);
+        }
+
+        $realId = \Vinkla\Hashids\Facades\Hashids::decode($id)[0] ?? null;
+
+        if (! $realId) {
+            return ResponseHelper::error('Kandidat tidak valid.', 422);
+        }
+
+        $lamaran = DB::table('N_WEB_CAREERS_Lamaran as l')
+            ->join('N_WEB_CAREERS_Program_Posisi as x', 'x.Id_Program_Posisi', '=', 'l.Program_Posisi_Id')
+            ->leftJoin('N_WEB_CAREERS_Program as p', 'p.Id_Program', '=', 'l.Program_Id')
+            ->leftJoin('N_WEB_CAREERS_Users as u', 'u.Id_Users', '=', 'l.Id_Users')
+            ->where('l.Id_Lamaran', (int) $realId)
+            // Inilah pagarnya: lamaran yang bukan milik MPP ini tidak pernah
+            // terbaca, sekalipun id-nya benar.
+            ->where('x.Mpp_Ref', $no)
+            ->select(
+                'l.Id_Lamaran', 'l.Kode', 'l.Status', 'l.Urutan_Tahap', 'l.Total_Tahap',
+                'l.Waktu_Selesai', 'l.Created_At',
+                'p.Nama as ProgramNama', 'p.Kategori',
+                'u.Nama as Pelamar', 'u.Email as EmailAkun', 'u.No_Hp as HpAkun',
+                'x.Posisi', 'x.Lokasi', 'x.Departemen', 'x.Level',
+            )
+            ->first();
+
+        if (! $lamaran) {
+            return ResponseHelper::error('Kandidat tidak ditemukan pada MPP ini.', 404);
+        }
+
+        try {
+            $profil = \App\Support\Career\LaporanKandidat::rakit((int) $realId);
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->error("Gagal merakit profil kandidat #{$realId}: ".$e->getMessage());
+            $profil = null;
+        }
+
+        return ResponseHelper::success([
+            'lamaran' => [
+                'kode' => $lamaran->Kode,
+                'pelamar' => $lamaran->Pelamar ?: '—',
+                'email' => $lamaran->EmailAkun,
+                'hp' => $lamaran->HpAkun,
+                'posisi' => $lamaran->Posisi,
+                'departemen' => $lamaran->Departemen,
+                'lokasi' => $lamaran->Lokasi,
+                'level' => $lamaran->Level,
+                'program' => $lamaran->ProgramNama,
+                'kategori' => $lamaran->Kategori,
+                'status' => $lamaran->Status,
+                'melamarPada' => $lamaran->Created_At ? Carbon::parse($lamaran->Created_At)->toDateString() : null,
+                'diterimaPada' => $lamaran->Waktu_Selesai ? Carbon::parse($lamaran->Waktu_Selesai)->toDateString() : null,
+            ],
+            // Seluruh formulir yang diisi kandidat, lengkap dengan berkasnya.
+            // Bentuknya sama dengan yang dipakai Export Studio — satu perakit,
+            // jadi profil di layar dan di PDF mustahil berbeda isinya.
+            'formulir' => $profil['formulir'] ?? [],
+            'kandidat' => $profil['kandidat'] ?? null,
+            // ── PROGRES SELEKSI, TANPA RAPOR TES ──────────────────────────
+            //
+            // Yang dikirim hanya URUTAN tahap dan statusnya: "sudah dilewati /
+            // sedang berjalan / belum". Nilai tes, catatan penilai, dan
+            // keputusan per aktivitas TIDAK ikut — itu bahan untuk memutuskan,
+            // dan memutuskan adalah pekerjaan worklist.
+            //
+            // Tahapnya tetap dikirim karena menjawab pertanyaan yang wajar di
+            // halaman MPP: "kursi ini diisi lewat proses seperti apa".
+            'tahap' => $this->tahapRingkas((int) $realId),
+        ], 'Profil kandidat MPP');
+    }
+
+    /**
+     * Urutan tahap seleksi + statusnya — TANPA nilai & catatan penilaian.
+     *
+     * Sengaja ringkas. Halaman MPP menjelaskan bagaimana kursi terisi, bukan
+     * menyediakan bahan untuk menilai ulang orangnya; skor dan catatan asesor
+     * tetap tinggal di worklist bersama tombol keputusannya.
+     */
+    private function tahapRingkas(int $lamaranId): array
+    {
+        return DB::table('N_WEB_CAREERS_Lamaran_Tahap')
+            ->where('Lamaran_Id', $lamaranId)
+            ->orderBy('Urutan')
+            ->get(['Urutan', 'Label', 'Status', 'Hasil', 'Diputus_At'])
+            ->map(fn ($t) => [
+                'urutan' => (int) $t->Urutan,
+                'label' => $t->Label,
+                'status' => $t->Status,
+                'hasil' => $t->Hasil,
+                'selesai' => $t->Diputus_At !== null,
+                'diputusPada' => $t->Diputus_At ? Carbon::parse($t->Diputus_At)->toDateString() : null,
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * GET /api/v1/karir/master-mpp/{no}/berkas/{id} — buka/unduh satu berkas.
+     *
+     * Pagarnya sama dengan kandidatDetail(): berkas hanya bisa dibuka bila
+     * pengisiannya benar-benar milik lamaran pada MPP ini. Menebak id berkas
+     * milik MPP lain berujung 404, bukan berkas orang lain.
+     *
+     * Berkas apply-form tersimpan di GCS (bucket PRIVAT), jadi yang dikirim
+     * adalah SIGNED URL berumur pendek — bukan berkasnya yang dialirkan lewat
+     * server ini. Cadangan lokal disediakan untuk data lama & lingkungan
+     * pengembangan tanpa GCS.
+     */
+    public function berkasKandidat(string $no, string $id)
+    {
+        if (! preg_match('#^[A-Za-z0-9\-/]{1,50}$#', $no)) {
+            abort(422);
+        }
+
+        $realId = \Vinkla\Hashids\Facades\Hashids::decode($id)[0] ?? null;
+
+        if (! $realId) {
+            abort(404);
+        }
+
+        $b = DB::table('N_WEB_CAREERS_Formulir_Berkas as b')
+            ->join('N_WEB_CAREERS_Formulir_Pengisian as fp', 'fp.Id_Formulir_Pengisian', '=', 'b.Formulir_Pengisian_Id')
+            ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'fp.Lamaran_Id')
+            ->join('N_WEB_CAREERS_Program_Posisi as x', 'x.Id_Program_Posisi', '=', 'l.Program_Posisi_Id')
+            ->where('b.Id_Formulir_Berkas', (int) $realId)
+            ->where('x.Mpp_Ref', $no)
+            // Nama_Asli, BUKAN Nama_File — kolom itu tidak ada di tabel ini,
+            // dan menyebutnya membuat setiap permintaan berkas gagal 500.
+            ->select('b.Id_Formulir_Berkas', 'b.Path_File', 'b.Mime', 'b.Nama_Asli')
+            ->first();
+
+        if (! $b) {
+            abort(404, 'Berkas tidak ditemukan pada MPP ini.');
+        }
+
+        if ($b->Path_File) {
+            try {
+                $gcs = \Illuminate\Support\Facades\Storage::disk(\App\Support\Career\GcsBerkas::DISK);
+
+                if ($gcs->exists($b->Path_File)) {
+                    return redirect()->away($gcs->temporaryUrl($b->Path_File, now()->addMinutes(15)));
+                }
+            } catch (\Throwable $e) {
+                Log::channel('web_career')->warning(
+                    'Signed URL GCS gagal untuk berkas '.$b->Id_Formulir_Berkas.': '.$e->getMessage()
+                );
+            }
+        }
+
+        foreach ([storage_path('app/'.$b->Path_File), public_path($b->Path_File), $b->Path_File] as $kandidat) {
+            if ($kandidat && is_file($kandidat)) {
+                return response()->file($kandidat, ['Content-Type' => $b->Mime ?: 'application/octet-stream']);
+            }
+        }
+
+        abort(404, 'File tidak ditemukan di penyimpanan.');
+    }
+
+    public function kandidat(Request $request, string $no)
+    {
+        if (! preg_match('#^[A-Za-z0-9\-/]{1,50}$#', $no)) {
+            return ResponseHelper::error('No transaksi tidak valid', 422);
+        }
+
+        try {
+            $page = max(1, (int) $request->query('page', 1));
+            $perPage = min(50, max(1, (int) $request->query('per_page', 6)));
+            $q = trim((string) $request->query('q', ''));
+
+            $potong = \App\Support\Career\HasilKeputusan::kodePotongKuota() ?: ['LULUS'];
+
+            $dasar = fn () => DB::table('N_WEB_CAREERS_Lamaran as l')
+                ->join('N_WEB_CAREERS_Program_Posisi as x', 'x.Id_Program_Posisi', '=', 'l.Program_Posisi_Id')
+                ->join('N_WEB_CAREERS_Users as u', 'u.Id_Users', '=', 'l.Id_Users')
+                ->leftJoin('N_WEB_CAREERS_Program as p', 'p.Id_Program', '=', 'x.Program_Id')
+                ->where('x.Mpp_Ref', $no)
+                ->whereIn('l.Status', $potong)
+                ->when($q !== '', fn ($w) => $w->where(function ($x) use ($q) {
+                    $x->where('u.Nama', 'like', "%{$q}%")->orWhere('l.Kode', 'like', "%{$q}%");
+                }));
+
+            $total = $dasar()->count();
+
+            $rows = $dasar()
+                // Yang terakhir diterima di atas: itu yang paling mungkin sedang
+                // ditanyakan, dan Id_Lamaran naik terus jadi urutannya stabil.
+                ->orderByDesc('l.Waktu_Selesai')
+                ->orderByDesc('l.Id_Lamaran')
+                ->forPage($page, $perPage)
+                ->get([
+                    'l.Id_Lamaran as id',
+                    'l.Kode as kode', 'u.Nama as nama', 'p.Nama as program',
+                    'x.Posisi as posisi', 'x.Lokasi as lokasi',
+                    DB::raw('CONVERT(varchar(10), l.Waktu_Selesai, 23) as diterima_pada'),
+                ])
+                ->map(fn ($r) => [
+                    // Diacak: id mentah tidak pernah keluar ke peramban.
+                    'id' => \Vinkla\Hashids\Facades\Hashids::encode($r->id),
+                    'kode' => $r->kode,
+                    'nama' => $r->nama ?: '—',
+                    'program' => $r->program ?: '—',
+                    'posisi' => $r->posisi,
+                    'lokasi' => $r->lokasi,
+                    'diterimaPada' => $r->diterima_pada,
+                ])
+                ->values();
+
+            return ResponseHelper::success([
+                'data' => $rows,
+                'total' => $total,
+                'page' => $page,
+                'perPage' => $perPage,
+                'totalPages' => max(1, (int) ceil($total / $perPage)),
+            ], 'Kandidat diterima');
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->error("Gagal memuat kandidat MPP {$no}: ".$e->getMessage());
+
+            return ResponseHelper::error('Gagal memuat kandidat', 500);
         }
     }
 
@@ -731,6 +1240,11 @@ class MasterMppController extends Controller
             ->leftJoin('Karyawan as k', fn ($j) => $j
                 ->on('k.Kode_Karyawan', '=', 'g.User_Penganggung_Jawab')
                 ->where('k.Kode_Perusahaan', self::KODE_PERUSAHAAN))
+            // Akun yang MENGINPUT & yang terakhir menyunting. leftJoin, bukan
+            // join: baris lama bisa saja tidak menyimpan idnya, dan MPP-nya tetap
+            // harus tampil — tanpa nama, bukan hilang sama sekali.
+            ->leftJoin('N_WEB_CAREERS_Users as ub', 'ub.Id_Users', '=', 'd.Created_By')
+            ->leftJoin('N_WEB_CAREERS_Users as uu', 'uu.Id_Users', '=', 'd.Updated_By')
             ->leftJoin('N_WEB_CAREERS_Master_Employment as me', 'me.Id_Employment', '=', 'd.Employment_Type')
             ->leftJoin('N_WEB_CAREERS_Master_Workplace as mw', 'mw.Id_Workplace', '=', 'd.Workplace_Type')
             ->leftJoin('N_WEB_CAREERS_Master_Experience_Level as mx', 'mx.Id_Experience_Level', '=', 'd.Experience_Level');
@@ -775,6 +1289,30 @@ class MasterMppController extends Controller
             $q->where('g.Tanggal_Periode', '>=', $start)->where('g.Tanggal_Periode', '<', $end);
         }
 
+        // ── RENTANG TANGGAL PERIODE — diketik admin ─────────────────────────
+        //
+        // Terpisah dari penyaring `periode` di atas, dan keduanya memang beda
+        // pertanyaan: yang itu memilih SATU bulan dari daftar yang sudah ada,
+        // yang ini menjawab "MPP yang tenggatnya jatuh antara tanggal A dan B" —
+        // rentang yang hampir tidak pernah pas satu bulan penuh.
+        //
+        // Kedua ujungnya BOLEH DIISI SENDIRI-SENDIRI: "sejak 1 Sep" tanpa batas
+        // akhir, atau "sampai 31 Des" tanpa batas awal. Menuntut keduanya
+        // membuat pertanyaan yang paling sering diajukan — "apa yang jatuh tempo
+        // sebelum akhir tahun" — tidak bisa ditanyakan sama sekali.
+        //
+        // Batas akhirnya INKLUSIF (< hari berikutnya): kolomnya datetime, dan
+        // `<= 31 Des` akan membuang baris yang jamnya bukan 00:00.
+        $dari = trim((string) $request->query('dari', ''));
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $dari)) {
+            $q->where('g.Tanggal_Periode', '>=', \Carbon\Carbon::parse($dari)->startOfDay());
+        }
+
+        $sampai = trim((string) $request->query('sampai', ''));
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $sampai)) {
+            $q->where('g.Tanggal_Periode', '<', \Carbon\Carbon::parse($sampai)->startOfDay()->addDay());
+        }
+
         $employment = (int) $request->query('employment', 0);
         if ($employment) {
             $q->where('d.Employment_Type', $employment);
@@ -788,6 +1326,26 @@ class MasterMppController extends Controller
         $experience = (int) $request->query('experience', 0);
         if ($experience) {
             $q->where('d.Experience_Level', $experience);
+        }
+
+        // ── PIC, BOLEH LEBIH DARI SATU ──────────────────────────────────────
+        //
+        // Dikirim sebagai daftar dipisah koma. Ditegakkan DI SERVER supaya
+        // penyaringnya benar lintas halaman: menyaring di layar hanya
+        // menyembunyikan baris pada halaman yang sedang terlihat, sementara MPP
+        // milik PIC itu di halaman berikutnya tetap tak ikut terbawa.
+        //
+        // Dibatasi 50 nilai — cukup untuk seluruh PIC yang mungkin ada, dan
+        // menahan permintaan yang mengirim ribuan nilai ke dalam klausa IN.
+        $pic = collect(explode(',', (string) $request->query('pic', '')))
+            ->map(fn ($v) => trim($v))
+            ->filter()
+            ->unique()
+            ->take(50)
+            ->values();
+
+        if ($pic->isNotEmpty()) {
+            $q->whereIn('g.User_Penganggung_Jawab', $pic->all());
         }
 
         $jenis = trim((string) $request->query('jenis', ''));
@@ -813,8 +1371,24 @@ class MasterMppController extends Controller
      * Lingkungan yang skrip skemanya belum dijalankan berjalan seperti sebelum
      * fitur ini ada.
      */
-    private function galatSla(array $data, ?string $mulai = null, bool $baru = false): ?string
+    private function galatSla(array $data, ?string $mulai = null, bool $baru = false, bool $diperpanjang = false): ?string
     {
+        // ── MPP YANG SUDAH DIPERPANJANG: TANGGALNYA TIDAK DIPERIKSA ─────────
+        //
+        // Tenggatnya memang SEHARUSNYA melewati batas SLA polos — itu justru
+        // hasil perpanjangan yang sudah disetujui berikut alasan tertulisnya.
+        // Mengukurnya lagi terhadap hitungan polos berarti setiap penyuntingan
+        // berikutnya ditolak dengan kalimat yang menyuruh admin "mundur ke
+        // 02 Okt", membatalkan keputusan yang sudah diambil lewat pintu yang
+        // benar — dan MPP-nya jadi tidak bisa disunting sama sekali.
+        //
+        // Tidak ada yang perlu dijaga di sini: pada MPP semacam itu update()
+        // mengabaikan tanggal kiriman borang dan mempertahankan yang tersimpan.
+        // Lihat pernahDiperpanjang() di update().
+        if ($diperpanjang) {
+            return null;
+        }
+
         // ── MT TIDAK TERIKAT SLA LEVEL ──────────────────────────────────────
         //
         // SLA menjawab "berapa lama satu lowongan boleh terbuka", dan itu
@@ -951,6 +1525,50 @@ class MasterMppController extends Controller
             'Sla_Batas' => $sla['batas'],
             'Sla_Dikunci_At' => now(),
         ];
+    }
+
+    /**
+     * MPP ini pernah diperpanjang?
+     *
+     * Dibaca dari kolom penanda, bukan dengan menghitung baris riwayat: satu
+     * nilai pada baris yang memang sudah diambil update(), bukan kueri kedua ke
+     * tabel lain untuk pertanyaan berjawab ya/tidak.
+     *
+     * Menjawab `false` di lingkungan yang skrip perpanjangannya belum
+     * dijalankan — di sana memang belum ada perpanjangan yang bisa terhapus,
+     * dan update() berjalan persis seperti sebelumnya.
+     */
+    private function pernahDiperpanjang(string $no): bool
+    {
+        if (! SlaMpp::siapPanjang()) {
+            return false;
+        }
+
+        return (int) DB::table(self::TABEL_D)
+            ->where('No_Transaksi_MPP', $no)
+            ->value('Sla_Perpanjangan_Ke') > 0;
+    }
+
+    /**
+     * Tempelkan keadaan kursi ke tiap baris daftar — SATU kueri untuk semuanya.
+     *
+     * Memulangkan barisnya apa adanya bila ledger belum dipasang: layar sudah
+     * punya cadangan (jumlahRekrutmen) dan tidak boleh kosong hanya karena
+     * fitur kuota belum aktif di lingkungan itu.
+     */
+    private function tempelKursi(\Illuminate\Support\Collection $rows): \Illuminate\Support\Collection
+    {
+        if ($rows->isEmpty() || ! KursiMpp::siap()) {
+            return $rows;
+        }
+
+        $keadaan = KursiMpp::keadaanBanyak($rows->pluck('noTransaksi')->all());
+
+        return $rows->map(function ($r) use ($keadaan) {
+            $r['kursi'] = $keadaan[$r['noTransaksi']] ?? null;
+
+            return $r;
+        })->values();
     }
 
     /** Snapshot yang sudah tersimpan pada sebuah MPP — untuk update(). */

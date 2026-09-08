@@ -766,6 +766,9 @@ class DashboardController extends Controller
                     'funnel' => $this->funnel($programs, $ids),
                     'tren' => $this->tren($ids, $periode),
                     'kesehatan' => $this->kesehatanProgram($programs, $ids),
+                    // Tenggat pemenuhan MPP yang sedang berjalan — hanya untuk
+                    // REKRUTMEN. Lihat slaMpp().
+                    'sla' => $this->slaMpp($kategori),
                 ];
             });
 
@@ -776,6 +779,97 @@ class DashboardController extends Controller
         } catch (\Throwable $e) {
             return $this->gagal('analitik', $kategori, $e);
         }
+    }
+
+    /**
+     * MPP yang tenggat pemenuhannya sedang berjalan — untuk panel monitoring.
+     *
+     * ── HANYA REKRUTMEN ───────────────────────────────────────────────────
+     *
+     * MT direkrut seangkatan mengikuti jadwal program yang ditetapkan HC,
+     * bukan mengejar tenggat pemenuhan kursi per MPP. Menampilkan hitung
+     * mundurnya di sana menekan rekruter atas target yang bukan miliknya.
+     *
+     * Yang ditampilkan MPP yang MASIH TERBUKA saja — MPP yang kursinya sudah
+     * penuh tidak lagi punya tenggat untuk dikejar, dan membiarkannya di
+     * daftar membuat papan penuh baris yang tidak menuntut tindakan apa pun.
+     *
+     * Sisa harinya dari SlaMpp::keadaan() — sumber yang sama dengan kartu MPP
+     * dan worklist, jadi tiga layar mustahil menyebut angka berbeda.
+     *
+     * @return array{ringkas: array, baris: list<array>}
+     */
+    private function slaMpp(string $kategori): array
+    {
+        $kosong = ['ringkas' => ['lewat' => 0, 'genting' => 0, 'waspada' => 0, 'aman' => 0], 'baris' => []];
+
+        if (mb_strtoupper($kategori) === 'MT' || ! \App\Support\Career\SlaMpp::siapSnapshot()) {
+            return $kosong;
+        }
+
+        $rows = DB::table('N_WEB_CAREERS_Detail_MPP as d')
+            ->leftJoin('N_WEB_CAREERS_Program_Posisi as x', 'x.Mpp_Ref', '=', 'd.No_Transaksi_MPP')
+            ->whereNotNull('d.Sla_Batas')
+            ->groupBy(
+                'd.No_Transaksi_MPP', 'd.Sla_Batas', 'd.Sla_Batas_Awal',
+                'd.Sla_Hari_Kerja', 'd.Sla_Perpanjangan_Ke',
+            )
+            ->select(
+                'd.No_Transaksi_MPP',
+                DB::raw('CONVERT(varchar(10), d.Sla_Batas, 23) as batas'),
+                DB::raw('CONVERT(varchar(10), d.Sla_Batas_Awal, 23) as batasAwal'),
+                'd.Sla_Hari_Kerja',
+                'd.Sla_Perpanjangan_Ke',
+                DB::raw('MAX(x.Posisi) as posisi'),
+                DB::raw('MAX(x.Departemen) as departemen'),
+                DB::raw('SUM(ISNULL(x.Kuota, 0)) as kuota'),
+                DB::raw('SUM(ISNULL(x.Terisi, 0)) as terisi'),
+            )
+            ->get();
+
+        $ringkas = $kosong['ringkas'];
+        $baris = [];
+
+        foreach ($rows as $r) {
+            $kuota = (int) $r->kuota;
+            $terisi = (int) $r->terisi;
+
+            // Kursinya sudah penuh — tidak ada lagi yang dikejar.
+            if ($kuota > 0 && $terisi >= $kuota) {
+                continue;
+            }
+
+            $keadaan = \App\Support\Career\SlaMpp::keadaan($r->batas);
+
+            if (! $keadaan) {
+                continue;
+            }
+
+            $nada = $keadaan['nada'] === 'hari-ini' ? 'genting' : $keadaan['nada'];
+            $ringkas[$nada] = ($ringkas[$nada] ?? 0) + 1;
+
+            $baris[] = [
+                'mpp' => trim((string) $r->No_Transaksi_MPP),
+                'posisi' => $r->posisi ?: '(belum ada loker)',
+                'departemen' => $r->departemen,
+                'kuota' => $kuota,
+                'terisi' => $terisi,
+                'batas' => $r->batas,
+                'batasAwal' => $r->batasAwal ?: $r->batas,
+                'hari' => (int) ($r->Sla_Hari_Kerja ?? 0),
+                'perpanjanganKe' => (int) ($r->Sla_Perpanjangan_Ke ?? 0),
+                'sisa' => $keadaan['sisa'],
+                'lewat' => $keadaan['lewat'],
+                'nada' => $keadaan['nada'],
+                'label' => $keadaan['label'],
+            ];
+        }
+
+        // Yang paling mendesak di atas — itu urutan yang menentukan apa yang
+        // dikerjakan lebih dulu.
+        usort($baris, fn ($a, $b) => $a['sisa'] <=> $b['sisa']);
+
+        return ['ringkas' => $ringkas, 'baris' => $baris];
     }
 
     /**

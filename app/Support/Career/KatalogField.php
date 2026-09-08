@@ -28,6 +28,11 @@ class KatalogField
         'lebar_persen',
         'lebar_jika',
         'tampil_jika',
+        // Wajib bersyarat. Universal seperti `tampil_jika` karena pertanyaannya
+        // sama untuk tipe apa pun: "kapan isian ini mengikat?"
+        'wajib_jika',
+        // Penanda bahwa key-nya diketik sendiri admin, bukan turunan label.
+        'key_manual',
     ];
 
     /** Properti per tipe. Urutan tipe DAN urutan properti harus sama dengan JS. */

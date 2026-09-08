@@ -163,6 +163,22 @@ class HclClient
         // Body harus string mentah yang SAMA persis dengan yang dikirim, karena
         // server menghitung ulang sha256 dari raw body.
         $rawBody = $body === [] ? '' : json_encode($body);
+
+        // -- KUNCI QUERY WAJIB DIURUTKAN ALFABETIS ------------------------
+        //
+        // Yang menandatangani di sisi CAT adalah Request::getQueryString()
+        // milik Symfony, dan method itu MENGURUTKAN parameternya. Kalau kita
+        // menyusunnya menurut urutan array PHP, dua sisi menghitung tanda
+        // tangan atas string berbeda untuk permintaan yang sama persis:
+        //
+        //   klien  : tahap=178&lamaran=594
+        //   server : lamaran=594&tahap=178   -> 401 Invalid Signature
+        //
+        // Tidak pernah terlihat selama ini karena seluruh panggilan sebelumnya
+        // berupa GET tanpa query atau POST berbadan JSON. Diurutkan di sini
+        // supaya penambah parameter berikutnya tidak perlu tahu urusan ini.
+        ksort($query);
+
         $queryString = $query === [] ? '' : http_build_query($query);
         $bodyHash = hash('sha256', $rawBody);
 

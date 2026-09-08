@@ -19,15 +19,18 @@
             <template v-if="tim">
                 <!-- ── HERO ──────────────────────────────────────── -->
                 <header class="dt-hero wc-reveal">
-                    <div
-                        class="dt-hero__photo"
-                        :style="tim.img?.header ? { backgroundImage: `url('${tim.img.header}')` } : undefined"
-                    >
-                        <div v-if="!tim.img?.header" class="dt-hero-watermark">
-                            <img src="/logo/EVOGROUP.png" alt="EVO Group" />
-                        </div>
-                    </div>
-                    <div class="dt-hero__scrim"></div>
+                    <!-- Foto hero hanya digambar bila divisinya punya sampul.
+                         Tanpa foto, TIDAK ada kotak berwatermark yang menggantikan
+                         — judul & keterangannya berdiri di atas latar polos, dan
+                         itu sudah cukup. Kotak berlogo hanya mengisi ruang tanpa
+                         memberi tahu apa pun tentang divisinya. -->
+                    <template v-if="tim.img?.header">
+                        <div
+                            class="dt-hero__photo"
+                            :style="{ backgroundImage: `url('${tim.img.header}')` }"
+                        ></div>
+                        <div class="dt-hero__scrim"></div>
+                    </template>
                     <div class="dt-hero__body">
                         <span class="dt-hero__eyebrow"><span class="dt-dot"></span> Fungsi Perusahaan</span>
                         <h1>{{ tim.nama }}</h1>
@@ -59,19 +62,14 @@
                         </div>
 
                         <div v-if="galeri.length" class="dt-about__media wc-reveal" style="--d: 90ms">
+                            <!-- Tanpa cabang placeholder: `galeri` kini hanya
+                                 berisi foto yang memang ada. -->
                             <div
                                 v-for="(g, i) in galeri"
                                 :key="i"
                                 class="dt-shot"
-                                :style="g ? { backgroundImage: `url('${g}')` } : undefined"
-                            >
-                                <div v-if="!g" class="dt-placeholder-logo dt-placeholder-logo--sm">
-                                    <div class="dt-placeholder-logo__mark">
-                                        <img src="/logo/EVOGROUP.png" alt="EVO Group" />
-                                    </div>
-                                    <span class="dt-placeholder-logo__badge">{{ getGalleryBadgeTitle(i) }}</span>
-                                </div>
-                            </div>
+                                :style="{ backgroundImage: `url('${g}')` }"
+                            ></div>
                         </div>
                     </div>
                 </section>
@@ -83,18 +81,23 @@
                         <p>Bagian-bagian yang bekerja sama menjalankan fungsi {{ tim.nama }}.</p>
                     </div>
                     <div class="dt-subgrid wc-reveal" style="--d: 70ms">
-                        <article v-for="(s, i) in subFungsi" :key="s.nama" class="dt-subcard">
+                        <article
+                            v-for="(s, i) in subFungsi"
+                            :key="s.nama"
+                            class="dt-subcard"
+                            :class="{ 'is-nofoto': !s.img }"
+                        >
+                            <!-- Bidang gambar hanya digambar bila fotonya ADA.
+                                 Sub-fungsi tanpa foto tetap tampil — nama dan
+                                 keterangannya yang penting — tapi tanpa kotak
+                                 ungu berlogo yang tidak menerangkan apa pun.
+                                 Kartunya lalu ditandai `is-nofoto` supaya
+                                 sudut atasnya tetap membulat. -->
                             <div
+                                v-if="s.img"
                                 class="dt-subcard__img"
-                                :style="s.img ? { backgroundImage: `url('${s.img}')` } : undefined"
-                            >
-                                <div v-if="!s.img" class="dt-placeholder-logo dt-placeholder-logo--card">
-                                    <div class="dt-placeholder-logo__mark">
-                                        <img src="/logo/EVOGROUP.png" alt="EVO Group" />
-                                    </div>
-                                    <span class="dt-placeholder-logo__badge">{{ s.nama }}</span>
-                                </div>
-                            </div>
+                                :style="{ backgroundImage: `url('${s.img}')` }"
+                            ></div>
                             <div class="dt-subcard__body">
                                 <h3>{{ s.nama }}</h3>
                                 <p v-if="s.deskripsi">{{ s.deskripsi }}</p>
@@ -108,12 +111,8 @@
             <template v-else>
                 <!-- ── HERO ──────────────────────────────────────── -->
                 <header class="dt-hero wc-reveal">
-                    <div class="dt-hero__photo">
-                        <div class="dt-hero-watermark">
-                            <img src="/logo/EVOGROUP.png" alt="EVO Group" />
-                        </div>
-                    </div>
-                    <div class="dt-hero__scrim"></div>
+                    <!-- Sepola hero dinamis di atas: tanpa foto, tanpa kotak
+                         watermark pengganti. -->
                     <div class="dt-hero__body">
                         <span class="dt-hero__eyebrow"><span class="dt-dot"></span> Fungsi Perusahaan</span>
                         <h1>Information Technology</h1>
@@ -291,72 +290,23 @@ const offices = computed(() => props.offices || []);
 const tim = computed(() => props.tim);
 const subFungsi = computed(() => props.subFungsi || []);
 
-function createEvoMockupSvg(title, category, colors = ['#1e1b4b', '#4338ca']) {
-    const cleanTitle = (title || 'EVO Group').replace(/[^a-zA-Z0-9\s]/g, '');
-    const cleanCategory = (category || 'CAREER PORTAL').replace(/[^a-zA-Z0-9\s]/g, '');
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500" viewBox="0 0 800 500">
-        <defs>
-            <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stop-color="${colors[0]}" />
-                <stop offset="100%" stop-color="${colors[1]}" />
-            </linearGradient>
-            <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-                <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>
-            </pattern>
-        </defs>
-        <rect width="100%" height="100%" fill="url(#bgGrad)"/>
-        <rect width="100%" height="100%" fill="url(#grid)"/>
-        <circle cx="700" cy="80" r="190" fill="rgba(139, 92, 246, 0.16)"/>
-        <circle cx="100" cy="420" r="160" fill="rgba(99, 102, 241, 0.14)"/>
-        
-        <!-- Glassmorphic Card Overlay -->
-        <rect x="50" y="50" width="700" height="400" rx="24" fill="rgba(255,255,255,0.07)" stroke="rgba(255,255,255,0.2)" stroke-width="1.5"/>
-        
-        <!-- Pill Tag -->
-        <rect x="310" y="110" width="180" height="32" rx="16" fill="rgba(245, 158, 11, 0.22)" stroke="rgba(245, 158, 11, 0.45)" stroke-width="1"/>
-        <text x="400" y="131" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="11" font-weight="900" fill="#fef08a" text-anchor="middle" letter-spacing="2">EVO GROUP CAREER</text>
-        
-        <!-- Main Title & Category Subtitle -->
-        <text x="400" y="220" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="28" font-weight="900" fill="#ffffff" text-anchor="middle" letter-spacing="-0.5">${cleanTitle}</text>
-        <text x="400" y="260" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="13" font-weight="800" fill="rgba(226, 232, 240, 0.88)" text-anchor="middle" letter-spacing="2.5">${cleanCategory}</text>
-        
-        <!-- Bottom Brand Badge -->
-        <rect x="340" y="300" width="120" height="28" rx="14" fill="rgba(255,255,255,0.15)"/>
-        <text x="400" y="318" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="11" font-weight="800" fill="#ffffff" text-anchor="middle">OFFICIAL MOCKUP</text>
-    </svg>`;
-    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-}
-
-const currentDefaults = computed(() => {
-    const name = namaTim.value || 'Fungsi Perusahaan';
-    return {
-        header: createEvoMockupSvg(name, 'FUNGSI PERUSAHAAN EVO GROUP', ['#1e1b4b', '#312e81']),
-        gallery: [
-            createEvoMockupSvg(`${name} Culture`, 'EVO WORKPLACE & TEAMWORK', ['#311b92', '#4527a0']),
-            createEvoMockupSvg(`${name} Standards`, 'EVO EXCELLENCE & VALUES', ['#1a237e', '#283593']),
-            createEvoMockupSvg(`${name} Innovation`, 'EVO GROWTH & FUTURE', ['#004d40', '#00695c']),
-        ],
-        sub: [
-            createEvoMockupSvg('Sub-fungsi EVO', 'EVO TEAM DIVISION', ['#312e81', '#4338ca']),
-            createEvoMockupSvg('Spesialisasi EVO', 'EVO SPECIALIZATION', ['#1e1b4b', '#3730a3']),
-            createEvoMockupSvg('Operasional EVO', 'EVO OPERATIONS', ['#2e1065', '#581c87']),
-        ]
-    };
-});
-
-const headerPhotoStyle = computed(() => {
-    const url = props.tim?.img?.header || currentDefaults.value.header;
-    return { backgroundImage: `url('${url}')` };
-});
-
+/**
+ * Foto galeri yang BENAR-BENAR ada — yang kosong dibuang, bukan diisi.
+ *
+ * Dulu larik ini dipulangkan apa adanya, termasuk slot yang null. Karena
+ * `galeri.length` selalu 3, blok galerinya selalu digambar, dan tiap slot
+ * kosong diisi kotak ungu berlogo EVO. Divisi yang belum mengunggah satu foto
+ * pun tetap menampilkan tiga kotak — hiasan yang tidak memberi tahu apa-apa,
+ * dan menghabiskan seluruh lebar layar di tempat yang seharusnya kosong.
+ *
+ * Sekarang: ada foto tampil, tidak ada tidak digambar sama sekali.
+ */
 const galeri = computed(() => {
-    return [props.tim?.img?.utama, props.tim?.img?.img2, props.tim?.img?.img3];
+    return [props.tim?.img?.utama, props.tim?.img?.img2, props.tim?.img?.img3]
+        .filter((u) => !!u);
 });
 
-function getGalleryBadgeTitle(index) {
-    const titles = ['EVO Workplace', 'EVO Standards', 'EVO People'];
-    return titles[index] || 'EVO Group';
-}
+
 
 const namaTim = computed(() => props.tim?.nama || 'Information Technology');
 const judulTab = computed(() => `Tim ${namaTim.value}`);
@@ -766,6 +716,12 @@ onUnmounted(() => revealObs?.disconnect());
 }
 .dt-subcard__body {
     padding: 1rem 1.1rem 1.15rem;
+}
+
+/* Tanpa bidang gambar, isinya perlu jarak atas sendiri — kalau tidak, judul
+   menempel persis di tepi kartu. */
+.dt-subcard.is-nofoto .dt-subcard__body {
+    padding-top: 1.25rem;
 }
 .dt-subcard__body h3 {
     margin: 0 0 0.35rem;

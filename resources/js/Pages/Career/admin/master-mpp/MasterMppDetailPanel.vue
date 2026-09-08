@@ -39,6 +39,16 @@
                                     class="wca-btn wca-btn--soft wca-btn--sm"
                                     @click="$emit('toggle-selesai', detail)"
                                 ><i class="bi" :class="detail.selesai ? 'bi-arrow-counterclockwise' : 'bi-check2-circle'"></i> {{ detail.selesai ? 'Belum Selesai' : 'Tandai Selesai' }}</button>
+                                <!-- Muncul selama MPP ini PUNYA tenggat — bukan hanya saat
+                                     server sudah bilang boleh. Kalau ternyata belum bisa
+                                     (kursi sudah penuh, jatah habis), modalnya yang
+                                     menerangkan sebabnya. Tombol yang hilang diam-diam
+                                     tidak memberi tahu apa pun. -->
+                                <button
+                                    v-if="detail.perpanjangan?.tersedia && detail.jenisProgram !== 'MT' && detail.sla?.hari"
+                                    class="wca-btn wca-btn--soft wca-btn--sm mmp-btn-sla"
+                                    @click="$emit('perpanjang', detail)"
+                                ><i class="bi bi-calendar-plus"></i> Perpanjang SLA</button>
                                 <button v-if="detail.status === 'AKTIF'" class="wca-btn wca-btn--ghost wca-btn--sm" @click="$emit('batalkan', detail)"><i class="bi bi-x-circle"></i> Batalkan</button>
                                 <button v-else class="wca-btn wca-btn--ghost wca-btn--sm" @click="$emit('aktifkan', detail)"><i class="bi bi-arrow-counterclockwise"></i> Aktifkan Kembali</button>
                             </div>
@@ -55,6 +65,17 @@
                                     <div><small>Jumlah Rekrutmen</small><b>{{ detail.jumlahRekrutmen }} orang</b></div>
                                     <div><small>{{ detail.sla?.mulai ? 'Periode Target' : 'Tenggat' }}</small><b>{{ periodeTeks }}</b></div>
                                     <div><small>Ketentuan SLA</small><b>{{ slaHariTeks }}</b></div>
+                                    <!-- Muncul HANYA bila tenggatnya pernah bergeser. Baris
+                                         "Tenggat Asli" yang selalu ada dan selalu sama dengan
+                                         tenggat berlaku cuma menambah yang harus dibaca. -->
+                                    <div v-if="adaPerpanjangan">
+                                        <small>Tenggat Asli</small>
+                                        <b class="mmp-sla-asli">{{ formatTanggal(detail.sla?.batasAwal) }}</b>
+                                    </div>
+                                    <div v-if="adaPerpanjangan">
+                                        <small>Tenggat Berlaku</small>
+                                        <b class="mmp-sla-baru">{{ formatTanggal(detail.sla?.batas) }}</b>
+                                    </div>
                                     <div><small>Lokasi</small><b>{{ detail.lokasi.nama || '—' }}</b></div>
                                     <div><small>Penanggung Jawab</small><b>{{ detail.penanggungJawab.nama }}</b></div>
                                 </div>
@@ -79,6 +100,47 @@
                                         <span class="mmp-dpill__body"><small>Level Pengalaman</small><strong>{{ detail.experienceLevel.nama }}</strong></span>
                                     </span>
                                 </div>
+                            </div>
+
+                            <!-- ── RIWAYAT PERPANJANGAN SLA ──────────────────────────────
+                                 Muncul hanya bila memang pernah diperpanjang. Yang ditampilkan
+                                 bukan sekadar daftar tanggal: ALASAN-nya yang jadi isi utama
+                                 tiap baris, sebab itulah satu-satunya keterangan yang tidak
+                                 bisa direkonstruksi dari data lain mana pun. -->
+                            <div v-if="riwayatPanjang.length" class="wca-seccard mmp-sla-card">
+                                <div class="wca-seccard__top">
+                                    <span class="wca-seccard__ico" style="background: rgba(124, 58, 237, 0.12); color: #7c3aed"><i class="bi bi-calendar-plus"></i></span>
+                                    <strong>Riwayat Perpanjangan SLA</strong>
+                                    <span class="wca-badge wca-b--slate">{{ riwayatPanjang.length }}&times;</span>
+                                </div>
+
+                                <ol class="mmp-tl">
+                                    <li v-for="r in riwayatPanjang" :key="r.id" class="mmp-tl__item">
+                                        <span class="mmp-tl__dot">{{ r.ke }}</span>
+
+                                        <div class="mmp-tl__isi">
+                                            <div class="mmp-tl__geser">
+                                                <span class="mmp-tl__lama">{{ formatTanggal(r.batasLama) }}</span>
+                                                <i class="bi bi-arrow-right"></i>
+                                                <span class="mmp-tl__baru">{{ formatTanggal(r.batasBaru) }}</span>
+                                                <span class="mmp-tl__hari">+{{ r.hari }} hari kerja</span>
+                                            </div>
+
+                                            <p class="mmp-tl__alasan">{{ r.alasan }}</p>
+
+                                            <div class="mmp-tl__kaki">
+                                                <span><i class="bi bi-person"></i> {{ r.oleh || '—' }}</span>
+                                                <span><i class="bi bi-clock"></i> {{ waktu(r.pada) }}</span>
+                                                <!-- Keadaan kursi SAAT ITU — pembenaran yang dipakai
+                                                     ("3 dibutuhkan, baru 1 terisi"), dan angka itu sudah
+                                                     berubah sejak saat itu. -->
+                                                <span v-if="r.kuota !== null">
+                                                    <i class="bi bi-people"></i> {{ r.terisi }}/{{ r.kuota }} terisi saat itu
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </li>
+                                </ol>
                             </div>
 
                             <div class="wca-seccard sec-data">
@@ -164,7 +226,7 @@ import { formatTanggal, statusBadge, statusLabel, jenisProgramLabel } from '@uti
 import { rentangPendek } from '@utils/rentangTanggal';
 
 const props = defineProps({ no: { type: String, default: null } });
-const emit = defineEmits(['close', 'edit', 'toggle-selesai', 'batalkan', 'aktifkan']);
+const emit = defineEmits(['close', 'edit', 'toggle-selesai', 'batalkan', 'aktifkan', 'perpanjang']);
 
 const detail = ref(null);
 const loading = ref(false);
@@ -207,6 +269,22 @@ const slaHariTeks = computed(() => {
 
     return hari ? `${hari} hari kerja` : 'Tidak tercatat';
 });
+
+const riwayatPanjang = computed(() => detail.value?.perpanjangan?.riwayat || []);
+
+const adaPerpanjangan = computed(() => Number(detail.value?.sla?.perpanjanganKe || 0) > 0);
+
+/** "02 Sep 2026, 14.30" — tanggal saja tidak cukup: dua perpanjangan bisa
+ *  terjadi di hari yang sama, dan urutannya jadi tidak terbaca. */
+function waktu(v) {
+    if (!v) return '—';
+
+    const d = new Date(String(v).replace(' ', 'T'));
+
+    return Number.isNaN(d.getTime())
+        ? v
+        : d.toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
 
 const categorizedSkills = computed(() => {
     if (!detail.value?.skill || !detail.value.skill.length) return [];
@@ -363,6 +441,91 @@ onBeforeUnmount(() => {
     text-transform: uppercase;
     letter-spacing: 0.03em;
 }
+
+/* ── Riwayat perpanjangan SLA ───────────────────────────────────────────── */
+.mmp-btn-sla { color: #7c3aed; }
+
+.mmp-sla-asli { color: #94a3b8; text-decoration: line-through; }
+.mmp-sla-baru { color: #7c3aed; }
+
+.mmp-sla-card .wca-seccard__top .wca-badge { margin-left: auto; }
+
+.mmp-tl { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.9rem; }
+
+.mmp-tl__item { display: flex; gap: 0.7rem; position: relative; }
+
+/* Garis penyambung antar butir — tanpa itu ia cuma tumpukan kotak, dan yang
+   membacanya tidak melihat bahwa tenggatnya bergeser BERUNTUN. */
+.mmp-tl__item:not(:last-child)::before {
+    content: '';
+    position: absolute;
+    left: 0.72rem;
+    top: 1.6rem;
+    bottom: -0.9rem;
+    width: 2px;
+    background: #ede9fe;
+}
+
+.mmp-tl__dot {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 50%;
+    font-size: 0.7rem;
+    font-weight: 800;
+    color: #fff;
+    background: #7c3aed;
+    z-index: 1;
+}
+
+.mmp-tl__isi { min-width: 0; flex: 1; }
+
+.mmp-tl__geser {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    font-size: 0.78rem;
+    font-weight: 800;
+}
+.mmp-tl__lama { color: #94a3b8; text-decoration: line-through; }
+.mmp-tl__geser i { color: #7c3aed; font-size: 0.72rem; }
+.mmp-tl__baru { color: #0f172a; }
+.mmp-tl__hari {
+    padding: 0.1rem 0.4rem;
+    border-radius: 999px;
+    font-size: 0.66rem;
+    color: #6d28d9;
+    background: #ede9fe;
+}
+
+/* ALASAN — bagian yang paling harus terbaca di butir ini. Diberi latar dan
+   garis tepi kiri supaya ia tidak terbaca sebagai keterangan tambahan. */
+.mmp-tl__alasan {
+    margin: 0.4rem 0 0;
+    padding: 0.45rem 0.6rem;
+    border-left: 3px solid #ddd6fe;
+    border-radius: 0 0.4rem 0.4rem 0;
+    font-size: 0.8rem;
+    line-height: 1.6;
+    color: #334155;
+    background: #faf9ff;
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+}
+
+.mmp-tl__kaki {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-top: 0.35rem;
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: #94a3b8;
+}
+.mmp-tl__kaki span { display: inline-flex; align-items: center; gap: 0.25rem; }
 
 .mmp-benefits { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
 .mmp-benefit { display: flex; align-items: center; gap: 0.45rem; font-size: 0.8rem; font-weight: 700; color: var(--slate); }

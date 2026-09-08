@@ -7,11 +7,13 @@ use App\Http\Controllers\Career\MasterLokasi\MasterLokasiController;
 use App\Http\Controllers\Controller;
 use App\Jobs\Career\WcApplyEmailJob;
 use App\Jobs\Career\WcApplyFormJob;
+use App\Jobs\Career\WcBerkasSeleksiJob;
 use App\Jobs\Career\WcBiodataHrisJob;
 use App\Jobs\Career\WcJadwalEmailJob;
 use App\Jobs\Career\WcLaporanKandidatJob;
 use App\Support\Career\AksesService;
 use App\Support\Career\AlurKolom;
+use App\Support\Career\BerkasSeleksi;
 use App\Support\Career\FormulirSchema;
 use App\Support\Career\GcsBerkas;
 use App\Support\Career\HtmlBersih;
@@ -21,6 +23,7 @@ use App\Support\Career\LamaranService;
 use App\Support\Career\Pemeriksaan;
 use App\Support\Career\LamaranTargetValidator;
 use App\Support\Career\PipelineProgress;
+use App\Support\Career\RakitBerkasSeleksi;
 use App\Support\Career\UlangTahap;
 use App\Support\CareerShell;
 use Illuminate\Http\Request;
@@ -1134,6 +1137,11 @@ class LamaranController extends Controller
                     'isImage' => in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'gif'], true),
                     'ukuran' => (int) $b->Ukuran_Byte,
                     'status' => $b->Status_Verifikasi,
+                    // Waktu unggah — dasar urutan "terbaru dulu" di panel berkas.
+                    // Urutan kolom `Urutan` menata lembaran MENURUT FORMULIRNYA;
+                    // yang dicari peninjau justru sebaliknya: apa yang paling
+                    // baru masuk, tak peduli dari formulir mana.
+                    'waktu' => (string) ($b->Waktu_Unggah ?: $b->Created_At ?: ''),
                 ];
             })->values();
 
@@ -1335,6 +1343,13 @@ class LamaranController extends Controller
             'ext' => $b['ext'],
             'isImage' => $b['isImage'],
             'isPdf' => $b['isPdf'],
+            // Ukuran, status verifikasi, dan waktu unggah ikut turun ke bentuk
+            // ringkas ini. Panel berkas di layar peninjau mengurutkan lembaran
+            // dari yang TERBARU dan menyebut beratnya sebelum dibuka — dua hal
+            // yang tak bisa dijawab kalau ketiganya berhenti di bentuk penuh.
+            'ukuran' => $b['ukuran'] ?? 0,
+            'status' => $b['status'] ?? '',
+            'waktu' => $b['waktu'] ?? '',
         ];
     }
 
@@ -2335,11 +2350,39 @@ class LamaranController extends Controller
                     'Updated_At' => now(),
                 ], fn ($v) => $v !== null));
 
-            // Tahap lamaran yang tertaut penjadwalan tahap ini & masih BERJALAN.
-            $tahap = DB::table('N_WEB_CAREERS_Lamaran_Tahap')
-                ->where('Lamaran_Id', $peserta->Lamaran_Id)
-                ->where('Penjadwalan_Tahap_Id', $peserta->Penjadwalan_Tahap_Id)
+            // Tahap lamaran pemilik ujian ini.
+            //
+            // DICARI LEWAT SUB-TES, bukan lewat kolom Penjadwalan_Tahap_Id milik
+            // tahapnya. Satu tahap bisa memuat beberapa ujian yang dijadwalkan
+            // di penjadwalan BERBEDA — "psikotest" berisi kognitif (penjadwalan
+            // #316) dan rr (#323) — sementara Lamaran_Tahap hanya punya SATU
+            // kolom penjadwalan, yang berisi salah satunya saja.
+            //
+            // Akibatnya hasil ujian yang penjadwalannya bukan yang tercatat di
+            // kolom itu tidak menemukan tahapnya, lalu pulang sebagai
+            // 'diproses' => false. Callback-nya sendiri menjawab HTTP 200 dan
+            // nilainya tersimpan di Penjadwalan_Peserta, jadi tidak ada yang
+            // tampak gagal — tapi sub-tesnya tidak pernah beranjak dari
+            // DIJADWALKAN, dan worklist selamanya menawarkan "Sinkronkan" untuk
+            // ujian yang sebenarnya sudah selesai.
+            //
+            // Lamaran_Tahap_Tes menyimpan Penjadwalan_Tahap_Id per aktivitas,
+            // jadi ia satu-satunya yang tahu pemilik sebenarnya.
+            $tahap = DB::table('N_WEB_CAREERS_Lamaran_Tahap as t')
+                ->join('N_WEB_CAREERS_Lamaran_Tahap_Tes as s', 's.Lamaran_Tahap_Id', '=', 't.Id_Lamaran_Tahap')
+                ->where('t.Lamaran_Id', $peserta->Lamaran_Id)
+                ->where('s.Penjadwalan_Tahap_Id', $peserta->Penjadwalan_Tahap_Id)
+                ->select('t.*')
                 ->first();
+
+            // Cadangan untuk data lama: sebelum sub-tes menyimpan penjadwalannya
+            // sendiri, ikatan itu hanya ada di kolom tahap.
+            if (! $tahap) {
+                $tahap = DB::table('N_WEB_CAREERS_Lamaran_Tahap')
+                    ->where('Lamaran_Id', $peserta->Lamaran_Id)
+                    ->where('Penjadwalan_Tahap_Id', $peserta->Penjadwalan_Tahap_Id)
+                    ->first();
+            }
 
             if (! $tahap || $tahap->Status !== 'BERJALAN') {
                 return ['diproses' => false]; // sudah diproses sebelumnya (idempoten)
@@ -2591,6 +2634,10 @@ class LamaranController extends Controller
         return Inertia::render('Career/admin/Pelamar', CareerShell::props('/karir/pelamar', 'Worklist Pelamar', [
             'talent' => $this->talentTabs(),
             'programAwal' => $this->daftarProgram(1, self::PROGRAM_PER_HALAMAN, '', ''),
+            // BERAPA KANDIDAT BOLEH DIPUTUS SEKALI KIRIM — dari konstanta yang
+            // sama dengan aturan validasinya, supaya layar tidak pernah
+            // mengizinkan pilihan yang akan ditolak server.
+            'batasPutusMassal' => self::BATAS_PUTUS_MASSAL,
             // TOMBOL KEPUTUSAN DIBACA DARI MASTER, bukan tiga tombol yang
             // ditulis mati di layar. Master sudah lama memuat lima hasil —
             // termasuk "Kandidat Menolak" dan "Mengundurkan Diri" — tetapi
@@ -2687,6 +2734,31 @@ class LamaranController extends Controller
 
     /** Berapa program per halaman di panel kiri (paginasi muncul bila lebih). */
     private const PROGRAM_PER_HALAMAN = 10;
+
+    /**
+     * BERAPA KANDIDAT BOLEH DIPUTUS DALAM SATU KALI KIRIM — DEMI REPUTASI SMTP.
+     *
+     * Bukan batas teknis. Satu keputusan hampir selalu menerbitkan satu email ke
+     * kandidat, jadi menekan "Putuskan" sekali untuk 150 orang berarti 150 email
+     * keluar dalam hitungan detik dari satu alamat pengirim yang sama, dengan
+     * badan surat yang nyaris identik. Itulah pola yang dibaca penyedia surat
+     * sebagai pengiriman massal mendadak, dan hukumannya jatuh pada seluruh
+     * domain: surat berikutnya masuk folder spam, atau akunnya ditangguhkan.
+     * Yang hilang bukan cuma gelombang itu — undangan wawancara dan tautan setel
+     * ulang kata sandi ikut berhenti sampai penangguhannya dicabut.
+     *
+     * Lima adalah ambang yang dipilih sengaja: cukup untuk membereskan satu
+     * panel kecil dalam satu tarikan, cukup kecil untuk menjaga laju kirim tetap
+     * menyerupai kerja manusia. Menaikkannya menuntut pembatas laju yang
+     * sesungguhnya di sisi antrean surat, bukan sekadar angka yang lebih besar
+     * di sini.
+     *
+     * ANGKANYA HIDUP DI SATU TEMPAT. Layar membacanya sebagai prop
+     * `batasPutusMassal`, aturan validasi memakainya lewat konstanta yang sama —
+     * jadi tidak ada dua angka yang bisa berselisih, dan tombol yang tampak
+     * boleh ditekan tidak akan ditolak diam-diam oleh server.
+     */
+    public const BATAS_PUTUS_MASSAL = 5;
 
     /** GET panel kiri — daftar program berjalan (paginasi + cari + filter jenis). */
     /**
@@ -3257,7 +3329,19 @@ class LamaranController extends Controller
         // dibuka — persis hal yang membuat mode program membingungkan, dan yang
         // harus tetap bisa dilihat begitu seseorang perlu memisahkannya lagi.
         $rekap = collect($pelamar)->groupBy('posisiId');
-        $posisi = $lokers->map(function ($x) use ($rekap) {
+
+        // ── SLA MPP UNTUK LOKER YANG TAMPIL ───────────────────────────────
+        //
+        // Diambil SEKALI untuk seluruh loker, bukan per baris: satu papan bisa
+        // memuat belasan loker, dan menanyakannya satu per satu berarti
+        // belasan kueri untuk data yang sama.
+        //
+        // Rekruter yang membuka worklist perlu tahu sisa waktunya DI SITU —
+        // tenggat yang hanya terlihat di halaman MPP tidak menolong orang yang
+        // sedang memutuskan kandidat.
+        $slaMpp = self::slaPerMpp($lokers->pluck('Mpp_Ref')->filter()->unique()->values()->all());
+
+        $posisi = $lokers->map(function ($x) use ($rekap, $slaMpp) {
             $isi = $rekap->get(Hashids::encode($x->Id_Program_Posisi), collect());
 
             return [
@@ -3273,6 +3357,9 @@ class LamaranController extends Controller
                 'berjalan' => $isi->where('statusLamaran', 'BERJALAN')->count(),
                 'lolos' => $isi->where('statusLamaran', 'LULUS')->count(),
                 'gugur' => $isi->where('statusLamaran', 'GUGUR')->count(),
+                // Tenggat pemenuhan MPP + sisa hari kerjanya. null bila loker
+                // ini tidak terikat MPP, atau MPP-nya belum punya SLA.
+                'sla' => $slaMpp[trim((string) ($x->Mpp_Ref ?? ''))] ?? null,
             ];
         })->values();
 
@@ -3302,6 +3389,11 @@ class LamaranController extends Controller
                 'kuota' => (int) $lokers->sum(fn ($x) => (int) ($x->Kuota ?? 0)),
                 'terisi' => (int) $lokers->sum(fn ($x) => (int) ($x->Terisi ?? 0)),
                 'program' => $lokers->pluck('ProgramNama')->unique()->values()->all(),
+                // Tenggat pemenuhan MPP + sisa hari kerjanya. Ditaruh di kepala
+                // panel supaya rekruter melihatnya SEBELUM memutuskan kandidat,
+                // bukan sesudah — tenggat yang cuma ada di halaman MPP tidak
+                // menolong orang yang sedang bekerja di worklist.
+                'sla' => $slaMpp[trim((string) ($wakil->Mpp_Ref ?? ''))] ?? null,
             ],
             'alurOpsi' => $alurOpsi,
             'alurAktif' => $alurAktif,
@@ -3832,7 +3924,27 @@ class LamaranController extends Controller
                     'catatanHtml' => $tAktif->Hold_Alasan_Html,
                     'sejak' => (string) ($tAktif->Hold_At ?: ''),
                     'olehSiapa' => $tAktif->Hold_By,
+                    // Sudah berapa hari KERJA tertahan sampai hari ini. Dihitung
+                    // hidup karena penahanannya memang masih berjalan.
+                    'hariKerja' => $tAktif->Hold_At
+                        ? \App\Support\Career\SlaMpp::selisihHariKerja(
+                            (string) $tAktif->Hold_At,
+                            now()->toDateTimeString(),
+                        )
+                        : 0,
                 ] : null,
+                // ── TOTAL TERTAHAN SEPANJANG TAHAP INI ────────────────────
+                //
+                // Dijumlahkan dari SELURUH penahanan yang pernah terjadi, bukan
+                // hanya yang terakhir: satu tahap bisa ditahan-dilepas
+                // berkali-kali, dan yang menjelaskan lamanya proses adalah
+                // totalnya.
+                //
+                // Ditampilkan sebagai angka pendamping SLA — tenggat MPP tidak
+                // bergeser karenanya (lihat catatan di kirim hold), tapi
+                // rekruter bisa menunjukkan berapa lama proses berhenti di luar
+                // kendalinya.
+                'holdTotalHariKerja' => $tAktif ? self::totalHariTertahan((int) $tAktif->Id_Lamaran_Tahap) : 0,
                 // Kesimpulan MESIN atas hasil tes tahap ini (LULUS/GAGAL/SEBAGIAN).
                 // Admin melihatnya sebelum mengetuk palu — tanpa ini layar hanya
                 // bilang "Siap Diputus" dan hasil tesnya harus ditebak sendiri.
@@ -4826,6 +4938,20 @@ class LamaranController extends Controller
             //
             // Lulus-atau-tidaknya pun dari Flag_Lolos, sebab itulah yang
             // menentukan surat mana yang dikirim.
+            // ── EMAIL PENOLAKAN: REKRUTMEN YA, MT TIDAK ──────────────────
+            //
+            // Master menyalakan email untuk GUGUR, dan itu benar untuk
+            // Rekrutmen: pelamar posisi biasa melamar ke banyak tempat dan
+            // berhak tahu kursinya sudah tertutup.
+            //
+            // Management Trainee berbeda. Pesertanya seangkatan, hasilnya
+            // diumumkan serentak oleh HC lewat kanal resmi program. Surat
+            // otomatis per orang mendahului pengumuman itu — peserta tahu
+            // dirinya gugur sebelum angkatannya diberi tahu apa pun, dan HC
+            // kehilangan kendali atas kabar yang seharusnya ia sampaikan.
+            //
+            // Kategorinya dibaca dari program, bukan dari layar: pintu ini
+            // bisa diketuk langsung tanpa lewat Worklist sama sekali.
             if ($tahap && ($defHasil->Flag_Kirim_Email ?? 'T') === 'Y') {
                 $this->kirimEmailHasilTahap((int) $tahap->Lamaran_Id, ($defHasil->Flag_Lolos ?? 'T') === 'Y');
             }
@@ -4936,20 +5062,24 @@ class LamaranController extends Controller
 
             if (($tipe->Flag_Jadwal ?? 'T') === 'Y' && empty($x->Jadwal_Mulai)) {
                 $dilewati[] = "{$x->Label} (belum dijadwalkan)";
+
                 continue;
             }
             if ($isMcu) {
                 $dilewati[] = "{$x->Label} (status kesehatan harus dicatat sendiri)";
+
                 continue;
             }
             if ($tipeNilai !== 'NONE') {
                 $dilewati[] = "{$x->Label} (bernilai angka — isi sendiri)";
+
                 continue;
             }
             // Ujian online: hanya yang nilainya SUDAH masuk dan tinggal menunggu
             // keputusan penilai. Yang hasilnya belum datang tidak bisa disimpulkan.
             if ($online && ! (($x->Peran ?? '') === 'INFORMATIF' && ($x->Status ?? '') === 'MENUNGGU_KEPUTUSAN')) {
                 $dilewati[] = "{$x->Label} (hasil ujian belum masuk)";
+
                 continue;
             }
 
@@ -5024,9 +5154,17 @@ class LamaranController extends Controller
      */
     public function putusMassal(Request $request)
     {
+        // BATASNYA LIMA, BUKAN 200 — LIHAT self::BATAS_PUTUS_MASSAL.
+        //
+        // Hold & penjadwalan massal boleh 200 karena keduanya tidak menerbitkan
+        // satu email per orang dengan badan surat yang sama. Keputusan
+        // menerbitkannya, dan 200 email serempak dari satu pengirim adalah pola
+        // yang membuat penyedia surat menangguhkan akunnya.
+        //
+        // Pesannya ditulis sendiri: bawaan Laravel berbunyi "item tidak boleh
+        // lebih dari 5 item", yang tidak menyebut sebabnya sama sekali.
         $data = $request->validate([
-            // Batas 200 mengikuti hold & penjadwalan massal.
-            'item' => 'required|array|min:1|max:200',
+            'item' => 'required|array|min:1|max:'.self::BATAS_PUTUS_MASSAL,
             'item.*.tahapId' => 'required|string|max:64',
             'item.*.hasil' => ['required', Rule::in(\App\Support\Career\LamaranService::masterHasilKeputusan()->keys()->all())],
             'item.*.catatan' => 'nullable|string',
@@ -5040,6 +5178,8 @@ class LamaranController extends Controller
             // sama dengan keputusan ini", dan pernyataan itu berlaku sama untuk
             // semua yang ia pilih.
             'catatAktivitas' => 'nullable|boolean',
+        ], [
+            'item.max' => 'Maksimal '.self::BATAS_PUTUS_MASSAL.' kandidat sekali kirim — pembatas ini menjaga alamat pengirim kami tidak ditangguhkan penyedia email. Kirim sisanya pada gelombang berikutnya.',
         ]);
 
         // Gerbang PIC untuk SELURUH gelombang sekaligus, sebelum satu pun
@@ -5319,7 +5459,7 @@ class LamaranController extends Controller
     {
         $data = $request->validate([
             'gelombang' => 'required|string|max:64',
-            'tahapId' => 'nullable|array|max:200',
+            'tahapId' => 'nullable|array|max:'.self::BATAS_PUTUS_MASSAL,
             'tahapId.*' => 'string|max:64',
         ]);
 
@@ -5359,6 +5499,17 @@ class LamaranController extends Controller
 
             \App\Jobs\Career\WcPutusMassalJob::dispatch($p);
             $ulang++;
+
+            // BATAS YANG SAMA BERLAKU DI SINI. Satu gelombang memang tak pernah
+            // lebih dari BATAS_PUTUS_MASSAL orang, tapi baris kegagalan
+            // menumpuk: percobaan yang gagal berkali-kali meninggalkan beberapa
+            // baris untuk kode gelombang yang sama. Tanpa penjaga ini, satu
+            // ketukan "Coba Lagi" bisa menerbitkan lebih banyak email daripada
+            // yang pernah diizinkan gelombang aslinya — persis yang dijaga
+            // batas itu.
+            if ($ulang >= self::BATAS_PUTUS_MASSAL) {
+                break;
+            }
         }
 
         Log::channel('web_career')->info(
@@ -5810,6 +5961,43 @@ class LamaranController extends Controller
                 'Created_By' => $nama,
                 'Created_By_Id' => $adminId,
             ]);
+
+            // ── LAMA TERTAHAN DIHITUNG SAAT DILEPAS ───────────────────────
+            //
+            // Barisan TAHAN yang menganga ditutup di sini: Lepas_At diisi, dan
+            // lamanya dihitung dalam HARI KERJA memakai kalender yang sama
+            // dengan SLA (Senin–Sabtu, dikurangi libur HCIS). Menghitungnya
+            // dalam hari kalender akan menyebut hold yang jatuh di akhir pekan
+            // panjang sebagai 3 hari padahal kantor cuma tutup 1 hari kerja.
+            //
+            // Dihitung SEKARANG, bukan saat laporan dibuka: kalender bisa
+            // berubah (cuti bersama baru ditetapkan), dan angka yang sudah
+            // disepakati tidak boleh bergeser diam-diam setelahnya.
+            //
+            // Tenggat MPP-nya sendiri TIDAK digeser — satu MPP dipakai bersama
+            // banyak kandidat, dan menghentikan jamnya karena satu orang
+            // ditahan akan membekukan yang lain. Angka ini pendamping, bukan
+            // pengurang.
+            if (! $menahan && self::siapHitungHold()) {
+                $mulai = DB::table('N_WEB_CAREERS_Lamaran_Tahap_Hold')
+                    ->where('Lamaran_Tahap_Id', $realId)
+                    ->where('Aksi', 'TAHAN')
+                    ->whereNull('Lepas_At')
+                    ->orderByDesc('Id_Lamaran_Tahap_Hold')
+                    ->first(['Id_Lamaran_Tahap_Hold', 'Created_At']);
+
+                if ($mulai) {
+                    DB::table('N_WEB_CAREERS_Lamaran_Tahap_Hold')
+                        ->where('Id_Lamaran_Tahap_Hold', $mulai->Id_Lamaran_Tahap_Hold)
+                        ->update([
+                            'Lepas_At' => $now,
+                            'Hari_Kerja_Tertahan' => \App\Support\Career\SlaMpp::selisihHariKerja(
+                                (string) $mulai->Created_At,
+                                (string) $now,
+                            ),
+                        ]);
+                }
+            }
         });
 
         Log::channel('web_career')->info(
@@ -5869,6 +6057,98 @@ class LamaranController extends Controller
         }
 
         return $batas.' Berkas yang dipilih berukuran '.$mb($file->getSize() / 1024).' MB — perkecil dulu, lalu unggah ulang.';
+    }
+
+    /**
+     * SLA beberapa MPP sekaligus, berkunci nomor MPP.
+     *
+     * SATU kueri untuk seluruh loker di papan. Menanyakannya per loker berarti
+     * belasan kueri untuk data yang sama, dan papan pelamar sudah cukup berat.
+     *
+     * Sisa harinya dihitung SlaMpp::keadaan() — sumber yang sama dengan kartu
+     * MPP dan dashboard, supaya tiga layar tidak pernah menyebut angka berbeda
+     * untuk MPP yang sama.
+     *
+     * @param  list<string>  $noMpp
+     * @return array<string, array>
+     */
+    private static function slaPerMpp(array $noMpp): array
+    {
+        if (! $noMpp || ! \App\Support\Career\SlaMpp::siapSnapshot()) {
+            return [];
+        }
+
+        $rows = DB::table('N_WEB_CAREERS_Detail_MPP')
+            ->whereIn('No_Transaksi_MPP', $noMpp)
+            ->whereNotNull('Sla_Batas')
+            ->get([
+                'No_Transaksi_MPP',
+                DB::raw('CONVERT(varchar(10), Sla_Batas, 23) as batas'),
+                DB::raw('CONVERT(varchar(10), Sla_Batas_Awal, 23) as batasAwal'),
+                'Sla_Hari_Kerja',
+                'Sla_Perpanjangan_Ke',
+            ]);
+
+        $hasil = [];
+
+        foreach ($rows as $r) {
+            $keadaan = \App\Support\Career\SlaMpp::keadaan($r->batas);
+
+            if (! $keadaan) {
+                continue;
+            }
+
+            $hasil[trim((string) $r->No_Transaksi_MPP)] = [
+                'batas' => $r->batas,
+                'batasAwal' => $r->batasAwal ?: $r->batas,
+                'hari' => (int) ($r->Sla_Hari_Kerja ?? 0),
+                'perpanjanganKe' => (int) ($r->Sla_Perpanjangan_Ke ?? 0),
+                'sisa' => $keadaan['sisa'],
+                'lewat' => $keadaan['lewat'],
+                'nada' => $keadaan['nada'],
+                'label' => $keadaan['label'],
+            ];
+        }
+
+        return $hasil;
+    }
+
+    /**
+     * Total hari kerja sebuah tahap pernah tertahan.
+     *
+     * Menjumlahkan Hari_Kerja_Tertahan dari seluruh penahanan yang SUDAH
+     * dilepas. Penahanan yang masih berjalan tidak ikut — angkanya belum
+     * final, dan layar menampilkannya terpisah lewat `hold.hariKerja`.
+     */
+    private static function totalHariTertahan(int $tahapId): int
+    {
+        if (! self::siapHitungHold()) {
+            return 0;
+        }
+
+        return (int) DB::table('N_WEB_CAREERS_Lamaran_Tahap_Hold')
+            ->where('Lamaran_Tahap_Id', $tahapId)
+            ->whereNotNull('Hari_Kerja_Tertahan')
+            ->sum('Hari_Kerja_Tertahan');
+    }
+
+    /**
+     * Kolom pencatat lama hold sudah ada di basis data ini?
+     *
+     * Skema dijalankan admin lewat SSMS (docs/02-09-2026), bukan oleh kode.
+     * Selama .sql-nya belum dijalankan, penahanan tetap berfungsi seperti
+     * sebelumnya — yang tidak ada hanya angka lamanya. Tanpa penjagaan ini,
+     * setiap pelepasan hold akan gagal dengan "invalid column name" dan
+     * merusak fitur yang tadinya jalan.
+     */
+    private static function siapHitungHold(): bool
+    {
+        static $siap = null;
+
+        return $siap ??= \App\Support\Career\Skema::adaKolom(
+            'N_WEB_CAREERS_Lamaran_Tahap_Hold',
+            'Hari_Kerja_Tertahan',
+        );
     }
 
     /** Master alasan HOLD yang aktif, di-cache per permintaan. */
@@ -6006,6 +6286,287 @@ class LamaranController extends Controller
         return ResponseHelper::success(null, 'Berkas dihapus.');
     }
 
+    // ═══ EXPORT STUDIO — BERKAS SELEKSI KANDIDAT ═══
+
+    /**
+     * Aturan muatan Export Studio — dipakai pratinjau maupun cetak.
+     *
+     * URUTAN `kunci` ADALAH BAGIAN DARI MUATAN, bukan sekadar daftar: layar
+     * mengirimkannya sesuai susunan yang tampak di panel kiri (yang bisa
+     * digeser admin), dan perakit mencetak mengikutinya. Karena itu ia array
+     * berindeks, bukan himpunan.
+     *
+     * `atur` berisi penyesuaian per kunci — judul yang ditulis ulang, bentuk
+     * tampilan bagian berulang, dan jarak atas. Semuanya opsional; kunci tanpa
+     * penyesuaian tidak muncul di sana sama sekali.
+     *
+     * `bab` adalah urutan bab yang digeser admin. Opsional: permintaan lama
+     * (dan pemanggil mana pun yang tidak mengirimnya) jatuh ke urutan bawaan.
+     */
+    private const ATURAN_BERKAS = [
+        'kunci' => 'required|array|min:1|max:400',
+        'kunci.*' => 'string|max:120',
+        'atur' => 'nullable|array|max:400',
+        'atur.*.gaya' => 'nullable|string|in:timeline,tabel,kartu',
+        // Bentuk isian pendek di halaman formulir — lihat formulir.blade.php.
+        'atur.*.bentuk' => 'nullable|string|in:kisi,kartu,baris',
+        // Penempatan bagian CV pada halaman dua kolom. Bawaannya sudah
+        // direkomendasikan per peran (SusunCv::BAGIAN); ini untuk admin
+        // yang ingin memindahkannya — mis. menaikkan Kemampuan ke kolom
+        // utama pada posisi yang menuntut keahlian teknis.
+        'atur.*.lajur' => 'nullable|string|in:kiri,utama,penuh',
+        'atur.*.judul' => 'nullable|string|max:120',
+        // Dibatasi 60px: lebih dari itu satu bagian bisa mendorong sisanya
+        // keluar dari kanvas halaman yang tingginya tetap.
+        'atur.*.jarakAtas' => 'nullable|integer|min:0|max:60',
+        // ── TATA LETAK PER HALAMAN ───────────────────────────────────────
+        //
+        // `atur.hal.<kunci halaman>` — kerapatan, sela, ukuran teks, geser.
+        // Batasnya dijaga DI SINI juga, bukan hanya di TataLetakHalaman:
+        // yang menjepit di sana melindungi tata letak, yang menolak di sini
+        // melindungi endpoint dari muatan yang mengada-ada (sela 99999
+        // membuat dompdf merender kanvas raksasa sebelum sempat dijepit).
+        // Tema warna halaman penutup. Hanya dua yang sah: navy (bawaan) &
+        // emas. Seluruh warna lain di halaman itu diturunkan dari pilihan
+        // ini, jadi tidak ada kombinasi yang bisa menghasilkan teks yang
+        // tak terbaca di atas latarnya sendiri.
+        'atur.penutup.tema' => 'nullable|string|in:navy,emas',
+        'atur.hal' => 'nullable|array|max:120',
+        'atur.hal.*.kerapatan' => 'nullable|string|in:rapat,seimbang,penuh',
+        'atur.hal.*.sela' => 'nullable|integer|min:10|max:72',
+        'atur.hal.*.teks' => 'nullable|integer|min:9|max:13',
+        // Boleh NEGATIF: menaikkan isi merapatkannya ke kop supaya ruang
+        // kosongnya berkumpul di kaki, bukan terbelah atas-bawah. Batas -30
+        // mengikuti TataLetakHalaman::NAIK_MAKS -- lebih dari itu judul
+        // halaman menabrak garis bawah kop.
+        'atur.hal.*.geser' => 'nullable|integer|min:-30|max:400',
+        // Paksa halaman ini berdiri sendiri walau isinya muat disambung ke
+        // halaman sebelumnya. "Muat" tidak sama dengan "pantas": satu
+        // formulir yang secara resmi harus mulai di lembar baru tetap berhak
+        // begitu, dan itu penilaian yang tidak bisa dihitung sistem.
+        'atur.hal.*.sendiri' => 'nullable|boolean',
+        'bab' => 'nullable|array|max:12',
+        'bab.*' => 'string|max:40',
+    ];
+
+    /**
+     * GET /api/v1/karir/lamaran/{id}/berkas-seleksi/opsi — isi apa saja yang
+     * bisa dicetak untuk kandidat ini.
+     *
+     * SENGAJA RINGAN: tidak memanggil CAT dan tidak mengunduh satu pun berkas.
+     * Layar hanya perlu tahu ada seksi apa saja; membuka modal tidak boleh
+     * menunggu belasan panggilan jaringan. Isinya baru diambil saat merender.
+     */
+    public function berkasSeleksiOpsi(string $id)
+    {
+        $realId = Hashids::decode($id)[0] ?? null;
+
+        if (! $realId) {
+            return ResponseHelper::error('Lamaran tidak valid.', 422);
+        }
+
+        $daftar = BerkasSeleksi::daftar((int) $realId);
+
+        if (! $daftar) {
+            return ResponseHelper::error('Lamaran tidak ditemukan.', 404);
+        }
+
+        return ResponseHelper::success($daftar, 'Opsi berkas seleksi');
+    }
+
+    /**
+     * POST /api/v1/karir/lamaran/{id}/berkas-seleksi/halaman — daftar halaman
+     * yang tata letaknya bisa disetel, beserta hitungan sistem untuk tiap
+     * halaman (sisa ruang, sela, padat/tidak).
+     *
+     * TERPISAH DARI PRATINJAU karena pratinjau memulangkan PDF mentah —
+     * tidak ada tempat menyelipkan JSON di badannya. Layar memanggil keduanya
+     * berbarengan, jadi tidak ada tambahan waktu tunggu yang terasa.
+     *
+     * Yang membuatnya murah: petaHalaman() melewati hasil seleksi & lampiran,
+     * dua bagian yang memanggil CAT dan mengunduh berkas — dan satu pun
+     * halamannya tidak bisa disetel.
+     */
+    public function berkasSeleksiHalaman(Request $request, string $id)
+    {
+        $realId = Hashids::decode($id)[0] ?? null;
+
+        if (! $realId) {
+            return ResponseHelper::error('Lamaran tidak valid.', 422);
+        }
+
+        $data = $request->validate(self::ATURAN_BERKAS);
+
+        try {
+            $peta = RakitBerkasSeleksi::petaHalaman(
+                (int) $realId,
+                $data['kunci'],
+                $data['atur'] ?? [],
+                $data['bab'] ?? [],
+            );
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->error('[BERKAS-SELEKSI] peta halaman gagal: '.$e->getMessage());
+
+            // Bukan galat yang perlu menggagalkan layar: tanpa peta, panel
+            // kanan hanya kehilangan pengaturan tata letak — pratinjau dan
+            // unduhan tetap berjalan. Daftar kosong lebih baik daripada modal
+            // yang menolak terbuka.
+            return ResponseHelper::success(['halaman' => []], 'Peta halaman kosong');
+        }
+
+        return ResponseHelper::success(['halaman' => $peta], 'Peta halaman');
+    }
+
+    /**
+     * POST /api/v1/karir/lamaran/{id}/berkas-seleksi/pratinjau — antrekan
+     * pratinjau, kembalikan id untuk dipantau.
+     *
+     * ── KENAPA LEWAT ANTREAN, BUKAN DIRENDER DI SINI ──────────────────────
+     *
+     * Dulu PDF-nya dirakit langsung di dalam permintaan ini. Di produksi itu
+     * berakhir 503: perakitannya makan ~56 detik — 44 detik di antaranya untuk
+     * mengambil dan merender laporan psikotes dari CAT — sementara Cloud Run
+     * memutus permintaan pada 60 detik. Yang dilihat admin bukan pratinjau,
+     * melainkan "Pratinjau gagal dibuat".
+     *
+     * Menaikkan batas Cloud Run hanya memindahkan masalahnya: admin tetap
+     * menatap layar diam hampir semenit, dan tiap pratinjau menahan satu
+     * instance selama itu — sepuluh admin mencetak bersamaan berarti sepuluh
+     * instance tertahan.
+     *
+     * Jalur antrean SUDAH ADA untuk unduhan, lengkap dengan pemantauan status
+     * dan penyajian berkasnya. Pratinjau memakai jalur yang sama persis,
+     * hanya dengan `pratinjau: true` — jadi tidak ada mesin kedua yang harus
+     * dijaga tetap sepakat dengan yang pertama.
+     *
+     * Yang membedakan isinya dari unduhan tetap satu hal saja: lampiran
+     * formulir diganti halaman penanda. Berkas penilaian FGD/wawancara,
+     * laporan psikotes, dan seluruh tata letaknya identik — itulah yang
+     * membuat pratinjau layak dipercaya sebagai gambaran hasil akhirnya.
+     */
+    public function berkasSeleksiPratinjau(Request $request, string $id)
+    {
+        $realId = Hashids::decode($id)[0] ?? null;
+
+        if (! $realId) {
+            return ResponseHelper::error('Lamaran tidak valid.', 422);
+        }
+
+        $data = $request->validate(self::ATURAN_BERKAS);
+
+        $lamaran = DB::table('N_WEB_CAREERS_Lamaran as l')
+            ->leftJoin('N_WEB_CAREERS_Users as u', 'u.Id_Users', '=', 'l.Id_Users')
+            ->where('l.Id_Lamaran', $realId)
+            ->select('l.Kode', 'u.Nama')
+            ->first();
+
+        if (! $lamaran) {
+            return ResponseHelper::error('Lamaran tidak ditemukan.', 404);
+        }
+
+        $exportId = DB::table('N_WEB_CAREERS_Export_Log')->insertGetId([
+            // Tipe TERPISAH dari BERKAS_SELEKSI. Layar riwayat unduhan
+            // menyaring berdasarkan kolom ini, dan pratinjau tidak boleh
+            // muncul di sana: isinya dokumen setengah jadi yang terlihat
+            // resmi, dan yang tercantum di riwayat cepat atau lambat dikirim
+            // ke luar oleh seseorang.
+            'Export_Type' => 'BERKAS_SELEKSI_PRATINJAU',
+            'Id_Users' => session('career_auth.id'),
+            'Keterangan' => 'Pratinjau — '.($lamaran->Nama ?: 'Kandidat'),
+            'Filters_Json' => json_encode([
+                'lamaranId' => (int) $realId,
+                'kodeLamaran' => $lamaran->Kode,
+                'kunci' => $data['kunci'],
+                'atur' => $data['atur'] ?? [],
+                'bab' => $data['bab'] ?? [],
+                'pratinjau' => true,
+            ]),
+            'Status_Export' => 'DIPROSES',
+            'Progress_Chunk' => 0,
+            'Progress_Total' => 1,
+            'Flag_Cancellation' => 'T',
+            'Created_At' => now(),
+        ], 'Id_Export');
+
+        WcBerkasSeleksiJob::dispatch(
+            (int) $exportId,
+            (int) $realId,
+            $data['kunci'],
+            (int) session('career_auth.id') ?: null,
+            $data['atur'] ?? [],
+            $data['bab'] ?? [],
+            pratinjau: true,
+        );
+
+        return ResponseHelper::success(
+            ['id' => Hashids::encode($exportId)],
+            'Pratinjau sedang disiapkan.',
+        );
+    }
+
+    /**
+     * POST /api/v1/karir/lamaran/{id}/berkas-seleksi — minta cetak berkas.
+     *
+     * SELALU LEWAT ANTREAN. Berkas seleksi bisa memuat belasan halaman
+     * rancangan, beberapa laporan psikotes yang ditarik dari CAT lewat
+     * jaringan, dan puluhan lampiran yang harus diunduh lalu digabungkan.
+     * Dikerjakan di dalam permintaan ini, admin menatap layar membeku lalu
+     * menekan tombolnya lagi — dan lahir dua berkas untuk satu permintaan.
+     */
+    public function berkasSeleksiBuat(Request $request, string $id)
+    {
+        $realId = Hashids::decode($id)[0] ?? null;
+
+        if (! $realId) {
+            return ResponseHelper::error('Lamaran tidak valid.', 422);
+        }
+
+        $data = $request->validate(self::ATURAN_BERKAS);
+
+        $lamaran = DB::table('N_WEB_CAREERS_Lamaran as l')
+            ->leftJoin('N_WEB_CAREERS_Users as u', 'u.Id_Users', '=', 'l.Id_Users')
+            ->leftJoin('N_WEB_CAREERS_Program as p', 'p.Id_Program', '=', 'l.Program_Id')
+            ->where('l.Id_Lamaran', $realId)
+            ->select('l.Kode', 'u.Nama', 'p.Nama as ProgramNama')
+            ->first();
+
+        if (! $lamaran) {
+            return ResponseHelper::error('Lamaran tidak ditemukan.', 404);
+        }
+
+        $exportId = DB::table('N_WEB_CAREERS_Export_Log')->insertGetId([
+            'Export_Type' => 'BERKAS_SELEKSI',
+            'Id_Users' => session('career_auth.id'),
+            'Keterangan' => trim(($lamaran->Nama ?: 'Kandidat').' — '.($lamaran->ProgramNama ?: '')),
+            'Filters_Json' => json_encode([
+                'lamaranId' => (int) $realId,
+                'kodeLamaran' => $lamaran->Kode,
+                'kunci' => $data['kunci'],
+                'atur' => $data['atur'] ?? [],
+                'bab' => $data['bab'] ?? [],
+            ]),
+            'Status_Export' => 'DIPROSES',
+            'Progress_Chunk' => 0,
+            'Progress_Total' => 1,
+            'Flag_Cancellation' => 'T',
+            'Created_At' => now(),
+        ], 'Id_Export');
+
+        WcBerkasSeleksiJob::dispatch(
+            (int) $exportId,
+            (int) $realId,
+            $data['kunci'],
+            (int) session('career_auth.id') ?: null,
+            $data['atur'] ?? [],
+            $data['bab'] ?? [],
+        );
+
+        return ResponseHelper::success(
+            ['id' => Hashids::encode($exportId)],
+            'Berkas seleksi sedang disiapkan. Tautan unduhnya muncul begitu selesai.',
+        );
+    }
+
     /**
      * GET /api/v1/karir/lamaran/{id}/laporan/opsi — formulir apa saja yang bisa
      * dicetak untuk kandidat ini.
@@ -6105,6 +6666,26 @@ class LamaranController extends Controller
      * Dipakai layar untuk menanyakan "sudah jadi belum" tanpa menahan admin
      * menunggu di depan tombol yang membeku.
      */
+    /**
+     * Baca kolom Keterangan Export_Log sebagai status sambungan HCLearn.
+     *
+     * Kolomnya dipakai bersama jenis ekspor lain yang menulis teks biasa di
+     * sana, jadi apa pun yang bukan JSON berisi kunci 'hclearn' diabaikan —
+     * bukan dianggap galat.
+     */
+    private static function bacaKeterangan(?string $ket): ?array
+    {
+        if (! $ket) {
+            return null;
+        }
+
+        $data = json_decode($ket, true);
+
+        return is_array($data) && isset($data['hclearn']) && is_array($data['hclearn'])
+            ? $data['hclearn']
+            : null;
+    }
+
     public function laporanStatus(string $id)
     {
         $realId = Hashids::decode($id)[0] ?? null;
@@ -6120,12 +6701,80 @@ class LamaranController extends Controller
             'selesai' => $row->Status_Export === 'SELESAI',
             'gagal' => $row->Status_Export === 'GAGAL',
             'pesan' => $row->Error_Message,
+            // ── STATUS SAMBUNGAN HCLEARN ──────────────────────────────────
+            //
+            // Render bisa "berhasil" sementara seluruh hasil psikotesnya gagal
+            // diambil — dan berkasnya lalu terlihat sama persis dengan berkas
+            // kandidat yang memang belum tes. Admin harus diberitahu, kalau
+            // tidak ia memutus kelulusan dari dokumen yang tidak lengkap.
+            'hclearn' => self::bacaKeterangan($row->Keterangan ?? null),
             // URL unduh lewat rute KITA, bukan URL bucket: berkasnya berisi data
             // pribadi kandidat, dan tautan bucket yang bocor bisa dibuka siapa pun.
             'url' => $row->Status_Export === 'SELESAI'
                 ? route('career.api.lamaran.laporan.unduh', Hashids::encode($row->Id_Export))
                 : null,
         ], 'Status laporan');
+    }
+
+    /**
+     * GET /api/v1/karir/berkas-seleksi/pratinjau/{id} — sajikan PDF pratinjau
+     * INLINE untuk ditampilkan di dalam bingkai.
+     *
+     * Terpisah dari laporanUnduh() karena dua hal yang tidak bisa didamaikan:
+     *
+     *   • laporanUnduh() memakai streamDownload(), yang memasang
+     *     Content-Disposition: attachment — peramban menyimpannya alih-alih
+     *     menampilkannya, dan bingkai pratinjau berakhir kosong;
+     *   • pratinjau memuat halaman penanda alih-alih lampiran sungguhan, jadi
+     *     ia dokumen setengah jadi yang terlihat resmi. Menyajikannya lewat
+     *     rute unduhan berarti ia bisa disimpan orang dan beredar sebagai
+     *     berkas seleksi yang sebenarnya.
+     *
+     * Hanya menerima Export_Type pratinjau. Berkas unduhan yang sah tetap
+     * harus lewat laporanUnduh(), dengan seluruh perlakuannya sendiri.
+     */
+    public function berkasSeleksiLihat(string $id)
+    {
+        $realId = Hashids::decode($id)[0] ?? null;
+
+        $row = $realId
+            ? DB::table('N_WEB_CAREERS_Export_Log')
+                ->where('Id_Export', $realId)
+                ->where('Export_Type', 'BERKAS_SELEKSI_PRATINJAU')
+                ->first()
+            : null;
+
+        if (! $row || $row->Status_Export !== 'SELESAI' || ! $row->File_Path) {
+            abort(404);
+        }
+
+        try {
+            $disk = Storage::disk(GcsBerkas::DISK);
+
+            if (! $disk->exists($row->File_Path)) {
+                abort(404, 'Pratinjau tidak ditemukan.');
+            }
+
+            $isi = $disk->get($row->File_Path);
+        } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->warning('[BERKAS-SELEKSI] pratinjau gagal disajikan: '.$e->getMessage());
+
+            abort(404, 'Pratinjau tidak ditemukan.');
+        }
+
+        return response($isi, 200, [
+            'Content-Type' => 'application/pdf',
+            // INLINE, dan namanya sengaja menyebut dirinya pratinjau: berkas
+            // ini memuat halaman penanda alih-alih lampiran sungguhan, jadi
+            // yang tersimpan dari sini adalah dokumen setengah jadi yang
+            // terlihat resmi. Unduhan yang sah hanya lewat antrean.
+            'Content-Disposition' => 'inline; filename="pratinjau-berkas-seleksi.pdf"',
+            // Jangan diindeks maupun disimpan perantara — isinya data pribadi.
+            'X-Robots-Tag' => 'noindex, nofollow, noarchive',
+            'Cache-Control' => 'private, no-store',
+        ]);
     }
 
     /** GET unduh berkas laporan (URL bertanda tangan 15 menit dari GCS). */
@@ -7267,6 +7916,54 @@ class LamaranController extends Controller
         $mulaiAwal = \Illuminate\Support\Carbon::parse($data['mulai']);
 
         $tipeSemua = self::masterTipeTahap();
+
+        // ══ BATAS SEKALI KIRIM — DIPERIKSA SEBELUM SATU BARIS PUN DITULIS ══
+        //
+        // Tiap penjadwalan menerbitkan satu undangan email ke kandidat, dan
+        // puluhan email serempak dari satu alamat pengirim adalah pola yang
+        // dibaca penyedia surat sebagai pengiriman massal mendadak — hukumannya
+        // penangguhan yang ikut mematikan email hasil seleksi & setel ulang
+        // kata sandi, bukan cuma gelombang ini. Lihat self::BATAS_PUTUS_MASSAL.
+        //
+        // DI MUKA, bukan di tengah gelung: berhenti di tengah meninggalkan
+        // sebagian kandidat sudah berjadwal dan sudah diundang, sisanya tidak —
+        // keadaan yang harus dibereskan tangan satu per satu.
+        //
+        // YANG PRIVAT DIKECUALIKAN. Tipe berjadwal privat (lihat JadwalPrivat)
+        // tidak mengirim satu undangan pun, jadi batas laju email tidak
+        // menjaga apa-apa di sana — dan menahannya berarti mengunci penjadwalan
+        // internal tanpa sebab. Privat-tidaknya ditentukan tipe tahap, dan satu
+        // kiriman selalu satu nama aktivitas, jadi cukup diperiksa sekali.
+        if (count($data['subTesIds']) > self::BATAS_PUTUS_MASSAL) {
+            // Tipe diambil dari sub-tesnya, JATUH KE TAHAP INDUK bila kosong —
+            // pola yang sama dipakai di seluruh berkas ini (lihat baris ~683).
+            // Tanpa jatuhan itu, aktivitas yang tipenya diwarisi induk terbaca
+            // sebagai tipe kosong, yang bukan privat — batasnya lalu berlaku
+            // untuk penjadwalan internal yang seharusnya bebas.
+            $kodeTipe = DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes as t')
+                ->join('N_WEB_CAREERS_Lamaran_Tahap as h', 'h.Id_Lamaran_Tahap', '=', 't.Lamaran_Tahap_Id')
+                ->whereIn('t.Id_Lamaran_Tahap_Tes', collect($data['subTesIds'])
+                    ->map(fn ($h) => Hashids::decode($h)[0] ?? null)->filter()->all())
+                ->get(['t.Tipe_Tahap_Kode as Sub', 'h.Tipe_Tahap_Kode as Induk'])
+                ->map(fn ($x) => $x->Sub ?: $x->Induk)
+                ->unique();
+
+            // Semua privat → tidak ada email sama sekali → tidak dibatasi.
+            // Campuran dianggap TIDAK privat: bila satu saja mengirim undangan,
+            // batasnya harus berlaku.
+            $semuaPrivat = $kodeTipe->isNotEmpty()
+                && $kodeTipe->every(fn ($k) => JadwalPrivat::untuk($k));
+
+            if (! $semuaPrivat) {
+                return ResponseHelper::error(
+                    'Maksimal '.self::BATAS_PUTUS_MASSAL.' kandidat sekali kirim — dipilih '.count($data['subTesIds'])
+                    .'. Tiap undangan adalah satu email; mengirimnya serempak membuat penyedia email menangguhkan '
+                    .'alamat pengirim kami. Jadwalkan '.self::BATAS_PUTUS_MASSAL.' orang dulu, lalu ulangi untuk sisanya.',
+                    422,
+                );
+            }
+        }
+
         $berhasil = [];
         $gagal = [];
         $urutanSesi = 0;
@@ -8195,6 +8892,11 @@ class LamaranController extends Controller
                     'isImage' => in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'gif'], true),
                     'ukuran' => (int) $b->Ukuran_Byte,
                     'status' => $b->Status_Verifikasi,
+                    // Waktu unggah — dasar urutan "terbaru dulu" di panel berkas.
+                    // Urutan kolom `Urutan` menata lembaran MENURUT FORMULIRNYA;
+                    // yang dicari peninjau justru sebaliknya: apa yang paling
+                    // baru masuk, tak peduli dari formulir mana.
+                    'waktu' => (string) ($b->Waktu_Unggah ?: $b->Created_At ?: ''),
                 ];
             })->values();
 

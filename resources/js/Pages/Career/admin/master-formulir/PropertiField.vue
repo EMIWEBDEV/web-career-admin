@@ -22,22 +22,56 @@
         <div class="mfb-inspector__group">
             <label>Unique Key Identifier</label>
             <div class="mfb-key-input">
-                <el-input v-model="field.key" :disabled="keyTerkunci" @blur="$emit('rapikan-key')" />
+                <el-input
+                    v-model="field.key"
+                    :disabled="keyTerkunci"
+                    :maxlength="MAKS_PANJANG_KEY"
+                    placeholder="Otomatis dari label"
+                    @blur="$emit('rapikan-key')"
+                />
                 <span v-if="keyTerkunci" class="mfb-lock-tag" title="Key terkunci karena formulir sudah dipublish">
                     <i class="bi bi-lock-fill"></i> Terkunci
                 </span>
+                <!-- Penghitung hanya muncul saat sudah dekat batas: angka yang
+                     selalu terpampang cuma jadi latar yang tak pernah dibaca,
+                     dan yang perlu diketahui admin justru ketika ruangnya menipis. -->
+                <span v-else-if="panjangKey > MAKS_PANJANG_KEY - 12" class="mfb-key-hitung" :class="{ 'is-mentok': panjangKey >= MAKS_PANJANG_KEY }">
+                    {{ panjangKey }}/{{ MAKS_PANJANG_KEY }}
+                </span>
             </div>
-            <small class="mfb-help">Kode unik pengenal kolom di database.</small>
+            <small v-if="keyTerkunci" class="mfb-help">
+                Sudah dipakai jawaban & berkas kandidat yang masuk, jadi tidak bisa diubah lagi. Label di atas tetap
+                bebas diganti — keduanya memang tidak harus sama.
+            </small>
+            <small v-else-if="field.key_manual" class="mfb-help mfb-help--nyala">
+                <i class="bi bi-pencil-fill"></i>
+                Key ini diketik sendiri, jadi tidak lagi ikut berubah saat Label diganti.
+                Kosongkan kotaknya untuk kembali mengikuti label.
+            </small>
+            <small v-else class="mfb-help">
+                Kode unik pengenal kolom di database, dibuat otomatis dari label. Boleh diketik sendiri — label yang
+                panjang tidak harus jadi key yang panjang.
+            </small>
         </div>
 
         <div class="mfb-inspector__checks">
-            <el-checkbox v-model="field.wajib">Wajib Diisi (Required)</el-checkbox>
+            <!-- Dimatikan (bukan disembunyikan) selagi ada `wajib_jika`: admin
+                 tetap perlu melihat bahwa kolom ini punya aturan wajib, dan
+                 di mana aturannya sekarang tinggal. Menyembunyikannya membuat
+                 centang yang hilang terbaca sebagai fitur yang rusak. -->
+            <el-checkbox v-model="field.wajib" :disabled="!!field.wajib_jika?.field">
+                Wajib Diisi (Required)
+            </el-checkbox>
             <!-- Label diperbaiki: artinya nilainya bisa dipakai MesinSyarat untuk
                  menggugurkan kandidat, bukan sekadar disaring di layar rekap. -->
             <el-checkbox v-if="punya('dapat_disaring')" v-model="field.dapat_disaring">
                 Bisa dipakai syarat auto-gugur
             </el-checkbox>
         </div>
+        <small v-if="field.wajib_jika?.field" class="mfb-help mfb-help--nyala">
+            <i class="bi bi-asterisk"></i>
+            Kewajiban kolom ini diatur bersyarat di bagian <b>Logika &amp; Kondisi</b> di bawah.
+        </small>
 
         <!-- ── Cara mengisi: konfigurasi yang menentukan isi jawaban, mengikuti tipe ── -->
         <div class="mfb-inspector__sep"><span>Cara Mengisi</span></div>
@@ -312,6 +346,42 @@
             </div>
         </div>
 
+        <!-- WAJIB BERSYARAT.
+             Sengaja bertetangga dengan "Tampil Jika": keduanya menjawab
+             pertanyaan yang mirip, dan menaruhnya berjauhan membuat admin
+             memakai yang satu untuk pekerjaan yang satunya. Bedanya ditulis
+             terus terang di bantuan di bawah, karena justru itu yang paling
+             sering tertukar. -->
+        <div class="mfb-inspector__group">
+            <label><i class="bi bi-asterisk"></i> Wajib Diisi Hanya Jika (Kondisional)</label>
+            <el-select
+                :model-value="field.wajib_jika?.field || ''"
+                style="width: 100%"
+                clearable
+                :placeholder="field.wajib ? 'Selalu wajib' : 'Tidak pernah wajib'"
+                :disabled="field.tipe === 'prefill'"
+                @change="aturWajibSyarat"
+            >
+                <el-option v-for="f in fieldSebelumnya" :key="f.field_id || f.key" :value="f.key" :label="f.label || f.key" />
+            </el-select>
+            <div v-if="field.wajib_jika?.field" class="mfb-condition-row">
+                <el-select v-model="field.wajib_jika.operator" style="width: 48%">
+                    <el-option v-for="o in operatorOptions" :key="o.value" :value="o.value" :label="o.label" />
+                </el-select>
+                <el-input v-model="field.wajib_jika.nilai" placeholder="Nilai pemicu" style="width: 52%" />
+            </div>
+            <small v-if="field.wajib_jika?.field" class="mfb-help mfb-help--nyala">
+                <i class="bi bi-info-circle"></i>
+                Selama syarat ini tidak terpenuhi, kolomnya boleh dikosongkan dan bintang merahnya ikut hilang.
+                Centang <b>Wajib Diisi</b> di atas jadi tidak berlaku — syarat ini yang menggantikannya.
+            </small>
+            <small v-else class="mfb-help">
+                Pakai ini untuk isian yang tetap TERLIHAT tapi baru mengikat pada jawaban tertentu — mis. "Nama
+                Pasangan" yang wajib hanya bila status pernikahan "Menikah". Untuk isian yang sebaiknya HILANG sama
+                sekali, pakai "Tampil Jika" di atas.
+            </small>
+        </div>
+
         <div v-if="punya('reset_anak')" class="mfb-inspector__group">
             <label>Kosongkan Field Ini Saat Jawaban Berubah</label>
             <el-select
@@ -360,6 +430,7 @@
  * induk bersifat scoped dan tidak menjangkau komponen anak.
  */
 import { daftarTipe, propertiTipe } from '@utils/formulir/katalogField';
+import { MAKS_PANJANG_KEY } from '@utils/formulir/schema';
 
 export default {
     name: 'PropertiField',
@@ -389,6 +460,11 @@ export default {
         };
     },
     computed: {
+        /** Batas panjang key = lebar kolom Field_Key. Lihat schema.js. */
+        MAKS_PANJANG_KEY: () => MAKS_PANJANG_KEY,
+        panjangKey() {
+            return String(this.field.key || '').length;
+        },
         tipeOptions() {
             return daftarTipe().map((t) => ({ value: t.value, label: t.label }));
         },
@@ -437,6 +513,25 @@ export default {
         },
         aturTampilSyarat(key) {
             this.field.tampil_jika = key ? { field: key, operator: '=', nilai: '' } : null;
+        },
+        /**
+         * Memasang syarat wajib sekaligus MEMATIKAN centang `wajib`.
+         *
+         * Keduanya menjawab pertanyaan yang sama ("kapan kolom ini mengikat?"),
+         * dan membiarkan keduanya menyala membuat inspector menampilkan dua
+         * jawaban berbeda untuk satu pertanyaan - sementara mesin aturannya
+         * hanya menuruti salah satu (wajib_jika menang). Yang tampak di layar
+         * harus sama dengan yang benar-benar berlaku.
+         */
+        aturWajibSyarat(key) {
+            if (key) {
+                this.field.wajib_jika = { field: key, operator: '=', nilai: '' };
+                this.field.wajib = false;
+
+                return;
+            }
+
+            this.field.wajib_jika = null;
         },
         aturBukaSyarat(key) {
             this.field.buka_jika = key ? { field: key, operator: '=', nilai: '' } : undefined;
@@ -607,6 +702,22 @@ export default {
     margin-top: 0.25rem;
 }
 
+/* Bantuan yang menerangkan aturan yang SEDANG BERLAKU, bukan sekadar penjelasan
+   umum -- dibedakan warnanya supaya terbaca sebagai keadaan, bukan basa-basi. */
+.mfb-help--nyala {
+    display: block;
+    color: #4f46e5;
+    background: #eef2ff;
+    border: 1px solid #e0e7ff;
+    border-radius: 7px;
+    padding: 0.4rem 0.55rem;
+    line-height: 1.5;
+}
+
+.mfb-help--nyala .bi {
+    margin-right: 0.25rem;
+}
+
 .mfb-inspector__checks {
     display: flex;
     flex-direction: column;
@@ -632,6 +743,55 @@ export default {
     display: flex;
     gap: 0.4rem;
     margin-top: 0.4rem;
+}
+
+/* TOMBOL KECIL SEKUNDER ("+ Tambah Opsi Baru", "Reset Filter").
+   Kelas ini dipakai sejak awal tapi TIDAK PERNAH punya aturan di berkas mana
+   pun, jadi tombolnya jatuh ke tampilan bawaan peramban -- kotak abu-abu yang
+   tampak seperti sisa markup, bukan tombol yang boleh ditekan. */
+.mfb-mini {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.4rem 0.7rem;
+    border: 1px dashed #c7d2fe;
+    border-radius: 8px;
+    background: #f8faff;
+    color: #4f46e5;
+    font-family: inherit;
+    font-size: 11.5px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.16s, border-color 0.16s, color 0.16s;
+}
+
+.mfb-mini:hover {
+    background: #eef2ff;
+    border-color: #a5b4fc;
+    color: #4338ca;
+}
+
+.mfb-mini:active {
+    background: #e0e7ff;
+}
+
+.mfb-mini .bi {
+    font-size: 12px;
+}
+
+/* Penghitung panjang key. Muncul hanya saat sudah mendekati batas kolom -
+   angka yang selalu terpampang cuma jadi latar yang tak pernah dibaca. */
+.mfb-key-hitung {
+    flex: 0 0 auto;
+    font-size: 10.5px;
+    font-weight: 700;
+    color: #94a3b8;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.mfb-key-hitung.is-mentok {
+    color: #b45309;
 }
 
 .mfb-optrow {

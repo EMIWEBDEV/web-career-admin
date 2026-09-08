@@ -490,6 +490,17 @@
                                                                     <span v-if="F.wajib" class="mfb-badge-req"
                                                                         >Wajib</span
                                                                     >
+                                                                    <!-- Wajib bersyarat ditandai berbeda: menyebutnya
+                                                                         "Wajib" akan berbohong pada kandidat yang
+                                                                         syaratnya tidak terpenuhi, sedangkan tidak
+                                                                         menandainya sama sekali menyembunyikan bahwa
+                                                                         kolom ini punya aturan. -->
+                                                                    <span
+                                                                        v-else-if="F.wajib_jika?.field"
+                                                                        class="mfb-badge-req mfb-badge-req--jika"
+                                                                        :title="`Wajib hanya jika ${F.wajib_jika.field} ${F.wajib_jika.operator} ${F.wajib_jika.nilai}`"
+                                                                        >Wajib bersyarat</span
+                                                                    >
                                                                     <span class="mfb-field-card__width"
                                                                         >{{ Number(F.lebar_persen || 33) }}%<template
                                                                             v-if="F.lebar_jika?.field"
@@ -1105,6 +1116,7 @@ import {
     skemaKosong,
     slugKey,
     validasiSkema,
+    MAKS_PANJANG_KEY,
 } from '@career/formulir';
 import { KATALOG_FIELD, bersihkanField, galatTipe } from '@utils/formulir/katalogField';
 import PropertiField from './PropertiField.vue';
@@ -1341,9 +1353,40 @@ export default {
             if (!t || t.tipe !== 'field') return null;
             return this.schema.langkah?.[t.li]?.bagian?.[t.bi]?.field?.[t.fi] || null;
         },
+        /**
+         * Key terkunci karena sudah dipublish — KECUALI bila key itu sendiri
+         * melebihi lebar kolom Field_Key.
+         *
+         * Gembok ini melindungi data kandidat yang sudah menunjuk key tersebut.
+         * Key yang kepanjangan tidak punya data untuk dilindungi: setiap
+         * unggahan berkasnya selalu mati dengan "String or binary data would be
+         * truncated", jadi tidak ada satu pun baris yang pernah tersimpan.
+         *
+         * Menguncinya justru menjebak — formulir sudah live, kandidat tidak
+         * bisa mengunggah, dan admin tidak diberi jalan memperbaikinya. Pagar
+         * yang sama juga dilonggarkan di server (guardKeyPublished); keduanya
+         * harus sepakat, sebab pagar server-lah yang benar-benar menahan.
+         */
         keyFieldTerkunci() {
             if (!this.fieldAktif || !this.aktif?.published?.schema) return false;
-            return this.fieldDipublish(this.fieldAktif);
+            if (!this.fieldDipublish(this.fieldAktif)) return false;
+
+            return String(this.keyPublished(this.fieldAktif) || '').length <= MAKS_PANJANG_KEY;
+        },
+        /** Key versi PUBLISHED milik field ini — pembanding, bukan yang di layar. */
+        keyPublished() {
+            return (field) => {
+                let ketemu = '';
+                (this.aktif?.published?.schema?.langkah || []).forEach((L) =>
+                    (L.bagian || []).forEach((B) =>
+                        (B.field || []).forEach((F) => {
+                            if (F.field_id && F.field_id === field.field_id) ketemu = F.key || '';
+                        }),
+                    ),
+                );
+
+                return ketemu;
+            };
         },
         fieldPalette() {
             return this.paletteUrutan
@@ -1395,7 +1438,11 @@ export default {
             return fields;
         },
         wajibFieldCount() {
-            return this.semuaField.filter((f) => f.wajib).length;
+            // Yang bersyarat ikut dihitung: bagi perancang formulir, kolom yang
+            // bisa mengikat adalah kolom yang perlu dipikirkan - dan angka ini
+            // dipakai menakar beban pengisian, bukan menghitung bintang merah
+            // pada satu kandidat tertentu.
+            return this.semuaField.filter((f) => f.wajib || f.wajib_jika?.field).length;
         },
         totalSectionCount() {
             return (this.schema.langkah || []).reduce((acc, L) => acc + (L.bagian?.length || 0), 0);
@@ -1668,6 +1715,7 @@ export default {
             (copy.field || []).forEach((f) => {
                 f.field_id = buatFieldId();
                 f.key = this.keyUnik(f.key || f.label);
+                f.key_manual = false;
             });
             this.schema.langkah[li].bagian.splice(bi + 1, 0, copy);
             this.selectSection(li, bi + 1);
@@ -1680,6 +1728,11 @@ export default {
             copy.field_id = buatFieldId();
             copy.label = `${field.label} (Salinan)`;
             copy.key = this.keyUnik(slugKey(copy.label));
+            // Salinan memulai hidupnya dengan key turunan label sendiri, jadi
+            // penanda 'diketik manual' milik aslinya tidak boleh ikut terbawa —
+            // kalau ikut, key salinan langsung beku padahal belum pernah
+            // disentuh siapa pun.
+            copy.key_manual = false;
             this.schema.langkah[li].bagian[bi].field.splice(fi + 1, 0, copy);
             this.selectField(li, bi, fi + 1);
             this.notice('Field diduplikat.');
@@ -1798,8 +1851,22 @@ export default {
             });
             this.notice('Preset layout kolom diterapkan.');
         },
+        /**
+         * Key mengikuti label — SELAMA key-nya belum pernah diketik sendiri.
+         *
+         * Bawaannya memang diturunkan dari label: itu yang membuat pembuatan
+         * field cepat, dan sembilan dari sepuluh kali memang itu yang diinginkan.
+         *
+         * Tapi begitu admin mengetik key-nya sendiri, label TIDAK BOLEH lagi
+         * menimpanya. Sebelum ada penjaga ini, fungsi ini dipanggil pada tiap
+         * ketukan di kotak Label, jadi key hasil ketikan hidup paling lama satu
+         * ketukan — yang membuat kotak Key tampak bisa diisi padahal sebenarnya
+         * tidak. Itulah yang membuat label panjang selalu memaksa key panjang,
+         * dan key panjang itulah yang menabrak batas kolom varchar(60).
+         */
         sinkronKey() {
             if (!this.fieldAktif || this.keyFieldTerkunci) return;
+            if (this.fieldAktif.key_manual) return;
             this.fieldAktif.key = this.keyUnik(slugKey(this.fieldAktif.label), this.fieldAktif.field_id);
         },
         ubahLabelField() {
@@ -1836,11 +1903,37 @@ export default {
             if (!this.langkahAktif) return;
             this.langkahAktif.tampil_jika = key ? { field: key, operator: '=', nilai: '' } : null;
         },
+        /**
+         * Dipanggil saat kotak Key DITINGGALKAN: rapikan ketikannya, lalu catat
+         * bahwa key ini kini milik admin.
+         *
+         * Penandanya dipasang di sini, bukan pada tiap ketukan: selama masih
+         * mengetik, key setengah jadi tidak boleh langsung memutus hubungan
+         * dengan label — admin yang salah ketik lalu mengosongkan kotaknya
+         * berhak mendapatkan bawaannya kembali.
+         *
+         * Dikosongkan = kembali mengikuti label. Itu jalan pulangnya, dan ia
+         * harus ada: tanpa itu, sekali key diketik, tidak ada cara membatalkan
+         * selain menghapus field-nya.
+         */
         rapikanKeyField() {
             if (!this.fieldAktif || this.keyFieldTerkunci) return;
-            const lama = this.fieldAktif.key;
-            const rapi = slugKey(lama || this.fieldAktif.label);
-            this.fieldAktif.key = this.keyUnik(rapi, this.fieldAktif.field_id);
+
+            const diketik = String(this.fieldAktif.key || '').trim();
+
+            if (diketik === '') {
+                this.fieldAktif.key_manual = false;
+                this.fieldAktif.key = this.keyUnik(slugKey(this.fieldAktif.label), this.fieldAktif.field_id);
+
+                return;
+            }
+
+            const rapi = this.keyUnik(slugKey(diketik), this.fieldAktif.field_id);
+            this.fieldAktif.key = rapi;
+            // Hanya dianggap manual bila hasilnya memang BEDA dari turunan
+            // labelnya. Mengetik ulang persis yang sama tidak perlu memutus
+            // hubungan dengan label.
+            this.fieldAktif.key_manual = rapi !== this.keyUnik(slugKey(this.fieldAktif.label), this.fieldAktif.field_id);
         },
         rapikanField(f) {
             // Dua arah: melengkapi bawaan tipe baru DAN membuang properti yang
@@ -1947,9 +2040,19 @@ export default {
                     }),
                 ),
             );
-            let key = slugKey(base);
+            // Akhiran pembeda dihitung ke dalam batas kolom, bukan ditempel
+            // begitu saja: `Field_Key` cuma varchar(60), dan basis yang sudah
+            // mepet batas akan melewatinya persis saat ada key kembar - galat
+            // yang baru muncul jauh kemudian, di layar KANDIDAT yang sedang
+            // mengunggah berkas.
+            const dasar = slugKey(base);
+            let key = dasar;
             let i = 2;
-            while (used.has(key)) key = `${slugKey(base)}_${i++}`;
+            while (used.has(key)) {
+                const akhiran = `_${i++}`;
+                key = dasar.slice(0, MAKS_PANJANG_KEY - akhiran.length).replace(/_+$/g, '') + akhiran;
+            }
+
             return key;
         },
         fieldDipublish(field) {
@@ -3062,6 +3165,40 @@ export default {
     font-family: monospace;
 }
 
+/* TOMBOL KECIL SEKUNDER ("+ Tambah Opsi Baru", "Reset Filter").
+   Kelas ini dipakai sejak awal tapi TIDAK PERNAH punya aturan di berkas mana
+   pun, jadi tombolnya jatuh ke tampilan bawaan peramban -- kotak abu-abu yang
+   tampak seperti sisa markup, bukan tombol yang boleh ditekan. */
+.mfb-mini {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.4rem 0.7rem;
+    border: 1px dashed #c7d2fe;
+    border-radius: 8px;
+    background: #f8faff;
+    color: #4f46e5;
+    font-family: inherit;
+    font-size: 11.5px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.16s, border-color 0.16s, color 0.16s;
+}
+
+.mfb-mini:hover {
+    background: #eef2ff;
+    border-color: #a5b4fc;
+    color: #4338ca;
+}
+
+.mfb-mini:active {
+    background: #e0e7ff;
+}
+
+.mfb-mini .bi {
+    font-size: 12px;
+}
+
 .mfb-badge-req {
     background: #fee2e2;
     color: #b91c1c;
@@ -3069,6 +3206,13 @@ export default {
     font-weight: 800;
     padding: 1px 4px;
     border-radius: 4px;
+}
+
+/* Wajib BERSYARAT -- sengaja tidak merah. Merah dibaca sebagai "pasti wajib",
+   dan kolom ini belum tentu mengikat. */
+.mfb-badge-req--jika {
+    background: #ede9fe;
+    color: #6d28d9;
 }
 
 .mfb-field-card__width {

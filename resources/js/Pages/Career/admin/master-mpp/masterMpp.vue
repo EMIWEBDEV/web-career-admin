@@ -4,176 +4,43 @@
 <template>
     <Head title="Master MPP" />
     <div class="wca">
-        <div class="wca-phead">
-            <div>
-                <h1>Master MPP</h1>
-                <p>
-                    Buat &amp; kelola transaksi Manpower Planning (MPP). Setiap MPP
-                    <b>Aktif &amp; Belum Selesai</b> otomatis bisa dipilih saat membuka program rekrutmen.
-                </p>
-            </div>
-            <div class="wca-phead__actions">
-                <div class="mmp-toggle" role="group" aria-label="Ubah tampilan">
-                    <button
-                        class="wca-iconbtn"
-                        :class="{ 'is-active': view === 'grid' }"
-                        title="Tampilan kartu"
-                        :aria-pressed="view === 'grid'"
-                        @click="setView('grid')"
-                    >
-                        <i class="bi bi-grid-3x3-gap-fill"></i>
-                    </button>
-                    <button
-                        class="wca-iconbtn"
-                        :class="{ 'is-active': view === 'table' }"
-                        title="Tampilan tabel"
-                        :aria-pressed="view === 'table'"
-                        @click="setView('table')"
-                    >
-                        <i class="bi bi-list-ul"></i>
-                    </button>
-                </div>
-                <button class="wca-btn wca-btn--primary" @click="openCreate">
-                    <i class="bi bi-plus-lg"></i> Transaksi MPP Baru
-                </button>
-            </div>
-        </div>
+        <!-- ══ BILAH RINGKAS — hanya tampilan split ══════════════════════
+             Mengikuti rancangan: judul + RINGKASAN ANGKA dalam satu baris, bukan
+             empat kartu statistik setinggi 150px. Angkanya pun berbeda dari
+             kartu lama: yang ditanyakan di halaman ini bukan "berapa MPP", tapi
+             "berapa kursi yang masih kosong dan berapa yang lewat tenggat".
 
-        <div class="wca-note wca-note--info">
-            <i class="bi bi-info-circle"></i>
-            <span
-                >Tidak ada hapus permanen — riwayat lamaran &amp; program yang sudah menempel ke MPP wajib tetap utuh.
-                Gunakan <b>Batalkan</b> untuk menghentikannya sebagai pilihan baru.</span
-            >
-        </div>
-
-        <div class="wca-stats">
-            <div class="wca-stat">
-                <div class="wca-stat__top">
-                    <span class="wca-stat__ico"><i class="bi bi-clipboard-data"></i></span>
+             Tombol "Ekspor Excel" pada rancangan TIDAK dipasang — diminta tidak
+             dimunculkan, dan belum ada yang menghasilkan berkasnya. -->
+        <div class="mmp-bar">
+            <span class="mmp-bar__ico"><i class="bi bi-briefcase-fill"></i></span>
+            <div class="mmp-bar__txt">
+                <h1>MPP</h1>
+                <div class="mmp-bar__meta">
+                    <span v-for="r in ringkasBar" :key="r.k">
+                        <span class="mmp-bar__dot" :style="{ background: r.c }"></span>
+                        <b>{{ r.v }}</b> {{ r.k }}
+                    </span>
                 </div>
-                <div class="wca-stat__num">{{ stats.total }}</div>
-                <div class="wca-stat__label">Total MPP</div>
             </div>
-            <div class="wca-stat">
-                <div class="wca-stat__top">
-                    <span class="wca-stat__ico" style="background: rgba(16, 185, 129, 0.12); color: #059669"
-                        ><i class="bi bi-play-circle"></i
-                    ></span>
-                </div>
-                <div class="wca-stat__num">{{ stats.aktif }}</div>
-                <div class="wca-stat__label">Aktif</div>
-            </div>
-            <div class="wca-stat">
-                <div class="wca-stat__top">
-                    <span class="wca-stat__ico" style="background: rgba(34, 197, 94, 0.12); color: #15803d"
-                        ><i class="bi bi-check-circle"></i
-                    ></span>
-                </div>
-                <div class="wca-stat__num">{{ stats.selesai }}</div>
-                <div class="wca-stat__label">Selesai</div>
-            </div>
-            <div class="wca-stat">
-                <div class="wca-stat__top">
-                    <span class="wca-stat__ico" style="background: rgba(239, 68, 68, 0.12); color: #b91c1c"
-                        ><i class="bi bi-x-circle"></i
-                    ></span>
-                </div>
-                <div class="wca-stat__num">{{ stats.dibatalkan }}</div>
-                <div class="wca-stat__label">Dibatalkan</div>
-            </div>
+            <button class="wca-iconbtn" title="Muat ulang" :disabled="loading" @click="load">
+                <i class="bi" :class="loading ? 'bi-arrow-repeat mmp-spin' : 'bi-arrow-clockwise'"></i>
+            </button>
+            <button class="wca-btn wca-btn--primary" @click="openCreate">
+                <i class="bi bi-plus-lg"></i> Transaksi MPP Baru
+            </button>
         </div>
 
         <!-- Toolbar: satu baris inline flex-wrap, pola sama dengan bekas Monitoring MPP -->
-        <div class="mmp-tb">
-            <div class="wca-search2 mmp-tb__srch">
-                <i class="bi" :class="loading && ready ? 'bi-arrow-repeat mmp-spin' : 'bi-search'"></i>
-                <input
-                    v-model="q"
-                    type="text"
-                    placeholder="Cari No Transaksi / Jabatan / Divisi…"
-                    @input="onSearchInput"
-                />
-            </div>
-            <button
-                v-for="s in ['AKTIF', 'DIBATALKAN']"
-                :key="s"
-                class="mmp-chip"
-                :class="{ on: fStatus === s }"
-                @click="toggleChip('fStatus', s)"
-            >
-                {{ s === 'AKTIF' ? 'Aktif' : 'Dibatalkan' }}
-            </button>
-            <span class="mmp-div"></span>
-            <button
-                v-for="s in ['1', '0']"
-                :key="'sel' + s"
-                class="mmp-chip"
-                :class="{ on: fSelesai === s }"
-                @click="toggleChip('fSelesai', s)"
-            >
-                {{ s === '1' ? 'Selesai' : 'Belum Selesai' }}
-            </button>
-            <span class="mmp-div"></span>
-            <button
-                v-for="s in ['REKRUTMEN', 'MT']"
-                :key="'jns' + s"
-                class="mmp-chip"
-                :class="{ on: fJenis === s }"
-                @click="toggleChip('fJenis', s)"
-            >
-                {{ jenisProgramLabel(s) }}
-            </button>
-            <span class="mmp-div"></span>
-            <span class="mmp-sel"
-                ><el-select v-model="fDivisi" placeholder="Divisi" clearable filterable @change="reload"
-                    ><el-option
-                        v-for="d in divisiOptions"
-                        :key="d.value"
-                        :label="d.label"
-                        :value="d.value" /></el-select
-            ></span>
-            <span class="mmp-sel"
-                ><el-select v-model="fPeriode" placeholder="Periode" clearable @change="reload"
-                    ><el-option v-for="p in periodeOptions" :key="p" :label="periodeLabel(p)" :value="p" /></el-select
-            ></span>
-            <span class="mmp-sel"
-                ><el-select v-model="fEmployment" placeholder="Tipe Kerja" clearable @change="reload"
-                    ><el-option
-                        v-for="e in klasifikasi.employment"
-                        :key="e.value"
-                        :label="e.label"
-                        :value="e.value" /></el-select
-            ></span>
-            <span class="mmp-sel"
-                ><el-select v-model="fWorkplace" placeholder="Lokasi Kerja" clearable @change="reload"
-                    ><el-option
-                        v-for="w in klasifikasi.workplace"
-                        :key="w.value"
-                        :label="w.label"
-                        :value="w.value" /></el-select
-            ></span>
-            <span class="mmp-sel"
-                ><el-select v-model="fExperience" placeholder="Exp. Level" clearable @change="reload"
-                    ><el-option
-                        v-for="x in klasifikasi.experience"
-                        :key="x.value"
-                        :label="x.label"
-                        :value="x.value" /></el-select
-            ></span>
-            <button v-if="hasFilter" class="wca-iconbtn mmp-tb__rst" title="Reset filter" @click="resetFilter">
-                <i class="bi bi-x-lg"></i>
-            </button>
-        </div>
-
         <template v-if="loading && !ready">
-            <div v-if="view === 'grid'" class="mmp-grid">
-                <div v-for="n in perPage" :key="n" class="mmp-skcard"></div>
-            </div>
-            <div v-else class="wca-card">
-                <div class="wca-card__body--flush">
-                    <div class="mmp-skrows"><div v-for="n in perPage" :key="n" class="mmp-skrow"></div></div>
+            <!-- Kerangka SPLIT: dua panel, bukan deretan kartu. Kerangka yang
+                 bentuknya berbeda dari isi yang akan datang membuat halaman
+                 terlihat melompat saat datanya tiba. -->
+            <div class="mmp-sksplit">
+                <div class="mmp-skpane">
+                    <div v-for="n in 5" :key="n" class="mmp-skrow"></div>
                 </div>
+                <div class="mmp-skpane mmp-skpane--kanan"></div>
             </div>
         </template>
 
@@ -183,163 +50,68 @@
             <button class="wca-btn wca-btn--primary wca-btn--sm" @click="load"><i class="bi bi-arrow-clockwise"></i> Coba lagi</button>
         </div></div>
 
-        <div v-else-if="!list.length" class="wca-card"><div class="wca-empty">
-            <i class="bi bi-clipboard-x"></i>
-            <h4>{{ hasFilter ? 'Tidak ada MPP cocok dengan filter' : 'Belum ada transaksi MPP' }}</h4>
-            <button v-if="hasFilter" class="wca-btn wca-btn--ghost wca-btn--sm" @click="resetFilter"><i class="bi bi-x-circle"></i> Reset filter</button>
-        </div></div>
+        <!-- DAFTAR KOSONG TIDAK MENGGANTI SELURUH LAYAR.
+             Dulu di sini ada cabang yang menukar seluruh split dengan satu kartu
+             "Belum ada transaksi MPP". Akibatnya panel penyaring ikut lenyap —
+             dan penyaring yang MENYEBABKAN daftarnya kosong jadi tidak bisa
+             dicabut lagi kecuali dengan memuat ulang halaman.
 
+             Keadaan kosongnya sekarang digambar DI DALAM panel kiri (lihat
+             "Tidak ada MPP yang cocok" di MasterMppSplit), sehingga penyaringnya
+             tetap ada di tempatnya. -->
         <template v-else>
-            <div v-if="view === 'grid'" class="mmp-grid" :class="{ 'mmp-busy': loading }">
-                <MasterMppCard
-                    v-for="m in list"
-                    :key="m.noTransaksi"
-                    :mpp="m"
-                    @open="openDetail"
-                    @edit="openEdit"
-                    @toggle-selesai="toggleSelesai"
-                    @batalkan="askBatalkan"
-                    @aktifkan="aktifkanKembali"
-                />
-            </div>
+            <!-- SPLIT — daftar kiri + detail kanan, mengikuti rancangan
+                 docs/refrences/v2/.../Realisasi Kuota MPP.dc.html. Seluruh aksi
+                 (Ubah/Selesai/Batalkan/Perpanjang) memakai handler yang sama
+                 dengan grid & tabel; yang berbeda cuma tata letaknya. -->
+            <MasterMppSplit
+                :daftar="daftarSplit"
+                :detail="splitDetail"
+                :terpilih="splitNo"
+                :memuat="splitMemuat"
+                :tab="splitTab"
+                :q="q"
+                :cq="cq"
+                :cpage="cpage"
+                :f-isi="fIsiSplit"
+                :f-sla="fSlaSplit"
+                :tab-isi="tabIsiSplit"
+                :tab-sla="tabSlaSplit"
+                :ada-filter="hasFilter || fIsiSplit !== 'all' || fSlaSplit !== 'all' || fPicSplit.length > 0 || !!rentangTgl"
+                :kandidat="kandidat"
+                :kandidat-total="kandidatTotal"
+                :kandidat-hal="kandidatHal"
+                :kandidat-memuat="kandidatMemuat"
+                :mobile-detail="splitMobileDetail"
+                :hal="page"
+                :total-hal="totalPages"
+                :total-mpp="totalData"
+                :f-pic="fPicSplit"
+                :pic-options="picOptions"
+                :f-jenis="fJenis || 'all'"
+                :tab-jenis="tabJenisSplit"
+                :rentang="rentangTgl"
+                @update:hal="gantiHalSplit"
+                @update:f-pic="gantiPic"
+                @update:f-jenis="gantiJenis"
+                @update:rentang="gantiRentang"
+                @pilih="pilihSplit"
+                @lihat-kandidat="bukaKandidat"
+                @kembali="splitMobileDetail = false"
+                @ubah="openEdit"
+                @batalkan="askBatalkan"
+                @aktifkan="(d) => aktifkanKembali(d, true)"
+                @toggle-selesai="(d) => toggleSelesai(d, true)"
+                @perpanjang="askPerpanjang"
+                @bersihkan="bersihkanSplit"
+                @update:q="(v) => { q = v; onSearchInput(); }"
+                @update:cq="(v) => { cq = v; cpage = 1; muatKandidat(); }"
+                @update:cpage="(v) => { cpage = v; muatKandidat(); }"
+                @update:tab="(v) => (splitTab = v)"
+                @update:f-isi="(v) => (fIsiSplit = v)"
+                @update:f-sla="(v) => (fSlaSplit = v)"
+            />
 
-            <div v-else class="wca-card" :class="{ 'mmp-busy': loading }">
-                <div class="wca-card__body--flush">
-                    <div class="wca-tablewrap">
-                        <table class="wca-table mmp-table">
-                            <thead>
-                                <tr>
-                                    <th>No Transaksi</th>
-                                    <th>Program</th>
-                                    <th>Jabatan</th>
-                                    <th>Divisi</th>
-                                    <th>Tipe Kerja</th>
-                                    <th>Lokasi Kerja</th>
-                                    <th class="mmp-num">Jml</th>
-                                    <th class="mmp-sortable" @click="toggleSort('status')">
-                                        Status <i class="bi" :class="sortIcon('status')"></i>
-                                    </th>
-                                    <th>Selesai</th>
-                                    <th class="mmp-sortable" @click="toggleSort('tanggal_periode')">
-                                        Periode <i class="bi" :class="sortIcon('tanggal_periode')"></i>
-                                    </th>
-                                    <th>Penanggung Jawab</th>
-                                    <th></th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr
-                                    v-for="m in list"
-                                    :key="m.noTransaksi"
-                                    style="cursor: pointer"
-                                    @click="openDetail(m.noTransaksi)"
-                                >
-                                    <td>
-                                        <span class="mmp-no">{{ m.noTransaksi }}</span>
-                                    </td>
-                                    <td>
-                                        <span
-                                            class="mmp-tb-badge"
-                                            :class="m.jenisProgram === 'MT' ? 'mmp-tb--mt' : 'mmp-tb--rek'"
-                                            ><i
-                                                class="bi"
-                                                :class="
-                                                    m.jenisProgram === 'MT'
-                                                        ? 'bi-mortarboard-fill'
-                                                        : 'bi-person-workspace'
-                                                "
-                                            ></i>
-                                            {{ jenisProgramLabel(m.jenisProgram) }}</span
-                                        >
-                                    </td>
-                                    <td>
-                                        <strong>{{ m.jabatan.nama || '—' }}</strong>
-                                    </td>
-                                    <td>{{ m.divisi.nama || '—' }}</td>
-                                    <td>
-                                        <span v-if="m.employmentType" class="mmp-tb-badge mmp-tb--emp">{{
-                                            m.employmentType.nama
-                                        }}</span
-                                        ><span v-else>—</span>
-                                    </td>
-                                    <td>
-                                        <span v-if="m.workplaceType" class="mmp-tb-badge mmp-tb--wp">{{
-                                            m.workplaceType.nama
-                                        }}</span
-                                        ><span v-else>—</span>
-                                    </td>
-                                    <td class="mmp-num">
-                                        <span class="wca-badge wca-b--slate"
-                                            ><i class="bi bi-people-fill"></i> {{ m.jumlahRekrutmen }}</span
-                                        >
-                                    </td>
-                                    <td>
-                                        <span class="wca-badge" :class="statusBadge(m.status)">{{
-                                            statusLabel(m.status)
-                                        }}</span>
-                                    </td>
-                                    <td>
-                                        <span class="mmp-flag" :class="{ 'is-done': m.selesai }"
-                                            ><span class="mmp-flag__dot"></span
-                                            >{{ m.selesai ? 'Selesai' : 'Berjalan' }}</span
-                                        >
-                                    </td>
-                                    <td>{{ formatTanggal(m.tanggalPeriode) }}</td>
-                                    <td>
-                                        <div class="wca-table__name">
-                                            <span class="wca-avatar wca-avatar--sm">{{
-                                                initials(m.penanggungJawab.nama)
-                                            }}</span>
-                                            <span>{{ m.penanggungJawab.nama }}</span>
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <div class="mmp-tb-actions" @click.stop>
-                                            <button class="wca-iconbtn" title="Ubah" @click="openEdit(m)">
-                                                <i class="bi bi-pencil"></i>
-                                            </button>
-                                            <button
-                                                class="wca-iconbtn"
-                                                :class="{ 'wca-iconbtn--success': !m.selesai }"
-                                                :title="m.selesai ? 'Tandai belum selesai' : 'Tandai selesai'"
-                                                @click="toggleSelesai(m)"
-                                            >
-                                                <i
-                                                    class="bi"
-                                                    :class="
-                                                        m.selesai ? 'bi-arrow-counterclockwise' : 'bi-check2-circle'
-                                                    "
-                                                ></i>
-                                            </button>
-                                            <button
-                                                v-if="m.status === 'AKTIF'"
-                                                class="wca-iconbtn wca-iconbtn--danger"
-                                                title="Batalkan"
-                                                @click="askBatalkan(m)"
-                                            >
-                                                <i class="bi bi-x-circle"></i>
-                                            </button>
-                                            <button
-                                                v-else
-                                                class="wca-iconbtn wca-iconbtn--success"
-                                                title="Aktifkan kembali"
-                                                @click="aktifkanKembali(m)"
-                                            >
-                                                <i class="bi bi-arrow-counterclockwise"></i>
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-
-            <div class="mmp-pagerow">
-                <span class="mmp-count">Menampilkan {{ list.length }} dari {{ totalData }} MPP</span>
-                <Pagination :current-page="page" :total-pages="totalPages" @page-change="changePage" />
-            </div>
         </template>
 
         <AdminModal
@@ -517,6 +289,35 @@
                                         <span>
                                             Periode targetnya mengikuti <b>tanggal MPP ini dibuat</b><template v-if="form.tanggalPeriode"> &mdash; {{ tglPanjang(form.tanggalPeriode) }}</template>.
                                             Ketentuan hari kerja per level hanya berlaku untuk Rekrutmen Reguler.
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- ── MPP INI SUDAH DIPERPANJANG ────────────────────────────
+                             Tenggatnya BEKU di layar ini, dan itu harus dikatakan —
+                             bukan dibiarkan sebagai tanggal yang tidak ikut berubah saat
+                             levelnya diganti. Admin yang mengganti level lalu melihat
+                             tanggal tidak bergerak akan mengira borangnya rusak, dan
+                             mencoba lagi.
+
+                             Tenggat hanya boleh bergeser lewat tombol Perpanjang, yang
+                             menuntut alasan tertulis. Itu disebutkan berikut tombolnya,
+                             supaya yang memang perlu memindahkannya tahu ke mana. -->
+                        <div v-else-if="editingNo && slaTerkunciPerpanjangan" class="mmp-slawrap">
+                            <div class="mmp-slanull is-panjang">
+                                <div class="mmp-slanull__head">
+                                    <i class="bi bi-calendar-check-fill"></i>
+                                    <div>
+                                        <b>Tenggat MPP ini sudah diperpanjang {{ slaPerpanjanganKe }}&times;</b>
+                                        <span>
+                                            Tenggat yang berlaku <b>{{ tglPanjang(slaBatasBerlaku) }}</b>
+                                            <template v-if="slaBatasAsli && slaBatasAsli !== slaBatasBerlaku">
+                                                (aslinya {{ tglPanjang(slaBatasAsli) }})</template>.
+                                            Menyunting MPP di sini <b>tidak menggeser tenggat</b> &mdash; termasuk bila
+                                            levelnya diganti. Gunakan tombol <b>Perpanjang SLA</b> di kartu atau panel
+                                            detail, yang mencatat alasannya.
                                         </span>
                                     </div>
                                 </div>
@@ -1121,6 +922,24 @@
             }})?
         </ConfirmModal>
 
+        <!-- Profil kandidat pengisi kursi — BACA SAJA, tanpa tombol aksi.
+             Lihat catatan kepala KandidatDetailModal.vue. -->
+        <KandidatDetailModal
+            :show="kandidatShow"
+            :no-mpp="kandidatNo"
+            :kandidat="kandidatTarget"
+            @tutup="kandidatShow = false"
+        />
+
+        <PerpanjangSlaModal
+            :show="panjangShow"
+            :busy="panjangBusy"
+            :no="panjangTarget?.noTransaksi || ''"
+            :keadaan="panjangKeadaan"
+            @close="panjangShow = false"
+            @confirm="konfirmasiPerpanjang"
+        />
+
         <MasterMppDetailPanel
             ref="panelRef"
             :no="selectedNo"
@@ -1139,6 +958,7 @@
                 }
             "
             @aktifkan="(d) => aktifkanKembali(d, true)"
+            @perpanjang="askPerpanjang"
         />
 
         <transition name="wca-toast"><div v-if="toast" class="wca-toast"><i class="bi bi-check-circle-fill"></i> {{ toast }}</div></transition>
@@ -1153,11 +973,22 @@ import ConfirmModal from '@career/ConfirmModal.vue';
 import Pagination from '../../../../components/ui/Pagination.vue';
 import MasterMppCard from './MasterMppCard.vue';
 import MasterMppDetailPanel from './MasterMppDetailPanel.vue';
+import MasterMppSplit from './MasterMppSplit.vue';
+import PerpanjangSlaModal from './PerpanjangSlaModal.vue';
+import KandidatDetailModal from './KandidatDetailModal.vue';
 import PointsEditor from './PointsEditor.vue';
 import { formatTanggal, initials, statusBadge, statusLabel, periodeLabel, jenisProgramLabel } from '@utils/career/masterMpp';
 import { ingatModal } from '@utils/ingatModal';
 import { punyaRentang as cekRentang, rentangPanjang } from '@utils/rentangTanggal';
 import { hariIni } from '@utils/tanggalLokal';
+import { kunciSla, penuhMpp, kursiMpp } from '@utils/career/mppSla';
+
+/* 'full' | 'partial' | 'empty' — dipakai tab keterisian di panel kiri. */
+function kunciIsi(m) {
+    if (penuhMpp(m)) return 'full';
+
+    return kursiMpp(m).terisi > 0 ? 'partial' : 'empty';
+}
 
 const API = '/api/v1/master-mpp';
 const CFG = { headers: { Accept: 'application/json' } };
@@ -1197,12 +1028,11 @@ const FORM_KOSONG = () => ({
 });
 
 export default {
-    components: { Head, AdminModal, ConfirmModal, Pagination, MasterMppCard, MasterMppDetailPanel, PointsEditor },
+    components: { Head, AdminModal, ConfirmModal, Pagination, MasterMppCard, MasterMppDetailPanel, MasterMppSplit, PerpanjangSlaModal, KandidatDetailModal, PointsEditor },
     // Modal di halaman ini selamat dari refresh — lihat @utils/ingatModal.
     mixins: [ingatModal('admin/master-mpp/masterMpp')],
     data() {
         return {
-            view: localStorage.getItem('mmp-view') || 'grid',
             list: [],
             stats: { total: 0, aktif: 0, selesai: 0, dibatalkan: 0 },
             loading: false,
@@ -1253,6 +1083,57 @@ export default {
             batalShow: false,
             batalTarget: null,
             batalBusy: false,
+
+            // PERPANJANG SLA. `panjangKeadaan` sengaja BUKAN turunan dari kartu:
+            // syarat boleh/tidaknya dihitung server (PerpanjangSla::keadaan) dan
+            // ikut menimbang hal-hal yang tidak ada di kartu — kursi yang sudah
+            // penuh, jatah yang sudah habis. Layar yang menyimpulkan sendiri
+            // cepat atau lambat menawarkan tombol yang lalu ditolak.
+            // Snapshot perpanjangan MPP yang sedang DISUNTING (bukan yang sedang
+            // diperpanjang) — lihat panel beku di langkah 1.
+            slaPanjang: null,
+
+            // ── TAMPILAN SPLIT ──────────────────────────────────────────────
+            // Detailnya diambil terpisah (endpoint detail) karena daftar sengaja
+            // tidak membawa Tanggung Jawab/Persyaratan/Skill/Benefit — lihat list().
+            splitNo: null,
+            splitDetail: null,
+            splitMemuat: false,
+            splitTab: 'kandidat',
+            splitMobileDetail: false,
+            // Penyaring MILIK PANEL KIRI, bekerja di atas baris yang sudah dimuat.
+            // Tidak dikirim ke server: keduanya (keterisian & SLA) dihitung dari
+            // tanggal + kursi yang sudah ada di tiap baris, jadi memutarnya lewat
+            // server berarti satu perjalanan jaringan untuk jawaban yang sudah
+            // dipegang layar.
+            fIsiSplit: 'all',
+            fSlaSplit: 'all',
+            // PIC bisa LEBIH DARI SATU — larik, bukan satu nilai. Lihat catatan
+            // di panel split: rekruter sering membandingkan beban dua-tiga PIC
+            // sekaligus, dan penyaring nilai-tunggal memaksa itu jadi tiga kali
+            // muat halaman yang hasilnya tidak pernah bisa dilihat berdampingan.
+            fPicSplit: [],
+            picOptions: [],
+            ringkasKursi: { kuota: 0, terisi: 0, sisa: 0, lewat: 0 },
+            // [dari, sampai] — null berarti belum disaring. Dikirim apa adanya
+            // ke server; sisi yang dikosongkan memang boleh sendirian.
+            rentangTgl: null,
+
+            kandidat: [],
+            kandidatTotal: 0,
+            kandidatHal: 1,
+            kandidatMemuat: false,
+            cq: '',
+            cpage: 1,
+
+            panjangShow: false,
+            // Profil kandidat (baca saja) — lihat KandidatDetailModal.vue.
+            kandidatShow: false,
+            kandidatTarget: null,
+            kandidatNo: '',
+            panjangTarget: null,
+            panjangKeadaan: null,
+            panjangBusy: false,
             selectedNo: null,
             toast: '',
             tm: null,
@@ -1274,6 +1155,98 @@ export default {
         };
     },
     computed: {
+        /* Ringkasan kursi & SLA untuk bilah atas — angka LINTAS SELURUH MPP,
+         * bukan halaman yang sedang terlihat (lihat ringkasKursiSla() di server). */
+        /* NAMANYA `ringkasBar`, BUKAN `ringkas`.
+         *
+         * `ringkas` sudah dipakai pratinjau wizard di bawah, dan dua computed
+         * bernama sama tidak menimbulkan galat apa pun saat dibangun — yang
+         * terakhir sekadar menang diam-diam. Akibatnya bilah atas menerima objek
+         * pratinjau lalu v-for mencacahnya jadi null, dan SELURUH halaman gagal
+         * digambar. Kegagalan yang paling mahal justru karena paling sunyi. */
+        ringkasBar() {
+            const r = this.ringkasKursi || { kuota: 0, terisi: 0, sisa: 0, lewat: 0 };
+
+            return [
+                { k: 'kuota', v: r.kuota, c: '#6366f1' },
+                { k: 'terisi', v: r.terisi, c: '#10b981' },
+                { k: 'sisa', v: r.sisa, c: '#f59e0b' },
+                { k: 'lewat SLA', v: r.lewat, c: '#ef4444' },
+            ];
+        },
+        /* ── TAMPILAN SPLIT ───────────────────────────────────────────────────
+         *
+         * Penyaring keterisian & SLA bekerja DI LAYAR, di atas baris yang sudah
+         * dimuat. Keduanya dihitung dari data yang memang sudah ada di tiap baris
+         * (kursi + tanggal batas), jadi memutarnya lewat server berarti satu
+         * perjalanan jaringan untuk jawaban yang sudah dipegang.
+         *
+         * Yang TIDAK dilakukan di layar: pencarian, filter divisi/periode, dan
+         * pagination. Ketiganya menyentuh baris yang belum dimuat, dan menyaring
+         * halaman yang sedang terlihat saja akan menyembunyikan MPP yang cocok
+         * hanya karena ia ada di halaman berikutnya. */
+        daftarSplit() {
+            return (this.list || []).filter(
+                (m) =>
+                    (this.fIsiSplit === 'all' || kunciIsi(m) === this.fIsiSplit) &&
+                    (this.fSlaSplit === 'all' || kunciSla(m) === this.fSlaSplit),
+            );
+        },
+        tabIsiSplit() {
+            const n = (k) => (k === 'all' ? this.list.length : this.list.filter((m) => kunciIsi(m) === k).length);
+
+            return [
+                { key: 'all', label: 'Semua', count: n('all') },
+                { key: 'full', label: 'Terpenuhi', count: n('full') },
+                { key: 'partial', label: 'Sebagian', count: n('partial') },
+                { key: 'empty', label: 'Kosong', count: n('empty') },
+            ];
+        },
+        /* Jenis program. Hitungannya dari `stats`-lah yang benar (lintas seluruh
+         * MPP), bukan dari `list` yang cuma halaman ini — tapi stats belum
+         * memecah per jenis, jadi angkanya diambil dari halaman yang terlihat
+         * dan sengaja TIDAK ditampilkan saat penyaring lain sedang aktif. */
+        tabJenisSplit() {
+            const n = (k) =>
+                k === 'all'
+                    ? this.list.length
+                    : this.list.filter((m) => (k === 'MT' ? m.jenisProgram === 'MT' : m.jenisProgram !== 'MT')).length;
+
+            return [
+                { key: 'all', label: 'Semua Jenis', count: n('all') },
+                { key: 'REKRUTMEN', label: 'Rekrutmen', count: n('REKRUTMEN') },
+                { key: 'MT', label: 'MT', count: n('MT') },
+            ];
+        },
+        tabSlaSplit() {
+            const n = (k) => (k === 'all' ? this.list.length : this.list.filter((m) => kunciSla(m) === k).length);
+
+            return [
+                { key: 'all', label: 'Semua SLA', count: n('all') },
+                { key: 'ontime', label: 'Dalam SLA', count: n('ontime') },
+                { key: 'risk', label: 'Mendekati', count: n('risk') },
+                { key: 'over', label: 'Lewat SLA', count: n('over') },
+            ];
+        },
+        /* ── MPP yang sedang disunting sudah pernah diperpanjang? ─────────────
+         *
+         * Kalau ya, tenggatnya BEKU di borang Ubah: mengganti level tetap
+         * memperbarui angka hari kerjanya (itu memang ikut level), tapi TANGGAL
+         * batasnya tidak bergerak. Server yang menegakkannya — ini cuma yang
+         * mengatakannya, sebab tanggal yang diam saat levelnya diganti tanpa
+         * satu kata pun terbaca sebagai borang yang rusak. */
+        slaTerkunciPerpanjangan() {
+            return !this.mtDipilih && Number(this.slaPanjang?.ke || 0) > 0;
+        },
+        slaPerpanjanganKe() {
+            return Number(this.slaPanjang?.ke || 0);
+        },
+        slaBatasBerlaku() {
+            return this.slaPanjang?.batas || null;
+        },
+        slaBatasAsli() {
+            return this.slaPanjang?.batasAwal || null;
+        },
         hasFilter() {
             return !!(
                 this.q ||
@@ -1608,6 +1581,20 @@ export default {
         this.loadOpsiFilter();
     },
     methods: {
+        /**
+         * Baris tabel: perlukah tombol Perpanjang?
+         *
+         * Syaratnya sama persis dengan kartu grid (lihat MasterMppCard) — tombol
+         * yang muncul di satu tampilan tapi tidak di tampilan lain untuk MPP yang
+         * sama membuat orang mengira salah satunya rusak.
+         *
+         * Hanya menyaring yang membuat tombolnya mustahil berguna: MT, yang
+         * dibatalkan, yang sudah selesai, dan yang tidak punya angka SLA sama
+         * sekali. Sisanya diputuskan server dan diterangkan di dalam modal.
+         */
+        bolehPerpanjang(m) {
+            return m.jenisProgram !== 'MT' && m.status === 'AKTIF' && !m.selesai && !!m.sla?.hari;
+        },
         /** Batas SLA level ini — kosong berarti level itu memang tidak dikunci. */
         async muatSla(idLevel) {
             this.sla = { hari: null, mulai: null, batas: null };
@@ -1746,9 +1733,144 @@ export default {
         statusLabel,
         periodeLabel,
         jenisProgramLabel,
-        setView(v) {
-            this.view = v;
-            localStorage.setItem('mmp-view', v);
+        /** Pilih satu MPP di panel kiri → muat detail + kandidatnya. */
+        /**
+         * Buka profil kandidat pengisi kursi.
+         *
+         * Barisnya dioper apa adanya supaya modal bisa langsung menampilkan
+         * nama & kodenya sambil menunggu profil lengkapnya tiba — kepala modal
+         * yang kosong beberapa detik terbaca seperti salah klik.
+         */
+        bukaKandidat(baris) {
+            if (!baris?.id) return;
+
+            // Nomor MPP-nya DIBEKUKAN saat modal dibuka, bukan dibaca terus
+            // dari state. Tampilan split memakai `splitNo` sementara panel
+            // lama memakai `selectedNo`; membaca salah satunya membuat modal
+            // kosong di tampilan yang lain — persis kekeliruan yang membuat
+            // modal ini sempat tidak memanggil apa pun.
+            this.kandidatNo = this.splitNo || this.selectedNo || '';
+            this.kandidatTarget = baris;
+            this.kandidatShow = true;
+        },
+
+        async pilihSplit(no) {
+            if (!no) return;
+
+            this.splitNo = no;
+            this.splitMobileDetail = true;
+            this.splitMemuat = true;
+            this.splitDetail = null;
+            this.cq = '';
+            this.cpage = 1;
+            this.kandidat = [];
+            this.kandidatTotal = 0;
+
+            try {
+                const res = await axios.get(`${API}/${encodeURIComponent(no)}`, CFG);
+
+                // Pilihan bisa sudah berpindah selagi permintaan ini di jalan.
+                // Jawaban untuk MPP yang sudah ditinggalkan dibuang, bukan
+                // dipasang — kalau tidak, panel menampilkan MPP yang tidak
+                // sedang disorot di daftar.
+                if (this.splitNo !== no) return;
+
+                this.splitDetail = res.data.result || null;
+            } catch (e) {
+                if (this.splitNo === no) this.notice(e.response?.data?.message || 'Gagal memuat detail MPP.');
+            } finally {
+                if (this.splitNo === no) this.splitMemuat = false;
+            }
+
+            this.muatKandidat();
+        },
+        /** Kandidat yang sudah DITERIMA pada MPP terpilih — dibaca dari Lamaran. */
+        async muatKandidat() {
+            const no = this.splitNo;
+            if (!no) return;
+
+            this.kandidatMemuat = true;
+            try {
+                const res = await axios.get(`${API}/${encodeURIComponent(no)}/kandidat`, {
+                    ...CFG,
+                    params: { page: this.cpage, per_page: 6, q: this.cq || undefined },
+                });
+                if (this.splitNo !== no) return;
+
+                const r = res.data.result || {};
+                this.kandidat = r.data || [];
+                this.kandidatTotal = r.total || 0;
+                this.kandidatHal = r.totalPages || 1;
+            } catch (e) {
+                if (this.splitNo === no) {
+                    this.kandidat = [];
+                    this.kandidatTotal = 0;
+                    this.kandidatHal = 1;
+                }
+            } finally {
+                if (this.splitNo === no) this.kandidatMemuat = false;
+            }
+        },
+        /**
+         * Muat ulang detail MPP yang sedang terbuka di panel split.
+         *
+         * Dipanggil sesudah setiap aksi yang mengubah keadaan MPP (selesai,
+         * batalkan, perpanjang). Tanpa ini panel kanan tetap menampilkan
+         * keadaan sebelum aksi — dan tombolnya menawarkan tindakan yang baru
+         * saja dilakukan.
+         */
+        segarkanSplit() {
+            if (!this.splitNo) return;
+
+            const no = this.splitNo;
+            axios
+                .get(`${API}/${encodeURIComponent(no)}`, CFG)
+                .then((res) => {
+                    if (this.splitNo === no) this.splitDetail = res.data.result || this.splitDetail;
+                })
+                .catch(() => {});
+        },
+        /** Pindah halaman di panel kiri — daftarnya dipenggal server. */
+        gantiHalSplit(n) {
+            const h = Math.min(Math.max(1, n), this.totalPages);
+            if (h === this.page) return;
+
+            this.page = h;
+            // Di ponsel tetap di panel daftar: yang barusan dilakukan orang
+            // adalah BERPINDAH HALAMAN, dan isinya yang ingin ia lihat.
+            this.splitMobileDetail = false;
+            this.load();
+        },
+        /**
+         * PIC terpilih berubah — dropdown mengirim larik utuh, bukan satuan.
+         *
+         * Kembali ke halaman 1: hasilnya daftar yang berbeda, dan bertahan di
+         * halaman 5 dari daftar lama hampir selalu mendarat di halaman kosong.
+         */
+        gantiPic(daftar) {
+            this.fPicSplit = Array.isArray(daftar) ? daftar : [];
+            this.page = 1;
+            this.load();
+        },
+        /** Jenis program — disaring di server (kolom Flag_MT). */
+        gantiJenis(k) {
+            this.fJenis = k === 'all' ? '' : k;
+            this.page = 1;
+            this.load();
+        },
+        /** Rentang tanggal periode. el-date-picker mengirim null saat dibersihkan. */
+        gantiRentang(v) {
+            this.rentangTgl = Array.isArray(v) && v.length === 2 ? v : null;
+            this.page = 1;
+            this.load();
+        },
+        /** Bersihkan SELURUH penyaring — yang di server maupun yang di panel kiri. */
+        bersihkanSplit() {
+            this.fIsiSplit = 'all';
+            this.fSlaSplit = 'all';
+            this.fPicSplit = [];
+            this.rentangTgl = null;
+            this.resetFilter();
         },
         async load() {
             this.loading = true;
@@ -1770,11 +1892,35 @@ export default {
                         employment: this.fEmployment || undefined,
                         workplace: this.fWorkplace || undefined,
                         experience: this.fExperience || undefined,
+                        // Bertumpuk: dikirim sebagai daftar dipisah koma. Disaring
+                        // DI SERVER, bukan di layar — kalau tidak, memilih satu PIC
+                        // hanya menyembunyikan baris di halaman ini sementara MPP
+                        // miliknya di halaman berikutnya tetap tak terlihat.
+                        pic: this.fPicSplit.length ? this.fPicSplit.join(',') : undefined,
+                        dari: this.rentangTgl?.[0] || undefined,
+                        sampai: this.rentangTgl?.[1] || undefined,
                     },
                 });
                 this.list = res.data.result || [];
                 this.totalData = res.data.total_data || 0;
                 this.totalPages = res.data.total_page || 1;
+
+                // SPLIT: pastikan selalu ada yang terpilih. Dua keadaan yang
+                // ditangani sekaligus — belum pernah memilih, dan MPP yang
+                // terpilih hilang dari daftar karena filternya berubah.
+                {
+                    const masih = this.daftarSplit.some((m) => m.noTransaksi === this.splitNo);
+                    if (!masih && this.daftarSplit.length) {
+                        this.pilihSplit(this.daftarSplit[0].noTransaksi);
+                        // Di ponsel jangan langsung melompat ke detail: yang baru
+                        // saja dilakukan orang adalah MENYARING daftar, dan
+                        // hasilnyalah yang ingin ia lihat.
+                        this.splitMobileDetail = false;
+                    } else if (!this.daftarSplit.length) {
+                        this.splitNo = null;
+                        this.splitDetail = null;
+                    }
+                }
             } catch (e) {
                 this.error = true;
             } finally {
@@ -1813,6 +1959,8 @@ export default {
                 const res = await axios.get(`${API}/opsi/filter`, CFG);
                 this.periodeOptions = res.data.result?.periode || [];
                 this.stats = res.data.result?.stats || this.stats;
+                this.picOptions = res.data.result?.pic || [];
+                this.ringkasKursi = res.data.result?.ringkas || this.ringkasKursi;
             } catch (e) {
                 /* stat/filter opsional, tidak menghentikan halaman */
             }
@@ -1885,6 +2033,9 @@ export default {
             this.modalTab = 1;
             this.form = FORM_KOSONG();
             this.slaBeku = null;
+            // Dikosongkan juga — sisa dari MPP sebelumnya akan memasang panel
+            // "sudah diperpanjang" pada MPP yang tidak pernah diperpanjang.
+            this.slaPanjang = null;
             this.mppDibuat = null;
             this.subDivisiOptions = [];
             this.karyawanOptions = [];
@@ -1897,6 +2048,9 @@ export default {
             this.modalTab = 1;
             this.form = FORM_KOSONG();
             this.slaBeku = null;
+            // Dikosongkan juga — sisa dari MPP sebelumnya akan memasang panel
+            // "sudah diperpanjang" pada MPP yang tidak pernah diperpanjang.
+            this.slaPanjang = null;
             this.mppDibuat = null;
             this.subDivisiOptions = [];
             this.karyawanOptions = [];
@@ -1941,6 +2095,16 @@ export default {
 
                 // Periode MPP ini dibaca dari barisnya sendiri, bukan dihitung ulang.
                 this.slaBeku = d.sla ? { mulai: d.sla.mulai, hari: d.sla.hari } : null;
+                // Keadaan perpanjangan MPP yang sedang disunting. Dipakai panel
+                // beku di langkah 1 — dan HANYA untuk memberi tahu; tenggatnya
+                // ditahan server, bukan oleh layar ini.
+                this.slaPanjang = d.sla
+                    ? {
+                          ke: Number(d.sla.perpanjanganKe || 0),
+                          batas: d.sla.batas || d.tanggalPeriode || null,
+                          batasAwal: d.sla.batasAwal || null,
+                      }
+                    : null;
                 // Dipasang SESUDAH form diisi: kalau jenisnya diubah menjadi MT di
                 // tengah suntingan, inilah tanggal yang akan dipakai — sama dengan
                 // yang ditulis server, bukan sisa tenggat SLA jenis sebelumnya.
@@ -2022,6 +2186,7 @@ export default {
                 await this.load();
                 await this.loadOpsiFilter();
                 if (dariPanel) this.$refs.panelRef?.load();
+                this.segarkanSplit();
             } catch (e) {
                 this.notice(e.response?.data?.message || 'Gagal mengubah status selesai.');
             }
@@ -2029,6 +2194,67 @@ export default {
         askBatalkan(m) {
             this.batalTarget = m;
             this.batalShow = true;
+        },
+        /**
+         * Buka modal perpanjangan — SESUDAH menanyakan keadaannya ke server.
+         *
+         * Modalnya dibuka lebih dulu dengan keadaan kosong, baru diisi. Menunggu
+         * jawaban sebelum membuka membuat tombol terasa mati beberapa saat, dan
+         * yang menekannya menekan lagi.
+         *
+         * Keadaannya TIDAK disusun dari data kartu. Boleh/tidaknya ikut menimbang
+         * hal-hal yang memang tidak ada di kartu — kursi yang sudah penuh, jatah
+         * yang sudah habis — dan tanggal barunya harus dihitung dengan
+         * penanggalan hari kerja yang sama dengan yang kelak menuliskannya.
+         */
+        async askPerpanjang(m) {
+            this.panjangTarget = m;
+            this.panjangKeadaan = null;
+            this.panjangShow = true;
+
+            try {
+                const res = await axios.get(`${API}/${encodeURIComponent(m.noTransaksi)}`, CFG);
+                this.panjangKeadaan = res.data.result?.perpanjangan || null;
+
+                // Jawaban yang datang untuk MPP yang sudah ditinggalkan dibuang.
+                // Tanpa ini, membuka lalu menutup lalu membuka MPP lain dengan
+                // cepat bisa memasang keadaan MPP pertama pada modal MPP kedua.
+                if (this.panjangTarget?.noTransaksi !== m.noTransaksi) return;
+            } catch (e) {
+                this.panjangShow = false;
+                this.notice(e.response?.data?.message || 'Gagal memuat keadaan SLA MPP ini.');
+            }
+        },
+        /** Kirim perpanjangannya. Alasannya sudah divalidasi panjangnya di modal. */
+        async konfirmasiPerpanjang(alasan) {
+            if (this.panjangBusy || !this.panjangTarget) return;
+            this.panjangBusy = true;
+
+            try {
+                const res = await axios.post(
+                    `${API}/${encodeURIComponent(this.panjangTarget.noTransaksi)}/perpanjang-sla`,
+                    { alasan },
+                    CFG,
+                );
+
+                this.panjangShow = false;
+                this.panjangTarget = null;
+                this.panjangKeadaan = null;
+
+                // Pesannya datang dari server, bukan dikarang ulang di sini: ia
+                // menyebut tenggat baru yang BENAR-BENAR tertulis, dan itu satu-
+                // satunya angka yang layak dipakai untuk memberi tahu admin.
+                this.notice(res.data.message || 'SLA diperpanjang.');
+
+                await this.load();
+                await this.loadOpsiFilter();
+                this.$refs.panelRef?.load();
+                this.segarkanSplit();
+            } catch (e) {
+                this.notice(e.response?.data?.message || 'Gagal memperpanjang SLA.');
+            } finally {
+                this.panjangBusy = false;
+            }
         },
         async confirmBatalkan() {
             if (this.batalBusy || !this.batalTarget) return;
@@ -2053,6 +2279,7 @@ export default {
                 await this.load();
                 await this.loadOpsiFilter();
                 if (dariPanel) this.$refs.panelRef?.load();
+                this.segarkanSplit();
             } catch (e) {
                 this.notice(e.response?.data?.message || 'Gagal mengaktifkan kembali.');
             }
@@ -2077,6 +2304,71 @@ export default {
    evo-theme.css, supaya tidak mengubah perilaku halaman admin lain. */
 .wca {
     overflow-x: hidden;
+}
+
+/* ── BILAH RINGKAS (tampilan split) ─────────────────────────────────────────
+ *
+ * Menggantikan kepala besar + 4 kartu statistik + barisan penyaring, yang
+ * bersama-sama memakan separuh layar pertama. Di sini semuanya jadi SATU baris
+ * setinggi ~64px, sehingga daftar MPP dan detailnya mulai tepat di bawah lipatan
+ * pertama — dan itulah yang sebenarnya dicari orang di halaman ini.
+ */
+.mmp-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 13px 16px;
+    margin-bottom: 12px;
+    background: #fff;
+    border: 1px solid #e7e3fb;
+    border-radius: 16px;
+    box-shadow: 0 6px 18px rgba(99, 102, 241, 0.06);
+}
+
+/* Kerangka muat untuk tampilan split — dua panel, sepadan dengan .mms. */
+.mmp-sksplit { display: grid; grid-template-columns: 340px 1fr; gap: 12px; }
+.mmp-skpane {
+    min-height: 420px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: #fff;
+    border: 1px solid #e7e3fb;
+    border-radius: 16px;
+}
+.mmp-skpane--kanan { background: linear-gradient(135deg, #f8f7ff, #fff); }
+@media (max-width: 900px) {
+    .mmp-sksplit { grid-template-columns: 1fr; }
+    .mmp-skpane--kanan { display: none; }
+}
+
+.mmp-bar__ico {
+    width: 36px;
+    height: 36px;
+    border-radius: 11px;
+    flex: none;
+    display: grid;
+    place-items: center;
+    color: #fff;
+    background: linear-gradient(135deg, #8b5cf6, #6366f1);
+    box-shadow: 0 8px 20px rgba(99, 102, 241, 0.28);
+}
+
+.mmp-bar__txt { flex: 1; min-width: 0; }
+.mmp-bar__txt h1 { margin: 0; font-size: 1.2rem; font-weight: 800; color: #0f172a; letter-spacing: -0.025em; line-height: 1.15; }
+
+.mmp-bar__meta { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 4px; font-size: 0.72rem; }
+.mmp-bar__meta > span { display: inline-flex; align-items: center; gap: 5px; }
+.mmp-bar__meta b { font-weight: 800; color: #334155; }
+.mmp-bar__meta > span { color: #94a3b8; }
+.mmp-bar__dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+
+@media (max-width: 640px) {
+    /* Ringkasan angka disembunyikan lebih dulu: ia keterangan, sementara judul
+       dan tombol "MPP Baru" adalah hal yang dipakai. */
+    .mmp-bar__meta { display: none; }
 }
 
 .mmp-toggle {
@@ -2696,6 +2988,15 @@ export default {
 .mmp-slanull.is-longgar .mmp-slanull__head b,
 .mmp-slanull.is-longgar .mmp-slanull__head span b { color: #475569; }
 .mmp-slanull.is-longgar .mmp-slanull__head span { color: #64748b; }
+/* SUDAH DIPERPANJANG: ungu, sewarna dengan lencana & tombol perpanjang di
+   kartu dan panel detail. Bukan kuning — ini bukan peringatan, melainkan
+   keterangan tentang kenapa tenggatnya tidak ikut bergerak di layar ini. */
+.mmp-slanull.is-panjang { border-color: #ddd6fe; background: linear-gradient(180deg, #faf9ff, #fff); }
+.mmp-slanull.is-panjang .mmp-slanull__head > i { color: #7c3aed; }
+.mmp-slanull.is-panjang .mmp-slanull__head b,
+.mmp-slanull.is-panjang .mmp-slanull__head span b { color: #6d28d9; }
+.mmp-slanull.is-panjang .mmp-slanull__head span { color: #64748b; }
+
 .mmp-slanull__act { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 11px; }
 .mmp-slanull__act .wca-btn { flex: 0 0 auto; height: 32px; border-radius: 9px; }
 @media (max-width: 520px) {
