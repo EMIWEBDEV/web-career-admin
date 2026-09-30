@@ -78,3 +78,11 @@ require __DIR__ . '/career/ridhoDeveloperEvoDevEvo-v2.php';
 // Diagnostik jalur jaringan (SMTP) — dijalankan lewat peramban karena Cloud Run
 // tidak menyediakan shell, dan pemeriksaannya HARUS dari mesin yang gagal.
 require __DIR__ . '/career/Diagnostik/DiagnostikWeb.php';
+
+// GEMBOK — halaman bypass penjadwalan (/ui/bypass/gembok).
+//
+// SENGAJA DI LUAR grup career.auth di atas: halaman ini dipakai justru ketika
+// panel admin sedang tidak bisa dipakai. Yang menjaganya adalah GEMBOK_SECRET
+// lewat middleware GerbangGembok — tanpa kunci yang cocok, seluruh rutenya
+// membalas 404. Baca catatan panjang di berkasnya sebelum mengubah ini.
+require __DIR__ . '/career/Gembok/GembokWeb.php';

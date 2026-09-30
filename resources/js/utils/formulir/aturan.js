@@ -290,6 +290,92 @@ export function periksaLangkah(langkah, jawaban) {
     return galat;
 }
 
+/** Tipe field yang berupa unggahan berkas. Cermin BerkasFormulir::TIPE_BERKAS. */
+const TIPE_BERKAS = new Set(['file', 'foto']);
+
+/**
+ * BERKAS YANG HARUS SUDAH ADA DI SERVER untuk jawaban ini.
+ *
+ * Nama berkas masuk ke jawaban begitu dipilih, sedangkan isinya naik lewat
+ * permintaan terpisah yang bisa gagal. Yang dikembalikan: setiap field berkas
+ * TERLIHAT yang wajib, ATAU yang jawabannya sudah menyebut nama berkas — nama
+ * tanpa berkas adalah tanda unggahannya gagal, dan itu harus tertangkap
+ * sebelum formulir terkirim, termasuk pada isian yang tidak wajib.
+ *
+ * Aturan tampil & wajibnya sama dengan periksaLangkah(): bagian tersembunyi
+ * dilewati, di bagian berulang syarat dinilai terhadap barisnya sendiri.
+ * Cermin PHP-nya BerkasFormulir::harapan() — server menolak kiriman dengan
+ * aturan yang sama, jadi keduanya WAJIB diubah bersamaan.
+ *
+ * `skema` harus sudah dinormalkan (normalisasiSkema), sama seperti yang
+ * dirender, supaya kunci field & bagian sama persis dengan jawabannya.
+ *
+ * @returns {Array<{bagian: string|null, baris: number|null, field: string, label: string, judulBagian: string|null, nama: string, wajib: boolean, pesan: string}>}
+ */
+export function harapanBerkas(skema, jawaban) {
+    const out = [];
+    const akar = jawaban || {};
+
+    (skema?.langkah || []).forEach((L) => {
+        (L.bagian || []).forEach((B) => {
+            if (!syaratTerpenuhi(B.tampil_jika, akar)) return;
+
+            if (B.berulang) {
+                const kunci = kunciBagian(B);
+                const daftar = akar[kunci];
+                if (!Array.isArray(daftar)) return;
+
+                daftar.forEach((r, i) => {
+                    if (!r || typeof r !== 'object' || Array.isArray(r)) return;
+                    (B.field || []).forEach((f) => {
+                        const h = harapSatu(f, r, kunci, i, B.judul);
+                        if (h) out.push(h);
+                    });
+                });
+                return;
+            }
+
+            (B.field || []).forEach((f) => {
+                const h = harapSatu(f, akar, null, null, null);
+                if (h) out.push(h);
+            });
+        });
+    });
+
+    return out;
+}
+
+/** Field berkas yang seharusnya ada, tapi `ada(bagian, baris, field)` menyatakan tidak. */
+export function berkasKurang(skema, jawaban, ada) {
+    return harapanBerkas(skema, jawaban).filter((h) => !ada(h.bagian, h.baris, h.field));
+}
+
+function harapSatu(f, konteks, bagian, baris, judulBagian) {
+    if (!f || !TIPE_BERKAS.has(f.tipe) || !syaratTerpenuhi(f.tampil_jika, konteks)) return null;
+
+    const nilai = konteks[f.key];
+    const wajib = wajibKini(f, konteks);
+    const adaNama = !kosong(nilai);
+    if (!wajib && !adaNama) return null;
+
+    const awalan = judulBagian !== null ? `${judulBagian} baris ${baris + 1}: ` : '';
+
+    return {
+        bagian,
+        baris,
+        field: f.key,
+        label: f.label,
+        judulBagian,
+        nama: adaNama ? String(nilai) : '',
+        wajib,
+        pesan:
+            awalan +
+            (adaNama
+                ? `"${f.label}" belum tersimpan di server — unggah ulang berkasnya.`
+                : `"${f.label}" wajib diunggah.`),
+    };
+}
+
 /** Gabungan pemeriksaan format nilai satu field: telepon, email, digit saja. */
 function galatFormat(f, v) {
     return galatTelepon(f, v) || galatEmail(f, v) || galatAngka(f, v) || galatDaftar(f, v);

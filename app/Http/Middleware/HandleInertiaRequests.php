@@ -28,6 +28,17 @@ class HandleInertiaRequests extends Middleware
         $user = Auth::user();
 
         return array_merge(parent::share($request), [
+            // VERSI APLIKASI — dibagikan ke SELURUH halaman.
+            //
+            // Ditaruh di sini, bukan di tiap controller: kaki halaman publik,
+            // layar masuk, dan panel admin dilayani controller yang berbeda-beda,
+            // dan menyalin satu nilai ke belasan tempat berarti cepat atau lambat
+            // ada layar yang menyebut versi yang sudah tidak berlaku.
+            //
+            // Nilainya statis (config, bukan kueri), jadi tidak menambah beban
+            // permintaan sama sekali.
+            'appVersion' => config('app.version', '1.0.0'),
+
             'auth' => [
                 'user' => $user
                     ? [

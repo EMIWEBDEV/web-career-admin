@@ -19,6 +19,27 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Versi Aplikasi
+    |--------------------------------------------------------------------------
+    |
+    | Ditampilkan di kaki halaman publik, layar masuk/daftar, dan panel admin.
+    | Gunanya satu: ketika ada yang melapor "tombolnya tidak jalan", jawaban
+    | pertama yang dibutuhkan adalah "kamu sedang membuka versi berapa" — tanpa
+    | itu, memastikan apakah perbaikannya sudah sampai ke pemakai berarti
+    | menebak.
+    |
+    | Bawaannya '1.0.0' dan itu disengaja: lingkungan yang belum menyetel
+    | APP_VERSION tetap menampilkan angka yang sah, bukan kosong atau 'null'
+    | yang justru terbaca sebagai kerusakan.
+    |
+    | Isi lewat .env saat rilis:  APP_VERSION=1.4.2
+    |
+    */
+
+    'version' => env('APP_VERSION', '1.0.1'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Environment
     |--------------------------------------------------------------------------
     |

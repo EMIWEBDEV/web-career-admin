@@ -297,6 +297,9 @@ final class AlurKolom
             'wajibUpload' => false,
             'penawaran' => false,
             'tuntas' => false,
+            'formulir' => false,
+            'batasMode' => null,
+            'batasHari' => null,
             'alurIds' => [],
             'alurLain' => true,
             // Penanda supaya layar bisa menjelaskan kolom ini apa adanya:
@@ -365,14 +368,24 @@ final class AlurKolom
                 || ($tt->Flag_Upload_Hasil ?? 'T') === 'Y',
             'penawaran' => ($tt->Flag_Penawaran ?? 'T') === 'Y',
             'tuntas' => ($t->Flag_Tuntas ?? 'T') === 'Y',
+            // Tahap ini menuntut isian formulir kandidat — hanya kolom seperti
+            // ini yang bisa diberi jadwal pengisian, dan hanya bila Master Alur
+            // memberinya jadwal (BatasIsi::kolomBolehDijadwal).
+            'formulir' => ($tt->Flag_Formulir ?? 'T') === 'Y',
+            'batasMode' => $t->Batas_Mode ?? null,
+            'batasHari' => isset($t->Batas_Hari) ? (int) $t->Batas_Hari : null,
             'alurIds' => [],
             'alurLain' => false,
             'cadangan' => false,
         ];
     }
 
-    /** Master Tipe Tahap, dipetakan per Kode. Dibaca sekali per permintaan. */
-    private static function masterTipe(): Collection
+    /**
+     * Master Tipe Tahap (SELURUH kolom), dipetakan per Kode. Dibaca sekali per
+     * permintaan — dan dipakai juga LamaranController::masterTipeTahap(), supaya
+     * papan worklist tidak mengkueri tabel yang sama dua kali.
+     */
+    public static function masterTipe(): Collection
     {
         static $cache = null;
 

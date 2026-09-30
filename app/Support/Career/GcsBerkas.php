@@ -10,10 +10,12 @@ use Illuminate\Support\Str;
  *
  * Struktur folder WAJIB:
  *   apply-form/{tahun}/{bulan}/{tanggal}/{nama-kandidat}/{nama-berkas}/{namafile}.{ext}
- *   contoh: apply-form/2026/07/01/mustofa-bin-musa/ktp/ktp.png
+ *   contoh: apply-form/2026/07/01/mustofa-bin-musa/ktp/ktp-<rand>.png
  *   foto  : apply-form/2026/07/01/mustofa-bin-musa/foto-verifikasi/verifikasi-<rand>.jpg
  *
- * Ekstensi diizinkan: pdf, jpg (jpeg dinormalkan ke jpg). Maks 2 MB per berkas.
+ * Berkas KANDIDAT (apply & formulir tahap) selalu lewat unggahUnik() — nama
+ * objeknya membawa akhiran acak; lihat alasannya di sana. Format & batas
+ * ukurannya mengikuti skema isian (BerkasFormulir::aturanUnggah()).
  * Atomicity dikendalikan pemanggil (Job): unggah dulu, DB menyusul; bila DB gagal,
  * panggil hapus() untuk membersihkan file (tidak boleh ada berkas yatim).
  */
@@ -49,6 +51,7 @@ class GcsBerkas
      * Akar membedakan ASAL berkasnya, bukan formatnya:
      *   apply-form/     berkas saat kandidat MELAMAR (CV, foto verifikasi)
      *   formulir-tahap/ berkas yang KANDIDAT unggah di formulir sebuah tahap
+     *   pemulihan-berkas/ berkas kandidat yang DIPULIHKAN ADMIN (hilang/tertinggal)
      *   hasil-tahap/    berkas yang TIM unggah sebagai hasil tahap
      *                   (wawancara, MCU, psikotes offline, dst.)
      *
@@ -82,6 +85,17 @@ class GcsBerkas
     }
 
     /**
+     * Path folder berkas yang DIPULIHKAN ADMIN atas nama kandidat (panel
+     * Pemulihan Berkas). Akarnya sendiri, bukan menumpang formulir-tahap/:
+     * berkas ini tidak diunggah kandidat, dan siapa pun yang menyisir bucket
+     * harus bisa membedakannya tanpa membaca basis data.
+     */
+    public function folderPemulihan(string $tahun, string $bulan, string $tanggal, string $namaKandidat): string
+    {
+        return 'pemulihan-berkas/' . $tahun . '/' . $bulan . '/' . $tanggal . '/' . $this->slug($namaKandidat);
+    }
+
+    /**
      * Unggah satu berkas. Nama file = slug-berkas.ext (deterministik → tanggal/nama
      * yang sama masuk folder yang sama, tidak bentrok).
      *
@@ -103,20 +117,25 @@ class GcsBerkas
     }
 
     /**
-     * Unggah berkas milik SATU BARIS bagian berulang.
+     * Unggah berkas KANDIDAT dengan nama objek yang pasti UNIK.
      *
-     * Berbeda dari unggah(), namanya membawa pembeda ACAK. Determinisme
-     * unggah() benar untuk berkas biasa — satu field, satu berkas, unggah ulang
-     * memang seharusnya menimpa. Di bagian berulang, tiga baris memakai nama
-     * field yang sama persis, sehingga path deterministik membuat sertifikat
-     * kedua menimpa yang pertama di bucket TANPA JEJAK. Persis jebakan yang
-     * sudah didokumentasikan di unggahGambarCatatan() di bawah.
+     * Berbeda dari unggah(), namanya membawa pembeda ACAK. Path deterministik
+     * (tanggal/nama-kandidat/field) menulis ke objek yang SAMA untuk:
+     *   - tiga baris bagian berulang yang memakai nama field yang sama persis
+     *     — sertifikat kedua menimpa yang pertama tanpa jejak;
+     *   - dua kandidat BERNAMA SAMA yang mengunggah di hari yang sama — CV
+     *     orang kedua menimpa milik orang pertama, dan baris Formulir_Berkas
+     *     orang pertama kini membuka CV orang lain;
+     *   - lamaran yang gagal diproses lalu dibersihkan — pembersihannya ikut
+     *     menghapus objek milik lamaran lain yang kebetulan berpath sama.
+     * Pemanggil yang mengganti berkas lama wajib menghapus objek lamanya
+     * sendiri setelah yang baru tercatat, supaya bucket tidak menumpuk sampah.
      *
      * @return string path GCS bila sukses
      *
      * @throws \RuntimeException bila gagal unggah
      */
-    public function unggahBaris(string $folderKandidat, string $namaBerkas, string $ext, string $konten): string
+    public function unggahUnik(string $folderKandidat, string $namaBerkas, string $ext, string $konten): string
     {
         $slug = $this->slug($namaBerkas);
         $ext = $this->normalkanExt($ext);

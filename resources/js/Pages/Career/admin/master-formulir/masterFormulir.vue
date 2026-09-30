@@ -1292,7 +1292,10 @@ export default {
                             label: 'CV / Resume Terkini',
                             tipe: 'file',
                             wajib: true,
-                            accept: '.pdf,.doc,.docx',
+                            // Bukan .doc/.docx: server hanya menyimpan PDF/JPG/PNG
+                            // (BerkasFormulir::EKSTENSI_SERVER). Menawarkan Word di
+                            // sini berarti CV kandidat ditolak saat diunggah.
+                            accept: '.pdf',
                             maks_mb: 5,
                             lebar_persen: 100,
                             penuh: true,

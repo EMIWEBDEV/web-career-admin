@@ -45,6 +45,40 @@ export const PROPERTI_UNIVERSAL = [
     'key_manual',
 ];
 
+/**
+ * Format yang DITERIMA SERVER untuk berkas kandidat. Cermin
+ * BerkasFormulir::EKSTENSI_SERVER di PHP — skema boleh mempersempit daftar
+ * ini, tidak boleh memperluasnya.
+ */
+export const FORMAT_BERKAS_SERVER = ['.pdf', '.jpg', '.jpeg', '.png', 'application/pdf', 'image/jpeg', 'image/png'];
+
+/** Batas ukuran tertinggi — cermin BerkasFormulir::MAKS_MB_KERAS. */
+export const MAKS_MB_BERKAS = 20;
+
+/**
+ * Format berkas yang diminta skema HARUS bisa diterima server.
+ *
+ * Browser menuruti `accept` apa adanya, server tidak: isian yang meminta .docx
+ * membiarkan kandidat memilih berkas Word, lalu server menolaknya — di formulir
+ * tahap penolakan itu dulu cuma notifikasi sekilas sementara nama berkasnya
+ * tetap tercatat, dan CV-nya tidak pernah ada.
+ */
+function periksaBerkas(f) {
+    if (!f.accept) return 'Format berkas yang diterima belum diatur.';
+
+    const asing = String(f.accept)
+        .split(',')
+        .map((x) => x.trim().toLowerCase())
+        .filter((x) => x && !FORMAT_BERKAS_SERVER.includes(x));
+    if (asing.length) {
+        return `Format ${asing.join(', ')} belum diterima server — pakai PDF, JPG, atau PNG.`;
+    }
+
+    if (Number(f.maks_mb) > MAKS_MB_BERKAS) return `Ukuran maksimal berkas ${MAKS_MB_BERKAS} MB.`;
+
+    return null;
+}
+
 /** Batas bawah > batas atas: satu pemeriksa dipakai number dan currency. */
 function periksaRentang(f) {
     const min = Number(f.min);
@@ -137,7 +171,7 @@ export const KATALOG_FIELD = {
         ikon: 'bi-paperclip',
         properti: ['accept', 'maks_mb'],
         bawaan: { accept: '.pdf', maks_mb: 5, penuh: true, lebar_persen: 100 },
-        periksa: (f) => (f.accept ? null : 'Format berkas yang diterima belum diatur.'),
+        periksa: periksaBerkas,
     },
     daftar: {
         // ── KENAPA TIPE SENDIRI, BUKAN TEXTAREA ─────────────────────────────

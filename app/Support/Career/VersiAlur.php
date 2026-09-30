@@ -565,6 +565,8 @@ class VersiAlur
                 'Flag_Talent_Pool' => $t->Flag_Talent_Pool ?: 'T',
                 'Flag_Upload_Hasil' => $t->Flag_Upload_Hasil,
                 'Flag_Wajib_Upload' => $t->Flag_Wajib_Upload,
+                // Aturan batas pengisian formulir ikut dibekukan — lihat BatasIsi.
+                ...BatasIsi::snapshot($t),
                 'Created_At' => now(), 'Created_By' => $userName, 'Created_By_Id' => $userId,
                 'Updated_At' => now(), 'Updated_By' => $userName, 'Updated_By_Id' => $userId,
             ], 'Id_Lamaran_Tahap');

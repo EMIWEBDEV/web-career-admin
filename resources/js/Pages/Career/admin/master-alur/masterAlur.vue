@@ -243,6 +243,47 @@
                             </div>
                         </div>
 
+                        <!-- JADWAL PENGISIAN FORMULIR — setiap tahap bertipe Formulir,
+                             termasuk tahap 1 (keputusan user: dikendalikan dari sini,
+                             bukan posisi tahap). Worklist hanya menampilkan pengaturan
+                             jadwal di kolom yang di sini diberi jadwal. Tanggal pastinya
+                             TIDAK disimpan di sini: satu alur dipakai banyak program,
+                             jadi tanggal diisi per program dari kepala kolom worklist. -->
+                        <div v-if="butuhFormulir(s)" class="alr-batas" :class="{ 'is-on': (s.batasMode || 'TANPA') !== 'TANPA' }">
+                            <div class="alr-batas__head">
+                                <b><i class="bi bi-hourglass-split"></i> Jadwal pengisian formulir</b>
+                                <small>Kandidat hanya bisa mengisi formulir tahap ini di antara waktu dibuka dan batas akhirnya. Lewat batas, formulir terkunci — admin yang memutuskan kelanjutannya.</small>
+                            </div>
+                            <!-- Tahap 1 = formulir pendaftaran: pelamar biasa mengirimnya
+                                 saat melamar, dalam masa pendaftaran Pembukaan Program.
+                                 Dikatakan terang-terangan supaya jadwal di sini tidak
+                                 disangka membatasi pendaftaran. -->
+                            <p v-if="i === 0" class="alr-batas__note">
+                                <i class="bi bi-info-circle-fill"></i>
+                                <span>
+                                    Tahap pertama adalah <b>formulir pendaftaran</b>: pelamar biasa mengisinya saat melamar,
+                                    dalam masa pendaftaran yang diatur di <b>Pembukaan Program</b>. Jadwal di sini berlaku bagi
+                                    kandidat yang mengisi formulir tahap ini <b>sesudah masuk</b> — mis. ditarik dari Talent Pool
+                                    langsung ke tahap ini.
+                                </span>
+                            </p>
+                            <div class="alr-batas__opsi">
+                                <button
+                                    v-for="o in opsiBatas" :key="o.v" type="button" class="alr-batas__opt"
+                                    :class="{ 'is-on': (s.batasMode || 'TANPA') === o.v }"
+                                    @click="s.batasMode = o.v"
+                                >
+                                    <i class="bi" :class="o.ikon"></i>
+                                    <span><b>{{ o.l }}</b><small>{{ o.d }}</small></span>
+                                </button>
+                            </div>
+                            <div v-if="s.batasMode === 'OTOMATIS'" class="alr-batas__row">
+                                <label class="wca-field-lbl">Berapa hari sejak tahap terbuka</label>
+                                <el-input-number v-model="s.batasHari" :min="1" :max="90" controls-position="right" style="width: 180px" />
+                                <small>Berakhir pukul 23.59 WIB pada hari ke-{{ s.batasHari || 'N' }} sejak tahapnya terbuka untuk kandidat.</small>
+                            </div>
+                        </div>
+
                         <!-- DAFTAR TES / AKTIVITAS — satu tahap bisa berisi banyak tes.
                              Online atau manual ditentukan TIPE TAHAP di atas, bukan
                              per aktivitas: tipe "Tes Online" = semua aktivitasnya ujian
@@ -576,14 +617,17 @@
 
                         <!-- Cut-off Talent Pool kini SATU titik di atas (bukan per tahap). -->
 
-                        <!-- UPLOAD BERKAS HASIL — mis. MCU (PDF/JPG dari requester) atau
-                             hasil wawancara. Bisa diwajibkan atau opsional per tahap. -->
-                        <div class="alr-tp alr-up" :class="{ 'is-on': s.uploadHasil }">
+                        <!-- UPLOAD BERKAS HASIL — mis. hasil wawancara. Bisa diwajibkan
+                             atau opsional per tahap. Disembunyikan untuk tipe yang di
+                             Master Tipe Tahap tidak menawarkannya (Flag_Opsi_Upload):
+                             tipe berbasis berkas (MCU, Penawaran, BG/Reference Check,
+                             Tanda Tangan) tetap menerima unggahan dari sifat tipenya. -->
+                        <div v-if="opsiUpload(s)" class="alr-tp alr-up" :class="{ 'is-on': s.uploadHasil }">
                             <div class="alr-tp__main">
                                 <span class="alr-tp__ico"><i class="bi bi-paperclip"></i></span>
                                 <div class="alr-tp__txt">
                                     <b>Upload berkas hasil (PDF/JPG)</b>
-                                    <small>Aktifkan agar admin/requester mengunggah hasil di tahap ini (mis. MCU, hasil wawancara). <template v-if="s.uploadHasil">Centang <em>“wajib”</em> bila berkas harus ada sebelum Loloskan.</template></small>
+                                    <small>Aktifkan agar admin/requester mengunggah hasil di tahap ini (mis. hasil wawancara atau FGD). <template v-if="s.uploadHasil">Centang <em>“wajib”</em> bila berkas harus ada sebelum Loloskan.</template></small>
                                 </div>
                             </div>
                             <div class="alr-up__ctl">
@@ -786,6 +830,13 @@ export default {
             // Mode urutan AKTIF — aktivitas dikerjakan bersamaan atau berurutan.
             // Isi, label, dan perilakunya dari Master Mode Urutan.
             modeUrutan: [],
+            // Aturan batas pengisian formulir tahap — kodenya sama dengan server
+            // (BatasIsi::TANPA / MANUAL / OTOMATIS); NULL di basis data = TANPA.
+            opsiBatas: [
+                { v: 'TANPA', l: 'Tanpa jadwal', d: 'Formulir terbuka kapan saja.', ikon: 'bi-infinity' },
+                { v: 'MANUAL', l: 'Dijadwalkan admin', d: 'Terkunci sampai waktu dibuka & batas akhirnya diisi per program dari worklist; sesudahnya hanya bisa diperpanjang.', ikon: 'bi-calendar-event' },
+                { v: 'OTOMATIS', l: 'Otomatis', d: 'Terbuka sejak tahap dimulai, sekian hari.', ikon: 'bi-stopwatch' },
+            ],
             // Mode penilaian AKTIF — cara aktivitas dinilai (tanpa nilai/angka/kategori).
             modePenilaian: [],
             // Mode lanjut AKTIF — otomatis / dipicu admin.
@@ -891,6 +942,8 @@ export default {
          * memilih formulirnya tanpa mengubah file ini.
          */
         butuhFormulir(s) { return this.infoTipe(s.tipe)?.formulir === true; },
+        /** Sakelar "Upload berkas hasil" ditawarkan untuk tipe tahap ini? (data Master Tipe Tahap) */
+        opsiUpload(s) { return this.infoTipe(s.tipe)?.opsiUpload !== false; },
 
         /**
          * Aktivitas bertipe ini ujian online (CAT)? — dari Perilaku di Master
@@ -1363,6 +1416,9 @@ export default {
                 uploadHasil: s.uploadHasil === true,
                 wajibUpload: s.wajibUpload === true,
                 tuntas: s.tuntas === true,
+                // Batas pengisian formulir (lihat BatasIsi di server).
+                batasMode: s.batasMode || 'TANPA',
+                batasHari: s.batasHari ?? null,
                 urutanAktivitas: s.urutanAktivitas || null,
                 // SATU kunci `tests`, bukan dua.
                 //
@@ -1473,7 +1529,7 @@ export default {
          * bukan lagi sesuatu yang harus dijaga dengan mematikan sakelar lain
          * setiap kali admin menyalakan yang baru.
          */
-        addStage() { this.form.stages.push({ label: '', tipe: '', mode: 'MANUAL_REVIEW', formulirId: null, tests: [], pengumuman: 'OTOMATIS', jedaHari: null, notifikasi: true, uploadHasil: false, wajibUpload: false }); },
+        addStage() { this.form.stages.push({ label: '', tipe: '', mode: 'MANUAL_REVIEW', formulirId: null, tests: [], pengumuman: 'OTOMATIS', jedaHari: null, notifikasi: true, uploadHasil: false, wajibUpload: false, batasMode: 'TANPA', batasHari: null }); },
         removeStage(i) { this.form.stages.splice(i, 1); },
 
         // Label & ikon pil diambil dari master (fallback ke kode bila belum termuat).
@@ -1555,11 +1611,17 @@ export default {
                     // Cut-off Talent Pool DITURUNKAN dari satu titik (talentPoolMulai):
                     // tahap ke-N sampai akhir → 'Y'. Tak lagi per-tahap manual.
                     talentPool: this.tahapTalentPool(i),
-                    uploadHasil: s.uploadHasil === true,
-                    wajibUpload: s.wajibUpload === true,
+                    // Tipe yang sakelarnya disembunyikan tidak membawa setelan
+                    // per tahap; server menerapkan aturan yang sama.
+                    uploadHasil: this.opsiUpload(s) && s.uploadHasil === true,
+                    wajibUpload: this.opsiUpload(s) && s.wajibUpload === true,
                     // DITURUNKAN dari satu pemilih, sepola dengan cut-off Talent
                     // Pool — tidak lagi disetel per tahap.
                     tuntas: this.form.tuntasTahap === i + 1,
+                    // Jadwal pengisian — setiap tahap bertipe Formulir, termasuk
+                    // tahap 1; server menerapkan aturan yang sama (isiBatas).
+                    batasMode: this.butuhFormulir(s) ? (s.batasMode || 'TANPA') : 'TANPA',
+                    batasHari: this.butuhFormulir(s) && s.batasMode === 'OTOMATIS' ? (s.batasHari || null) : null,
                 })),
             };
             try {
@@ -1806,6 +1868,32 @@ export default {
 .alr-unggah__body { padding: 0 13px 13px; border-top: 1px dashed rgba(99, 102, 241, .22); padding-top: 12px; }
 .alr-unggah__wajib { display: flex; align-items: center; gap: 9px; margin-top: 10px; font-size: 12px; color: #475569; }
 .alr-unggah__wajib b { color: #dc2626; }
+
+/* BATAS PENGISIAN FORMULIR — sepola dengan kotak unggah di atas. */
+.alr-batas { margin-top: 12px; border: 1px solid #eef0f7; border-radius: 12px; background: #fbfbfe; transition: border-color .18s, background .18s; }
+.alr-batas.is-on { border-color: rgba(245, 158, 11, .4); background: rgba(245, 158, 11, .05); }
+.alr-batas__head { padding: 11px 13px 8px; }
+.alr-batas__head b { display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 800; color: #334155; }
+.alr-batas__head small { display: block; font-size: 11px; color: #94a3b8; margin-top: 2px; }
+.alr-batas__note { display: flex; align-items: flex-start; gap: 7px; margin: 0 13px 10px; padding: 8px 10px; border-radius: 9px; font-size: 11.5px; line-height: 1.55; color: #3730a3; background: rgba(99, 102, 241, .07); border: 1px solid rgba(99, 102, 241, .18); }
+.alr-batas__note .bi { flex: none; margin-top: 2px; }
+.alr-batas__opsi { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding: 0 13px 12px; }
+.alr-batas__opt {
+    appearance: none; font: inherit; cursor: pointer; text-align: left;
+    display: flex; align-items: flex-start; gap: 8px; padding: 9px 10px; border-radius: 10px;
+    border: 1px solid #e5e7f0; background: #fff; color: #475569; transition: all .16s;
+}
+.alr-batas__opt .bi { flex: none; margin-top: 1px; font-size: 14px; color: #94a3b8; }
+.alr-batas__opt b { display: block; font-size: 12px; font-weight: 800; color: #334155; }
+.alr-batas__opt small { display: block; margin-top: 1px; font-size: 10.5px; line-height: 1.4; color: #94a3b8; }
+.alr-batas__opt:hover { border-color: #c7d2fe; }
+.alr-batas__opt.is-on { border-color: #f59e0b; background: #fffbeb; box-shadow: 0 0 0 3px rgba(245, 158, 11, .12); }
+.alr-batas__opt.is-on .bi { color: #d97706; }
+.alr-batas__row { display: grid; gap: 6px; padding: 10px 13px 12px; border-top: 1px dashed rgba(245, 158, 11, .3); }
+.alr-batas__row > small { font-size: 11px; color: #94a3b8; }
+@media (max-width: 640px) {
+    .alr-batas__opsi { grid-template-columns: 1fr; }
+}
 .alr-test__flags { display: flex; align-items: center; gap: .7rem; flex-wrap: wrap; padding-top: 1.35rem; }
 .alr-test__prov { display: inline-flex; align-items: center; gap: .3rem; font-size: 11px; font-weight: 700; }
 .alr-test__prov.is-sys { color: #b45309; }

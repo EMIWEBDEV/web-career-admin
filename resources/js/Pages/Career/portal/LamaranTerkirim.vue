@@ -376,6 +376,7 @@ const TIPE = {
     HCLEARN_TEST: { i: 'bi-pc-display', l: 'Tes Online' },
     TES: { i: 'bi-pc-display', l: 'Tes Online' },
     INTERVIEW: { i: 'bi-chat-dots', l: 'Wawancara' },
+    FGD: { i: 'bi-people-fill', l: 'FGD' },
     SCREENING: { i: 'bi-funnel', l: 'Seleksi' },
     DECISION: { i: 'bi-clipboard-check', l: 'Keputusan' },
     OFFERING: { i: 'bi-envelope-paper', l: 'Penawaran' },

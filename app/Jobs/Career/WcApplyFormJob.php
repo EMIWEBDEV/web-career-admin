@@ -24,7 +24,10 @@ use Illuminate\Support\Facades\Log;
  * CATATAN GAMBAR/BERKAS: file TIDAK dititip sebagai base64 (kena batas ukuran/chunk).
  * Berkas sudah di-stream ke GCS saat REQUEST; payload hanya menyimpan PATH-nya.
  * Job ini murni menulis DB, lalu:
- *  - Bila insert DB gagal → seluruh berkas GCS dihapus (tidak ada berkas yatim).
+ *  - Bila insert DB gagal pada percobaan TERAKHIR → seluruh berkas GCS dihapus
+ *    (tidak ada berkas yatim). Percobaan antara TIDAK menghapus apa pun: yang
+ *    berikutnya masih membutuhkan berkas itu.
+ *  - Begitu transaksinya selesai, tidak ada lagi yang boleh menghapus berkas.
  *  - Jadi: file & DB dua-duanya ada, atau dua-duanya tidak ada.
  */
 class WcApplyFormJob implements ShouldQueue, ShouldBeUnique
@@ -96,13 +99,26 @@ class WcApplyFormJob implements ShouldQueue, ShouldBeUnique
                     ->orderBy('Id_Formulir_Pengisian')
                     ->first();
 
-                if ($pengisian && $berkasSiap) {
+                // Ada berkas tapi tak ada pengisian untuk ditempeli: dulu berkasnya
+                // dilewati diam-diam lalu Berkas_Json dikosongkan — lamaran jadi
+                // tercatat tanpa satu berkas pun dan jejak path-nya ikut lenyap.
+                // Sekarang dibatalkan: lebih baik gagal & terlihat daripada tuntas
+                // tapi kehilangan CV.
+                if ($berkasSiap && ! $pengisian) {
+                    throw new \RuntimeException('Pengisian pendaftaran tidak terbentuk — berkas lamaran tidak bisa ditautkan.');
+                }
+
+                if ($berkasSiap) {
                     $now = now();
                     foreach ($berkasSiap as $i => $b) {
                         DB::table('N_WEB_CAREERS_Formulir_Berkas')->insert([
                             'Formulir_Pengisian_Id' => $pengisian->Id_Formulir_Pengisian,
                             'Id_Users' => (int) $payload['userId'],
                             'Field_Key' => $b['field'],
+                            // Posisi baris bagian berulang — tanpa ini worklist tak
+                            // bisa memasangkan sertifikat ke barisnya sendiri.
+                            'Bagian_Key' => $b['bagian'] ?? null,
+                            'Baris_Index' => $b['baris'] ?? null,
                             'Urutan' => $i + 1,
                             'Nama_Asli' => $b['nama'],
                             'Path_File' => $b['path'],
@@ -118,60 +134,85 @@ class WcApplyFormJob implements ShouldQueue, ShouldBeUnique
                     }
                 }
 
+                // SELESAI ditulis DI DALAM transaksi yang sama. Kalau ditulis
+                // sesudahnya lalu gagal, lamarannya sudah ada tetapi payload-nya
+                // tidak berkata begitu — percobaan berikutnya mengulang dari awal,
+                // ditolak "sudah melamar", dan pembersihannya menghapus berkas
+                // yang sedang dipakai lamaran yang sah.
+                DB::table('N_WEB_CAREERS_Apply_Payload')->where('Process_Id', $this->processId)->update([
+                    'Status' => 'SELESAI',
+                    'Lamaran_Id' => $lamaranId,
+                    'Berkas_Json' => null,
+                    'Waktu_Proses' => now(),
+                    'Updated_At' => now(),
+                ]);
+
                 return $lamaranId;
             });
-
-            // ── 3. SUKSES → tandai payload selesai, kosongkan base64 (hemat ruang) ──
-            DB::table('N_WEB_CAREERS_Apply_Payload')->where('Process_Id', $this->processId)->update([
-                'Status' => 'SELESAI',
-                'Lamaran_Id' => $lamaranId,
-                'Berkas_Json' => null,
-                'Waktu_Proses' => now(),
-                'Updated_At' => now(),
-            ]);
-
-            Log::channel('web_career')->info("[APPLY] {$this->processId} selesai — lamaran #{$lamaranId}, " . count($terunggah) . ' berkas.');
-
-            // Kirim email HASIL ke kandidat lewat QUEUE TERPISAH (wc-applymail) —
-            // tidak menahan job apply. Gagal antre email TIDAK menggagalkan apply.
-            $this->kirimEmailHasil($lamaranId, (int) $payload['userId']);
-
-            // ── BIODATA → HRIS REKRUTMEN ────────────────────────────────────
-            //
-            // Formulir pendaftaran inilah yang memuat tanggal lahir, jenis
-            // kelamin, dan alamat kandidat — data yang dulu tidak pernah sampai
-            // ke HCLearn, karena satu-satunya pengiriman terjadi saat ia
-            // MENDAFTAR AKUN, tepat ketika belum mengisi apa pun.
-            //
-            // Posisi yang dilamar ikut terbawa, dan ikut berubah bila kandidat
-            // yang sama melamar posisi lain dengan akun yang sama.
-            //
-            // Queue tersendiri, best-effort: lamarannya sudah tersimpan, jadi
-            // HCLearn yang sedang tumbang tidak boleh menggagalkan apa pun.
-            WcBiodataHrisJob::dispatch((int) $payload['userId'], 'APPLY');
         } catch (\Throwable $e) {
-            // Kompensasi: hapus berkas yang sudah terunggah (tidak boleh ada yatim).
-            $gcs->hapus($terunggah);
+            $terakhir = $this->attempts() >= $this->tries;
+
+            // Kompensasi HANYA pada percobaan terakhir. Dulu berkas dihapus di
+            // setiap kegagalan — termasuk yang masih akan diulang — sehingga
+            // percobaan berikutnya yang BERHASIL mencatat baris Formulir_Berkas
+            // yang menunjuk objek yang sudah tidak ada: CV tercatat, tapi 404.
+            if ($terakhir) {
+                $gcs->hapus($terunggah);
+            }
 
             DB::table('N_WEB_CAREERS_Apply_Payload')->where('Process_Id', $this->processId)->update([
-                'Status' => 'GAGAL',
+                // Selama masih akan diulang, statusnya tetap MENUNGGU: layar
+                // kandidat berhenti memantau di GAGAL pertama, dan kandidat yang
+                // melihat "gagal" mengirim lamaran kedua sementara yang pertama
+                // masih diproses.
+                'Status' => $terakhir ? 'GAGAL' : 'MENUNGGU',
                 'Percobaan' => ($row->Percobaan ?? 0) + 1,
                 'Pesan_Error' => substr($e->getMessage(), 0, 480),
                 'Waktu_Proses' => now(),
                 'Updated_At' => now(),
             ]);
 
-            Log::channel('web_career')->error("[APPLY] {$this->processId} GAGAL: " . $e->getMessage());
+            Log::channel('web_career')->error("[APPLY] {$this->processId} GAGAL (percobaan {$this->attempts()}/{$this->tries}): " . $e->getMessage());
 
             // Percobaan terakhir → catat ke N_WEB_CAREERS_Failed_Jobs & SELESAI.
             // Sengaja TIDAK throw agar kegagalan tak masuk N_LMS_Failed_Jobs global.
-            if ($this->attempts() >= $this->tries) {
+            if ($terakhir) {
                 $this->catatGagalWc('APPLYFORM', json_encode(['processId' => $this->processId]), $e);
 
                 return;
             }
 
             throw $e; // masih ada sisa percobaan → retry
+        }
+
+        // ── LAMARAN SUDAH TERSIMPAN ─────────────────────────────────────────
+        // Dari sini ke bawah TIDAK ADA yang boleh menghapus berkas atau
+        // menggagalkan job. Dulu langkah-langkah ini berada di dalam try yang
+        // sama dengan kompensasi di atas: antrean biodata yang menolak membuat
+        // seluruh berkas lamaran yang SUDAH tercatat ikut terhapus.
+
+        Log::channel('web_career')->info("[APPLY] {$this->processId} selesai — lamaran #{$lamaranId}, " . count($terunggah) . ' berkas.');
+
+        // Kirim email HASIL ke kandidat lewat QUEUE TERPISAH (wc-applymail) —
+        // tidak menahan job apply. Gagal antre email TIDAK menggagalkan apply.
+        $this->kirimEmailHasil($lamaranId, (int) $payload['userId']);
+
+        // ── BIODATA → HRIS REKRUTMEN ────────────────────────────────────
+        //
+        // Formulir pendaftaran inilah yang memuat tanggal lahir, jenis
+        // kelamin, dan alamat kandidat — data yang dulu tidak pernah sampai
+        // ke HCLearn, karena satu-satunya pengiriman terjadi saat ia
+        // MENDAFTAR AKUN, tepat ketika belum mengisi apa pun.
+        //
+        // Posisi yang dilamar ikut terbawa, dan ikut berubah bila kandidat
+        // yang sama melamar posisi lain dengan akun yang sama.
+        //
+        // Queue tersendiri, best-effort: lamarannya sudah tersimpan, jadi
+        // HCLearn yang sedang tumbang tidak boleh menggagalkan apa pun.
+        try {
+            WcBiodataHrisJob::dispatch((int) $payload['userId'], 'APPLY');
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->warning("[APPLY] {$this->processId} biodata HRIS gagal diantrekan: " . $e->getMessage());
         }
     }
 

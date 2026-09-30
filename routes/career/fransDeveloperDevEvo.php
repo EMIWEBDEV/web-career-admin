@@ -52,3 +52,7 @@ require base_path('routes/career/MasterSlaMpp/MasterSlaMppWeb.php');
 require base_path('routes/career/MasterJenisVerifikasi/MasterJenisVerifikasiWeb.php');
 require base_path('routes/career/MasterSkrining/MasterSkriningWeb.php');
 require base_path('routes/career/MasterPertanyaan/MasterPertanyaanWeb.php');
+// Pemulihan berkas kandidat yang hilang (CV, KK, sertifikat…) oleh admin.
+require base_path('routes/career/PemulihanBerkas/PemulihanBerkasWeb.php');
+// Batas pengisian formulir tahap (tanggal kolom & perpanjangan kandidat).
+require base_path('routes/career/BatasIsi/BatasIsiWeb.php');

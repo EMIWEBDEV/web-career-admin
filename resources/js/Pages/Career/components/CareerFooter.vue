@@ -70,13 +70,18 @@
         <div class="wc-footer__bar">
             <div class="wc-footer__bar-inner">
                 <span>&copy; {{ tahun }} EVO Group. Seluruh hak cipta.</span>
-                <span class="wc-footer__credit">Dikelola oleh <b>Tim Technology EVO Group</b></span>
+                <span class="wc-footer__credit">
+                    Dikelola oleh <b>Tim Technology EVO Group</b>
+                    <span class="wc-footer__ver" title="Versi aplikasi">Versi {{ versi }}</span>
+                </span>
             </div>
         </div>
     </footer>
 </template>
 
 <script setup>
+import { usePage } from '@inertiajs/vue3';
+import { computed } from 'vue';
 import { goToSection } from '@utils/career/data';
 
 defineProps({
@@ -84,4 +89,13 @@ defineProps({
 });
 
 const tahun = new Date().getFullYear();
+
+/**
+ * Versi aplikasi — dibagikan HandleInertiaRequests ke seluruh halaman.
+ *
+ * Cadangan '1.0.0' bukan basa-basi: komponen ini juga dipakai halaman yang
+ * dirender tanpa shared props lengkap, dan kaki halaman yang berbunyi
+ * "vundefined" jauh lebih buruk daripada angka bawaan yang benar.
+ */
+const versi = computed(() => usePage().props?.appVersion || '1.0.0');
 </script>

@@ -377,7 +377,10 @@ export default {
             </button>
 
             <p class="switch-row">Sudah punya akun? <Link :href="loginUrl" class="switch-link">Masuk di sini</Link></p>
-            <div class="ver-row"><span>EVO <b>Career</b></span><span>© 2026 EVO Group</span></div>
+            <div class="ver-row">
+                <span class="ver-tag" title="Versi aplikasi">Versi {{ $page.props.appVersion || '1.0.0' }}</span>
+                <span>© 2026 EVO Group</span>
+            </div>
         </form>
 
         <!-- ═══ LANGKAH 2 REGISTER (form lengkap) & LOGIN ═══ -->
@@ -495,7 +498,10 @@ export default {
                 </button>
             </p>
 
-            <div class="ver-row"><span>EVO <b>Career</b></span><span>© 2026 EVO Group</span></div>
+            <div class="ver-row">
+                <span class="ver-tag" title="Versi aplikasi">Versi {{ $page.props.appVersion || '1.0.0' }}</span>
+                <span>© 2026 EVO Group</span>
+            </div>
         </form>
     </AuthShell>
 </template>

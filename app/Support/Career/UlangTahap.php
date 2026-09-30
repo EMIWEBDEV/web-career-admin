@@ -187,6 +187,13 @@ class UlangTahap
                     ->update(self::aktivitasBersih($nama, $adminId, $now));
             }
 
+            // Tahap tujuan kini BERJALAN lagi: batas pengisiannya dihitung ulang
+            // dari saat ini, sama seperti tahap yang baru dibuka.
+            $tujuan = $tahapRows->firstWhere('Urutan', $urutan);
+            if ($tujuan) {
+                BatasIsi::buka((int) $tujuan->Id_Lamaran_Tahap, $now, $nama, $adminId);
+            }
+
             // 6) KEMBALIKAN lamarannya sendiri ke keadaan berjalan.
             DB::table('N_WEB_CAREERS_Lamaran')
                 ->where('Id_Lamaran', $lamaranId)
@@ -265,7 +272,14 @@ class UlangTahap
     /** Kolom perjalanan yang dinolkan pada tahap. Cetakannya tidak disentuh. */
     private static function tahapBersih(bool $pertama, string $nama, ?int $adminId, $now): array
     {
-        return [
+        // Catatan untuk kandidat ikut dinolkan — ia menempel pada keputusan
+        // yang barusan dibatalkan (salinannya sudah masuk arsip). Hanya bila
+        // kolomnya sudah dibuat; sebelum itu kolomnya memang belum ada.
+        $eksternal = CatatanEksternal::siap() ? [CatatanEksternal::KOLOM => null] : [];
+
+        // Batas pengisian putaran lalu ikut dinolkan (aturannya tetap); tahap
+        // tujuan dihitung ulang sesudahnya lewat BatasIsi::buka().
+        return $eksternal + BatasIsi::kolomBersih() + [
             'Status' => $pertama ? 'BERJALAN' : 'MENUNGGU',
             'Hasil' => null,
             'Skor' => null,

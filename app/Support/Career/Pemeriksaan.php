@@ -105,11 +105,12 @@ class Pemeriksaan
 
         // Lingkungan yang kolom penandanya belum ada tetap dilayani daftar
         // cadangan di bawah — sama seperti sebelumnya, hanya tidak lagi
-        // ditanyakan berulang kali.
+        // ditanyakan berulang kali. Dibaca dari master tipe yang SUDAH dimuat
+        // (AlurKolom::masterTipe, sekali per permintaan), bukan kueri sendiri.
         $kode = Skema::adaKolom('N_WEB_CAREERS_Master_Tipe_Tahap', 'Flag_Pemeriksaan')
-            ? DB::table('N_WEB_CAREERS_Master_Tipe_Tahap')
-                ->where('Flag_Pemeriksaan', 'Y')
-                ->pluck('Kode')->map(fn ($k) => (string) $k)->all()
+            ? AlurKolom::masterTipe()
+                ->filter(fn ($t) => strtoupper(trim((string) ($t->Flag_Pemeriksaan ?? ''))) === 'Y')
+                ->keys()->map(fn ($k) => (string) $k)->all()
             : ['REFERENCE_CHECK', 'BACKGROUND_CHECK'];
 
         return self::$petaPeriksa = array_fill_keys($kode, true);

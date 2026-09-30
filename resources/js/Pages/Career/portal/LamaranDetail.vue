@@ -236,6 +236,41 @@
                             {{ putusanTahap.label }} — {{ putusanTahap.lolos ? 'Lolos' : 'Tidak Lolos' }}
                         </div>
                         <p class="ld-verdict__text">{{ putusanTahap.teks }}</p>
+
+                        <!-- Lolos & lanjut: catatannya menunggu di kartu tahap
+                             berikutnya — di sini cukup penunjuk ke sana. -->
+                        <a
+                            v-if="catatanMasuk && catatanMasuk.urutan === putusanTahap.urutan"
+                            href="#ld-ctim"
+                            class="ld-verdict__cat"
+                            @click.prevent="keCatatan"
+                        >
+                            <i class="bi bi-megaphone-fill"></i> Ada catatan untuk tahap {{ catatanMasuk.berikut || 'berikutnya' }}
+                            <i class="bi bi-arrow-down-short"></i>
+                        </a>
+
+                        <!-- Tidak lolos, atau tahap terakhir: tidak ada tahap
+                             berikutnya untuk ditempati, jadi catatannya di sini. -->
+                        <div v-if="catatanPutusan" class="ld-ctim ld-ctim--putusan">
+                            <div class="ld-ctim__hd">
+                                <span class="ld-ctim__ic" aria-hidden="true"><i class="bi bi-megaphone-fill"></i></span>
+                                <div class="ld-ctim__ttl">
+                                    <b>Catatan</b>
+                                    <small v-if="catatanPutusan.at">{{ fmtWaktu(catatanPutusan.at) }}</small>
+                                </div>
+                            </div>
+                            <KontenAman :html="tautkan(catatanPutusan.html)" class="ld-ctim__html" />
+                            <details v-if="!tahapAktif && catatanLama.length" class="ld-ctim__lama">
+                                <summary><i class="bi bi-clock-history"></i> Catatan sebelumnya ({{ catatanLama.length }})</summary>
+                                <article v-for="c in catatanLama" :key="c.urutan" class="ld-ctim__item">
+                                    <div class="ld-ctim__itemhd">
+                                        <b>{{ judulCatatan(c) }}</b>
+                                        <span v-if="c.at">{{ fmtD(c.at) }}</span>
+                                    </div>
+                                    <KontenAman :html="tautkan(c.html)" class="ld-ctim__html" />
+                                </article>
+                            </details>
+                        </div>
                     </div>
                     <span class="ld-verdict__badge">{{ putusanTahap.lolos ? 'LOLOS' : 'TIDAK LOLOS' }}</span>
                 </div>
@@ -380,6 +415,49 @@
                         </div>
                     </div>
 
+                    <!-- ══ CATATAN DARI TIM — "kamu lolos, ini catatan kami" ══
+                         Catatan yang ditulis tim saat memutus tahap SEBELUMNYA
+                         menjadi catatan tahap ini: link Zoom psikotes ditulis
+                         ketika Seleksi Administrasi diloloskan, dan dibaca
+                         ketika kandidat berada di tahap Psikotes. Karena itu ia
+                         duduk paling atas di kartu tahap aktif — sebelum
+                         aktivitas mana pun. Server baru mengirim isinya setelah
+                         hasil tahap sebelumnya boleh diumumkan. -->
+                    <section v-if="catatanMasuk || catatanLama.length" id="ld-ctim" class="ld-ctim" aria-labelledby="ld-ctim-judul">
+                        <template v-if="catatanMasuk">
+                            <div class="ld-ctim__hd">
+                                <span class="ld-ctim__ic" aria-hidden="true"><i class="bi bi-megaphone-fill"></i></span>
+                                <div class="ld-ctim__ttl">
+                                    <!-- Cukup "Catatan" — tanpa "dari Tim Rekrutmen" (permintaan user). -->
+                                    <b id="ld-ctim-judul">Catatan</b>
+                                    <small>
+                                        <template v-if="catatanMasuk.hasil === 'LULUS'">
+                                            Kamu lolos {{ catatanMasuk.label }} — berikut pesan kami untuk tahap ini.
+                                        </template>
+                                        <template v-else>Dari keputusan tahap {{ catatanMasuk.label }}.</template>
+                                    </small>
+                                </div>
+                            </div>
+                            <KontenAman :html="tautkan(catatanMasuk.html)" class="ld-ctim__html" />
+                            <div v-if="catatanMasuk.at" class="ld-ctim__waktu">
+                                <i class="bi bi-clock"></i> {{ fmtWaktu(catatanMasuk.at) }}
+                            </div>
+                        </template>
+                        <details v-if="catatanLama.length" class="ld-ctim__lama">
+                            <summary>
+                                <i class="bi bi-clock-history"></i>
+                                {{ catatanMasuk ? 'Catatan sebelumnya' : 'Catatan tahap sebelumnya' }} ({{ catatanLama.length }})
+                            </summary>
+                            <article v-for="c in catatanLama" :key="c.urutan" class="ld-ctim__item">
+                                <div class="ld-ctim__itemhd">
+                                    <b>{{ judulCatatan(c) }}</b>
+                                    <span v-if="c.at">{{ fmtD(c.at) }}</span>
+                                </div>
+                                <KontenAman :html="tautkan(c.html)" class="ld-ctim__html" />
+                            </article>
+                        </details>
+                    </section>
+
                     <!-- KEADAAN TAHAP — SATU KALIMAT, BUKAN DAFTAR.
                          Dulu di sini berdiri daftar seluruh aktivitas berikut
                          statusnya ("DISC — Menunggu", "FGD — Menunggu"). Itu
@@ -460,8 +538,46 @@
                          mana pun. Sekarang ia satu bagian di dalam kartu yang
                          sama, berdampingan dengan aktivitas lainnya. -->
                     <div v-if="tugas && (komponen || tugas.schema)" class="ld-act__form">
+                        <!-- BATAS PENGISIAN — di atas formulir, karena menentukan
+                             sampai kapan formulir di bawahnya bisa dikirim. Lewat
+                             batas (mode kunci): formulirnya diganti pesan; isian
+                             yang tersimpan tetap aman bila tim memperpanjang. -->
+                        <div v-if="tugas.batas && (tugas.batas.batas || tugas.batas.belumDiatur)" class="ld-batas" :class="kelasBatasPortal" role="status">
+                            <span class="ld-batas__ic" aria-hidden="true">
+                                <i class="bi" :class="formTerkunci ? 'bi-lock-fill' : 'bi-hourglass-split'"></i>
+                            </span>
+                            <div class="ld-batas__isi">
+                                <!-- Jadwal pengisian belum diatur tim: terkunci. -->
+                                <template v-if="tugas.batas.belumDiatur">
+                                    <b>Formulir belum dibuka</b>
+                                    <small>Tim rekrutmen akan mengumumkan jadwal pengisiannya. Pantau halaman ini dan email kamu.</small>
+                                </template>
+                                <!-- Waktu dibukanya belum tiba: terkunci sampai itu. -->
+                                <template v-else-if="belumBukaLive">
+                                    <b>Formulir dibuka {{ tugas.batas.bukaTeks }}</b>
+                                    <small>
+                                        Kamu bisa mulai mengisi <strong>{{ durasiTeks(bukaMs - now) }}</strong> lagi,
+                                        paling lambat {{ tugas.batas.teks }}.
+                                    </small>
+                                </template>
+                                <template v-else-if="formTerkunci">
+                                    <b>Batas pengisian sudah lewat</b>
+                                    <small>
+                                        Formulir ini terkunci sejak {{ tugas.batas.teks }}. Isianmu yang sudah tersimpan tidak
+                                        hilang — hubungi tim rekrutmen bila memerlukan perpanjangan.
+                                    </small>
+                                </template>
+                                <template v-else>
+                                    <b>Kirim sebelum {{ tugas.batas.teks }}</b>
+                                    <small>
+                                        Sisa waktu <strong>{{ sisaBatasTeks }}</strong>.
+                                        Setelah lewat, formulir terkunci dan tidak bisa dikirim lagi.
+                                    </small>
+                                </template>
+                            </div>
+                        </div>
                         <DynamicForm
-                            v-if="tugas.schema"
+                            v-if="tugas.schema && !formTerkunci"
                             v-model="jawaban"
                             :skema="tugas.schema"
                             :judul="tugas.formulirNama || tugas.label"
@@ -475,7 +591,7 @@
                             @pindah-langkah="simpanDraf"
                         />
                         <component
-                            v-else
+                            v-else-if="!formTerkunci"
                             :is="komponen"
                             v-model="jawaban"
                             :konteks="konteksForm"
@@ -1356,7 +1472,11 @@ import {
 } from '@career/formulir';
 import DynamicForm from '@career/formulir/DynamicForm.vue';
 import { kunciBerkas } from '@utils/formulir/berkasBaris';
+import { berkasKurang } from '@utils/formulir/aturan';
+import { normalisasiSkema } from '@utils/formulir/schema';
+import { tautkan } from '@utils/career/tautanOtomatis';
 import JadwalKartu from '@career/JadwalKartu.vue';
+import KontenAman from '@career/KontenAman.vue';
 import UnggahAktivitas from '@career/UnggahAktivitas.vue';
 
 /**
@@ -1494,7 +1614,7 @@ const PESAN_TAHAP_INTERNAL =
     'Mohon pastikan nomor telepon dan email Anda tetap aktif.';
 
 export default {
-    components: { Head, Link, JadwalKartu, DynamicForm, UnggahAktivitas },
+    components: { Head, Link, JadwalKartu, DynamicForm, KontenAman, UnggahAktivitas },
     props: {
         lamaran: { type: Object, default: () => ({}) },
         tahap: { type: Array, default: () => [] },
@@ -1520,6 +1640,20 @@ export default {
             langkahAwal: 0,
             drafSiap: false,
             berkasDraf: {},
+            // Unggahan draf yang MASIH BERJALAN, per kunci berkas. Kirim menunggu
+            // semuanya selesai — dulu formulir terkirim selagi berkasnya masih
+            // di jalan, dan berkas itu tidak pernah ikut tercatat.
+            unggahan: {},
+            // Nomor unggahan TERBARU per isian. Unggahan lama yang selesai
+            // belakangan tidak boleh menimpa hasil milik yang lebih baru.
+            nomorUnggah: {},
+            // Isian yang unggahannya gagal → pesan yang MENETAP di bawah kotak
+            // unggahnya. Notifikasi saja hilang dalam 4 detik, sementara nama
+            // berkasnya dulu tetap tercatat seolah beres.
+            berkasGagal: {},
+            // bagian/baris/field tiap berkas yang dipilih di tab ini — untuk
+            // mencoba ulang unggahannya sebelum formulir dikirim.
+            berkasMeta: {},
             mengirim: false,
             openForm: 0,
             lightbox: null,
@@ -1555,6 +1689,107 @@ export default {
         };
     },
     computed: {
+        /**
+         * Catatan UNTUK KANDIDAT yang sudah boleh dibaca — terbaru dulu.
+         *
+         * Server hanya mengirim `catatanEksternal` setelah hasil tahapnya boleh
+         * diumumkan (lihat LamaranController::terbitKeKandidat), jadi tidak ada
+         * aturan kedua yang perlu dijaga di sini.
+         */
+        catatanKandidat() {
+            const waktu = (x) => {
+                const t = Date.parse(String(x || '').replace(' ', 'T'));
+
+                return Number.isNaN(t) ? 0 : t;
+            };
+
+            return (this.tahap || [])
+                .filter((t) => t.catatanEksternal)
+                .map((t) => ({
+                    urutan: t.urutan,
+                    label: t.label,
+                    hasil: t.hasil,
+                    html: t.catatanEksternal,
+                    at: t.catatanAt ? String(t.catatanAt).replace(' ', 'T') : null,
+                    berikut: (this.tahap.find((x) => x.urutan === t.urutan + 1) || {}).label || null,
+                }))
+                .sort((a, b) => waktu(b.at) - waktu(a.at) || b.urutan - a.urutan);
+        },
+        /**
+         * BATAS PENGISIAN formulir tahap aktif (server: BatasIsi::status).
+         *
+         * Jam halaman berdetak tiap 15 detik, jadi formulir ikut terkunci SAAT
+         * batasnya lewat — tanpa menunggu halaman dimuat ulang. Server tetap
+         * menolak kiriman yang lolos dari layar.
+         */
+        batasMs() {
+            const b = this.tugas?.batas;
+
+            return b?.batas ? new Date(String(b.batas).replace(' ', 'T')).getTime() : null;
+        },
+        bukaMs() {
+            const b = this.tugas?.batas;
+
+            return b?.buka ? new Date(String(b.buka).replace(' ', 'T')).getTime() : null;
+        },
+        /** Waktu dibuka belum tiba — dihitung hidup, jadi formulir terbuka SAAT waktunya. */
+        belumBukaLive() {
+            return this.bukaMs !== null && this.now < this.bukaMs;
+        },
+        batasLewat() {
+            return this.batasMs !== null && this.now > this.batasMs;
+        },
+        formTerkunci() {
+            const b = this.tugas?.batas;
+            if (!b || b.terkirim) return false;
+            if (b.belumDiatur || this.belumBukaLive) return true;
+
+            // Lewat batas SELALU terkunci — tidak ada "ditandai terlambat".
+            return this.batasLewat;
+        },
+        sisaBatasTeks() {
+            return this.batasMs === null ? '' : this.durasiTeks(this.batasMs - this.now);
+        },
+        kelasBatasPortal() {
+            const b = this.tugas?.batas;
+            if (b?.belumDiatur || this.belumBukaLive) return 'is-tutup';
+            if (this.formTerkunci) return 'is-kunci';
+
+            return this.batasMs !== null && this.batasMs - this.now <= 86400000 ? 'is-dekat' : 'is-aman';
+        },
+        /**
+         * Catatan untuk TAHAP AKTIF = catatan keputusan tahap tepat sebelumnya.
+         *
+         * "Kamu lolos, ini catatan kami": yang ditulis saat Seleksi
+         * Administrasi diloloskan adalah pesan untuk tahap Psikotes. Hanya
+         * tahap TERAKHIR yang diputus sebelum tahap aktif yang dihitung —
+         * catatan dua tahap lalu bukan pesan untuk tahap ini, walaupun tahap
+         * sesudahnya diputus tanpa catatan.
+         */
+        catatanMasuk() {
+            if (!this.tahapAktif) return null;
+            const sebelum = this.tahap.filter((t) => t.urutan < this.tahapAktif.urutan && t.hasil);
+            const t = sebelum.length ? sebelum[sebelum.length - 1] : null;
+
+            return t ? this.catatanKandidat.find((c) => c.urutan === t.urutan) || null : null;
+        },
+        /**
+         * Keputusan yang TIDAK berlanjut ke tahap aktif (tidak lolos, tahap
+         * terakhir): tidak ada kartu tahap berikutnya, jadi catatannya ikut
+         * kartu keputusan.
+         */
+        catatanPutusan() {
+            const p = this.putusanTahap;
+            if (!p || this.catatanMasuk?.urutan === p.urutan) return null;
+
+            return this.catatanKandidat.find((c) => c.urutan === p.urutan) || null;
+        },
+        /** Catatan lain yang sudah lewat — dilipat, tidak dibuang. */
+        catatanLama() {
+            const tampil = [this.catatanMasuk?.urutan, this.catatanPutusan?.urutan];
+
+            return this.catatanKandidat.filter((c) => !tampil.includes(c.urutan));
+        },
         isMtCategory() {
             const cat = (this.lamaran?.kategori || this.lamaran?.Kategori || this.lamaran?.kategori_program || '')
                 .toString()
@@ -2104,9 +2339,22 @@ export default {
 
             // Ada yang harus DIKERJAKAN kandidat → itu yang disebut lebih dulu.
             if (this.tugas && (this.komponen || this.tugas.schema)) {
+                // Batas pengisian sudah lewat & formulirnya terkunci: yang harus
+                // dilakukan bukan lagi mengisi, melainkan menghubungi tim.
+                if (this.formTerkunci) {
+                    const nama = this.tugas.formulirNama || 'Formulir';
+                    const b = this.tugas.batas;
+                    let text = `Batas pengisian ${nama} sudah lewat. Hubungi tim rekrutmen bila memerlukan perpanjangan.`;
+                    if (b.belumDiatur) text = `${nama} belum dibuka. Tim rekrutmen akan mengumumkan jadwal pengisiannya.`;
+                    else if (this.belumBukaLive) text = `${nama} dibuka ${b.bukaTeks}, paling lambat ${b.teks}.`;
+
+                    return { title: `${posisi} · ${cur.label}`, text };
+                }
+
                 return {
                     title: `${posisi} · ${cur.label}`,
-                    text: `Lengkapi ${this.tugas.formulirNama || 'formulir'} di bawah untuk melanjutkan ke tahap berikutnya.`,
+                    text: `Lengkapi ${this.tugas.formulirNama || 'formulir'} di bawah untuk melanjutkan ke tahap berikutnya.`
+                        + (this.tugas.batas?.batas && !this.tugas.batas.lewat ? ` Batasnya ${this.tugas.batas.teks}.` : ''),
                 };
             }
 
@@ -2272,9 +2520,9 @@ export default {
 
             return { foto, nama, data, waktuKirim: f.waktuKirim };
         },
-        /** Konteks formulir + daftar berkas draf yang sudah tersimpan di server. */
+        /** Konteks formulir + berkas draf yang sudah tersimpan di server + yang gagal naik. */
         konteksForm() {
-            return { ...(this.konteks || {}), berkasDraf: this.berkasDraf };
+            return { ...(this.konteks || {}), berkasDraf: this.berkasDraf, berkasGagal: this.berkasGagal };
         },
         /** Tab isi bawah — hanya yang memang ada isinya yang ditampilkan. */
         tabs() {
@@ -2815,6 +3063,26 @@ export default {
                     : { background: 'rgba(16,185,129,.12)', color: '#059669' };
             if (t.status === 'BERJALAN') return { background: 'rgba(245,158,11,.14)', color: '#b45309' };
             return { background: '#eef0f7', color: '#94a3b8' };
+        },
+        /** "Seleksi Administrasi → Psikotes" bila lolos ke tahap berikutnya; selain itu nama tahapnya. */
+        judulCatatan(c) {
+            return c.hasil === 'LULUS' && c.berikut ? `${c.label} → ${c.berikut}` : c.label;
+        },
+        tautkan,
+        /** "2 hari 5 jam" / "3 jam" / "12 menit" — sisa waktu menuju suatu saat. */
+        durasiTeks(ms) {
+            if (!ms || ms <= 0) return 'habis';
+            const jam = Math.floor(ms / 3600000);
+            if (jam < 1) return `${Math.max(1, Math.floor(ms / 60000))} menit`;
+            if (jam < 24) return `${jam} jam`;
+            const hari = Math.floor(jam / 24);
+            const sisa = jam % 24;
+
+            return sisa ? `${hari} hari ${sisa} jam` : `${hari} hari`;
+        },
+        /** Dari kartu keputusan ke catatan di kartu tahap aktif. */
+        keCatatan() {
+            document.getElementById('ld-ctim')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
         },
         fmtD(iso, short) {
             if (!iso) return '';
@@ -3446,11 +3714,15 @@ export default {
             if (e.hapus) {
                 delete this.berkas[kunci];
                 delete this.berkasDraf[kunci];
+                delete this.berkasMeta[kunci];
+                delete this.berkasGagal[kunci];
                 this.notice('Berkas dihapus.');
                 return;
             }
             if (e.file) {
                 this.berkas[kunci] = e.file;
+                this.berkasMeta[kunci] = { bagian: e.bagian ?? null, baris: e.baris ?? null, field: e.field.key };
+                delete this.berkasGagal[kunci];
                 this.unggahDraf(kunci, e.file, e.field.key, e.bagian, e.baris);
             }
         },
@@ -3479,10 +3751,45 @@ export default {
             }
             await this.muatBerkasDraf();
         },
+        /**
+         * Kirim formulir tahap — HANYA bila setiap berkas yang disebut jawaban
+         * benar-benar sudah ada di server.
+         *
+         * Nama berkas masuk ke jawaban begitu dipilih, sedangkan isinya naik
+         * lewat unggahan terpisah. Dulu Kirim tidak menunggu unggahan itu dan
+         * tidak memeriksa hasilnya: unggahan yang gagal atau masih berjalan
+         * berakhir sebagai nama berkas tanpa berkas (CV, KTP, sertifikat yang
+         * "hilang" di produksi). Server kini menolak kiriman seperti itu; di
+         * sini ia dicegah lebih dulu, dan unggahan yang tertinggal dicoba ulang.
+         */
         async kirim(nilai) {
             if (this.mengirim || !this.tugas) return;
             this.mengirim = true;
             try {
+                // 1. Unggahan yang masih berjalan ditunggu sampai tuntas.
+                if (Object.keys(this.unggahan).length) {
+                    this.notice('Menunggu unggahan berkas selesai…');
+                    await Promise.allSettled(Object.values(this.unggahan));
+                }
+
+                // 2. Nama berkas yang belum punya salinan di server: dicoba unggah
+                //    ulang sekali selagi berkasnya masih dipegang tab ini.
+                let kurang = this.berkasBelumTersimpan(nilai);
+                const ulang = kurang.filter((k) => this.berkas[kunciBerkas(k.bagian, k.baris, k.field)]);
+                if (ulang.length) {
+                    await Promise.allSettled(
+                        ulang.map((k) => {
+                            const kn = kunciBerkas(k.bagian, k.baris, k.field);
+                            return this.unggahDraf(kn, this.berkas[kn], k.field, k.bagian, k.baris);
+                        }),
+                    );
+                    kurang = this.berkasBelumTersimpan(nilai);
+                }
+                if (kurang.length) {
+                    this.tandaiBerkasKurang(kurang);
+                    return;
+                }
+
                 const res = await axios.post(
                     `/api/v1/lamaran/tahap/${this.tugas.tahapId}/kirim`,
                     { jawaban: nilai },
@@ -3491,9 +3798,71 @@ export default {
                 this.notice(res.data?.message || 'Formulir terkirim.');
                 setTimeout(() => router.reload(), 800);
             } catch (e) {
+                // Server menolak karena berkas yang disebut jawaban tidak ada:
+                // kosongkan tepat isian itu supaya kotak unggahnya muncul lagi.
+                const kurangServer = e.response?.data?.result?.berkasKurang;
+                if (e.response?.status === 422 && Array.isArray(kurangServer) && kurangServer.length) {
+                    await this.muatBerkasDraf();
+                    this.tandaiBerkasKurang(kurangServer, e.response.data.message);
+                    return;
+                }
                 this.notice(e.response?.data?.message || 'Gagal mengirim formulir.', true);
+                // 409 = sudah terkirim / tahap tertutup: yang tepat memuat ulang.
+                if (e.response?.status === 409) setTimeout(() => router.reload(), 1500);
             } finally {
                 this.mengirim = false;
+            }
+        },
+        /**
+         * Berkas yang seharusnya ada tapi belum punya salinan di server — aturan
+         * yang SAMA dengan penolakan server (berkasKurang ↔ BerkasFormulir).
+         */
+        berkasBelumTersimpan(jawaban) {
+            const ada = (bagian, baris, field) => !!this.berkasDraf[kunciBerkas(bagian, baris, field)];
+            if (this.tugas?.schema) {
+                return berkasKurang(normalisasiSkema(this.tugas.schema), jawaban || {}, ada);
+            }
+
+            // Formulir komponen lama (tanpa skema): yang bisa diperiksa hanya
+            // berkas yang dipilih di tab ini.
+            return Object.entries(this.berkasMeta)
+                .filter(([k]) => !this.berkasDraf[k])
+                .map(([, m]) => ({ ...m, label: m.field, wajib: false, nama: '' }));
+        },
+        /**
+         * Tandai isian yang berkasnya tidak ada di server: nama berkasnya
+         * dikosongkan (kotak unggah muncul lagi, validasi "wajib diisi" ikut
+         * menyala), dan pesannya menetap di bawah kotak itu.
+         */
+        tandaiBerkasKurang(daftar, pesan = null) {
+            const gagal = { ...this.berkasGagal };
+            daftar.forEach((k) => {
+                const bagian = k.bagian ?? null;
+                const baris = k.baris ?? null;
+                const kn = kunciBerkas(bagian, baris, k.field);
+                gagal[kn] = 'Belum tersimpan di server — pilih ulang berkasnya.';
+                delete this.berkas[kn];
+                delete this.berkasMeta[kn];
+                this.aturIsianBerkas(bagian, baris, k.field, '');
+            });
+            this.berkasGagal = gagal;
+
+            const label = daftar.map((k) => k.label).join(', ');
+            this.notice(
+                pesan || `Berkas berikut belum tersimpan di server: ${label}. Unggah ulang, lalu kirim kembali.`,
+                true,
+                9000,
+            );
+        },
+        /** Tulis nilai sebuah isian berkas — di akar jawaban atau di baris bagian berulang. */
+        aturIsianBerkas(bagian, baris, field, nilai) {
+            if (bagian === null || bagian === undefined || baris === null || baris === undefined) {
+                this.jawaban[field] = nilai;
+                return;
+            }
+            const daftar = this.jawaban[bagian];
+            if (Array.isArray(daftar) && daftar[baris] && typeof daftar[baris] === 'object') {
+                daftar[baris][field] = nilai;
             }
         },
         /**
@@ -3532,6 +3901,19 @@ export default {
          */
         async unggahDraf(kunci, file, field, bagian = null, baris = null) {
             if (!this.tugas) return;
+            const nomor = (this.nomorUnggah[kunci] || 0) + 1;
+            this.nomorUnggah[kunci] = nomor;
+
+            // Didaftarkan supaya Kirim bisa MENUNGGU-nya (lihat kirim()).
+            const janji = this.naikkanDraf(kunci, file, field, bagian, baris, nomor);
+            this.unggahan[kunci] = janji;
+            try {
+                await janji;
+            } finally {
+                if (this.unggahan[kunci] === janji) delete this.unggahan[kunci];
+            }
+        },
+        async naikkanDraf(kunci, file, field, bagian, baris, nomor) {
             const fd = new FormData();
             fd.append('field', field);
             // Dikirim hanya bila memang berkas baris berulang — endpoint
@@ -3541,19 +3923,65 @@ export default {
                 fd.append('baris', String(baris));
             }
             fd.append('berkas', file);
-            try {
-                const { data } = await axios.post(`/kandidat/lamaran/tahap/${this.tugas.tahapId}/draf/berkas`, fd);
-                const r = data?.result;
-                if (r?.url) {
-                    this.berkasDraf = { ...this.berkasDraf, [kunci]: r };
-                } else {
-                    // Server menerima berkasnya tapi tidak mengembalikan URL.
-                    // Tarik ulang daftarnya daripada membiarkan kartu tanpa tautan.
-                    await this.muatBerkasDraf();
+
+            let galat = null;
+            for (let coba = 0; coba < 2; coba++) {
+                try {
+                    const { data } = await axios.post(`/kandidat/lamaran/tahap/${this.tugas.tahapId}/draf/berkas`, fd);
+                    // Sudah digantikan berkas yang lebih baru untuk isian yang sama.
+                    if (this.nomorUnggah[kunci] !== nomor) return;
+
+                    const r = data?.result;
+                    if (r?.url) {
+                        this.berkasDraf = { ...this.berkasDraf, [kunci]: r };
+                    } else {
+                        // Server menerima berkasnya tapi tidak mengembalikan URL.
+                        // Tarik ulang daftarnya daripada membiarkan kartu tanpa tautan.
+                        await this.muatBerkasDraf();
+                    }
+                    delete this.berkasGagal[kunci];
+                    return;
+                } catch (err) {
+                    galat = err;
+                    // Penolakan server (4xx: format, ukuran, formulir tertutup)
+                    // tidak akan berubah bila diulang. Yang dicoba ulang hanya
+                    // gangguan jaringan & galat server.
+                    const st = err.response?.status;
+                    if (st && st < 500) break;
+                    await new Promise((selesai) => setTimeout(selesai, 1200));
                 }
-            } catch (err) {
-                this.notice(err.response?.data?.message || 'Berkas gagal disimpan sementara. Coba unggah ulang.', true);
             }
+
+            if (this.nomorUnggah[kunci] !== nomor) return;
+            this.gagalUnggah(kunci, galat, file?.name);
+        },
+        /**
+         * Unggahan GAGAL: isiannya dikembalikan ke keadaan terakhir yang benar-
+         * benar tersimpan di server — berkas sebelumnya bila ada, kosong bila
+         * belum pernah — dan pesannya menetap di bawah kotak unggah.
+         *
+         * Dulu cukup notifikasi 4 detik, sementara nama berkas yang gagal tetap
+         * tercatat di jawaban dan pratinjau lokalnya tetap bisa dibuka: kartu
+         * tampak beres, formulir terkirim, berkasnya tidak pernah ada.
+         */
+        gagalUnggah(kunci, err, nama) {
+            const pesan =
+                err?.response?.data?.message || 'Berkas gagal diunggah. Periksa koneksi Anda lalu pilih ulang berkasnya.';
+            const meta = this.berkasMeta[kunci];
+            const tersimpan = this.berkasDraf[kunci];
+
+            delete this.berkas[kunci];
+            if (!tersimpan) delete this.berkasMeta[kunci];
+            if (meta) this.aturIsianBerkas(meta.bagian, meta.baris, meta.field, tersimpan?.nama || '');
+
+            this.berkasGagal = {
+                ...this.berkasGagal,
+                [kunci]: tersimpan ? `${pesan} Berkas sebelumnya tetap dipakai.` : pesan,
+            };
+            this.notice(`${nama ? `"${nama}" ` : 'Berkas '}belum tersimpan: ${pesan}`, true, 9000);
+
+            // 409 = formulirnya sudah terkirim / tahap tertutup.
+            if (err?.response?.status === 409) setTimeout(() => router.reload(), 1500);
         },
         /**
          * Bersihkan nama berkas di draf yang TIDAK punya salinan di server.
@@ -3638,17 +4066,23 @@ export default {
                 // Pesan dari server ditampilkan apa adanya bila ada — galat
                 // validasi yang disembunyikan di balik kalimat umum membuat
                 // sebabnya mustahil ditebak dari layar.
+                //
+                // (Dulu blok ini memakai `err` yang tidak pernah ada, sehingga
+                // galat simpan draf justru melempar ReferenceError dan pesannya
+                // tidak pernah tampil.)
                 this.notice(
-                    err.response?.data?.message || 'Isian belum tersimpan ke server. Periksa koneksi Anda.',
+                    e.response?.data?.message || 'Isian belum tersimpan ke server. Periksa koneksi Anda.',
                     true,
                 );
+                // 409 = formulirnya sudah terkirim / tahap tertutup.
+                if (e.response?.status === 409) setTimeout(() => router.reload(), 1500);
             }
         },
-        notice(x, err = false) {
+        notice(x, err = false, lama = 4000) {
             this.toast = x;
             this.toastErr = err;
             if (this.tm) clearTimeout(this.tm);
-            this.tm = setTimeout(() => (this.toast = ''), 4000);
+            this.tm = setTimeout(() => (this.toast = ''), lama);
         },
     },
 };
@@ -3758,6 +4192,171 @@ TQVA5K0T) — ia dibaca
 }
 .ld-back:hover {
     color: #4f46e5;
+}
+
+/* ═══ CATATAN DARI TIM — di kartu tahap aktif / kartu keputusan ═══
+   Prefiks sendiri (ld-ctim): `.ld-cat` sudah dipakai blok lain di berkas ini. */
+.ld-ctim {
+    position: relative;
+    margin: 16px 20px 0;
+    padding: 16px 18px 16px 21px;
+    border-radius: 18px;
+    background: linear-gradient(135deg, #f7f5ff, #ffffff 70%);
+    border: 1px solid #e2dcfb;
+    box-shadow: 0 10px 26px rgba(99, 102, 241, 0.08);
+    overflow: hidden;
+    animation: ldKeadaanMasuk 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.ld-ctim::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    background: linear-gradient(180deg, #8b5cf6, #6366f1);
+}
+.ld-ctim__hd {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+.ld-ctim__ic {
+    flex: none;
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+    display: grid;
+    place-items: center;
+    font-size: 1rem;
+    color: #fff;
+    background: linear-gradient(135deg, #8b5cf6, #6366f1);
+    box-shadow: 0 8px 18px rgba(99, 102, 241, 0.3);
+}
+.ld-ctim__ttl {
+    min-width: 0;
+}
+.ld-ctim__ttl b {
+    display: block;
+    font-size: 15px;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    color: #1e1b4b;
+}
+.ld-ctim__ttl small {
+    display: block;
+    margin-top: 2px;
+    font-size: 12.5px;
+    font-weight: 600;
+    line-height: 1.45;
+    color: #6d28d9;
+}
+.ld-ctim .ld-ctim__html {
+    font-size: 14.5px;
+    line-height: 1.7;
+    color: #334155;
+}
+.ld-ctim .ld-ctim__html :deep(a) {
+    color: #4f46e5;
+    font-weight: 700;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    overflow-wrap: anywhere;
+}
+.ld-ctim__waktu {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #94a3b8;
+}
+.ld-ctim__lama {
+    margin-top: 10px;
+    padding-top: 6px;
+    border-top: 1px dashed #e2dcfb;
+}
+.ld-ctim > .ld-ctim__lama:first-child {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: 0;
+}
+.ld-ctim__lama summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 40px;
+    font-size: 13px;
+    font-weight: 800;
+    color: #6d28d9;
+    list-style: none;
+    cursor: pointer;
+}
+.ld-ctim__lama summary::-webkit-details-marker {
+    display: none;
+}
+.ld-ctim__item {
+    margin-top: 8px;
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: #fff;
+    border: 1px solid #eef0f7;
+}
+.ld-ctim__itemhd {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+    margin-bottom: 6px;
+    font-size: 12.5px;
+    color: #94a3b8;
+}
+.ld-ctim__itemhd b {
+    color: #1e293b;
+}
+/* Di dalam kartu keputusan: menempel di kolom teks, bukan kartu kedua. */
+.ld-ctim--putusan {
+    margin: 12px 0 0;
+    background: rgba(255, 255, 255, 0.78);
+    border-color: rgba(15, 23, 42, 0.08);
+    box-shadow: none;
+}
+/* Penunjuk di kartu keputusan: "ada catatan untuk tahap berikutnya ↓". */
+.ld-verdict__cat {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 34px;
+    margin-top: 9px;
+    padding: 6px 12px;
+    /* Bukan 999px: di ponsel kalimatnya membungkus 2–3 baris, dan pil bulat
+       yang membungkus terlihat seperti gumpalan. */
+    border-radius: 14px;
+    font-size: 12.5px;
+    font-weight: 800;
+    line-height: 1.45;
+    color: #047857;
+    background: rgba(16, 185, 129, 0.13);
+    text-decoration: none;
+    transition: background 0.16s;
+}
+.ld-verdict__cat:hover {
+    background: rgba(16, 185, 129, 0.22);
+}
+@media (max-width: 640px) {
+    .ld-ctim {
+        margin: 14px 14px 0;
+        padding: 14px 14px 14px 18px;
+        border-radius: 16px;
+    }
+    .ld-ctim--putusan {
+        margin: 12px 0 0;
+    }
+    .ld-ctim .ld-ctim__html {
+        font-size: 14px;
+    }
 }
 
 /* HERO */
@@ -4115,6 +4714,91 @@ TQVA5K0T) — ia dibaca
 }
 .ld-act__form {
     padding: 18px 20px;
+}
+/* BATAS PENGISIAN — pita di atas formulir; warnanya ikut mendesaknya waktu. */
+.ld-batas {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin: 0 0 16px;
+    padding: 12px 14px;
+    border-radius: 14px;
+    border: 1px solid #c7d2fe;
+    background: linear-gradient(135deg, #eef2ff, #f8faff);
+}
+.ld-batas__ic {
+    flex: none;
+    width: 34px;
+    height: 34px;
+    border-radius: 11px;
+    display: grid;
+    place-items: center;
+    font-size: 15px;
+    background: rgba(99, 102, 241, 0.14);
+    color: #4338ca;
+}
+.ld-batas__isi {
+    min-width: 0;
+}
+.ld-batas__isi b {
+    display: block;
+    font-size: 14px;
+    font-weight: 800;
+    color: #1e1b4b;
+}
+.ld-batas__isi small {
+    display: block;
+    margin-top: 3px;
+    font-size: 12.5px;
+    line-height: 1.55;
+    color: #475569;
+}
+.ld-batas.is-dekat {
+    border-color: #fde68a;
+    background: linear-gradient(135deg, #fffbeb, #fffdf5);
+}
+.ld-batas.is-dekat .ld-batas__ic {
+    background: rgba(245, 158, 11, 0.16);
+    color: #b45309;
+}
+.ld-batas.is-dekat .ld-batas__isi b {
+    color: #78350f;
+}
+.ld-batas.is-lewat {
+    border-color: #fdba74;
+    background: #fff7ed;
+}
+.ld-batas.is-lewat .ld-batas__ic {
+    background: rgba(249, 115, 22, 0.16);
+    color: #c2410c;
+}
+.ld-batas.is-kunci {
+    border-color: #fca5a5;
+    background: #fef2f2;
+}
+.ld-batas.is-kunci .ld-batas__ic {
+    background: rgba(239, 68, 68, 0.14);
+    color: #b91c1c;
+}
+.ld-batas.is-kunci .ld-batas__isi b {
+    color: #991b1b;
+}
+/* Belum dibuka — terkunci, tapi bukan kesalahan kandidat: nada netral. */
+.ld-batas.is-tutup {
+    border-color: #cbd5e1;
+    background: linear-gradient(135deg, #f1f5f9, #f8fafc);
+}
+.ld-batas.is-tutup .ld-batas__ic {
+    background: rgba(71, 85, 105, 0.14);
+    color: #334155;
+}
+@media (max-width: 640px) {
+    .ld-batas {
+        padding: 11px 12px;
+    }
+    .ld-batas__isi b {
+        font-size: 13.5px;
+    }
 }
 
 /* Daftar aktivitas dalam satu tahap (tahap multi-tes) */

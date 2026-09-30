@@ -2432,6 +2432,23 @@ h6,
     color: #f43f5e;
 }
 
+/* LENCANA VERSI di kaki halaman publik.
+   Monospace & redup: angka ini dicari ketika ada yang salah, bukan dibaca
+   saat semuanya baik-baik saja. */
+.wc-footer__ver {
+    margin-left: 0.15rem;
+    padding: 1px 7px;
+    border-radius: 999px;
+    border: 1px solid var(--line, #e2e8f0);
+    background: rgba(255, 255, 255, 0.6);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.66rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: var(--muted);
+    white-space: nowrap;
+}
+
 /* ═══════════ TOAST + TOTOP ═══════════ */
 /* Kembaran .wca-toast untuk halaman publik/portal. Ikut dinaikkan: portal pun
    punya modal (lamar, unggah berkas) yang menutupi jawabannya. Lihat catatan

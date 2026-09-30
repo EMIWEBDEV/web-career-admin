@@ -58,7 +58,7 @@ class BerkasSeleksi
      * jawabannya sudah tercetak di bab data kandidat.
      */
     private const TIPE_BERNILAI = [
-        'INTERVIEW', 'TES_OFFLINE_MANUAL', 'PHONE_SCREEN', 'MCU',
+        'INTERVIEW', 'FGD', 'TES_OFFLINE_MANUAL', 'PHONE_SCREEN', 'MCU',
         'REFERENCE_CHECK', 'BACKGROUND_CHECK', 'NEGOTIATION', 'ADMIN_SCREENING',
     ];
 

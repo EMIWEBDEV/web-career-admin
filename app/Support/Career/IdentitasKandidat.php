@@ -2,8 +2,6 @@
 
 namespace App\Support\Career;
 
-use Illuminate\Support\Facades\DB;
-
 /**
  * WEB CAREER — NAMA RESMI kandidat, diambil dari FORMULIR.
  *
@@ -35,6 +33,22 @@ class IdentitasKandidat
      * @param  array  $jawaban  isi Jawaban_Json yang sudah di-decode
      * @param  ?string  $snapshotJson  isi Schema_Snapshot_Json, bila ada
      */
+    /**
+     * Langkah PERTAMA nama() saja — kunci dari master, tanpa snapshot skema.
+     * Dipakai pemuat massal: kandidat yang namanya sudah ketemu di sini tidak
+     * perlu snapshot skemanya dibaca sama sekali (JSON 5–22 KB per pengisian).
+     */
+    public static function namaDariMaster(array $jawaban): ?string
+    {
+        foreach (self::kunciMaster() as $k) {
+            if ($v = self::teks($jawaban[$k] ?? null)) {
+                return $v;
+            }
+        }
+
+        return null;
+    }
+
     public static function nama(array $jawaban, ?string $snapshotJson = null): ?string
     {
         foreach (self::kunciMaster() as $k) {
@@ -58,14 +72,14 @@ class IdentitasKandidat
         return null;
     }
 
-    /** Daftar kunci nama dari master — dibaca sekali per permintaan. */
+    /**
+     * Daftar kunci nama dari master — lewat pemuat LamaranService, yang membaca
+     * seluruh jenis identitas dalam satu kueri per permintaan. Papan worklist
+     * memakai keduanya; dua pemuat terpisah berarti tabel yang sama dua kali.
+     */
     private static function kunciMaster(): array
     {
-        static $cache = null;
-
-        return $cache ??= DB::table('N_WEB_CAREERS_Master_Kunci_Identitas')
-            ->where('Kode', 'NAMA')->where('Flag_Aktif', 'Y')
-            ->orderBy('Urutan')->pluck('Field_Key')->all();
+        return LamaranService::kunciIdentitas('NAMA');
     }
 
     /**

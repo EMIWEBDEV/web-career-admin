@@ -14,7 +14,7 @@ namespace App\Support\Career;
  * Pengetahuan itu dipusatkan DI SINI, bukan disalin ke tiap pemanggil. Empat
  * salinan aturan yang sama persis adalah cara bug tadi lahir.
  *
- * Cerminan JS-nya: resources/js/components/career/formulir/inti/berkasBaris.js,
+ * Cerminan JS-nya: resources/js/utils/formulir/berkasBaris.js,
  * dijaga tetap sama oleh tests/Unit/BerkasBarisSinkronTest.php.
  */
 class BerkasBaris
@@ -61,24 +61,32 @@ class BerkasBaris
     /**
      * Kunci sebuah BAGIAN, persis seperti yang dihitung browser.
      *
-     * Cerminan dari kunciBagian() di inti/aturan.js. Editor tidak pernah
+     * Cerminan dari kunciBagian() di utils/formulir/aturan.js. Editor tidak pernah
      * membuat kunci bagian otomatis — schema.js menyimpan `key: B.key || ''` —
      * jadi bagian berulang tanpa `key` adalah bentuk yang SAH dan benar-benar
      * bisa tersimpan. Untuk bagian semacam itu browser menurunkan kuncinya dari
      * judul, dan server WAJIB sampai pada kunci yang sama; kalau tidak, gerbang
      * pemeriksaan akan menolak unggahan yang sah dan mematikan formulir itu
      * sepenuhnya.
+     *
+     * Judulnya dinormalkan dulu seperti normalisasiBagian() di schema.js: judul
+     * yang TIDAK diisi menjadi "Bagian N" (N = urutan bagian di langkahnya,
+     * dikirim lewat $indeks), sedangkan judul yang sengaja dikosongkan jatuh ke
+     * 'bagian'. Tanpa $indeks perilakunya sama seperti sebelumnya.
      */
-    public static function kunciBagian(array $bagian): string
+    public static function kunciBagian(array $bagian, ?int $indeks = null): string
     {
         $key = (string) ($bagian['key'] ?? '');
         if ($key !== '') {
             return $key;
         }
 
-        $judul = (string) ($bagian['judul'] ?? 'bagian');
+        $judul = $bagian['judul'] ?? null;
+        $judul = $judul === null
+            ? ($indeks !== null ? 'Bagian ' . ($indeks + 1) : 'bagian')
+            : trim((string) $judul);
 
-        return trim(preg_replace('/[^a-z0-9]+/', '_', mb_strtolower($judul)) ?: '', '_');
+        return trim(preg_replace('/[^a-z0-9]+/', '_', mb_strtolower($judul !== '' ? $judul : 'bagian')) ?: '', '_');
     }
 
     /** Apakah satu entri daftar berkas adalah triplet yang dicari. */

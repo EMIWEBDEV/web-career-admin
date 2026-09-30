@@ -237,6 +237,15 @@ class CekSurat extends Command
                 'catatan' => 'Bawa KTP dan ijazah asli.',
             ],
 
+            'pengingat-batas' => [
+                'nama' => 'Frans Bachtiar',
+                'tahap' => 'Kelengkapan Data',
+                'batas_teks' => 'Kamis, 15 Okt 2026 pukul 23.59 WIB',
+                'sisa_teks' => 'sekitar 20 jam lagi',
+                'posisi' => 'Software Engineer',
+                'program' => 'Management Trainee 2026',
+                'kode' => 'WC-2026-000123',
+            ],
             'hasil-lamaran' => [
                 'nama' => 'Frans Bachtiar',
                 'status' => 'LOLOS',
@@ -248,6 +257,9 @@ class CekSurat extends Command
                 'urutan' => 1,
                 'total' => 4,
                 'diterima' => false,
+                // Catatan eksternal tahap — bentuknya sama dengan keluaran
+                // CatatanEksternal::keTeksSurat(): teks polos, alamat web mentah.
+                'catatan' => "Psikotes online Senin 09.00 WIB.\n\nLink Zoom (https://zoom.us/j/123456789)\n\n• Siapkan KTP dan alat tulis",
                 'email' => 'contoh@evopet.id',
                 'tgl_lahir' => '21 Jul 2001',
                 'kampus' => 'Universitas Contoh',

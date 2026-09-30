@@ -321,19 +321,13 @@ class CareerLandingController extends Controller
                 $program = $pb
                     ? DB::table('N_WEB_CAREERS_Program')->where('Id_Program', $pb->Program_Id)->first(['Alur_Kode', 'Kategori'])
                     : null;
-                $kode = $program
-                    ? DB::table('N_WEB_CAREERS_Master_Alur_Tahap as t')
-                        ->join('N_WEB_CAREERS_Master_Alur as a', 'a.Id_Master_Alur', '=', 't.Master_Alur_Id')
-                        ->where('a.Kode', $program->Alur_Kode ?? '')
-                        ->orderBy('t.Urutan')
-                        ->value('t.Formulir_Kode')
-                    : null;
 
-                if ($kode) {
-                    $payload = \App\Support\Career\FormulirSchema::publishedByKode($kode);
-                    if ($payload) {
-                        return $payload;
-                    }
+                // Sumber yang SAMA dengan pemeriksa berkas di LamaranController::lamar().
+                if ($program) {
+                    return \App\Support\Career\FormulirSchema::pendaftaranProgram(
+                        $program->Alur_Kode ?? null,
+                        (string) ($job['kategori'] ?? ''),
+                    );
                 }
             } catch (\Throwable $e) {
                 Log::channel('web_career')->warning('Gagal memuat schema formulir pendaftaran: ' . $e->getMessage());

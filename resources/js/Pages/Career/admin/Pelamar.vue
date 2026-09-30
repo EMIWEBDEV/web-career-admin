@@ -289,7 +289,7 @@
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M3 10h18M8 2v4M16 2v4" /><path d="M9 15l2 2 4-4" /></svg>
                                 Jadwalkan Tes
                             </button>
-                            <button type="button" class="plw-btn-reload" title="Muat ulang" @click="muatDetail(selectedId)">
+                            <button type="button" class="plw-btn-reload" :class="{ 'is-segar': menyegarkan }" :title="menyegarkan ? 'Menyegarkan…' : 'Muat ulang'" @click="muatDetail(selectedId)">
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7" /><path d="M21 4v5h-5" /></svg>
                             </button>
                         </div>
@@ -691,7 +691,56 @@
                                 >
                                     <i class="bi" :class="kolomPilih === kunciKolom(col) ? 'bi-check2-square' : 'bi-ui-checks'"></i>
                                 </button>
+                                <!-- JADWAL PENGISIAN KOLOM — hanya tahap Formulir yang
+                                     oleh Master Alur diberi jadwal, di papan PROGRAM
+                                     (server yang menandai `bolehBatas`; papan per-MPP
+                                     tidak). Bukan posisi tahap, bukan nama kolom. -->
+                                <button
+                                    v-if="col.bolehBatas && statusTab === 'AKTIF'"
+                                    type="button" class="plw-col__ico"
+                                    :class="{ 'is-on': !!col.batasProgram && !kolomDilepas(col), 'is-aktif': kolomDilepas(col) || (!col.batasProgram && ringkasBatas(col).tutup > 0) }"
+                                    :title="kolomDilepas(col)
+                                        ? 'Master Alur: tahap ini tanpa jadwal — lepas batas waktu kandidat yang masih terikat jadwal lama'
+                                        : col.batasProgram
+                                            ? `Jadwal pengisian: ${tglJamId(col.bukaProgram)} – ${tglJamId(col.batasProgram)} · klik untuk memperpanjang`
+                                            : 'Atur jadwal pengisian formulir kolom ini'"
+                                    @click="askBatasKolom(col)"
+                                >
+                                    <i class="bi bi-hourglass-split"></i>
+                                </button>
                             </div>
+
+                            <!-- KETERANGAN JADWAL KOLOM — di SETIAP kolom yang oleh Master
+                                 Alur diberi jadwal, terbaca tanpa membuka apa pun:
+                                 jadwal yang berlaku, kandidat yang terkunci menunggu,
+                                 atau aturan otomatisnya. Klik = atur / perpanjang. -->
+                            <button
+                                v-if="col.bolehBatas && statusTab === 'AKTIF'"
+                                type="button" class="plw-colbatas"
+                                :class="kelasKolomBatas(col)"
+                                @click="askBatasKolom(col)"
+                            >
+                                <i class="bi" :class="ikonKolomBatas(col)"></i>
+                                <!-- Master Alur sudah mematikan jadwal tahap ini, tapi masih
+                                     ada yang terikat jadwal lama (snapshot) — tawarkan lepas. -->
+                                <span v-if="kolomDilepas(col)">
+                                    Master Alur: tanpa jadwal · {{ ringkasBatas(col).belum }} kandidat masih terikat jadwal lama.
+                                    Lepas batas waktu
+                                </span>
+                                <span v-else-if="col.batasProgram">
+                                    Buka {{ tglJamId(col.bukaProgram) }} · Batas {{ tglJamId(col.batasProgram) }}
+                                    · {{ ringkasBatas(col).belum }} belum kirim<template v-if="ringkasBatas(col).lewat"> · <b>{{ ringkasBatas(col).lewat }} lewat</b></template>
+                                </span>
+                                <span v-else-if="ringkasBatas(col).tutup">
+                                    Formulir terkunci — jadwal pengisian belum diatur ({{ ringkasBatas(col).tutup }} kandidat menunggu). Atur sekarang
+                                </span>
+                                <span v-else-if="col.batasMode === 'OTOMATIS'">
+                                    Otomatis {{ col.batasHari || '—' }} hari sejak tahap terbuka · bisa diganti jadwal kolom
+                                </span>
+                                <span v-else>
+                                    Dijadwalkan admin · jadwal kolom belum diatur
+                                </span>
+                            </button>
 
                             <!-- PANEL PENYARING KOLOM -->
                             <div v-if="filterBuka === kunciKolom(col)" class="plw-colf">
@@ -708,6 +757,9 @@
                                     <el-option value="JADWAL" label="Belum dijadwalkan" />
                                     <el-option value="TERJADWAL" label="Sudah dijadwalkan" />
                                     <el-option value="HOLD" label="Ditahan" />
+                                    <el-option value="BATAS_TUTUP" label="Formulir belum dibuka" />
+                                    <el-option value="BATAS_LEWAT" label="Lewat batas pengisian" />
+                                    <el-option value="BATAS_DEKAT" label="Batas ≤ 24 jam" />
                                 </el-select>
                                 <el-select v-model="filterKol(col).urut" size="small" placeholder="Urutkan">
                                     <el-option value="LAMA" label="Terlama menunggu" />
@@ -784,6 +836,17 @@
                                     >
                                         <i class="bi bi-play-circle"></i> Lanjutkan
                                     </button>
+                                    <!-- JADWAL MASSAL — atur (yang belum berjadwal) /
+                                         perpanjang (yang sudah) untuk yang terpilih.
+                                         Hanya muncul bila ada yang sedang mengisi formulir. -->
+                                    <button
+                                        v-if="bisaBatasMassal.length"
+                                        type="button" class="plw-selbar__batas"
+                                        :title="`Atur / perpanjang jadwal pengisian ${bisaBatasMassal.length} kandidat terpilih`"
+                                        @click="askBatasKandidat(bisaBatasMassal)"
+                                    >
+                                        <i class="bi bi-hourglass-split"></i> Jadwal
+                                    </button>
                                 </div>
                                 <!-- SEBAB TOMBOL MATI, DITULIS — bukan cuma
                                      disembunyikan di `title`. Tooltip tidak pernah
@@ -846,6 +909,15 @@
 
                                     <div class="plw-card__foot">
                                         <span class="plw-card__chip" :class="'tone-' + r.badge.tone">{{ r.badge.teks }}</span>
+                                        <!-- Batas pengisian formulir — hanya selama
+                                             formulirnya belum terkirim. -->
+                                        <span
+                                            v-if="r.batas && !r.batas.terkirim && (r.batas.batas || r.batas.belumDiatur)"
+                                            class="plw-card__batas" :class="kelasBatas(r.batas)"
+                                            :title="r.batas.belumDiatur ? 'Formulir terkunci — jadwal pengisian belum diatur' : 'Jadwal pengisian: ' + (r.batas.bukaTeks || 'terbuka') + ' s/d ' + r.batas.teks"
+                                        >
+                                            <i class="bi" :class="r.batas.terkunci ? 'bi-lock-fill' : 'bi-hourglass-split'"></i> {{ labelBatas(r.batas) }}
+                                        </span>
                                         <span v-if="r.waktuLamar" class="plw-card__umur" :title="'Melamar ' + tglId(r.waktuLamar)">
                                             <i class="bi bi-clock-history"></i> {{ umurHari(r.waktuLamar) }}
                                         </span>
@@ -922,6 +994,14 @@
                                         @click="askHoldMassal(false)"
                                     >
                                         <i class="bi bi-play-circle"></i> Lanjutkan
+                                    </button>
+                                    <button
+                                        v-if="bisaBatasMassal.length"
+                                        type="button" class="plw-selbar__batas"
+                                        :title="`Atur / perpanjang jadwal pengisian ${bisaBatasMassal.length} kandidat terpilih`"
+                                        @click="askBatasKandidat(bisaBatasMassal)"
+                                    >
+                                        <i class="bi bi-hourglass-split"></i> Jadwal
                                     </button>
                                 </div>
                                 <!-- Sama dengan bilah papan: sebabnya ditulis, tidak
@@ -1698,9 +1778,51 @@
                         </div>
                     </div>
 
+                    <!-- ═══ HASIL TAHAP SEBELUMNYA ═══
+                         Di tahap mana pun kandidat berada, hasil & berkas tahap
+                         yang sudah dilewati (FGD, wawancara, MCU…) tetap terlihat
+                         di sini — bukan hanya berkas formulir. Rapor di atas hanya
+                         milik tahap aktif; tanpa ini, hasil FGD di tahap 4 hilang
+                         dari pandangan begitu kandidat masuk tahap 5. -->
+                    <div v-if="tahapSebelumnya.length" class="plw-hts">
+                        <div class="plw-hts__head">
+                            <span class="plw-hts__lbl"><i class="bi bi-clock-history"></i> HASIL TAHAP SEBELUMNYA</span>
+                            <span class="plw-hts__jml">{{ tahapSebelumnya.length }} tahap</span>
+                        </div>
+                        <div v-for="t in tahapSebelumnya" :key="t.id" class="plw-hts__item">
+                            <div class="plw-hts__top">
+                                <span class="plw-hts__no">{{ String(t.urutan).padStart(2, '0') }}</span>
+                                <div class="plw-hts__isi">
+                                    <b>{{ t.label }}</b>
+                                    <small>
+                                        <span class="plw-test__pill" :class="kelasHasilTahap(t)">{{ labelHasilTahap(t) }}</span>
+                                        <template v-if="t.skor !== null"> · skor {{ t.skor }}</template>
+                                        <template v-if="t.diputusAt"> · {{ t.diputusBy || '—' }}, {{ tglId(t.diputusAt) }}</template>
+                                    </small>
+                                </div>
+                                <button type="button" class="plw-hts__detail" @click="bukaTahapRiwayat(t.id)">
+                                    Detail <i class="bi bi-chevron-right"></i>
+                                </button>
+                            </div>
+                            <div v-if="t.berkas.length" class="plw-hts__berkas">
+                                <button
+                                    v-for="b in t.berkas" :key="b.sumber + b.id" type="button" class="plw-hts__file"
+                                    :title="`${b.nama}${b.aktivitas ? ' — ' + b.aktivitas : ''}${b.sumber === 'KANDIDAT' ? ' (dari kandidat)' : ''}`"
+                                    @click="bukaDok(b)"
+                                >
+                                    <i class="bi" :class="b.isImage ? 'bi-image' : 'bi-file-earmark-text'"></i>
+                                    <span>{{ b.aktivitas || b.nama }}</span>
+                                    <em v-if="b.sumber === 'KANDIDAT'">kandidat</em>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- ═══ PROGRES SELEKSI ═══
                          Seluruh tahap program dalam satu linimasa, dengan posisi
-                         kandidat ini di dalamnya.
+                         kandidat ini di dalamnya. Tahap yang sudah dimulai BISA
+                         DIKLIK: membuka isi tahap itu (hasil, catatan, berkas,
+                         formulir) — baca-saja, dan berkasnya bisa dibuka lagi.
 
                          Ada DI KAKI RAPOR, bukan sebagai tab tersendiri. Pertanyaan
                          yang dijawabnya — "tes ini tahap keberapa, sesudah ini apa
@@ -1715,14 +1837,36 @@
                         <div class="plw-alur__bar"><div :style="{ width: persenAlur + '%' }"></div></div>
 
                         <ol class="plw-alur__line">
-                            <li v-for="s in alurKandidat" :key="s.kunci" class="plw-alur__item" :class="'is-' + s.keadaan">
+                            <li
+                                v-for="s in alurKandidat" :key="s.kunci"
+                                class="plw-alur__item" :class="['is-' + s.keadaan, { 'is-klik': !!s.id }]"
+                                :role="s.id ? 'button' : null" :tabindex="s.id ? 0 : null"
+                                :title="s.id ? 'Lihat hasil, catatan & berkas tahap ini' : null"
+                                @click="s.id && bukaTahapRiwayat(s.id)"
+                                @keydown.enter="s.id && bukaTahapRiwayat(s.id)"
+                            >
                                 <span class="plw-alur__node"><span></span></span>
                                 <div class="plw-alur__isi">
                                     <div style="min-width: 0">
                                         <div class="plw-alur__nama">{{ s.nomor }}. {{ s.label }}</div>
                                         <div class="plw-alur__ket">{{ s.catatan }}</div>
                                     </div>
-                                    <span class="plw-alur__tag">{{ s.tag }}</span>
+                                    <span class="plw-alur__kanan">
+                                        <span class="plw-alur__tag">{{ s.tag }}</span>
+                                        <i v-if="s.id" class="bi bi-chevron-right plw-alur__buka" aria-hidden="true"></i>
+                                    </span>
+                                </div>
+                                <!-- Catatan UNTUK KANDIDAT yang ditulis saat tahap ini
+                                     diputus — yang dibaca kandidat di portalnya, jadi
+                                     tim perlu melihat persis kalimat yang sama, dan
+                                     tahu apakah kalimat itu sudah sampai. -->
+                                <div v-if="s.catatanEksternal" class="plw-alur__ce" :class="{ 'is-tunggu': !s.catatanEksternal.terbit }" @click.stop>
+                                    <div class="plw-alur__cehead">
+                                        <i class="bi bi-megaphone-fill"></i>
+                                        <span>Catatan untuk kandidat</span>
+                                        <em>{{ s.catatanEksternal.terbit ? 'sudah terlihat kandidat' : 'terlihat setelah hasil diumumkan' }}</em>
+                                    </div>
+                                    <KontenAman :html="s.catatanEksternal.html" ringkas />
                                 </div>
                             </li>
                         </ol>
@@ -1855,6 +1999,7 @@
                                         <span class="plw-fm__filefile">{{ b.file }}</span>
                                         <span class="plw-fm__filefoot">
                                             <span class="plw-fm__fileext">{{ b.ext || 'FILE' }}</span>
+                                            <span v-if="b.berkas && b.berkas.olehAdmin" class="plw-oleh" :title="judulOleh(b.berkas)"><i class="bi bi-person-badge-fill"></i>Admin</span>
                                             <span class="plw-fm__filedari">{{ b.konteks }}</span>
                                         </span>
                                     </button>
@@ -1874,6 +2019,7 @@
                                     <span class="plw-fm__pin">
                                         <b>{{ fmTerpilih.nama }}</b>
                                         <em>{{ fmTerpilih.konteks }} · {{ fmTerpilih.file }}</em>
+                                        <span v-if="fmTerpilih.berkas && fmTerpilih.berkas.olehAdmin" class="plw-oleh plw-oleh--blok" :title="judulOleh(fmTerpilih.berkas)"><i class="bi bi-person-badge-fill"></i>Diunggah admin<template v-if="fmTerpilih.berkas.oleh"> · {{ fmTerpilih.berkas.oleh }}</template></span>
                                     </span>
                                     <button type="button" class="plw-fm__pbtn" @click="bukaDok(fmTerpilih.berkas)">
                                         <i class="bi bi-box-arrow-up-right"></i> Buka Berkas
@@ -2047,6 +2193,7 @@
                                                                                 <i class="bi" :class="b.isImage ? 'bi-file-earmark-image-fill' : 'bi-file-earmark-pdf-fill'"></i>
                                                                             </span>
                                                                             <span class="plw-tl__filenama">{{ b.nama }}</span>
+                                                                            <span v-if="b.olehAdmin" class="plw-oleh" :title="judulOleh(b)"><i class="bi bi-person-badge-fill"></i>Admin</span>
                                                                             <span class="plw-tl__fileext">{{ (b.ext || '').toUpperCase() }}</span>
                                                                             <span class="plw-tl__filego">Lihat</span>
                                                                         </button>
@@ -2123,6 +2270,7 @@
                                             <span class="plw-doc__in">
                                                 <span class="plw-doc__nama">{{ d.nama }}</span>
                                                 <span class="plw-doc__file">{{ d.berkas ? d.berkas.nama : 'Belum diunggah' }}</span>
+                                                <span v-if="d.berkas && d.berkas.olehAdmin" class="plw-oleh plw-oleh--blok" :title="judulOleh(d.berkas)"><i class="bi bi-person-badge-fill"></i>Diunggah admin</span>
                                             </span>
                                             <span v-if="d.berkas" class="plw-doc__ext">{{ (d.berkas.ext || '').toUpperCase() }}</span>
                                         </component>
@@ -2180,6 +2328,7 @@
                                 <template v-else>{{ dokSemua.length }} lembar · {{ profil.formulir.length }} formulir</template>
                             </em>
                         </span>
+                        <span v-if="dokLihat && dokLihat.berkas && dokLihat.berkas.olehAdmin" class="plw-oleh" :title="judulOleh(dokLihat.berkas)"><i class="bi bi-person-badge-fill"></i>Admin</span>
                         <button
                             v-if="dokLihat" type="button" class="plw-dok__hbtn"
                             title="Buka besar di tengah layar" @click="bukaDok(dokLihat.berkas)"
@@ -2240,6 +2389,7 @@
                                     <img v-if="b.isImage" :src="b.berkas.url" :alt="b.nama" loading="lazy" @error="gagalThumb($event)">
                                     <i v-else class="bi" :class="ikonBerkas(b)"></i>
                                     <em class="plw-dok__sext">{{ b.ext || 'FILE' }}</em>
+                                    <em v-if="b.berkas && b.berkas.olehAdmin" class="plw-dok__sadm" title="Diunggah admin"><i class="bi bi-person-badge-fill"></i></em>
                                 </span>
                                 <span class="plw-dok__sname">{{ b.nama }}</span>
                             </button>
@@ -2441,6 +2591,43 @@
                         Tahap ini pernah tertahan <b>{{ detailKandidat.holdTotalHariKerja }} hari kerja</b>
                         — tidak mengurangi tenggat SLA MPP.
                     </p>
+
+                    <!-- JADWAL PENGISIAN FORMULIR — selama formulir tahap ini
+                         belum terkirim. Belum berjadwal → "Atur jadwal"; sudah →
+                         hanya "Perpanjang" (jadwal tidak disunting, keputusan user). -->
+                    <div v-if="detailKandidat.batas && !detailKandidat.batas.terkirim" class="plw-batasp" :class="kelasBatas(detailKandidat.batas)">
+                        <div class="plw-batasp__top">
+                            <span class="plw-batasp__ic"><i class="bi" :class="detailKandidat.batas.terkunci ? 'bi-lock-fill' : 'bi-hourglass-split'"></i></span>
+                            <div class="plw-batasp__isi">
+                                <b v-if="detailKandidat.batas.belumDiatur">Formulir terkunci — jadwal pengisian belum diatur</b>
+                                <b v-else-if="detailKandidat.batas.batas">
+                                    <template v-if="detailKandidat.batas.bukaTeks">Dibuka {{ detailKandidat.batas.bukaTeks }} · </template>Batas {{ detailKandidat.batas.teks }}
+                                </b>
+                                <b v-else>Tanpa jadwal pengisian</b>
+                                <small>{{ keteranganBatas(detailKandidat.batas) }}</small>
+                            </div>
+                            <button type="button" class="plw-batasp__ubah" @click="askBatasKandidat([detailKandidat])">
+                                <template v-if="kolomDilepas(kolomDari(detailKandidat))"><i class="bi bi-unlock"></i> Lepas batas waktu</template>
+                                <template v-else-if="detailKandidat.batas.batas"><i class="bi bi-hourglass-top"></i> Perpanjang</template>
+                                <template v-else><i class="bi bi-calendar-plus"></i> Atur jadwal</template>
+                            </button>
+                        </div>
+                        <button v-if="detailKandidat.tahapId" type="button" class="plw-batasp__rw" @click="toggleRiwayatBatas">
+                            <i class="bi" :class="riwayatBatasBuka ? 'bi-chevron-up' : 'bi-clock-history'"></i>
+                            {{ riwayatBatasBuka ? 'Tutup riwayat' : 'Riwayat jadwal' }}
+                        </button>
+                        <ul v-if="riwayatBatasBuka" class="plw-batasp__list">
+                            <li v-if="riwayatBatas.muat" class="is-kosong"><span class="plw-spin"></span> Memuat…</li>
+                            <li v-else-if="!riwayatBatas.baris.length" class="is-kosong">Belum ada perubahan.</li>
+                            <li v-for="(h, i) in riwayatBatas.baris" :key="i">
+                                <b>
+                                    <span v-if="h.sumber === 'UBAH'" class="plw-rwk is-ubah">Diedit superadmin</span>
+                                    {{ h.baru || 'tanpa batas' }}
+                                </b>
+                                <small>{{ h.alasan || '—' }} · {{ h.oleh || 'SISTEM' }} · {{ tglJamId(h.at) }}</small>
+                            </li>
+                        </ul>
+                    </div>
 
                     <!-- KEHADIRAN DULU, baru keputusan. Selama masih ada aktivitas
                          berjadwal yang kehadirannya belum ditetapkan, meloloskan
@@ -2749,7 +2936,7 @@
                         </span>
                         <div style="min-width: 0">
                             <div class="plw-lb__name">{{ lightbox.nama }}</div>
-                            <div class="plw-lb__desc">{{ lightbox.field === 'foto_verifikasi' ? 'Foto verifikasi identitas kandidat' : 'Pratinjau berkas kandidat' }}</div>
+                            <div class="plw-lb__desc" :title="lightbox.olehAdmin ? lightbox.catatan || '' : ''">{{ lightbox.olehAdmin ? (lightbox.catatan || 'Diunggah admin atas nama kandidat') : lightbox.field === 'foto_verifikasi' ? 'Foto verifikasi identitas kandidat' : 'Pratinjau berkas kandidat' }}</div>
                         </div>
                     </div>
                     <button type="button" class="plw-lb__close" @click="lightbox = null">
@@ -2779,6 +2966,9 @@
                     <img v-else v-show="!lbLoading && !lbError" :src="lbSrc" :alt="lightbox.nama" @load="selesaiMuat()" @error="selesaiMuat(true)" />
                     <div class="plw-lb__foot">
                         <div style="font-size: 12px; color: #8b93a7" class="plw-ell">{{ lightbox.nama }}</div>
+                        <div v-if="lightbox.olehAdmin" class="plw-lb__adm" :title="lightbox.catatan || ''">
+                            <i class="bi bi-person-badge-fill"></i> Diunggah admin<template v-if="lightbox.oleh"> · {{ lightbox.oleh }}</template>
+                        </div>
                         <div v-if="lightbox.status === 'TERVERIFIKASI'" class="plw-lb__ok">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5" /></svg>
                             Terverifikasi
@@ -2787,6 +2977,525 @@
                 </div>
             </div>
         </div>
+
+        <!-- ═══ KIRIM ULANG EMAIL HASIL ═══
+             Satu baris per tahap yang pernah diputus. Tombolnya dipegang
+             AdminModal ber-`busy`: selama pengiriman ia berputar, terkunci, dan
+             jendelanya tidak bisa ditutup — klik kedua tidak pernah melahirkan
+             surat kedua. -->
+        <AdminModal
+            :show="emailShow"
+            title="Kirim Ulang Email Hasil"
+            :subtitle="detailKandidat ? detailKandidat.pelamar : ''"
+            icon="bi-envelope-arrow-up-fill"
+            size="md"
+            :busy="emailSibuk"
+            busy-label="Mengirim email…"
+            save-label="Kirim Ulang"
+            :save-disabled="!emailPilih || emailMuat"
+            foot-note="Surat yang sama dikirim lagi — keputusan tahapnya tidak berubah."
+            @close="emailShow = false"
+            @save="kirimUlangEmail"
+        >
+            <div v-if="emailMuat" class="plw-eml__state"><span class="plw-spin"></span> Memuat riwayat keputusan…</div>
+            <div v-else-if="!emailTahap.length" class="plw-eml__state">
+                <i class="bi bi-inbox"></i> Belum ada tahap yang diputus — belum ada email hasil yang bisa dikirim ulang.
+            </div>
+            <template v-else>
+                <label
+                    v-for="t in emailTahap" :key="t.tahapId"
+                    class="plw-eml__row"
+                    :class="{ 'is-on': emailPilih === t.tahapId, 'is-mati': !t.kirimEmail }"
+                >
+                    <input v-model="emailPilih" type="radio" name="plw-eml" :value="t.tahapId" :disabled="!t.kirimEmail || emailSibuk">
+                    <span class="plw-eml__no">{{ t.urutan }}</span>
+                    <span class="plw-eml__in">
+                        <b>{{ t.label }}</b>
+                        <small v-if="t.kirimEmail">Diputus {{ tglId(t.diputusAt) }}<template v-if="t.diputusBy"> oleh {{ t.diputusBy }}</template></small>
+                        <small v-else>"{{ t.hasilNama }}" memang tidak dikabarkan lewat email</small>
+                    </span>
+                    <span class="plw-eml__tag" :class="t.lolos ? 'is-lolos' : 'is-gugur'">{{ t.hasilNama }}</span>
+                </label>
+                <p class="plw-eml__note">
+                    <i class="bi bi-envelope-at"></i>
+                    <span>
+                        Dikirim ke <b>{{ emailTujuan || detailKandidat?.email || '—' }}</b>. Catatan untuk kandidat pada
+                        tahap itu (bila ada) ikut di dalam suratnya.
+                    </span>
+                </p>
+            </template>
+        </AdminModal>
+
+        <!-- POPUP "EMAIL TERKIRIM" — jawaban yang jelas atas "sudah terkirim
+             belum?", bukan toast yang lewat begitu saja di sudut layar. -->
+        <AdminModal
+            :show="!!emailTerkirim"
+            title="Email terkirim"
+            :subtitle="emailTerkirim ? emailTerkirim.pelamar : ''"
+            icon="bi-send-check-fill"
+            size="sm"
+            foot-note=""
+            @close="emailTerkirim = null"
+        >
+            <div v-if="emailTerkirim" class="plw-emlok">
+                <span class="plw-emlok__ic"><i class="bi bi-check2-circle"></i></span>
+                <p>
+                    Email hasil tahap <b>{{ emailTerkirim.tahap }}</b> sudah dikirim ulang ke
+                    <b>{{ emailTerkirim.email }}</b>.
+                </p>
+                <small>Diproses antrean pengiriman — biasanya sampai dalam 1–2 menit. Bila belum ada, minta kandidat memeriksa folder Spam.</small>
+            </div>
+            <template #footer>
+                <button type="button" class="wca-btn wca-btn--dark" @click="emailTerkirim = null">
+                    <i class="bi bi-check-lg"></i> Oke
+                </button>
+            </template>
+        </AdminModal>
+
+        <!-- ═══ JADWAL PENGISIAN — SATU KOLOM (program × tahap) ═══
+             Belum berjadwal → pasang (waktu dibuka + batas akhir, keduanya wajib).
+             Sudah → HANYA perpanjang: + hari, + jam, atau tanggal & jam pilihan.
+             Keputusan user: sesudah dipasang, jadwal tidak disunting. Bila Master
+             Alur sudah mematikan jadwal tahapnya → LEPAS batas waktu (bawaan). -->
+        <AdminModal
+            :show="batasKolomShow"
+            :title="{ LEPAS: 'Lepas Batas Waktu', PERPANJANG: 'Perpanjang Jadwal', UBAH: 'Edit Jadwal' }[batasKolomLangkah] || 'Atur Jadwal Pengisian'"
+            :subtitle="batasKolomCol ? batasKolomCol.label + (detail.program ? ' — ' + detail.program.nama : '') : ''"
+            icon="bi-hourglass-split"
+            size="sm"
+            :busy="batasSibuk"
+            busy-label="Menyimpan jadwal…"
+            :foot-note="{
+                LEPAS: 'Kandidat justru mendapat waktu tanpa batas.',
+                PERPANJANG: 'Hanya maju — batas tidak pernah dimundurkan.',
+                UBAH: 'Tercatat atas nama Anda beserta alasannya.',
+            }[batasKolomLangkah] || 'Berlaku untuk seluruh kandidat program ini di tahap tersebut.'"
+            @close="batasKolomShow = false"
+        >
+            <div v-if="batasKolomCol" class="plw-batasm">
+                <!-- Pilihan langkah: Master Alur sudah "Tanpa jadwal" → lepas, atau
+                     tetap urus jadwal lamanya; SUPERADMIN → juga bisa mengedit. -->
+                <div v-if="kolomDilepas(batasKolomCol) || (superadmin && batasKolomCol.batasProgram)" class="plw-seg">
+                    <button v-if="kolomDilepas(batasKolomCol)" type="button" class="plw-seg__b is-net" :class="{ 'is-on': batasKolomLangkah === 'LEPAS' }" @click="batasKolomLangkah = 'LEPAS'">
+                        <i class="bi bi-unlock"></i> Lepas batas waktu
+                    </button>
+                    <button
+                        type="button" class="plw-seg__b is-net"
+                        :class="{ 'is-on': ['PERPANJANG', 'ATUR'].includes(batasKolomLangkah) }"
+                        @click="batasKolomLangkah = batasKolomCol.batasProgram ? 'PERPANJANG' : 'ATUR'"
+                    >
+                        <template v-if="batasKolomCol.batasProgram"><i class="bi bi-hourglass-top"></i> Perpanjang</template>
+                        <template v-else><i class="bi bi-calendar-plus"></i> Atur jadwal lama</template>
+                    </button>
+                    <button
+                        v-if="superadmin && batasKolomCol.batasProgram"
+                        type="button" class="plw-seg__b is-net"
+                        :class="{ 'is-on': batasKolomLangkah === 'UBAH' }"
+                        @click="batasKolomLangkah = 'UBAH'"
+                    >
+                        <i class="bi bi-pencil-square"></i> Edit · superadmin
+                    </button>
+                </div>
+
+                <template v-if="batasKolomLangkah === 'LEPAS'">
+                    <p class="plw-note is-info">
+                        <i class="bi bi-info-circle-fill"></i>
+                        <span>
+                            Di Master Alur, tahap ini sudah <b>Tanpa jadwal</b>. Kandidat yang masuk sesudahnya tidak berjadwal,
+                            tapi yang sudah di sini masih memegang aturan lamanya (snapshot).
+                        </span>
+                    </p>
+                    <ul class="plw-batasm__info">
+                        <li><b>{{ ringkasBatas(batasKolomCol).belum }}</b> kandidat yang belum mengirim bisa mengisi formulir <b>tanpa batas waktu</b> — termasuk yang sedang terkunci.</li>
+                        <li v-if="batasKolomCol.batasProgram">Jadwal kolom ({{ tglJamId(batasKolomCol.bukaProgram) }} – {{ tglJamId(batasKolomCol.batasProgram) }}) dihapus.</li>
+                        <li>Kandidat yang sudah mengirim tidak terpengaruh. Setiap pelepasan tercatat di riwayat kandidat.</li>
+                    </ul>
+                </template>
+                <!-- EDIT — khusus superadmin, untuk kasus salah klik. Boleh mundur;
+                     alasan wajib; tercatat di riwayat kolom & kandidat. -->
+                <template v-else-if="batasKolomLangkah === 'UBAH'">
+                    <p class="plw-note is-lock">
+                        <i class="bi bi-shield-lock-fill"></i>
+                        <span>
+                            <b>Khusus superadmin</b> — untuk memperbaiki salah input. Waktu dibuka & batas akhir boleh
+                            dimajukan maupun dimundurkan. Kandidat yang mengikuti jadwal kolom ikut berubah; yang berjadwal
+                            pribadi tidak.
+                        </span>
+                    </p>
+                    <div class="plw-batasm__dua">
+                        <div>
+                            <label class="plw-fld__lbl">Formulir dibuka <b>*</b></label>
+                            <el-date-picker
+                                v-model="batasKolomBuka" type="datetime"
+                                format="DD MMM YYYY HH:mm" value-format="YYYY-MM-DD HH:mm:ss"
+                                placeholder="Kapan mulai bisa diisi" style="width: 100%"
+                            />
+                        </div>
+                        <div>
+                            <label class="plw-fld__lbl">Batas akhir <b>*</b></label>
+                            <el-date-picker
+                                v-model="batasKolomTgl" type="datetime"
+                                format="DD MMM YYYY HH:mm" value-format="YYYY-MM-DD HH:mm:ss"
+                                placeholder="Paling lambat dikirim" style="width: 100%"
+                                :default-time="JAM_BATAS"
+                            />
+                        </div>
+                    </div>
+                    <p class="plw-fld__hint">
+                        Sebelumnya: dibuka {{ tglJamId(batasKolomCol.bukaProgram) }} · batas {{ tglJamId(batasKolomCol.batasProgram) }}
+                    </p>
+                    <p v-if="batasKolomTgl && batasKolomBuka && batasKolomTgl <= batasKolomBuka" class="plw-note is-err">
+                        <i class="bi bi-exclamation-triangle-fill"></i>
+                        <span>Batas akhir harus sesudah waktu formulir dibuka.</span>
+                    </p>
+                    <p v-else-if="kolomUbahLampau" class="plw-note is-err">
+                        <i class="bi bi-exclamation-triangle-fill"></i>
+                        <span>Batas akhir ini sudah lewat — kandidat yang mengikuti jadwal kolom akan <b>langsung terkunci</b>.</span>
+                    </p>
+                    <label class="plw-fld__lbl">Alasan pengeditan <b>*</b></label>
+                    <el-input
+                        v-model="batasKolomAlasan" type="textarea" :rows="2" maxlength="300" show-word-limit
+                        placeholder="mis. salah pilih tanggal saat memasang jadwal"
+                    />
+                </template>
+                <template v-else-if="batasKolomLangkah === 'PERPANJANG'">
+                    <div class="plw-batasm__kini">
+                        <i class="bi bi-calendar-check"></i>
+                        <div>
+                            <small>Jadwal kolom sekarang</small>
+                            <b>Dibuka {{ tglJamId(batasKolomCol.bukaProgram) }} · Batas {{ tglJamId(batasKolomCol.batasProgram) }}</b>
+                        </div>
+                    </div>
+                    <PerpanjangBatas v-model="perp" :batas-kini="batasKolomCol.batasProgram" />
+                    <ul class="plw-batasm__info">
+                        <li><b>{{ ringkasBatas(batasKolomCol).belum }}</b> kandidat belum mengirim. Yang batasnya lebih awal ikut maju — termasuk yang pernah diperpanjang pribadi.</li>
+                        <li>Waktu dibuka tidak berubah. Jadwal tidak bisa disunting atau dimundurkan, hanya diperpanjang lagi bila perlu.</li>
+                    </ul>
+                </template>
+                <template v-else>
+                    <!-- DUA WAKTU, KEDUANYA WAJIB (keputusan user): formulir
+                         terkunci sebelum dibuka dan sesudah batasnya. -->
+                    <div class="plw-batasm__dua">
+                        <div>
+                            <label class="plw-fld__lbl">Formulir dibuka <b>*</b></label>
+                            <el-date-picker
+                                v-model="batasKolomBuka" type="datetime"
+                                format="DD MMM YYYY HH:mm" value-format="YYYY-MM-DD HH:mm:ss"
+                                placeholder="Kapan mulai bisa diisi" style="width: 100%"
+                            />
+                        </div>
+                        <div>
+                            <label class="plw-fld__lbl">Batas akhir <b>*</b></label>
+                            <el-date-picker
+                                v-model="batasKolomTgl" type="datetime"
+                                format="DD MMM YYYY HH:mm" value-format="YYYY-MM-DD HH:mm:ss"
+                                placeholder="Paling lambat dikirim" style="width: 100%"
+                                :default-time="JAM_BATAS"
+                            />
+                        </div>
+                    </div>
+                    <p v-if="salahKolomBaru" class="plw-note is-err">
+                        <i class="bi bi-exclamation-triangle-fill"></i>
+                        <span>{{ salahKolomBaru }}</span>
+                    </p>
+                    <ul class="plw-batasm__info">
+                        <li v-if="kolomDilepas(batasKolomCol)">
+                            Hanya kandidat yang masih terikat jadwal lama yang ikut jadwal ini — kandidat baru tetap tanpa jadwal,
+                            sesuai Master Alur.
+                        </li>
+                        <li v-else>
+                            Semua kandidat di kolom ini yang belum mengirim formulir ikut jadwal ini<template v-if="ringkasBatas(batasKolomCol).tutup">
+                            — <b>{{ ringkasBatas(batasKolomCol).tutup }}</b> di antaranya sedang terkunci menunggu</template>.
+                        </li>
+                        <li>Sebelum waktu dibuka dan sesudah batas akhir, formulir <b>terkunci</b>; admin yang memutuskan — tidak ada gugur otomatis.</li>
+                        <li>Yang masuk tahap ini belakangan ikut otomatis (paling cepat 2 hari sejak formulirnya terbuka).</li>
+                    </ul>
+                    <p class="plw-note is-lock">
+                        <i class="bi bi-info-circle-fill"></i>
+                        <span>Periksa dulu sebelum menyimpan: sesudah disimpan, jadwal ini <b>tidak bisa diubah</b> — hanya bisa diperpanjang.</span>
+                    </p>
+                </template>
+
+                <!-- RIWAYAT JADWAL KOLOM — siapa memasang, memperpanjang, mengedit,
+                     atau melepas, kapan, dari berapa ke berapa, dan alasannya. -->
+                <button type="button" class="plw-batasp__rw" @click="toggleRiwayatKolom">
+                    <i class="bi" :class="riwayatKolom.buka ? 'bi-chevron-up' : 'bi-clock-history'"></i>
+                    {{ riwayatKolom.buka ? 'Tutup riwayat jadwal kolom' : 'Riwayat jadwal kolom' }}
+                </button>
+                <ul v-if="riwayatKolom.buka" class="plw-batasp__list plw-batasm__riwayat">
+                    <li v-if="riwayatKolom.muat" class="is-kosong"><span class="plw-spin"></span> Memuat…</li>
+                    <li v-else-if="!riwayatKolom.baris.length" class="is-kosong">Belum ada perubahan tercatat.</li>
+                    <li v-for="(h, i) in riwayatKolom.baris" :key="i">
+                        <b>
+                            <span class="plw-rwk" :class="`is-${String(h.aksi).toLowerCase()}`">{{ labelAksiKolom(h.aksi) }}</span>
+                            <template v-if="h.aksi === 'LEPAS'">tanpa batas waktu</template>
+                            <template v-else>
+                                <template v-if="h.batasLama && h.batasLama !== h.batasBaru">{{ h.batasLama }} → </template>{{ h.batasBaru }}
+                            </template>
+                        </b>
+                        <small v-if="h.aksi === 'UBAH' && h.bukaLama !== h.bukaBaru">Waktu dibuka: {{ h.bukaLama || '—' }} → {{ h.bukaBaru || '—' }}</small>
+                        <small>
+                            {{ h.oleh || 'SISTEM' }}<template v-if="h.peran"> ({{ h.peran }})</template> · {{ tglJamId(h.at) }}
+                            <template v-if="h.jumlah !== null"> · {{ h.jumlah }} kandidat</template>
+                        </small>
+                        <small v-if="h.alasan" class="plw-rwk__alasan">“{{ h.alasan }}”</small>
+                    </li>
+                </ul>
+            </div>
+            <template #footer>
+                <button type="button" class="wca-btn wca-btn--ghost" :disabled="batasSibuk" @click="batasKolomShow = false">
+                    <i class="bi bi-x-lg"></i> Batal
+                </button>
+                <button type="button" class="wca-btn wca-btn--dark" :disabled="!bolehSimpanBatasKolom" @click="simpanBatasKolom">
+                    <span v-if="batasSibuk" class="wca-spin" aria-hidden="true"></span>
+                    <i v-else class="bi" :class="{ LEPAS: 'bi-unlock', PERPANJANG: 'bi-hourglass-top', UBAH: 'bi-pencil-square' }[batasKolomLangkah] || 'bi-check2'"></i>
+                    {{ batasSibuk ? 'Menyimpan…' : ({ LEPAS: 'Lepas Batas Waktu', PERPANJANG: 'Perpanjang', UBAH: 'Simpan Editan' }[batasKolomLangkah] || 'Simpan Jadwal') }}
+                </button>
+            </template>
+        </AdminModal>
+
+        <!-- ═══ JADWAL PENGISIAN — KANDIDAT TERPILIH (satuan & massal) ═══
+             Satu tindakan per simpan: yang BELUM berjadwal hanya bisa diatur,
+             yang SUDAH hanya bisa diperpanjang, dan yang tahapnya di Master Alur
+             sudah "Tanpa jadwal" bisa dilepas. Pilihan kelompok muncul hanya bila
+             ada lebih dari satu kelompok. -->
+        <AdminModal
+            :show="batasKandShow"
+            :title="{ ATUR: 'Atur Jadwal Pengisian', LEPAS: 'Lepas Batas Waktu', UBAH: 'Edit Jadwal' }[batasKandLangkah] || 'Perpanjang Jadwal'"
+            :subtitle="batasKandTarget.length === 1 ? batasKandTarget[0].pelamar : `${batasKandTarget.length} kandidat terpilih`"
+            icon="bi-hourglass-split"
+            size="sm"
+            :busy="batasSibuk"
+            busy-label="Menyimpan jadwal…"
+            :save-label="{ ATUR: 'Simpan Jadwal', LEPAS: 'Lepas Batas Waktu', UBAH: 'Simpan Editan' }[batasKandLangkah] || 'Perpanjang'"
+            :save-disabled="!bolehSimpanBatasKand"
+            foot-note="Setiap perubahan tercatat di riwayat kandidat."
+            @save="simpanBatasKandidat"
+            @close="batasKandShow = false"
+        >
+            <div class="plw-batasm">
+                <div v-if="[batasKandBelum, batasKandSudah, batasKandLepas, batasKandUbah].filter((g) => g.length).length > 1" class="plw-seg">
+                    <button v-if="batasKandLepas.length" type="button" class="plw-seg__b is-net" :class="{ 'is-on': batasKandLangkah === 'LEPAS' }" @click="batasKandLangkah = 'LEPAS'">
+                        <i class="bi bi-unlock"></i> Lepas · {{ batasKandLepas.length }}
+                    </button>
+                    <button v-if="batasKandBelum.length" type="button" class="plw-seg__b is-net" :class="{ 'is-on': batasKandLangkah === 'ATUR' }" @click="batasKandLangkah = 'ATUR'">
+                        <i class="bi bi-calendar-plus"></i> Atur jadwal · {{ batasKandBelum.length }}
+                    </button>
+                    <button v-if="batasKandSudah.length" type="button" class="plw-seg__b is-net" :class="{ 'is-on': batasKandLangkah === 'PERPANJANG' }" @click="batasKandLangkah = 'PERPANJANG'">
+                        <i class="bi bi-hourglass-top"></i> Perpanjang · {{ batasKandSudah.length }}
+                    </button>
+                    <button v-if="batasKandUbah.length" type="button" class="plw-seg__b is-net" :class="{ 'is-on': batasKandLangkah === 'UBAH' }" @click="batasKandLangkah = 'UBAH'">
+                        <i class="bi bi-pencil-square"></i> Edit · {{ batasKandUbah.length }}
+                    </button>
+                </div>
+
+                <!-- EDIT — khusus superadmin: tetapkan apa adanya, boleh mundur. -->
+                <template v-if="batasKandLangkah === 'UBAH'">
+                    <p class="plw-note is-lock">
+                        <i class="bi bi-shield-lock-fill"></i>
+                        <span>
+                            <b>Khusus superadmin</b> — untuk memperbaiki salah input. Jadwal {{ batasKandUbah.length }} kandidat
+                            ditetapkan apa adanya (boleh mundur) dan menjadi jadwal pribadi.
+                        </span>
+                    </p>
+                    <div class="plw-batasm__dua">
+                        <div>
+                            <label class="plw-fld__lbl">Formulir dibuka <small>opsional</small></label>
+                            <el-date-picker
+                                v-model="batasKandBuka" type="datetime"
+                                format="DD MMM YYYY HH:mm" value-format="YYYY-MM-DD HH:mm:ss"
+                                placeholder="Kosong = sekarang" style="width: 100%"
+                            />
+                        </div>
+                        <div>
+                            <label class="plw-fld__lbl">Batas akhir <b>*</b></label>
+                            <el-date-picker
+                                v-model="batasKandTgl" type="datetime"
+                                format="DD MMM YYYY HH:mm" value-format="YYYY-MM-DD HH:mm:ss"
+                                placeholder="Paling lambat dikirim" style="width: 100%"
+                                :default-time="JAM_BATAS"
+                            />
+                        </div>
+                    </div>
+                    <p v-if="batasKandTgl && batasKandBuka && batasKandTgl <= batasKandBuka" class="plw-note is-err">
+                        <i class="bi bi-exclamation-triangle-fill"></i>
+                        <span>Batas akhir harus sesudah waktu formulir dibuka.</span>
+                    </p>
+                    <p v-else-if="kandUbahLampau" class="plw-note is-err">
+                        <i class="bi bi-exclamation-triangle-fill"></i>
+                        <span>Batas akhir ini sudah lewat — formulirnya akan <b>langsung terkunci</b>.</span>
+                    </p>
+                </template>
+                <template v-else-if="batasKandLangkah === 'LEPAS'">
+                    <p class="plw-note is-info">
+                        <i class="bi bi-info-circle-fill"></i>
+                        <span>
+                            Di Master Alur, tahap {{ batasKandLepas.length === 1 ? 'kandidat ini' : 'mereka' }} sudah <b>Tanpa jadwal</b>.
+                            <b>{{ batasKandLepas.length }} kandidat</b> bisa mengisi formulir tanpa batas waktu — termasuk yang sedang terkunci.
+                        </span>
+                    </p>
+                </template>
+                <template v-else-if="batasKandLangkah === 'ATUR'">
+                    <p v-if="batasKandTarget.length > 1" class="plw-fld__hint">
+                        Untuk <b>{{ batasKandBelum.length }} kandidat</b> yang belum berjadwal.
+                    </p>
+                    <div class="plw-batasm__dua">
+                        <div>
+                            <label class="plw-fld__lbl">Formulir dibuka <small>opsional</small></label>
+                            <el-date-picker
+                                v-model="batasKandBuka" type="datetime"
+                                format="DD MMM YYYY HH:mm" value-format="YYYY-MM-DD HH:mm:ss"
+                                placeholder="Kosong = sekarang" style="width: 100%"
+                            />
+                        </div>
+                        <div>
+                            <label class="plw-fld__lbl">Batas akhir <b>*</b></label>
+                            <el-date-picker
+                                v-model="batasKandTgl" type="datetime"
+                                format="DD MMM YYYY HH:mm" value-format="YYYY-MM-DD HH:mm:ss"
+                                placeholder="Paling lambat dikirim" style="width: 100%"
+                                :default-time="JAM_BATAS"
+                            />
+                        </div>
+                    </div>
+                    <p v-if="salahKandBaru" class="plw-note is-err">
+                        <i class="bi bi-exclamation-triangle-fill"></i>
+                        <span>{{ salahKandBaru }}</span>
+                    </p>
+                    <p class="plw-note is-lock">
+                        <i class="bi bi-info-circle-fill"></i>
+                        <span>Menjadi jadwal pribadi. Sesudah disimpan, jadwal ini <b>tidak bisa diubah</b> — hanya bisa diperpanjang.</span>
+                    </p>
+                </template>
+                <template v-else>
+                    <p v-if="batasKandTarget.length > 1" class="plw-fld__hint">
+                        Untuk <b>{{ batasKandSudah.length }} kandidat</b> yang sudah berjadwal.
+                    </p>
+                    <div v-if="batasKandSudah.length === 1" class="plw-batasm__kini">
+                        <i class="bi bi-calendar-check"></i>
+                        <div>
+                            <small>{{ labelSumberBatas(batasKandSudah[0].batas.sumber) }}</small>
+                            <b>
+                                <template v-if="batasKandSudah[0].batas.buka">Dibuka {{ tglJamId(batasKandSudah[0].batas.buka) }} · </template>Batas {{ tglJamId(batasKandSudah[0].batas.batas) }}
+                            </b>
+                        </div>
+                    </div>
+                    <PerpanjangBatas v-model="perp" :batas-kini="batasKandLama" />
+                </template>
+
+                <label class="plw-fld__lbl">
+                    Alasan <b v-if="batasKandLangkah === 'UBAH'">*</b><small v-else>opsional</small>
+                </label>
+                <el-input
+                    v-model="batasKandAlasan" type="textarea" :rows="2" maxlength="300" show-word-limit
+                    :placeholder="batasKandLangkah === 'UBAH' ? 'mis. salah pilih tanggal saat memasang jadwal' : 'mis. kandidat meminta waktu untuk mengurus SKCK'"
+                />
+                <p v-if="batasKandTarget.length > 1" class="plw-fld__hint">
+                    Hanya kandidat yang sedang mengisi formulir tahap yang diubah; sisanya dilewati dan dilaporkan.
+                </p>
+            </div>
+        </AdminModal>
+
+        <!-- ═══ DETAIL SATU TAHAP (dari Progres Seleksi / Hasil tahap sebelumnya) ═══
+             Baca-saja: keputusan & catatannya, rapor aktivitas, berkas hasil, dan
+             formulir yang diisi di tahap itu — semua berkas bisa dibuka lagi. -->
+        <AdminModal
+            :show="tahapRiwayat.show"
+            :title="tahapRiwayat.data ? `${String(tahapRiwayat.data.tahap.urutan).padStart(2, '0')}. ${tahapRiwayat.data.tahap.label}` : 'Detail Tahap'"
+            :subtitle="detailKandidat ? `${detailKandidat.pelamar} · riwayat tahap` : ''"
+            icon="bi-signpost-split"
+            size="lg"
+            foot-note="Baca-saja — keputusan diambil di tahap aktif."
+            @close="tahapRiwayat.show = false"
+        >
+            <div v-if="tahapRiwayat.muat" class="plw-trw__muat"><span class="plw-spin"></span> Memuat isi tahap…</div>
+            <div v-else-if="tahapRiwayat.data" class="plw-trw">
+                <!-- KEPUTUSAN -->
+                <div class="plw-trw__put">
+                    <span class="plw-test__pill" :class="kelasHasilTahap(tahapRiwayat.data.tahap)">{{ labelHasilTahap(tahapRiwayat.data.tahap) }}</span>
+                    <span v-if="tahapRiwayat.data.tahap.skor !== null" class="plw-trw__skor">Skor {{ tahapRiwayat.data.tahap.skor }}</span>
+                    <span class="plw-trw__meta">
+                        <template v-if="tahapRiwayat.data.tahap.diputusAt">
+                            Diputus {{ tahapRiwayat.data.tahap.diputusBy || '—' }} · {{ tglJamId(tahapRiwayat.data.tahap.diputusAt) }}
+                        </template>
+                        <template v-else-if="tahapRiwayat.data.tahap.waktuMulai">Dimulai {{ tglJamId(tahapRiwayat.data.tahap.waktuMulai) }}</template>
+                    </span>
+                </div>
+                <p v-if="tahapRiwayat.data.tahap.alasan" class="plw-trw__alasan"><b>Alasan:</b> {{ tahapRiwayat.data.tahap.alasan }}</p>
+                <div v-if="tahapRiwayat.data.tahap.catatanHtml || tahapRiwayat.data.tahap.catatan" class="plw-trw__cat">
+                    <small><i class="bi bi-lock-fill"></i> Catatan keputusan (internal)</small>
+                    <KontenAman v-if="tahapRiwayat.data.tahap.catatanHtml" :html="tahapRiwayat.data.tahap.catatanHtml" ringkas />
+                    <p v-else>{{ tahapRiwayat.data.tahap.catatan }}</p>
+                </div>
+                <div v-if="tahapRiwayat.data.tahap.catatanEksternal" class="plw-trw__cat is-eks">
+                    <small><i class="bi bi-megaphone-fill"></i> Catatan untuk kandidat</small>
+                    <KontenAman :html="tahapRiwayat.data.tahap.catatanEksternal" ringkas />
+                </div>
+
+                <!-- RAPOR AKTIVITAS -->
+                <div class="plw-trw__sek">Hasil aktivitas <em>{{ tahapRiwayat.data.tests.length }}</em></div>
+                <p v-if="!tahapRiwayat.data.tests.length" class="plw-trw__kosong">Tidak ada aktivitas tercatat.</p>
+                <div v-for="t in tahapRiwayat.data.tests" :key="t.id" class="plw-trw__tes">
+                    <div class="plw-trw__teshead">
+                        <div class="plw-trw__tesnama">
+                            <b>{{ t.label }}</b>
+                            <small>{{ t.tipeNama || t.tipe }}<template v-if="t.jadwal"> · {{ jadwalRingkas(t.jadwal) }}</template></small>
+                        </div>
+                        <span v-if="t.skorBermakna && t.nilai !== null && t.nilai !== undefined" class="plw-test__score">{{ t.nilai }}</span>
+                        <span class="plw-test__pill" :class="pillTes(t)">{{ labelTes(t) }}</span>
+                    </div>
+                    <div v-if="t.catatanHtml || t.catatan" class="plw-trw__tescat">
+                        <KontenAman v-if="t.catatanHtml" :html="t.catatanHtml" ringkas />
+                        <p v-else>{{ t.catatan }}</p>
+                    </div>
+                    <div v-if="(t.berkas || []).length || (t.berkasKandidat || []).length" class="plw-hts__berkas">
+                        <button v-for="b in t.berkas || []" :key="'t' + b.id" type="button" class="plw-hts__file" :title="b.nama" @click="bukaDok(b)">
+                            <i class="bi" :class="b.isImage ? 'bi-image' : 'bi-file-earmark-text'"></i><span>{{ b.nama }}</span><em>tim</em>
+                        </button>
+                        <button v-for="b in t.berkasKandidat || []" :key="'k' + b.id" type="button" class="plw-hts__file" :title="b.nama" @click="bukaDok(b)">
+                            <i class="bi" :class="b.isImage ? 'bi-image' : 'bi-file-earmark-text'"></i><span>{{ b.nama }}</span><em>kandidat</em>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- BERKAS HASIL TAHAP (bukan milik satu aktivitas) -->
+                <template v-if="tahapRiwayat.data.berkas.length">
+                    <div class="plw-trw__sek">Berkas hasil tahap <em>{{ tahapRiwayat.data.berkas.length }}</em></div>
+                    <div class="plw-hts__berkas">
+                        <button v-for="b in tahapRiwayat.data.berkas" :key="b.id" type="button" class="plw-hts__file" :title="b.nama" @click="bukaDok(b)">
+                            <i class="bi" :class="b.isImage ? 'bi-image' : 'bi-file-earmark-text'"></i><span>{{ b.nama }}</span>
+                        </button>
+                    </div>
+                </template>
+
+                <!-- FORMULIR YANG DIISI DI TAHAP INI -->
+                <template v-for="f in formulirTahapRiwayat" :key="f.no">
+                    <div class="plw-trw__sek">
+                        Formulir · {{ f.label }}
+                        <em v-if="f.waktuKirim">dikirim {{ tglJamId(f.waktuKirim) }}</em>
+                    </div>
+                    <div v-if="berkasFormulir(f).length" class="plw-hts__berkas">
+                        <button v-for="b in berkasFormulir(f)" :key="b.id" type="button" class="plw-hts__file" :title="b.konteks" @click="bukaDok(b.berkas)">
+                            <i class="bi" :class="b.isImage ? 'bi-image' : 'bi-file-earmark-text'"></i><span>{{ b.nama }}</span>
+                        </button>
+                    </div>
+                    <button type="button" class="plw-trw__link" @click="lihatFormulirTahap(f)">
+                        <i class="bi bi-card-list"></i> Lihat jawaban lengkap di Berkas &amp; Biodata
+                    </button>
+                </template>
+            </div>
+            <template #footer>
+                <button type="button" class="wca-btn wca-btn--ghost" :disabled="!tahapRiwayatGeser(-1)" @click="bukaTahapRiwayat(tahapRiwayatGeser(-1))">
+                    <i class="bi bi-chevron-left"></i> Tahap sebelumnya
+                </button>
+                <button type="button" class="wca-btn wca-btn--ghost" @click="tahapRiwayat.show = false">
+                    <i class="bi bi-x-lg"></i> Tutup
+                </button>
+                <button type="button" class="wca-btn wca-btn--ghost" :disabled="!tahapRiwayatGeser(1)" @click="bukaTahapRiwayat(tahapRiwayatGeser(1))">
+                    Tahap berikutnya <i class="bi bi-chevron-right"></i>
+                </button>
+            </template>
+        </AdminModal>
 
         <ConfirmModal
             :show="konfirmShow"
@@ -2929,21 +3638,25 @@
                  umpan balik kenapa penawaran kita kalah. -->
             <div class="plw-fld">
                 <label class="plw-fld__lbl">
-                    {{ labelCatatanPutus }}
-                    <b v-if="alasanWajib">*</b>
+                    Catatan Keputusan
+                    <small v-if="alasanWajib">{{ labelCatatanPutus }} wajib di tab internal</small>
                     <small v-else>opsional</small>
                 </label>
-                <!-- Editor berformat, bukan kotak sebaris. Alasan keputusan yang
+                <!-- DUA CATATAN: untuk kandidat (eksternal) & untuk tim (internal).
+                     Editor berformat, bukan kotak sebaris — alasan keputusan yang
                      menutup lamaran orang layak ditulis selengkap catatan
-                     wawancara — dan kerap perlu memuat bukti (tangkapan layar
-                     percakapan kandidat yang menyatakan mundur). -->
-                <EditorQuill
-                    v-model="putusCatatanHtml"
-                    ringkas
+                     wawancara, dan yang internal kerap perlu memuat bukti
+                     (tangkapan layar percakapan kandidat yang menyatakan mundur). -->
+                <CatatanKeputusan
+                    v-model:tab="putusTabCatatan"
+                    v-model:eksternal="putusCatatanEksternalHtml"
+                    v-model:internal="putusCatatanHtml"
+                    :eksternal-siap="!!catatanTahap.eksternalSiap"
+                    :label-internal="alasanWajib ? labelCatatanPutus : 'Catatan Internal'"
+                    :wajib-internal="alasanWajib"
+                    :placeholder-internal="placeholderCatatanPutus"
                     :upload-url="URL_GAMBAR"
                     :upload-data="{ tahapId: putusTarget?.tahapId }"
-                    :placeholder="placeholderCatatanPutus"
-                    hint="Bisa diberi format & gambar. Tersimpan sebagai catatan keputusan tahap ini."
                 />
             </div>
             <p v-if="alasanWajib && !catatanCukup" class="plw-note is-err">
@@ -4122,10 +4835,10 @@
                 <div v-if="!massalWajibLuring" class="plw-fld">
                     <label class="plw-fld__lbl">Metode <b>*</b></label>
                     <div class="plw-seg">
-                        <button type="button" class="plw-seg__b is-net" :class="{ 'is-on': massalMode === 'DARING' }" @click="massalMode = 'DARING'">
+                        <button v-if="massalBoleh('DARING')" type="button" class="plw-seg__b is-net" :class="{ 'is-on': massalMode === 'DARING' }" @click="massalMode = 'DARING'">
                             <i class="bi bi-camera-video-fill"></i> Daring
                         </button>
-                        <button type="button" class="plw-seg__b is-net" :class="{ 'is-on': massalMode === 'LURING' }" @click="massalMode = 'LURING'">
+                        <button v-if="massalBoleh('LURING')" type="button" class="plw-seg__b is-net" :class="{ 'is-on': massalMode === 'LURING' }" @click="massalMode = 'LURING'">
                             <i class="bi bi-geo-alt-fill"></i> Tatap muka
                         </button>
                     </div>
@@ -4818,15 +5531,18 @@
 
                 <div class="plw-fld">
                     <label class="plw-fld__lbl">
-                        Alasan / catatan
-                        <b v-if="pmButuhCatatan">*</b>
-                        <small v-else>opsional, dipakai untuk semua</small>
+                        Catatan Keputusan
+                        <small v-if="pmButuhCatatan">alasan wajib di tab internal</small>
+                        <small v-else>opsional, dipakai untuk semua kandidat terpilih</small>
                     </label>
-                    <EditorQuill
-                        v-model="pmCatatanHtml"
-                        ringkas
-                        placeholder="mis. Hasil psikotes di bawah ambang batas yang ditetapkan panel."
-                        hint="Tersimpan sebagai catatan keputusan pada tahap SETIAP kandidat terpilih."
+                    <CatatanKeputusan
+                        v-model:tab="pmTabCatatan"
+                        v-model:eksternal="pmCatatanEksternalHtml"
+                        v-model:internal="pmCatatanHtml"
+                        :eksternal-siap="!!catatanTahap.eksternalSiap"
+                        :label-internal="pmButuhCatatan ? 'Alasan (internal)' : 'Catatan Internal'"
+                        :wajib-internal="pmButuhCatatan"
+                        placeholder-internal="mis. Hasil psikotes di bawah ambang batas yang ditetapkan panel."
                     />
                     <p v-if="pmButuhCatatan && !pmCatatanCukup" class="plw-note is-err">
                         <i class="bi bi-exclamation-circle-fill"></i>
@@ -4874,12 +5590,18 @@
                                  satuan yang memang ber-HTML; kalau yang massal
                                  lahir sebagai teks polos, dua catatan untuk hal
                                  yang sama tampil dengan dua wajah berbeda. -->
-                            <EditorQuill
-                                v-model="b.catatanHtml"
-                                ringkas mungil
-                                :placeholder="hasilKeputusan.find((h) => h.kode === b.hasil)?.butuhAlasan
+                            <CatatanKeputusan
+                                v-model:tab="b.tabCatatan"
+                                v-model:eksternal="b.catatanEksternalHtml"
+                                v-model:internal="b.catatanHtml"
+                                mungil
+                                :eksternal-siap="!!catatanTahap.eksternalSiap"
+                                :label-internal="hasilKeputusan.find((h) => h.kode === b.hasil)?.butuhAlasan ? 'Alasan' : 'Internal'"
+                                :wajib-internal="!!hasilKeputusan.find((h) => h.kode === b.hasil)?.butuhAlasan"
+                                :placeholder-internal="hasilKeputusan.find((h) => h.kode === b.hasil)?.butuhAlasan
                                     ? 'Alasan WAJIB untuk keputusan ini…'
-                                    : 'Catatan (opsional)…'"
+                                    : 'Catatan tim (opsional)…'"
+                                placeholder-eksternal="Pesan untuk kandidat ini (opsional)…"
                             />
                         </div>
                     </div>
@@ -4925,8 +5647,11 @@ import PanelSkrining from '@career/PanelSkrining.vue';
 import ConfirmModal from '@career/ConfirmModal.vue';
 import ExportStudio from '@career/ExportStudio.vue';
 import EditorQuill from '@career/EditorQuill.vue';
+import CatatanKeputusan from '@career/CatatanKeputusan.vue';
 import KontenAman from '@career/KontenAman.vue';
 import UraianLipat from '@career/UraianLipat.vue';
+import PerpanjangBatas from '@career/PerpanjangBatas.vue';
+import { keDate, salahPerpanjang } from '@utils/career/batasIsi';
 import { grupBagian, grupField, labelField, tipeField } from '@career/formulir';
 import { ingatModal } from '@utils/ingatModal';
 
@@ -4990,7 +5715,7 @@ export default {
     // "Extraneous non-props attributes" berhenti — atribut itu memang tidak
     // dipakai sebagai atribut HTML di sini.
     inheritAttrs: false,
-    components: { Head, AdminModal, BerkasAktivitas, ConfirmModal, EditorQuill, ExportStudio, KontenAman, PanelPemeriksaan, PanelProses, PanelSkrining, UraianLipat },
+    components: { Head, AdminModal, BerkasAktivitas, CatatanKeputusan, ConfirmModal, EditorQuill, ExportStudio, KontenAman, PanelPemeriksaan, PanelProses, PanelSkrining, PerpanjangBatas, UraianLipat },
     props: {
         talent: { type: Array, default: () => [] },
         programAwal: { type: Object, default: () => ({ data: [], page: 1, totalPage: 1, total: 0 }) },
@@ -5014,6 +5739,11 @@ export default {
         // keputusan tetap digambar untuk admin yang tidak berhak, dan
         // penolakannya baru datang setelah alasan diketik & modal dikirim.
         akses: { type: Object, default: () => ({ permissions: {}, konten: {} }) },
+        // CATATAN KEPUTUSAN DUA ARAH — lihat CatatanEksternal (server).
+        //   eksternalSiap  kolom catatan untuk kandidat sudah ada di basis data;
+        //   tabBawaan      tab yang terbuka lebih dulu menurut kategori akun ini
+        //                  (hanya Rekrutmen → INTERNAL, selain itu EKSTERNAL).
+        catatanTahap: { type: Object, default: () => ({ eksternalSiap: false, tabBawaan: 'EKSTERNAL' }) },
         // BERAPA KANDIDAT BOLEH DIPUTUS SEKALI KIRIM.
         //
         // Datang dari LamaranController::BATAS_PUTUS_MASSAL — konstanta yang
@@ -5068,6 +5798,14 @@ export default {
             selectedId: null,
             detail: { program: null, posisi: [], kolom: [], pelamar: [] },
             loadingDetail: false,
+            // Penyegaran SENYAP sesudah aksi — papan tetap tampil, hanya tombol
+            // muat ulang yang berputar. Lihat muatDetail() & segarkanKartu().
+            menyegarkan: false,
+            // Nomor permintaan papan & per kartu: jawaban yang tiba TERLAMBAT
+            // (program sudah diganti, atau permintaan yang lebih baru sudah
+            // dikirim) dibuang, bukan ditimpakan ke papan.
+            nomorMuatDetail: 0,
+            nomorKartu: {},
             // ── DASAR DAFTAR PANEL KIRI ─────────────────────────────────────
             //
             // 'program' | 'loker'. Disimpan di perangkat, sama seperti `mode`:
@@ -5110,7 +5848,9 @@ export default {
             // Tab modal detail: 'rapor' | 'berkas'. Selalu kembali ke
             // 'rapor' setiap kandidat dibuka — lihat bukaKandidat().
             tabAktif: 'rapor',
-            profil: { lamaran: null, formulir: [] },
+            profil: { lamaran: null, formulir: [], tahap: [] },
+            // Satu tahap kandidat yang dibuka dari Progres Seleksi (baca-saja).
+            tahapRiwayat: { show: false, muat: false, id: null, data: null },
             loadingProfil: false,
             berkasHasil: [],
             tahapBerkasId: null,
@@ -5121,6 +5861,31 @@ export default {
             emailMuat: false,
             emailSibuk: false,
             emailTahap: [],
+            // Popup sukses kirim ulang: { pelamar, tahap, email } | null.
+            emailTerkirim: null,
+            // ── Jadwal pengisian formulir tahap (lihat App\Support\Career\BatasIsi) ──
+            batasKolomShow: false,
+            batasKolomCol: null,
+            batasKolomBuka: '',
+            batasKolomTgl: '',
+            // 'ATUR' | 'PERPANJANG' | 'LEPAS' (Master Alur sudah "Tanpa jadwal")
+            // | 'UBAH' (khusus superadmin).
+            batasKolomLangkah: 'ATUR',
+            batasKolomAlasan: '',
+            riwayatKolom: { buka: false, muat: false, baris: [] },
+            batasKandShow: false,
+            batasKandTarget: [],
+            // 'ATUR' (yang belum berjadwal) | 'PERPANJANG' (yang sudah) | 'LEPAS'.
+            batasKandLangkah: 'PERPANJANG',
+            batasKandBuka: '',
+            batasKandTgl: '',
+            batasKandAlasan: '',
+            // Pilihan perpanjangan — dipakai bergantian modal kolom & kandidat.
+            perp: { cara: 'HARI', hari: 2, jam: 6, sampai: '' },
+            batasSibuk: false,
+            riwayatBatas: { buka: false, muat: false, baris: [], tahapId: null },
+            // Batas berakhir di detik terakhir harinya — sama dengan server.
+            JAM_BATAS: new Date(2000, 0, 1, 23, 59, 59),
             emailPilih: null,
             // Alamat tujuan MENURUT SERVER — hanya untuk ditampilkan dan
             // dicocokkan; bukan alamat yang kita kirimkan sebagai tujuan.
@@ -5250,6 +6015,9 @@ export default {
             // DITURUNKAN saat dikirim, tidak disimpan sebagai state kedua —
             // dua salinan yang bisa berselisih hanya menunggu giliran basi.
             putusCatatanHtml: '',
+            // Catatan UNTUK KANDIDAT & tab yang sedang terbuka di jendela keputusan.
+            putusCatatanEksternalHtml: '',
+            putusTabCatatan: 'EKSTERNAL',
             // Kandidat yang mundur disimpan di Talent Pool atau tidak. Hanya
             // ditanyakan untuk hasil ber-`pilihTalentPool`; nilainya disemai
             // dari bawaan masternya saat modal dibuka.
@@ -5376,6 +6144,8 @@ export default {
             pmPola: 'SERAGAM',      // SERAGAM = satu keputusan untuk semua, SENDIRI = per kandidat
             pmHasil: '',            // kode hasil pada mode SERAGAM
             pmCatatanHtml: '',      // catatan bersama pada mode SERAGAM
+            pmCatatanEksternalHtml: '', // catatan UNTUK KANDIDAT, bersama pada mode SERAGAM
+            pmTabCatatan: 'EKSTERNAL',
             // Sekalian mencatat hasil aktivitas yang belum tercatat. Menyala
             // secara bawaan: itulah bentuk pemakaian yang membuat keputusan
             // massal ada gunanya sama sekali.
@@ -5479,6 +6249,22 @@ export default {
         clearTimeout(this.dokTimer);
     },
     watch: {
+        /**
+         * Tab Edit (superadmin) untuk SATU kandidat berjadwal: isian awal = jadwalnya
+         * sekarang, supaya yang dikoreksi cukup bagian yang salah.
+         */
+        batasKandLangkah(v) {
+            const satu = this.batasKandUbah.length === 1 ? this.batasKandUbah[0].batas : null;
+            if (v === 'UBAH' && satu?.batas && !this.batasKandTgl) {
+                this.batasKandBuka = satu.buka ? String(satu.buka).slice(0, 19) : '';
+                this.batasKandTgl = String(satu.batas).slice(0, 19);
+            }
+        },
+        // Keputusan massal yang MENUNTUT alasan membuka tab internal — di
+        // sanalah alasan itu harus ditulis. Lihat tabAwalCatatan().
+        pmHasil(v) {
+            if (this.hasilKeputusan.find((h) => h.kode === v)?.butuhAlasan) this.pmTabCatatan = 'INTERNAL';
+        },
         // Pilihan DIKOSONGKAN saat papan berganti isi.
         //
         // Tanpa ini, kandidat yang terpilih lalu tersaring keluar tetap terbawa
@@ -5499,6 +6285,13 @@ export default {
             this.massalLokasiId = null;
             this.massalLokasiNama = '';
             this.massalLokasiAlamat = '';
+            // Bentuk yang tidak berlaku untuk aktivitas barunya (wajib tatap
+            // muka, atau di luar izin tipenya) dipindah ke yang berlaku. Kalau
+            // tidak, layar menyembunyikan pilihannya sementara yang terkirim
+            // tetap bentuk lama — dan server menolaknya satu per satu.
+            if (!this.massalBoleh(this.massalMode)) {
+                this.massalMode = this.massalBoleh('DARING') ? 'DARING' : 'LURING';
+            }
         },
         keadaanPilih() { this.terpilih = []; this.listPage = 1; },
         // Ganti program = papan yang sama sekali lain. Penyaring kolom milik
@@ -5890,12 +6683,12 @@ export default {
             (this.profil.formulir || []).forEach((f) => {
                 (f.jawaban || []).forEach((j) => {
                     const label = this.labelIsian(f, j);
-                    this.berkasSel(j).forEach((b, i) => tambah(f, label, f.label, b, i));
+                    this.berkasSel(j).forEach((b, i) => tambah(f, this.namaBerkasFormulir(f, b, label), f.label, b, i));
 
                     (j.baris || []).forEach((row, ri) => (row || []).forEach((p) => {
                         this.berkasSel(p).forEach((b, i) => tambah(
                             f,
-                            p.label || label,
+                            this.namaBerkasFormulir(f, b, p.label || label, row),
                             `${label} · baris ${ri + 1}`,
                             b,
                             `${ri}-${i}`,
@@ -5903,7 +6696,26 @@ export default {
                     }));
                 });
 
-                this.berkasLepas(f).forEach((b, i) => tambah(f, this.labelBerkas(b), f.label, b, `x${i}`));
+                this.berkasLepas(f).forEach((b, i) => tambah(f, this.namaBerkasFormulir(f, b, this.labelBerkas(b)), f.label, b, `x${i}`));
+            });
+
+            // HASIL TAHAP — berkas tim & kandidat per tahap/aktivitas (FGD,
+            // wawancara, MCU…). Tanpa ini panel hanya memuat berkas formulir,
+            // dan hasil tahap yang sudah lewat tidak punya tempat untuk dibuka.
+            (this.profil.tahap || []).forEach((t) => {
+                (t.berkas || []).forEach((b, i) => keluar.push({
+                    id: `t${t.urutan}::${b.sumber}::${b.id || i}`,
+                    // Kiriman kandidat ditandai — "FGD" dari tim dan "FGD" dari
+                    // kandidat adalah dua lembar yang berbeda.
+                    nama: `${b.aktivitas || t.label}${b.sumber === 'KANDIDAT' ? ' · kandidat' : ''}`,
+                    konteks: `Hasil · ${t.label}${b.sumber === 'KANDIDAT' ? ' · dari kandidat' : ''}`,
+                    file: b.nama || '—',
+                    ext: String(b.ext || '').toUpperCase(),
+                    isImage: !!b.isImage,
+                    folder: `t${t.urutan}`,
+                    folderLabel: `Hasil · ${t.label}`,
+                    berkas: { ...b, isPdf: String(b.ext || '').toLowerCase() === 'pdf', waktu: b.createdAt },
+                }));
             });
 
             return keluar;
@@ -5920,6 +6732,13 @@ export default {
                     label: f.label,
                     ikon: f.waktuKirim ? 'bi-folder-fill' : 'bi-folder',
                     jumlah: per.get(String(f.no)) || 0,
+                })),
+                // Satu folder per tahap yang punya berkas hasil.
+                ...(this.profil.tahap || []).filter((t) => per.get(`t${t.urutan}`)).map((t) => ({
+                    key: `t${t.urutan}`,
+                    label: `Hasil · ${t.label}`,
+                    ikon: 'bi-clipboard2-check-fill',
+                    jumlah: per.get(`t${t.urutan}`),
                 })),
             ];
         },
@@ -6012,6 +6831,19 @@ export default {
                         label: this.labelPendek(f.label),
                         judul: f.label,
                         ikon: f.sumber === 'PENDAFTARAN' ? 'bi-person-plus-fill' : 'bi-folder-fill',
+                        jumlah: n,
+                    });
+                }
+            });
+            // Satu tab per tahap yang punya berkas hasil (FGD, wawancara, MCU…).
+            (this.profil.tahap || []).forEach((t) => {
+                const n = per.get(`t${t.urutan}`) || 0;
+                if (n) {
+                    tabs.push({
+                        key: `t${t.urutan}`,
+                        label: `Hasil ${this.labelPendek(t.label)}`,
+                        judul: `Berkas hasil — ${t.label}`,
+                        ikon: 'bi-clipboard2-check-fill',
                         jumlah: n,
                     });
                 }
@@ -6111,6 +6943,42 @@ export default {
             const tutup = d.statusLamaran !== 'BERJALAN';
             const lulusPenuh = d.statusLamaran === 'LULUS';
 
+            // Tahap MILIK KANDIDAT INI (dimuat bersama berkas) — lebih jujur daripada
+            // kolom papan, yang bisa menggabungkan beberapa versi alur, dan membawa
+            // id tahap sehingga tiap tahap yang sudah dimulai bisa dibuka.
+            if (this.tahapKandidat.length) {
+                return this.tahapKandidat.map((t) => {
+                    const no = t.urutan;
+                    let keadaan = 'nanti';
+                    if (lulusPenuh || no < kini) keadaan = 'lewat';
+                    else if (no === kini) keadaan = tutup ? 'tutup' : 'kini';
+
+                    const nBerkas = (t.berkas || []).length;
+                    const teks = {
+                        lewat: {
+                            tag: t.bypass ? 'Dilewati' : 'Selesai',
+                            catatan: t.hasil
+                                ? `${this.labelHasilTahap(t)}${nBerkas ? ` · ${nBerkas} berkas` : ''}`
+                                : 'Sudah dilewati',
+                        },
+                        kini: { tag: 'Berlangsung', catatan: d.hold ? 'Sedang ditahan' : 'Sedang berjalan' },
+                        tutup: { tag: this.statusLabel(d.statusLamaran), catatan: 'Perjalanan berakhir di tahap ini' },
+                        nanti: { tag: 'Menunggu', catatan: 'Belum dimulai' },
+                    }[keadaan];
+
+                    return {
+                        kunci: t.id,
+                        id: keadaan === 'nanti' ? null : t.id,
+                        nomor: String(no).padStart(2, '0'),
+                        label: t.label,
+                        keadaan,
+                        tag: teks.tag,
+                        catatan: teks.catatan,
+                        catatanEksternal: (this.profil?.catatanKandidat || []).find((x) => x.urutan === no) || null,
+                    };
+                });
+            }
+
             return this.kolomTampil.map((c, i) => {
                 const no = Number(c.urutan) || i + 1;
                 let keadaan = 'nanti';
@@ -6131,8 +6999,24 @@ export default {
                     keadaan,
                     tag: teks.tag,
                     catatan: teks.catatan,
+                    // Dimuat bersama berkas saat drawer dibuka (worklistBerkas).
+                    catatanEksternal: (this.profil?.catatanKandidat || []).find((x) => x.urutan === no) || null,
                 };
             });
+        },
+        /** Seluruh tahap milik kandidat di drawer (worklistBerkas → profil.tahap). */
+        tahapKandidat() { return this.profil?.tahap || []; },
+        /** Tahap SEBELUM tahap aktif yang sudah diputus — "Hasil tahap sebelumnya". */
+        tahapSebelumnya() {
+            const kini = Number(this.detailKandidat?.urutan) || 0;
+
+            return this.tahapKandidat.filter((t) => t.urutan < kini && (t.hasil || t.status === 'SELESAI'));
+        },
+        /** Formulir yang diisi di tahap yang sedang dibuka di modal riwayat. */
+        formulirTahapRiwayat() {
+            const no = this.tahapRiwayat.data?.tahap?.urutan;
+
+            return no ? (this.profil.formulir || []).filter((f) => Number(f.urutan) === Number(no)) : [];
         },
         persenAlur() {
             const d = this.detailKandidat;
@@ -6175,10 +7059,16 @@ export default {
                 for (const t of r.tests || []) {
                     if (!t.butuhJadwal || t.selesai || t.terkunci) continue;
                     const k = t.label;
-                    if (!peta.has(k)) peta.set(k, { label: k, jumlah: 0, wajibLuring: false, jadwalPrivat: false, lokasiPeruntukan: null });
+                    if (!peta.has(k)) peta.set(k, { label: k, jumlah: 0, wajibLuring: false, jadwalPrivat: false, lokasiPeruntukan: null, modeIzin: null });
                     const a = peta.get(k);
                     a.jumlah++;
                     a.wajibLuring = a.wajibLuring || !!t.wajibLuring;
+                    // Izin bentuk jadwal digabung sebagai IRISAN — yang paling
+                    // ketat menang, sama seperti wajib tatap muka di atas.
+                    // null = tidak dibatasi.
+                    if (t.modeIzin) {
+                        a.modeIzin = a.modeIzin ? a.modeIzin.filter((m) => t.modeIzin.includes(m)) : [...t.modeIzin];
+                    }
                     // Ikut dibawa karena kaki modalnya menjanjikan email: untuk
                     // tipe berjadwal privat tak satu pun undangan dikirim.
                     a.jadwalPrivat = a.jadwalPrivat || !!t.jadwalPrivat;
@@ -6195,6 +7085,54 @@ export default {
             return this.aktivitasTerpilih.find((a) => a.label === this.massalAktivitas) || null;
         },
         massalWajibLuring() { return !!this.aktivitasMassalDef?.wajibLuring; },
+        /** Riwayat batas yang terbuka memang milik kandidat di drawer sekarang. */
+        riwayatBatasBuka() {
+            return this.riwayatBatas.buka && this.riwayatBatas.tahapId === this.detailKandidat?.tahapId;
+        },
+        /** Terpilih yang sedang mengisi formulir tahap — sasaran tombol "Jadwal". */
+        bisaBatasMassal() {
+            return this.barisTerpilih.filter((r) => r.tahapId && r.batas && !r.batas.terkirim);
+        },
+        salahKolomBaru() { return this.salahJadwalBaru(this.batasKolomBuka, this.batasKolomTgl); },
+        /** Superadmin boleh MENGEDIT jadwal (boleh mundur) — admin hanya memperpanjang. */
+        superadmin() { return this.$page?.props?.careerAuth?.role === 'SUPERADMIN'; },
+        kolomUbahLampau() { return !!this.batasKolomTgl && (keDate(this.batasKolomTgl) || 0) < new Date(); },
+        kandUbahLampau() { return !!this.batasKandTgl && (keDate(this.batasKandTgl) || 0) < new Date(); },
+        bolehSimpanBatasKolom() {
+            const col = this.batasKolomCol;
+            if (!col || this.batasSibuk) return false;
+            if (this.batasKolomLangkah === 'LEPAS') return true;
+            if (this.batasKolomLangkah === 'UBAH') {
+                return this.superadmin && !!this.batasKolomBuka && !!this.batasKolomTgl
+                    && this.batasKolomTgl > this.batasKolomBuka && this.batasKolomAlasan.trim().length >= 5;
+            }
+            if (this.batasKolomLangkah === 'PERPANJANG') return !!col.batasProgram && !salahPerpanjang(col.batasProgram, this.perp);
+
+            return !!this.batasKolomBuka && !!this.batasKolomTgl && !this.salahKolomBaru;
+        },
+        /** Kandidat terpilih yang belum berjadwal — hanya bisa DIATUR. */
+        batasKandBelum() { return this.batasKandTarget.filter((r) => !r.batas.batas); },
+        /** Yang sudah berjadwal — hanya bisa DIPERPANJANG. */
+        batasKandSudah() { return this.batasKandTarget.filter((r) => !!r.batas.batas); },
+        /** Yang tahapnya di Master Alur sudah "Tanpa jadwal" — bisa DILEPAS. */
+        batasKandLepas() { return this.batasKandTarget.filter((r) => this.kolomDilepas(this.kolomDari(r))); },
+        /** Superadmin: seluruh yang terikat jadwal bisa DIEDIT. */
+        batasKandUbah() { return this.superadmin ? this.batasKandTarget : []; },
+        /** Batas sekarang untuk pratinjau; null bila banyak (masing-masing dari batasnya). */
+        batasKandLama() { return this.batasKandSudah.length === 1 ? this.batasKandSudah[0].batas.batas : null; },
+        salahKandBaru() { return this.salahJadwalBaru(this.batasKandBuka, this.batasKandTgl); },
+        bolehSimpanBatasKand() {
+            if (this.batasSibuk) return false;
+            if (this.batasKandLangkah === 'LEPAS') return this.batasKandLepas.length > 0;
+            if (this.batasKandLangkah === 'UBAH') {
+                return this.batasKandUbah.length > 0 && !!this.batasKandTgl
+                    && (!this.batasKandBuka || this.batasKandTgl > this.batasKandBuka)
+                    && this.batasKandAlasan.trim().length >= 5;
+            }
+            if (this.batasKandLangkah === 'ATUR') return this.batasKandBelum.length > 0 && !!this.batasKandTgl && !this.salahKandBaru;
+
+            return this.batasKandSudah.length > 0 && !salahPerpanjang(this.batasKandLama, this.perp);
+        },
         peruntukanMassal() {
             const kode = this.aktivitasMassalDef?.lokasiPeruntukan;
 
@@ -6527,9 +7465,7 @@ export default {
         },
         /** Bentuk yang boleh dipilih: tipe wajib-luring hanya menerima yang luring. */
         modeJadwalDipakai() {
-            const semua = this.modeJadwal || [];
-
-            return this.jadwalTarget?.wajibLuring ? semua.filter((m) => m.luring) : semua;
+            return this.modeUntuk(this.jadwalTarget);
         },
         modeJadwalDef() { return (this.modeJadwal || []).find((m) => m.kode === this.jadwalMode) || null; },
         /**
@@ -7259,6 +8195,23 @@ export default {
          * apa adanya karena ia punya arti tersendiri — bukti kandidat yang
          * mengisi memang orangnya; sisanya dirapikan dari nama kuncinya.
          */
+        /**
+         * Nama berkas formulir untuk layar: label ASLI isiannya dari skema, tanpa
+         * kata kerja "Upload/Unggah" ("Upload Sertifikat" → "Sertifikat"), ditambah
+         * nama barisnya bila berkas itu milik bagian berulang ("Sertifikat ·
+         * JAVASCRIPT"). Dulu sel di dalam baris hanya punya label tebakan dari
+         * kuncinya — `sert_file` → "File" — sehingga tiga sertifikat tertulis
+         * "File" semua. Yang kepanjangan dipotong CSS (…), tidak di sini.
+         */
+        namaBerkasFormulir(f, b, cadangan, baris = null) {
+            const asli = String(this.petaSkema(f).label[b?.field] || cadangan || 'Berkas');
+            const inti = asli.replace(/^(upload|unggah|lampirkan|lampiran)\s+/i, '').trim() || asli;
+            if (!baris) return inti;
+
+            const judul = baris.find((p) => !this.berkasSel(p).length && typeof p.nilai === 'string' && p.nilai.trim());
+
+            return judul ? `${inti} · ${judul.nilai.trim()}` : inti;
+        },
         labelBerkas(b) {
             if (b.field === 'foto_verifikasi') return 'Foto Verifikasi';
 
@@ -7867,6 +8820,14 @@ export default {
             const d = new Date(String(v).replace(' ', 'T'));
             return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
         },
+        /** Tanggal + jam — batas pengisian selalu menyebut jamnya. */
+        tglJamId(v) {
+            if (!v) return '—';
+            const d = new Date(String(v).replace(' ', 'T'));
+            return Number.isNaN(d.getTime())
+                ? '—'
+                : d.toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+        },
         /** Sudah berapa lama sejak melamar — penanda kandidat yang terlalu lama menunggu. */
         umurHari(v) {
             if (!v) return '';
@@ -7975,6 +8936,9 @@ export default {
                         case 'JADWAL': return (r.tests || []).some((t) => t.butuhJadwal && !t.jadwal);
                         case 'TERJADWAL': return (r.tests || []).some((t) => !!t.jadwal && !t.selesai);
                         case 'HOLD': return !!r.hold;
+                        case 'BATAS_TUTUP': return !!(r.batas?.belumDiatur || r.batas?.belumBuka);
+                        case 'BATAS_LEWAT': return !!r.batas?.lewat;
+                        case 'BATAS_DEKAT': return !!r.batas?.batas && !r.batas.lewat && !r.batas.terkirim && r.batas.sisaDetik <= 86400;
                         default: return true;
                     }
                 });
@@ -8143,8 +9107,18 @@ export default {
         gantiAlur() {
             if (this.selectedId) this.muatDetail(this.selectedId);
         },
-        async muatDetail(id) {
-            this.loadingDetail = true;
+        async muatDetail(id, { senyap = false } = {}) {
+            // Jawaban yang tiba sesudah permintaan lain dikirim (program
+            // diganti, atau aksi berikutnya sudah memicu penyegaran baru)
+            // DIBUANG. Tanpa ini, papan program yang baru saja ditinggalkan
+            // bisa tiba belakangan dan menimpa papan yang sedang dibuka.
+            const nomor = ++this.nomorMuatDetail;
+            // SENYAP = penyegaran sesudah aksi. Papan tidak dikosongkan:
+            // mengganti ratusan kartu dengan "Memuat…" setiap kali rekruter
+            // mencatat sesuatu membuang posisi gulirnya dan terasa seperti
+            // aplikasi macet. Pergantian program tetap menampilkan pemuat.
+            if (senyap) this.menyegarkan = true;
+            else this.loadingDetail = true;
             try {
                 // Dua bentuk permintaan, satu bentuk jawaban: detailLoker
                 // sengaja memulangkan kunci `program` yang sama, jadi seluruh
@@ -8156,6 +9130,7 @@ export default {
                         ...CFG,
                     })
                     : await axios.get(`/api/v1/karir/lamaran/worklist/program/${id}`, CFG);
+                if (nomor !== this.nomorMuatDetail) return;
 
                 this.detail = res.data.result;
                 // Pemilih diselaraskan dengan alur yang BENAR-BENAR dipakai
@@ -8167,10 +9142,85 @@ export default {
                 }
                 this.segarkanDrawer();
             } catch (e) {
-                this.notice('Gagal memuat papan seleksi.', true);
+                if (nomor === this.nomorMuatDetail) this.notice('Gagal memuat papan seleksi.', true);
             } finally {
-                this.loadingDetail = false;
+                if (nomor === this.nomorMuatDetail) {
+                    this.loadingDetail = false;
+                    this.menyegarkan = false;
+                }
             }
+        },
+        /**
+         * SEGARKAN SATU KARTU — sesudah aksi atas SATU kandidat.
+         *
+         * Dulu setiap aksi (catat hasil, jadwal, hadir, putus, …) memuat ulang
+         * SELURUH papan: ratusan kartu dibangun ulang di server demi satu
+         * kandidat yang berubah — dikali puluhan rekruter yang bekerja
+         * serempak — dan papannya dikosongkan selama menunggu. Sekarang hanya
+         * kartu itu yang diminta (papan yang sama, disaring satu lamaran lewat
+         * `?lamaran=`), lalu ditempel di tempatnya.
+         *
+         * Tetap muat ulang penuh (senyap) bila kartunya tak ditemukan, keluar
+         * dari papan, pindah ke kolom yang belum ada, atau STATUS lamarannya
+         * berubah: status ikut dihitung di rekap lowongan, kuota, dan daftar
+         * program — angka yang hanya benar bila seluruh papan dihitung ulang.
+         *
+         * @param {{lamaran?: string, tahap?: string, tes?: string}} petunjuk
+         *        id lamaran, id tahap aktifnya, atau id salah satu aktivitas di
+         *        rapornya. Jenisnya DISEBUT, tidak ditebak: hashid dari tabel
+         *        berbeda bisa saja sama bunyinya.
+         */
+        async segarkanKartu(petunjuk = {}) {
+            if (!this.selectedId) return;
+            const semua = this.detail?.pelamar || [];
+            const lama = (petunjuk.lamaran && semua.find((r) => r.id === petunjuk.lamaran))
+                || (petunjuk.tahap && semua.find((r) => r.tahapId === petunjuk.tahap))
+                || (petunjuk.tes && semua.find((r) => (r.tests || []).some((x) => x.id === petunjuk.tes)))
+                || null;
+            if (!lama) {
+                await this.muatDetail(this.selectedId, { senyap: true });
+                return;
+            }
+
+            const papan = this.nomorMuatDetail;
+            const nomor = (this.nomorKartu[lama.id] || 0) + 1;
+            this.nomorKartu[lama.id] = nomor;
+            const basi = () => papan !== this.nomorMuatDetail || nomor !== this.nomorKartu[lama.id];
+            this.menyegarkan = true;
+            let penuh = false;
+            try {
+                const res = this.basisLoker
+                    ? await axios.get('/api/v1/karir/lamaran/worklist/loker/detail', {
+                        params: { kunci: this.selectedId, alur: this.alurPilih || undefined, lamaran: lama.id },
+                        ...CFG,
+                    })
+                    : await axios.get(`/api/v1/karir/lamaran/worklist/program/${this.selectedId}`, {
+                        params: { lamaran: lama.id },
+                        ...CFG,
+                    });
+                // Basi: papan dimuat ulang/diganti selagi menunggu, atau kartu
+                // yang sama sudah diminta lagi oleh aksi berikutnya.
+                if (basi()) return;
+
+                const hasil = res.data?.result || {};
+                const baru = (hasil.pelamar || [])[0];
+                const i = (this.detail?.pelamar || []).findIndex((r) => r.id === lama.id);
+                const kolomAda = !!baru && (this.detail.kolom || []).some((k) => k.kode === baru.kolomKode);
+                if (!baru || i < 0 || !kolomAda || baru.statusLamaran !== lama.statusLamaran) {
+                    penuh = true;
+                } else {
+                    this.detail.pelamar.splice(i, 1, baru);
+                    this.detail.kampusBendera = { ...(this.detail.kampusBendera || {}), ...(hasil.kampusBendera || {}) };
+                    this.segarkanDrawer();
+                }
+            } catch (e) {
+                penuh = !basi();
+            } finally {
+                // Yang akan memuat penuh membiarkan tombolnya tetap berputar —
+                // muatDetail() yang menghentikannya.
+                if (!basi() && !penuh) this.menyegarkan = false;
+            }
+            if (penuh) await this.muatDetail(this.selectedId, { senyap: true });
         },
         goJadwal() { router.visit('/karir/penjadwalan'); },
         /* ── Drawer ── */
@@ -8264,12 +9314,13 @@ export default {
             this.dokTab = '';
             this.dokCari = '';
             this.dokSaring = false;
-            this.profil = { lamaran: null, formulir: [] };
+            this.profil = { lamaran: null, formulir: [], tahap: [] };
+            this.tahapRiwayat = { show: false, muat: false, id: null, data: null };
             this.berkasHasil = [];
             this.loadingProfil = true;
             try {
                 const res = await axios.get(`/api/v1/karir/lamaran/berkas/${r.id}`, CFG);
-                this.profil = res.data.result || { lamaran: null, formulir: [] };
+                this.profil = res.data.result || { lamaran: null, formulir: [], tahap: [] };
                 this.bukaBerkasAwal();
             } catch (e) {
                 this.notice('Gagal memuat berkas kandidat.', true);
@@ -8444,11 +9495,65 @@ export default {
             this.lbError = gagal;
         },
         /**
+         * Keterangan lencana "Diunggah admin": siapa yang mengunggah, lalu
+         * alasan yang ia tulis di panel Pemulihan Berkas. Berkas seperti ini
+         * bukan kiriman kandidat sendiri — peninjau berhak tahu asal-usulnya
+         * sebelum menilainya.
+         */
+        judulOleh(b) {
+            return [`Diunggah admin${b && b.oleh ? ` — ${b.oleh}` : ''}`, b && b.catatan].filter(Boolean).join('\n');
+        },
+        /**
          * Buka dokumen di modal — gambar MAUPUN PDF.
          *
          * PDF dulu dilempar ke tab baru, jadi admin kehilangan konteks drawer
          * yang sedang dibacanya. Modalnya sanggup menyematkan PDF lewat iframe.
          */
+        /* ── Riwayat tahap (Progres Seleksi yang bisa diklik) ── */
+        async bukaTahapRiwayat(id) {
+            if (!id) return;
+            this.tahapRiwayat = { show: true, muat: true, id, data: null };
+            try {
+                const res = await axios.get(`/api/v1/karir/lamaran/tahap/${id}/detail`, CFG);
+                if (this.tahapRiwayat.id === id) this.tahapRiwayat.data = res.data.result;
+            } catch (e) {
+                this.notice(e.response?.data?.message || 'Gagal memuat isi tahap.', true);
+                if (this.tahapRiwayat.id === id) this.tahapRiwayat.show = false;
+            } finally {
+                if (this.tahapRiwayat.id === id) this.tahapRiwayat.muat = false;
+            }
+        },
+        /** Id tahap tetangga (yang sudah dimulai) untuk tombol sebelumnya/berikutnya. */
+        tahapRiwayatGeser(arah) {
+            const bisa = this.tahapKandidat.filter((t) => !['MENUNGGU', 'BELUM'].includes(t.status));
+            const i = bisa.findIndex((t) => t.id === this.tahapRiwayat.id);
+
+            return i < 0 ? null : bisa[i + arah]?.id || null;
+        },
+        /** Nama hasil dari master Hasil Keputusan — sama dengan tombol keputusan. */
+        labelHasilTahap(t) {
+            if (t.bypass) return 'Dilewati';
+            if (!t.hasil) return t.status === 'BERJALAN' ? 'Berlangsung' : 'Belum diputus';
+
+            return this.hasilKeputusan.find((h) => h.kode === t.hasil)?.nama || t.hasil;
+        },
+        kelasHasilTahap(t) {
+            if (t.bypass) return 'is-note';
+            if (!t.hasil) return t.status === 'BERJALAN' ? 'is-sched' : 'is-wait';
+            const def = this.hasilKeputusan.find((h) => h.kode === t.hasil);
+
+            return (def ? def.lolos : t.hasil === 'LULUS') ? 'is-pass' : 'is-fail';
+        },
+        /** Berkas satu formulir (dari daftar panel berkas) — untuk modal riwayat tahap. */
+        berkasFormulir(f) {
+            return this.fmSemua.filter((b) => b.folder === String(f.no));
+        },
+        /** Buka tab Berkas & Biodata pada formulir itu, lalu tutup modal riwayat. */
+        lihatFormulirTahap(f) {
+            this.tahapRiwayat.show = false;
+            this.tabAktif = 'berkas';
+            this.fmFolder = String(f.no);
+        },
         bukaDok(b) {
             this.lightbox = { ...b, pdf: !b.isImage };
             this.lbSrc = b.url;
@@ -8558,7 +9663,7 @@ export default {
             try {
                 const res = await axios.patch(`/api/v1/karir/lamaran/sub-tes/${t.id}/persetujuan`, { sumber: 'TELEPON' }, CFG);
                 this.notice(res.data?.message || 'Persetujuan dicatat.');
-                await this.muatDetail(this.selectedId);
+                await this.segarkanKartu({ tes: t.id });
             } catch (e) {
                 this.notice(e.response?.data?.message || 'Gagal mencatat persetujuan.', true);
             } finally {
@@ -8579,10 +9684,11 @@ export default {
                     { sumber: 'TOLAK', keterangan: this.tolakAlasan.trim() },
                     CFG,
                 );
+                const tes = this.tolakTarget.id;
                 this.notice(res.data?.message || 'Penolakan dicatat.');
                 this.tolakShow = false;
                 this.tolakTarget = null;
-                await this.muatDetail(this.selectedId);
+                await this.segarkanKartu({ tes });
             } catch (e) {
                 this.notice(e.response?.data?.message || 'Gagal mencatat penolakan.', true);
             } finally {
@@ -8711,10 +9817,11 @@ export default {
                 return;
             }
 
+            const tes = this.skrTarget?.id;
             this.skrShow = false;
             this.skrTarget = null;
             this.skrIsi = null;
-            if (this.selectedId) await this.muatDetail(this.selectedId);
+            if (this.selectedId) await this.segarkanKartu({ tes });
         },
 
         askCatat(t) {
@@ -8786,7 +9893,7 @@ export default {
             this[kunci] = false;
             if (this.berkasAktivitasBerubah) {
                 this.berkasAktivitasBerubah = false;
-                this.muatDetail(this.selectedId);
+                this.muatDetail(this.selectedId, { senyap: true });
             }
         },
         /** Alasan HOLD dari master — dimuat sekali per sesi. */
@@ -8862,9 +9969,9 @@ export default {
 
                 this.ulangShow = false;
                 this.notice(res.data?.message || 'Tahap diulang.');
-                // Papan seleksi dimuat ulang: tahap, aktivitas, dan berkas
-                // kandidat ini semuanya baru saja berubah.
-                if (this.selectedId) await this.muatDetail(this.selectedId);
+                // Kartu kandidat ini disegarkan: tahap, aktivitas, dan berkasnya
+                // semuanya baru saja berubah.
+                if (this.selectedId) await this.segarkanKartu({ lamaran: this.detailKandidat?.id });
             } catch (e) {
                 this.notice(e.response?.data?.message || 'Gagal mengulang tahap.', true);
             } finally {
@@ -8922,6 +10029,8 @@ export default {
             this.pmPola = 'SERAGAM';
             this.pmHasil = '';
             this.pmCatatanHtml = '';
+            this.pmCatatanEksternalHtml = '';
+            this.pmTabCatatan = this.tabAwalCatatan('');
             this.pmBaris = bisa.map((r) => ({
                 id: r.id,
                 tahapId: r.tahapId,
@@ -8930,6 +10039,8 @@ export default {
                 tahap: r.tahap,
                 hasil: '',
                 catatanHtml: '',
+                catatanEksternalHtml: '',
+                tabCatatan: this.tabAwalCatatan(''),
             }));
             this.pmShow = true;
         },
@@ -8937,7 +10048,13 @@ export default {
         sebarPutusBarisPertama() {
             const a = this.pmBaris[0];
             if (!a?.hasil) return;
-            this.pmBaris = this.pmBaris.map((b, i) => (i === 0 ? b : { ...b, hasil: a.hasil, catatanHtml: a.catatanHtml }));
+            this.pmBaris = this.pmBaris.map((b, i) => (i === 0 ? b : {
+                ...b,
+                hasil: a.hasil,
+                catatanHtml: a.catatanHtml,
+                catatanEksternalHtml: a.catatanEksternalHtml,
+                tabCatatan: a.tabCatatan,
+            }));
             const nama = this.hasilKeputusan.find((x) => x.kode === a.hasil)?.nama || a.hasil;
             this.notice(`Keputusan "${nama}" disalin ke ${this.pmBaris.length - 1} baris lain.`);
         },
@@ -8992,6 +10109,7 @@ export default {
                             hasil: this.pmHasil,
                             catatan: teksDariHtml(this.pmCatatanHtml) || null,
                             catatanHtml: this.pmCatatanHtml || null,
+                            catatanEksternalHtml: this.catatanEksternalKirim(this.pmCatatanEksternalHtml),
                         };
                     }
                     const b = this.pmBaris.find((x) => x.tahapId === r.tahapId);
@@ -9001,6 +10119,7 @@ export default {
                         hasil: b?.hasil,
                         catatan: teksDariHtml(b?.catatanHtml) || null,
                         catatanHtml: b?.catatanHtml || null,
+                        catatanEksternalHtml: this.catatanEksternalKirim(b?.catatanEksternalHtml),
                     };
                 });
 
@@ -9089,7 +10208,7 @@ export default {
                     // Papan baru disegarkan SETELAH gelombangnya tuntas: menyegarkan
                     // tiap denyut berarti kartu berpindah kolom di bawah kursor admin
                     // yang sedang membaca panelnya.
-                    this.muatDetail(this.selectedId);
+                    this.muatDetail(this.selectedId, { senyap: true });
                     this.muatProgram();
                 }
             } catch (e) {
@@ -9210,7 +10329,7 @@ export default {
                 this.hmShow = false;
                 this.terpilih = [];
                 this.tutupPilihKolom();
-                this.muatDetail(this.selectedId);
+                this.muatDetail(this.selectedId, { senyap: true });
                 this.muatProgram();
             } catch (e) {
                 // Kegagalan menyeluruh membawa daftar siapa & kenapa — jauh
@@ -9242,7 +10361,7 @@ export default {
                 // menyimpulkan sendiri, sehingga isi drawer yang lama sudah
                 // tidak menggambarkan keadaan mana pun.
                 this.detailKandidat = null;
-                await this.muatDetail(this.selectedId);
+                await this.segarkanKartu({ tahap: target.tahapId });
                 this.muatProgram();
             } catch (e) {
                 this.notice(e.response?.data?.message || 'Gagal memproses penahanan.', true);
@@ -9273,7 +10392,7 @@ export default {
                 this.emailTujuan = res.data.result?.email || null;
                 // Yang terbaru dipilihkan di muka — itu yang paling sering
                 // dimaksud, dan admin tinggal menggeser bila bukan itu.
-                this.emailPilih = this.emailTahap[0]?.tahapId || null;
+                this.emailPilih = this.emailTahap.find((t) => t.kirimEmail)?.tahapId || null;
             } catch (e) {
                 this.notice(e.response?.data?.message || 'Gagal memuat riwayat keputusan.', true);
             } finally {
@@ -9297,7 +10416,12 @@ export default {
                     { email: this.detailKandidat?.email || this.emailTujuan },
                     CFG,
                 );
-                this.notice(res.data?.message || 'Email diantrekan ulang.');
+                const tahap = this.emailTahap.find((t) => t.tahapId === this.emailPilih);
+                this.emailTerkirim = {
+                    pelamar: this.detailKandidat?.pelamar || '',
+                    tahap: tahap?.label || 'terpilih',
+                    email: this.emailTujuan || this.detailKandidat?.email || 'alamat kandidat',
+                };
                 this.emailShow = false;
             } catch (e) {
                 this.notice(e.response?.data?.message || 'Gagal mengantrekan email.', true);
@@ -9850,7 +10974,233 @@ export default {
             this.terpilih = [...new Set([...this.terpilih, ...ids])];
         },
 
+        /* ── BATAS PENGISIAN FORMULIR ────────────────────────────────────────
+           Aturannya seluruhnya di server (App\Support\Career\BatasIsi); layar
+           hanya membaca `batas` tiap kartu dan `batasProgram` tiap kolom. */
+        /** Satu kolom: belum mengirim, lewat batas, dan terkunci menunggu jadwal. */
+        ringkasBatas(col) {
+            const baris = (this.detail?.pelamar || []).filter(
+                (r) => r.kolomKode === col.kode && r.batas && !r.batas.terkirim,
+            );
+
+            return {
+                belum: baris.length,
+                lewat: baris.filter((r) => r.batas.lewat).length,
+                tutup: baris.filter((r) => r.batas.belumDiatur).length,
+            };
+        },
+        /** Kolom papan milik satu kartu / baris kandidat. */
+        kolomDari(r) {
+            return r ? (this.detail?.kolom || []).find((k) => k.kode === r.kolomKode) || null : null;
+        },
+        /**
+         * Master Alur sudah mematikan jadwal tahap kolom ini, tapi kolomnya masih
+         * perlu diurus (ada jadwal lama / kandidat yang terikat) → tawarkan lepas.
+         */
+        kolomDilepas(col) {
+            return !!col && !!col.bolehBatas && !['MANUAL', 'OTOMATIS'].includes(col.batasMode);
+        },
+        kelasKolomBatas(col) {
+            const r = this.ringkasBatas(col);
+            if (this.kolomDilepas(col)) return r.belum ? 'is-perlu' : 'is-netral';
+            if (col.batasProgram) return { 'is-lewat': r.lewat > 0 };
+
+            return r.tutup ? 'is-perlu' : 'is-netral';
+        },
+        ikonKolomBatas(col) {
+            if (this.kolomDilepas(col)) return 'bi-unlock';
+            if (col.batasProgram) return 'bi-hourglass-split';
+            if (this.ringkasBatas(col).tutup) return 'bi-lock-fill';
+
+            return col.batasMode === 'OTOMATIS' ? 'bi-stopwatch' : 'bi-calendar-plus';
+        },
+        labelBatas(b) {
+            if (b?.belumDiatur) return 'Belum dijadwalkan';
+            if (b?.belumBuka) return `Buka ${this.tglJamId(b.buka)}`;
+            const jam = Math.floor(Math.abs(b?.sisaDetik || 0) / 3600);
+            if (b?.lewat) return jam < 24 ? `Lewat ${Math.max(1, jam)} jam` : `Lewat ${Math.floor(jam / 24)} hari`;
+            if (jam < 1) return '< 1 jam lagi';
+
+            return jam < 24 ? `${jam} jam lagi` : `${Math.floor(jam / 24)} hari lagi`;
+        },
+        kelasBatas(b) {
+            if (!b) return 'is-kosong';
+            if (b.belumDiatur || b.belumBuka) return 'is-tutup';
+            if (!b.batas) return 'is-kosong';
+            if (b.terkunci) return 'is-kunci';
+            if (b.lewat) return 'is-lewat';
+
+            return b.sisaDetik <= 86400 ? 'is-dekat' : 'is-aman';
+        },
+        labelSumberBatas(sumber) {
+            return { PROGRAM: 'Jadwal kolom program', PRIBADI: 'Jadwal pribadi', ATURAN: 'Aturan otomatis tahap' }[sumber] || 'Jadwal';
+        },
+        keteranganBatas(b) {
+            if (b.belumDiatur) {
+                return 'Kandidat belum bisa mengisi formulir sampai jadwal kolomnya diatur (ikon jam pasir di kepala kolom), atau beri jadwal pribadi lewat Atur jadwal.';
+            }
+            if (!b.batas) return 'Tahap ini tanpa jadwal — formulir terbuka. Atur jadwal bila kandidat ini perlu batas khusus.';
+            const sumber = this.labelSumberBatas(b.sumber);
+            if (b.belumBuka) return `${sumber} · formulir baru dibuka ${b.bukaTeks} — sampai itu terkunci.`;
+            if (b.terkunci) return `${sumber} · batas sudah lewat — formulir terkunci, kandidat tidak bisa mengirim.`;
+
+            return `${sumber} · ${this.labelBatas(b)}.`;
+        },
+        /** "YYYY-MM-DD HH:mm:ss" waktu setempat — format pemilih tanggal. */
+        waktuKini() {
+            const d = new Date();
+            const dua = (n) => String(n).padStart(2, '0');
+
+            return `${d.getFullYear()}-${dua(d.getMonth() + 1)}-${dua(d.getDate())} ${dua(d.getHours())}:${dua(d.getMinutes())}:00`;
+        },
+        /** Jadwal baru: batas akhir sesudah waktu dibuka dan belum lewat. null = sah. */
+        salahJadwalBaru(buka, batas) {
+            const akhir = keDate(batas);
+            if (!akhir) return null;
+            if (akhir <= new Date()) return 'Batas akhir itu sudah lewat — pilih waktu yang akan datang.';
+            const awal = keDate(buka);
+            if (awal && akhir <= awal) return 'Batas akhir harus sesudah waktu formulir dibuka.';
+
+            return null;
+        },
+        perpBaru() {
+            this.perp = { cara: 'HARI', hari: 2, jam: 6, sampai: '' };
+        },
+        askBatasKolom(col) {
+            this.batasKolomCol = col;
+            this.batasKolomLangkah = this.kolomDilepas(col) ? 'LEPAS' : (col.batasProgram ? 'PERPANJANG' : 'ATUR');
+            // Berjadwal → isian awal = jadwal sekarang (dipakai tab Edit superadmin).
+            this.batasKolomBuka = col.batasProgram ? String(col.bukaProgram || '').slice(0, 19) : this.waktuKini();
+            this.batasKolomTgl = col.batasProgram ? String(col.batasProgram).slice(0, 19) : '';
+            this.batasKolomAlasan = '';
+            this.riwayatKolom = { buka: false, muat: false, baris: [] };
+            this.perpBaru();
+            this.batasKolomShow = true;
+        },
+        async simpanBatasKolom() {
+            const col = this.batasKolomCol;
+            if (!this.bolehSimpanBatasKolom || !this.detail?.program?.id) return;
+            const dasar = { programId: this.detail.program.id, kodeTahap: col.kode };
+            const [alamat, isi] = {
+                LEPAS: ['/api/v1/karir/batas-isi/program/lepas', dasar],
+                PERPANJANG: ['/api/v1/karir/batas-isi/program/perpanjang', { ...dasar, ...this.isiPerpanjang() }],
+                UBAH: ['/api/v1/karir/batas-isi/program/ubah', { ...dasar, buka: this.batasKolomBuka, batas: this.batasKolomTgl, alasan: this.batasKolomAlasan }],
+                ATUR: ['/api/v1/karir/batas-isi/program', { ...dasar, buka: this.batasKolomBuka, batas: this.batasKolomTgl }],
+            }[this.batasKolomLangkah];
+            this.batasSibuk = true;
+            try {
+                const res = await axios.post(alamat, isi, CFG);
+                this.notice(res.data.message || 'Jadwal disimpan.');
+                this.batasKolomShow = false;
+                await this.muatDetail(this.selectedId, { senyap: true });
+            } catch (e) {
+                this.notice(e.response?.data?.message || 'Gagal menyimpan jadwal.', true);
+            } finally {
+                this.batasSibuk = false;
+            }
+        },
+        /** Isian perpanjangan untuk server: cara + nilai (hari/jam) atau sampai. */
+        isiPerpanjang() {
+            const p = this.perp;
+
+            return {
+                cara: p.cara,
+                nilai: p.cara === 'HARI' ? Number(p.hari) : (p.cara === 'JAM' ? Number(p.jam) : null),
+                sampai: p.cara === 'SAMPAI' ? p.sampai : null,
+            };
+        },
+        askBatasKandidat(baris) {
+            this.batasKandTarget = (baris || []).filter((r) => r && r.tahapId && r.batas && !r.batas.terkirim);
+            if (!this.batasKandTarget.length) return;
+            // Yang belum berjadwal tidak bisa diperpanjang, yang sudah tidak bisa
+            // diatur ulang — kelompok yang lebih besar dibuka lebih dulu. Bila
+            // Master Alur tahapnya sudah "Tanpa jadwal", lepas yang didahulukan.
+            this.batasKandLangkah = this.batasKandLepas.length
+                ? 'LEPAS'
+                : (this.batasKandBelum.length > this.batasKandSudah.length ? 'ATUR' : 'PERPANJANG');
+            this.batasKandBuka = '';
+            this.batasKandTgl = '';
+            this.batasKandAlasan = '';
+            this.perpBaru();
+            this.batasKandShow = true;
+        },
+        async simpanBatasKandidat() {
+            if (!this.bolehSimpanBatasKand) return;
+            const langkah = this.batasKandLangkah;
+            const sasaran = { ATUR: this.batasKandBelum, LEPAS: this.batasKandLepas, UBAH: this.batasKandUbah }[langkah] || this.batasKandSudah;
+            const isi = {
+                ATUR: { cara: 'ATUR', buka: this.batasKandBuka || null, sampai: this.batasKandTgl },
+                LEPAS: { cara: 'LEPAS' },
+                UBAH: { cara: 'UBAH', buka: this.batasKandBuka || null, sampai: this.batasKandTgl },
+            }[langkah] || this.isiPerpanjang();
+            this.batasSibuk = true;
+            try {
+                const res = await axios.post('/api/v1/karir/batas-isi/kandidat', {
+                    tahapIds: sasaran.map((r) => r.tahapId),
+                    ...isi,
+                    alasan: this.batasKandAlasan || null,
+                }, CFG);
+                this.notice(res.data.message || 'Jadwal disimpan.');
+                this.batasKandShow = false;
+                this.riwayatBatas = { buka: false, muat: false, baris: [], tahapId: null };
+                await this.muatDetail(this.selectedId, { senyap: true });
+            } catch (e) {
+                this.notice(e.response?.data?.message || 'Gagal menyimpan jadwal.', true);
+            } finally {
+                this.batasSibuk = false;
+            }
+        },
+        labelAksiKolom(a) {
+            return { PASANG: 'Dipasang', PERPANJANG: 'Diperpanjang', UBAH: 'Diedit superadmin', LEPAS: 'Dilepas' }[a] || a;
+        },
+        async toggleRiwayatKolom() {
+            if (this.riwayatKolom.buka) {
+                this.riwayatKolom.buka = false;
+
+                return;
+            }
+            const col = this.batasKolomCol;
+            if (!col || !this.detail?.program?.id) return;
+            this.riwayatKolom = { buka: true, muat: true, baris: [] };
+            try {
+                const res = await axios.get('/api/v1/karir/batas-isi/program/riwayat', {
+                    params: { programId: this.detail.program.id, kodeTahap: col.kode },
+                    ...CFG,
+                });
+                if (this.batasKolomCol === col) this.riwayatKolom.baris = res.data.result || [];
+            } catch (e) {
+                this.notice('Gagal memuat riwayat jadwal kolom.', true);
+            } finally {
+                this.riwayatKolom.muat = false;
+            }
+        },
+        async toggleRiwayatBatas() {
+            const id = this.detailKandidat?.tahapId;
+            if (!id) return;
+            if (this.riwayatBatas.buka && this.riwayatBatas.tahapId === id) {
+                this.riwayatBatas.buka = false;
+
+                return;
+            }
+            this.riwayatBatas = { buka: true, muat: true, baris: [], tahapId: id };
+            try {
+                const res = await axios.get(`/api/v1/karir/batas-isi/riwayat/${id}`, CFG);
+                if (this.riwayatBatas.tahapId === id) this.riwayatBatas.baris = res.data.result || [];
+            } catch (e) {
+                this.notice('Gagal memuat riwayat jadwal.', true);
+            } finally {
+                if (this.riwayatBatas.tahapId === id) this.riwayatBatas.muat = false;
+            }
+        },
         /* ── JADWAL MASSAL ─────────────────────────────────────────────────── */
+        /** Bentuk `k` (DARING/LURING) berlaku untuk aktivitas massal terpilih? */
+        massalBoleh(k) {
+            const a = this.aktivitasMassalDef;
+            if (!a) return true;
+            if (a.wajibLuring && k !== 'LURING') return false;
+
+            return !a.modeIzin || a.modeIzin.includes(k);
+        },
         askJadwalMassal() {
             if (!this.aktivitasTerpilih.length) return;
             this.muatLokasi();
@@ -9859,8 +11209,8 @@ export default {
             const utama = this.aktivitasTerpilih[0];
             this.massalAktivitas = utama.label;
             // Sepadan dengan penjadwalan satuan: DARING sebagai bawaan, kecuali
-            // tipenya memang mustahil daring (MCU, tanda tangan kontrak).
-            this.massalMode = utama.wajibLuring ? 'LURING' : 'DARING';
+            // tipenya mustahil daring (MCU) atau tidak mengizinkannya.
+            this.massalMode = this.massalBoleh('DARING') ? 'DARING' : 'LURING';
             this.massalPola = 'BERGILIR';
             this.massalMulai = '';
             this.massalDurasi = 30;
@@ -9906,7 +11256,7 @@ export default {
                 this.massalShow = false;
                 this.terpilih = [];
                 this.kolomPilih = '';
-                await this.muatDetail(this.selectedId);
+                await this.muatDetail(this.selectedId, { senyap: true });
             } catch (e) {
                 this.notice(e.response?.data?.message || 'Gagal menjadwalkan massal.', true);
             } finally {
@@ -9996,15 +11346,29 @@ export default {
                     } : {}),
                     ...(this.hadirTarget.penawaran && hadir ? { jawabanPenawaran: this.jawabPenawaran || null } : {}),
                 }, CFG);
+                const tes = this.hadirTarget.id;
                 this.notice(res.data?.message || 'Kehadiran dicatat.');
                 this.hadirShow = false;
                 this.hadirTarget = null;
-                await this.muatDetail(this.selectedId);
+                await this.segarkanKartu({ tes });
             } catch (e) {
                 this.notice(e.response?.data?.message || 'Gagal mencatat kehadiran.', true);
             } finally {
                 this.sibuk = false;
             }
+        },
+        /**
+         * Bentuk jadwal yang boleh untuk sebuah aktivitas — dua aturan master:
+         * tipe wajib tatap muka (MCU) dan izin bentuk per tipe (FGD tanpa
+         * telepon). Server menegakkan keduanya juga; ini supaya pilihan yang
+         * pasti ditolak tidak pernah ditawarkan.
+         */
+        modeUntuk(t) {
+            const izin = t?.modeIzin;
+
+            return (this.modeJadwal || []).filter(
+                (m) => (!t?.wajibLuring || m.luring) && (!izin || izin.includes(m.kode)),
+            );
         },
         askJadwal(t) {
             this.muatLokasi();
@@ -10017,9 +11381,7 @@ export default {
             // langsung pada Telepon; tanpa ini admin harus ingat memindahkannya
             // tiap kali, dan yang lupa mengirim undangan bertautan Meet untuk
             // percakapan yang sebenarnya cuma panggilan telepon.
-            const pilihan = this.jadwalTarget?.wajibLuring
-                ? (this.modeJadwal || []).filter((m) => m.luring)
-                : (this.modeJadwal || []);
+            const pilihan = this.modeUntuk(t);
             const sah = (k) => k && pilihan.some((m) => m.kode === k);
             this.jadwalMode = [j.mode, t.modeJadwalBawaan, pilihan[0]?.kode].find(sah) || '';
             // Nomor profil sebagai TITIK AWAL, bukan yang tersimpan diam-diam:
@@ -10085,10 +11447,11 @@ export default {
                     kontak: this.modeJadwalDef?.butuhKontak ? this.jadwalKontak.trim() : null,
                     catatan: this.jadwalCatatan || null,
                 }, CFG);
+                const tes = this.jadwalTarget.id;
                 this.notice(res.data?.message || 'Jadwal disimpan.');
                 this.jadwalShow = false;
                 this.jadwalTarget = null;
-                await this.muatDetail(this.selectedId);
+                await this.segarkanKartu({ tes });
             } catch (e) {
                 this.notice(e.response?.data?.message || 'Gagal menyimpan jadwal.', true);
             } finally {
@@ -10113,10 +11476,11 @@ export default {
                     catatan: teksDariHtml(this.catatCatatanHtml) || null,
                     catatanHtml: this.catatCatatanHtml || null,
                 }, CFG);
+                const tes = this.catatTarget.id;
                 this.notice(res.data?.message || 'Hasil dicatat.');
                 this.catatShow = false;
                 this.catatTarget = null;
-                await this.muatDetail(this.selectedId);
+                await this.segarkanKartu({ tes });
             } catch (e) {
                 this.notice(e.response?.data?.message || 'Gagal mencatat hasil.', true);
             } finally {
@@ -10144,7 +11508,7 @@ export default {
             try {
                 const res = await axios.patch(`/api/v1/karir/lamaran/sub-tes/${t.id}/lanjutkan`, {}, CFG);
                 this.notice(res.data?.message || 'Aktivitas berikutnya dibuka.');
-                await this.muatDetail(this.selectedId);
+                await this.segarkanKartu({ tes: t.id });
             } catch (e) {
                 this.notice(e.response?.data?.message || 'Gagal membuka aktivitas berikutnya.', true);
             } finally {
@@ -10173,7 +11537,7 @@ export default {
             try {
                 const res = await axios.patch(`/api/v1/karir/lamaran/sub-tes/${t.id}/catat-hasil`, { hasil }, CFG);
                 this.notice(res.data?.message || (hasil === 'LULUS' ? 'Dinyatakan lulus.' : 'Dinyatakan tidak lulus.'));
-                await this.muatDetail(this.selectedId);
+                await this.segarkanKartu({ tes: t.id });
             } catch (e) {
                 this.notice(e.response?.data?.message || 'Gagal menyimpan keputusan.', true);
             } finally {
@@ -10187,7 +11551,7 @@ export default {
             try {
                 const res = await axios.post(`/api/v1/karir/lamaran/sub-tes/${t.id}/sinkron`, {}, CFG);
                 this.notice(res.data?.message || 'Hasil ditarik dari HCLearn.');
-                await this.muatDetail(this.selectedId);
+                await this.segarkanKartu({ tes: t.id });
             } catch (e) {
                 this.notice(e.response?.data?.message || 'Gagal menarik hasil dari HCLearn.', true);
             } finally {
@@ -10209,7 +11573,7 @@ export default {
                 }, CFG);
                 this.absenShow = false;
                 this.notice(res.data?.message || 'Aktivitas ditandai tidak hadir.');
-                await this.muatDetail(this.selectedId);
+                await this.segarkanKartu({ tes: t.id });
             } catch (e) {
                 this.notice(e.response?.data?.message || 'Gagal memproses.', true);
             } finally {
@@ -10218,6 +11582,23 @@ export default {
         },
 
         /* ── Keputusan ── */
+        /**
+         * Tab catatan yang terbuka lebih dulu. Keputusan yang MENUNTUT alasan
+         * dibuka di tab internal — alasan itu catatan tim, dan admin yang
+         * disambut tab kandidat akan mengetik alasannya di tempat yang salah.
+         * Selebihnya mengikuti kategori akun (catatanTahap.tabBawaan).
+         */
+        tabAwalCatatan(hasil) {
+            if (!this.catatanTahap.eksternalSiap) return 'INTERNAL';
+            const def = this.hasilKeputusan.find((h) => h.kode === hasil);
+            if (def?.butuhAlasan || def?.olehKandidat) return 'INTERNAL';
+
+            return this.catatanTahap.tabBawaan === 'INTERNAL' ? 'INTERNAL' : 'EKSTERNAL';
+        },
+        /** Catatan untuk kandidat yang layak dikirim — kosong / kolom belum ada = null. */
+        catatanEksternalKirim(html) {
+            return this.catatanTahap.eksternalSiap && teksDariHtml(html || '').trim() ? html : null;
+        },
         askPutus(r, hasil) {
             // Pagar kedua. Tombolnya memang sudah mati, tapi modal ini juga
             // terpanggil dari jalur lain — dan membuka borang yang pasti
@@ -10230,6 +11611,8 @@ export default {
             this.putusTarget = r;
             this.putusHasil = hasil;
             this.putusCatatanHtml = '';
+            this.putusCatatanEksternalHtml = '';
+            this.putusTabCatatan = this.tabAwalCatatan(hasil);
             // Pilihan Talent Pool disemai dari BAWAAN masternya, bukan dari
             // pilihan terakhir admin. Keputusan sebelumnya menyangkut orang
             // lain; mewarisinya membuat kandidat kedua ikut nasib kandidat
@@ -10257,6 +11640,8 @@ export default {
                     hasil: this.putusHasil,
                     catatan: teksDariHtml(this.putusCatatanHtml) || null,
                     catatanHtml: this.putusCatatanHtml || null,
+                    // Catatan UNTUK KANDIDAT — null bila kosong atau kolomnya belum ada.
+                    catatanEksternalHtml: this.catatanEksternalKirim(this.putusCatatanEksternalHtml),
                     // Hanya berarti untuk hasil yang memang menyerahkan pilihan
                     // ini ke admin; server mengabaikannya pada hasil lain.
                     ...(this.putusDef?.pilihTalentPool ? { talentPool: this.putusTalentPool } : {}),
@@ -10265,11 +11650,12 @@ export default {
                     // ke server, jadi mustahil ada keputusan tanpa hasil
                     // kesehatannya (atau sebaliknya) bila salah satu gagal.
                 }, CFG);
+                const tahap = this.putusTarget.tahapId;
                 this.notice(res.data?.message || 'Keputusan tersimpan.');
                 this.konfirmShow = false;
                 this.detailKandidat = null;
                 this.putusTarget = null;
-                this.muatDetail(this.selectedId);
+                this.segarkanKartu({ tahap });
                 this.muatProgram();
             } catch (e) {
                 this.notice(e.response?.data?.message || 'Gagal memproses keputusan.', true);
@@ -10424,6 +11810,9 @@ export default {
 .plw-btn-jadwal:hover { transform: translateY(-2px); }
 .plw-btn-reload { appearance: none; cursor: pointer; border: 1px solid #e6e9f3; background: #fff; width: 42px; height: 42px; border-radius: 13px; display: flex; align-items: center; justify-content: center; color: #64748b; transition: all 0.3s; }
 .plw-btn-reload:hover { color: #4f46e5; transform: rotate(90deg); }
+/* Penyegaran senyap sesudah aksi: papan tetap tampil, tombol ini yang berputar. */
+.plw-btn-reload.is-segar { color: #4f46e5; }
+.plw-btn-reload.is-segar svg { animation: plwSpin 0.9s linear infinite; }
 
 .plw-tabs { display: flex; gap: 9px; margin-bottom: 13px; flex-wrap: wrap; }
 .plw-tab { appearance: none; cursor: pointer; font-family: inherit; font-size: 13.5px; font-weight: 800; display: inline-flex; align-items: center; gap: 9px; padding: 11px 18px; border-radius: 14px; transition: all 0.18s; background: #fff; color: #64748b; border: 1px solid #e6e9f3; }
@@ -11223,6 +12612,13 @@ export default {
 /* ═══ TAB ALUR SELEKSI ═══ */
 .plw-alur { background: #fff; border: 1px solid #eef0f7; border-radius: 18px; padding: 18px 20px; }
 .plw-alur__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+/* Catatan untuk kandidat di bawah tahapnya. Ungu = sudah sampai ke kandidat;
+   kuning = masih tertahan aturan pengumuman. */
+.plw-alur__ce { margin: 8px 0 2px; padding: 9px 11px; border-radius: 12px; background: #f5f3ff; border: 1px solid #ddd6fe; }
+.plw-alur__ce.is-tunggu { background: #fffbeb; border-color: #fde68a; }
+.plw-alur__cehead { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 7px; margin-bottom: 5px; font-size: 11px; font-weight: 800; color: #6d28d9; }
+.plw-alur__ce.is-tunggu .plw-alur__cehead { color: #b45309; }
+.plw-alur__cehead em { font-style: normal; font-weight: 700; color: #94a3b8; }
 .plw-alur__lbl { font-size: 11px; font-weight: 800; letter-spacing: 0.12em; color: #8b93a7; }
 .plw-alur__pos { font-size: 13px; font-weight: 800; color: #4f46e5; }
 .plw-alur__bar { height: 8px; border-radius: 99px; background: #eef0f7; overflow: hidden; margin-bottom: 20px; }
@@ -12154,6 +13550,175 @@ button.plw-doc:hover { border-color: #a5b4fc; box-shadow: 0 8px 22px rgba(99, 10
     background: #f8fafc; color: #475569; font-size: 11.5px; line-height: 1.55;
 }
 .plw-eml__note i { color: #6366f1; }
+.plw-emlok { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; padding: 4px 4px 2px; }
+.plw-emlok__ic { width: 58px; height: 58px; border-radius: 50%; display: grid; place-items: center; font-size: 28px; color: #059669; background: rgba(16, 185, 129, .12); box-shadow: 0 0 0 8px rgba(16, 185, 129, .06); }
+.plw-emlok p { margin: 4px 0 0; font-size: 14px; line-height: 1.6; color: #0f172a; }
+.plw-emlok small { font-size: 11.5px; line-height: 1.55; color: #64748b; }
+
+/* ── BATAS PENGISIAN FORMULIR ─────────────────────────────────────────────
+   Empat keadaan, satu bahasa warna di kartu, drawer, dan kepala kolom:
+   aman (indigo) · ≤ 24 jam (kuning) · lewat (merah muda) · terkunci (merah). */
+.plw-colbatas {
+    appearance: none; font: inherit; cursor: pointer; text-align: left;
+    display: flex; align-items: flex-start; gap: 6px; width: 100%;
+    margin: -4px 0 9px; padding: 6px 9px; border-radius: 9px;
+    border: 1px solid #c7d2fe; background: #eef2ff; color: #4338ca;
+    font-size: 11px; font-weight: 700; line-height: 1.4;
+}
+.plw-colbatas .bi { flex: none; margin-top: 1px; }
+.plw-colbatas b { color: #b91c1c; }
+.plw-colbatas.is-perlu { background: #fffbeb; border-color: #fde68a; color: #92400e; }
+/* Berjadwal di Master Alur, belum diatur, tapi tak ada yang tertahan. */
+.plw-colbatas.is-netral { background: #f8fafc; border-color: #e2e8f0; color: #475569; }
+.plw-colbatas.is-lewat { border-color: #fecaca; }
+.plw-colbatas:hover { filter: brightness(0.97); }
+
+.plw-card__foot:has(.plw-card__batas) { flex-wrap: wrap; row-gap: 6px; }
+.plw-card__batas {
+    display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px;
+    border-radius: 999px; font-size: 10.5px; font-weight: 800; white-space: nowrap;
+}
+.plw-card__batas.is-aman { background: #eef2ff; color: #4338ca; }
+.plw-card__batas.is-dekat { background: #fef3c7; color: #92400e; }
+.plw-card__batas.is-lewat { background: #fee2e2; color: #b91c1c; }
+.plw-card__batas.is-kunci { background: #b91c1c; color: #fff; }
+/* Belum dibuka / belum dijadwalkan — terkunci, tapi bukan karena terlambat. */
+.plw-card__batas.is-tutup { background: #e2e8f0; color: #334155; }
+
+.plw-selbar__batas {
+    appearance: none; cursor: pointer; font: inherit; font-size: 10.5px; font-weight: 800;
+    display: inline-flex; align-items: center; gap: 5px; padding: 6px 9px;
+    white-space: nowrap; border-radius: 7px; transition: all .16s;
+    background: #fffbeb; border: 1px solid #fde68a; color: #92400e;
+}
+.plw-selbar__batas:hover { background: #fef3c7; border-color: #fcd34d; }
+
+.plw-batasp {
+    margin-bottom: 10px; padding: 10px 12px; border-radius: 12px;
+    background: #eef2ff; border: 1px solid #c7d2fe;
+}
+.plw-batasp.is-dekat { background: #fffbeb; border-color: #fde68a; }
+.plw-batasp.is-lewat { background: #fef2f2; border-color: #fecaca; }
+.plw-batasp.is-kunci { background: #fef2f2; border-color: #fca5a5; }
+.plw-batasp.is-kosong { background: #f8fafc; border-color: #e2e8f0; }
+.plw-batasp.is-tutup { background: #f1f5f9; border-color: #cbd5e1; }
+.plw-batasp.is-tutup .plw-batasp__ic { background: rgba(71, 85, 105, 0.14); color: #334155; }
+.plw-batasp__top { display: flex; align-items: flex-start; gap: 9px; }
+.plw-batasp__ic {
+    flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 9px;
+    background: rgba(99, 102, 241, 0.14); color: #4338ca; font-size: 14px;
+}
+.plw-batasp.is-dekat .plw-batasp__ic { background: rgba(245, 158, 11, 0.16); color: #b45309; }
+.plw-batasp.is-lewat .plw-batasp__ic,
+.plw-batasp.is-kunci .plw-batasp__ic { background: rgba(239, 68, 68, 0.14); color: #b91c1c; }
+.plw-batasp__isi { min-width: 0; flex: 1; }
+.plw-batasp__isi b { display: block; font-size: 12.5px; font-weight: 800; color: #1e293b; }
+.plw-batasp__isi small { display: block; margin-top: 2px; font-size: 11px; line-height: 1.5; color: #64748b; }
+.plw-batasp__ubah {
+    flex: none; display: inline-flex; align-items: center; gap: 5px; cursor: pointer;
+    border: 1px solid #c7d2fe; background: #fff; color: #4338ca;
+    font-size: 11.5px; font-weight: 800; border-radius: 8px; padding: 6px 11px;
+}
+.plw-batasp__ubah:hover { background: #eef2ff; }
+.plw-batasp__rw {
+    appearance: none; border: 0; background: none; cursor: pointer; font: inherit;
+    display: inline-flex; align-items: center; gap: 5px; margin-top: 8px; padding: 0;
+    font-size: 11px; font-weight: 700; color: #6366f1;
+}
+.plw-batasp__list { list-style: none; margin: 8px 0 0; padding: 8px 0 0; border-top: 1px dashed rgba(99, 102, 241, 0.3); display: grid; gap: 7px; }
+.plw-batasp__list li b { display: block; font-size: 11.5px; font-weight: 800; color: #334155; }
+.plw-batasp__list li small { display: block; font-size: 10.5px; line-height: 1.45; color: #64748b; }
+.plw-batasp__list li.is-kosong { font-size: 11px; color: #94a3b8; display: flex; align-items: center; gap: 6px; }
+
+.plw-batasm { display: grid; gap: 10px; }
+.plw-batasm .plw-fld__lbl { margin: 2px 0 -4px; }
+.plw-batasm__info { margin: 0; padding: 10px 12px 10px 28px; border-radius: 10px; background: #f8fafc; border: 1px solid #e2e8f0; display: grid; gap: 4px; }
+.plw-batasm__info li { font-size: 12px; line-height: 1.55; color: #475569; }
+/* ── HASIL TAHAP SEBELUMNYA & DETAIL TAHAP (riwayat) ───────────────────── */
+.plw-hts { margin: 14px 0 4px; padding: 12px 14px; border-radius: 14px; background: #fbfbfe; border: 1px solid #eceef6; }
+.plw-hts__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.plw-hts__lbl { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 800; letter-spacing: .06em; color: #64748b; }
+.plw-hts__jml { font-size: 11px; font-weight: 700; color: #94a3b8; }
+.plw-hts__item { padding: 9px 0; border-top: 1px dashed #e5e7f0; }
+.plw-hts__item:first-of-type { border-top: 0; }
+.plw-hts__top { display: flex; align-items: center; gap: 10px; }
+.plw-hts__no { flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 9px; background: #eef2ff; color: #4338ca; font-size: 11px; font-weight: 800; }
+.plw-hts__isi { min-width: 0; flex: 1; }
+.plw-hts__isi b { display: block; font-size: 12.5px; font-weight: 800; color: #1e293b; }
+.plw-hts__isi small { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; margin-top: 3px; font-size: 11px; color: #64748b; }
+.plw-hts__isi .plw-test__pill { padding: 1px 8px; font-size: 10.5px; }
+.plw-hts__detail {
+    flex: none; display: inline-flex; align-items: center; gap: 4px; padding: 5px 10px; border-radius: 8px; cursor: pointer;
+    border: 1px solid #c7d2fe; background: #fff; color: #4338ca; font: inherit; font-size: 11.5px; font-weight: 800;
+}
+.plw-hts__detail:hover { background: #eef2ff; }
+.plw-hts__berkas { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.plw-hts__file {
+    display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 5px 10px; border-radius: 9px; cursor: pointer;
+    border: 1px solid #e2e8f0; background: #fff; color: #334155; font: inherit; font-size: 11.5px; font-weight: 700;
+}
+.plw-hts__file:hover { border-color: #a5b4fc; background: #f5f7ff; }
+.plw-hts__file .bi { flex: none; color: #6366f1; }
+.plw-hts__file span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 240px; }
+.plw-hts__file em { flex: none; font-style: normal; font-size: 10px; font-weight: 800; color: #0f766e; background: #ecfdf5; border-radius: 999px; padding: 0 6px; }
+
+.plw-alur__item.is-klik { cursor: pointer; border-radius: 10px; transition: background .15s; }
+.plw-alur__item.is-klik:hover { background: #f5f7ff; }
+.plw-alur__item.is-klik:focus-visible { outline: 2px solid #a5b4fc; outline-offset: 2px; }
+.plw-alur__kanan { flex: none; display: inline-flex; align-items: center; gap: 6px; }
+.plw-alur__buka { flex: none; color: #a5b4fc; font-size: 13px; }
+.plw-alur__item.is-klik:hover .plw-alur__buka { color: #4f46e5; }
+
+.plw-trw { display: grid; gap: 10px; }
+.plw-trw__muat { display: flex; align-items: center; gap: 8px; padding: 24px 4px; font-size: 13px; color: #64748b; }
+.plw-trw__put { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.plw-trw__skor { font-size: 12.5px; font-weight: 800; color: #4f46e5; }
+.plw-trw__meta { font-size: 11.5px; color: #64748b; }
+.plw-trw__alasan { margin: 0; font-size: 12px; color: #475569; }
+.plw-trw__cat { padding: 10px 12px; border-radius: 11px; background: #f8fafc; border: 1px solid #e2e8f0; }
+.plw-trw__cat.is-eks { background: #f5f3ff; border-color: #ddd6fe; }
+.plw-trw__cat > small { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; font-size: 10.5px; font-weight: 800; letter-spacing: .03em; text-transform: uppercase; color: #64748b; }
+.plw-trw__cat p { margin: 0; font-size: 12.5px; line-height: 1.55; color: #334155; white-space: pre-line; }
+.plw-trw__sek { display: flex; align-items: baseline; gap: 8px; margin-top: 6px; font-size: 11px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: #64748b; }
+.plw-trw__sek em { font-style: normal; font-weight: 700; letter-spacing: 0; text-transform: none; color: #94a3b8; }
+.plw-trw__kosong { margin: 0; font-size: 12px; color: #94a3b8; }
+.plw-trw__tes { padding: 10px 12px; border-radius: 12px; border: 1px solid #eceef6; background: #fff; }
+.plw-trw__teshead { display: flex; align-items: center; gap: 10px; }
+.plw-trw__tesnama { min-width: 0; flex: 1; }
+.plw-trw__tesnama b { display: block; font-size: 13px; font-weight: 800; color: #1e2447; }
+.plw-trw__tesnama small { display: block; margin-top: 1px; font-size: 11px; color: #94a3b8; }
+.plw-trw__tescat { margin-top: 8px; padding: 8px 10px; border-radius: 9px; background: #f8fafc; }
+.plw-trw__tescat p { margin: 0; font-size: 12px; line-height: 1.55; color: #334155; white-space: pre-line; }
+.plw-trw__link {
+    justify-self: start; display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: none; cursor: pointer;
+    font: inherit; font-size: 11.5px; font-weight: 800; color: #4f46e5;
+}
+
+/* Riwayat jadwal kolom & tanda editan superadmin. */
+.plw-batasm__riwayat { margin-top: 0; }
+.plw-rwk {
+    display: inline-flex; align-items: center; margin-right: 6px; padding: 1px 7px; border-radius: 999px;
+    font-size: 10px; font-weight: 800; letter-spacing: 0.02em; vertical-align: 1px;
+    background: #eef2ff; color: #4338ca;
+}
+.plw-rwk.is-perpanjang { background: #ecfdf5; color: #047857; }
+.plw-rwk.is-ubah { background: #fef3c7; color: #92400e; }
+.plw-rwk.is-lepas { background: #f1f5f9; color: #334155; }
+.plw-rwk__alasan { font-style: italic; color: #475569 !important; }
+
+/* Jadwal yang sedang berlaku — dibaca sebelum memperpanjangnya. */
+.plw-batasm__kini {
+    display: flex; align-items: flex-start; gap: 9px; padding: 9px 12px; border-radius: 10px;
+    background: #f8fafc; border: 1px solid #e2e8f0;
+}
+.plw-batasm__kini > .bi { flex: none; margin-top: 2px; font-size: 15px; color: #6366f1; }
+.plw-batasm__kini small { display: block; font-size: 10.5px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.03em; }
+.plw-batasm__kini b { display: block; font-size: 12.5px; font-weight: 800; color: #1e293b; line-height: 1.45; }
+.plw-batasm__dua { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.plw-batasm__dua > div { display: grid; gap: 6px; }
+@media (max-width: 640px) {
+    .plw-batasm__dua { grid-template-columns: 1fr; }
+}
 
 /* Centang wajib sebelum menggugurkan — sengaja mencolok, bukan sekadar teks. */
 .plw-putus__cek { display: flex; align-items: flex-start; gap: 9px; margin-top: 12px; padding: 10px 12px; border-radius: 10px; cursor: pointer; font-size: 12px; line-height: 1.55; color: #7f1d1d; background: rgba(220, 38, 38, .06); border: 1px solid rgba(220, 38, 38, .22); text-align: left; }
@@ -12243,6 +13808,15 @@ button.plw-doc:hover { border-color: #a5b4fc; box-shadow: 0 8px 22px rgba(99, 10
 .plw-lb__retry:hover { transform: translateY(-1px); }
 .plw-lb__foot { padding: 14px 18px; display: flex; align-items: center; justify-content: space-between; gap: 10px; border-top: 1px solid #eef0f7; }
 .plw-lb__ok { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 800; color: #059669; flex: 0 0 auto; }
+.plw-lb__adm { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 800; color: #c2410c; flex: 0 0 auto; white-space: nowrap; }
+
+/* LENCANA "DIUNGGAH ADMIN" — berkas yang dipulihkan admin lewat panel
+   Pemulihan Berkas atas nama kandidat. Jingga, bukan hijau: ini keterangan
+   asal-usul, bukan tanda sah. Tooltip-nya menyebut siapa dan alasannya. */
+.plw-oleh { display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; font-size: 9.5px; font-weight: 800; letter-spacing: 0.02em; padding: 2px 7px; border-radius: 999px; background: #fff7ed; color: #c2410c; border: 1px solid #fed7aa; white-space: nowrap; cursor: help; }
+.plw-oleh i { font-size: 10px; }
+.plw-oleh--blok { margin-top: 5px; }
+.plw-dok__sadm { position: absolute; left: 3px; top: 3px; width: 16px; height: 16px; border-radius: 5px; display: grid; place-items: center; font-size: 9px; font-style: normal; background: #f97316; color: #fff; }
 
 /* TOAST */
 /* Lapis toast bersama (--wca-z-toast, evo-theme.css). 1300 dulu cukup untuk

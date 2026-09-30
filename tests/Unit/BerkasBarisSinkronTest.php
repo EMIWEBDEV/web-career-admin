@@ -16,7 +16,7 @@ use PHPUnit\Framework\TestCase;
  */
 class BerkasBarisSinkronTest extends TestCase
 {
-    private const JS = __DIR__ . '/../../resources/js/components/career/formulir/inti/berkasBaris.js';
+    private const JS = __DIR__ . '/../../resources/js/utils/formulir/berkasBaris.js';
 
     public function test_format_kunci_sama_dengan_js(): void
     {
@@ -38,7 +38,7 @@ class BerkasBarisSinkronTest extends TestCase
      */
     public function test_pola_slug_kunci_bagian_sama_dengan_aturan_js(): void
     {
-        $isi = file_get_contents(__DIR__ . '/../../resources/js/components/career/formulir/inti/aturan.js');
+        $isi = file_get_contents(__DIR__ . '/../../resources/js/utils/formulir/aturan.js');
 
         preg_match('/export function kunciBagian\(B\) \{(.*?)\n\}/s', $isi, $m);
         $this->assertNotEmpty($m, 'kunciBagian tidak ditemukan di aturan.js');

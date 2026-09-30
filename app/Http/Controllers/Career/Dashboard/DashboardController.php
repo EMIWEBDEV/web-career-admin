@@ -130,6 +130,7 @@ class DashboardController extends Controller
         'HCLEARN_TEST' => 'Jadwalkan tes online',
         'TES_OFFLINE_MANUAL' => 'Jadwalkan tes offline',
         'INTERVIEW' => 'Atur & catat wawancara',
+        'FGD' => 'Atur & catat FGD',
         'MCU' => 'Jadwalkan MCU',
         'OFFERING' => 'Kirim penawaran',
         'ADMIN_SCREENING' => 'Screening berkas',

@@ -38,7 +38,10 @@
             </p>
 
             <p class="switch-row">Ingat kata sandimu? <Link href="/login" class="switch-link">Masuk di sini</Link></p>
-            <div class="ver-row"><span>EVO <b>Career</b></span><span>© 2026 EVO Group</span></div>
+            <div class="ver-row">
+                <span class="ver-tag" title="Versi aplikasi">Versi {{ $page.props.appVersion || '1.0.0' }}</span>
+                <span>© 2026 EVO Group</span>
+            </div>
         </form>
 
         <!-- FASE 2: masukkan 6 digit OTP -->
@@ -85,7 +88,10 @@
                 <span v-else class="switch-muted">Kirim ulang dalam {{ resendCooldown }}s</span>
             </p>
             <p class="switch-row"><button type="button" class="switch-link" @click="kembaliKeMinta()"><i class="bi bi-arrow-left"></i> Ganti email</button></p>
-            <div class="ver-row"><span>EVO <b>Career</b></span><span>© 2026 EVO Group</span></div>
+            <div class="ver-row">
+                <span class="ver-tag" title="Versi aplikasi">Versi {{ $page.props.appVersion || '1.0.0' }}</span>
+                <span>© 2026 EVO Group</span>
+            </div>
         </form>
 
         <!-- FASE 3: kata sandi baru -->
@@ -116,7 +122,10 @@
             </button>
 
             <p class="switch-row">Ingat kata sandimu? <Link href="/login" class="switch-link">Masuk di sini</Link></p>
-            <div class="ver-row"><span>EVO <b>Career</b></span><span>© 2026 EVO Group</span></div>
+            <div class="ver-row">
+                <span class="ver-tag" title="Versi aplikasi">Versi {{ $page.props.appVersion || '1.0.0' }}</span>
+                <span>© 2026 EVO Group</span>
+            </div>
         </form>
     </AuthShell>
 </template>

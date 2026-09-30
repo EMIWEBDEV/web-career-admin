@@ -169,8 +169,10 @@
                             :keterangan="'Lengkapi data berikut untuk melamar posisi ini.'"
                             :disabled="mengirim"
                             :langkah-awal="drafLangkahAwal"
+                            :konteks="konteksApply"
                             label-kirim="Finalisasi & Kirim"
                             @berkas="onDynamicBerkas"
+                            @hapus-baris="onDynamicHapusBaris"
                             @kirim="finalizeDynamic"
                             @pindah-langkah="simpanDrafLokal"
                         />
@@ -459,41 +461,16 @@
                             </div>
 
                             <!-- FACE -->
+                            <!-- FACE — komponen kamera yang SAMA dengan formulir dinamis
+                                 (AmbilFoto): jeda pemanasan 6 detik, bingkai gelap
+                                 ditolak, dan perangkat tanpa kamera mendapat kalimat
+                                 yang jelas. Verifikasi wajah wajib — tidak ada jalan
+                                 pintas unggah berkas. -->
                             <div v-else-if="cur.tipe === 'FACE'" class="wca-face">
-                                <div class="wca-face__stage">
-                                    <img v-if="facePhoto" :src="facePhoto" alt="Foto wajah" />
-                                    <video
-                                        v-show="cameraOn && !facePhoto"
-                                        ref="videoEl"
-                                        autoplay
-                                        playsinline
-                                        muted
-                                    ></video>
-                                    <div v-if="!cameraOn && !facePhoto" class="wca-face__idle">
-                                        <i class="bi bi-camera-video"></i><span>Kamera belum aktif</span>
-                                    </div>
-                                    <canvas ref="canvasEl" style="display: none"></canvas>
-                                </div>
-                                <div v-if="cameraError" class="wca-note wca-note--danger" style="margin: 0.6rem 0 0">
-                                    <i class="bi bi-exclamation-triangle"></i
-                                    ><span
-                                        >Kamera tak tersedia. Pastikan situs memakai HTTPS dan izin kamera diaktifkan,
-                                        lalu coba lagi.</span
-                                    >
-                                </div>
-                                <div class="wca-face__act">
-                                    <template v-if="!facePhoto">
-                                        <button v-if="!cameraOn" class="wca-btn wca-btn--primary" @click="startCamera">
-                                            <i class="bi bi-camera-video"></i> Aktifkan Kamera
-                                        </button>
-                                        <button v-else class="wca-btn wca-btn--primary" @click="capture">
-                                            <i class="bi bi-camera"></i> Ambil Foto
-                                        </button>
-                                    </template>
-                                    <button v-else class="wca-btn wca-btn--ghost" @click="retake">
-                                        <i class="bi bi-arrow-repeat"></i> Ambil Ulang
-                                    </button>
-                                </div>
+                                <AmbilFoto
+                                    :model-value="facePhoto || ''"
+                                    @update:model-value="(v) => (facePhoto = v || null)"
+                                />
                             </div>
 
                             <!-- REVIEW (tabs + timeline + berkas + consent) -->
@@ -663,7 +640,11 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import CareerLayout from './Layouts/CareerLayout.vue';
 import TeleponNegara from '@career/TeleponNegara.vue';
 import DynamicForm from '@career/formulir/DynamicForm.vue';
+import AmbilFoto from '@career/formulir/inti/AmbilFoto.vue';
 import { jawabanAwal } from '@career/formulir';
+import { berkasKurang } from '@utils/formulir/aturan';
+import { kunciBerkas } from '@utils/formulir/berkasBaris';
+import { normalisasiSkema } from '@utils/formulir/schema';
 import {
     bacaDraf,
     hapusDraf,
@@ -764,6 +745,8 @@ const formulirDinamis = computed(() => !!props.flow.formulir?.schema);
 // server untuk isian setengah jadi. Draf ditaruh di localStorage peramban
 // kandidat; lihat inti/drafLokal.js untuk alasan tiap penjaganya.
 const skemaDinamis = props.flow.formulir?.schema || null;
+// Bentuk yang dirender DynamicForm — kunci field & bagiannya yang dipakai jawaban.
+const skemaNormal = skemaDinamis ? normalisasiSkema(skemaDinamis) : null;
 const drafPeta = skemaDinamis ? petaSkema(skemaDinamis) : null;
 const drafKunci = skemaDinamis
     ? kunciDraf({ identitas: props.flow.kandidat?.email || '', lowonganId: lowongan.id })
@@ -795,7 +778,18 @@ const dynamicJawaban = reactive(
           }
         : {},
 );
+// Berkas yang dipilih, berkunci KOMPOSIT (bagian, baris, field) — lihat
+// onDynamicBerkas(). Nilainya membawa bagian/baris/field-nya sendiri supaya
+// berkas baris berulang terkirim ke barisnya, bukan runtuh jadi satu.
 const dynamicFiles = reactive({});
+// Isian berkas yang tertinggal/ditolak → pesan yang MENETAP di bawah kotak
+// unggahnya (FieldRenderer membacanya lewat konteks.berkasGagal).
+const dynamicGagal = reactive({});
+const konteksApply = { berkasGagal: dynamicGagal };
+// Cloud Run menolak request di atas 32 MiB sebelum sampai ke aplikasi, dan
+// seluruh berkas lamaran naik dalam SATU request. Diperiksa di sini supaya
+// kandidat mendapat penjelasan, bukan "Gagal mengirim lamaran" tanpa sebab.
+const MAKS_TOTAL_BERKAS = 30 * 1024 * 1024;
 
 /**
  * Simpan draf.
@@ -1096,54 +1090,17 @@ function normalTelepon(raw) {
     return s;
 }
 
-// ── Kamera / verifikasi wajah ──
-const videoEl = ref(null);
-const canvasEl = ref(null);
-const cameraOn = ref(false);
-const cameraError = ref(false);
+// ── Verifikasi wajah ──
+// Kameranya milik AmbilFoto: ia menyala, memanaskan, menilai bingkai, dan
+// mematikan diri saat langkah FACE ditinggalkan (komponennya dilepas).
 const facePhoto = ref(null);
-let stream = null;
-async function startCamera() {
-    cameraError.value = false;
-    try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
-        cameraOn.value = true;
-        await Promise.resolve();
-        if (videoEl.value) videoEl.value.srcObject = stream;
-    } catch (e) {
-        cameraError.value = true;
-        cameraOn.value = false;
-    }
-}
-function capture() {
-    const v = videoEl.value,
-        c = canvasEl.value;
-    if (!v || !c) return;
-    c.width = v.videoWidth || 480;
-    c.height = v.videoHeight || 360;
-    c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
-    facePhoto.value = c.toDataURL('image/jpeg', 0.85);
-    stopCamera();
-}
-function stopCamera() {
-    if (stream) {
-        stream.getTracks().forEach((t) => t.stop());
-        stream = null;
-    }
-    cameraOn.value = false;
-}
-function retake() {
-    facePhoto.value = null;
-    startCamera();
-}
-onBeforeUnmount(stopCamera);
 
 // ── Navigasi & validasi ──
 function validateStep() {
     err.value = '';
     const s = cur.value;
     if (s.tipe === 'FACE' && !facePhoto.value) {
-        err.value = 'Ambil foto wajah dulu untuk melanjutkan.';
+        err.value = 'Verifikasi wajah wajib: ambil foto langsung dari kamera untuk melanjutkan. Tanpa kamera, pendaftaran tidak bisa dilanjutkan — gunakan perangkat yang memiliki kamera.';
         return false;
     }
     if (s.tipe === 'FORM' && !s.opsional) {
@@ -1186,8 +1143,15 @@ function back() {
 }
 function onDynamicBerkas(e) {
     if (!e?.field?.key) return;
+    // Kunci KOMPOSIT. Dulu hanya field.key: tiga sertifikat di bagian berulang
+    // memakai key yang sama persis, sehingga hanya yang terakhir dipilih yang
+    // ikut terkirim — dua lainnya tinggal nama di jawaban.
+    const bagian = e.bagian ?? null;
+    const baris = e.baris ?? null;
+    const kunci = kunciBerkas(bagian, baris, e.field.key);
     if (e.hapus) {
-        delete dynamicFiles[e.field.key];
+        delete dynamicFiles[kunci];
+        delete dynamicGagal[kunci];
         return;
     }
     if (e.galat) {
@@ -1196,25 +1160,99 @@ function onDynamicBerkas(e) {
         return;
     }
     if (e.file) {
-        dynamicFiles[e.field.key] = {
+        dynamicFiles[kunci] = {
             raw: e.file,
             name: e.file.name,
             size: e.file.size,
             isPdf: /pdf$/i.test(e.file.name) || e.file.type === 'application/pdf',
+            bagian,
+            baris,
+            field: e.field.key,
         };
+        delete dynamicGagal[kunci];
     }
+}
+
+/**
+ * Baris bagian berulang dihapus: berkasnya ikut dibuang dan indeks berkas di
+ * atasnya diturunkan — sama dengan BerkasBaris::geser() di server. Dua fase
+ * (kumpulkan dulu, baru pasang) supaya entri yang baru digeser tidak ikut
+ * terhapus oleh entri lama yang kebetulan berkunci sama.
+ */
+function onDynamicHapusBaris(bagian, i) {
+    const geser = [];
+    Object.keys(dynamicFiles).forEach((k) => {
+        const v = dynamicFiles[k];
+        if (v?.bagian !== bagian || v.baris === null || v.baris === undefined) return;
+        delete dynamicFiles[k];
+        delete dynamicGagal[k];
+        if (v.baris > i) geser.push({ ...v, baris: v.baris - 1 });
+    });
+    geser.forEach((v) => {
+        dynamicFiles[kunciBerkas(bagian, v.baris, v.field)] = v;
+    });
+}
+
+/** Tulis nilai isian berkas — di akar jawaban atau di baris bagian berulang. */
+function aturIsianApply(bagian, baris, field, nilai) {
+    if (bagian === null || bagian === undefined || baris === null || baris === undefined) {
+        dynamicJawaban[field] = nilai;
+        return;
+    }
+    const daftar = dynamicJawaban[bagian];
+    if (Array.isArray(daftar) && daftar[baris] && typeof daftar[baris] === 'object') {
+        daftar[baris][field] = nilai;
+    }
+}
+
+/**
+ * Isian yang berkasnya tidak ikut terkirim: namanya dikosongkan (kotak unggah
+ * muncul lagi) dan pesannya menetap — di bawah kotak itu dan di bawah formulir.
+ */
+function tandaiBerkasKurang(daftar, pesan = null) {
+    daftar.forEach((k) => {
+        const bagian = k.bagian ?? null;
+        const baris = k.baris ?? null;
+        const kunci = kunciBerkas(bagian, baris, k.field);
+        delete dynamicFiles[kunci];
+        dynamicGagal[kunci] = 'Berkas ini belum terlampir — pilih (ulang) berkasnya.';
+        aturIsianApply(bagian, baris, k.field, '');
+    });
+    const label = daftar.map((k) => k.label).join(', ');
+    err.value = pesan || `Berkas berikut belum terlampir: ${label}. Pilih (ulang) berkasnya, lalu kirim kembali.`;
+    notice(err.value, 8000);
 }
 
 async function finalizeDynamic(jawaban) {
     if (mengirim.value) return;
     mengirim.value = true;
     err.value = '';
-    stopCamera();
 
     const ko = checkKnockout(jenis, jawaban || {}, props.flow.syarat);
     if (!lowongan.pembukaanId || !lowongan.posisiId) {
         mengirim.value = false;
         notice('Target lamaran tidak valid. Muat ulang halaman lalu coba kembali.');
+        return;
+    }
+
+    // Berkas yang diwajibkan — atau yang namanya sudah tercatat di jawaban —
+    // harus BENAR-BENAR ikut terkirim. Aturannya sama dengan server
+    // (berkasKurang ↔ BerkasFormulir::kurang), yang kini menolak lamaran tanpa
+    // berkasnya; di sini dicegah lebih dulu supaya kandidat tahu isian mana.
+    const kurang = skemaNormal
+        ? berkasKurang(skemaNormal, jawaban || {}, (b, i, f) => !!dynamicFiles[kunciBerkas(b, i, f)]?.raw)
+        : [];
+    if (kurang.length) {
+        mengirim.value = false;
+        tandaiBerkasKurang(kurang);
+        return;
+    }
+
+    const total = Object.values(dynamicFiles).reduce((n, v) => n + (v?.raw?.size || 0), 0);
+    if (total > MAKS_TOTAL_BERKAS) {
+        mengirim.value = false;
+        err.value = `Total ukuran berkas ${(total / 1048576).toFixed(1)} MB melebihi batas 30 MB per lamaran. Perkecil ukuran berkasnya lalu kirim kembali.`;
+        notice(err.value, 8000);
         return;
     }
 
@@ -1225,8 +1263,21 @@ async function finalizeDynamic(jawaban) {
         fd.append('gugur', ko.length ? 1 : 0);
         if (ko.length) fd.append('alasan', ko.join(' � '));
         fd.append('jawaban', JSON.stringify({ ...(jawaban || {}) }));
-        Object.entries(dynamicFiles).forEach(([key, v]) => {
-            if (v?.raw) fd.append(`berkas[${key}]`, v.raw, v.name);
+        // Berkas biasa: berkas[field]. Berkas baris berulang: baris[n][…]
+        // dengan identitas barisnya sendiri — dulu semuanya berkas[field],
+        // sehingga baris-baris dengan field sama saling menimpa.
+        let n = 0;
+        Object.values(dynamicFiles).forEach((v) => {
+            if (!v?.raw) return;
+            if (v.bagian !== null && v.bagian !== undefined && v.baris !== null && v.baris !== undefined) {
+                fd.append(`baris[${n}][berkas]`, v.raw, v.name);
+                fd.append(`baris[${n}][bagian]`, v.bagian);
+                fd.append(`baris[${n}][baris]`, String(v.baris));
+                fd.append(`baris[${n}][field]`, v.field);
+                n++;
+                return;
+            }
+            fd.append(`berkas[${v.field}]`, v.raw, v.name);
         });
 
         const res = await axios.post('/api/v1/lamaran', fd, { headers: { Accept: 'application/json' } });
@@ -1245,6 +1296,12 @@ async function finalizeDynamic(jawaban) {
             return;
         }
         mengirim.value = false;
+        // Server menolak karena berkas yang disebut jawaban tidak ikut terkirim.
+        const kurangServer = e.response?.data?.result?.berkasKurang;
+        if (st === 422 && Array.isArray(kurangServer) && kurangServer.length) {
+            tandaiBerkasKurang(kurangServer, e.response.data.message);
+            return;
+        }
         notice(e.response?.data?.message || 'Gagal mengirim lamaran ke sistem.');
     }
 }
@@ -1259,7 +1316,6 @@ async function finalize() {
             return;
         }
     }
-    stopCamera();
     const isForm2 = props.flow.form === 2;
     // Form 2 wajib dikerjakan dari Detail Lamaran agar memiliki tahapId dan
     // tersimpan lewat endpoint formulir tahap. Guard ini mencegah sukses palsu
@@ -1583,10 +1639,10 @@ onBeforeUnmount(() => Object.values(files).forEach((v) => v && v.url && URL.revo
 
 const toast = ref('');
 let tm = null;
-function notice(m) {
+function notice(m, lama = 3000) {
     toast.value = m;
     if (tm) clearTimeout(tm);
-    tm = setTimeout(() => (toast.value = ''), 3000);
+    tm = setTimeout(() => (toast.value = ''), lama);
 }
 </script>
 

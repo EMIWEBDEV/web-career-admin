@@ -216,6 +216,7 @@ Route::prefix('api/v1/karir')
 
         // Berkas hasil tahap (MCU/Interview) — unggah PDF/JPG, daftar, preview, hapus.
         Route::get('/lamaran/tahap/{id}/berkas', [LamaranController::class, 'berkasTahap'])->name('lamaran.tahap.berkas')->middleware('career.permission:pelamarPage,VIEW');
+        Route::get('/lamaran/tahap/{id}/detail', [LamaranController::class, 'tahapDetail'])->name('lamaran.tahap.detail')->middleware('career.permission:pelamarPage,VIEW');
         Route::post('/lamaran/tahap/{id}/berkas', [LamaranController::class, 'unggahBerkasTahap'])->name('lamaran.tahap.berkas.unggah')->middleware('career.permission:pelamarPage,EDIT');
         Route::get('/lamaran/tahap/berkas/file/{id}', [LamaranController::class, 'berkasTahapFile'])->name('lamaran.tahap.berkas.file')->middleware('career.permission:pelamarPage,VIEW');
         Route::delete('/lamaran/tahap/berkas/{id}', [LamaranController::class, 'hapusBerkasTahap'])->name('lamaran.tahap.berkas.hapus')->middleware('career.permission:pelamarPage,EDIT');

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Career\MasterAlur;
 use App\Helpers\ResponseHelper;
 use App\Http\Controllers\Controller;
 use App\Support\Career\AksesService;
+use App\Support\Career\BatasIsi;
 use App\Support\Career\KodeUnik;
 use App\Support\Career\LamaranService;
 use App\Support\Career\VersiAlur;
@@ -144,6 +145,10 @@ class MasterAlurController extends Controller
                         'wajibUpload' => ($t->Flag_Wajib_Upload ?? 'T') === 'Y',
                         // TITIK TUNTAS: tahap yang menutup proses seleksi.
                         'tuntas' => ($t->Flag_Tuntas ?? 'T') === 'Y',
+                        // BATAS PENGISIAN formulir — lihat BatasIsi. NULL di
+                        // basis data berarti tanpa batas.
+                        'batasMode' => $t->Batas_Mode ?? BatasIsi::TANPA,
+                        'batasHari' => isset($t->Batas_Hari) ? (int) $t->Batas_Hari : null,
                     ])->values(),
                 ];
             })->values();
@@ -449,6 +454,39 @@ class MasterAlurController extends Controller
             // sebelum sampai ke simpanTahap(): saklarnya bisa dinyalakan,
             // disimpan, dan Flag_Tuntas tetap 'T' tanpa satu pun pesan galat.
             'stages.*.tuntas' => 'nullable|boolean',
+            // BATAS PENGISIAN formulir tahap — lihat BatasIsi & isiBatas().
+            'stages.*.batasMode' => 'nullable|in:TANPA,OTOMATIS,MANUAL',
+            'stages.*.batasHari' => 'nullable|integer|min:1|max:90',
+        ];
+    }
+
+    /**
+     * Aturan JADWAL PENGISIAN satu tahap (lihat BatasIsi).
+     *
+     * Berlaku untuk tahap bertipe Formulir MANA PUN — termasuk tahap 1, sesuai
+     * keputusan user (dikendalikan dari Master Alur, bukan posisi tahap). Tahap
+     * tanpa formulir disimpan NULL (= tanpa jadwal), bukan mode yang tak punya
+     * akibat apa pun.
+     */
+    private function isiBatas(array $s, bool $berformulir): array
+    {
+        $mode = $s['batasMode'] ?? BatasIsi::TANPA;
+
+        if (! $berformulir || ! BatasIsi::berjadwal($mode)) {
+            return ['Batas_Mode' => null, 'Batas_Hari' => null, 'Batas_Aksi' => null];
+        }
+
+        if ($mode === BatasIsi::OTOMATIS && empty($s['batasHari'])) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'stages' => "Tahap \"{$s['label']}\" berbatas otomatis — isi berapa hari batasnya.",
+            ]);
+        }
+
+        return [
+            'Batas_Mode' => $mode,
+            'Batas_Hari' => $mode === BatasIsi::OTOMATIS ? (int) $s['batasHari'] : null,
+            // Lewat batas SELALU terkunci — tidak ada pilihan (keputusan user).
+            'Batas_Aksi' => BatasIsi::KUNCI,
         ];
     }
 
@@ -797,6 +835,10 @@ class MasterAlurController extends Controller
             $tuntas = ! $tuntasTerpakai && ($s['tuntas'] ?? false);
             $tuntasTerpakai = $tuntasTerpakai || $tuntas;
 
+            // Sakelar upload per tahap ditawarkan untuk tipe ini? (Master Tipe
+            // Tahap.Flag_Opsi_Upload — sebelum kolomnya ada: ya.)
+            $opsiUpload = ($tipe[$s['tipe']]->Flag_Opsi_Upload ?? 'Y') !== 'T';
+
             $isi = [
                 'Master_Alur_Id' => $alurId,
                 'Urutan' => $i + 1,
@@ -829,11 +871,19 @@ class MasterAlurController extends Controller
                 // Upload berkas hasil — aktif bila admin menyalakannya, ATAU bila
                 // tipe tahapnya memang berbasis berkas (flag dari Master Tipe
                 // Tahap; dulu kode 'MCU' ditulis langsung di beberapa file).
-                'Flag_Upload_Hasil' => (($s['uploadHasil'] ?? false) || ($tipe[$s['tipe']]->Flag_Upload_Hasil ?? 'T') === 'Y') ? 'Y' : 'T',
-                'Flag_Wajib_Upload' => ($s['wajibUpload'] ?? false) ? 'Y' : 'T',
+                // Tipe yang sakelarnya disembunyikan (Flag_Opsi_Upload = 'T')
+                // hanya mengikuti sifat tipenya — kiriman layar diabaikan.
+                'Flag_Upload_Hasil' => (($opsiUpload && ($s['uploadHasil'] ?? false)) || ($tipe[$s['tipe']]->Flag_Upload_Hasil ?? 'T') === 'Y') ? 'Y' : 'T',
+                'Flag_Wajib_Upload' => ($opsiUpload && ($s['wajibUpload'] ?? false)) ? 'Y' : 'T',
                 'Flag_Tuntas' => $tuntas ? 'Y' : 'T',
                 'Updated_At' => $now, 'Updated_By' => $userName, 'Updated_By_Id' => $userId,
             ];
+
+            // Aturan batas pengisian — hanya bila kolomnya sudah dibuat
+            // (docs/28-09-2026/04); sebelum itu menulisinya menggagalkan simpan.
+            if (BatasIsi::siap()) {
+                $isi += $this->isiBatas($s, (bool) ($perilakuFormulir[$s['tipe'] ?? ''] ?? false));
+            }
 
             // PAKAI ULANG baris yang sudah ada — id-nya dipegang lamaran yang
             // sedang berjalan (Lamaran_Tahap.Master_Alur_Tahap_Id), jadi tidak

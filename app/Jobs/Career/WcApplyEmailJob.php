@@ -192,6 +192,13 @@ class WcApplyEmailJob implements ShouldQueue
                     'foto_base64' => $this->foto(),
 
                     'feedback_url' => $this->data['feedbackUrl'] ?? null, // [feat/feedback]
+
+                    // Catatan UNTUK KANDIDAT yang ditulis admin saat memutus tahap
+                    // (mis. link Zoom psikotes). TEKS, bukan HTML — lihat
+                    // CatatanEksternal::keTeksSurat(). Server surat versi lama
+                    // mengabaikan isian yang belum ia kenal, jadi aman dikirim
+                    // sebelum templatnya diperbarui.
+                    'catatan' => $this->data['catatan'] ?? null,
                 ],
                 kunciIdempotensi: $this->kunci,
             );

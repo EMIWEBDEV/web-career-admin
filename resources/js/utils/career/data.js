@@ -71,6 +71,7 @@ export function stageTypeLabel(tipe) {
         ADMIN_SCREENING: 'Seleksi administrasi',
         HCLEARN_TEST: 'Tes online (HCLearn)',
         INTERVIEW: 'Wawancara',
+        FGD: 'Diskusi kelompok (FGD)',
         DOCUMENT: 'Kelengkapan dokumen',
         DECISION: 'Keputusan & pengumuman',
         OFFERING: 'Penawaran kerja',

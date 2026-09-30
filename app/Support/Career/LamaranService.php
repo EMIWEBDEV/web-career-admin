@@ -116,27 +116,17 @@ class LamaranService
      * @param  int[]  $lamaranIds
      * @return \Illuminate\Support\Collection<int,string> dikunci Id_Lamaran
      */
-    public static function identitasPerLamaran(array $lamaranIds, string $kode): \Illuminate\Support\Collection
+    public static function identitasPerLamaran(array $lamaranIds, string $kode, ?\Illuminate\Support\Collection $pengisian = null): \Illuminate\Support\Collection
     {
         if (! $lamaranIds) {
             return collect();
         }
 
-        // BERPOTONG — lihat MetrikRekrutmen::potongIn(). Worklist memanggilnya
-        // dengan SELURUH pelamar satu program; di atas 2100 id, SQL Server
-        // menolak kuerinya bulat-bulat dan papannya gagal dimuat.
-        return \App\Support\Career\MetrikRekrutmen::potongIn(
-            fn () => DB::table('N_WEB_CAREERS_Formulir_Pengisian')
-                ->orderBy('Waktu_Kirim')            // lama → baru
-                ->orderBy('Id_Formulir_Pengisian')
-                ->select(['Lamaran_Id', 'Jawaban_Json']),
-            'Lamaran_Id',
-            $lamaranIds,
-        )->groupBy('Lamaran_Id')
+        return ($pengisian ?? self::pengisianPerLamaran($lamaranIds))
             ->map(function ($rows) use ($kode) {
                 $gabung = [];
                 foreach ($rows as $r) {
-                    foreach ((json_decode($r->Jawaban_Json ?: '{}', true) ?: []) as $k => $v) {
+                    foreach ($r->jawaban as $k => $v) {
                         if ($v === null || $v === '' || $v === []) {
                             continue;
                         }
@@ -147,6 +137,46 @@ class LamaranService
                 return self::dariKunci($gabung, $kode);
             })
             ->filter(fn ($v) => $v !== null && $v !== '');
+    }
+
+    /**
+     * Pengisian formulir BANYAK lamaran sekaligus — [Lamaran_Id => baris…].
+     *
+     * Urut lama → baru (Waktu_Kirim, lalu Id), jawabannya sudah diurai di
+     * `->jawaban`. Papan worklist membacanya SEKALI lalu membagikannya ke
+     * penyaring kampus (identitasPerLamaran) dan nama resmi kandidat: dulu
+     * keduanya membaca Jawaban_Json yang sama persis, masing-masing sekali —
+     * dua kali isi seluruh formulir seluruh pelamar, setiap papan dibuka.
+     *
+     * BERPOTONG — lihat MetrikRekrutmen::potongIn(). Worklist memanggilnya
+     * dengan SELURUH pelamar satu program; di atas 2100 id, SQL Server
+     * menolak kuerinya bulat-bulat dan papannya gagal dimuat.
+     *
+     * @param  int[]  $lamaranIds
+     */
+    public static function pengisianPerLamaran(array $lamaranIds): \Illuminate\Support\Collection
+    {
+        if (! $lamaranIds) {
+            return collect();
+        }
+
+        $kolom = ['Id_Formulir_Pengisian', 'Lamaran_Id', 'Jawaban_Json'];
+        // Versi formulir ikut bila ada — pengambil nama resmi memakainya untuk
+        // membaca snapshot skema sekali per versi, bukan sekali per pengisian.
+        if (Skema::adaKolom('N_WEB_CAREERS_Formulir_Pengisian', 'Master_Formulir_Versi_Id')) {
+            $kolom[] = 'Master_Formulir_Versi_Id';
+        }
+
+        return \App\Support\Career\MetrikRekrutmen::potongIn(
+            fn () => DB::table('N_WEB_CAREERS_Formulir_Pengisian')
+                ->orderBy('Waktu_Kirim')            // lama → baru
+                ->orderBy('Id_Formulir_Pengisian')
+                ->select($kolom),
+            'Lamaran_Id',
+            $lamaranIds,
+        )->each(function ($r) {
+            $r->jawaban = json_decode($r->Jawaban_Json ?: '{}', true) ?: [];
+        })->groupBy('Lamaran_Id');
     }
 
     /**
@@ -334,8 +364,12 @@ class LamaranService
         return null;
     }
 
-    /** Daftar kunci formulir untuk satu jenis identitas — dari master, di-cache. */
-    private static function kunciIdentitas(string $kode): array
+    /**
+     * Daftar kunci formulir untuk satu jenis identitas — dari master, di-cache.
+     * Satu kueri per permintaan untuk SEMUA jenis; IdentitasKandidat membaca
+     * kunci NAMA dari sini juga, bukan dari kuerinya sendiri.
+     */
+    public static function kunciIdentitas(string $kode): array
     {
         static $cache = null;
 
@@ -528,6 +562,8 @@ class LamaranService
                     // Aturan pengumuman ikut dibekukan dari cetakan (Batch 6).
                     'Mode_Pengumuman' => $t->Mode_Pengumuman ?? 'OTOMATIS',
                     'Flag_Notifikasi' => $t->Flag_Notifikasi ?? 'Y',
+                    // Aturan batas pengisian formulir ikut dibekukan — lihat BatasIsi.
+                    ...BatasIsi::snapshot($t),
                     'Created_At' => $now, 'Created_By' => $nama, 'Created_By_Id' => $userAdminId,
                     'Updated_At' => $now, 'Updated_By' => $nama, 'Updated_By_Id' => $userAdminId,
                 ], 'Id_Lamaran_Tahap');
@@ -1209,6 +1245,10 @@ class LamaranService
                 'Status' => 'BERJALAN',
                 'Updated_At' => $now,
             ]);
+
+            // Tahap berformulir berbatas: jamnya mulai berjalan SEKARANG —
+            // tanggal program kolomnya, atau aturan otomatis tahapnya.
+            BatasIsi::buka((int) $berikut->Id_Lamaran_Tahap, $now, $nama, $adminId);
             DB::table('N_WEB_CAREERS_Lamaran')->where('Id_Lamaran', $tahap->Lamaran_Id)->update([
                 'Urutan_Tahap' => $berikut->Urutan,
                 'Updated_At' => $now, 'Updated_By' => $nama, 'Updated_By_Id' => $adminId,
@@ -1527,6 +1567,7 @@ class LamaranService
                     'Flag_Bypass' => $bypass ? 'Y' : 'T',
                     'Mode_Pengumuman' => $t->Mode_Pengumuman ?? 'OTOMATIS',
                     'Flag_Notifikasi' => $t->Flag_Notifikasi ?? 'Y',
+                    ...BatasIsi::snapshot($t),
                     'Created_At' => $now, 'Created_By' => $nama, 'Created_By_Id' => $adminId,
                     'Updated_At' => $now, 'Updated_By' => $nama, 'Updated_By_Id' => $adminId,
                 ], 'Id_Lamaran_Tahap');
@@ -1534,6 +1575,12 @@ class LamaranService
                 // Sub-tes hanya dibekukan untuk tahap yang benar-benar dijalani.
                 if (! $bypass) {
                     $this->snapshotSubTes($lamaranTahapId, $t->Id_Master_Alur_Tahap, $now, $nama, $adminId);
+                }
+
+                // Titik masuk fast-track bisa langsung tahap Kelengkapan —
+                // batas pengisiannya dihitung sejak ia dibuka di sini.
+                if ($isEntry) {
+                    BatasIsi::buka((int) $lamaranTahapId, $now, $nama, $adminId);
                 }
             }
 

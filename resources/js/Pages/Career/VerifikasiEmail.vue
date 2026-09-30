@@ -154,6 +154,9 @@ export default {
             <p class="alt-row">Sudah terverifikasi sebelumnya? <Link href="/login" class="alt-link">Masuk di sini</Link></p>
         </template>
 
-        <div class="ver-row"><span>EVO <b>Career</b></span><span>© 2026 EVO Group</span></div>
+        <div class="ver-row">
+                <span class="ver-tag" title="Versi aplikasi">Versi {{ $page.props.appVersion || '1.0.0' }}</span>
+                <span>© 2026 EVO Group</span>
+            </div>
     </AuthShell>
 </template>

@@ -234,6 +234,9 @@ export default {
             <p class="alt-row">Salah alamat email? <Link href="/register" class="alt-link">Daftar ulang</Link></p>
         </template>
 
-        <div class="ver-row"><span>EVO <b>Career</b></span><span>© 2026 EVO Group</span></div>
+        <div class="ver-row">
+                <span class="ver-tag" title="Versi aplikasi">Versi {{ $page.props.appVersion || '1.0.0' }}</span>
+                <span>© 2026 EVO Group</span>
+            </div>
     </AuthShell>
 </template>

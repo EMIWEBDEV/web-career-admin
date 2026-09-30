@@ -372,7 +372,24 @@ const subsidiaries = [
 .authx .verif-pending { margin: 12px 0 0; padding: 10px 14px; text-align: center; font-size: 12.5px; font-weight: 500; color: #64748b; background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.18); border-radius: 12px; }
 .authx .verif-pending i { color: var(--indigo); }
 .authx .verif-pending .switch-link:disabled { opacity: 0.6; cursor: not-allowed; }
-.authx .ver-row { margin-top: 22px; padding-top: 18px; border-top: 1px solid rgba(226, 232, 240, 0.85); display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: #94a3b8; }
+.authx .ver-row { margin-top: 22px; padding-top: 18px; border-top: 1px solid rgba(226, 232, 240, 0.85); display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 12px; color: #94a3b8; }
+
+/* LENCANA VERSI — kecil, monospace, tidak menarik perhatian.
+   Angka ini dibaca ketika ada yang salah, bukan saat semuanya baik-baik saja;
+   jadi ia harus mudah DITEMUKAN tanpa pernah ikut meminta dibaca. */
+.authx .ver-tag {
+    flex: 0 0 auto;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid rgba(226, 232, 240, 0.9);
+    background: rgba(248, 250, 252, 0.9);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: #94a3b8;
+    white-space: nowrap;
+}
 .authx .ver-row b { color: #0f172a; font-weight: 700; }
 .authx .ver-row span b { color: var(--indigo); }
 

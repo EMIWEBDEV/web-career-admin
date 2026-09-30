@@ -218,6 +218,10 @@ class CareerAdminController extends Controller
                     // apa pun. Itulah yang terjadi pada "EVO MANAGEMENT 2026".
                     'formulir' => ($r->Flag_Formulir ?? 'T') === 'Y',
                     'uploadHasil' => ($r->Flag_Upload_Hasil ?? 'T') === 'Y',
+                    // Sakelar "Upload berkas hasil" per tahap ditawarkan di
+                    // Master Alur? Bawaan ya; 'T' = disembunyikan untuk tipe
+                    // ini (docs/29-09-2026/01). Sebelum kolomnya ada: ya.
+                    'opsiUpload' => ($r->Flag_Opsi_Upload ?? 'Y') !== 'T',
                     'jadwal' => ($r->Flag_Jadwal ?? 'T') === 'Y',
                     'wajibLuring' => ($r->Flag_Wajib_Luring ?? 'T') === 'Y',
                     'tuntas' => ($r->Flag_Tuntas ?? 'T') === 'Y',

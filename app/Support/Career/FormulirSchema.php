@@ -80,6 +80,34 @@ class FormulirSchema
         return self::payload($form, $versiRow ?? self::versiPublished((int) $form->Id_Master_Formulir));
     }
 
+    /**
+     * Skema formulir PENDAFTARAN sebuah program — yang dirender halaman lamar.
+     *
+     * Satu sumber untuk dua pemakai: halaman lamar (CareerLandingController)
+     * dan pemeriksa berkas di LamaranController::lamar(). Kalau keduanya
+     * menghitung sendiri-sendiri, server bisa menuntut isian yang tidak pernah
+     * tampil di layar kandidat.
+     *
+     * Urutannya: formulir tahap PERTAMA alur program (versi published), lalu
+     * cadangan per kategori untuk alur yang tahap pertamanya belum berformulir.
+     */
+    public static function pendaftaranProgram(?string $alurKode, string $kategori): ?array
+    {
+        $kode = $alurKode
+            ? DB::table('N_WEB_CAREERS_Master_Alur_Tahap as t')
+                ->join('N_WEB_CAREERS_Master_Alur as a', 'a.Id_Master_Alur', '=', 't.Master_Alur_Id')
+                ->where('a.Kode', $alurKode)
+                ->orderBy('t.Urutan')
+                ->value('t.Formulir_Kode')
+            : null;
+
+        if ($kode && ($payload = self::publishedByKode($kode))) {
+            return $payload;
+        }
+
+        return self::pendaftaranUntukKategori($kategori);
+    }
+
     public static function pendaftaranUntukKategori(string $kategori): ?array
     {
         $komponen = match (strtoupper($kategori)) {

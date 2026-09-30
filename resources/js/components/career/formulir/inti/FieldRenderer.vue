@@ -342,6 +342,10 @@
                     <i class="bi bi-trash3-fill"></i>
                 </button>
             </div>
+
+            <small v-if="galatUnggah" class="fr__unggah-galat" role="alert">
+                <i class="bi bi-exclamation-circle-fill"></i> {{ galatUnggah }}
+            </small>
         </template>
 
 
@@ -386,14 +390,18 @@
         <!-- Foto verifikasi dari kamera. Yang tersimpan di jawaban hanya nama
              berkasnya (seperti tipe `file`); gambarnya sendiri dikirim ke induk
              lewat event `berkas` supaya ikut jalur unggah yang sama. -->
-        <AmbilFoto
-            v-else-if="field.tipe === 'foto'"
-            :model-value="fotoTampil"
-            :nama-tersimpan="String(nilai ?? '')"
-            :disabled="disabled"
-            @update:model-value="(v) => (fotoDataUrl = v)"
-            @foto="terimaFoto"
-        />
+        <template v-else-if="field.tipe === 'foto'">
+            <AmbilFoto
+                :model-value="fotoTampil"
+                :nama-tersimpan="String(nilai ?? '')"
+                :disabled="disabled"
+                @update:model-value="(v) => (fotoDataUrl = v)"
+                @foto="terimaFoto"
+            />
+            <small v-if="galatUnggah" class="fr__unggah-galat" role="alert">
+                <i class="bi bi-exclamation-circle-fill"></i> {{ galatUnggah }}
+            </small>
+        </template>
 
         <el-checkbox
             v-else-if="field.tipe === 'consent'"
@@ -575,6 +583,13 @@ const drafBerkas = computed(
 const urlPratinjau = computed(() => pratinjau.value || drafBerkas.value?.url || '');
 const gambarPratinjau = computed(
     () => pratinjauGambar.value || String(drafBerkas.value?.mime || '').startsWith('image/'),
+);
+
+// Unggahan yang GAGAL untuk isian ini, dititipkan induk lewat `konteks`.
+// Pesannya menetap di bawah kotak unggah: notifikasi saja hilang dalam empat
+// detik, dan dulu nama berkas yang gagal tetap tampil seolah beres.
+const galatUnggah = computed(
+    () => props.konteks?.berkasGagal?.[kunciBerkas(props.bagian, props.baris, props.field.key)] || '',
 );
 
 // Prefill TANPA `buka_jika` selalu terkunci — perilaku lama tetap utuh untuk
@@ -805,6 +820,18 @@ function lihatBerkas() {
    kali — menaruhnya di sana akan menggelembungkan Jawaban_Json tanpa guna. */
 const fotoDataUrl = ref('');
 
+// Pratinjau lokal milik berkas yang GAGAL naik dibuang. Tanpa ini kartunya
+// tetap bisa dibuka dari salinan di tab — tampak tersimpan padahal server tidak
+// pernah menerimanya — atau malah menampilkan isi berkas gagal di bawah nama
+// berkas lama yang dipulihkan.
+watch(galatUnggah, (g) => {
+    if (!g) return;
+    if (pratinjau.value) URL.revokeObjectURL(pratinjau.value);
+    pratinjau.value = '';
+    pratinjauGambar.value = false;
+    fotoDataUrl.value = '';
+});
+
 /**
  * Yang ditampilkan: jepretan baru bila ada, kalau tidak foto draf yang sudah
  * tersimpan di server. Tanpa jalur kedua, kandidat yang melanjutkan pengisian
@@ -961,6 +988,9 @@ function pilihBerkas(uf) {
 .fr__drop-txt { flex: 1; min-width: 0; text-align: left; line-height: 1.3; }
 .fr__drop-txt strong { display: block; font-size: 12.5px; font-weight: 700; color: #1e293b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fr__drop-txt small { font-size: 10.5px; color: #8b93a7; }
+/* Unggahan gagal — merah, menetap sampai berkas dipilih ulang. */
+.fr__unggah-galat { display: flex; align-items: flex-start; gap: .35rem; font-size: 11.5px; font-weight: 600; line-height: 1.45; color: #b91c1c; }
+.fr__unggah-galat .bi { flex: 0 0 auto; margin-top: 1px; }
 .fr__drop.is-mati { opacity: .55; pointer-events: none; }
 
 /* -- Berkas TERPASANG: satu baris ringkas (pratinjau + nama + ganti + hapus),

@@ -1784,7 +1784,7 @@ class RakitBerkasSeleksi
     {
         return match ($tipe) {
             'TES_OFFLINE_MANUAL' => '#f59e0b',
-            'INTERVIEW', 'PHONE_SCREEN' => '#334155',
+            'INTERVIEW', 'PHONE_SCREEN', 'FGD' => '#334155',
             default => '#a37a2c',
         };
     }

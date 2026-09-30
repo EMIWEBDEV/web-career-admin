@@ -103,6 +103,7 @@ class WcPutusMassalJob implements ShouldQueue
                     'hasil' => $m['hasil'],
                     'catatan' => $m['catatan'] ?? null,
                     'catatanHtml' => $m['catatanHtml'] ?? null,
+                    'catatanEksternalHtml' => $m['catatanEksternalHtml'] ?? null,
                     'talentPool' => $m['talentPool'] ?? null,
                     'tanggalKonfirmasi' => $m['tanggalKonfirmasi'] ?? null,
                 ],
