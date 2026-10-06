@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Support\Career\AksesService;
 use App\Support\CareerShell;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
@@ -303,6 +304,36 @@ class PembukaanProgramController extends Controller
         ];
     }
 
+    /**
+     * Hari yang sudah lewat tidak bisa dipilih sebagai tanggal buka / tutup
+     * (masukan user 2 Okt 2026) — cermin kalendernya (hariLampau / sebelumMulai
+     * di pembukaanProgram.vue). Tanggal lama yang TIDAK diubah tetap boleh:
+     * pembukaan yang sudah berjalan masih bisa disunting.
+     */
+    private static function galatHariLampau(array $data, ?object $lama = null): ?string
+    {
+        $cek = [
+            ['buka', 'Tanggal buka', $lama->Tanggal_Buka ?? null],
+            ['tutup', 'Tanggal tutup', $lama->Tanggal_Tutup ?? null],
+        ];
+        foreach ($cek as [$kunci, $label, $nilaiLama]) {
+            if (empty($data[$kunci]) || ($kunci === 'tutup' && $data['masaBerlaku'] === 'EVERGREEN')) {
+                continue;
+            }
+            $baru = Carbon::parse($data[$kunci]);
+            if (! $baru->lt(now()->startOfDay())) {
+                continue;
+            }
+            if ($nilaiLama && Carbon::parse($nilaiLama)->format('Y-m-d H:i') === $baru->format('Y-m-d H:i')) {
+                continue;
+            }
+
+            return "{$label} tidak boleh di hari yang sudah lewat — pilih hari ini atau sesudahnya.";
+        }
+
+        return null;
+    }
+
     private function programId(string $kode): ?int
     {
         return DB::table('N_WEB_CAREERS_Program')->where('Kode', $kode)->value('Id_Program');
@@ -312,6 +343,9 @@ class PembukaanProgramController extends Controller
     {
         try {
             $data = $request->validate($this->rules());
+            if ($galat = self::galatHariLampau($data)) {
+                return ResponseHelper::error($galat, 422);
+            }
             $programId = $this->programId($data['program']);
             if (! $programId) {
                 return ResponseHelper::error('Program tidak ditemukan.', 422);
@@ -351,6 +385,9 @@ class PembukaanProgramController extends Controller
                 return ResponseHelper::error('Data tidak ditemukan', 404);
             }
             $data = $request->validate($this->rules());
+            if ($galat = self::galatHariLampau($data, $row)) {
+                return ResponseHelper::error($galat, 422);
+            }
             $programId = $this->programId($data['program']);
             if (! $programId) {
                 return ResponseHelper::error('Program tidak ditemukan.', 422);

@@ -496,6 +496,13 @@
                                     <circle class="ld-kico__pin" cx="24" cy="28.2" r="1.8" />
                                 </template>
 
+                                <!-- DITUNDA TIM — tanda jeda: jadwalnya berhenti, belum batal. -->
+                                <template v-else-if="keadaanTahap.nada === 'tunda'">
+                                    <circle class="ld-kico__ring" cx="24" cy="24" r="14" />
+                                    <line class="ld-kico__jarum" x1="21" y1="18.5" x2="21" y2="29.5" />
+                                    <line class="ld-kico__jarum" x1="27" y1="18.5" x2="27" y2="29.5" />
+                                </template>
+
                                 <!-- SUDAH DIJADWALKAN — kalender dengan centang tergambar. -->
                                 <template v-else-if="keadaanTahap.nada === 'jadwal'">
                                     <rect class="ld-kico__ring" x="14" y="15.5" width="20" height="18" rx="3" />
@@ -658,7 +665,7 @@
                                 </span>
                                 <div>
                                     <b>{{ judulSelesai(a) }}</b>
-                                    <p>{{ pesanSetelahTes }}</p>
+                                    <p>{{ pesanSelesai(a) }}</p>
                                 </div>
                             </div>
 
@@ -713,7 +720,16 @@
 
                                 <!-- JADWAL TATAP MUKA (wawancara / tes offline / MCU). -->
                                 <div v-if="a.jadwal" class="ld-jdwwrap">
-                                    <JadwalKartu :jadwal="{ label: a.label, ...a.jadwal }" />
+                                    <JadwalKartu
+                                        :jadwal="{ label: a.label, ...a.jadwal }"
+                                        :konfirmasi="a.konfirmasi || null"
+                                        @konfirmasi-berubah="muatUlangKonfirmasi"
+                                    />
+                                </div>
+                                <!-- DITUNDA tim — alasan, perkiraan jadwal pengganti
+                                     (atau "akan dikabarkan"), dan pesan tim. -->
+                                <div v-else-if="a.konfirmasi && a.konfirmasi.status === 'DITUNDA'" class="ld-jdwwrap">
+                                    <JadwalTunda :tunda="a.konfirmasi.tunda" :label="a.label" :kalimat="a.konfirmasi.kalimat" :warna="a.konfirmasi.warna" />
                                 </div>
 
                                 <!-- BERKAS YANG HARUS KANDIDAT UNGGAH.
@@ -861,6 +877,13 @@
                                         <span v-if="a.mcu.tanggal">{{ fmtWaktu(a.mcu.tanggal) }}</span>
                                     </div>
                                     <p v-if="a.mcu.catatan" class="ld-mcu__cat">{{ a.mcu.catatan }}</p>
+                                    <!-- PENGGANTIAN BIAYA — kesimpulan otomatis dari hasil
+                                         ini (lolos = diganti). Kandidat membacanya di
+                                         tempat yang sama dengan hasilnya, tanpa perlu
+                                         menanyakan ke siapa pun. -->
+                                    <p v-if="a.biaya?.hasilKalimat" class="ld-mcu__biaya" :class="'is-' + String(a.biaya.kode).toLowerCase()">
+                                        <i class="bi bi-cash-coin"></i> {{ a.biaya.hasilKalimat }}
+                                    </p>
                                 </div>
                             </div>
                         </div>
@@ -1476,6 +1499,7 @@ import { berkasKurang } from '@utils/formulir/aturan';
 import { normalisasiSkema } from '@utils/formulir/schema';
 import { tautkan } from '@utils/career/tautanOtomatis';
 import JadwalKartu from '@career/JadwalKartu.vue';
+import JadwalTunda from '@career/JadwalTunda.vue';
 import KontenAman from '@career/KontenAman.vue';
 import UnggahAktivitas from '@career/UnggahAktivitas.vue';
 
@@ -1614,7 +1638,7 @@ const PESAN_TAHAP_INTERNAL =
     'Mohon pastikan nomor telepon dan email Anda tetap aktif.';
 
 export default {
-    components: { Head, Link, JadwalKartu, DynamicForm, KontenAman, UnggahAktivitas },
+    components: { Head, Link, JadwalKartu, JadwalTunda, DynamicForm, KontenAman, UnggahAktivitas },
     props: {
         lamaran: { type: Object, default: () => ({}) },
         tahap: { type: Array, default: () => [] },
@@ -1968,6 +1992,7 @@ export default {
 
             return hidup.find((x) => x.keadaan.nada === 'aksi')
                 || hidup.find((x) => x.keadaan.nada === 'jadwal')
+                || hidup.find((x) => x.keadaan.nada === 'tunda')
                 || hidup.find((x) => x.keadaan.nada === 'tunggu')
                 || hidup[0]
                 // Semuanya sudah tuntas: yang paling berhak disorot adalah yang
@@ -2144,6 +2169,22 @@ export default {
                     ikon: 'bi-calendar-check-fill',
                     judul: 'Kamu sudah dijadwalkan',
                     pesan: 'Rincian waktu dan tempatnya ada di bawah. Undangan yang sama juga dikirim ke emailmu — mohon hadir tepat waktu.',
+                };
+            }
+
+            // DITUNDA tim — sebut apa adanya, berikut perkiraan penggantinya.
+            // Tanpa cabang ini kartu besar berbunyi "Menunggu jadwal" seolah
+            // jadwalnya belum pernah ada.
+            const ditunda = belum.find((x) => !x.jadwal && x.konfirmasi?.status === 'DITUNDA');
+            if (ditunda) {
+                const perkiraan = ditunda.konfirmasi?.tunda?.perkiraanTeks;
+                return {
+                    nada: 'tunda',
+                    ikon: 'bi-pause-circle-fill',
+                    judul: `Jadwal ${ditunda.label} ditunda`,
+                    pesan: perkiraan
+                        ? `Jadwal penggantinya diperkirakan ${perkiraan}. Rinciannya menyusul lewat email dan halaman ini — tidak ada yang perlu kamu lakukan sekarang.`
+                        : 'Jadwal penggantinya akan dikabarkan lewat email dan halaman ini. Tidak ada yang perlu kamu lakukan sekarang.',
                 };
             }
 
@@ -2404,16 +2445,40 @@ export default {
 
                 // Aktivitas yang ditangani tim: berkas dulu — itu satu-satunya
                 // yang benar-benar menuntut kandidat — baru jadwalnya.
+                if (a.unggah?.tertutup) {
+                    return {
+                        title: `${posisi} · ${nama} — batas unggah sudah lewat`,
+                        text: 'Kotak unggahnya sudah ditutup. Hubungi tim rekrutmen bila kamu membutuhkan perpanjangan.',
+                    };
+                }
                 if (a.unggah && !a.unggah.terkirim) {
                     return {
                         title: `${posisi} · ${nama} — menunggu berkasmu`,
-                        text: a.unggah.petunjuk || 'Unggah berkas yang diminta pada aktivitas ini, lalu tekan kirim bila sudah lengkap.',
+                        text: (a.unggah.petunjuk || 'Unggah berkas yang diminta pada aktivitas ini, lalu tekan kirim bila sudah lengkap.')
+                            + (a.unggah.batasTeks ? ` Paling lambat ${a.unggah.batasTeks}.` : ''),
                     };
                 }
                 if (a.jadwal) {
                     return {
-                        title: `${nama} dijadwalkan ${this.fmtWaktu(a.jadwal.mulai)}`,
+                        // Berrentang tanggal (MCU vendor / mandiri): tidak ada jam
+                        // janji temu — "dijadwalkan 11 Sep 00.00" menyesatkan.
+                        title: a.jadwal.batasWaktu
+                            // Titik tengah, bukan tanda pisah — rentangnya sendiri sudah
+                            // memakai "–" ("30 September – 07 Oktober 2026").
+                            ? `${nama} · ${a.jadwal.rentangTeks || a.jadwal.batasTeks}`
+                            : `${nama} dijadwalkan ${this.fmtWaktu(a.jadwal.mulai)}`,
                         text: a.jadwal.catatan || 'Rincian tempat dan waktunya ada di kartu jadwal pada halaman ini.',
+                    };
+                }
+                // DITUNDA tim — spanduk menyebut penundaannya, bukan pesan
+                // "menunggu jadwal" umum tahap ini.
+                if (a.konfirmasi?.status === 'DITUNDA') {
+                    const perkiraan = a.konfirmasi.tunda?.perkiraanTeks;
+                    return {
+                        title: `${posisi} · ${nama} ditunda`,
+                        text: perkiraan
+                            ? `Jadwal penggantinya diperkirakan ${perkiraan}. Rinciannya menyusul lewat email dan halaman ini.`
+                            : 'Jadwal penggantinya akan dikabarkan lewat email dan halaman ini.',
                     };
                 }
             }
@@ -3261,8 +3326,16 @@ export default {
             // unggahnya memang sudah boleh tampil. Lencana "Menunggu berkasmu"
             // di atas blok yang isinya "menunggu jadwal" menuntut kandidat
             // mengerjakan sesuatu yang halaman itu sendiri belum sediakan.
+            // Batas aktivitas berbatas waktu (MCU mandiri) sudah lewat — itulah
+            // yang paling perlu terbaca, di atas "menunggu berkasmu".
+            if (a.unggah?.tertutup) return { nada: 'lewat', label: 'Unggah ditutup' };
+            if (a.jadwal?.lewat) return { nada: 'lewat', label: 'Lewat batas' };
             if (this.unggahSiap(a) && ! a.unggah.terkirim) return { nada: 'aksi', label: 'Menunggu berkasmu' };
             if (a.unggah?.terkirim) return { nada: 'proses', label: 'Berkas terkirim' };
+            // DITUNDA tim — jadwalnya dikosongkan, penggantinya menyusul.
+            // Bukan "Menunggu jadwal": kandidat perlu tahu jadwalnya pernah ada
+            // dan kenapa sekarang tidak (kartunya ada di bawah lencana ini).
+            if (!a.jadwal && a.konfirmasi?.status === 'DITUNDA') return { nada: 'tunda', label: 'Ditunda' };
             if (a.jadwal) return { nada: 'jadwal', label: 'Sudah dijadwalkan' };
 
             // ══ TIPE YANG MEMANG TIDAK PERNAH DIJADWALKAN ══
@@ -3285,6 +3358,14 @@ export default {
             }
 
             return { nada: 'tunggu', label: 'Menunggu jadwal' };
+        },
+        /**
+         * Kandidat menjawab konfirmasi LANGSUNG di kartu jadwal — muat ulang
+         * data lamaran di tempat (tanpa pindah halaman) supaya status, aturan
+         * ubah, dan lencananya ikut berubah. Pesan suksesnya dipegang kartu.
+         */
+        muatUlangKonfirmasi() {
+            router.reload({ preserveScroll: true });
         },
         belumMulai(t) {
             return t.ujian?.waktuMulai ? this.now < new Date(t.ujian.waktuMulai).getTime() : false;
@@ -3375,7 +3456,22 @@ export default {
             return ! a.perluJadwal || !! a.jadwal;
         },
         judulSelesai(a) {
+            // Ditutup karena kandidat sendiri menyatakan tidak melanjutkan — bukan
+            // "sudah selesai" biasa, dan jangan menjanjikan langkah berikutnya.
+            if (this.mundurSendiri(a)) return 'Kamu menyatakan tidak melanjutkan seleksi';
+
             return this.sudahSelesai(a) ? 'Tes sudah kamu kerjakan — tidak dapat diulang' : 'Aktivitas ini sudah selesai';
+        },
+        pesanSelesai(a) {
+            if (this.mundurSendiri(a)) {
+                return `${a.konfirmasi.kalimat || 'Pernyataanmu sudah kami terima.'} Tim rekrutmen akan menutup lamaranmu — tidak ada lagi yang perlu kamu lakukan di sini.`;
+            }
+
+            return this.pesanSetelahTes;
+        },
+        /** Aktivitas ditutup (Tidak Hadir) karena kandidat menyatakan tidak melanjutkan. */
+        mundurSendiri(a) {
+            return a.konfirmasi?.status === 'MUNDUR';
         },
         bisaAkses(t) {
             const u = t.ujian;
@@ -5448,6 +5544,9 @@ TQVA5K0T) — ia dibaca
 .ld-akt.is-selesai .ld-akt__badge { background: #d1fae5; color: #047857; }
 .ld-akt.is-lewat { border-left-color: #ef4444; }
 .ld-akt.is-lewat .ld-akt__badge { background: #fee2e2; color: #b91c1c; }
+/* Ditunda tim — ungu master status DITUNDA. */
+.ld-akt.is-tunda { border-left-color: #7c3aed; }
+.ld-akt.is-tunda .ld-akt__badge { background: #ede9fe; color: #5b21b6; }
 
 /* Belum gilirannya — sengaja diredupkan seluruhnya, bukan cuma dilencanai:
    yang terbuka hari ini harus menonjol di antara yang belum. */
@@ -5457,6 +5556,10 @@ TQVA5K0T) — ia dibaca
 
 @media (max-width: 640px) {
     .ld-akt { margin-left: 12px; margin-right: 12px; }
+    /* Kartu jadwal di dalam blok aktivitas: tiga lapis bantalan (halaman, blok,
+       kartu) menyisakan kartu selebar 300px di ponsel 390px — rapatkan lapis
+       tengahnya supaya isi kartu (tanggal, tombol Gabung) tidak berdesakan. */
+    .ld-akt__body .ld-jdwwrap { margin-left: 8px; margin-right: 8px; }
 }
 
 /* Jarak kartu jadwal terhadap kartu tahap; isinya milik JadwalKartu.vue. */
@@ -5534,6 +5637,22 @@ TQVA5K0T) — ia dibaca
     line-height: 1.6;
     color: #475569;
 }
+/* Penggantian biaya — hijau bila diganti, netral bila tidak (bukan merah:
+   hasilnya sudah disampaikan di atas, baris ini hanya akibatnya). */
+.ld-mcu__biaya {
+    display: flex;
+    align-items: flex-start;
+    gap: 7px;
+    margin: 10px 0 0;
+    padding: 8px 11px;
+    border-radius: 10px;
+    font-size: 12.5px;
+    line-height: 1.55;
+    font-weight: 600;
+}
+.ld-mcu__biaya .bi { flex: none; margin-top: 2px; }
+.ld-mcu__biaya.is-diganti { color: #065f46; background: #ecfdf5; border: 1px solid #a7f3d0; }
+.ld-mcu__biaya.is-tidak_diganti { color: #475569; background: #f1f5f9; border: 1px solid #e2e8f0; }
 
 
 /* ── KEADAAN TAHAP — satu panel tenang, bukan daftar asesmen ────────────────
@@ -5608,6 +5727,7 @@ TQVA5K0T) — ia dibaca
    supaya tidak terbaca sebagai ajakan mengerjakan sesuatu lagi. */
 .ld-keadaan.is-kirim  { --ldk: #0284c7; background: linear-gradient(135deg, rgba(14, 165, 233, .1), rgba(14, 165, 233, .03)); border-color: rgba(14, 165, 233, .3); }
 .ld-keadaan.is-tinjau { --ldk: #7c3aed; background: linear-gradient(135deg, rgba(124, 58, 237, .09), rgba(124, 58, 237, .03)); border-color: rgba(124, 58, 237, .26); }
+.ld-keadaan.is-tunda { --ldk: #7c3aed; background: linear-gradient(135deg, rgba(124, 58, 237, .09), rgba(124, 58, 237, .03)); border-color: rgba(124, 58, 237, .26); }
 .ld-keadaan.is-jadwal { --ldk: #4f46e5; background: linear-gradient(135deg, rgba(99, 102, 241, .09), rgba(99, 102, 241, .03)); border-color: rgba(99, 102, 241, .28); }
 .ld-keadaan.is-aksi   { --ldk: #059669; background: linear-gradient(135deg, rgba(16, 185, 129, .1), rgba(16, 185, 129, .03)); border-color: rgba(16, 185, 129, .3); }
 .ld-keadaan.is-proses { --ldk: #b45309; background: linear-gradient(135deg, rgba(245, 158, 11, .1), rgba(245, 158, 11, .03)); border-color: rgba(245, 158, 11, .3); }

@@ -478,6 +478,13 @@
                                 <el-option value="JADWAL" label="Belum dijadwalkan" />
                                 <el-option value="TERJADWAL" label="Sudah dijadwalkan" />
                                 <el-option value="HOLD" label="Sedang ditahan" />
+                                <!-- KONFIRMASI KEHADIRAN — jawaban kandidat atas undangannya. -->
+                                <el-option value="KONF_MENUNGGU" label="Belum konfirmasi" />
+                                <el-option value="KONF_LAIN" label="Minta jadwal lain" />
+                                <el-option value="KONF_MUNDUR" label="Menyatakan mundur" />
+                                <el-option value="KONF_LEWAT" label="Tidak menjawab (jadwal sudah mulai)" />
+                                <el-option value="KONF_HADIR" label="Konfirmasi akan hadir" />
+                                <el-option value="KONF_DITUNDA" label="Ditunda (pengganti belum terbit)" />
                             </el-select>
                         </div>
 
@@ -760,6 +767,12 @@
                                     <el-option value="BATAS_TUTUP" label="Formulir belum dibuka" />
                                     <el-option value="BATAS_LEWAT" label="Lewat batas pengisian" />
                                     <el-option value="BATAS_DEKAT" label="Batas ≤ 24 jam" />
+                                    <el-option value="KONF_MENUNGGU" label="Belum konfirmasi" />
+                                    <el-option value="KONF_LAIN" label="Minta jadwal lain" />
+                                    <el-option value="KONF_MUNDUR" label="Menyatakan mundur" />
+                                    <el-option value="KONF_LEWAT" label="Tidak menjawab" />
+                                    <el-option value="KONF_HADIR" label="Akan hadir" />
+                                    <el-option value="KONF_DITUNDA" label="Ditunda" />
                                 </el-select>
                                 <el-select v-model="filterKol(col).urut" size="small" placeholder="Urutkan">
                                     <el-option value="LAMA" label="Terlama menunggu" />
@@ -798,6 +811,18 @@
                                         :onClick="!gerbangJadwalMassal.boleh ? null : askJadwalMassal"
                                     >
                                         <i class="bi bi-calendar-plus"></i> Jadwalkan
+                                    </button>
+                                    <!-- KIRIM ULANG EMAIL JADWAL — kandidat terpilih yang
+                                         sudah dijadwalkan dan masih ditunggu (mis. MCU
+                                         mandiri yang belum mengunggah). Maks. sekali kirim
+                                         sama dengan batas massal lain. -->
+                                    <button
+                                        v-if="aktivitasKirimUlang.length"
+                                        type="button" class="plw-selbar__ulang"
+                                        :title="`Kirim ulang email jadwal ke kandidat terpilih (maks. ${batasKirimUlang} sekali kirim)`"
+                                        @click="askKirimUlangMassal"
+                                    >
+                                        <i class="bi bi-envelope-arrow-up"></i> Kirim ulang
                                     </button>
                                     <!-- TAHAN MASSAL. Penahanan hampir selalu lahir
                                          dari satu peristiwa yang mengenai banyak
@@ -918,6 +943,15 @@
                                         >
                                             <i class="bi" :class="r.batas.terkunci ? 'bi-lock-fill' : 'bi-hourglass-split'"></i> {{ labelBatas(r.batas) }}
                                         </span>
+                                        <!-- Konfirmasi kehadiran yang paling butuh perhatian
+                                             (jadwal lain > mundur > tak menjawab > belum). -->
+                                        <span
+                                            v-if="konfPerKartu[r.id]"
+                                            class="plw-card__konf" :style="{ '--nada': konfPerKartu[r.id].warna || '#94a3b8' }"
+                                            :title="`${konfPerKartu[r.id].aktivitas}: ${konfPerKartu[r.id].label}`"
+                                        >
+                                            <i class="bi" :class="konfPerKartu[r.id].ikon || 'bi-hourglass-split'"></i> {{ konfPerKartu[r.id].pendek }}
+                                        </span>
                                         <span v-if="r.waktuLamar" class="plw-card__umur" :title="'Melamar ' + tglId(r.waktuLamar)">
                                             <i class="bi bi-clock-history"></i> {{ umurHari(r.waktuLamar) }}
                                         </span>
@@ -969,6 +1003,18 @@
                                         :onClick="!gerbangJadwalMassal.boleh ? null : askJadwalMassal"
                                     >
                                         <i class="bi bi-calendar-plus"></i> Jadwalkan
+                                    </button>
+                                    <!-- KIRIM ULANG EMAIL JADWAL — kandidat terpilih yang
+                                         sudah dijadwalkan dan masih ditunggu (mis. MCU
+                                         mandiri yang belum mengunggah). Maks. sekali kirim
+                                         sama dengan batas massal lain. -->
+                                    <button
+                                        v-if="aktivitasKirimUlang.length"
+                                        type="button" class="plw-selbar__ulang"
+                                        :title="`Kirim ulang email jadwal ke kandidat terpilih (maks. ${batasKirimUlang} sekali kirim)`"
+                                        @click="askKirimUlangMassal"
+                                    >
+                                        <i class="bi bi-envelope-arrow-up"></i> Kirim ulang
                                     </button>
                                     <button
                                         v-if="bolehPutus"
@@ -1471,10 +1517,75 @@
                                         </span>
                                     </div>
                                     <div v-if="t.jadwal" class="plw-test__jadwalinfo">
-                                        <i class="bi" :class="t.jadwal.daring ? 'bi-camera-video-fill' : 'bi-geo-alt-fill'"></i>
+                                        <i class="bi" :class="t.jadwal.batasWaktu ? 'bi-hospital' : (t.jadwal.daring ? 'bi-camera-video-fill' : 'bi-geo-alt-fill')"></i>
                                         <span>
                                             {{ jadwalRingkas(t.jadwal) }}
-                                            <template v-if="!t.jadwal.daring && t.jadwal.lokasi"> · {{ t.jadwal.lokasi }}</template>
+                                            <template v-if="!t.jadwal.daring && !t.jadwal.batasWaktu && t.jadwal.lokasi"> · {{ t.jadwal.lokasi }}</template>
+                                            <template v-if="t.jadwal.vendor && t.jadwal.tempat?.nama"> · {{ t.jadwal.tempat.nama }}</template>
+                                        </span>
+                                        <!-- Surat pengantar yang diterima kandidat — dibuka apa adanya,
+                                             satu lencana per surat. -->
+                                        <a
+                                            v-for="(s, i) in (t.jadwal.surat || [])" :key="'srt' + i"
+                                            :href="s.url" target="_blank" rel="noopener"
+                                            class="plw-test__adj is-surat" :title="s.nama" @click.stop
+                                        >
+                                            <i class="bi bi-file-earmark-pdf"></i> surat{{ t.jadwal.surat.length > 1 ? ' ' + (i + 1) : '' }}
+                                        </a>
+                                        <!-- Batasnya lewat, hasil belum masuk: tindak lanjut ada di
+                                             tangan tim (perpanjang atau tandai tidak melaksanakan). -->
+                                        <span v-if="t.jadwal.lewat" class="plw-test__adj is-no" title="Batas waktu sudah lewat dan hasilnya belum dicatat">
+                                            <i class="bi bi-alarm-fill"></i> lewat batas
+                                        </span>
+                                        <!-- Batas UNGGAH dimundurkan lewat "Perpanjang" — rentang
+                                             pemeriksaan di baris jadwal tetap yang lama. -->
+                                        <span
+                                            v-else-if="t.jadwal.batasDiperpanjang" class="plw-test__adj is-warn"
+                                            :title="`Batas unggah hasil diperpanjang sampai ${t.jadwal.batasUnggahTeks} — tanggal pemeriksaan tetap`"
+                                        >
+                                            <i class="bi bi-hourglass-split"></i> unggah diperpanjang
+                                        </span>
+                                    </div>
+                                    <!-- KONFIRMASI KEHADIRAN — jawaban kandidat atas versi jadwal
+                                         ini (akan hadir / minta jadwal lain / mundur / belum).
+                                         Diklik: panel rincian, pengingat manual, proses
+                                         permintaan, catat jawaban, tunda, riwayat. -->
+                                    <div v-if="t.konfirmasi" class="plw-test__periksa">
+                                        <button
+                                            type="button"
+                                            class="plw-test__adj plw-konf"
+                                            :style="{ '--nada': t.konfirmasi.warna || '#94a3b8' }"
+                                            :aria-expanded="konfBuka === t.id"
+                                            :title="t.konfirmasi.batasTeks ? `Batas konfirmasi ${t.konfirmasi.batasTeks}` : ''"
+                                            @click.stop="konfBuka = konfBuka === t.id ? null : t.id"
+                                        >
+                                            <i class="bi" :class="t.konfirmasi.ikon || 'bi-hourglass-split'"></i>
+                                            {{ t.konfirmasi.label }}
+                                            <template v-if="t.konfirmasi.permintaan"> · tenggat {{ t.konfirmasi.permintaan.slaTeks }}</template>
+                                            <template v-else-if="t.konfirmasi.status === 'MENUNGGU' && t.konfirmasi.batasTeks"> · batas {{ t.konfirmasi.batasTeks }}</template>
+                                            <template v-else-if="t.konfirmasi.status === 'DITUNDA'"> · {{ t.konfirmasi.tunda?.perkiraanTeks ? `perkiraan ${t.konfirmasi.tunda.perkiraanTeks}` : 'pengganti belum ditetapkan' }}</template>
+                                            <i class="bi" :class="konfBuka === t.id ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
+                                        </button>
+                                    </div>
+                                    <KonfirmasiPanel
+                                        v-if="t.konfirmasi && konfBuka === t.id"
+                                        class="plw-konf-panel"
+                                        :id-aktivitas="t.id"
+                                        :ringkas="t.konfirmasi"
+                                        :boleh-ubah="aksiSaya.includes('EDIT')"
+                                        :aksi-jadwal="false"
+                                        @berubah="segarkanKartu({ tes: t.id })"
+                                        @pesan="notice"
+                                    />
+                                    <!-- PENGGANTIAN BIAYA — ditentukan sistem dari hasil MCU
+                                         (lolos = diganti). Tampil begitu hasilnya dicatat. -->
+                                    <div v-if="t.biaya && t.biaya.kode !== 'MENUNGGU'" class="plw-test__periksa">
+                                        <span
+                                            class="plw-test__adj"
+                                            :class="{ 'is-ok': t.biaya.kode === 'DIGANTI', 'is-warn': t.biaya.kode === 'TIDAK_DIGANTI' }"
+                                            :title="t.biaya.kalimat"
+                                        >
+                                            <i class="bi bi-cash-coin"></i> {{ t.biaya.label }}
                                         </span>
                                     </div>
                                     <!-- CATATAN PENILAIAN.
@@ -1524,6 +1635,8 @@
                                     <div v-if="t.unggahKandidat && !(t.berkasKandidat || []).length" class="plw-test__kirimkosong" :class="{ 'is-wajib': t.unggahKandidat.wajib }">
                                         <i class="bi" :class="t.unggahKandidat.wajib ? 'bi-exclamation-triangle-fill' : 'bi-hourglass'"></i>
                                         Kandidat belum mengunggah berkas{{ t.unggahKandidat.wajib ? ' (wajib)' : '' }}.
+                                        <template v-if="t.unggahKandidat.tertutup">Batas unggahnya sudah lewat — perpanjang bila perlu.</template>
+                                        <template v-else-if="t.unggahKandidat.batasTeks">Batas unggah: {{ t.unggahKandidat.batasTeks }}{{ t.unggahKandidat.diperpanjang ? ' (diperpanjang)' : '' }}.</template>
                                     </div>
 
                                     <!-- PANEL DETAIL — catatan penilaian, berkas kandidat, dan
@@ -1532,6 +1645,16 @@
                                          berarti puluhan blok teks berformat yang tak seorang pun
                                          baca serentak. -->
                                     <div v-if="detailTes === t.id" class="plw-test__detail">
+                                        <!-- INSTRUKSI yang benar-benar diterima kandidat (salinan
+                                             saat dijadwalkan) — tim bisa memastikan apa yang
+                                             dibaca kandidat tanpa membuka surelnya. -->
+                                        <div v-if="t.jadwal?.catatanHtml" class="plw-test__cat is-kaya">
+                                            <i class="bi bi-send"></i>
+                                            <div style="min-width: 0; flex: 1">
+                                                <small class="plw-test__catlbl">Instruksi terkirim ke kandidat</small>
+                                                <KontenAman :html="t.jadwal.catatanHtml" ringkas />
+                                            </div>
+                                        </div>
                                         <div v-if="t.catatanHtml" class="plw-test__cat is-kaya">
                                             <i class="bi bi-chat-left-text"></i>
                                             <KontenAman :html="t.catatanHtml" />
@@ -1652,25 +1775,68 @@
                                     {{ lanjutId === t.id ? 'Membuka…' : 'Lanjutkan' }}
                                 </button>
 
+                                <!-- BERBATAS WAKTU (MCU mandiri): tidak ada "kehadiran" —
+                                     kandidat mengerjakannya sendiri, jadi tombolnya
+                                     berbunyi apa yang sebenarnya dicatat: hasilnya,
+                                     atau bahwa ia tidak melaksanakannya. Server-nya sama. -->
                                 <template v-if="t.butuhKehadiran && !t.terkunci">
-                                    <button type="button" class="plw-test__hdr is-ya" title="Kandidat datang — hasil aktivitas ini lalu bisa dicatat & berkasnya diunggah" @click="askHadir(t, 'Y')">
-                                        <i class="bi bi-person-check-fill"></i> Hadir
+                                    <button
+                                        type="button" class="plw-test__hdr is-ya"
+                                        :title="t.jadwal?.batasWaktu ? 'Hasilnya sudah masuk — catat statusnya (dari berkas kandidat)' : 'Kandidat datang — hasil aktivitas ini lalu bisa dicatat & berkasnya diunggah'"
+                                        @click="askHadir(t, 'Y')"
+                                    >
+                                        <i class="bi" :class="t.jadwal?.batasWaktu ? 'bi-clipboard2-check-fill' : 'bi-person-check-fill'"></i>
+                                        {{ t.jadwal?.batasWaktu ? 'Catat Hasil' : 'Hadir' }}
                                     </button>
-                                    <button type="button" class="plw-test__hdr is-tidak" title="Kandidat tidak datang — aktivitas ditutup dan tahapnya dievaluasi ulang" @click="askHadir(t, 'T')">
-                                        <i class="bi bi-person-dash-fill"></i> Tidak Hadir
+                                    <button
+                                        type="button" class="plw-test__hdr is-tidak"
+                                        :title="t.jadwal?.batasWaktu ? 'Kandidat tidak melaksanakannya — aktivitas ditutup dan tahapnya dievaluasi ulang' : 'Kandidat tidak datang — aktivitas ditutup dan tahapnya dievaluasi ulang'"
+                                        @click="askHadir(t, 'T')"
+                                    >
+                                        <i class="bi bi-person-dash-fill"></i>
+                                        {{ t.jadwal?.batasWaktu ? 'Tidak Melaksanakan' : 'Tidak Hadir' }}
                                     </button>
                                 </template>
                                 <!-- Kehadiran yang SUDAH ditetapkan tetap terbaca —
                                      itulah dasar tombol keputusan boleh ditekan. -->
                                 <span v-else-if="t.hadir === 'Y'" class="plw-test__hdrtag">
-                                    <i class="bi bi-person-check-fill"></i> Hadir
+                                    <i class="bi bi-person-check-fill"></i> {{ t.jadwal?.batasWaktu ? 'Dilaksanakan' : 'Hadir' }}
                                 </span>
                                 <span v-else-if="t.hadir === 'T'" class="plw-test__hdrtag is-no">
-                                    <i class="bi bi-person-dash-fill"></i> Tidak hadir
+                                    <i class="bi bi-person-dash-fill"></i> {{ t.jadwal?.batasWaktu ? 'Tidak dilaksanakan' : 'Tidak hadir' }}
                                 </span>
 
+                                <!-- PERMINTAAN JADWAL LAIN TERBUKA — kandidat sudah mengajukan
+                                     waktu lain, jadi pertanyaannya sekarang hanya satu: diapakan
+                                     usulannya. Tiga tombolnya MENGGANTIKAN Ubah Jadwal, Tunda,
+                                     dan Kirim ulang email (yang justru menimpa usulan diam-diam),
+                                     dan berdiri di baris ini — bukan tersembunyi di panel
+                                     konfirmasi (masukan user 2 Okt 2026). -->
+                                <template v-if="bisaProsesMinta(t)">
+                                    <button
+                                        type="button" class="plw-test__jdw is-setuju"
+                                        title="Pilih salah satu usulan kandidat — jadwal baru terkirim dan kandidat langsung tercatat akan hadir"
+                                        @click="bukaMintaBaris(t, 'setujui')"
+                                    >
+                                        <i class="bi bi-check2-circle"></i> Setujui Usulan
+                                    </button>
+                                    <button
+                                        type="button" class="plw-test__jdw"
+                                        title="Usulan kandidat tidak bisa — tawarkan waktu lain; kandidat mengonfirmasi ulang"
+                                        @click="bukaMintaBaris(t, 'tawarkan')"
+                                    >
+                                        <i class="bi bi-calendar2-plus"></i> Tawarkan Waktu Lain
+                                    </button>
+                                    <button
+                                        type="button" class="plw-test__jdw is-tolak"
+                                        title="Jadwal semula tetap — kandidat diminta menjawab lagi"
+                                        @click="bukaMintaBaris(t, 'tolak')"
+                                    >
+                                        <i class="bi bi-x-circle"></i> Tolak
+                                    </button>
+                                </template>
                                 <button
-                                    v-if="t.butuhJadwal"
+                                    v-if="t.butuhJadwal && !mintaTerbuka(t)"
                                     type="button" class="plw-test__jdw"
                                     :class="{ 'is-set': t.jadwal }"
                                     :title="judulTombolJadwal(t)"
@@ -1678,6 +1844,49 @@
                                 >
                                     <i class="bi" :class="t.jadwal ? 'bi-calendar-check-fill' : 'bi-calendar-plus'"></i>
                                     {{ t.jadwal ? 'Ubah Jadwal' : 'Atur Jadwal' }}
+                                </button>
+                                <!-- TUNDA JADWAL — aksi atas JADWALNYA, sejajar Ubah Jadwal (bukan
+                                     di panel konfirmasi): jadwal dikosongkan, kandidat dikabari
+                                     alasan & perkiraan penggantinya. Yang sudah ditunda: Perbarui
+                                     info (mis. dari "belum diketahui" menjadi perkiraan tanggal). -->
+                                <button
+                                    v-if="bisaTunda(t)"
+                                    type="button" class="plw-test__jdw is-tunda"
+                                    title="Kosongkan jadwal ini & kabari kandidat — alasan, perkiraan jadwal pengganti, pesan"
+                                    @click="bukaTundaBaris(t, 'tunda')"
+                                >
+                                    <i class="bi bi-pause-circle"></i> Tunda Jadwal
+                                </button>
+                                <button
+                                    v-else-if="bisaPerbaruiTunda(t)"
+                                    type="button" class="plw-test__jdw is-tunda"
+                                    title="Perbarui alasan / perkiraan jadwal pengganti — kandidat bisa dikabari lagi lewat email"
+                                    @click="bukaTundaBaris(t, 'perbarui')"
+                                >
+                                    <i class="bi bi-pencil-square"></i> Perbarui Info Tunda
+                                </button>
+                                <!-- PERPANJANG — hanya BATAS UNGGAH hasil (MCU mandiri); tanggal
+                                     pemeriksaan tetap. Kotak unggah yang sudah tertutup ikut
+                                     terbuka. Vendor tidak punya batas unggah: rentangnya diubah
+                                     lewat "Ubah Jadwal". -->
+                                <button
+                                    v-if="bisaPerpanjang(t)"
+                                    type="button" class="plw-test__jdw is-panjang"
+                                    title="Mundurkan batas unggah hasil — tanggal pemeriksaan, tempat, surat & instruksi tetap; kandidat dikabari lewat email"
+                                    @click="askPerpanjang(t)"
+                                >
+                                    <i class="bi bi-hourglass-split"></i> Perpanjang
+                                </button>
+                                <!-- KIRIM ULANG EMAIL — kandidat melapor tidak menerima, atau
+                                     belum juga mengunggah. Isinya dirakit dari jadwal yang
+                                     berlaku sekarang, bukan salinan email lama. -->
+                                <button
+                                    v-if="bisaKirimUlang(t)"
+                                    type="button" class="plw-test__jdw is-ulang"
+                                    :title="judulKirimUlang(t)"
+                                    @click="askKirimUlang(t)"
+                                >
+                                    <i class="bi bi-envelope-arrow-up"></i> Kirim ulang email
                                 </button>
                                 <!-- KEPUTUSAN LANGSUNG — ujian online ber-peran INFORMATIF.
                                      Kandidat sudah mengerjakan, nilainya sudah masuk dari
@@ -3174,7 +3383,8 @@
                 </template>
                 <template v-else>
                     <!-- DUA WAKTU, KEDUANYA WAJIB (keputusan user): formulir
-                         terkunci sebelum dibuka dan sesudah batasnya. -->
+                         terkunci sebelum dibuka dan sesudah batasnya. Hari yang
+                         sudah lewat tidak bisa dipilih. -->
                     <div class="plw-batasm__dua">
                         <div>
                             <label class="plw-fld__lbl">Formulir dibuka <b>*</b></label>
@@ -3182,6 +3392,7 @@
                                 v-model="batasKolomBuka" type="datetime"
                                 format="DD MMM YYYY HH:mm" value-format="YYYY-MM-DD HH:mm:ss"
                                 placeholder="Kapan mulai bisa diisi" style="width: 100%"
+                                :disabled-date="sebelumHariIni"
                             />
                         </div>
                         <div>
@@ -3191,6 +3402,7 @@
                                 format="DD MMM YYYY HH:mm" value-format="YYYY-MM-DD HH:mm:ss"
                                 placeholder="Paling lambat dikirim" style="width: 100%"
                                 :default-time="JAM_BATAS"
+                                :disabled-date="sebelumHariIni"
                             />
                         </div>
                     </div>
@@ -3346,6 +3558,7 @@
                                 v-model="batasKandBuka" type="datetime"
                                 format="DD MMM YYYY HH:mm" value-format="YYYY-MM-DD HH:mm:ss"
                                 placeholder="Kosong = sekarang" style="width: 100%"
+                                :disabled-date="sebelumHariIni"
                             />
                         </div>
                         <div>
@@ -3355,6 +3568,7 @@
                                 format="DD MMM YYYY HH:mm" value-format="YYYY-MM-DD HH:mm:ss"
                                 placeholder="Paling lambat dikirim" style="width: 100%"
                                 :default-time="JAM_BATAS"
+                                :disabled-date="sebelumHariIni"
                             />
                         </div>
                     </div>
@@ -3726,8 +3940,12 @@
                      daring (MCU itu pemeriksaan fisik, tanda tangan kontrak butuh
                      kehadiran). Menawarkan pilihan yang tidak masuk akal hanya
                      mengundang salah pilih. -->
-                <div v-if="!jadwalTarget?.wajibLuring" class="plw-fld">
-                    <label class="plw-fld__lbl">Metode <b>*</b></label>
+                <!-- Pilihan ditampilkan bila ada LEBIH DARI SATU bentuk yang sah.
+                     MCU punya dua — VENDOR (RS/klinik/lab rekanan) atau MANDIRI
+                     (klinik/RS pilihan kandidat) — meski keduanya pemeriksaan
+                     fisik; yang daring memang tetap tidak ditawarkan. -->
+                <div v-if="modeJadwalDipakai.length > 1" class="plw-fld">
+                    <label class="plw-fld__lbl">{{ jadwalTarget?.wajibLuring ? 'Cara pelaksanaan' : 'Metode' }} <b>*</b></label>
                     <!-- Tombolnya DARI MASTER Mode Jadwal. Dulu dua tombol
                          ditulis mati di sini, dan bentuk ketiga — telepon, yang
                          justru paling lazim untuk penawaran gaji — mustahil ada
@@ -3745,7 +3963,7 @@
                     </div>
                     <p v-if="modeJadwalDef?.deskripsi" class="plw-fld__hint">{{ modeJadwalDef.deskripsi }}</p>
                 </div>
-                <p v-else class="plw-note is-lock">
+                <p v-else-if="jadwalTarget?.wajibLuring" class="plw-note is-lock">
                     <i class="bi bi-geo-alt-fill"></i>
                     <span>
                         {{ jadwalTarget?.tipeNama || 'Aktivitas ini' }} hanya bisa dijalankan
@@ -3772,9 +3990,52 @@
                     </span>
                 </p>
 
+                <!-- BERRENTANG TANGGAL (MCU vendor / mandiri): tidak ada jam janji
+                     temu — yang ditanyakan RENTANGNYA, dan itu pun sudah terisi
+                     dari master (Batas_Hari_Bawaan): rekruter cukup menyimpan.
+                     Tanggal terakhir = batasnya (unggah mandiri, pengingat). -->
+                <template v-if="modeJadwalDef?.batasWaktu">
+                    <div class="plw-fld">
+                        <label class="plw-fld__lbl">Rentang tanggal pemeriksaan <b>*</b></label>
+                        <el-date-picker
+                            v-model="jadwalRentang" type="daterange"
+                            format="DD MMM YYYY" value-format="YYYY-MM-DD"
+                            range-separator="–" start-placeholder="Tanggal pertama" end-placeholder="Tanggal terakhir"
+                            style="width: 100%"
+                            :disabled-date="sebelumHariIni"
+                        />
+                        <p class="plw-fld__hint">
+                            Tanggal terakhir berlaku sampai pukul 23.59<template v-if="modeJadwalDef.batasHari">
+                            — terisi otomatis {{ modeJadwalDef.batasHari }} hari dari hari ini</template>.
+                            <template v-if="modeJadwalDef.unggahKandidat">
+                                Itu juga batas kandidat mengunggah hasilnya; sesudahnya kotak unggah ditutup (bisa diperpanjang).
+                            </template>
+                            <template v-else>Tanpa jam janji temu — kandidat datang kapan saja dalam rentang ini.</template>
+                        </p>
+                    </div>
+                    <!-- "Tempat" MANDIRI yang dibaca kandidat — dari master mode,
+                         bukan isian: tidak ada lokasi yang perlu dipilih tim. -->
+                    <p v-if="!modeJadwalDef.butuhTempat && modeJadwalDef.kalimatUndangan" class="plw-note is-info">
+                        <i class="bi bi-hospital"></i>
+                        <span><b>Tempat untuk kandidat:</b> {{ modeJadwalDef.kalimatUndangan }}</span>
+                    </p>
+                </template>
+                <template v-else>
                 <div class="plw-fld">
                     <label class="plw-fld__lbl">Waktu mulai <b>*</b></label>
-                    <el-date-picker v-model="jadwalMulai" type="datetime" format="DD MMM YYYY HH:mm" value-format="YYYY-MM-DD HH:mm:ss" placeholder="Pilih tanggal & jam" style="width: 100%" />
+                    <!-- TANGGAL YANG SUDAH LEWAT TIDAK BISA DIPILIH (masukan user
+                         2 Okt 2026) — kalender hanya mematikan HARI, jadi jam yang
+                         sudah lewat hari ini ditolak lewat pesan di bawahnya. -->
+                    <el-date-picker
+                        v-model="jadwalMulai" type="datetime"
+                        format="DD MMM YYYY HH:mm" value-format="YYYY-MM-DD HH:mm:ss"
+                        placeholder="Pilih tanggal & jam" style="width: 100%"
+                        :disabled-date="sebelumHariIni"
+                    />
+                    <p v-if="jadwalMulaiLewat" class="plw-note is-err">
+                        <i class="bi bi-exclamation-triangle-fill"></i>
+                        <span>Waktu mulai itu sudah lewat — pilih tanggal &amp; jam yang akan datang.</span>
+                    </p>
                 </div>
                 <div class="plw-fld">
                     <label class="plw-fld__lbl">Waktu selesai <small>opsional</small></label>
@@ -3800,6 +4061,18 @@
                         <span>Waktu selesai masih lebih awal daripada waktu mulai. Perbaiki dulu, atau kosongkan saja — kolom ini opsional.</span>
                     </p>
                 </div>
+                <!-- KONFIRMASI KEHADIRAN — batasnya WAKTU MULAI di atas (keputusan
+                     user 1 Okt 2026), tidak ada yang perlu diisi. Lewat waktu mulai,
+                     tombol kandidat hilang dan kehadiran dicatat seperti biasa. -->
+                <p v-if="konfJadwalAktif" class="plw-note is-info">
+                    <i class="bi bi-calendar-check"></i>
+                    <span>
+                        Kandidat diminta <b>konfirmasi kehadiran</b> lewat tombol di email — akan hadir, minta jadwal lain,
+                        atau tidak melanjutkan — dan bisa menjawab sampai <b>waktu mulai<template v-if="jadwalMulai"> ({{ waktuKonf(jadwalMulai) }})</template></b>.
+                        <template v-if="konfJadwalLama"> Ia sudah menjawab <b>{{ konfJadwalLama.label }}</b>; mengubah waktu, bentuk, atau tempat meminta konfirmasi ulang, mengubah instruksi saja tidak.</template>
+                    </span>
+                </p>
+                </template>
 
                 <div v-if="modeJadwalDef?.butuhTautan" class="plw-fld">
                     <label class="plw-fld__lbl" for="jdw-link">Tautan pertemuan <b>*</b></label>
@@ -3927,8 +4200,106 @@
                         <input id="jdw-lokasi" v-model="jadwalLokasi" type="text" class="plw-inp" placeholder="mis. Gedung B lantai 3, temui resepsionis" maxlength="300" />
                     </div>
                 </template>
+                <!-- VENDOR: tempat DIKETIK, bukan dipilih dari peta. Vendor
+                     berjaringan (laboratorium, klinik) punya puluhan cabang di satu
+                     kota — yang dibutuhkan kandidat adalah NAMA vendornya dan cabang
+                     mana saja yang melayani, bukan satu titik peta yang pasti salah
+                     untuk sebagian orang. Alamat & tautan Google Maps hanya bila
+                     memang satu tempat — dan petanya tidak pernah dikarang sistem. -->
+                <template v-else-if="modeJadwalDef?.butuhTempat">
+                    <div class="plw-fld">
+                        <label class="plw-fld__lbl" for="jdw-vendor">{{ modeJadwalDef.labelTempat || 'Nama tempat' }} <b>*</b></label>
+                        <input id="jdw-vendor" v-model="jadwalLokasiNama" type="text" class="plw-inp" placeholder="mis. Laboratorium Klinik Pramita" maxlength="200" />
+                    </div>
+                    <div class="plw-fld">
+                        <label class="plw-fld__lbl">Cabang / lokasi yang melayani <small>opsional</small></label>
+                        <EditorQuill
+                            v-model="jadwalLokasiHtml"
+                            ringkas
+                            placeholder="mis. Semua cabang di Palembang: Pramita Sudirman, Pramita Demang. Datang 07.00–10.00."
+                            hint="Kandidat memilih cabang terdekat dari daftar ini."
+                        />
+                    </div>
+                    <div class="plw-fld">
+                        <label class="plw-fld__lbl" for="jdw-vendor-alamat">Alamat lengkap <small>opsional</small></label>
+                        <input id="jdw-vendor-alamat" v-model="jadwalLokasiAlamat" type="text" class="plw-inp" placeholder="Bila hanya satu tempat — mis. Jl. Jend. Sudirman No. 12, Palembang" maxlength="500" />
+                    </div>
+                    <div class="plw-fld">
+                        <label class="plw-fld__lbl" for="jdw-vendor-peta">Tautan Google Maps <small>opsional</small></label>
+                        <input id="jdw-vendor-peta" v-model="jadwalMapsUrl" type="url" class="plw-inp" placeholder="https://maps.app.goo.gl/..." maxlength="500" />
+                        <p v-if="jadwalMapsSalah" class="plw-note is-err">
+                            <i class="bi bi-exclamation-triangle-fill"></i>
+                            <span>Harus tautan Google Maps — salin lewat tombol <b>Bagikan</b> di Google Maps.</span>
+                        </p>
+                    </div>
+                </template>
 
-                <div class="plw-fld">
+                <!-- SURAT PENGANTAR — wajib untuk mode ber-Flag_Butuh_Surat. Boleh
+                     lebih dari satu, hanya PDF, dengan batas JUMLAH ukuran seluruhnya
+                     (bukan per berkas). Surat yang sudah melekat bisa dihapus satu
+                     per satu; yang baru langsung diunggah begitu dipilih dan baru
+                     terikat ke kandidat ini saat jadwalnya disimpan. -->
+                <div v-if="modeJadwalDef?.butuhSurat" class="plw-fld">
+                    <label class="plw-fld__lbl">
+                        {{ modeJadwalDef.labelSurat }} <b>*</b>
+                        <span class="plw-surat__kuota" :class="{ 'is-penuh': jadwalSuratSisa <= 0 }">
+                            {{ fmtUkuran(jadwalSuratTotal) }} dari {{ jadwalFitur.suratMaksMb || 5 }} MB
+                        </span>
+                    </label>
+                    <div class="plw-surat">
+                        <div v-for="(s, i) in jadwalSuratDaftar" :key="s.ref || 'lama' + s.tetap" class="plw-surat__baris">
+                            <i class="bi bi-file-earmark-pdf-fill"></i>
+                            <a v-if="s.url" :href="s.url" target="_blank" rel="noopener" class="plw-surat__nama">{{ s.nama }}</a>
+                            <span v-else class="plw-surat__nama">{{ s.nama }}</span>
+                            <span class="plw-surat__ukuran">{{ fmtUkuran(s.ukuran) }}</span>
+                            <small :class="s.ref ? 'is-baru' : 'is-lama'">{{ s.ref ? 'baru' : 'terlampir' }}</small>
+                            <button type="button" class="plw-surat__x" title="Hapus surat ini" @click="jadwalSuratDaftar.splice(i, 1)">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </div>
+                        <span v-if="!jadwalSuratDaftar.length" class="plw-surat__kosong">Belum ada surat.</span>
+                        <label class="plw-surat__pilih" :class="{ 'is-busy': suratUnggahDi === 'satuan', 'is-mati': jadwalSuratSisa <= 0 }">
+                            <input
+                                type="file" hidden multiple :accept="suratAccept"
+                                :disabled="!!suratUnggahDi || jadwalSuratSisa <= 0" @change="unggahSurat($event, 'satuan')"
+                            >
+                            <i class="bi" :class="suratUnggahDi === 'satuan' ? 'bi-arrow-repeat plw-putar' : 'bi-plus-lg'"></i>
+                            {{ suratUnggahDi === 'satuan' ? 'Mengunggah…' : 'Tambah surat (PDF)' }}
+                        </label>
+                    </div>
+                    <p class="plw-fld__hint">
+                        Hanya PDF · boleh lebih dari satu · total paling besar {{ jadwalFitur.suratMaksMb || 5 }} MB
+                        (sisa {{ fmtUkuran(Math.max(0, jadwalSuratSisa)) }}). Kandidat mengunduhnya dari email dan portal.
+                    </p>
+                </div>
+
+                <!-- INSTRUKSI UNTUK KANDIDAT — terisi dari Master Alur dan
+                     LANGSUNG bisa disunting di sini: editornya selalu tampil,
+                     tanpa klik "Ubah" lebih dulu. Data per kandidat (tempat,
+                     waktu, biaya) TIDAK ditulis di sini — sistem yang merakitnya
+                     di posisi tetap undangan. -->
+                <div v-if="jadwalFitur.instruksi" class="plw-fld">
+                    <label class="plw-fld__lbl">
+                        {{ jadwalTarget?.jadwalPrivat ? 'Catatan internal' : 'Instruksi untuk kandidat' }}
+                        <small>opsional</small>
+                    </label>
+                    <EditorQuill
+                        v-model="jadwalCatatanHtml"
+                        ringkas
+                        placeholder="mis. Bawa KTP asli. Puasa 10 jam sebelum pemeriksaan."
+                        hint="Terisi dari Master Alur — ubah bila ada yang khusus. Tanpa tanggal/tempat: keduanya dirakit sistem di undangan."
+                    />
+                    <p v-if="jadwalInfo.muat" class="plw-fld__hint">
+                        <i class="bi bi-arrow-repeat plw-putar"></i> Memuat instruksi dari Master Alur…
+                    </p>
+                    <button
+                        v-else-if="jadwalInfo.instruksiAlur && jadwalCatatanHtml !== jadwalInfo.instruksiAlur"
+                        type="button" class="plw-fld__isi" @click="jadwalCatatanHtml = jadwalInfo.instruksiAlur"
+                    >
+                        <i class="bi bi-arrow-counterclockwise"></i> Kembalikan instruksi dari Master Alur
+                    </button>
+                </div>
+                <div v-else class="plw-fld">
                     <!-- "Untuk kandidat" hanya benar bila ia menerimanya. Pada
                          jadwal privat catatan ini tidak pernah sampai ke mana
                          pun selain catatan tim sendiri. -->
@@ -3939,13 +4310,243 @@
                     <textarea id="jdw-catatan" v-model="jadwalCatatan" class="plw-inp plw-inp--ta" rows="2" maxlength="1000" placeholder="mis. Bawa KTP asli dan portofolio cetak."></textarea>
                 </div>
 
+                <!-- INFORMASI BIAYA — kalimatnya dari master tipe (MCU: bayar
+                     dulu, diganti bila lolos); tampil-tidaknya diatur admin.
+                     Bawaannya dari Master Alur, bisa diubah untuk jadwal ini —
+                     mis. biaya sudah dijelaskan di instruksi, atau vendor dibayar
+                     langsung perusahaan. Penggantiannya tetap ditentukan sistem
+                     dari hasil MCU. -->
+                <div v-if="biayaJadwal && !jadwalTarget?.jadwalPrivat" class="plw-biaya" :class="{ 'is-off': !jadwalTampilBiaya }">
+                    <div class="plw-biaya__head">
+                        <span><i class="bi bi-cash-coin"></i> <b>Tampilkan informasi biaya ke kandidat</b></span>
+                        <el-switch v-model="jadwalTampilBiaya" size="small" />
+                    </div>
+                    <!-- Kalimatnya bisa disunting untuk kandidat ini — terisi dari
+                         Master Alur (atau kalimat bawaan tipe). -->
+                    <textarea
+                        v-if="jadwalTampilBiaya"
+                        v-model="jadwalKalimatBiaya" class="plw-inp plw-inp--ta plw-biaya__teks" rows="3" maxlength="1000"
+                        :placeholder="biayaJadwal"
+                    ></textarea>
+                    <p v-else class="plw-biaya__isi">{{ jadwalKalimatBiaya || biayaJadwal }}</p>
+                    <button
+                        v-if="jadwalTampilBiaya && jadwalInfo.kalimatBiayaAlur && jadwalKalimatBiaya.trim() !== jadwalInfo.kalimatBiayaAlur"
+                        type="button" class="plw-fld__isi" @click="jadwalKalimatBiaya = jadwalInfo.kalimatBiayaAlur"
+                    >
+                        <i class="bi bi-arrow-counterclockwise"></i> Kembalikan kalimat bawaan
+                    </button>
+                    <small class="plw-biaya__hint">
+                        {{ jadwalTampilBiaya
+                            ? 'Ikut di email & portal kandidat — kalimatnya bisa disunting. Matikan bila biaya sudah dijelaskan di instruksi.'
+                            : 'Tidak ditampilkan — email & portal kandidat tanpa informasi biaya.' }}
+                    </small>
+                </div>
+
+                <!-- ALASAN PERUBAHAN — hanya saat jadwal yang SUDAH dikirim
+                     diubah. Menjadwalkan pertama kali tidak menuntut apa pun. -->
+                <div v-if="butuhAlasanJadwal" class="plw-fld">
+                    <label class="plw-fld__lbl" for="jdw-alasan">Alasan perubahan <b>*</b></label>
+                    <textarea
+                        id="jdw-alasan" v-model="jadwalAlasan" class="plw-inp plw-inp--ta" rows="2" maxlength="500"
+                        placeholder="mis. Vendor penuh minggu ini — dialihkan ke klinik terdekat pilihan kandidat."
+                    ></textarea>
+                    <p class="plw-fld__hint">Kandidat sudah menerima jadwal lama. Alasannya tercatat di riwayat jadwal.</p>
+                </div>
+
+                <!-- RIWAYAT JADWAL — siapa mengubah apa, kapan, dan kenapa. -->
+                <div v-if="jadwalInfo.jejak.length" class="plw-jdw__jejak">
+                    <button type="button" class="plw-fld__isi" @click="jadwalJejakBuka = !jadwalJejakBuka">
+                        <i class="bi" :class="jadwalJejakBuka ? 'bi-chevron-up' : 'bi-clock-history'"></i>
+                        Riwayat jadwal ({{ jadwalInfo.jejak.length }})
+                    </button>
+                    <ol v-if="jadwalJejakBuka" class="plw-jdw__jejaklist">
+                        <li v-for="(j, i) in jadwalInfo.jejak" :key="i">
+                            <b>{{ labelAksiJejak(j.aksi) }}</b> · {{ fmtWaktu(j.at) }} · {{ j.oleh || 'Sistem' }}
+                            <small>{{ ringkasJejak(j) }}</small>
+                            <small v-if="j.alasan" class="is-alasan">Alasan: {{ j.alasan }}</small>
+                        </li>
+                    </ol>
+                </div>
+
                 <!-- Janji email hanya diucapkan bila emailnya memang dikirim.
                      Tipe berjadwal privat tidak mengirim apa pun. -->
                 <p v-if="!jadwalTarget?.jadwalPrivat" class="plw-note is-info">
                     <i class="bi bi-envelope-fill"></i>
                     <span>
-                        Undangan berisi waktu, {{ jadwalMode === 'DARING' ? 'tautan pertemuan' : 'lokasi berikut petanya' }},
-                        dan catatan di atas langsung dikirim ke email kandidat.
+                        <template v-if="modeJadwalDef?.batasWaktu">
+                            Email berisi rentang tanggal, {{ modeJadwalDef.butuhTempat ? 'vendor & cabangnya' : 'tempat pilihan kandidat' }}<template v-if="modeJadwalDef.butuhSurat">, tautan {{ hurufKecilAwal(modeJadwalDef.labelSurat || 'surat') }}</template><template v-if="biayaJadwal && jadwalTampilBiaya">, aturan biaya</template>,
+                            dan instruksi di atas langsung dikirim ke kandidat.<template v-if="modeJadwalDef.unggahKandidat"> Pengingat unggah terkirim otomatis menjelang batasnya.</template>
+                        </template>
+                        <template v-else>
+                            Undangan berisi waktu, {{ modeJadwalDef?.butuhTautan ? 'tautan pertemuan' : (modeJadwalDef?.butuhLokasi ? 'lokasi berikut petanya' : 'bentuk pelaksanaannya') }}<template v-if="biayaJadwal && jadwalTampilBiaya">, aturan biaya</template>,
+                            dan catatan di atas langsung dikirim ke email kandidat.
+                        </template>
+                    </span>
+                </p>
+            </div>
+        </ConfirmModal>
+
+        <!-- PERPANJANG BATAS UNGGAH — kandidat yang mengunggah hasilnya sendiri
+             (MCU mandiri). Tanggal pemeriksaan TIDAK ikut mundur; alasannya
+             tercatat di jejak. -->
+        <ConfirmModal
+            :show="perpanjangShow"
+            :danger="false"
+            icon="bi-hourglass-split"
+            title="Perpanjang Batas Unggah"
+            :subtitle="perpanjangTarget ? `${perpanjangTarget.label} — ${detailKandidat?.pelamar || ''}` : ''"
+            :confirm-label="perpanjangTarget?.jadwalPrivat ? 'Perpanjang' : 'Perpanjang &amp; Kabari Kandidat'"
+            :busy="sibuk"
+            :confirm-disabled="!bolehPerpanjang"
+            form-mode
+            @confirm="konfirmPerpanjang"
+            @cancel="perpanjangShow = false"
+        >
+            <div class="plw-jdw">
+                <p class="plw-note is-info">
+                    <i class="bi bi-calendar-range"></i>
+                    <span>
+                        Batas unggah sekarang <b>{{ perpanjangTarget?.jadwal?.batasUnggahTeks || '—' }}</b>.
+                        Yang mundur hanya batas unggah hasil — tanggal pemeriksaan
+                        <b>{{ perpanjangTarget?.jadwal?.rentangTeks || '—' }}</b>, tempat, surat pengantar, dan instruksi tetap.
+                        Kotak unggah kandidat terbuka sampai tanggal baru.
+                    </span>
+                </p>
+                <div class="plw-fld">
+                    <label class="plw-fld__lbl">Batas unggah yang baru <b>*</b></label>
+                    <el-date-picker
+                        v-model="perpanjangTanggal" type="date"
+                        format="DD MMM YYYY" value-format="YYYY-MM-DD"
+                        placeholder="Pilih tanggal" style="width: 100%"
+                        :disabled-date="sebelumBatasBaru"
+                    />
+                    <p class="plw-fld__hint">Berlaku sampai pukul 23.59 hari itu.</p>
+                </div>
+                <div class="plw-fld">
+                    <label class="plw-fld__lbl" for="jdw-panjang-alasan">Alasan perpanjangan <b>*</b></label>
+                    <textarea
+                        id="jdw-panjang-alasan" v-model="perpanjangAlasan" class="plw-inp plw-inp--ta" rows="2" maxlength="500"
+                        placeholder="mis. Hasil lab kandidat baru keluar lusa."
+                    ></textarea>
+                    <p class="plw-fld__hint">Tercatat di riwayat jadwal — tidak dikirim ke kandidat.</p>
+                </div>
+                <p v-if="!perpanjangTarget?.jadwalPrivat" class="plw-note is-info">
+                    <i class="bi bi-envelope-fill"></i>
+                    <span>Kandidat menerima email "batas unggah diperpanjang" berisi rincian jadwal yang berlaku.</span>
+                </p>
+            </div>
+        </ConfirmModal>
+
+        <!-- TUNDA JADWAL / PERBARUI INFO TUNDA — dari baris aksi aktivitas.
+             Pilihan alasan & rentang tanggalnya dimuat jendelanya sendiri. -->
+        <TundaDialog
+            v-if="tundaBaris.id"
+            :show="tundaBaris.show"
+            :id-aktivitas="tundaBaris.id"
+            :mode="tundaBaris.mode"
+            :konteks="tundaBaris.konteks"
+            :awal="tundaBaris.awal"
+            @close="tundaBaris.show = false"
+            @selesai="selesaiTundaBaris"
+        />
+
+        <!-- PROSES PERMINTAAN JADWAL LAIN — dari baris aksi aktivitas. -->
+        <PermintaanDialog
+            v-if="mintaBaris.minta"
+            :show="mintaBaris.show"
+            :mode="mintaBaris.mode"
+            :permintaan="mintaBaris.minta"
+            :konteks="mintaBaris.konteks"
+            @close="mintaBaris.show = false"
+            @selesai="selesaiMintaBaris"
+            @berubah="segarkanKartu({ tes: mintaBaris.id })"
+        />
+
+        <!-- KIRIM ULANG EMAIL JADWAL — isinya dirakit ulang dari jadwal yang
+             berlaku sekarang. Kandidat mandiri yang belum mengunggah menerima
+             bunyi pengingat unggah. -->
+        <ConfirmModal
+            :show="kirimUlangShow"
+            :danger="false"
+            icon="bi-envelope-arrow-up"
+            title="Kirim Ulang Email"
+            :subtitle="kirimUlangTarget ? `${kirimUlangTarget.label} — ${detailKandidat?.pelamar || ''}` : ''"
+            confirm-label="Kirim Ulang"
+            :busy="sibuk"
+            form-mode
+            @confirm="konfirmKirimUlang"
+            @cancel="kirimUlangShow = false"
+        >
+            <div class="plw-jdw">
+                <p class="plw-note is-info">
+                    <i class="bi bi-envelope-paper-fill"></i>
+                    <span>
+                        <template v-if="kirimUlangTarget?.unggahKandidat && !kirimUlangTarget.unggahKandidat.terkirim">
+                            Kandidat belum mengunggah hasilnya — email berbunyi <b>pengingat untuk mengunggah</b>
+                            sebelum <b>{{ kirimUlangTarget.unggahKandidat.batasTeks || kirimUlangTarget.jadwal?.batasTeks || '—' }}</b>,
+                            lengkap dengan rincian jadwalnya<template v-if="kirimUlangTarget.jadwal?.surat"> dan surat pengantar</template>.
+                        </template>
+                        <template v-else>
+                            Email berisi rincian jadwal <b>yang berlaku sekarang</b>
+                            ({{ jadwalRingkas(kirimUlangTarget?.jadwal || {}) }})<template v-if="kirimUlangTarget?.jadwal?.surat">, termasuk surat pengantarnya</template>.
+                        </template>
+                    </span>
+                </p>
+                <p v-if="kirimUlangTarget?.jadwal?.emailAt" class="plw-fld__hint">
+                    Email jadwal terakhir dikirim {{ fmtWaktu(kirimUlangTarget.jadwal.emailAt) }}.
+                </p>
+            </div>
+        </ConfirmModal>
+
+        <!-- KIRIM ULANG MASSAL — per nama aktivitas, sama seperti jadwal massal. -->
+        <ConfirmModal
+            :show="kirimUlangMassalShow"
+            :danger="false"
+            icon="bi-envelope-arrow-up"
+            title="Kirim Ulang Email Jadwal"
+            :subtitle="`${terpilih.length} kandidat terpilih`"
+            confirm-label="Kirim Ulang"
+            :busy="sibuk"
+            :confirm-disabled="!bolehKirimUlangMassal"
+            form-mode
+            @confirm="konfirmKirimUlangMassal"
+            @cancel="kirimUlangMassalShow = false"
+        >
+            <div class="plw-jdw">
+                <div class="plw-fld">
+                    <label class="plw-fld__lbl">Aktivitas <b>*</b></label>
+                    <el-select v-model="kirimUlangAktivitas" placeholder="Pilih aktivitas" style="width: 100%">
+                        <el-option
+                            v-for="a in aktivitasKirimUlang" :key="a.label"
+                            :value="a.label" :label="`${a.label} — ${a.jumlah} kandidat`"
+                        />
+                    </el-select>
+                </div>
+                <div v-if="sasaranKirimUlang.length" class="plw-prev">
+                    <div class="plw-prev__head">
+                        <i class="bi bi-list-check"></i>
+                        <span>{{ sasaranKirimUlang.length }} kandidat akan dikirimi ulang</span>
+                    </div>
+                    <div class="plw-prev__list">
+                        <div v-for="(p, i) in sasaranKirimUlang" :key="p.t.id" class="plw-prev__row">
+                            <span class="plw-prev__no">{{ i + 1 }}</span>
+                            <span class="plw-ell">{{ p.r.pelamar }}</span>
+                            <b>{{ p.t.unggahKandidat && !p.t.unggahKandidat.terkirim ? 'ajakan unggah' : 'info jadwal' }}</b>
+                        </div>
+                    </div>
+                </div>
+                <p v-if="lebihanKirimUlang" class="plw-note is-err">
+                    <i class="bi bi-shield-exclamation"></i>
+                    <span>
+                        Maksimal <b>{{ batasKirimUlang }} kandidat</b> sekali kirim — lepas {{ lebihanKirimUlang }} centang,
+                        lalu kirim sisanya di gelombang berikutnya.
+                    </span>
+                </p>
+                <p class="plw-note is-info">
+                    <i class="bi bi-envelope-fill"></i>
+                    <span>
+                        Tiap kandidat menerima satu email berisi rincian jadwal yang berlaku sekarang. Yang baru dikirimi email
+                        beberapa menit lalu, atau sudah mengirim berkasnya, dilewati dan disebutkan satu per satu.
                     </span>
                 </p>
             </div>
@@ -3956,10 +4557,14 @@
         <ConfirmModal
             :show="hadirShow"
             :danger="hadirNilai === 'T'"
-            :icon="hadirNilai === 'Y' ? 'bi-person-check-fill' : 'bi-person-dash-fill'"
-            :title="hadirNilai === 'Y' ? 'Tandai Hadir' : 'Tandai Tidak Hadir'"
+            :icon="hadirNilai === 'Y' ? (hadirBerbatas ? 'bi-clipboard2-check-fill' : 'bi-person-check-fill') : 'bi-person-dash-fill'"
+            :title="hadirNilai === 'Y'
+                ? (hadirBerbatas ? 'Catat Hasil' : 'Tandai Hadir')
+                : (hadirBerbatas ? 'Tandai Tidak Melaksanakan' : 'Tandai Tidak Hadir')"
             :subtitle="hadirTarget ? `${hadirTarget.label} \u2014 ${detailKandidat?.pelamar || ''}` : ''"
-            :confirm-label="hadirNilai === 'Y' ? 'Simpan Kehadiran & Hasil' : 'Ya, Tidak Hadir'"
+            :confirm-label="hadirNilai === 'Y'
+                ? (hadirBerbatas ? 'Simpan Hasil' : 'Simpan Kehadiran & Hasil')
+                : (hadirBerbatas ? 'Ya, Tidak Melaksanakan' : 'Ya, Tidak Hadir')"
             :busy="sibuk"
             :confirm-disabled="!bolehSimpanHadir"
             form-mode
@@ -3976,6 +4581,21 @@
                     Tombol keputusan tetap terbuka setelahnya.
                 </template>
             </p>
+            <!-- Jawaban kandidat atas undangannya — RENCANA, bukan fakta. Yang
+                 dicatat di sini adalah faktanya; keduanya sengaja tidak disamakan. -->
+            <p
+                v-if="hadirTarget?.konfirmasi && !hadirBerbatas"
+                class="plw-note"
+                :class="['JADWAL_LAIN', 'MUNDUR'].includes(hadirTarget.konfirmasi.status) ? 'is-lock' : 'is-info'"
+            >
+                <i class="bi" :class="hadirTarget.konfirmasi.ikon || 'bi-info-circle-fill'"></i>
+                <span>
+                    Konfirmasi kandidat: <b>{{ hadirTarget.konfirmasi.label }}</b>.
+                    <template v-if="hadirTarget.konfirmasi.permintaan">Permintaan jadwal lainnya masih terbuka — mencatat kehadiran akan menutupnya.</template>
+                    <template v-else-if="hadirTarget.konfirmasi.status === 'MUNDUR'">Kandidat menyatakan tidak melanjutkan — tutup lamarannya lewat keputusan <b>Mengundurkan Diri</b>.</template>
+                    <template v-else-if="hadirTarget.konfirmasi.status === 'TANPA_JAWABAN'">Kandidat tidak menjawab sampai batas — ini tidak menggugurkan; catat kehadirannya apa adanya.</template>
+                </span>
+            </p>
 
             <!-- KANDIDAT HADIR = penilaiannya sedang berlangsung, dan inilah
                  saat catatannya ditulis — bukan nanti lewat jendela terpisah
@@ -3990,7 +4610,9 @@
                      modal: penilai menulis catatannya sambil melihat lembar
                      jawaban yang diserahkan, dan menutup modal untuk membacanya
                      berarti kehilangan yang sudah diketik. -->
-                <div v-if="(hadirTarget?.berkasKandidat || []).length" class="plw-kirimbox">
+                <!-- Mandiri: berkas kandidat ditampilkan di tempat kotak unggah (di
+                     bawah), bukan dua kali. -->
+                <div v-if="(hadirTarget?.berkasKandidat || []).length && !hasilDariKandidat(hadirTarget)" class="plw-kirimbox">
                     <span class="plw-kirimbox__lbl"><i class="bi bi-inbox-fill"></i> Diserahkan kandidat</span>
                     <!-- Dibuka di MODAL, bukan tab baru: tab baru melempar
                          penilai keluar dari jendela yang sedang ia isi. -->
@@ -4097,7 +4719,8 @@
                              lolos, dan penilai berhak tahu itu SEBELUM menekan. -->
                         <p v-if="mcuDef" class="plw-fld__hint">
                             <i class="bi" :class="mcuDef.lolos ? 'bi-check-circle-fill' : 'bi-x-circle-fill'"></i>
-                            Pilihan ini menutup MCU sebagai <b>{{ mcuDef.lolos ? 'LULUS' : 'TIDAK LULUS' }}</b>.
+                            Pilihan ini menutup MCU sebagai <b>{{ mcuDef.lolos ? 'LULUS' : 'TIDAK LULUS' }}</b><template v-if="hadirTarget?.biaya">
+                            — biaya pemeriksaan kandidat <b>{{ mcuDef.lolos ? 'DIGANTI' : 'TIDAK DIGANTI' }}</b> (otomatis, tidak perlu diisi)</template>.
                         </p>
                     </div>
 
@@ -4255,14 +4878,47 @@
                      menghasilkan dokumen; kotak kosong di sana cuma meminta
                      sesuatu yang memang tidak ada. -->
                 <template v-if="hadirTarget?.berkasAktivitas !== false">
+                    <!-- HASIL DIUNGGAH KANDIDAT (MCU mandiri): kandidatlah yang
+                         memegang hasil & kwitansinya — berkasnya masuk lewat
+                         portal. Kotak unggah tim diganti keterangan ini; server
+                         juga menolak unggahan tim (subTesBerkasUnggah). Vendor
+                         tetap memakai kotak unggah biasa. -->
+                    <div v-if="hasilDariKandidat(hadirTarget)" class="plw-hasilk">
+                        <div class="plw-hasilk__head">
+                            <span class="plw-hasilk__title"><i class="bi bi-paperclip"></i> {{ hadirTarget.labelBerkas || 'Berkas hasil' }}</span>
+                            <span class="plw-hasilk__tag"><i class="bi bi-person-fill-lock"></i> diunggah kandidat</span>
+                        </div>
+                        <div v-if="(hadirTarget.berkasKandidat || []).length" class="plw-hasilk__list">
+                            <button
+                                v-for="b in hadirTarget.berkasKandidat" :key="b.id"
+                                type="button" class="plw-test__kirimfile" :title="b.nama" @click="bukaDok(b)"
+                            >
+                                <i class="bi" :class="b.isImage ? 'bi-file-earmark-image-fill' : 'bi-file-earmark-pdf-fill'"></i>
+                                {{ b.nama }}
+                            </button>
+                        </div>
+                        <p v-else class="plw-hasilk__kosong">
+                            <i class="bi bi-hourglass-split"></i>
+                            Kandidat belum mengunggah hasilnya<template v-if="hadirTarget.unggahKandidat?.batasTeks"> — batas unggah {{ hadirTarget.unggahKandidat.batasTeks }}</template>.
+                        </p>
+                        <p class="plw-hasilk__ket">
+                            <i class="bi bi-lock-fill"></i>
+                            <span>
+                                {{ hadirTarget.jadwal?.modeNama || 'Mandiri' }}: hasil &amp; kwitansi diunggah kandidat sendiri lewat portal — tim tidak mengunggah atau mengganti berkas ini.
+                                <template v-if="hadirTarget.unggahKandidat?.terkirim"> Dikirim kandidat {{ tglId(hadirTarget.unggahKandidat.terkirim) }}.</template>
+                                <template v-else-if="(hadirTarget.berkasKandidat || []).length"> Kandidat belum menekan Kirim — berkasnya masih bisa ia ubah.</template>
+                            </span>
+                        </p>
+                    </div>
                     <BerkasAktivitas
+                        v-else
                         :sub-tes-id="hadirTarget?.id || ''"
                         :awal="hadirTarget?.berkas || []"
                         :label="hadirTarget?.labelBerkas || 'Berkas hasil / lampiran penilaian'"
                         @berubah="tandaiBerkasBerubah"
                         @lihat="bukaDok"
                     />
-                    <p v-if="hadirTarget?.petunjukBerkas" class="plw-fld__hint">
+                    <p v-if="hadirTarget?.petunjukBerkas && !hasilDariKandidat(hadirTarget)" class="plw-fld__hint">
                         <i class="bi bi-info-circle"></i> {{ hadirTarget.petunjukBerkas }}
                     </p>
                 </template>
@@ -4561,7 +5217,40 @@
             <!-- Lembar penilaian yang dipindai berlabuh pada AKTIVITAS ini,
                  bukan pada tahapnya — di tahap campuran, berkas setingkat tahap
                  tak bisa dibedakan antara hasil DISC dan hasil wawancara. -->
+            <!-- HASIL DIUNGGAH KANDIDAT (MCU mandiri): kandidatlah yang
+                 memegang hasil & kwitansinya — berkasnya masuk lewat
+                 portal. Kotak unggah tim diganti keterangan ini; server
+                 juga menolak unggahan tim (subTesBerkasUnggah). Vendor
+                 tetap memakai kotak unggah biasa. -->
+            <div v-if="hasilDariKandidat(catatTarget)" class="plw-hasilk">
+                <div class="plw-hasilk__head">
+                    <span class="plw-hasilk__title"><i class="bi bi-paperclip"></i> {{ catatTarget.labelBerkas || 'Berkas hasil' }}</span>
+                    <span class="plw-hasilk__tag"><i class="bi bi-person-fill-lock"></i> diunggah kandidat</span>
+                </div>
+                <div v-if="(catatTarget.berkasKandidat || []).length" class="plw-hasilk__list">
+                    <button
+                        v-for="b in catatTarget.berkasKandidat" :key="b.id"
+                        type="button" class="plw-test__kirimfile" :title="b.nama" @click="bukaDok(b)"
+                    >
+                        <i class="bi" :class="b.isImage ? 'bi-file-earmark-image-fill' : 'bi-file-earmark-pdf-fill'"></i>
+                        {{ b.nama }}
+                    </button>
+                </div>
+                <p v-else class="plw-hasilk__kosong">
+                    <i class="bi bi-hourglass-split"></i>
+                    Kandidat belum mengunggah hasilnya<template v-if="catatTarget.unggahKandidat?.batasTeks"> — batas unggah {{ catatTarget.unggahKandidat.batasTeks }}</template>.
+                </p>
+                <p class="plw-hasilk__ket">
+                    <i class="bi bi-lock-fill"></i>
+                    <span>
+                        {{ catatTarget.jadwal?.modeNama || 'Mandiri' }}: hasil &amp; kwitansi diunggah kandidat sendiri lewat portal — tim tidak mengunggah atau mengganti berkas ini.
+                        <template v-if="catatTarget.unggahKandidat?.terkirim"> Dikirim kandidat {{ tglId(catatTarget.unggahKandidat.terkirim) }}.</template>
+                        <template v-else-if="(catatTarget.berkasKandidat || []).length"> Kandidat belum menekan Kirim — berkasnya masih bisa ia ubah.</template>
+                    </span>
+                </p>
+            </div>
             <BerkasAktivitas
+                v-else
                 :sub-tes-id="catatTarget?.id || ''"
                 :awal="catatTarget?.berkas || []"
                 label="Berkas hasil aktivitas"
@@ -4832,22 +5521,56 @@
                     </p>
                 </div>
 
-                <div v-if="!massalWajibLuring" class="plw-fld">
-                    <label class="plw-fld__lbl">Metode <b>*</b></label>
+                <!-- Tombolnya DARI MASTER Mode Jadwal (bukan dua tombol tertulis
+                     mati): MCU punya "Vendor" dan "Mandiri".
+                     Bentuk yang menuntut nomor per kandidat (telepon) tidak
+                     ditawarkan di sini — satu nomor untuk seratus orang tidak
+                     pernah benar. -->
+                <div v-if="modeMassalDipakai.length > 1" class="plw-fld">
+                    <label class="plw-fld__lbl">{{ massalWajibLuring ? 'Cara pelaksanaan' : 'Metode' }} <b>*</b></label>
                     <div class="plw-seg">
-                        <button v-if="massalBoleh('DARING')" type="button" class="plw-seg__b is-net" :class="{ 'is-on': massalMode === 'DARING' }" @click="massalMode = 'DARING'">
-                            <i class="bi bi-camera-video-fill"></i> Daring
-                        </button>
-                        <button v-if="massalBoleh('LURING')" type="button" class="plw-seg__b is-net" :class="{ 'is-on': massalMode === 'LURING' }" @click="massalMode = 'LURING'">
-                            <i class="bi bi-geo-alt-fill"></i> Tatap muka
+                        <button
+                            v-for="m in modeMassalDipakai" :key="m.kode"
+                            type="button" class="plw-seg__b is-net"
+                            :class="{ 'is-on': massalMode === m.kode }"
+                            :title="m.deskripsi"
+                            @click="massalMode = m.kode"
+                        >
+                            <i class="bi" :class="m.ikon"></i> {{ m.nama }}
                         </button>
                     </div>
+                    <p v-if="massalModeDef?.deskripsi" class="plw-fld__hint">{{ massalModeDef.deskripsi }}</p>
                 </div>
-                <p v-else class="plw-note is-lock">
+                <p v-else-if="massalWajibLuring" class="plw-note is-lock">
                     <i class="bi bi-geo-alt-fill"></i>
                     <span>Aktivitas ini hanya bisa dijalankan <b>tatap muka</b>, jadi metodenya tidak dapat diubah.</span>
                 </p>
 
+                <!-- BERRENTANG TANGGAL: satu rentang untuk semua kandidat, tanpa
+                     pola jam — masing-masing datang kapan saja di dalamnya. -->
+                <template v-if="massalModeDef?.batasWaktu">
+                    <div class="plw-fld">
+                        <label class="plw-fld__lbl">Rentang tanggal pemeriksaan <b>*</b></label>
+                        <el-date-picker
+                            v-model="massalRentang" type="daterange"
+                            format="DD MMM YYYY" value-format="YYYY-MM-DD"
+                            range-separator="–" start-placeholder="Tanggal pertama" end-placeholder="Tanggal terakhir"
+                            style="width: 100%"
+                            :disabled-date="sebelumHariIni"
+                        />
+                        <p class="plw-fld__hint">
+                            Tanggal terakhir berlaku sampai pukul 23.59<template v-if="massalModeDef.batasHari">
+                            — terisi otomatis {{ massalModeDef.batasHari }} hari dari hari ini</template>.
+                            <template v-if="massalModeDef.unggahKandidat"> Itu juga batas kandidat mengunggah hasilnya.</template>
+                        </p>
+                    </div>
+                    <p v-if="!massalModeDef.butuhTempat && massalModeDef.kalimatUndangan" class="plw-note is-info">
+                        <i class="bi bi-hospital"></i>
+                        <span><b>Tempat untuk kandidat:</b> {{ massalModeDef.kalimatUndangan }}</span>
+                    </p>
+                </template>
+
+                <template v-else>
                 <!-- DUA POLA WAKTU — keduanya nyata di lapangan, dan memilih
                      yang salah berarti seratus orang datang berbarengan untuk
                      wawancara yang hanya bisa satu-satu. -->
@@ -4881,7 +5604,16 @@
                      nilainya boleh sampai 480. -->
                 <div class="plw-fld">
                     <label class="plw-fld__lbl">{{ massalPola === 'BERGILIR' ? 'Slot pertama mulai' : 'Waktu mulai' }} <b>*</b></label>
-                    <el-date-picker v-model="massalMulai" type="datetime" format="DD MMM YYYY HH:mm" value-format="YYYY-MM-DD HH:mm:ss" placeholder="Pilih tanggal & jam" style="width: 100%" />
+                    <el-date-picker
+                        v-model="massalMulai" type="datetime"
+                        format="DD MMM YYYY HH:mm" value-format="YYYY-MM-DD HH:mm:ss"
+                        placeholder="Pilih tanggal & jam" style="width: 100%"
+                        :disabled-date="sebelumHariIni"
+                    />
+                    <p v-if="massalMulaiLewat" class="plw-note is-err">
+                        <i class="bi bi-exclamation-triangle-fill"></i>
+                        <span>Waktu mulai itu sudah lewat — pilih tanggal &amp; jam yang akan datang.</span>
+                    </p>
                 </div>
                 <div v-if="massalPola === 'BERGILIR'" class="plw-fld__row">
                     <div class="plw-fld">
@@ -4917,12 +5649,18 @@
                         <template v-else>Pilih tanggal &amp; jam untuk melihat urutannya.</template>
                     </span>
                 </p>
+                <!-- Konfirmasi kehadiran: batas tiap kandidat = waktu mulai SESINYA. -->
+                <p v-if="massalKonfAktif" class="plw-note is-info">
+                    <i class="bi bi-calendar-check"></i>
+                    <span>Tiap kandidat bisa mengonfirmasi kehadiran sampai <b>waktu mulai sesinya sendiri</b> — tidak ada batas terpisah yang perlu diisi.</span>
+                </p>
+                </template>
 
-                <div v-if="massalMode === 'DARING'" class="plw-fld">
+                <div v-if="massalModeDef?.butuhTautan" class="plw-fld">
                     <label class="plw-fld__lbl">Tautan pertemuan <b>*</b></label>
                     <input v-model="massalLink" type="url" class="plw-inp" placeholder="https://meet.google.com/..." maxlength="500" />
                 </div>
-                <template v-else>
+                <template v-else-if="massalModeDef?.butuhLokasi">
                     <!-- Disaring menurut peruntukan aktivitas yang dipilih, sama
                          seperti jendela satuan. Tanpa ini, menjadwalkan MCU
                          massal bisa mengirim seratus orang ke kantor sekaligus. -->
@@ -4956,10 +5694,125 @@
                         <input v-model="massalLokasi" type="text" class="plw-inp" placeholder="mis. Gedung B lantai 3, temui resepsionis" maxlength="300" />
                     </div>
                 </template>
+                <!-- VENDOR — sama dengan jendela satuan: nama vendor + cabangnya,
+                     alamat & tautan Google Maps opsional. -->
+                <template v-else-if="massalModeDef?.butuhTempat">
+                    <div class="plw-fld">
+                        <label class="plw-fld__lbl">{{ massalModeDef.labelTempat || 'Nama tempat' }} <b>*</b></label>
+                        <input v-model="massalLokasiNama" type="text" class="plw-inp" placeholder="mis. Laboratorium Klinik Pramita" maxlength="200" />
+                    </div>
+                    <div class="plw-fld">
+                        <label class="plw-fld__lbl">Cabang / lokasi yang melayani <small>opsional</small></label>
+                        <EditorQuill
+                            v-model="massalLokasiHtml"
+                            ringkas
+                            placeholder="mis. Semua cabang di Palembang: Pramita Sudirman, Pramita Demang. Datang 07.00–10.00."
+                            hint="Kandidat memilih cabang terdekat dari daftar ini."
+                        />
+                    </div>
+                    <div class="plw-fld">
+                        <label class="plw-fld__lbl">Alamat lengkap <small>opsional</small></label>
+                        <input v-model="massalLokasiAlamat" type="text" class="plw-inp" placeholder="Bila hanya satu tempat" maxlength="500" />
+                    </div>
+                    <div class="plw-fld">
+                        <label class="plw-fld__lbl">Tautan Google Maps <small>opsional</small></label>
+                        <input v-model="massalMapsUrl" type="url" class="plw-inp" placeholder="https://maps.app.goo.gl/..." maxlength="500" />
+                        <p v-if="massalMapsSalah" class="plw-note is-err">
+                            <i class="bi bi-exclamation-triangle-fill"></i>
+                            <span>Harus tautan Google Maps — salin lewat tombol <b>Bagikan</b> di Google Maps.</span>
+                        </p>
+                    </div>
+                </template>
 
-                <div class="plw-fld">
+                <!-- SURAT PENGANTAR MASSAL — SATU surat untuk seluruh sasaran
+                     (surat kolektif). Tanpa surat baru, tiap kandidat memakai
+                     suratnya sendiri — yang belum punya membuat surat ini wajib. -->
+                <div v-if="massalModeDef?.butuhSurat" class="plw-fld">
+                    <label class="plw-fld__lbl">
+                        {{ massalModeDef.labelSurat }}
+                        <b v-if="massalButuhSurat">*</b><small v-else>opsional — semua sudah punya</small>
+                        <span class="plw-surat__kuota" :class="{ 'is-penuh': massalSuratSisa <= 0 }">
+                            {{ fmtUkuran(massalSuratTotal) }} dari {{ jadwalFitur.suratMaksMb || 5 }} MB
+                        </span>
+                    </label>
+                    <div class="plw-surat">
+                        <div v-for="(s, i) in massalSuratDaftar" :key="s.ref" class="plw-surat__baris">
+                            <i class="bi bi-file-earmark-pdf-fill"></i>
+                            <span class="plw-surat__nama">{{ s.nama }}</span>
+                            <span class="plw-surat__ukuran">{{ fmtUkuran(s.ukuran) }}</span>
+                            <small class="is-baru">untuk semua</small>
+                            <button type="button" class="plw-surat__x" title="Hapus surat ini" @click="massalSuratDaftar.splice(i, 1)">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </div>
+                        <span v-if="!massalSuratDaftar.length" class="plw-surat__kosong">
+                            {{ massalPunyaSurat ? `${massalPunyaSurat} kandidat memakai suratnya masing-masing.` : 'Belum ada surat.' }}
+                        </span>
+                        <label class="plw-surat__pilih" :class="{ 'is-busy': suratUnggahDi === 'massal', 'is-mati': massalSuratSisa <= 0 }">
+                            <input
+                                type="file" hidden multiple :accept="suratAccept"
+                                :disabled="!!suratUnggahDi || massalSuratSisa <= 0" @change="unggahSurat($event, 'massal')"
+                            >
+                            <i class="bi" :class="suratUnggahDi === 'massal' ? 'bi-arrow-repeat plw-putar' : 'bi-plus-lg'"></i>
+                            {{ suratUnggahDi === 'massal' ? 'Mengunggah…' : 'Tambah surat (PDF)' }}
+                        </label>
+                    </div>
+                    <p class="plw-fld__hint">
+                        Hanya PDF · total paling besar {{ jadwalFitur.suratMaksMb || 5 }} MB. Surat di sini dipakai SEMUA kandidat
+                        terpilih (menggantikan suratnya masing-masing) — untuk surat per orang, jadwalkan satu per satu.
+                    </p>
+                </div>
+
+                <!-- INSTRUKSI — sama untuk seluruh kandidat, terisi dari Master
+                     Alur; editornya langsung tampil untuk disunting. -->
+                <div v-if="jadwalFitur.instruksi" class="plw-fld">
+                    <label class="plw-fld__lbl">
+                        Instruksi untuk kandidat <small>opsional</small>
+                    </label>
+                    <EditorQuill
+                        v-model="massalCatatanHtml"
+                        ringkas
+                        placeholder="mis. Bawa KTP asli. Puasa 10 jam sebelum pemeriksaan."
+                        hint="Terisi dari Master Alur — sama untuk semua kandidat terpilih. Tanpa tanggal/tempat: keduanya dirakit sistem di undangan."
+                    />
+                    <p v-if="massalInstruksiMuat" class="plw-fld__hint">
+                        <i class="bi bi-arrow-repeat plw-putar"></i> Memuat instruksi dari Master Alur…
+                    </p>
+                </div>
+                <div v-else class="plw-fld">
                     <label class="plw-fld__lbl">Catatan untuk kandidat <small>opsional</small></label>
                     <textarea v-model="massalCatatan" class="plw-inp plw-inp--ta" rows="2" maxlength="1000" placeholder="mis. Bawa KTP asli dan portofolio cetak."></textarea>
+                </div>
+
+                <div v-if="biayaMassal" class="plw-biaya" :class="{ 'is-off': !massalTampilBiaya }">
+                    <div class="plw-biaya__head">
+                        <span><i class="bi bi-cash-coin"></i> <b>Tampilkan informasi biaya ke kandidat</b></span>
+                        <el-switch v-model="massalTampilBiaya" size="small" />
+                    </div>
+                    <textarea
+                        v-if="massalTampilBiaya"
+                        v-model="massalKalimatBiaya" class="plw-inp plw-inp--ta plw-biaya__teks" rows="3" maxlength="1000"
+                        :placeholder="biayaMassal"
+                    ></textarea>
+                    <p v-else class="plw-biaya__isi">{{ massalKalimatBiaya || biayaMassal }}</p>
+                    <small class="plw-biaya__hint">
+                        {{ massalTampilBiaya
+                            ? 'Ikut di email & portal semua kandidat terpilih.'
+                            : 'Tidak ditampilkan ke kandidat terpilih.' }}
+                    </small>
+                </div>
+
+                <!-- Sebagian terpilih SUDAH punya jadwal — menggantinya butuh
+                     alasan, sama seperti jalur satuan. -->
+                <div v-if="massalAdaJadwal && jadwalFitur.jejak" class="plw-fld">
+                    <label class="plw-fld__lbl">Alasan perubahan <b>*</b></label>
+                    <textarea
+                        v-model="massalAlasan" class="plw-inp plw-inp--ta" rows="2" maxlength="500"
+                        placeholder="mis. Vendor tutup sementara — seluruh angkatan dialihkan ke klinik terdekat."
+                    ></textarea>
+                    <p class="plw-fld__hint">
+                        {{ massalAdaJadwal }} kandidat terpilih sudah menerima jadwal — alasannya tercatat di riwayat jadwal masing-masing.
+                    </p>
                 </div>
 
                 <!-- PRATINJAU JAM. Undangan yang sudah terkirim tak bisa ditarik,
@@ -4968,7 +5821,10 @@
                 <div v-if="pratinjauMassal.length" class="plw-prev">
                     <div class="plw-prev__head">
                         <i class="bi bi-list-ol"></i>
-                        <span>Pratinjau — {{ pratinjauMassal.length }} kandidat akan diundang</span>
+                        <span>
+                            Pratinjau — {{ pratinjauMassal.length }} kandidat akan
+                            {{ massalModeDef?.batasWaktu ? 'menerima instruksi' : 'diundang' }}
+                        </span>
                     </div>
                     <div class="plw-prev__list">
                         <div v-for="(p, i) in pratinjauMassal" :key="p.id" class="plw-prev__row">
@@ -4993,7 +5849,7 @@
                 <p v-else class="plw-note is-info">
                     <i class="bi bi-envelope-fill"></i>
                     <span>
-                        Undangan dikirim ke email <b>tiap kandidat</b> begitu disimpan, berisi jam masing-masing —
+                        Undangan dikirim ke email <b>tiap kandidat</b> begitu disimpan, berisi {{ massalModeDef?.batasWaktu ? 'rentang tanggal & rinciannya' : 'jam masing-masing' }} —
                         maksimal <b>{{ batasPutusMassal }} kandidat sekali kirim</b>, supaya alamat pengirim kami
                         tidak ditangguhkan penyedia email.
                     </span>
@@ -5651,7 +6507,11 @@ import CatatanKeputusan from '@career/CatatanKeputusan.vue';
 import KontenAman from '@career/KontenAman.vue';
 import UraianLipat from '@career/UraianLipat.vue';
 import PerpanjangBatas from '@career/PerpanjangBatas.vue';
+import KonfirmasiPanel from '@career/KonfirmasiPanel.vue';
+import TundaDialog from '@career/TundaDialog.vue';
+import PermintaanDialog from '@career/PermintaanDialog.vue';
 import { keDate, salahPerpanjang } from '@utils/career/batasIsi';
+import { muatOpsiTunda, waktuSingkat } from '@utils/career/konfirmasi';
 import { grupBagian, grupField, labelField, tipeField } from '@career/formulir';
 import { ingatModal } from '@utils/ingatModal';
 
@@ -5701,6 +6561,94 @@ function teksDariHtml(html) {
 }
 
 /**
+ * Teks polos → paragraf HTML untuk editor.
+ *
+ * Jadwal lama hanya punya catatan teks polos. Membuka "Ubah Jadwal" pada
+ * jadwal seperti itu tidak boleh menampilkan editor kosong — catatan yang
+ * sudah diterima kandidat akan hilang begitu disimpan ulang.
+ */
+function htmlDariTeks(teks) {
+    const baris = String(teks || '').split(/\r?\n/).map((b) => b.trim()).filter(Boolean);
+    if (!baris.length) return '';
+    const el = document.createElement('div');
+
+    return baris.map((b) => {
+        el.textContent = b;
+
+        return `<p>${el.innerHTML}</p>`;
+    }).join('');
+}
+
+/** "YYYY-MM-DD" untuk hari ini + `hari` hari (waktu setempat). */
+function tanggalDepan(hari) {
+    const d = new Date();
+    d.setDate(d.getDate() + Number(hari || 0));
+    const dua = (n) => String(n).padStart(2, '0');
+
+    return `${d.getFullYear()}-${dua(d.getMonth() + 1)}-${dua(d.getDate())}`;
+}
+
+/**
+ * "11–14 Sep 2026" / "30 Sep – 07 Okt 2026" — rentang tanggal ringkas.
+ * Bentuknya sama dengan UndanganJadwal::rentangPendek di server (tanggal
+ * selalu dua angka, nama bulan dari daftar yang sama — bukan dari locale
+ * peramban, yang menulis Agustus sebagai "Agu" atau "Agt" tergantung versi).
+ */
+const BULAN_PENDEK = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+function fmtRentang(a, b) {
+    if (!b) return '—';
+    const tgl = (v) => new Date(String(v).slice(0, 10) + 'T00:00:00');
+    const d2 = tgl(b);
+    if (Number.isNaN(d2.getTime())) return '—';
+    const d1 = a ? tgl(a) : null;
+    const hari = (d) => String(d.getDate()).padStart(2, '0');
+    const bulan = (d) => `${hari(d)} ${BULAN_PENDEK[d.getMonth()]}`;
+    const penuh = (d) => `${bulan(d)} ${d.getFullYear()}`;
+    if (!d1 || Number.isNaN(d1.getTime()) || d1 >= d2) return penuh(d2);
+    if (d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth()) return `${hari(d1)}–${penuh(d2)}`;
+    if (d1.getFullYear() === d2.getFullYear()) return `${bulan(d1)} – ${penuh(d2)}`;
+
+    return `${penuh(d1)} – ${penuh(d2)}`;
+}
+
+/**
+ * Tautan Google Maps yang ditempel tim sah? Kosong = sah (opsional).
+ *
+ * Cermin UndanganJadwal::normalkanMaps di server: tombol simpan yang menyala
+ * lalu ditolak 422 membuat rekruter mengira sistemnya rusak.
+ */
+function petaGoogleSah(url) {
+    let u = String(url || '').trim();
+    if (!u) return true;
+    if (/\s/.test(u)) return false;
+    if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
+    let p;
+    try {
+        p = new URL(u);
+    } catch (e) {
+        return false;
+    }
+    const host = p.hostname.toLowerCase();
+    const path = p.pathname || '';
+    const tld = '(com|[a-z]{2}|co\\.[a-z]{2}|com\\.[a-z]{2})';
+
+    return host === 'maps.app.goo.gl'
+        || (host === 'goo.gl' && path.startsWith('/maps'))
+        || (host === 'g.co' && path.startsWith('/kgs/'))
+        || (new RegExp(`^(www\\.)?google\\.${tld}$`).test(host) && path.startsWith('/maps'))
+        || new RegExp(`^maps\\.google\\.${tld}$`).test(host);
+}
+
+/** "Jum, 17 Okt 2026" — tanggal saja, untuk batas waktu. */
+function fmtTanggal(v) {
+    if (!v) return '—';
+    const d = new Date(String(v).replace(' ', 'T'));
+    if (Number.isNaN(d.getTime())) return '—';
+
+    return d.toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+/**
  * Pilihan status MCU + nada warnanya.
  *
  * Hasil pemeriksaan kesehatan tidak cukup "lulus / gagal": keadaan tengah —
@@ -5715,7 +6663,7 @@ export default {
     // "Extraneous non-props attributes" berhenti — atribut itu memang tidak
     // dipakai sebagai atribut HTML di sini.
     inheritAttrs: false,
-    components: { Head, AdminModal, BerkasAktivitas, CatatanKeputusan, ConfirmModal, EditorQuill, ExportStudio, KontenAman, PanelPemeriksaan, PanelProses, PanelSkrining, PerpanjangBatas, UraianLipat },
+    components: { Head, AdminModal, BerkasAktivitas, CatatanKeputusan, ConfirmModal, EditorQuill, ExportStudio, KonfirmasiPanel, KontenAman, PanelPemeriksaan, PanelProses, PanelSkrining, PermintaanDialog, PerpanjangBatas, TundaDialog, UraianLipat },
     props: {
         talent: { type: Array, default: () => [] },
         programAwal: { type: Object, default: () => ({ data: [], page: 1, totalPage: 1, total: 0 }) },
@@ -5757,6 +6705,10 @@ export default {
         // penyedia surat menangguhkan alamatnya — yang ikut mematikan undangan
         // wawancara dan setel ulang kata sandi, bukan cuma gelombang ini.
         batasPutusMassal: { type: Number, default: 5 },
+        // Jejak jadwal & instruksi berformat (skrip 30-09-2026) sudah aktif di
+        // basis data ini? Sebelum skripnya dijalankan, jendela jadwal tidak
+        // menuntut alasan dan catatannya tetap teks polos.
+        jadwalFitur: { type: Object, default: () => ({ jejak: false, instruksi: false, alasanMin: 5 }) },
     },
     // Modal di halaman ini selamat dari refresh — lihat @utils/ingatModal.
     mixins: [ingatModal('admin/pelamar', {
@@ -5766,6 +6718,7 @@ export default {
         buka: [
             'emailShow', 'laporanShow', 'konfirmShow', 'catatShow', 'jadwalShow',
             'hadirShow', 'holdShow', 'hmShow', 'pmShow', 'massalShow', 'absenShow',
+            'perpanjangShow', 'kirimUlangShow', 'kirimUlangMassalShow',
         ],
         // Panel antrean & pengunduh punya timer yang mati bersama halaman lamanya;
         // memulihkan tampilannya berarti memasang progres yang tidak akan bergerak.
@@ -5778,6 +6731,12 @@ export default {
         abaikan: [
             /^(borong|unduhan|unduhanRaf|lightbox|lbSrc|lbTimer|lbLoading|lbError|studio[A-Z])/,
             /^dok(Lihat|Src|Muat|Gagal|Timer|Cari)$/,
+            // Bahan jendela jadwal dari server (instruksi Master Alur, riwayat)
+            // dan penanda memuatnya — dipulihkan, keduanya bisa tertinggal di
+            // keadaan "memuat…" yang tak akan pernah selesai.
+            // Penanda unggah surat pengantar: dipulihkan, tombolnya tertahan
+            // "Mengunggah…" selamanya.
+            /^(jadwalInfo|massalInstruksiMuat|suratUnggahDi)$/,
         ],
     })],
     data() {
@@ -5995,6 +6954,8 @@ export default {
             // SATU saja: membuka semuanya sekaligus mengembalikan dinding teks
             // yang justru ingin dihindari, dan drawer-nya hanya selebar itu.
             detailTes: null,
+            // Aktivitas yang panel KONFIRMASI KEHADIRAN-nya sedang dibuka (satu).
+            konfBuka: null,
             lightbox: null,
             // Biodata dibaca di layar penuh, jendela detail tetap terbuka di
             // belakangnya. Lihat hamparan .plw-biofull.
@@ -6048,6 +7009,7 @@ export default {
             jadwalTarget: null,
             jadwalMode: 'DARING',
             jadwalMulai: '',
+            jadwalMulaiAsal: '',
             jadwalSelesai: '',
             jadwalLink: '',
             jadwalKontak: '',
@@ -6080,6 +7042,43 @@ export default {
             daftarPeruntukan: [],
             lokasiLoading: false,
             jadwalCatatan: '',
+            // ── MODE BERRENTANG TANGGAL (MCU vendor / mandiri) & INSTRUKSI ─────
+            // Rentang ["YYYY-MM-DD", "YYYY-MM-DD"] — terisi otomatis dari
+            // Batas_Hari_Bawaan mode-nya; rekruter cukup menyimpan.
+            jadwalRentang: [],
+            // VENDOR: catatan cabang (berformat) & tautan Google Maps yang ditempel.
+            jadwalLokasiHtml: '',
+            jadwalMapsUrl: '',
+            // Daftar surat pengantar di jendela: yang sudah melekat { tetap: urutan }
+            // dan yang baru diunggah { ref } — keduanya { nama, ukuran }.
+            jadwalSuratDaftar: [],
+            // Kalimat biaya untuk kandidat ini (bisa disunting).
+            jadwalKalimatBiaya: '',
+            // Informasi biaya ikut ke kandidat? Bawaan dari Master Alur.
+            jadwalTampilBiaya: true,
+            // Surat yang sedang diunggah: 'satuan' | 'massal' | null.
+            suratUnggahDi: null,
+            // Perpanjang batas & kirim ulang email jadwal.
+            perpanjangShow: false,
+            perpanjangTarget: null,
+            perpanjangTanggal: '',
+            perpanjangAlasan: '',
+            kirimUlangShow: false,
+            kirimUlangTarget: null,
+            // Jendela Tunda dari baris aksi aktivitas (tunda | perbarui).
+            tundaBaris: { show: false, id: '', mode: 'tunda', awal: null, konteks: {} },
+            // Proses permintaan jadwal lain dari baris aksi aktivitas.
+            mintaBaris: { show: false, id: '', mode: 'setujui', minta: null, konteks: {} },
+            kirimUlangMassalShow: false,
+            kirimUlangAktivitas: '',
+            // Instruksi berformat untuk kandidat — terisi dari Master Alur.
+            jadwalCatatanHtml: '',
+
+            // Alasan perubahan — hanya diminta saat jadwal yang sudah terkirim diubah.
+            jadwalAlasan: '',
+            // Bahan dari server: instruksi Master Alur + riwayat jadwal aktivitas ini.
+            jadwalInfo: { muat: false, id: null, instruksiAlur: null, kalimatBiayaAlur: null, jejak: [] },
+            jadwalJejakBuka: false,
             hadirShow: false,
             hadirTarget: null,
             hadirNilai: 'Y',
@@ -6217,6 +7216,18 @@ export default {
             massalLokasiNama: '',
             massalLokasiAlamat: '',
             massalCatatan: '',
+            // Mode berrentang tanggal: satu rentang untuk semua kandidat.
+            massalRentang: [],
+            massalLokasiHtml: '',
+            massalMapsUrl: '',
+            // Surat pengantar kolektif [{ ref, nama, ukuran }] untuk seluruh sasaran.
+            massalSuratDaftar: [],
+            massalKalimatBiaya: '',
+            massalTampilBiaya: true,
+            massalCatatanHtml: '',
+            // Dipakai untuk kandidat terpilih yang SUDAH punya jadwal.
+            massalAlasan: '',
+            massalInstruksiMuat: false,
             sibuk: false,
             // Id aktivitas yang sedang ditarik hasilnya dari HCLearn.
             sinkronId: null,
@@ -6273,6 +7284,10 @@ export default {
         // sedang dilihat siapa pun.
         statusTab() { this.terpilih = []; this.listPage = 1; },
         posisiPilih() { this.terpilih = []; this.listPage = 1; },
+        // Pindah ke mode berrentang tanggal → rentangnya langsung terisi dari
+        // master, supaya rekruter cukup menyimpan.
+        jadwalMode() { this.isiRentangBawaan(); },
+        massalMode() { this.isiRentangMassal(); },
         /**
          * Ganti aktivitas → lokasi yang sudah dipilih DIBATALKAN.
          *
@@ -6290,7 +7305,11 @@ export default {
             // tidak, layar menyembunyikan pilihannya sementara yang terkirim
             // tetap bentuk lama — dan server menolaknya satu per satu.
             if (!this.massalBoleh(this.massalMode)) {
-                this.massalMode = this.massalBoleh('DARING') ? 'DARING' : 'LURING';
+                this.massalMode = this.modeMassalAwal();
+            }
+            // Instruksinya milik aktivitas — ganti aktivitas, ganti instruksi.
+            if (this.massalShow) {
+                this.muatInstruksiMassal();
             }
         },
         keadaanPilih() { this.terpilih = []; this.listPage = 1; },
@@ -6535,6 +7554,12 @@ export default {
                     JADWAL: 'Belum dijadwalkan',
                     TERJADWAL: 'Sudah dijadwalkan',
                     HOLD: 'Sedang ditahan',
+                    KONF_MENUNGGU: 'Belum konfirmasi',
+                    KONF_LAIN: 'Minta jadwal lain',
+                    KONF_MUNDUR: 'Menyatakan mundur',
+                    KONF_LEWAT: 'Tidak menjawab',
+                    KONF_HADIR: 'Akan hadir',
+                    KONF_DITUNDA: 'Ditunda',
                 };
                 out.push({ key: `keadaan:${v}`, jenis: 'Keadaan', label: teks[v] || v });
             });
@@ -7059,9 +8084,16 @@ export default {
                 for (const t of r.tests || []) {
                     if (!t.butuhJadwal || t.selesai || t.terkunci) continue;
                     const k = t.label;
-                    if (!peta.has(k)) peta.set(k, { label: k, jumlah: 0, wajibLuring: false, jadwalPrivat: false, lokasiPeruntukan: null, modeIzin: null });
+                    if (!peta.has(k)) peta.set(k, { label: k, jumlah: 0, wajibLuring: false, jadwalPrivat: false, lokasiPeruntukan: null, modeIzin: null, modeJadwalBawaan: null, biaya: null, konfirmasiAturan: null });
                     const a = peta.get(k);
                     a.jumlah++;
+                    // Aturan konfirmasi kehadiran milik TIPE aktivitasnya.
+                    a.konfirmasiAturan = a.konfirmasiAturan || t.konfirmasiAturan || null;
+                    // Bentuk bawaan & aturan biaya milik TIPE aktivitasnya — satu
+                    // nama aktivitas selalu satu tipe, jadi nilainya sama untuk
+                    // seluruh kandidat di baris ini.
+                    a.modeJadwalBawaan = a.modeJadwalBawaan || t.modeJadwalBawaan || null;
+                    a.biaya = a.biaya || t.biaya?.kalimat || null;
                     a.wajibLuring = a.wajibLuring || !!t.wajibLuring;
                     // Izin bentuk jadwal digabung sebagai IRISAN — yang paling
                     // ketat menang, sama seperti wajib tatap muka di atas.
@@ -7085,6 +8117,58 @@ export default {
             return this.aktivitasTerpilih.find((a) => a.label === this.massalAktivitas) || null;
         },
         massalWajibLuring() { return !!this.aktivitasMassalDef?.wajibLuring; },
+        /**
+         * Bentuk jadwal yang sah untuk aktivitas massal terpilih — aturan yang
+         * sama dengan jendela satuan (modeUntuk), dikurangi bentuk yang menuntut
+         * NOMOR per kandidat: satu nomor untuk seluruh angkatan tidak pernah benar.
+         */
+        modeMassalDipakai() {
+            return this.modeUntuk(this.aktivitasMassalDef).filter((m) => !m.butuhKontak);
+        },
+        massalModeDef() { return (this.modeJadwal || []).find((m) => m.kode === this.massalMode) || null; },
+        biayaMassal() { return this.aktivitasMassalDef?.biaya || null; },
+        /** Berapa sasaran yang SUDAH punya jadwal — menggantinya butuh alasan. */
+        massalAdaJadwal() { return this.sasaranMassal.filter((x) => !!x.t.jadwal).length; },
+        /** Sasaran yang sudah punya surat pengantar sendiri. */
+        massalPunyaSurat() { return this.sasaranMassal.filter((x) => !!x.t.jadwal?.surat?.length).length; },
+        /** Batas JUMLAH ukuran surat pengantar satu jadwal (byte). */
+        suratMaksByte() { return (this.jadwalFitur?.suratMaksMb || 5) * 1024 * 1024; },
+        massalSuratTotal() { return this.massalSuratDaftar.reduce((n, s) => n + (Number(s.ukuran) || 0), 0); },
+        massalSuratSisa() { return this.suratMaksByte - this.massalSuratTotal; },
+        jadwalSuratTotal() { return this.jadwalSuratDaftar.reduce((n, s) => n + (Number(s.ukuran) || 0), 0); },
+        jadwalSuratSisa() { return this.suratMaksByte - this.jadwalSuratTotal; },
+        /** Surat kolektif WAJIB? Ya bila ada sasaran yang belum punya surat sama sekali. */
+        massalButuhSurat() {
+            return !!this.massalModeDef?.butuhSurat && this.sasaranMassal.some((x) => !x.t.jadwal?.surat?.length);
+        },
+        massalMapsSalah() { return !petaGoogleSah(this.massalMapsUrl); },
+        /** Batas sekali kirim ulang — sama dengan batas massal lain. */
+        batasKirimUlang() { return this.jadwalFitur?.kirimUlangMaks || this.batasPutusMassal || 5; },
+        /**
+         * Aktivitas terpilih yang surelnya bisa dikirim ulang, per NAMA —
+         * pola yang sama dengan aktivitasTerpilih untuk jadwal massal.
+         */
+        aktivitasKirimUlang() {
+            const peta = new Map();
+            for (const r of this.barisTerpilih) {
+                for (const t of r.tests || []) {
+                    if (!this.bisaKirimUlangBaris(t)) continue;
+                    if (!peta.has(t.label)) peta.set(t.label, { label: t.label, jumlah: 0 });
+                    peta.get(t.label).jumlah++;
+                }
+            }
+
+            return [...peta.values()].sort((a, b) => b.jumlah - a.jumlah);
+        },
+        sasaranKirimUlang() {
+            return this.barisTerpilih
+                .map((r) => ({ r, t: (r.tests || []).find((x) => x.label === this.kirimUlangAktivitas && this.bisaKirimUlangBaris(x)) }))
+                .filter((x) => !!x.t);
+        },
+        lebihanKirimUlang() { return Math.max(0, this.sasaranKirimUlang.length - this.batasKirimUlang); },
+        bolehKirimUlangMassal() {
+            return !!this.kirimUlangAktivitas && this.sasaranKirimUlang.length > 0 && !this.lebihanKirimUlang;
+        },
         /** Riwayat batas yang terbuka memang milik kandidat di drawer sekarang. */
         riwayatBatasBuka() {
             return this.riwayatBatas.buka && this.riwayatBatas.tahapId === this.detailKandidat?.tahapId;
@@ -7182,6 +8266,13 @@ export default {
         },
         /** Siapa dapat jam berapa — dihitung dengan rumus yang SAMA dengan server. */
         pratinjauMassal() {
+            // Berrentang tanggal: semua mendapat rentang yang sama.
+            if (this.massalModeDef?.batasWaktu) {
+                if ((this.massalRentang || []).length !== 2 || !this.massalAktivitas) return [];
+                const rentang = fmtRentang(this.massalRentang[0], this.massalRentang[1]);
+
+                return this.sasaranMassal.map((x) => ({ id: x.r.id, pelamar: x.r.pelamar, jam: rentang }));
+            }
             if (!this.massalMulai || !this.massalAktivitas) return [];
             const awal = new Date(String(this.massalMulai).replace(' ', 'T'));
             if (Number.isNaN(awal.getTime())) return [];
@@ -7200,12 +8291,25 @@ export default {
             });
         },
         bolehSimpanMassal() {
-            if (!this.massalAktivitas || !this.massalMulai || !this.sasaranMassal.length) return false;
+            const m = this.massalModeDef;
+            if (!m || !this.massalAktivitas || !this.sasaranMassal.length) return false;
             // BATAS SEKALI KIRIM. Diperiksa dari `sasaranMassal` — yang
             // benar-benar akan menerima undangan — bukan dari jumlah centang:
             // yang tidak punya aktivitas ini dilewati dan tidak diemail.
             if (this.lebihanSasaranMassal) return false;
-            if (this.massalMode === 'DARING') return !!this.massalLink.trim();
+            if (this.massalAdaJadwal && this.jadwalFitur?.jejak
+                && this.massalAlasan.trim().length < (this.jadwalFitur?.alasanMin || 5)) return false;
+            // VENDOR bernama (tautan petanya, bila diisi, Google Maps); surat
+            // kolektif bila ada sasaran yang belum punya surat.
+            if (m.butuhTempat && (!this.massalLokasiNama.trim() || this.massalMapsSalah)) return false;
+            if (m.butuhSurat && this.massalButuhSurat && !this.massalSuratDaftar.length) return false;
+            if (this.massalSuratSisa < 0) return false;
+            if (this.suratUnggahDi) return false;
+            if (m.batasWaktu) return (this.massalRentang || []).length === 2;
+            if (!this.massalMulai) return false;
+            if (this.massalMulaiLewat) return false;
+            if (m.butuhTautan) return !!this.massalLink.trim();
+            if (!m.butuhLokasi) return true;
             if (!this.massalLokasiId) return false;
             // Tempat luar-master: syaratnya sama persis dengan jendela satuan
             // dan dengan server.
@@ -7469,6 +8573,64 @@ export default {
         },
         modeJadwalDef() { return (this.modeJadwal || []).find((m) => m.kode === this.jadwalMode) || null; },
         /**
+         * Aktivitas yang dijadwalkan MEMINTA konfirmasi kehadiran? Dari tipenya
+         * (Master Tipe Tahap → konfirmasiAturan) dan bentuknya — rentang tanggal
+         * (MCU mandiri/vendor) tidak punya jam janji temu untuk dikonfirmasi.
+         */
+        konfJadwalAktif() {
+            return !!this.jadwalTarget?.konfirmasiAturan && !!this.modeJadwalDef && !this.modeJadwalDef.batasWaktu;
+        },
+        /** Jawaban kandidat yang ikut direset bila waktu/tempat diubah. */
+        konfJadwalLama() {
+            const k = this.jadwalTarget?.konfirmasi;
+
+            return k && ['AKAN_HADIR', 'JADWAL_LAIN'].includes(k.status) ? k : null;
+        },
+        /** Lencana konfirmasi per kartu (id lamaran → konfirmasi terpenting). */
+        konfPerKartu() {
+            // DITUNDA menunggu tindakan tim (jadwal pengganti) — di atas yang
+            // menunggu jawaban kandidat.
+            const URUT = { JADWAL_LAIN: 1, MUNDUR: 2, DITUNDA: 3, TANPA_JAWABAN: 4, MENUNGGU: 5, AKAN_HADIR: 6 };
+            const PENDEK = {
+                JADWAL_LAIN: 'jadwal lain', MUNDUR: 'mundur', DITUNDA: 'ditunda', TANPA_JAWABAN: 'tak menjawab',
+                MENUNGGU: 'belum konfirmasi', AKAN_HADIR: 'akan hadir',
+            };
+            const out = {};
+            for (const r of this.detail?.pelamar || []) {
+                let pilih = null;
+                for (const t of r.tests || []) {
+                    const k = t.konfirmasi;
+                    if (!k || t.selesai) continue;
+                    if (!pilih || (URUT[k.status] || 9) < (URUT[pilih.k.status] || 9)) pilih = { k, t };
+                }
+                if (pilih) out[r.id] = { ...pilih.k, aktivitas: pilih.t.label, pendek: PENDEK[pilih.k.status] || pilih.k.label };
+            }
+
+            return out;
+        },
+        massalKonfAktif() {
+            return !!this.aktivitasMassalDef?.konfirmasiAturan && !!this.massalModeDef && !this.massalModeDef.batasWaktu;
+        },
+        /** Aturan biaya aktivitas yang sedang dijadwalkan (null = tak ada). */
+        biayaJadwal() { return this.jadwalTarget?.biaya?.kalimat || null; },
+        /** Aktivitas di jendela Hadir berbatas waktu (tanpa "kehadiran")? */
+        hadirBerbatas() { return !!this.hadirTarget?.jadwal?.batasWaktu; },
+        /**
+         * Alasan perubahan diminta? Hanya bila jadwalnya SUDAH pernah dikirim
+         * dan tabel jejaknya ada — aturan yang sama dengan server.
+         */
+        butuhAlasanJadwal() { return !!this.jadwalTarget?.jadwal && !!this.jadwalFitur?.jejak; },
+        /** Tautan peta vendor diisi tapi bukan Google Maps? Cermin server. */
+        jadwalMapsSalah() { return !petaGoogleSah(this.jadwalMapsUrl); },
+        /** Format surat pengantar untuk pemilih berkas (".pdf,.jpg,…"). */
+        suratAccept() {
+            return (this.jadwalFitur?.suratFormat || ['pdf']).map((x) => '.' + x).join(',');
+        },
+        bolehPerpanjang() {
+            return !!this.perpanjangTanggal
+                && this.perpanjangAlasan.trim().length >= (this.jadwalFitur?.alasanMin || 5);
+        },
+        /**
          * Waktu selesai mendahului waktu mulai?
          *
          * Dibandingkan sebagai TEKS, bukan Date. Keduanya datang dari pemilih
@@ -7479,13 +8641,41 @@ export default {
         jadwalSelesaiSalah() {
             return !!this.jadwalMulai && !!this.jadwalSelesai && this.jadwalSelesai <= this.jadwalMulai;
         },
+        /**
+         * Waktu mulai yang DIPILIH sudah lewat. Jadwal yang sudah berjalan dan
+         * jamnya tidak disentuh (mis. hanya membetulkan tautan) tetap boleh
+         * disimpan — yang ditolak hanya memilih waktu lampau. Server memeriksa
+         * hal yang sama (jadwalLampau di LamaranController).
+         */
+        jadwalMulaiLewat() {
+            const m = keDate(this.jadwalMulai);
+            if (!m) return false;
+            const asal = keDate(this.jadwalMulaiAsal);
+            if (asal && Math.floor(asal.getTime() / 60000) === Math.floor(m.getTime() / 60000)) return false;
+
+            // Ketelitian MENIT, sama dengan server (startOfMinute).
+            return m.getTime() < Math.floor(Date.now() / 60000) * 60000;
+        },
+        massalMulaiLewat() {
+            const m = keDate(this.massalMulai);
+
+            return !!m && m.getTime() < Math.floor(Date.now() / 60000) * 60000;
+        },
         /** Syaratnya dibaca dari FLAG mode terpilih — sama persis dengan server. */
         bolehSimpanJadwal() {
-            if (!this.jadwalMulai) return false;
-            if (this.jadwalSelesaiSalah) return false;
-
             const m = this.modeJadwalDef;
             if (!m) return false;
+            if (this.butuhAlasanJadwal && this.jadwalAlasan.trim().length < (this.jadwalFitur?.alasanMin || 5)) return false;
+            // VENDOR: namanya wajib, tautan petanya (bila diisi) Google Maps.
+            // Surat pengantar: yang baru, atau yang sudah melekat pada jadwal ini.
+            if (m.butuhTempat && (!(this.jadwalLokasiNama || '').trim() || this.jadwalMapsSalah)) return false;
+            if (m.butuhSurat && (!this.jadwalSuratDaftar.length || this.jadwalSuratSisa < 0)) return false;
+            if (this.suratUnggahDi) return false;
+            // Berrentang tanggal: rentangnya lengkap — tanpa jam, tanpa tautan.
+            if (m.batasWaktu) return (this.jadwalRentang || []).length === 2;
+            if (!this.jadwalMulai) return false;
+            if (this.jadwalMulaiLewat) return false;
+            if (this.jadwalSelesaiSalah) return false;
             if (m.butuhTautan) return !!this.jadwalLink.trim();
             if (m.butuhLokasi) {
                 if (!this.jadwalLokasiId) return false;
@@ -8939,7 +10129,7 @@ export default {
                         case 'BATAS_TUTUP': return !!(r.batas?.belumDiatur || r.batas?.belumBuka);
                         case 'BATAS_LEWAT': return !!r.batas?.lewat;
                         case 'BATAS_DEKAT': return !!r.batas?.batas && !r.batas.lewat && !r.batas.terkirim && r.batas.sisaDetik <= 86400;
-                        default: return true;
+                        default: return this.cocokKonfirmasi(r, f.keadaan) ?? true;
                     }
                 });
             }
@@ -9292,6 +10482,10 @@ export default {
         },
         async bukaKandidat(r) {
             this.detailKandidat = r;
+            // Pilihan alasan jendela Tunda dimuat diam-diam sejak drawer dibuka
+            // (sekali per halaman; tidak menunggu berkas yang bisa lama) — saat
+            // tombol Tunda diklik, pilihannya sudah ada.
+            if (this.aksiSaya.includes('EDIT') && r?.statusLamaran === 'BERJALAN') muatOpsiTunda().catch(() => {});
             // Selalu kembali ke Rapor Tes. Tab terakhir yang dibuka milik
             // KANDIDAT SEBELUMNYA; membawanya ke kandidat berikutnya berarti
             // jendela terbuka di "Berkas & Biodata" yang masih memuat, dan
@@ -9403,6 +10597,7 @@ export default {
          *  tombol "Detail" yang membuka panel kosong. */
         jumlahDetail(t) {
             return (t.catatanHtml || t.catatan ? 1 : 0)
+                + (t.jadwal?.catatanHtml ? 1 : 0)
                 + (t.berkasKandidat || []).length
                 + (t.berkas || []).length;
         },
@@ -9411,6 +10606,8 @@ export default {
         },
         /** Ringkas jadwal untuk satu baris rapor: "Sen, 12 Agu 2026 · 09.00". */
         jadwalRingkas(j) {
+            // Berrentang tanggal (MCU vendor / mandiri): yang berarti rentangnya.
+            if (j?.batasWaktu) return `${j.modeNama || 'Mandiri'} · ${j.rentangPendek || fmtRentang(j.mulai, j.batas)}`;
             if (!j?.mulai) return '—';
             const d = new Date(String(j.mulai).replace(' ', 'T'));
             if (Number.isNaN(d.getTime())) return '—';
@@ -10926,8 +12123,26 @@ export default {
                 // Sudah punya jadwal yang belum lewat — antrean "siapa yang
                 // harus ditandai hadir hari ini".
                 case 'TERJADWAL': return (r.tests || []).some((t) => !!t.jadwal && !t.selesai);
-                default: return true;
+                default: return this.cocokKonfirmasi(r, kode) ?? true;
             }
+        },
+        /**
+         * Keadaan KONFIRMASI KEHADIRAN — dibaca dari status EFEKTIF yang dikirim
+         * server (MENUNGGU yang lewat batas = TANPA_JAWABAN). Null = bukan kode
+         * konfirmasi.
+         */
+        cocokKonfirmasi(r, kode) {
+            const status = {
+                KONF_MENUNGGU: 'MENUNGGU',
+                KONF_LAIN: 'JADWAL_LAIN',
+                KONF_MUNDUR: 'MUNDUR',
+                KONF_LEWAT: 'TANPA_JAWABAN',
+                KONF_HADIR: 'AKAN_HADIR',
+                KONF_DITUNDA: 'DITUNDA',
+            }[kode];
+            if (!status) return null;
+
+            return (r.tests || []).some((t) => !t.selesai && t.konfirmasi?.status === status);
         },
         /** Kunci stabil sebuah kolom — dipakai menandai kolom mana yang aktif. */
         kunciKolom(col) { return col.kode || col.label || String(col.urutan || ''); },
@@ -11193,13 +12408,47 @@ export default {
             }
         },
         /* ── JADWAL MASSAL ─────────────────────────────────────────────────── */
-        /** Bentuk `k` (DARING/LURING) berlaku untuk aktivitas massal terpilih? */
+        /** Bentuk berkode `k` berlaku untuk aktivitas massal terpilih? */
         massalBoleh(k) {
-            const a = this.aktivitasMassalDef;
-            if (!a) return true;
-            if (a.wajibLuring && k !== 'LURING') return false;
+            return this.modeMassalDipakai.some((m) => m.kode === k);
+        },
+        /**
+         * Bentuk awal: bawaan tipe aktivitasnya (Master Tipe Tahap), lalu Daring
+         * seperti sebelumnya, lalu yang pertama sah — sama dengan jendela satuan.
+         */
+        modeMassalAwal() {
+            const sah = (k) => k && this.massalBoleh(k);
 
-            return !a.modeIzin || a.modeIzin.includes(k);
+            return [this.aktivitasMassalDef?.modeJadwalBawaan, 'DARING', this.modeMassalDipakai[0]?.kode].find(sah) || '';
+        },
+        /** Rentang bawaan mode berrentang tanggal untuk jendela massal. */
+        isiRentangMassal() {
+            const m = this.massalModeDef;
+            if (!m?.batasWaktu || (this.massalRentang || []).length === 2 || !m.batasHari) return;
+            this.massalRentang = [tanggalDepan(0), tanggalDepan(m.batasHari)];
+        },
+        /**
+         * Instruksi Master Alur untuk aktivitas massal terpilih — dari kandidat
+         * pertama. Seluruh sasaran satu nama aktivitas dalam satu program, jadi
+         * instruksinya sama; yang berbeda program memang tidak dijadwalkan
+         * bersamaan di papan ini.
+         */
+        async muatInstruksiMassal() {
+            const t = this.sasaranMassal[0]?.t;
+            this.massalCatatanHtml = '';
+            if (!t || !this.jadwalFitur?.instruksi) return;
+            this.massalInstruksiMuat = true;
+            try {
+                const res = await axios.get(`/api/v1/karir/lamaran/sub-tes/${t.id}/jadwal-info`, CFG);
+                if (this.sasaranMassal[0]?.t?.id !== t.id) return;
+                this.massalCatatanHtml = res.data?.result?.instruksiAlur || '';
+                this.massalTampilBiaya = res.data?.result?.tampilBiayaAlur !== false;
+                this.massalKalimatBiaya = res.data?.result?.kalimatBiayaAlur || this.massalKalimatBiaya;
+            } catch (e) {
+                // Diam — jendelanya tetap bisa dipakai tanpa instruksi bawaan.
+            } finally {
+                this.massalInstruksiMuat = false;
+            }
         },
         askJadwalMassal() {
             if (!this.aktivitasTerpilih.length) return;
@@ -11208,9 +12457,7 @@ export default {
             // pilihan awal — itulah yang hampir selalu dimaksud.
             const utama = this.aktivitasTerpilih[0];
             this.massalAktivitas = utama.label;
-            // Sepadan dengan penjadwalan satuan: DARING sebagai bawaan, kecuali
-            // tipenya mustahil daring (MCU) atau tidak mengizinkannya.
-            this.massalMode = this.massalBoleh('DARING') ? 'DARING' : 'LURING';
+            this.massalMode = this.modeMassalAwal();
             this.massalPola = 'BERGILIR';
             this.massalMulai = '';
             this.massalDurasi = 30;
@@ -11221,31 +12468,59 @@ export default {
             this.massalLokasiNama = '';
             this.massalLokasiAlamat = '';
             this.massalCatatan = '';
+            this.massalRentang = [];
+            this.isiRentangMassal();
+            this.massalLokasiHtml = '';
+            this.massalMapsUrl = '';
+            this.massalSuratDaftar = [];
+            this.massalTampilBiaya = true;
+            this.massalKalimatBiaya = this.biayaMassal || '';
+            this.massalAlasan = '';
             this.massalShow = true;
+            this.muatInstruksiMassal();
         },
         async konfirmJadwalMassal() {
             if (this.sibuk || !this.bolehSimpanMassal) return;
             this.sibuk = true;
             try {
+                const m = this.massalModeDef || {};
                 const res = await axios.post('/api/v1/karir/lamaran/sub-tes/jadwal-massal', {
                     // Id AKTIVITAS, bukan id kandidat: satu kandidat bisa punya
                     // beberapa aktivitas, dan yang dijadwalkan hanya yang dipilih.
                     subTesIds: this.sasaranMassal.map((x) => x.t.id),
                     mode: this.massalMode,
-                    pola: this.massalPola,
-                    mulai: this.massalMulai,
-                    durasiMenit: this.massalPola === 'BERGILIR' ? this.massalDurasi : null,
-                    jedaMenit: this.massalPola === 'BERGILIR' ? this.massalJeda : null,
-                    link: this.massalMode === 'DARING' ? this.massalLink : null,
-                    lokasiId: this.massalMode === 'LURING' ? this.massalLokasiId : null,
-                    lokasi: this.massalMode === 'LURING' ? (this.massalLokasi || null) : null,
-                    lokasiNama: this.massalLokasiId === this.LOKASI_LAIN ? (this.massalLokasiNama.trim() || null) : null,
-                    lokasiAlamat: this.massalLokasiId === this.LOKASI_LAIN ? (this.massalLokasiAlamat.trim() || null) : null,
-                    catatan: this.massalCatatan || null,
+                    // Berrentang tanggal: tanpa pola & jam — cukup rentangnya.
+                    pola: m.batasWaktu ? null : this.massalPola,
+                    mulai: m.batasWaktu ? (this.massalRentang?.[0] || null) : this.massalMulai,
+                    selesai: m.batasWaktu ? (this.massalRentang?.[1] || null) : null,
+                    durasiMenit: !m.batasWaktu && this.massalPola === 'BERGILIR' ? this.massalDurasi : null,
+                    jedaMenit: !m.batasWaktu && this.massalPola === 'BERGILIR' ? this.massalJeda : null,
+                    // Yang dikirim mengikuti FLAG mode, bukan nama modenya.
+                    link: m.butuhTautan ? this.massalLink : null,
+                    lokasiId: m.butuhLokasi ? this.massalLokasiId : null,
+                    lokasi: m.butuhLokasi ? (this.massalLokasi || null) : null,
+                    // Nama & alamat yang DIKETIK: tempat "Lainnya", atau vendor.
+                    lokasiNama: (m.butuhLokasi && this.massalLokasiId === this.LOKASI_LAIN) || m.butuhTempat
+                        ? (this.massalLokasiNama.trim() || null) : null,
+                    lokasiAlamat: (m.butuhLokasi && this.massalLokasiId === this.LOKASI_LAIN) || m.butuhTempat
+                        ? (this.massalLokasiAlamat.trim() || null) : null,
+                    mapsUrl: m.butuhTempat ? (this.massalMapsUrl.trim() || null) : null,
+                    lokasiHtml: m.butuhTempat ? (this.massalLokasiHtml || null) : null,
+                    // Satu set surat untuk semua; tanpa set, tiap kandidat memakai suratnya.
+                    suratRef: m.butuhSurat && this.massalSuratDaftar.length ? this.massalSuratDaftar.map((s) => s.ref) : null,
+                    kalimatBiaya: this.biayaMassal ? ((this.massalKalimatBiaya || '').trim() || null) : null,
+                    tampilBiaya: this.biayaMassal ? this.massalTampilBiaya : null,
+                    alasan: this.massalAdaJadwal ? (this.massalAlasan.trim() || null) : null,
+                    ...(this.jadwalFitur?.instruksi
+                        ? { catatanHtml: this.massalCatatanHtml || null, catatan: teksDariHtml(this.massalCatatanHtml) || null }
+                        : { catatan: this.massalCatatan || null }),
                 }, CFG);
 
                 const gagal = res.data?.result?.gagal || [];
-                this.notice(res.data?.message || 'Jadwal massal tersimpan.', gagal.length > 0);
+                // Yang dilewati disebut apa adanya — paling banyak lima orang
+                // (batas sekali kirim), jadi masih terbaca di satu pesan.
+                const rinci = gagal.slice(0, 5).map((g) => `${g.nama}: ${g.alasan}`).join(' · ');
+                this.notice([res.data?.message || 'Jadwal massal tersimpan.', rinci].filter(Boolean).join(' — '), gagal.length > 0);
                 // Yang ditolak disebutkan satu per satu di log peramban: daftar
                 // panjang di dalam toast tak terbaca, tapi menghilangkannya sama
                 // saja kehilangan orang tanpa jejak.
@@ -11388,6 +12663,8 @@ export default {
             // admin tetap harus melihat dan menyetujuinya sebelum menyimpan.
             this.jadwalKontak = j.kontak || this.detailKandidat?.hp || '';
             this.jadwalMulai = j.mulai || '';
+            // Pembanding "jam mulai diubah?" — lihat jadwalMulaiLewat.
+            this.jadwalMulaiAsal = j.mulai || '';
             this.jadwalSelesai = j.selesai || '';
             this.jadwalLink = j.link || '';
             this.jadwalLokasi = j.lokasi || '';
@@ -11401,7 +12678,362 @@ export default {
             this.jadwalLokasiNama = j.lokasiNama || '';
             this.jadwalLokasiAlamat = j.lokasiAlamat || '';
             this.jadwalCatatan = j.catatan || '';
+            // Rentang yang sudah ada dipakai lagi; bila belum ada, terisi dari
+            // master begitu mode berrentang terpilih (lihat isiRentangBawaan).
+            this.jadwalRentang = j.batasWaktu && j.mulai && j.batas
+                ? [String(j.mulai).slice(0, 10), String(j.batas).slice(0, 10)]
+                : [];
+            this.isiRentangBawaan();
+            // VENDOR: catatan cabang & tautan peta yang ditempel tim. Surat yang
+            // sudah melekat ikut tampil — bisa dihapus satu per satu atau ditambah.
+            this.jadwalLokasiHtml = j.lokasiHtml || '';
+            this.jadwalMapsUrl = j.mapsUrl || '';
+            this.jadwalSuratDaftar = (j.surat || []).map((s, i) => ({ tetap: i, ref: null, nama: s.nama, ukuran: s.ukuran, url: s.url }));
+            // Kalimat biaya jadwal ini; jadwal baru memakai kalimat alur (muatInfoJadwal).
+            this.jadwalKalimatBiaya = j.kalimatBiaya || t.biaya?.kalimat || '';
+            // Informasi biaya: pilihan jadwal ini bila sudah ada; jadwal baru
+            // memakai bawaan Master Alur (dibaca muatInfoJadwal).
+            this.jadwalTampilBiaya = j.tampilBiaya !== false;
+            // Instruksi yang SUDAH dikirim lebih dulu; jadwal lama yang cuma
+            // punya teks polos diubah jadi paragraf supaya tidak hilang di editor.
+            this.jadwalCatatanHtml = j.catatanHtml || htmlDariTeks(j.catatan || '');
+
+            this.jadwalAlasan = '';
+            this.jadwalJejakBuka = false;
             this.jadwalShow = true;
+            this.muatInfoJadwal(t, !j.catatanHtml && !j.catatan);
+        },
+        /** 'Kam, 08 Okt · 10.00' — bentuk ringkas waktu (batas konfirmasi = waktu mulai). */
+        waktuKonf(v) { return waktuSingkat(v); },
+        /**
+         * Instruksi dari Master Alur + riwayat jadwal aktivitas ini.
+         *
+         * `isiInstruksi`: editor diisi instruksi Master Alur — hanya untuk jadwal
+         * yang belum pernah membawa catatan. Yang sudah dikirim tidak ditimpa:
+         * isinya adalah apa yang benar-benar diterima kandidat.
+         */
+        async muatInfoJadwal(t, isiInstruksi) {
+            this.jadwalInfo = { muat: true, id: t.id, instruksiAlur: null, kalimatBiayaAlur: null, jejak: [] };
+            try {
+                const res = await axios.get(`/api/v1/karir/lamaran/sub-tes/${t.id}/jadwal-info`, CFG);
+                if (this.jadwalInfo.id !== t.id) return;
+                const r = res.data?.result || {};
+                this.jadwalInfo.instruksiAlur = r.instruksiAlur || null;
+                this.jadwalInfo.jejak = r.jejak || [];
+                this.jadwalInfo.kalimatBiayaAlur = r.kalimatBiayaAlur || null;
+                if (!t.jadwal) {
+                    this.jadwalTampilBiaya = r.tampilBiayaAlur !== false;
+                    this.jadwalKalimatBiaya = r.kalimatBiayaAlur || this.jadwalKalimatBiaya;
+                }
+                if (isiInstruksi && r.instruksiAlur && !this.jadwalCatatanHtml) {
+                    this.jadwalCatatanHtml = r.instruksiAlur;
+                }
+            } catch (e) {
+                // Tanpa instruksi bawaan jendela tetap bisa dipakai — cukup diam.
+            } finally {
+                if (this.jadwalInfo.id === t.id) this.jadwalInfo.muat = false;
+            }
+        },
+        /** Rentang bawaan mode berrentang tanggal: hari ini s.d. + N hari (dari master). */
+        isiRentangBawaan() {
+            const m = this.modeJadwalDef;
+            if (!m?.batasWaktu || (this.jadwalRentang || []).length === 2 || !m.batasHari) return;
+            this.jadwalRentang = [tanggalDepan(0), tanggalDepan(m.batasHari)];
+        },
+        /** Kalender batas: hari yang sudah lewat tidak bisa dipilih. */
+        sebelumHariIni(d) {
+            const k = new Date();
+
+            return d < new Date(k.getFullYear(), k.getMonth(), k.getDate());
+        },
+        labelAksiJejak(aksi) {
+            return {
+                BUAT: 'Dijadwalkan',
+                UBAH: 'Diubah',
+                PERPANJANG: 'Diperpanjang',
+                PENGINGAT: 'Pengingat terkirim',
+                KIRIM_ULANG: 'Email dikirim ulang',
+            }[aksi] || aksi;
+        },
+        /**
+         * Satu baris ringkas isi jadwal pada riwayat. Berbatas waktu atau tidak
+         * dibaca dari FLAG mode-nya (dikirim server), bukan dari kodenya.
+         */
+        ringkasJejak(j) {
+            const bagian = [j.modeNama || j.mode];
+            if (j.batasWaktu) {
+                if (j.rentang) bagian.push(j.rentang);
+                else if (j.selesai) bagian.push(`batas ${fmtTanggal(j.selesai)}`);
+                // Perpanjangan hanya memundurkan batas unggah — rentangnya tetap.
+                if (j.batasUnggah) bagian.push(`batas unggah ${j.batasUnggah}`);
+                if (j.tempat) bagian.push(j.tempat);
+            } else {
+                if (j.mulai) bagian.push(this.jadwalRingkas({ mulai: j.mulai }));
+                if (j.tempat) bagian.push(j.tempat);
+            }
+            if (j.surat) bagian.push(`surat: ${j.surat}`);
+            if (j.undangan === 'GAGAL') bagian.push('email gagal');
+
+            return bagian.filter(Boolean).join(' · ');
+        },
+        /** "Surat pengantar MCU" → "surat pengantar MCU" — singkatan tetap utuh di tengah kalimat. */
+        hurufKecilAwal(teks) {
+            const t = String(teks || '');
+
+            return t.charAt(0).toLowerCase() + t.slice(1);
+        },
+        /** Isian VENDOR: nama, alamat, tautan peta, catatan cabang. */
+        isianVendor() {
+            return {
+                lokasiNama: (this.jadwalLokasiNama || '').trim() || null,
+                lokasiAlamat: (this.jadwalLokasiAlamat || '').trim() || null,
+                mapsUrl: (this.jadwalMapsUrl || '').trim() || null,
+                lokasiHtml: this.jadwalLokasiHtml || null,
+            };
+        },
+        /** "1,2 MB" / "350 KB" — sama dengan SuratJadwal::teksUkuran di server. */
+        fmtUkuran(b) {
+            const n = Number(b) || 0;
+
+            return n >= 1048576
+                ? `${(Math.round(n / 104857.6) / 10).toString().replace('.', ',')} MB`
+                : `${Math.max(1, Math.round(n / 1024))} KB`;
+        },
+        /**
+         * Unggah SURAT PENGANTAR begitu dipilih — langkah pertama dari dua.
+         * Boleh beberapa berkas sekaligus; tiap berkas diperiksa lebih dulu
+         * (hanya PDF, muat di SISA kuota total) supaya yang pasti ditolak tidak
+         * sempat terunggah. Server menjawab ref terenkripsi yang lalu dibawa
+         * saat jadwal disimpan — dan di sana batas totalnya ditegakkan lagi.
+         */
+        async unggahSurat(e, untuk) {
+            const berkas = [...(e.target.files || [])];
+            e.target.value = '';
+            if (!berkas.length || this.suratUnggahDi) return;
+            const daftar = untuk === 'massal' ? this.massalSuratDaftar : this.jadwalSuratDaftar;
+            const format = this.jadwalFitur?.suratFormat || ['pdf'];
+            const maksMb = this.jadwalFitur?.suratMaksMb || 5;
+            const maksBerkas = this.jadwalFitur?.suratMaksBerkas || 10;
+            this.suratUnggahDi = untuk;
+            try {
+                for (const f of berkas) {
+                    const ext = String(f.name.split('.').pop() || '').toLowerCase();
+                    if (!format.includes(ext)) {
+                        this.notice(`"${f.name}" bukan PDF — surat pengantar hanya menerima PDF.`, true);
+                        continue;
+                    }
+                    if (daftar.length >= maksBerkas) {
+                        this.notice(`Surat pengantar paling banyak ${maksBerkas} berkas.`, true);
+                        break;
+                    }
+                    const total = daftar.reduce((n, s) => n + (Number(s.ukuran) || 0), 0);
+                    if (total + f.size > this.suratMaksByte) {
+                        this.notice(
+                            `"${f.name}" (${this.fmtUkuran(f.size)}) tidak muat — total surat paling besar ${maksMb} MB, `
+                            + `sisa ${this.fmtUkuran(Math.max(0, this.suratMaksByte - total))}.`,
+                            true,
+                        );
+                        continue;
+                    }
+                    const fd = new FormData();
+                    fd.append('berkas', f);
+                    const res = await axios.post('/api/v1/karir/lamaran/jadwal/surat', fd, CFG);
+                    const r = res.data?.result || {};
+                    daftar.push({ tetap: null, ref: r.ref, nama: r.nama || f.name, ukuran: r.ukuran ?? f.size, url: null });
+                }
+            } catch (err) {
+                this.notice(err.response?.data?.message || 'Surat gagal diunggah.', true);
+            } finally {
+                this.suratUnggahDi = null;
+            }
+        },
+        /**
+         * Hasil aktivitas ini diunggah KANDIDAT sendiri karena mode jadwalnya
+         * (MCU mandiri)? Maka tim tidak diberi kotak unggah — hanya melihat
+         * berkas kandidat. Unggahan dari setelan Master Alur (tes offline dsb.)
+         * tidak termasuk: di sana berkas tim adalah lembar penilaiannya sendiri.
+         */
+        hasilDariKandidat(t) {
+            return t?.unggahKandidat?.sumber === 'MODE';
+        },
+        /**
+         * Batas UNGGAH yang masih bisa diperpanjang? Hanya mode yang kandidatnya
+         * mengunggah sendiri (server mengirim batasUnggah hanya untuk itu), dan
+         * selama berkasnya belum dikirim — sama dengan gerbang server.
+         */
+        bisaPerpanjang(t) {
+            return this.detailKandidat?.statusLamaran === 'BERJALAN'
+                && !!t.jadwal?.batasUnggah && !!t.butuhKehadiran && !t.terkunci
+                && !t.unggahKandidat?.terkirim;
+        },
+        askPerpanjang(t) {
+            this.perpanjangTarget = t;
+            // Titik awal: tiga hari sesudah batas unggah sekarang (atau sesudah
+            // hari ini bila batasnya sudah lewat) — rekruter cukup menyesuaikan.
+            const batas = t.jadwal?.batasUnggah ? new Date(String(t.jadwal.batasUnggah).slice(0, 10) + 'T00:00:00') : null;
+            const dasar = batas && batas > new Date() ? batas : new Date();
+            dasar.setDate(dasar.getDate() + 3);
+            const dua = (n) => String(n).padStart(2, '0');
+            this.perpanjangTanggal = `${dasar.getFullYear()}-${dua(dasar.getMonth() + 1)}-${dua(dasar.getDate())}`;
+            this.perpanjangAlasan = '';
+            this.perpanjangShow = true;
+        },
+        /** Kalender perpanjangan: hanya sesudah batas unggah sekarang, dan tidak sebelum hari ini. */
+        sebelumBatasBaru(d) {
+            if (this.sebelumHariIni(d)) return true;
+            const b = this.perpanjangTarget?.jadwal?.batasUnggah;
+            if (!b) return false;
+            const [y, m, t] = String(b).slice(0, 10).split('-').map(Number);
+
+            return d <= new Date(y, m - 1, t);
+        },
+        async konfirmPerpanjang() {
+            if (this.sibuk || !this.perpanjangTarget || !this.bolehPerpanjang) return;
+            this.sibuk = true;
+            try {
+                const res = await axios.patch(`/api/v1/karir/lamaran/sub-tes/${this.perpanjangTarget.id}/perpanjang`, {
+                    selesai: this.perpanjangTanggal,
+                    alasan: this.perpanjangAlasan.trim(),
+                }, CFG);
+                const tes = this.perpanjangTarget.id;
+                this.notice(res.data?.message || 'Batas unggah diperpanjang.');
+                this.perpanjangShow = false;
+                this.perpanjangTarget = null;
+                await this.segarkanKartu({ tes });
+            } catch (e) {
+                this.notice(e.response?.data?.message || 'Gagal memperpanjang.', true);
+            } finally {
+                this.sibuk = false;
+            }
+        },
+        /**
+         * Aktivitas terjadwal yang surelnya MASIH masuk akal dikirim ulang —
+         * aturan yang sama dengan server (kirimUlangSatu): bukan privat, belum
+         * dicatat hasilnya, dan bukan kandidat yang sudah mengirim berkasnya
+         * atau yang kotak unggahnya sudah tertutup (perpanjang dulu).
+         */
+        bisaKirimUlangBaris(t) {
+            return !!t.jadwal && !t.jadwalPrivat && !!t.butuhKehadiran && !t.terkunci && !t.selesai
+                && !t.unggahKandidat?.terkirim && !t.unggahKandidat?.tertutup;
+        },
+        bisaKirimUlang(t) {
+            // Permintaan jadwal lain terbuka: email jadwal semula yang dikirim ulang
+            // hanya membingungkan kandidat yang sedang menunggu jawaban usulannya.
+            return this.detailKandidat?.statusLamaran === 'BERJALAN' && !this.mintaTerbuka(t) && this.bisaKirimUlangBaris(t);
+        },
+        /** Kandidat mengajukan jadwal lain dan tim belum menjawabnya. */
+        mintaTerbuka(t) {
+            return t.konfirmasi?.permintaan?.status === 'TERBUKA' && !t.selesai && !t.hadir;
+        },
+        bisaProsesMinta(t) {
+            return this.mintaTerbuka(t) && this.aksiSaya.includes('EDIT') && this.detailKandidat?.statusLamaran === 'BERJALAN';
+        },
+        bukaMintaBaris(t, mode) {
+            this.mintaBaris = {
+                show: true,
+                id: t.id,
+                mode,
+                minta: t.konfirmasi.permintaan,
+                konteks: {
+                    kandidat: this.detailKandidat?.pelamar || this.detailKandidat?.nama || '',
+                    aktivitas: t.label,
+                    waktuTeks: t.jadwal ? this.jadwalRingkas(t.jadwal) : '',
+                },
+            };
+        },
+        async selesaiMintaBaris(pesan) {
+            const tes = this.mintaBaris.id;
+            this.mintaBaris.show = false;
+            this.notice(pesan || 'Tersimpan.');
+            await this.segarkanKartu({ tes });
+        },
+        judulKirimUlang(t) {
+            return t.unggahKandidat && !t.unggahKandidat.terkirim
+                ? 'Kirim ulang email — berbunyi pengingat untuk mengunggah hasil, lengkap dengan rincian jadwalnya'
+                : 'Kirim ulang email berisi rincian jadwal yang berlaku sekarang';
+        },
+        askKirimUlang(t) {
+            this.kirimUlangTarget = t;
+            this.kirimUlangShow = true;
+        },
+        /**
+         * TUNDA JADWAL dari baris aksi — aturan yang sama dengan server
+         * (KonfirmasiJadwal::tunda): aktivitas ber-konfirmasi yang terjadwal,
+         * belum dimulai, belum dicatat kehadirannya, lamarannya masih berjalan.
+         */
+        bisaTunda(t) {
+            if (!this.aksiSaya.includes('EDIT') || this.detailKandidat?.statusLamaran !== 'BERJALAN') return false;
+            // Usulan kandidat dijawab dulu (Setujui / Tawarkan / Tolak) — menunda di
+            // tengahnya menelantarkan permintaan yang sedang menunggu.
+            if (this.mintaTerbuka(t)) return false;
+            if (!t.konfirmasi || t.konfirmasi.status === 'DITUNDA' || !t.jadwal || t.terkunci || t.selesai || t.hadir) return false;
+            const mulai = t.jadwal.mulai ? new Date(String(t.jadwal.mulai).replace(' ', 'T')) : null;
+
+            return !!mulai && !Number.isNaN(mulai.getTime()) && mulai.getTime() > Date.now();
+        },
+        bisaPerbaruiTunda(t) {
+            return this.aksiSaya.includes('EDIT') && this.detailKandidat?.statusLamaran === 'BERJALAN'
+                && t.konfirmasi?.status === 'DITUNDA' && !t.jadwal && !t.selesai;
+        },
+        bukaTundaBaris(t, mode) {
+            this.tundaBaris = {
+                show: true,
+                id: t.id,
+                mode,
+                awal: mode === 'perbarui' ? (t.konfirmasi?.tunda || null) : null,
+                konteks: {
+                    kandidat: this.detailKandidat?.pelamar || this.detailKandidat?.nama || '',
+                    aktivitas: t.label,
+                    waktuTeks: t.jadwal ? this.jadwalRingkas(t.jadwal) : '',
+                },
+            };
+        },
+        async selesaiTundaBaris(pesan) {
+            const tes = this.tundaBaris.id;
+            this.tundaBaris.show = false;
+            this.notice(pesan || 'Tersimpan.');
+            await this.segarkanKartu({ tes });
+        },
+        async konfirmKirimUlang() {
+            if (this.sibuk || !this.kirimUlangTarget) return;
+            this.sibuk = true;
+            try {
+                const res = await axios.post(`/api/v1/karir/lamaran/sub-tes/${this.kirimUlangTarget.id}/kirim-ulang`, {}, CFG);
+                const tes = this.kirimUlangTarget.id;
+                this.notice(res.data?.message || 'Email dikirim ulang.');
+                this.kirimUlangShow = false;
+                this.kirimUlangTarget = null;
+                await this.segarkanKartu({ tes });
+            } catch (e) {
+                this.notice(e.response?.data?.message || 'Gagal mengirim ulang email.', true);
+            } finally {
+                this.sibuk = false;
+            }
+        },
+        askKirimUlangMassal() {
+            if (!this.aktivitasKirimUlang.length) return;
+            this.kirimUlangAktivitas = this.aktivitasKirimUlang[0].label;
+            this.kirimUlangMassalShow = true;
+        },
+        async konfirmKirimUlangMassal() {
+            if (this.sibuk || !this.bolehKirimUlangMassal) return;
+            this.sibuk = true;
+            try {
+                const res = await axios.post('/api/v1/karir/lamaran/sub-tes/kirim-ulang-massal', {
+                    subTesIds: this.sasaranKirimUlang.map((x) => x.t.id),
+                }, CFG);
+                const gagal = res.data?.result?.gagal || [];
+                const rinci = gagal.slice(0, 5).map((g) => `${g.nama}: ${g.alasan}`).join(' · ');
+                this.notice([res.data?.message || 'Email dikirim ulang.', rinci].filter(Boolean).join(' — '), gagal.length > 0);
+                this.kirimUlangMassalShow = false;
+                this.terpilih = [];
+                this.kolomPilih = '';
+                await this.muatDetail(this.selectedId, { senyap: true });
+            } catch (e) {
+                this.notice(e.response?.data?.message || 'Gagal mengirim ulang email.', true);
+            } finally {
+                this.sibuk = false;
+            }
         },
         /** Nama & alamat tempat luar-master — hanya saat "Lainnya" dipilih. */
         isianLokasiLain() {
@@ -11422,6 +13054,7 @@ export default {
          * tidak boleh ikut padam. Sisa harinya dijaga `jadwalSelesaiSalah`.
          */
         sebelumHariMulai(d) {
+            if (this.sebelumHariIni(d)) return true;
             if (!this.jadwalMulai) return false;
             const [y, b, t] = this.jadwalMulai.slice(0, 10).split('-').map(Number);
 
@@ -11431,10 +13064,15 @@ export default {
             if (this.sibuk || !this.jadwalTarget) return;
             this.sibuk = true;
             try {
+                const berbatas = !!this.modeJadwalDef?.batasWaktu;
+                const m = this.modeJadwalDef || {};
                 const res = await axios.patch(`/api/v1/karir/lamaran/sub-tes/${this.jadwalTarget.id}/jadwal`, {
                     mode: this.jadwalMode,
-                    mulai: this.jadwalMulai,
-                    selesai: this.jadwalSelesai || null,
+                    // Berrentang tanggal: tanggal pertama & terakhir (server
+                    // membacanya pukul 00.00 & 23.59), tanpa jam.
+                    mulai: berbatas ? (this.jadwalRentang?.[0] || null) : this.jadwalMulai,
+                    selesai: berbatas ? (this.jadwalRentang?.[1] || null) : (this.jadwalSelesai || null),
+                    alasan: this.butuhAlasanJadwal ? this.jadwalAlasan.trim() : null,
                     // Yang dikirim mengikuti FLAG mode, bukan nama modenya —
                     // sama persis dengan yang ditegakkan server.
                     link: this.modeJadwalDef?.butuhTautan ? this.jadwalLink : null,
@@ -11443,9 +13081,20 @@ export default {
                     // Hanya ikut saat "Lainnya" — kalau selalu dikirim, sisa
                     // ketikan dari percobaan sebelumnya tersimpan sebagai tempat
                     // kedua pada jadwal yang lokasinya sudah dipilih dari master.
-                    ...this.isianLokasiLain(),
+                    // VENDOR mengirim isiannya sendiri (nama, alamat, peta, cabang).
+                    ...(m.butuhTempat ? this.isianVendor() : this.isianLokasiLain()),
+                    // Surat: urutan surat lama yang dipertahankan + ref surat baru.
+                    suratTetap: m.butuhSurat ? this.jadwalSuratDaftar.filter((s) => s.tetap !== null).map((s) => s.tetap) : null,
+                    suratRef: m.butuhSurat ? this.jadwalSuratDaftar.filter((s) => s.ref).map((s) => s.ref) : null,
+                    // Hanya berarti untuk tipe yang punya kalimat biaya.
+                    tampilBiaya: this.biayaJadwal ? this.jadwalTampilBiaya : null,
+                    kalimatBiaya: this.biayaJadwal ? ((this.jadwalKalimatBiaya || '').trim() || null) : null,
                     kontak: this.modeJadwalDef?.butuhKontak ? this.jadwalKontak.trim() : null,
-                    catatan: this.jadwalCatatan || null,
+                    // Instruksi berformat bila kolomnya sudah ada; teks polosnya
+                    // diturunkan server dari HTML — keduanya mustahil berselisih.
+                    ...(this.jadwalFitur?.instruksi
+                        ? { catatanHtml: this.jadwalCatatanHtml || null, catatan: teksDariHtml(this.jadwalCatatanHtml) || null }
+                        : { catatan: this.jadwalCatatan || null }),
                 }, CFG);
                 const tes = this.jadwalTarget.id;
                 this.notice(res.data?.message || 'Jadwal disimpan.');
@@ -12807,6 +14456,15 @@ export default {
    supaya tidak terbaca sebagai bagian dari borang yang sedang diisi. */
 .plw-kirimbox { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; padding: 9px 11px; border-radius: 10px; font-size: 11px; background: rgba(2, 132, 199, .05); border: 1px solid rgba(2, 132, 199, .18); }
 .plw-kirimbox__lbl { display: inline-flex; align-items: center; gap: 5px; font-weight: 800; color: #075985; }
+/* Hasil yang diunggah KANDIDAT (MCU mandiri) — pengganti kotak unggah tim. */
+.plw-hasilk { margin-top: 4px; padding: 11px 13px; border-radius: 12px; border: 1px dashed rgba(2, 132, 199, .35); background: rgba(2, 132, 199, .04); }
+.plw-hasilk__head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.plw-hasilk__title { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 800; color: #1e293b; }
+.plw-hasilk__tag { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 800; color: #075985; background: rgba(2, 132, 199, .12); }
+.plw-hasilk__list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; font-size: 11px; }
+.plw-hasilk__kosong { display: flex; align-items: center; gap: 6px; margin: 9px 0 0; font-size: 12px; font-weight: 700; color: #b45309; }
+.plw-hasilk__ket { display: flex; align-items: flex-start; gap: 7px; margin: 9px 0 0; font-size: 11.5px; line-height: 1.55; color: #64748b; }
+.plw-hasilk__ket > .bi { flex: none; margin-top: 2px; color: #0369a1; }
 /* Jadwal yang sudah ditetapkan — dibaca sekilas saat menandai kehadiran. */
 /* Sepasang tombol persetujuan di baris aktivitas — sama besar, sebab keduanya
    jawaban yang sah. */
@@ -12973,6 +14631,8 @@ export default {
 .plw-note.is-info { color: #3730a3; background: rgba(99, 102, 241, .08); border: 1px solid rgba(99, 102, 241, .2); }
 .plw-note.is-lock { color: #92400e; background: rgba(245, 158, 11, .09); border: 1px solid rgba(245, 158, 11, .25); }
 .plw-note.is-err { color: #b91c1c; background: rgba(239, 68, 68, .07); border: 1px solid rgba(239, 68, 68, .22); }
+/* Aturan biaya (MCU) — keterangan yang ikut di undangan, bukan isian. */
+.plw-note.is-biaya { color: #065f46; background: rgba(16, 185, 129, .08); border: 1px solid rgba(16, 185, 129, .22); }
 
 /* Blok borang bertajuk (hasil MCU di modal keputusan). */
 .plw-mform { margin-bottom: 12px; padding: 13px; border: 1px solid rgba(15, 23, 42, .1); border-radius: 14px; background: #f9fafc; }
@@ -13164,6 +14824,78 @@ export default {
 .plw-test__jdw.is-set { color: #059669; border-color: rgba(16, 185, 129, .35); }
 .plw-test__jdw.is-set:hover { background: rgba(16, 185, 129, .07); }
 .plw-jdw { text-align: left; }
+/* Pratinjau instruksi (terisi dari Master Alur) — dibaca dulu, editornya baru
+   dibuka lewat "Ubah". Tingginya dibatasi supaya jendela tetap pendek. */
+.plw-jdw__instruksi { margin-top: 6px; padding: 9px 11px; max-height: 150px; overflow: auto; border-radius: 10px; background: #f8fafc; border: 1px solid #e6e9f2; font-size: 12px; color: #334155; }
+.plw-jdw__jejak { margin-top: 10px; }
+.plw-jdw__jejaklist { margin: 6px 0 0; padding: 0 0 0 18px; display: grid; gap: 6px; font-size: 11.5px; color: #334155; }
+.plw-jdw__jejaklist small { display: block; color: #64748b; line-height: 1.45; }
+.plw-jdw__jejaklist small.is-alasan { color: #92400e; }
+/* Informasi biaya — sakelar tampil/tidak ke kandidat beserta kalimatnya. */
+.plw-biaya { margin-top: 12px; padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(16, 185, 129, .25); background: rgba(236, 253, 245, .7); transition: background .16s, border-color .16s; }
+.plw-biaya.is-off { border-color: #e2e8f0; background: #f8fafc; }
+.plw-biaya__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12.5px; color: #065f46; }
+.plw-biaya__head .bi { margin-right: 2px; }
+.plw-biaya.is-off .plw-biaya__head { color: #475569; }
+.plw-biaya__isi { margin: 6px 0 0; font-size: 12px; line-height: 1.55; color: #065f46; }
+.plw-biaya.is-off .plw-biaya__isi { color: #94a3b8; }
+.plw-biaya__hint { display: block; margin-top: 4px; font-size: 11px; color: #64748b; }
+/* Surat pengantar di jendela jadwal: nama berkas + tombol unggah/ganti sebaris. */
+.plw-surat { display: flex; flex-direction: column; align-items: stretch; gap: 6px; margin-top: 6px; padding: 8px 10px; border: 1px dashed #c7cbdb; border-radius: 10px; background: #f8fafc; font-size: 12.5px; color: #334155; }
+.plw-surat__baris { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 8px; background: #fff; border: 1px solid #eef1f6; }
+.plw-surat__baris > .bi { flex: none; font-size: 15px; color: #dc2626; }
+.plw-surat__ukuran { flex: none; font-size: 11px; color: #94a3b8; }
+.plw-surat small.is-lama { color: #64748b; }
+.plw-surat__kuota { margin-left: auto; font-size: 11px; font-weight: 700; color: #475569; background: #eef2ff; padding: 1px 8px; border-radius: 999px; }
+.plw-surat__kuota.is-penuh { color: #b91c1c; background: #fee2e2; }
+.plw-surat__pilih { align-self: flex-start; }
+.plw-surat__pilih.is-mati { opacity: .45; cursor: not-allowed; }
+.plw-biaya__teks { margin-top: 6px; font-size: 12.5px; }
+.plw-surat__nama { min-width: 0; flex: 1; font-weight: 700; color: #1e293b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-decoration: none; }
+a.plw-surat__nama:hover { color: #4f46e5; text-decoration: underline; }
+.plw-surat small { flex: none; font-size: 10.5px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: #059669; }
+.plw-surat__kosong { flex: 1; color: #94a3b8; font-style: italic; }
+.plw-surat__x { flex: none; appearance: none; border: 0; background: none; color: #94a3b8; cursor: pointer; padding: 2px 4px; }
+.plw-surat__x:hover { color: #dc2626; }
+.plw-surat__pilih { flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 8px; border: 1px solid rgba(99, 102, 241, .35); background: #fff; font-size: 12px; font-weight: 700; color: #4f46e5; cursor: pointer; }
+.plw-surat__pilih:hover { background: #f5f3ff; }
+.plw-surat__pilih.is-busy { opacity: .6; cursor: progress; }
+/* Perpanjang & kirim ulang — sekeluarga dengan "Ubah Jadwal", beda nada. */
+.plw-test__jdw.is-panjang { color: #0f766e; border-color: rgba(13, 148, 136, .35); }
+.plw-test__jdw.is-panjang:hover { background: rgba(13, 148, 136, .07); }
+.plw-test__jdw.is-ulang { color: #b45309; border-color: rgba(245, 158, 11, .4); }
+.plw-test__jdw.is-ulang:hover { background: #fffbeb; }
+/* Tunda — ungu master status DITUNDA. */
+.plw-test__jdw.is-tunda { color: #6d28d9; border-color: rgba(124, 58, 237, .35); }
+.plw-test__jdw.is-setuju { color: #15803d; border-color: rgba(22, 163, 74, .4); background: rgba(240, 253, 244, .9); }
+.plw-test__jdw.is-tolak { color: #b91c1c; border-color: rgba(220, 38, 38, .35); }
+.plw-test__jdw.is-tunda:hover { background: #f5f3ff; }
+.plw-test__adj.is-surat { text-decoration: none; color: #4338ca; background: #eef2ff; }
+.plw-test__adj.is-surat:hover { background: #e0e7ff; }
+/* KONFIRMASI KEHADIRAN — chip berwarna status (dari master), bisa diklik. */
+.plw-konf {
+    appearance: none; cursor: pointer; font-family: inherit; border: 1px solid transparent;
+    color: var(--nada, #64748b);
+    background: color-mix(in srgb, var(--nada, #94a3b8) 12%, #fff);
+    border-color: color-mix(in srgb, var(--nada, #94a3b8) 30%, #fff);
+}
+.plw-konf:hover { background: color-mix(in srgb, var(--nada, #94a3b8) 20%, #fff); }
+.plw-konf:focus-visible { outline: 2px solid #a5b4fc; outline-offset: 1px; }
+.plw-konf-panel { margin-top: 6px; }
+.plw-card__konf {
+    display: inline-flex; align-items: center; gap: 3px; white-space: nowrap;
+    padding: 1px 7px; border-radius: 999px; font-size: 10px; font-weight: 800;
+    color: var(--nada, #64748b);
+    background: color-mix(in srgb, var(--nada, #94a3b8) 12%, #fff);
+}
+.plw-selbar__ulang {
+    appearance: none; cursor: pointer; font: inherit; font-size: 10.5px; font-weight: 800;
+    display: inline-flex; align-items: center; gap: 5px; padding: 6px 9px;
+    white-space: nowrap; border-radius: 7px; transition: all .16s;
+    background: #fffbeb; border: 1px solid #fde68a; color: #b45309;
+}
+.plw-selbar__ulang:hover { background: #fef3c7; border-color: #fcd34d; }
+.plw-test__catlbl { display: block; margin-bottom: 3px; font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #6366f1; }
 /* DUA kendali di modal ini tetap dari Element Plus — pemilih tanggal-waktu dan
    daftar lokasi yang bisa dicari. Keduanya perkakas nyata yang tak ada
    padanannya di HTML biasa (input datetime-local tak punya kalender bahasa

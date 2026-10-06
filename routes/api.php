@@ -11,3 +11,6 @@ use Illuminate\Support\Facades\Route;
 */
 
 Route::middleware('auth:sanctum')->get('/user', fn (Request $request) => $request->user());
+
+// Pemicu tugas terjadwal (Cloud Scheduler → antrean Cloud Tasks).
+require base_path('routes/career/Tugas/PemicuTugasApi.php');

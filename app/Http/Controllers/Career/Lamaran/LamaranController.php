@@ -17,19 +17,24 @@ use App\Support\Career\BerkasBaris;
 use App\Support\Career\BerkasFormulir;
 use App\Support\Career\BerkasSeleksi;
 use App\Support\Career\BatasIsi;
+use App\Support\Career\BiayaAktivitas;
 use App\Support\Career\CatatanEksternal;
 use App\Support\Career\FormulirSchema;
 use App\Support\Career\GcsBerkas;
 use App\Support\Career\HtmlBersih;
 use App\Support\Career\JadwalPrivat;
+use App\Support\Career\JejakJadwal;
 use App\Support\Career\KatalogPrefill;
+use App\Support\Career\KonfirmasiJadwal;
 use App\Support\Career\LamaranService;
 use App\Support\Career\Pemeriksaan;
 use App\Support\Career\LamaranTargetValidator;
 use App\Support\Career\PemulihanBerkas;
 use App\Support\Career\PipelineProgress;
 use App\Support\Career\RakitBerkasSeleksi;
+use App\Support\Career\SuratJadwal;
 use App\Support\Career\UlangTahap;
+use App\Support\Career\UndanganJadwal;
 use App\Support\CareerShell;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -853,17 +858,15 @@ class LamaranController extends Controller
                     // Aturan unggahan untuk KANDIDAT pada aktivitas ini.
                     // Formatnya ikut dikirim supaya portal menampilkan aturan
                     // yang benar-benar berlaku, bukan aturan umum yang ditebak.
-                    'unggah' => ($s->Unggah_Kandidat ?? 'T') === 'Y' ? [
-                        'wajib' => ($s->Unggah_Wajib ?? 'T') === 'Y',
-                        'format' => array_values(array_filter(array_map('trim', explode(',', (string) ($s->Unggah_Format ?: 'pdf'))))),
-                        'maksMb' => (int) ($s->Unggah_Maks_Mb ?: 5),
-                        'petunjuk' => $s->Unggah_Petunjuk,
-                        // SUDAH DINYATAKAN LENGKAP oleh kandidat sendiri?
-                        // Yang membedakan "masih mengunggah" dari "menunggu
-                        // dinilai" — dua keadaan yang menuntut hal berbeda dari
-                        // kandidat maupun dari tim.
-                        'terkirim' => $s->Unggah_Kirim_At ? (string) $s->Unggah_Kirim_At : null,
-                    ] : null,
+                    //
+                    // Sumbernya DUA: setelan alur, atau MODE jadwalnya (MCU
+                    // mandiri — kandidat yang memegang hasilnya). Bentuknya satu:
+                    // wajib, format, maksMb, petunjuk, `terkirim` (sudah
+                    // dinyatakan lengkap — pembeda "masih mengunggah" dari
+                    // "menunggu dinilai"), dan `tertutup` (batasnya lewat; server
+                    // menolak unggah, hapus, maupun kirim). Lihat
+                    // UndanganJadwal::aturanUnggah().
+                    'unggah' => UndanganJadwal::aturanUnggah($s),
                     // Jadwal tatap muka: kapan, di mana / lewat tautan apa.
                     // Inilah yang dicari kandidat begitu diundang wawancara.
                     // Status MCU boleh dilihat kandidat — itu menyangkut dirinya
@@ -924,7 +927,23 @@ class LamaranController extends Controller
                             $s->Jadwal_Lokasi_Id ? $lokasiJadwal->get($s->Jadwal_Lokasi_Id) : null,
                         ),
                         'catatan' => $s->Jadwal_Catatan,
-                    ] : null,
+                        // Rentang (MCU vendor / mandiri), tempat vendor, instruksi
+                        // berformat, aturan biaya, dan SURAT PENGANTAR — dibuka
+                        // lewat rute portal yang memeriksa kepemilikannya. Lihat
+                        // jadwalTambahan().
+                    ] + self::jadwalTambahan($s, $ti, '/kandidat/lamaran/tes/'.Hashids::encode($s->Id_Lamaran_Tahap_Tes).'/surat') : null,
+                    // KONFIRMASI KEHADIRAN — status jawabannya, batasnya, dan
+                    // tautan bertanda tangan ke halaman konfirmasi (sama dengan
+                    // tombol di surel undangan).
+                    'konfirmasi' => KonfirmasiJadwal::untukKandidat($s),
+                    // KETENTUAN BIAYA aktivitas ini beserta kesimpulannya
+                    // (diganti / tidak) begitu hasilnya keluar. Turunan dari
+                    // hasil yang sudah tersimpan — bukan isian siapa pun.
+                    // Admin yang mematikan informasi biaya untuk jadwal ini
+                    // (mis. sudah dijelaskan di instruksi) mematikan
+                    // kesimpulannya juga: kandidat tidak membaca soal biaya
+                    // yang tak pernah disampaikan kepadanya.
+                    'biaya' => UndanganJadwal::tampilBiaya($s) ? BiayaAktivitas::status($s, $ti) : null,
                     'selesai' => $s->Flag_Selesai === 'Y',
                     'butuhJadwal' => $online && $s->Flag_Selesai !== 'Y' && ! $su,
                     // Tahap BERURUTAN: aktivitas ini belum gilirannya. Kandidat
@@ -1738,6 +1757,21 @@ class LamaranController extends Controller
     }
 
     /**
+     * Pesan penolakan bila kotak unggah aktivitas ini SUDAH DITUTUP (batasnya
+     * lewat) — null bila masih terbuka. Kalimatnya menyebut jalan keluarnya:
+     * perpanjangan hanya bisa diberikan tim.
+     */
+    private static function galatUnggahTertutup(?array $aturan): ?string
+    {
+        if (! $aturan || empty($aturan['tertutup'])) {
+            return null;
+        }
+
+        return 'Batas unggah sudah lewat ('.($aturan['batasTeks'] ?? '-').') — kotak unggah ditutup. '
+            .'Hubungi tim rekrutmen bila kamu membutuhkan perpanjangan.';
+    }
+
+    /**
      * Mode urutan ini MENGUNCI aktivitas berikutnya atau tidak?
      *
      * Jawabannya dibaca dari `Master_Mode_Urutan.Flag_Berurutan`, bukan dari
@@ -1841,9 +1875,13 @@ class LamaranController extends Controller
      * sering terjadi: layar basi. Admin yang membuka drawer sebelum rekannya
      * menyelesaikan aktivitas pertama masih memegang daftar tombol versi lama.
      *
+     * Publik karena dipakai juga KonfirmasiJadwal: pernyataan "tidak
+     * melanjutkan" yang menandai Tidak Hadir melewati gerbang yang sama
+     * dengan tombolnya.
+     *
      * @return string|null pesan penolakan, atau null bila boleh dikerjakan
      */
-    private static function kunciUrutan(object $sub): ?string
+    public static function kunciUrutan(object $sub): ?string
     {
         $tahap = DB::table('N_WEB_CAREERS_Lamaran_Tahap')
             ->where('Id_Lamaran_Tahap', $sub->Lamaran_Tahap_Id)
@@ -1984,12 +2022,20 @@ class LamaranController extends Controller
             return ResponseHelper::error('Aktivitas tidak ditemukan.', 404);
         }
 
-        if (($tes->Unggah_Kandidat ?? 'T') !== 'Y') {
+        // Aturan dari alur ATAU dari mode jadwal (MCU mandiri) — sumber yang
+        // sama dengan yang dibaca portal, jadi yang ditawarkan layar persis
+        // yang diterima di sini.
+        $aturan = UndanganJadwal::aturanUnggah($tes);
+        if (! $aturan) {
             return ResponseHelper::error('Aktivitas ini tidak meminta unggahan berkas.', 409);
         }
 
         if ($tes->Flag_Selesai === 'Y' || $tes->StatusTahap !== 'BERJALAN') {
             return ResponseHelper::error('Aktivitas ini sudah selesai - berkas tidak bisa diubah lagi.', 409);
+        }
+
+        if ($galat = self::galatUnggahTertutup($aturan)) {
+            return ResponseHelper::error($galat, 409);
         }
 
         // SUDAH DIKIRIM → LANGKAH UNGGAH DITUTUP SEPENUHNYA.
@@ -2011,8 +2057,8 @@ class LamaranController extends Controller
             );
         }
 
-        $format = array_values(array_filter(array_map('trim', explode(',', (string) ($tes->Unggah_Format ?: 'pdf')))));
-        $maksMb = (int) ($tes->Unggah_Maks_Mb ?: 5);
+        $format = $aturan['format'];
+        $maksMb = (int) $aturan['maksMb'];
 
         $data = $request->validate([
             'berkas' => 'required|file|mimes:'.implode(',', $format).'|max:'.($maksMb * 1024),
@@ -2089,12 +2135,17 @@ class LamaranController extends Controller
             return ResponseHelper::error('Aktivitas tidak ditemukan.', 404);
         }
 
-        if (($tes->Unggah_Kandidat ?? 'T') !== 'Y') {
+        $aturan = UndanganJadwal::aturanUnggah($tes);
+        if (! $aturan) {
             return ResponseHelper::error('Aktivitas ini tidak meminta unggahan berkas.', 409);
         }
 
         if ($tes->Flag_Selesai === 'Y' || $tes->StatusTahap !== 'BERJALAN') {
             return ResponseHelper::error('Aktivitas ini sudah selesai — berkas tidak bisa diubah lagi.', 409);
+        }
+
+        if ($galat = self::galatUnggahTertutup($aturan)) {
+            return ResponseHelper::error($galat, 409);
         }
 
         $jumlah = DB::table('N_WEB_CAREERS_Lamaran_Tes_Berkas')
@@ -2167,6 +2218,14 @@ class LamaranController extends Controller
 
         if ($b->Flag_Selesai === 'Y') {
             return ResponseHelper::error('Aktivitas sudah selesai - berkas tidak bisa dihapus.', 409);
+        }
+
+        // BATAS UNGGAH LEWAT → yang sudah masuk dibekukan apa adanya. Tim
+        // membacanya sebagai bahan; menghapus sesudah batas sama saja menarik
+        // bukti dari meja penilai.
+        $pemilik = DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')->where('Id_Lamaran_Tahap_Tes', $b->Lamaran_Tahap_Tes_Id)->first();
+        if ($pemilik && ($galat = self::galatUnggahTertutup(UndanganJadwal::aturanUnggah($pemilik)))) {
+            return ResponseHelper::error($galat, 409);
         }
 
         // SUDAH IKUT DIKIRIM → TIDAK BISA DITARIK LAGI.
@@ -2930,7 +2989,39 @@ class LamaranController extends Controller
                 'petunjukKontak' => $m->Petunjuk_Kontak,
                 'kalimatUndangan' => $m->Kalimat_Undangan,
                 'luring' => ($m->Flag_Luring ?? 'T') === 'Y',
+                // WAKTUNYA BATAS AKHIR, bukan janji temu (mis. MCU mandiri):
+                // jendela jadwal menanyakan "paling lambat", bukan tanggal & jam.
+                'batasWaktu' => UndanganJadwal::berbatasWaktu($m),
+                // Batas yang langsung terisi saat mode ini dipilih — rekruter
+                // cukup menyimpan, tidak perlu memilih tanggal.
+                'batasHari' => (int) ($m->Batas_Hari_Bawaan ?? 0) ?: null,
+                // VENDOR: nama vendor + catatan cabang diketik tim (bukan Master
+                // Lokasi); alamat & tautan Google Maps opsional.
+                'butuhTempat' => UndanganJadwal::butuhTempat($m),
+                'labelTempat' => $m->Label_Tempat ?? null,
+                // Surat pengantar wajib dilampirkan (MCU vendor & mandiri).
+                'butuhSurat' => UndanganJadwal::butuhSurat($m),
+                'labelSurat' => UndanganJadwal::labelSurat($m),
+                // Kandidat sendiri yang mengunggah hasilnya (MANDIRI).
+                'unggahKandidat' => UndanganJadwal::unggahKandidat($m),
             ])->all(),
+            // Kolom & tabel fitur jadwal 30-09-2026 sudah ada? Sebelum skripnya
+            // dijalankan, alasan perubahan tidak dituntut dan instruksi tetap
+            // berupa teks polos.
+            'jadwalFitur' => [
+                'jejak' => JejakJadwal::siap(),
+                'instruksi' => UndanganJadwal::siapInstruksi(),
+                'alasanMin' => JejakJadwal::ALASAN_MIN,
+                // Kolom tempat vendor, tautan peta, dan surat pengantar.
+                'vendor' => UndanganJadwal::siapVendor(),
+                // Surat pengantar: hanya PDF, boleh lebih dari satu, dengan
+                // batas JUMLAH ukuran seluruhnya.
+                'suratMaksMb' => SuratJadwal::MAKS_TOTAL_MB,
+                'suratFormat' => SuratJadwal::FORMAT,
+                'suratMaksBerkas' => SuratJadwal::MAKS_BERKAS,
+                // Batas sekali kirim ulang surel — sama dengan batas massal lain.
+                'kirimUlangMaks' => self::BATAS_PUTUS_MASSAL,
+            ],
         ]));
     }
 
@@ -4034,6 +4125,9 @@ class LamaranController extends Controller
         // memuatnya per aktivitas saat drawer dibuka berarti satu kueri per
         // baris rapor, dan drawer terasa tersendat justru saat paling dipakai.
         $subIdsAll = $subPer->flatten(1)->pluck('Id_Lamaran_Tahap_Tes')->all();
+        // Snapshot konfirmasi (CRM + permintaan terbuka) untuk seluruh papan —
+        // dua kueri berpotong, bukan dua kueri per kartu.
+        KonfirmasiJadwal::muatBanyak($subIdsAll);
         $berkasSub = \App\Support\Career\MetrikRekrutmen::potongIn(
             fn () => DB::table('N_WEB_CAREERS_Lamaran_Tahap_Berkas')->whereNull('Ulang_Id')->orderByDesc('Id_Lamaran_Tahap_Berkas'),
             'Lamaran_Tahap_Tes_Id',
@@ -4504,6 +4598,10 @@ class LamaranController extends Controller
 
         $jumlah = collect($subs)->count();
 
+        // Konfirmasi seluruh aktivitas tahap ini dalam SATU kueri (papan sudah
+        // memuat semuanya di muka — panggilan ini lalu tidak menyentuh basis data).
+        KonfirmasiJadwal::muatBanyak(collect($subs)->pluck('Id_Lamaran_Tahap_Tes')->all());
+
         return collect($subs)
             ->map(fn ($x) => self::rapotTes(
                 $x,
@@ -4667,18 +4765,16 @@ class LamaranController extends Controller
             // bisa membedakan "belum mengunggah padahal wajib" dari "aktivitas
             // ini memang tidak meminta apa-apa" — dua keadaan yang menuntut
             // tindakan berbeda dari tim.
-            'unggahKandidat' => ($x->Unggah_Kandidat ?? 'T') === 'Y' ? [
-                'wajib' => ($x->Unggah_Wajib ?? 'T') === 'Y',
-                'petunjuk' => $x->Unggah_Petunjuk ?? null,
-                'format' => array_values(array_filter(array_map('trim', explode(',', (string) ($x->Unggah_Format ?: 'pdf'))))),
-                'maksMb' => (int) ($x->Unggah_Maks_Mb ?: 0),
-                // KANDIDAT SUDAH MENYATAKAN LENGKAP? Pembeda antara "masih
-                // mengunggah" dan "menunggu dinilai". Menilai pekerjaan yang
-                // belum dinyatakan selesai adalah keputusan yang tak bisa
-                // ditarik — tim perlu melihat bedanya sebelum menekan apa pun.
-                'terkirim' => $x->Unggah_Kirim_At ? (string) $x->Unggah_Kirim_At : null,
-                'terkirimOleh' => $x->Unggah_Kirim_By ?? null,
-            ] : null,
+            //
+            // KANDIDAT SUDAH MENYATAKAN LENGKAP (`terkirim`)? Pembeda antara
+            // "masih mengunggah" dan "menunggu dinilai". Menilai pekerjaan yang
+            // belum dinyatakan selesai adalah keputusan yang tak bisa ditarik —
+            // tim perlu melihat bedanya sebelum menekan apa pun. Aturannya dari
+            // alur ATAU dari mode jadwal (MCU mandiri), sama persis dengan yang
+            // dibaca portal — lihat UndanganJadwal::aturanUnggah().
+            'unggahKandidat' => ($aturanUnggah = UndanganJadwal::aturanUnggah($x))
+                ? $aturanUnggah + ['terkirimOleh' => $x->Unggah_Kirim_By ?? null]
+                : null,
             'berkasKandidat' => $berkasKandidat,
             // Tipe yang menuntut waktu & tempat (wawancara, MCU, tes offline).
             // Dibaca dari Master Tipe Tahap — BUKAN daftar kode di dalam kode
@@ -4783,7 +4879,22 @@ class LamaranController extends Controller
                 'catatan' => $x->Jadwal_Catatan,
                 'olehSiapa' => $x->Jadwal_By,
                 'kontak' => $x->Jadwal_Kontak ?? null,
-            ] : null,
+                // Isian mentah VENDOR untuk jendela "Ubah jadwal": catatan
+                // cabang (berformat) dan tautan peta yang ditempel tim.
+                'lokasiHtml' => $x->Jadwal_Lokasi_Html ?? null,
+                'mapsUrl' => $x->Jadwal_Maps_Url ?? null,
+                // Surel jadwal terakhir berangkat — tombol "Kirim ulang"
+                // menahan diri beberapa menit sesudahnya.
+                'emailAt' => ! empty($x->Jadwal_Email_At) ? (string) $x->Jadwal_Email_At : null,
+            ] + self::jadwalTambahan($x, $tipe, '/api/v1/karir/lamaran/sub-tes/'.Hashids::encode($x->Id_Lamaran_Tahap_Tes).'/surat') : null,
+            // Ketentuan biaya (MCU) — dan begitu hasilnya dicatat, kesimpulannya:
+            // diganti atau tidak. Tak ada isian; lihat BiayaAktivitas.
+            'biaya' => BiayaAktivitas::status($x, $tipe),
+            // KONFIRMASI KEHADIRAN — jawaban kandidat atas versi jadwal ini
+            // (status efektif, batas, hitungan surel, permintaan jadwal lain),
+            // dan aturannya untuk jendela Atur Jadwal (null = tidak diminta).
+            'konfirmasi' => KonfirmasiJadwal::ringkas($x),
+            'konfirmasiAturan' => KonfirmasiJadwal::aturanLayar($x, $tipe),
             // Peruntukan lokasi yang boleh dipilih untuk tipe aktivitas ini —
             // null = tidak dibatasi. Jendela jadwal menyaring dropdown-nya dari
             // sini, dan server memeriksa hal yang sama persis.
@@ -4965,6 +5076,36 @@ class LamaranController extends Controller
         }
 
         if (! empty($x->Jadwal_Mulai) && empty($x->Jadwal_Hadir)) {
+            // BERRENTANG TANGGAL (MCU vendor / mandiri): tidak ada "kehadiran"
+            // di satu jam tertentu. Yang ditunggu bergantung pada SIAPA yang
+            // memegang hasilnya — dibaca dari flag mode, bukan nama mode:
+            //   kandidat mengunggah (MANDIRI) → berkasnya, sebelum batas;
+            //   vendor (VENDOR)               → hasil dari vendor, dicatat tim.
+            $modeX = UndanganJadwal::mode($x->Jadwal_Mode ?? null);
+            if (UndanganJadwal::berbatasWaktu($modeX)) {
+                if ($aturan = UndanganJadwal::aturanUnggah($x)) {
+                    if ($aturan['terkirim']) {
+                        return 'berkas kandidat sudah masuk — hasil belum dicatat';
+                    }
+
+                    // Batas UNGGAH (bisa diperpanjang), bukan akhir rentang pemeriksaan.
+                    $batasUnggah = UndanganJadwal::tanggalPendek($aturan['batas']);
+
+                    return $aturan['tertutup']
+                        ? 'lewat batas unggah '.$batasUnggah.' — berkas kandidat belum masuk'
+                        : 'menunggu kandidat memeriksakan diri & mengunggah hasil (paling lambat '.$batasUnggah
+                            .($aturan['diperpanjang'] ? ', diperpanjang' : '').')';
+                }
+
+                $batas = ! empty($x->Jadwal_Selesai) ? \Illuminate\Support\Carbon::parse($x->Jadwal_Selesai) : null;
+                $lewat = $batas && now()->gt($batas);
+                $rentang = UndanganJadwal::rentangPendek($x->Jadwal_Mulai ?? null, $batas);
+
+                return $lewat
+                    ? 'rentang '.$rentang.' sudah lewat — hasil belum dicatat'
+                    : 'menunggu hasil dari '.mb_strtolower($modeX->Nama ?? 'vendor').' ('.$rentang.')';
+            }
+
             return 'kehadiran belum ditetapkan';
         }
 
@@ -7315,7 +7456,8 @@ class LamaranController extends Controller
             ->where('t.Id_Lamaran_Tahap_Tes', $realId)
             // `Urutan` ikut diambil: gerbang urutan aktivitas membacanya untuk
             // tahu aktivitas mana yang berada di depan yang ini.
-            ->select('t.Id_Lamaran_Tahap_Tes', 't.Lamaran_Tahap_Id', 't.Urutan', 't.Label', 't.Tipe_Tahap_Kode', 't.Flag_Selesai', 'h.Lamaran_Id')
+            ->select('t.Id_Lamaran_Tahap_Tes', 't.Lamaran_Tahap_Id', 't.Urutan', 't.Label', 't.Tipe_Tahap_Kode', 't.Flag_Selesai',
+                't.Jadwal_Mode', 't.Jadwal_Mulai', 'h.Lamaran_Id')
             ->first();
 
         if (! $sub) {
@@ -7323,6 +7465,14 @@ class LamaranController extends Controller
         }
         if ($sub->Flag_Selesai === 'Y') {
             return ResponseHelper::error('Aktivitas ini sudah final — berkasnya tidak bisa ditambah lagi.', 409);
+        }
+        // HASIL YANG DIUNGGAH KANDIDAT SENDIRI (MCU mandiri): kandidatlah yang
+        // memegang hasil dan kwitansinya, dan berkasnya masuk lewat portal.
+        // Tim tidak mengunggah di sini — berkas kedua dari tim akan terbaca
+        // sebagai hasil pengganti. Vendor tetap diunggah tim.
+        if (! empty($sub->Jadwal_Mulai) && UndanganJadwal::unggahKandidat(UndanganJadwal::mode($sub->Jadwal_Mode ?? null))) {
+            return ResponseHelper::error('Hasil aktivitas ini diunggah kandidat sendiri lewat portal ('
+                .(UndanganJadwal::mode($sub->Jadwal_Mode)->Nama ?? 'Mandiri').') — tim tidak mengunggah atau menggantinya.', 409);
         }
 
         if ($kunci = self::kunciUrutan($sub)) {
@@ -7793,6 +7943,10 @@ class LamaranController extends Controller
 
             Log::channel('web_career')->info("Sub-tes #{$realId} ditandai TIDAK_HADIR → evaluasi: ".($outcome ?? '-'));
 
+            if ($sub->Jadwal_Mulai) {
+                KonfirmasiJadwal::catatKehadiran((int) $realId, 'T', (string) session('career_auth.nama', 'ADMIN'), session('career_auth.id') ? (int) session('career_auth.id') : null);
+            }
+
             return ResponseHelper::success(['outcome' => $outcome], 'Sub-tes ditandai tidak hadir.');
         } catch (\Throwable $e) {
             Log::channel('web_career')->error("Gagal tandai sub-tes #{$id}: ".$e->getMessage());
@@ -7830,8 +7984,11 @@ class LamaranController extends Controller
         $data = $request->validate([
             // Daftar mode dari MASTER — bentuk jadwal baru cukup satu baris data.
             'mode' => ['required', Rule::in(self::masterModeJadwal()->keys()->all())],
-            'mulai' => 'required|date',
-            'selesai' => 'nullable|date|after:mulai',
+            // Wajib-tidaknya MULAI dan arti SELESAI ditentukan flag mode-nya —
+            // lihat waktuJadwal(). Pada mode berbatas waktu (MCU mandiri) yang
+            // diisi hanya batas akhirnya.
+            'mulai' => 'nullable|date',
+            'selesai' => 'nullable|date',
             // `required_if` sengaja TIDAK dipakai lagi: ia menuntut nama mode
             // ditulis di sini, dan itu persis yang membuat mode baru harus
             // menyunting validator. Syaratnya ditegakkan setelah ini, dari flag.
@@ -7848,17 +8005,38 @@ class LamaranController extends Controller
             // peruntukan, bukan dari `required_if` di sini.
             'lokasiNama' => 'nullable|string|max:200',
             'lokasiAlamat' => 'nullable|string|max:500',
+            // VENDOR: tautan Google Maps yang DITEMPEL tim (opsional — tidak
+            // pernah dikarang sistem) dan catatan cabang/lokasi berformat.
+            'mapsUrl' => 'nullable|string|max:500',
+            'lokasiHtml' => 'nullable|string|max:30000',
+            // Surat pengantar yang BARU diunggah (ref dari /lamaran/jadwal/surat),
+            // dan urutan surat LAMA yang dipertahankan. Tanpa `suratTetap`,
+            // seluruh surat lama dipertahankan. Batasnya jumlah ukuran — lihat
+            // susunSurat().
+            'suratRef' => 'nullable|array|max:'.SuratJadwal::MAKS_BERKAS,
+            'suratRef.*' => 'string|max:4000',
+            'suratTetap' => 'nullable|array|max:'.SuratJadwal::MAKS_BERKAS,
+            'suratTetap.*' => 'integer|min:0|max:100',
+            // Informasi biaya ikut ke kandidat? Kosong = bawaan Master Alur.
+            'tampilBiaya' => 'nullable|boolean',
+            // Kalimat biaya yang dikirim — bisa disunting per jadwal; kosong =
+            // kalimat alur, lalu kalimat tipe.
+            'kalimatBiaya' => 'nullable|string|max:1000',
             'catatan' => 'nullable|string',
+            // Instruksi berformat (daftar pemeriksaan, persiapan) — disaring
+            // sebelum disimpan; teks polosnya diturunkan dari sini.
+            'catatanHtml' => 'nullable|string|max:30000',
+            // Kenapa jadwal yang SUDAH dikirim diubah — wajib, lihat di bawah.
+            'alasan' => 'nullable|string|max:500',
         ], [
             'link.required_if' => 'Tautan pertemuan wajib diisi untuk wawancara daring.',
             'lokasiId.required_if' => 'Pilih lokasi untuk kegiatan tatap muka.',
-            'selesai.after' => 'Waktu selesai harus setelah waktu mulai.',
         ]);
 
         $sub = DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes as t')
             ->join('N_WEB_CAREERS_Lamaran_Tahap as h', 'h.Id_Lamaran_Tahap', '=', 't.Lamaran_Tahap_Id')
             ->where('t.Id_Lamaran_Tahap_Tes', $realId)
-            ->select('t.*', 'h.Lamaran_Id', 'h.Label as TahapLabel', 'h.Urutan as TahapUrutan')
+            ->select('t.*', 'h.Lamaran_Id', 'h.Label as TahapLabel', 'h.Urutan as TahapUrutan', 'h.Tipe_Tahap_Kode as TahapTipe')
             ->first();
 
         if (! $sub) {
@@ -7895,9 +8073,62 @@ class LamaranController extends Controller
             return ResponseHelper::error($galat, 422);
         }
 
-        $this->terapkanJadwal((int) $realId, $data, $data['mulai'], $data['selesai'] ?? null);
+        $modeDef = self::masterModeJadwal()->get($data['mode']);
+        [$mulai, $selesai, $galat] = self::waktuJadwal($data, $modeDef, $sub->Jadwal_Mulai ?? null);
+        if ($galat) {
+            return ResponseHelper::error($galat, 422);
+        }
+
+        // ── JADWAL YANG SUDAH DIKIRIM DIUBAH → ALASANNYA WAJIB ─────────────
+        // Kandidat sudah memegang undangan yang lama. Mengubahnya — pindah RS,
+        // pindah ke klinik pilihan sendiri, geser tanggal — adalah pengecualian
+        // yang harus bisa dijelaskan belakangan, dan satu kalimat sekarang jauh
+        // lebih murah daripada menebaknya dari ingatan bulan depan. Hanya bila
+        // tabel jejaknya ada: alasan yang tak punya tempat disimpan tidak
+        // pantas dituntut.
+        if (! empty($sub->Jadwal_Mulai) && JejakJadwal::siap()
+            && mb_strlen(trim((string) ($data['alasan'] ?? ''))) < JejakJadwal::ALASAN_MIN) {
+            return ResponseHelper::error(
+                'Tuliskan alasan perubahan jadwal (minimal '.JejakJadwal::ALASAN_MIN.' karakter) — kandidat sudah menerima jadwal yang lama.',
+                422,
+            );
+        }
+
+        // ── SURAT PENGANTAR (mode ber-Flag_Butuh_Surat) ────────────────────
+        // Daftar FINAL: surat lama yang dipertahankan + yang baru diunggah.
+        // Mengubah tanggal tidak memaksa mengunggah ulang; tanpa satu surat
+        // pun, jadwalnya tidak boleh terbit — kandidat yang datang tanpa surat
+        // pengantar ditolak di loket.
+        if (UndanganJadwal::butuhSurat($modeDef)) {
+            [$data['_surat'], $galat] = self::susunSurat($sub, $data, $modeDef);
+            if ($galat) {
+                return ResponseHelper::error($galat, 422);
+            }
+        }
+
+        [$data['catatanHtml'], $data['catatan']] = UndanganJadwal::saringInstruksi($data['catatanHtml'] ?? null, $data['catatan'] ?? null);
+        // Catatan cabang vendor disaring sama seperti instruksi: gambar dibuang
+        // (tak bisa dibuka kandidat, dan surel tidak memuatnya).
+        $data['lokasiHtml'] = CatatanEksternal::saring($data['lokasiHtml'] ?? null);
+
+        $aksi = JejakJadwal::aksi($sub);
+
+        // Jadwal & konfirmasinya SATU transaksi: versi yang naik tanpa baris
+        // konfirmasinya akan membuat tautan di surel menunjuk undangan kosong.
+        // Batas konfirmasi = WAKTU MULAI jadwal ini (KonfirmasiJadwal::batasDari).
+        DB::transaction(function () use ($realId, $data, $mulai, $selesai, $sub) {
+            $this->terapkanJadwal((int) $realId, $data, $mulai, $selesai);
+            KonfirmasiJadwal::terbitkan(
+                (int) $realId,
+                $sub,
+                (string) session('career_auth.nama', 'ADMIN'),
+                session('career_auth.id') ? (int) session('career_auth.id') : null,
+            );
+        });
 
         $undangan = $this->kirimUndanganJadwal((int) $realId, (int) $sub->Lamaran_Id);
+
+        JejakJadwal::catat((int) $realId, $aksi, $data['alasan'] ?? null, $undangan);
 
         // Tiga keadaan, tiga kalimat. "Privat" bukan kegagalan: menyuruh admin
         // memeriksa log untuk sesuatu yang berjalan sebagaimana mestinya hanya
@@ -7913,6 +8144,417 @@ class LamaranController extends Controller
             ['emailTerkirim' => $undangan === 'terkirim', 'undangan' => $undangan],
             $pesan,
         );
+    }
+
+    /**
+     * GET /api/v1/karir/lamaran/sub-tes/{id}/jadwal-info — bahan jendela Atur
+     * Jadwal yang tidak ikut di muatan papan.
+     *
+     *   instruksiAlur  instruksi yang ditulis SEKALI di Master Alur untuk
+     *                  aktivitas ini — mengisi editornya, jadi rekruter cukup
+     *                  menyimpan. Tidak ikut di muatan papan: ratusan kartu kali
+     *                  satu blok HTML untuk jendela yang dibuka satu per satu.
+     *   jejak          riwayat jadwal aktivitas ini (dibuat / diubah /
+     *                  diperpanjang / diingatkan) berikut alasannya.
+     */
+    public function subTesJadwalInfo(string $id)
+    {
+        $realId = Hashids::decode($id)[0] ?? null;
+        if (! $realId) {
+            return ResponseHelper::error('Aktivitas tidak valid.', 422);
+        }
+
+        $lamaranId = DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes as t')
+            ->join('N_WEB_CAREERS_Lamaran_Tahap as h', 'h.Id_Lamaran_Tahap', '=', 't.Lamaran_Tahap_Id')
+            ->where('t.Id_Lamaran_Tahap_Tes', $realId)
+            ->value('h.Lamaran_Id');
+        $tipe = $lamaranId ? self::tipeAktivitas((int) $realId) : null;
+
+        // Lingkup yang sama dengan papan: riwayat jadwal & instruksinya milik
+        // kandidat yang memang boleh dilihat akun ini.
+        if (! $lamaranId || ! $this->lamaranDalamLingkup((int) $lamaranId)) {
+            return ResponseHelper::error('Aktivitas tidak ditemukan.', 404);
+        }
+
+        $setelan = UndanganJadwal::setelanAlur((int) $realId);
+
+        return ResponseHelper::success([
+            'instruksiAlur' => $setelan['instruksi'],
+            // Informasi biaya ditampilkan ke kandidat? — bawaan Master Alur —
+            // berikut kalimatnya (kalimat alur, lalu kalimat tipe).
+            'tampilBiayaAlur' => $setelan['tampilBiaya'],
+            'kalimatBiayaAlur' => $setelan['kalimatBiaya'] ?: (trim((string) ($tipe->Kalimat_Biaya ?? '')) ?: null),
+            'jejak' => JejakJadwal::daftar((int) $realId),
+        ], 'Info jadwal');
+    }
+
+    /** Jeda minimum antara dua surel jadwal ke kandidat yang sama (menit). */
+    private const JEDA_KIRIM_ULANG_MENIT = 10;
+
+    /**
+     * POST /api/v1/karir/lamaran/jadwal/surat — unggah SURAT PENGANTAR jadwal.
+     *
+     * Langkah pertama dari dua (lihat SuratJadwal): berkasnya disimpan dulu dan
+     * dijawab dengan ref terenkripsi, yang lalu dibawa permintaan jadwal satuan
+     * maupun massal. Belum terikat ke kandidat mana pun sampai jadwalnya
+     * benar-benar disimpan.
+     */
+    public function jadwalSurat(Request $request)
+    {
+        if (! UndanganJadwal::siapVendor()) {
+            return ResponseHelper::error('Surat pengantar belum aktif — skrip docs/30-09-2026/01 belum dijalankan.', 409);
+        }
+
+        $data = $request->validate([
+            // Hanya PDF. Satu berkas tak mungkin melampaui batas TOTAL; jumlah
+            // seluruh surat satu jadwal diperiksa saat jadwalnya disimpan.
+            'berkas' => 'required|file|mimes:'.implode(',', SuratJadwal::FORMAT).'|mimetypes:application/pdf|max:'.(SuratJadwal::MAKS_TOTAL_MB * 1024),
+        ], [
+            'berkas.required' => 'Pilih berkas surat pengantarnya.',
+            'berkas.mimes' => 'Surat pengantar hanya menerima PDF.',
+            'berkas.mimetypes' => 'Surat pengantar hanya menerima PDF.',
+            'berkas.max' => 'Ukuran surat melebihi '.SuratJadwal::MAKS_TOTAL_MB.' MB — batas itu untuk SELURUH surat satu jadwal.',
+        ]);
+
+        try {
+            $hasil = SuratJadwal::simpan($data['berkas']);
+        } catch (\Throwable $e) {
+            Log::channel('web_career')->error('[SURAT-JADWAL] unggah gagal: '.$e->getMessage());
+
+            return ResponseHelper::error('Surat gagal diunggah: '.Str::limit($e->getMessage(), 140), 500);
+        }
+
+        return ResponseHelper::success($hasil, 'Surat pengantar terunggah.');
+    }
+
+    /**
+     * GET /api/v1/karir/lamaran/sub-tes/{id}/surat/{urutan?} — surat pengantar,
+     * dibuka dari worklist. `?unduh=1` = unduh sebagai berkas (lihat SuratJadwal::layani).
+     */
+    public function subTesSurat(Request $request, string $id, int $urutan = 0)
+    {
+        $realId = Hashids::decode($id)[0] ?? null;
+        $s = $realId && UndanganJadwal::siapVendor()
+            ? DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes as t')
+                ->join('N_WEB_CAREERS_Lamaran_Tahap as h', 'h.Id_Lamaran_Tahap', '=', 't.Lamaran_Tahap_Id')
+                ->where('t.Id_Lamaran_Tahap_Tes', $realId)
+                ->first(['h.Lamaran_Id', 't.Jadwal_Surat_Json'])
+            : null;
+
+        // Lingkup yang sama dengan papan: surat milik kandidat yang memang
+        // boleh dilihat akun ini.
+        if (! $s || ! $this->lamaranDalamLingkup((int) $s->Lamaran_Id)) {
+            abort(404);
+        }
+
+        return SuratJadwal::layani(SuratJadwal::path($s, $urutan), SuratJadwal::nama($s, $urutan), $request->boolean('unduh'));
+    }
+
+    /**
+     * GET /kandidat/lamaran/tes/{id}/surat/{urutan?} — surat pengantar milik
+     * kandidat yang login. Bawaannya tampil di peramban (tombol "Lihat");
+     * `?unduh=1` mengunduhnya dengan nama aslinya; `?isi=1` menyajikan isinya
+     * langsung untuk panel pratinjau di kartu MCU (lihat SuratJadwal::sajikanIsi).
+     */
+    public function tesSurat(Request $request, string $id, int $urutan = 0)
+    {
+        $tes = UndanganJadwal::siapVendor() ? $this->tesMilikSaya($id) : null;
+
+        if ($request->boolean('isi')) {
+            return SuratJadwal::sajikanIsi(
+                $tes ? SuratJadwal::path($tes, $urutan) : null,
+                $tes ? SuratJadwal::nama($tes, $urutan) : null,
+            );
+        }
+
+        return SuratJadwal::layani(
+            $tes ? SuratJadwal::path($tes, $urutan) : null,
+            $tes ? SuratJadwal::nama($tes, $urutan) : null,
+            $request->boolean('unduh'),
+        );
+    }
+
+    /**
+     * GET /karir/surat-jadwal/{id} — surat pengantar dari tautan SUREL.
+     *
+     * Tanpa sesi: surel dibuka di aplikasi surat yang tidak membawa cookie
+     * portal. Rutenya bertanda tangan (`signed`, lihat SuratJadwal::tautanEmail)
+     * sehingga tidak bisa ditebak maupun disunting ke aktivitas lain, dan mati
+     * dengan sendirinya. Yang disajikan selalu surat TERBARU aktivitasnya.
+     */
+    public function suratJadwalPublik(string $id, int $urutan = 0)
+    {
+        $realId = Hashids::decode($id)[0] ?? null;
+        $s = $realId && UndanganJadwal::siapVendor()
+            ? DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')->where('Id_Lamaran_Tahap_Tes', $realId)->first(['Jadwal_Surat_Json'])
+            : null;
+        $path = $s ? SuratJadwal::path($s, $urutan) : null;
+
+        // Dicatat: tautan ini hidup di luar sesi, jadi jejaknya satu-satunya
+        // cara mengetahui surat siapa yang dibuka.
+        Log::channel('web_career')->info("[SURAT-JADWAL] surat #{$urutan} aktivitas #{$realId} dibuka dari tautan surel");
+
+        // Selalu tampil (inline): tanda tangan tautan mencakup query-nya, jadi
+        // "?unduh=1" yang ditempelkan akan membatalkan tautannya sendiri.
+        return SuratJadwal::layani($path, $s ? SuratJadwal::nama($s, $urutan) : null);
+    }
+
+    /**
+     * PATCH /api/v1/karir/lamaran/sub-tes/{id}/perpanjang — mundurkan BATAS
+     * UNGGAH hasil pada jadwal yang kandidatnya mengunggah sendiri (MCU mandiri).
+     *
+     * Yang paling sering terjadi: hasil lab kandidat belum keluar. Rentang
+     * pemeriksaan TIDAK ikut bergeser — ia informasi kapan memeriksakan diri,
+     * sedangkan yang ditunggu tim adalah berkasnya. Hanya
+     * Jadwal_Batas_Unggah yang diisi; tempat, surat, instruksi, dan rentangnya
+     * tetap. Kotak unggah yang sudah tertutup terbuka lagi dengan sendirinya
+     * (aturanUnggah membaca batas yang baru), dan kandidat dikabari lewat surel.
+     *
+     * Mode tanpa unggahan kandidat (VENDOR) tidak punya batas unggah: rentang
+     * vendor diubah lewat "Ubah Jadwal", dengan alasan dan undangan baru.
+     */
+    public function subTesPerpanjang(Request $request, string $id)
+    {
+        $realId = Hashids::decode($id)[0] ?? null;
+        if (! $realId) {
+            return ResponseHelper::error('Aktivitas tidak valid.', 422);
+        }
+
+        $data = $request->validate([
+            'selesai' => 'required|date',
+            'alasan' => 'required|string|max:500',
+        ], [
+            'selesai.required' => 'Pilih tanggal batas unggah yang baru.',
+            'alasan.required' => 'Tuliskan alasan perpanjangannya.',
+        ]);
+
+        $sub = self::subTesBerjadwal((int) $realId);
+        if (! $sub) {
+            return ResponseHelper::error('Aktivitas tidak ditemukan.', 404);
+        }
+        if ($galat = $this->galatPicTahap((int) $sub->Lamaran_Tahap_Id)) {
+            return $galat;
+        }
+        if ($galat = self::galatJadwalTerbuka($sub)) {
+            return ResponseHelper::error($galat, 409);
+        }
+        $mode = UndanganJadwal::mode($sub->Jadwal_Mode);
+        if (! UndanganJadwal::berbatasWaktu($mode) || ! UndanganJadwal::unggahKandidat($mode)) {
+            return ResponseHelper::error(
+                'Perpanjang hanya untuk batas unggah hasil yang diunggah kandidat sendiri (mis. MCU mandiri). '
+                    .'Untuk mengubah rentang pemeriksaan, gunakan "Ubah Jadwal".',
+                409,
+            );
+        }
+        if (! UndanganJadwal::siapBatasUnggah()) {
+            return ResponseHelper::error('Perpanjangan batas unggah belum aktif — skrip docs/30-09-2026/01 belum dijalankan.', 409);
+        }
+        if ((UndanganJadwal::aturanUnggah($sub, $mode)['terkirim'] ?? null)) {
+            return ResponseHelper::error('Kandidat sudah mengirim berkasnya — tidak ada batas unggah yang perlu diperpanjang.', 409);
+        }
+        if (mb_strlen(trim($data['alasan'])) < JejakJadwal::ALASAN_MIN) {
+            return ResponseHelper::error('Alasan perpanjangan minimal '.JejakJadwal::ALASAN_MIN.' karakter.', 422);
+        }
+
+        $baru = UndanganJadwal::akhirHari((string) $data['selesai']);
+        $lama = UndanganJadwal::batasUnggah($sub);
+        if ($lama && $baru->lte($lama)) {
+            return ResponseHelper::error('Tanggal baru harus sesudah batas unggah sekarang ('.UndanganJadwal::teksBatas($lama).').', 422);
+        }
+        if ($baru->lte(now())) {
+            return ResponseHelper::error('Tanggal baru harus hari ini atau sesudahnya.', 422);
+        }
+
+        $nama = session('career_auth.nama');
+        DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')->where('Id_Lamaran_Tahap_Tes', $realId)->update([
+            // Hanya batas unggah — rentang pemeriksaan (Jadwal_Mulai/Selesai) tetap.
+            'Jadwal_Batas_Unggah' => $baru->format('Y-m-d H:i:s'),
+            // Jadwal_At ikut maju: pengingat menjelang batas BARU boleh terkirim
+            // lagi (satu pengingat per jadwal tersimpan — karir:pengingat-jadwal).
+            'Jadwal_At' => now(),
+            'Jadwal_By' => $nama,
+            'Jadwal_By_Id' => session('career_auth.id'),
+            'Updated_At' => now(),
+            'Updated_By' => $nama,
+        ]);
+
+        $undangan = $this->kirimUndanganJadwal((int) $realId, (int) $sub->Lamaran_Id, ['perpanjang' => true]);
+        JejakJadwal::catat((int) $realId, JejakJadwal::PERPANJANG, $data['alasan'], $undangan);
+
+        $sampai = 'Batas unggah diperpanjang sampai '.UndanganJadwal::teksBatas($baru).' (tanggal pemeriksaan tetap)';
+
+        return ResponseHelper::success(
+            ['undangan' => $undangan, 'batas' => $baru->format('Y-m-d H:i:s')],
+            [
+                'terkirim' => $sampai.' — kandidat dikabari lewat email.',
+                'privat' => $sampai.'.',
+                'gagal' => $sampai.'. Email pemberitahuan gagal dikirim — periksa log.',
+            ][$undangan],
+        );
+    }
+
+    /**
+     * POST /api/v1/karir/lamaran/sub-tes/{id}/kirim-ulang — kirim ulang surel
+     * jadwal ke kandidat ("resend information").
+     *
+     * Isinya dirakit ulang dari jadwal SAAT INI (UndanganJadwal::muatan) — bukan
+     * salinan surel lama — jadi yang terkirim selalu tempat, rentang, surat
+     * pengantar, dan instruksi yang berlaku sekarang. Pada MCU mandiri yang
+     * berkasnya belum masuk, suratnya berbunyi ajakan untuk mengunggah.
+     */
+    public function subTesKirimUlang(string $id)
+    {
+        $realId = Hashids::decode($id)[0] ?? null;
+        $sub = $realId ? self::subTesBerjadwal((int) $realId) : null;
+        if (! $sub) {
+            return ResponseHelper::error('Aktivitas tidak ditemukan.', 404);
+        }
+        if ($galat = $this->galatPicTahap((int) $sub->Lamaran_Tahap_Id)) {
+            return $galat;
+        }
+
+        [$galat, $kode, $undangan] = $this->kirimUlangSatu($sub);
+        if ($galat) {
+            return ResponseHelper::error($galat, $kode);
+        }
+
+        return ResponseHelper::success(['undangan' => $undangan], 'Email jadwal dikirim ulang ke kandidat.');
+    }
+
+    /**
+     * POST /api/v1/karir/lamaran/sub-tes/kirim-ulang-massal — kirim ulang surel
+     * jadwal ke beberapa kandidat sekaligus.
+     *
+     * Dibatasi BATAS_PUTUS_MASSAL per kiriman, alasan yang sama dengan jadwal
+     * massal: puluhan surel serempak dari satu alamat dibaca penyedia surat
+     * sebagai pengiriman massal mendadak. Tiap kandidat dilaporkan sendiri —
+     * yang dilewati berikut alasannya.
+     */
+    public function kirimUlangMassal(Request $request)
+    {
+        $data = $request->validate([
+            'subTesIds' => 'required|array|min:1|max:'.self::BATAS_PUTUS_MASSAL,
+            'subTesIds.*' => 'required|string|max:64',
+        ], [
+            'subTesIds.max' => 'Maksimal '.self::BATAS_PUTUS_MASSAL.' kandidat sekali kirim ulang — tiap kiriman adalah satu email.',
+        ]);
+
+        $berhasil = [];
+        $gagal = [];
+        foreach (array_values(array_unique($data['subTesIds'])) as $hash) {
+            $id = Hashids::decode($hash)[0] ?? null;
+            $sub = $id ? self::subTesBerjadwal((int) $id) : null;
+            $nama = $sub->Pelamar ?? ('#'.$hash);
+
+            if (! $sub) {
+                $gagal[] = ['nama' => $nama, 'alasan' => 'Aktivitas tidak ditemukan.'];
+
+                continue;
+            }
+            if ($this->galatPicTahap((int) $sub->Lamaran_Tahap_Id)) {
+                $gagal[] = ['nama' => $nama, 'alasan' => 'Di luar lingkup lowongan yang Anda pegang.'];
+
+                continue;
+            }
+
+            [$galat] = $this->kirimUlangSatu($sub);
+            if ($galat) {
+                $gagal[] = ['nama' => $nama, 'alasan' => $galat];
+
+                continue;
+            }
+            $berhasil[] = ['nama' => $nama];
+        }
+
+        Log::channel('web_career')->info(
+            '[JADWAL-KIRIM-ULANG] '.count($berhasil).' terkirim, '.count($gagal).' dilewati — oleh '.session('career_auth.nama', 'ADMIN')
+        );
+
+        return ResponseHelper::success(
+            ['berhasil' => $berhasil, 'gagal' => $gagal],
+            count($gagal)
+                ? count($berhasil).' email dikirim ulang, '.count($gagal).' dilewati.'
+                : count($berhasil).' email jadwal dikirim ulang.',
+        );
+    }
+
+    /**
+     * Kirim ulang surel satu aktivitas — dipakai jalur satuan & massal.
+     *
+     * @return array{0: ?string, 1: int, 2: ?string} [galat, kode HTTP, hasil undangan]
+     */
+    private function kirimUlangSatu(object $sub): array
+    {
+        if ($galat = self::galatJadwalTerbuka($sub)) {
+            return [$galat, 409, null];
+        }
+        if (JadwalPrivat::untuk($sub->Tipe_Tahap_Kode ?: ($sub->TahapTipe ?? null))) {
+            return ['Jadwal ini internal — kandidat memang tidak dikirimi email.', 409, null];
+        }
+
+        // Surel "silakan unggah" untuk orang yang sudah mengirim — atau yang
+        // kotak unggahnya sudah tertutup — hanya membingungkan.
+        $aturan = UndanganJadwal::aturanUnggah($sub);
+        if ($aturan && $aturan['terkirim']) {
+            return ['Kandidat sudah mengirim berkasnya — tidak ada yang perlu diingatkan.', 409, null];
+        }
+        if ($aturan && $aturan['tertutup']) {
+            return ['Batas unggahnya sudah lewat — perpanjang dulu supaya kandidat bisa mengunggah.', 409, null];
+        }
+
+        // Dua tekan beruntun (atau dua rekruter di kandidat yang sama) tidak
+        // boleh menjadi dua surel identik di kotak masuk kandidat.
+        if (! empty($sub->Jadwal_Email_At)) {
+            $menit = (int) floor(\Illuminate\Support\Carbon::parse($sub->Jadwal_Email_At)->diffInMinutes(now()));
+            if ($menit < self::JEDA_KIRIM_ULANG_MENIT) {
+                return [
+                    'Email jadwal baru dikirim '.($menit < 1 ? 'kurang dari semenit' : "{$menit} menit").' lalu — tunggu '
+                        .self::JEDA_KIRIM_ULANG_MENIT.' menit sebelum mengirim ulang.',
+                    429,
+                    null,
+                ];
+            }
+        }
+
+        $batas = ! empty($aturan['batas']) ? \Illuminate\Support\Carbon::parse($aturan['batas']) : null;
+        $undangan = $this->kirimUndanganJadwal(
+            (int) $sub->Id_Lamaran_Tahap_Tes,
+            (int) $sub->Lamaran_Id,
+            ['kirim_ulang' => true] + ($batas ? ['sisa_teks' => UndanganJadwal::sisaTeks(now(), $batas)] : []),
+        );
+        JejakJadwal::catat((int) $sub->Id_Lamaran_Tahap_Tes, JejakJadwal::KIRIM_ULANG, null, $undangan);
+        if ($undangan === 'terkirim') {
+            // Kiriman tangan admin DIHITUNG & DITANDAI di snapshot CRM.
+            KonfirmasiJadwal::tandaiKirimUlang((int) $sub->Id_Lamaran_Tahap_Tes, (string) session('career_auth.nama', 'ADMIN'));
+        }
+
+        return $undangan === 'terkirim'
+            ? [null, 200, $undangan]
+            : ['Email gagal diantrekan — periksa log.', 500, $undangan];
+    }
+
+    /** Satu aktivitas berikut status lamaran & tahapnya — bahan gerbang perpanjang / kirim ulang. */
+    private static function subTesBerjadwal(int $subTesId): ?object
+    {
+        return DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes as t')
+            ->join('N_WEB_CAREERS_Lamaran_Tahap as h', 'h.Id_Lamaran_Tahap', '=', 't.Lamaran_Tahap_Id')
+            ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'h.Lamaran_Id')
+            ->leftJoin('N_WEB_CAREERS_Users as u', 'u.Id_Users', '=', 'l.Id_Users')
+            ->where('t.Id_Lamaran_Tahap_Tes', $subTesId)
+            ->select('t.*', 'h.Lamaran_Id', 'h.Tipe_Tahap_Kode as TahapTipe', 'l.Status as StatusLamaran', 'u.Nama as Pelamar')
+            ->first();
+    }
+
+    /** Jadwal ini masih bisa diperpanjang / dikirim ulang? Pesan galat, atau null. */
+    private static function galatJadwalTerbuka(object $sub): ?string
+    {
+        return match (true) {
+            ($sub->StatusLamaran ?? '') !== 'BERJALAN' => 'Lamaran sudah tidak berjalan.',
+            ($sub->Flag_Selesai ?? 'N') === 'Y' => 'Aktivitas ini sudah selesai.',
+            ! empty($sub->Jadwal_Hadir) => 'Hasil aktivitas ini sudah dicatat.',
+            empty($sub->Jadwal_Mulai) => 'Aktivitas ini belum dijadwalkan.',
+            default => null,
+        };
     }
 
     /**
@@ -7992,7 +8634,21 @@ class LamaranController extends Controller
             ->values()
             ->all();
 
-        return $izin ?: null;
+        if ($izin) {
+            return $izin;
+        }
+
+        // TANPA DAFTAR = semua bentuk aktif — KECUALI yang menuntut izin
+        // eksplisit (Flag_Wajib_Izin). MCU mandiri tidak masuk akal untuk
+        // wawancara; tanpa pengecualian ini ia ikut ditawarkan ke setiap tipe
+        // yang daftarnya kosong. Selama tak ada bentuk seperti itu, hasilnya
+        // tetap null (tak dibatasi) — perilaku lama tidak berubah.
+        $semua = self::masterModeJadwal();
+        $wajibIzin = $semua->filter(fn ($m) => ($m->Flag_Wajib_Izin ?? 'T') === 'Y');
+
+        return $wajibIzin->isEmpty()
+            ? null
+            : $semua->reject(fn ($m) => ($m->Flag_Wajib_Izin ?? 'T') === 'Y')->keys()->values()->all();
     }
 
     /** Pesan galat bila bentuk jadwal di luar izin tipenya; null bila boleh. */
@@ -8034,6 +8690,17 @@ class LamaranController extends Controller
         // kandidat harus yang benar-benar tercatat, bukan yang kebetulan ada.
         if (($m->Flag_Butuh_Kontak ?? 'T') === 'Y' && empty($data['kontak'])) {
             return "Bentuk \"{$m->Nama}\" wajib mencantumkan nomor yang akan dihubungi.";
+        }
+        // VENDOR: tempatnya diketik tim. Namanya wajib; tautan peta opsional,
+        // tetapi bila diisi HARUS tautan Google Maps — ia dikirim apa adanya
+        // lewat surel resmi, dan tautan sembarang di sana adalah celah penipuan.
+        if (UndanganJadwal::butuhTempat($m)) {
+            if (trim((string) ($data['lokasiNama'] ?? '')) === '') {
+                return (($m->Label_Tempat ?? null) ?: 'Nama tempat').' wajib diisi.';
+            }
+            if (UndanganJadwal::normalkanMaps($data['mapsUrl'] ?? null) === false) {
+                return 'Tautan peta harus tautan Google Maps (mis. https://maps.app.goo.gl/...) — salin lewat tombol "Bagikan" di Google Maps.';
+            }
         }
 
         return null;
@@ -8167,6 +8834,21 @@ class LamaranController extends Controller
      */
     public static function tempatJadwal(object $s, ?object $master = null): ?array
     {
+        // VENDOR: tempat DIKETIK tim — nama vendor, alamat (opsional), catatan
+        // cabang yang melayani, dan tautan Google Maps HANYA bila ditempel tim.
+        // Petanya tidak pernah dikarang dari nama: vendor berjaringan punya
+        // puluhan cabang, dan pin hasil tebakan tampil sama meyakinkannya
+        // dengan pin yang benar.
+        if (UndanganJadwal::butuhTempat(UndanganJadwal::mode($s->Jadwal_Mode ?? null))) {
+            $lepas = MasterLokasiController::lokasiLepas($s->Jadwal_Lokasi_Nama ?? null, $s->Jadwal_Lokasi_Alamat ?? null);
+
+            return $lepas ? [
+                'vendor' => true,
+                'mapsUrl' => ($s->Jadwal_Maps_Url ?? null) ?: null,
+                'catatanHtml' => ($s->Jadwal_Lokasi_Html ?? null) ?: null,
+            ] + $lepas : null;
+        }
+
         if ($s->Jadwal_Lokasi_Id ?? null) {
             $id = (int) $s->Jadwal_Lokasi_Id;
 
@@ -8247,6 +8929,154 @@ class LamaranController extends Controller
         return null;
     }
 
+    /**
+     * Rincian jadwal di luar kolom lamanya — satu bentuk untuk portal kandidat
+     * DAN rapor worklist, supaya "lewat batas" di satu layar tidak berbunyi
+     * lain di layar sebelahnya.
+     *
+     *   batasWaktu     waktunya RENTANG TANGGAL (mode ber-Flag_Batas_Waktu)
+     *   batas          akhir rentang pemeriksaan, bila berrentang
+     *   rentangTeks    "30 September – 07 Oktober 2026" — TETAP walau batas
+     *                  unggahnya diperpanjang
+     *   rentangPendek  "30 Sep – 07 Okt 2026" (baris ringkas worklist)
+     *   batasUnggah    batas unggah hasil yang berlaku (mode yang kandidatnya
+     *                  mengunggah sendiri): akhir rentang, atau tanggal
+     *                  perpanjangan dari tim; null pada mode lain — tanpa ini,
+     *                  tombol Perpanjang tidak muncul
+     *   batasUnggahTeks, batasDiperpanjang  teksnya, dan apakah sudah dimundurkan
+     *   modeNama       nama bentuknya dari master ("Vendor", "Mandiri")
+     *   vendor         tempat diketik tim (nama vendor + catatan cabang)
+     *   tempatKalimat  "tempat" MANDIRI: klinik/RS pilihan kandidat
+     *   surat          surat pengantar: [{nama, ukuran, url}] (null bila tak ada);
+     *                  url dirakit dari `$awalanSurat` + urutan — rute portal
+     *                  dan rute admin berbeda
+     *   suratLabel     nama suratnya ("Surat pengantar MCU")
+     *   lewat          batasnya sudah lewat dan aktivitasnya belum ditutup
+     *   catatanHtml    instruksi berformat yang diterima kandidat
+     *   biaya          kalimat biaya yang dibaca kandidat (null bila disembunyikan
+     *                  atau tipenya tanpa ketentuan biaya)
+     *   tampilBiaya    informasi biaya ikut ke kandidat pada jadwal ini
+     *   kalimatBiaya   kalimat biaya jadwal ini untuk disunting ulang (terisi
+     *                  walau disembunyikan)
+     */
+    private static function jadwalTambahan(object $s, ?object $tipe, ?string $awalanSurat = null): array
+    {
+        $mode = UndanganJadwal::mode($s->Jadwal_Mode ?? null);
+        $berbatas = UndanganJadwal::berbatasWaktu($mode);
+        $vendor = UndanganJadwal::butuhTempat($mode);
+        $terbuka = ($s->Flag_Selesai ?? 'N') !== 'Y' && empty($s->Jadwal_Hadir);
+        $surat = [];
+        foreach (SuratJadwal::daftar($s) as $urutan => $i) {
+            $surat[] = ['nama' => $i['nama'], 'ukuran' => $i['ukuran'], 'url' => $awalanSurat ? $awalanSurat.'/'.$urutan : null];
+        }
+        // Batas yang berlaku: batas unggah (bisa diperpanjang) pada mode yang
+        // kandidatnya mengunggah sendiri, akhir rentang pada mode lain.
+        $batasUnggah = $berbatas && UndanganJadwal::unggahKandidat($mode) ? UndanganJadwal::batasUnggah($s) : null;
+        $batasBerlaku = $batasUnggah ?? ($berbatas && ! empty($s->Jadwal_Selesai)
+            ? \Illuminate\Support\Carbon::parse($s->Jadwal_Selesai)
+            : null);
+
+        return [
+            'batasWaktu' => $berbatas,
+            'batas' => $berbatas && ! empty($s->Jadwal_Selesai) ? (string) $s->Jadwal_Selesai : null,
+            'batasTeks' => $berbatas ? UndanganJadwal::teksBatas($s->Jadwal_Selesai ?? null) : null,
+            'batasUnggah' => $batasUnggah?->format('Y-m-d H:i:s'),
+            'batasUnggahTeks' => $batasUnggah ? UndanganJadwal::teksBatas($batasUnggah) : null,
+            'batasDiperpanjang' => $batasUnggah !== null && UndanganJadwal::batasDiperpanjang($s),
+            'rentangTeks' => $berbatas ? UndanganJadwal::teksRentang($s->Jadwal_Mulai ?? null, $s->Jadwal_Selesai ?? null) : null,
+            'rentangPendek' => $berbatas ? UndanganJadwal::rentangPendek($s->Jadwal_Mulai ?? null, $s->Jadwal_Selesai ?? null) : null,
+            'modeNama' => $mode->Nama ?? $s->Jadwal_Mode,
+            'vendor' => $vendor,
+            'tempatKalimat' => $berbatas && ! $vendor ? ($mode->Kalimat_Undangan ?? null) : null,
+            'surat' => $surat ?: null,
+            'suratLabel' => $surat ? UndanganJadwal::labelSurat($mode) : null,
+            'lewat' => $terbuka && $batasBerlaku !== null && now()->gt($batasBerlaku),
+            'catatanHtml' => $s->Jadwal_Catatan_Html ?? null,
+            // Kalimat biaya hanya bila admin menampilkannya untuk jadwal ini.
+            'biaya' => UndanganJadwal::kalimatBiaya($s, $tipe),
+            'tampilBiaya' => UndanganJadwal::tampilBiaya($s),
+            'kalimatBiaya' => trim((string) ($s->Jadwal_Kalimat_Biaya ?? '')) ?: (trim((string) ($tipe->Kalimat_Biaya ?? '')) ?: null),
+        ];
+    }
+
+    /**
+     * [mulai, selesai, galat] sebuah jadwal — menurut FLAG mode-nya.
+     *
+     * JANJI TEMU (bawaan): mulai wajib, selesai opsional dan harus sesudahnya.
+     *
+     * BERRENTANG TANGGAL (Flag_Batas_Waktu, MCU vendor / mandiri): yang
+     * ditanyakan RENTANGNYA — tanggal pertama dan terakhir pemeriksaan, keduanya
+     * wajib. Tidak ada jam janji temu: awal dibaca pukul 00.00 hari pertama,
+     * akhir pukul 23.59 hari terakhir ("sampai Senin" = sepanjang hari Senin).
+     * Akhir rentang itulah BATASNYA — batas unggah MANDIRI, dan patokan
+     * pengingat.
+     *
+     * Dipakai jalur satuan DAN massal, supaya keduanya menegakkan aturan yang
+     * sama persis.
+     *
+     * @param  ?string  $mulaiLama  Jadwal yang sudah ada (Atur Jadwal satuan). Waktu
+     *                              mulai yang TIDAK diubah boleh tetap di masa lalu —
+     *                              jadwal yang sedang berjalan masih bisa disunting
+     *                              (mis. membetulkan tautan). Jadwal massal: null.
+     * @return array{0: ?string, 1: ?string, 2: ?string}
+     */
+    private static function waktuJadwal(array $data, ?object $mode, ?string $mulaiLama = null): array
+    {
+        if (UndanganJadwal::berbatasWaktu($mode)) {
+            if (empty($data['mulai']) || empty($data['selesai'])) {
+                return [null, null, 'Tentukan rentang tanggalnya — tanggal pertama dan terakhir pemeriksaan.'];
+            }
+
+            $awal = UndanganJadwal::awalHari((string) $data['mulai']);
+            $batas = UndanganJadwal::akhirHari((string) $data['selesai']);
+            if ($batas->lt($awal)) {
+                return [null, null, 'Tanggal terakhir tidak boleh sebelum tanggal pertama.'];
+            }
+            if ($batas->lte(now())) {
+                return [null, null, 'Rentang tanggalnya sudah lewat — tanggal terakhir harus hari ini atau sesudahnya.'];
+            }
+            // HARI YANG SUDAH LEWAT tidak bisa dipilih (masukan user 2 Okt 2026) —
+            // sama dengan kalendernya (sebelumHariIni di Pelamar.vue).
+            if ($awal->lt(now()->startOfDay()) && ! self::waktuTetap($mulaiLama, $awal, 'Y-m-d')) {
+                return [null, null, 'Tanggal pertama sudah lewat — pilih hari ini atau sesudahnya.'];
+            }
+
+            return [$awal->format('Y-m-d H:i:s'), $batas->format('Y-m-d H:i:s'), null];
+        }
+
+        if (empty($data['mulai'])) {
+            return [null, null, 'Waktu mulai wajib diisi.'];
+        }
+
+        // WAKTU MULAI YANG SUDAH LEWAT tidak bisa dipilih (masukan user 2 Okt
+        // 2026). Ditolak di sini juga, bukan hanya di kalendernya: layar basi &
+        // DevTools tetap bisa mengirimnya. Sama dengan jadwalMulaiLewat di layar.
+        $mulaiBaru = \Illuminate\Support\Carbon::parse($data['mulai']);
+        if ($mulaiBaru->lt(now()->startOfMinute()) && ! self::waktuTetap($mulaiLama, $mulaiBaru, 'Y-m-d H:i')) {
+            return [null, null, 'Waktu mulai itu sudah lewat — pilih tanggal & jam yang akan datang.'];
+        }
+
+        if (! empty($data['selesai'])
+            && \Illuminate\Support\Carbon::parse($data['selesai'])->lte(\Illuminate\Support\Carbon::parse($data['mulai']))) {
+            return [null, null, 'Waktu selesai harus setelah waktu mulai.'];
+        }
+
+        return [(string) $data['mulai'], ($data['selesai'] ?? null) ?: null, null];
+    }
+
+    /** Waktu lama & baru sama pada ketelitian `$format` (menit / hari). */
+    private static function waktuTetap(?string $lama, \Illuminate\Support\Carbon $baru, string $format): bool
+    {
+        if (! $lama) {
+            return false;
+        }
+        try {
+            return \Illuminate\Support\Carbon::parse($lama)->format($format) === $baru->format($format);
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
     private function terapkanJadwal(int $subTesId, array $data, string $mulai, ?string $selesai): void
     {
         $mode = self::masterModeJadwal()->get($data['mode']);
@@ -8255,6 +9085,8 @@ class LamaranController extends Controller
         $pakaiLokasi = ($mode->Flag_Butuh_Lokasi ?? 'T') === 'Y';
         // Tempat di luar master — sudah divalidasi di periksaPeruntukanLokasi().
         $lepas = $pakaiLokasi && ($data['lokasiId'] ?? null) === MasterLokasiController::LAINNYA;
+        // VENDOR: nama & alamat vendor memakai kolom tempat-diketik yang sama.
+        $vendor = UndanganJadwal::butuhTempat($mode);
 
         DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')
             ->where('Id_Lamaran_Tahap_Tes', $subTesId)
@@ -8278,11 +9110,13 @@ class LamaranController extends Controller
                 // Keduanya dikosongkan saat lokasi terdaftar yang dipilih,
                 // supaya sisa isian percobaan sebelumnya tidak ikut terbaca
                 // sebagai tempat kedua di undangan yang sama.
-                'Jadwal_Lokasi_Nama' => $lepas ? trim((string) ($data['lokasiNama'] ?? '')) : null,
-                'Jadwal_Lokasi_Alamat' => $lepas ? (trim((string) ($data['lokasiAlamat'] ?? '')) ?: null) : null,
+                'Jadwal_Lokasi_Nama' => $lepas || $vendor ? trim((string) ($data['lokasiNama'] ?? '')) : null,
+                'Jadwal_Lokasi_Alamat' => $lepas || $vendor ? (trim((string) ($data['lokasiAlamat'] ?? '')) ?: null) : null,
                 // Nomor yang akan dihubungi — bagian dari JANJINYA, bukan
                 // salinan profil. Lihat penjelasan panjang di .sql-nya.
                 'Jadwal_Kontak' => ($mode->Flag_Butuh_Kontak ?? 'T') === 'Y' ? ($data['kontak'] ?? null) : null,
+                // Teks polos TURUNAN instruksi berformat di bawahnya (lihat
+                // UndanganJadwal::saringInstruksi) — dipakai surel & layar lama.
                 'Jadwal_Catatan' => $data['catatan'] ?? null,
                 'Jadwal_At' => $now,
                 'Jadwal_By' => $nama,
@@ -8290,7 +9124,150 @@ class LamaranController extends Controller
                 'Status' => 'DIJADWALKAN',
                 'Updated_At' => $now,
                 'Updated_By' => $nama,
-            ]);
+            ] + (UndanganJadwal::siapInstruksi()
+                // SALINAN instruksi yang diterima kandidat. Selalu ditulis —
+                // termasuk null — supaya instruksi berformat dari jadwal lama
+                // tidak tertinggal di samping teks polos yang baru.
+                ? ['Jadwal_Catatan_Html' => $data['catatanHtml'] ?? null]
+                : []) + self::kolomVendorSurat($data, $mode) + self::kolomBiaya($subTesId, $data)
+                + self::kolomBatasUnggah($subTesId, $mode, $selesai)
+                // VERSI JADWAL — naik di SETIAP simpan, tidak pernah direset.
+                // Jawaban konfirmasi dan tautan di surel menempel pada versi:
+                // tautan lama tidak bisa mengonfirmasi jam yang sudah diganti.
+                + (\App\Support\Career\Skema::adaKolom('N_WEB_CAREERS_Lamaran_Tahap_Tes', 'Jadwal_Versi')
+                    ? ['Jadwal_Versi' => DB::raw('ISNULL(Jadwal_Versi, 0) + 1')]
+                    : []));
+    }
+
+    /**
+     * Perpanjangan BATAS UNGGAH pada jadwal yang disimpan ulang.
+     *
+     * Dipertahankan hanya bila modenya masih diunggah kandidat dan tanggalnya
+     * masih sesudah akhir rentang yang baru: perpanjangan yang sudah diberikan
+     * tidak dicabut diam-diam oleh suntingan lain (nama vendor, instruksi,
+     * surat). Rentang baru yang lebih lambat menggantikannya, jadi kolomnya
+     * dikosongkan — label "diperpanjang" tidak boleh tertinggal tanpa arti.
+     */
+    private static function kolomBatasUnggah(int $subTesId, ?object $mode, ?string $selesai): array
+    {
+        if (! UndanganJadwal::siapBatasUnggah()) {
+            return [];
+        }
+
+        $lama = DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')->where('Id_Lamaran_Tahap_Tes', $subTesId)
+            ->first(['Jadwal_Mulai', 'Jadwal_Batas_Unggah']);
+        $tetap = ! empty($lama->Jadwal_Mulai) && ! empty($lama->Jadwal_Batas_Unggah) && $selesai
+            && UndanganJadwal::berbatasWaktu($mode) && UndanganJadwal::unggahKandidat($mode)
+            && \Illuminate\Support\Carbon::parse($lama->Jadwal_Batas_Unggah)->gt(\Illuminate\Support\Carbon::parse($selesai));
+
+        return ['Jadwal_Batas_Unggah' => $tetap ? $lama->Jadwal_Batas_Unggah : null];
+    }
+
+    /**
+     * INFORMASI BIAYA pada jadwal ini — ditampilkan atau tidak, dan kalimatnya.
+     *
+     * Dibekukan saat jadwal disimpan: yang diterima kandidat tidak berubah bila
+     * setelan alurnya diganti besok. Tanpa pilihan dari layar (klien lama,
+     * jalur lain), bawaan Master Alur yang berlaku. Kalimat kosong = kalimat
+     * alur, lalu kalimat tipe — dan yang tersimpan selalu kalimat JADINYA,
+     * supaya jejaknya menyebut apa yang benar-benar dibaca kandidat.
+     */
+    private static function kolomBiaya(int $subTesId, array $data): array
+    {
+        if (! UndanganJadwal::siapTampilBiaya()) {
+            return [];
+        }
+
+        $alur = UndanganJadwal::setelanAlur($subTesId);
+        $tampil = array_key_exists('tampilBiaya', $data) && $data['tampilBiaya'] !== null
+            ? filter_var($data['tampilBiaya'], FILTER_VALIDATE_BOOLEAN)
+            : $alur['tampilBiaya'];
+        $kolom = ['Jadwal_Tampil_Biaya' => $tampil ? 'Y' : 'T'];
+
+        if (\App\Support\Career\Skema::adaKolom('N_WEB_CAREERS_Lamaran_Tahap_Tes', 'Jadwal_Kalimat_Biaya')) {
+            $kalimat = trim((string) ($data['kalimatBiaya'] ?? '')) ?: ($alur['kalimatBiaya'] ?? null)
+                ?: (trim((string) (self::tipeAktivitas($subTesId)->Kalimat_Biaya ?? '')) ?: null);
+            $kolom['Jadwal_Kalimat_Biaya'] = $kalimat ? mb_substr($kalimat, 0, 1000) : null;
+        }
+
+        return $kolom;
+    }
+
+    /** Definisi tipe sebuah aktivitas — tipe aktivitasnya, jatuh ke tipe tahapnya. */
+    private static function tipeAktivitas(int $subTesId): ?object
+    {
+        $r = DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes as t')
+            ->join('N_WEB_CAREERS_Lamaran_Tahap as h', 'h.Id_Lamaran_Tahap', '=', 't.Lamaran_Tahap_Id')
+            ->where('t.Id_Lamaran_Tahap_Tes', $subTesId)
+            ->first(['t.Tipe_Tahap_Kode as Sub', 'h.Tipe_Tahap_Kode as Induk']);
+
+        return $r ? (self::masterTipeTahap()[$r->Sub ?: $r->Induk] ?? null) : null;
+    }
+
+    /**
+     * Daftar surat pengantar FINAL sebuah jadwal — [daftar, galat].
+     *
+     * Surat lama (pada jadwal yang SUDAH terbit) dipertahankan sesuai
+     * `suratTetap` (urutan yang dipertahankan; kunci tak dikirim = semua), lalu
+     * yang baru diunggah (`suratRef`) menyusul di belakangnya. Jadwal yang BARU
+     * terbit tidak "memakai lagi" apa pun — sisa surat percobaan lama bukan
+     * surat untuk jadwal ini. Batasnya satu: JUMLAH ukuran seluruhnya.
+     *
+     * @return array{0: ?array, 1: ?string}
+     */
+    private static function susunSurat(object $sub, array $data, ?object $mode): array
+    {
+        $lama = ! empty($sub->Jadwal_Mulai) ? SuratJadwal::daftar($sub) : [];
+        if (array_key_exists('suratTetap', $data) && is_array($data['suratTetap'])) {
+            $pilih = array_flip(array_map('intval', $data['suratTetap']));
+            $lama = array_values(array_filter($lama, fn ($i, $k) => isset($pilih[$k]), ARRAY_FILTER_USE_BOTH));
+        }
+
+        $baru = [];
+        foreach ((array) ($data['suratRef'] ?? []) as $ref) {
+            $x = SuratJadwal::baca(is_string($ref) ? $ref : null);
+            if (! $x) {
+                return [null, 'Unggahan surat pengantar sudah kedaluwarsa atau tidak sah — unggah ulang suratnya.'];
+            }
+            $baru[] = $x;
+        }
+
+        $semua = array_merge($lama, $baru);
+        if (! $semua) {
+            return [null, UndanganJadwal::labelSurat($mode).' wajib dilampirkan.'];
+        }
+
+        return ($galat = SuratJadwal::galatBatas($semua)) ? [null, $galat] : [$semua, null];
+    }
+
+    /**
+     * Kolom VENDOR & SURAT PENGANTAR sebuah jadwal (bila kolomnya sudah ada).
+     *
+     * Sama seperti kolom lain di terapkanJadwal(): yang tidak dipakai mode
+     * terpilih DIKOSONGKAN — catatan cabang vendor yang tertinggal pada jadwal
+     * mandiri akan terbaca sebagai tempat yang harus didatangi. Daftar surat
+     * FINAL disusun pemanggil (susunSurat / gelung massal) — tanpa daftar itu,
+     * surat yang ada dibiarkan.
+     */
+    private static function kolomVendorSurat(array $data, ?object $mode): array
+    {
+        if (! UndanganJadwal::siapVendor()) {
+            return [];
+        }
+
+        $vendor = UndanganJadwal::butuhTempat($mode);
+        $kolom = [
+            'Jadwal_Lokasi_Html' => $vendor ? ($data['lokasiHtml'] ?? null) : null,
+            'Jadwal_Maps_Url' => $vendor ? (UndanganJadwal::normalkanMaps($data['mapsUrl'] ?? null) ?: null) : null,
+        ];
+
+        if (! UndanganJadwal::butuhSurat($mode)) {
+            return $kolom + ['Jadwal_Surat_Json' => null];
+        }
+
+        return isset($data['_surat']) && is_array($data['_surat'])
+            ? $kolom + ['Jadwal_Surat_Json' => SuratJadwal::json($data['_surat'])]
+            : $kolom;
     }
 
     /**
@@ -8321,8 +9298,12 @@ class LamaranController extends Controller
             'subTesIds.*' => 'required|string|max:64',
             // Daftar mode dari MASTER — bentuk jadwal baru cukup satu baris data.
             'mode' => ['required', Rule::in(self::masterModeJadwal()->keys()->all())],
-            'pola' => 'required|in:SERENTAK,BERGILIR',
-            'mulai' => 'required|date',
+            // Pola jam tidak berarti apa-apa pada mode berbatas waktu — semua
+            // kandidat mendapat batas yang sama. Karena itu tidak diwajibkan di
+            // sini; waktuJadwal() yang menentukan apa yang wajib.
+            'pola' => 'nullable|in:SERENTAK,BERGILIR',
+            'mulai' => 'nullable|date',
+            'selesai' => 'nullable|date',
             // Hanya dipakai pola BERGILIR. Batas atas menjaga dari salah ketik
             // yang melempar sesi terakhir ke tahun depan.
             'durasiMenit' => 'nullable|integer|min:5|max:480',
@@ -8336,16 +9317,55 @@ class LamaranController extends Controller
             'lokasi' => 'nullable|string|max:300',
             'lokasiNama' => 'nullable|string|max:200',
             'lokasiAlamat' => 'nullable|string|max:500',
+            'mapsUrl' => 'nullable|string|max:500',
+            'lokasiHtml' => 'nullable|string|max:30000',
+            // SATU set surat untuk seluruh sasaran (surat kolektif). Kosong =
+            // tiap kandidat memakai surat yang sudah melekat pada jadwalnya.
+            'suratRef' => 'nullable|array|max:'.SuratJadwal::MAKS_BERKAS,
+            'suratRef.*' => 'string|max:4000',
+            'tampilBiaya' => 'nullable|boolean',
+            'kalimatBiaya' => 'nullable|string|max:1000',
             'catatan' => 'nullable|string',
+            'catatanHtml' => 'nullable|string|max:30000',
+            // Dipakai untuk kandidat yang SUDAH punya jadwal — lihat gerbang di
+            // dalam gelung.
+            'alasan' => 'nullable|string|max:500',
         ], [
             'link.required_if' => 'Tautan pertemuan wajib diisi untuk kegiatan daring.',
             'lokasiId.required_if' => 'Pilih lokasi untuk kegiatan tatap muka.',
         ]);
 
-        $bergilir = $data['pola'] === 'BERGILIR';
+        $modeDef = self::masterModeJadwal()->get($data['mode']);
+        $berbatas = UndanganJadwal::berbatasWaktu($modeDef);
+
+        // Waktu dihitung SEKALI dengan aturan yang sama seperti jalur satuan.
+        // Pola bergilir menggeser jam per kandidat di dalam gelung; batas waktu
+        // sama untuk semua.
+        [$mulaiDasar, $selesaiBatas, $galatWaktu] = self::waktuJadwal($data, $modeDef);
+        if ($galatWaktu) {
+            return ResponseHelper::error($galatWaktu, 422);
+        }
+
+        $bergilir = ! $berbatas && ($data['pola'] ?? 'SERENTAK') === 'BERGILIR';
         $durasi = (int) ($data['durasiMenit'] ?? 30);
         $jeda = (int) ($data['jedaMenit'] ?? 0);
-        $mulaiAwal = \Illuminate\Support\Carbon::parse($data['mulai']);
+        $mulaiAwal = \Illuminate\Support\Carbon::parse($mulaiDasar);
+
+        // Instruksi disaring SEKALI — isinya sama untuk seluruh kandidat.
+        [$data['catatanHtml'], $data['catatan']] = UndanganJadwal::saringInstruksi($data['catatanHtml'] ?? null, $data['catatan'] ?? null);
+        $data['lokasiHtml'] = CatatanEksternal::saring($data['lokasiHtml'] ?? null);
+        $alasanMassal = trim((string) ($data['alasan'] ?? ''));
+
+        // Surat kolektif dibaca SEKALI; kandidat tanpa surat baru maupun lama
+        // dilewati di dalam gelung (bukan menggagalkan seluruh kiriman).
+        $butuhSurat = UndanganJadwal::butuhSurat($modeDef);
+        $suratMassal = null;
+        if ($butuhSurat && ! empty($data['suratRef'])) {
+            [$suratMassal, $galatSurat] = self::susunSurat((object) ['Jadwal_Mulai' => null], ['suratRef' => $data['suratRef']], $modeDef);
+            if ($galatSurat) {
+                return ResponseHelper::error($galatSurat, 422);
+            }
+        }
 
         $tipeSemua = self::masterTipeTahap();
 
@@ -8408,7 +9428,7 @@ class LamaranController extends Controller
                 ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'h.Lamaran_Id')
                 ->leftJoin('N_WEB_CAREERS_Users as u', 'u.Id_Users', '=', 'l.Id_Users')
                 ->where('t.Id_Lamaran_Tahap_Tes', $id)
-                ->select('t.*', 'h.Lamaran_Id', 'l.Status as StatusLamaran', 'u.Nama as Pelamar')
+                ->select('t.*', 'h.Lamaran_Id', 'h.Tipe_Tahap_Kode as TahapTipe', 'l.Status as StatusLamaran', 'u.Nama as Pelamar')
                 ->first() : null;
 
             $nama = $sub->Pelamar ?? ('#'.$hash);
@@ -8453,22 +9473,58 @@ class LamaranController extends Controller
                 continue;
             }
 
+            // Jadwal yang SUDAH dikirim hanya boleh diubah beserta alasannya —
+            // aturan yang sama dengan jalur satuan. Yang belum pernah
+            // dijadwalkan tidak menuntut apa pun.
+            if (! empty($sub->Jadwal_Mulai) && JejakJadwal::siap() && mb_strlen($alasanMassal) < JejakJadwal::ALASAN_MIN) {
+                $gagal[] = ['nama' => $nama, 'alasan' => 'Sudah punya jadwal — isi alasan perubahan untuk menggantinya.'];
+
+                continue;
+            }
+
+            // Surat kolektif menggantikan surat masing-masing; tanpanya tiap
+            // kandidat memakai suratnya sendiri — yang belum punya dilewati.
+            if ($butuhSurat) {
+                $data['_surat'] = $suratMassal ?? (! empty($sub->Jadwal_Mulai) ? SuratJadwal::daftar($sub) : []);
+                if (! $data['_surat']) {
+                    $gagal[] = ['nama' => $nama, 'alasan' => UndanganJadwal::labelSurat($modeDef).' belum ada — unggah suratnya di jendela ini.'];
+
+                    continue;
+                }
+            }
+
             // Nomor sesi dihitung dari yang BENAR-BENAR dijadwalkan, bukan dari
             // posisi di daftar kiriman. Kalau dari posisi, satu kandidat yang
             // ditolak akan meninggalkan lubang jam kosong di tengah rangkaian.
             $mulai = $bergilir
                 ? $mulaiAwal->copy()->addMinutes($urutanSesi * ($durasi + $jeda))
                 : $mulaiAwal->copy();
-            $selesai = $bergilir ? $mulai->copy()->addMinutes($durasi) : null;
+            $selesai = $bergilir
+                ? $mulai->copy()->addMinutes($durasi)->format('Y-m-d H:i:s')
+                : $selesaiBatas;
 
-            $this->terapkanJadwal(
-                (int) $sub->Id_Lamaran_Tahap_Tes,
-                $data,
-                $mulai->format('Y-m-d H:i:s'),
-                $selesai?->format('Y-m-d H:i:s'),
-            );
+            $aksi = JejakJadwal::aksi($sub);
+
+            // Batas konfirmasi tiap kandidat = waktu mulai SESINYA SENDIRI
+            // (pola bergilir: tiap orang beda jam, tiap orang beda batas).
+            DB::transaction(function () use ($sub, $data, $mulai, $selesai) {
+                $this->terapkanJadwal(
+                    (int) $sub->Id_Lamaran_Tahap_Tes,
+                    $data,
+                    $mulai->format('Y-m-d H:i:s'),
+                    $selesai,
+                );
+                KonfirmasiJadwal::terbitkan(
+                    (int) $sub->Id_Lamaran_Tahap_Tes,
+                    $sub,
+                    (string) session('career_auth.nama', 'ADMIN'),
+                    session('career_auth.id') ? (int) session('career_auth.id') : null,
+                );
+            });
 
             $undangan = $this->kirimUndanganJadwal((int) $sub->Id_Lamaran_Tahap_Tes, (int) $sub->Lamaran_Id);
+
+            JejakJadwal::catat((int) $sub->Id_Lamaran_Tahap_Tes, $aksi, $alasanMassal ?: null, $undangan);
 
             $berhasil[] = [
                 'nama' => $nama,
@@ -8514,19 +9570,14 @@ class LamaranController extends Controller
      *
      * @return 'terkirim'|'gagal'|'privat'
      */
-    private function kirimUndanganJadwal(int $subTesId, int $lamaranId): string
+    private function kirimUndanganJadwal(int $subTesId, int $lamaranId, array $bunyi = []): string
     {
         try {
-            $sub = DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes as t')
-                ->join('N_WEB_CAREERS_Lamaran_Tahap as h', 'h.Id_Lamaran_Tahap', '=', 't.Lamaran_Tahap_Id')
-                ->join('N_WEB_CAREERS_Lamaran as l', 'l.Id_Lamaran', '=', 'h.Lamaran_Id')
-                ->join('N_WEB_CAREERS_Users as u', 'u.Id_Users', '=', 'l.Id_Users')
-                ->leftJoin('N_WEB_CAREERS_Program as p', 'p.Id_Program', '=', 'l.Program_Id')
-                ->leftJoin('N_WEB_CAREERS_Program_Posisi as x', 'x.Id_Program_Posisi', '=', 'l.Program_Posisi_Id')
-                ->where('t.Id_Lamaran_Tahap_Tes', $subTesId)
-                ->select('t.*', 'h.Label as TahapLabel', 'l.Kode', 'u.Id_Users', 'u.Nama', 'u.Email',
-                    'p.Nama as ProgramNama', 'x.Posisi')
-                ->first();
+            // Isi suratnya disusun UndanganJadwal — sumber yang sama dengan
+            // pengingat menjelang batas (karir:pengingat-jadwal), supaya
+            // keduanya mustahil menyebut tempat, batas, atau biaya yang berbeda.
+            $muatan = UndanganJadwal::muatan($subTesId);
+            $sub = $muatan['sub'] ?? null;
 
             if (! $sub || ! $sub->Email) {
                 return 'gagal';
@@ -8573,37 +9624,13 @@ class LamaranController extends Controller
                 );
             }
 
-            // TEMPATNYA ikut, bukan hanya patokan yang diketik rekruter.
-            //
-            // Undangan sebelumnya cuma membawa Jadwal_Lokasi — teks bebas
-            // semacam "Pabrik di Banyuasin". Nama tempat, alamat, dan petanya —
-            // justru yang dipilih rekruter di layar penjadwalan — tidak pernah
-            // sampai ke kandidat; bila patokannya dikosongkan, undangannya
-            // bahkan tidak menyebut lokasi sama sekali. Sekarang keduanya
-            // dikirim: TEMPAT sebagai alamat resmi, PATOKAN sebagai penunjuk
-            // rinci di dalamnya.
-            $tempat = self::tempatJadwal($sub);
-
-            WcJadwalEmailJob::dispatch((int) $sub->Id_Users, [
-                'nama' => $sub->Nama,
-                'email' => $sub->Email,
-                'kode' => $sub->Kode,
-                'posisi' => $sub->Posisi ?: $sub->ProgramNama,
-                'program' => $sub->ProgramNama,
-                'tahap' => $sub->TahapLabel,
-                'aktivitas' => $sub->Label,
-                'mode' => $sub->Jadwal_Mode,
-                'mulai' => (string) $sub->Jadwal_Mulai,
-                'selesai' => (string) ($sub->Jadwal_Selesai ?: ''),
-                'link' => $sub->Jadwal_Link,
-                // Nama tempat yang dipilih; patokan tetap dikirim terpisah.
-                'lokasi' => $tempat['nama'] ?? $sub->Jadwal_Lokasi,
-                'alamat' => $tempat['alamatLengkap'] ?? null,
-                'patokan' => $tempat ? $sub->Jadwal_Lokasi : null,
-                'kontak' => $tempat['kontakTelp'] ?? null,
-                'mapsUrl' => $tempat['mapsUrl'] ?? null,
-                'catatan' => $sub->Jadwal_Catatan,
-            ]);
+            // TEMPATNYA ikut, bukan hanya patokan yang diketik rekruter — nama
+            // resmi, alamat, peta, dan patokan rincinya (lihat
+            // UndanganJadwal::muatan). Pada mode berbatas waktu, tempatnya
+            // pilihan kandidat sendiri dan suratnya menyebut batas akhirnya.
+            // `$bunyi`: penanda maksud surat yang sama isinya — dikirim ulang
+            // oleh tim, atau batasnya diperpanjang (lihat templat di EVO Mail).
+            WcJadwalEmailJob::dispatch($muatan['userId'], array_merge($muatan['data'], $bunyi));
 
             DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')
                 ->where('Id_Lamaran_Tahap_Tes', $subTesId)
@@ -8758,6 +9785,16 @@ class LamaranController extends Controller
         // sebelum tombol ditekan, jadi tim bisa melepas hold lalu mengulang.
         try {
             $aksi = DB::transaction(function () use ($realId, $sub, $data, $now, $nama, $html, $ringkas, $isMcuSub, $defMcu, $defJawab) {
+                // TIDAK HADIR = aktivitas selesai dengan hasil GAGAL; mesin keputusan
+                // yang menentukan nasib tahapnya (bisa gugur, bisa menunggu aktivitas
+                // lain di tahap yang sama). Implementasinya SATU, dipakai juga
+                // pernyataan "tidak melanjutkan seleksi" (KonfirmasiJadwal::jawab).
+                if ($data['hadir'] === 'T') {
+                    $eval = $this->svc->catatTidakHadir($sub, $html, $ringkas, $nama, (int) session('career_auth.id'));
+
+                    return ['mode' => 'TIDAK_HADIR', 'outcome' => $eval['outcome'] ?? null];
+                }
+
                 DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')->where('Id_Lamaran_Tahap_Tes', $realId)->update([
                     'Jadwal_Hadir' => $data['hadir'],
                     'Jadwal_Hadir_At' => $now,
@@ -8776,22 +9813,6 @@ class LamaranController extends Controller
                     'Mcu_Tanggal' => $data['mcuTanggal'] ?? $sub->Mcu_Tanggal,
                     'Mcu_Catatan' => $data['mcuCatatan'] ?? $sub->Mcu_Catatan,
                 ] : []));
-
-                // TIDAK HADIR = aktivitas selesai dengan hasil GAGAL; mesin keputusan
-                // yang menentukan nasib tahapnya (bisa gugur, bisa menunggu aktivitas
-                // lain di tahap yang sama).
-                if ($data['hadir'] === 'T') {
-                    DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')->where('Id_Lamaran_Tahap_Tes', $realId)->update([
-                        'Status' => 'TIDAK_HADIR',
-                        'Hasil' => $sub->Peran === 'INFORMATIF' ? null : 'GAGAL',
-                        'Flag_Selesai' => 'Y',
-                        'Waktu_Selesai' => $now,
-                    ]);
-
-                    $eval = $this->svc->evaluasiTahap((int) $sub->Lamaran_Tahap_Id, (int) session('career_auth.id'));
-
-                    return ['mode' => 'TIDAK_HADIR', 'outcome' => $eval['outcome'] ?? null];
-                }
 
                 // ── HADIR + HASIL SEKALIGUS ─────────────────────────────────
                 // Bila hasilnya ikut dikirim, aktivitas langsung DITUTUP di permintaan
@@ -8913,6 +9934,11 @@ class LamaranController extends Controller
         // dalam transaksi bisa dijemput worker sebelum transaksinya selesai —
         // kandidat menerima surat "Selamat, Anda lolos" atas keputusan yang
         // sedetik kemudian digulung balik, dan surat itu tak bisa ditarik lagi.
+
+        // Kehadiran = FAKTA hari H. Undangan & permintaan jadwal lain yang masih
+        // terbuka selesai di sini — tidak ada lagi surel konfirmasi untuknya.
+        KonfirmasiJadwal::catatKehadiran((int) $realId, $data['hadir'], (string) ($nama ?: 'ADMIN'), session('career_auth.id') ? (int) session('career_auth.id') : null);
+
         if ($aksi['mode'] === 'TIDAK_HADIR') {
             return ResponseHelper::success(['outcome' => $aksi['outcome']], 'Ditandai TIDAK HADIR — tahap dievaluasi ulang.');
         }

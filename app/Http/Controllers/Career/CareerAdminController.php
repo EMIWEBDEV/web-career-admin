@@ -240,6 +240,10 @@ class CareerAdminController extends Controller
                     // Selama kolomnya belum ada di basis data, nilainya false dan
                     // layar Alur memakai daftar kode cadangannya sendiri.
                     'pemeriksaan' => ($r->Flag_Pemeriksaan ?? 'T') === 'Y',
+                    // Kalimat aturan biaya tipe ini (MCU) — builder Alur
+                    // menawarkan sakelar "tampilkan informasi biaya" hanya
+                    // untuk tipe yang memang punya kalimatnya.
+                    'biaya' => trim((string) ($r->Kalimat_Biaya ?? '')) ?: null,
                     'ikon' => $r->Ikon,
                 ])
                 ->values();

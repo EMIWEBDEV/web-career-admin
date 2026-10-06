@@ -381,6 +381,12 @@ class LaporanKandidat
                 'internal' => ! JadwalPrivat::terlihat($s),
                 'catatan' => $s->Catatan,
                 'mcuStatus' => $s->Mcu_Status,
+                // Penggantian biaya (MCU): Diganti / Tidak diganti / Menunggu —
+                // turunan hasilnya, null bila tipenya tak punya ketentuan biaya.
+                'biaya' => BiayaAktivitas::status(
+                    $s,
+                    AlurKolom::masterTipe()->get($s->Tipe_Tahap_Kode ?: $t->Tipe_Tahap_Kode),
+                )['label'] ?? null,
             ])->values()->all(),
         ])->values()->all();
     }

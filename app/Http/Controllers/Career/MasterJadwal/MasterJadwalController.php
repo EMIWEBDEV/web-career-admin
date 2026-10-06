@@ -8,6 +8,7 @@ use App\Support\Career\AksesService;
 use App\Support\Career\KodeUnik;
 use App\Support\CareerShell;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
@@ -143,6 +144,35 @@ class MasterJadwalController extends Controller
         ];
     }
 
+    /**
+     * Hari yang sudah lewat tidak bisa dipilih untuk agenda (masukan user 2 Okt
+     * 2026) — cermin kalendernya (hariLampau / sebelumMulai di masterJadwal.vue).
+     * Tanggal yang SUDAH tersimpan tetap boleh: agenda yang sudah berjalan (mis.
+     * registrasi bulan lalu) ikut terkirim ulang setiap kali jadwalnya disunting.
+     *
+     * @param  string[]  $tanggalLama  'Y-m-d' agenda yang tersimpan sekarang.
+     */
+    private static function galatAgendaLampau(array $agenda, array $tanggalLama = []): ?string
+    {
+        $hariIni = now()->startOfDay();
+        foreach (array_values($agenda) as $i => $g) {
+            foreach (['mulai', 'selesai'] as $k) {
+                if (empty($g[$k])) {
+                    continue;
+                }
+                $t = Carbon::parse($g[$k]);
+                if ($t->gte($hariIni) || in_array($t->format('Y-m-d'), $tanggalLama, true)) {
+                    continue;
+                }
+                $label = trim((string) ($g['label'] ?? '')) ?: 'agenda ke-'.($i + 1);
+
+                return "Tanggal {$k} \"{$label}\" sudah lewat — pilih hari ini atau sesudahnya.";
+            }
+        }
+
+        return null;
+    }
+
     /** Simpan baris agenda (anak) untuk sebuah jadwal. */
     private function simpanAgenda(int $jadwalId, array $agenda, ?int $userId): void
     {
@@ -261,6 +291,9 @@ class MasterJadwalController extends Controller
             if ($galat = $this->galatKategori($data['kategori'] ?? null)) {
                 return $galat;
             }
+            if ($galat = self::galatAgendaLampau($data['agenda'] ?? [])) {
+                return ResponseHelper::error($galat, 422);
+            }
             $userId = session('career_auth.id');
             $userName = session('career_auth.nama', 'ADMIN');
             $now = now();
@@ -310,6 +343,16 @@ class MasterJadwalController extends Controller
 
             if ($galat = $this->galatKategori($data['kategori'] ?? null)) {
                 return $galat;
+            }
+            $tanggalLama = DB::table('N_WEB_CAREERS_Master_Jadwal_Agenda')
+                ->where('Master_Jadwal_Id', $realId)
+                ->get(['Tanggal_Mulai', 'Tanggal_Selesai'])
+                ->flatMap(fn ($g) => [$g->Tanggal_Mulai, $g->Tanggal_Selesai])
+                ->filter()
+                ->map(fn ($t) => Carbon::parse($t)->format('Y-m-d'))
+                ->unique()->values()->all();
+            if ($galat = self::galatAgendaLampau($data['agenda'] ?? [], $tanggalLama)) {
+                return ResponseHelper::error($galat, 422);
             }
             $userId = session('career_auth.id');
             $userName = session('career_auth.nama', 'ADMIN');

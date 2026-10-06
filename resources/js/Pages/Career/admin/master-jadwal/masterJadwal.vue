@@ -199,8 +199,8 @@
                                 </div>
                             </div>
                             <div class="jdw-col6"><label class="wca-field-lbl">Label</label><el-input v-model="s.label" placeholder="mis. Psikotes Online" /></div>
-                            <div class="jdw-col6"><label class="wca-field-lbl">Mulai</label><el-date-picker v-model="s.mulai" type="date" value-format="YYYY-MM-DD" placeholder="Mulai" style="width:100%" /></div>
-                            <div class="jdw-col6"><label class="wca-field-lbl">Selesai</label><el-date-picker v-model="s.selesai" type="date" value-format="YYYY-MM-DD" placeholder="Selesai" style="width:100%" /></div>
+                            <div class="jdw-col6"><label class="wca-field-lbl">Mulai</label><el-date-picker v-model="s.mulai" type="date" value-format="YYYY-MM-DD" placeholder="Mulai" style="width:100%" :disabled-date="hariLampau" /></div>
+                            <div class="jdw-col6"><label class="wca-field-lbl">Selesai</label><el-date-picker v-model="s.selesai" type="date" value-format="YYYY-MM-DD" placeholder="Selesai" style="width:100%" :disabled-date="(d) => sebelumMulai(d, s.mulai)" /></div>
                         </div>
                         <button class="wca-iconbtn wca-iconbtn--danger" type="button" title="Hapus agenda" @click="removeRow(i)"><i class="bi bi-trash"></i></button>
                     </div>
@@ -329,6 +329,20 @@ export default {
         this.loadJenis();
     },
     methods: {
+        /** Hari yang sudah lewat tidak bisa dipilih (masukan user 2 Okt 2026). */
+        hariLampau(d) {
+            const k = new Date();
+
+            return d < new Date(k.getFullYear(), k.getMonth(), k.getDate());
+        },
+        /** Lampau, atau sebelum hari `mulai` ('YYYY-MM-DD…'). */
+        sebelumMulai(d, mulai) {
+            if (this.hariLampau(d)) return true;
+            if (!mulai) return false;
+            const [y, m, t] = String(mulai).slice(0, 10).split('-').map(Number);
+
+            return d < new Date(y, m - 1, t);
+        },
         katLabel(k) { return { REKRUTMEN: 'Rekrutmen', MT: 'Management Trainee', INTERNSHIP: 'Internship' }[k] || k; },
         initials(name) {
             if (!name) return 'SY';

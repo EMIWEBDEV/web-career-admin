@@ -34,6 +34,12 @@ export default defineConfig({
             },
         }),
     ],
+    // Web Worker (utils/career/ejaanWorker.js — pemeriksa ejaan nspell) dibangun
+    // sebagai modul ES, sama dengan di dev: pekerja dibuat `type: 'module'`,
+    // dan di dev dibungkus Blob sesama-origin (lihat utils/career/ejaan.js).
+    worker: {
+        format: "es",
+    },
     server: {
         host: "localhost",
 
@@ -76,6 +82,9 @@ export default defineConfig({
             // halaman yang kedalaman foldernya berbeda-beda, jadi jalur relatif
             // ("../../../utils/…") cuma jadi sumber salah ketik.
             "@utils": path.resolve(__dirname, "./resources/js/utils"),
+            // Kamus Hunspell (id_ID, en_US) + tambahan.txt — dibaca pekerja
+            // ejaan peramban (utils/career/ejaanWorker.js) dan server (Kamus.php).
+            "@kamus": path.resolve(__dirname, "./resources/kamus"),
         },
     },
     build: {

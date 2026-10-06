@@ -58,6 +58,9 @@ require __DIR__ . '/kpi/ridhoDevEvo.php';
 // Endpoint pendidikan untuk formulir kandidat (cascade jenjang→jenis→kampus).
 require __DIR__ . '/career/Pendidikan/PendidikanWeb.php';
 
+// KONFIRMASI KEHADIRAN (PUBLIK, tautan bertanda tangan dari surel undangan).
+require __DIR__ . '/career/KonfirmasiJadwal/KonfirmasiJadwalWeb.php';
+
 // Media hero slide (PUBLIK — dipakai landing page & preview admin).
 Route::get('/karir/hero-media/{id}/{slot}', [\App\Http\Controllers\Career\MasterHero\MasterHeroController::class, 'mediaPublik'])
     ->where(['slot' => 'desktop|mobile|video_desktop|video_mobile|poster_desktop|poster_mobile'])

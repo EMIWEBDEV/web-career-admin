@@ -854,8 +854,8 @@
                         </el-select>
                     </div>
                     <div class="wca-frow">
-                        <div><label class="wca-field-lbl">Tanggal &amp; Jam Buka</label><el-date-picker v-model="form.buka" type="datetime" value-format="YYYY-MM-DD HH:mm:ss" format="DD MMM YYYY HH:mm" placeholder="Pilih tanggal &amp; jam" style="width:100%" /></div>
-                        <div><label class="wca-field-lbl">Tanggal &amp; Jam Tutup</label><el-date-picker v-model="form.tutup" type="datetime" value-format="YYYY-MM-DD HH:mm:ss" format="DD MMM YYYY HH:mm" placeholder="Pilih tanggal &amp; jam" style="width:100%" :default-time="akhirHari" :disabled="form.masaBerlaku === 'EVERGREEN'" /></div>
+                        <div><label class="wca-field-lbl">Tanggal &amp; Jam Buka</label><el-date-picker v-model="form.buka" type="datetime" value-format="YYYY-MM-DD HH:mm:ss" format="DD MMM YYYY HH:mm" placeholder="Pilih tanggal &amp; jam" style="width:100%" :disabled-date="hariLampau" /></div>
+                        <div><label class="wca-field-lbl">Tanggal &amp; Jam Tutup</label><el-date-picker v-model="form.tutup" type="datetime" value-format="YYYY-MM-DD HH:mm:ss" format="DD MMM YYYY HH:mm" placeholder="Pilih tanggal &amp; jam" style="width:100%" :default-time="akhirHari" :disabled="form.masaBerlaku === 'EVERGREEN'" :disabled-date="(d) => sebelumMulai(d, form.buka)" /></div>
                     </div>
                     <p class="pbk-note"><i class="bi bi-info-circle"></i> Begitu disimpan, program <b>langsung terbit</b> ke landing. Ingin menundanya? Jadikan draft lewat tombol status di daftar.</p>
                 </div>
@@ -1387,6 +1387,20 @@ export default {
         clearTimeout(this.tm);
     },
     methods: {
+        /** Hari yang sudah lewat tidak bisa dipilih (masukan user 2 Okt 2026). */
+        hariLampau(d) {
+            const k = new Date();
+
+            return d < new Date(k.getFullYear(), k.getMonth(), k.getDate());
+        },
+        /** Lampau, atau sebelum hari `mulai` ('YYYY-MM-DD…'). */
+        sebelumMulai(d, mulai) {
+            if (this.hariLampau(d)) return true;
+            if (!mulai) return false;
+            const [y, m, t] = String(mulai).slice(0, 10).split('-').map(Number);
+
+            return d < new Date(y, m - 1, t);
+        },
         katLabel(k) { return { REKRUTMEN: 'Rekrutmen', MT: 'Management Trainee', INTERNSHIP: 'Internship' }[k] || k || '—'; },
         katIkon(k) { return { REKRUTMEN: 'bi-briefcase', MT: 'bi-mortarboard', INTERNSHIP: 'bi-backpack' }[k] || 'bi-diagram-3'; },
         katPill(k) { return { MT: 'pkg-pill--gold', INTERNSHIP: 'pkg-pill--green', REKRUTMEN: 'pkg-pill--sky' }[k] || 'pkg-pill--slate'; },

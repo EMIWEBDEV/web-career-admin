@@ -132,6 +132,14 @@ class MasterAlurController extends Controller
                             'penilaianMode' => $x->Penilaian_Mode,
                             'penilaianOpsi' => $x->Penilaian_Opsi,
                             'nilaiMaks' => $x->Nilai_Maks !== null ? (float) $x->Nilai_Maks : null,
+                            // Instruksi untuk kandidat — ditulis sekali di sini,
+                            // disalin ke undangan tiap kandidat saat dijadwalkan.
+                            'instruksiHtml' => $x->Instruksi_Html ?? null,
+                            // Informasi biaya ditampilkan ke kandidat (bawaan
+                            // per alur; kosong = tampil).
+                            'tampilBiaya' => ($x->Tampil_Biaya ?? 'Y') !== 'T',
+                            // Kalimat biaya alur ini (kosong = kalimat tipe).
+                            'kalimatBiaya' => $x->Kalimat_Biaya ?? null,
                         ])->values(),
                         // Aturan pengumuman hasil tahap ini (lihat Batch 6).
                         'pengumuman' => $t->Mode_Pengumuman ?? 'OTOMATIS',
@@ -438,6 +446,11 @@ class MasterAlurController extends Controller
             'stages.*.tests.*.penilaianMode' => ['nullable', Rule::in($this->modePenilaianAktif() ?: ['TANPA_NILAI'])],
             'stages.*.tests.*.penilaianOpsi' => 'nullable|string|max:500',
             'stages.*.tests.*.nilaiMaks' => 'nullable|numeric|min:1|max:10000',
+            // Instruksi untuk kandidat (paket pemeriksaan, persiapan, dokumen) —
+            // HTML editor, disaring sebelum disimpan.
+            'stages.*.tests.*.instruksiHtml' => 'nullable|string|max:30000',
+            'stages.*.tests.*.tampilBiaya' => 'nullable|boolean',
+            'stages.*.tests.*.kalimatBiaya' => 'nullable|string|max:1000',
             // Pengumuman hasil tahap — hanya mode AKTIF dari master (bukan hardcode).
             'stages.*.pengumuman' => ['nullable', Rule::in($kodeModeAktif ?: ['OTOMATIS'])],
             'stages.*.jedaHari' => 'nullable|integer|min:0|max:3650',
@@ -1008,6 +1021,25 @@ class MasterAlurController extends Controller
                         : null,
                     'Updated_At' => $now, 'Updated_By' => $userName, 'Updated_By_Id' => $userId,
                 ];
+
+                // INSTRUKSI UNTUK KANDIDAT — hanya bila layar memang mengirimnya
+                // dan kolomnya sudah ada (docs/30-09-2026/01). Klien lama yang
+                // tidak mengenal kunci ini tidak boleh diam-diam menghapus
+                // instruksi yang sudah ditulis. Gambar dibuang: kandidat tak bisa
+                // membuka rute gambar admin, dan surel tidak memuatnya.
+                if (array_key_exists('instruksiHtml', $t) && \App\Support\Career\UndanganJadwal::siapInstruksiAlur()) {
+                    $isiTes['Instruksi_Html'] = \App\Support\Career\CatatanEksternal::saring($t['instruksiHtml'] ?? null);
+                }
+                // Tampilkan informasi biaya ke kandidat — sama: hanya bila
+                // layar mengirimnya (klien lama tidak boleh mematikannya diam-diam).
+                if (array_key_exists('tampilBiaya', $t) && $t['tampilBiaya'] !== null
+                    && \App\Support\Career\UndanganJadwal::siapBiayaAlur()) {
+                    $isiTes['Tampil_Biaya'] = filter_var($t['tampilBiaya'], FILTER_VALIDATE_BOOLEAN) ? 'Y' : 'T';
+                }
+                // Kalimat biaya alur ini — kosong berarti kalimat bawaan tipenya.
+                if (array_key_exists('kalimatBiaya', $t) && \App\Support\Career\UndanganJadwal::siapKalimatBiayaAlur()) {
+                    $isiTes['Kalimat_Biaya'] = trim((string) ($t['kalimatBiaya'] ?? '')) ?: null;
+                }
 
                 $tesId = $tesLama[$j + 1] ?? null;
                 if ($tesId) {

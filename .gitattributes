@@ -7,3 +7,7 @@
 public/build/**            linguist-generated=true -diff
 package-lock.json          -diff
 composer.lock              -diff
+
+# Daftar kata hasil `npm run kamus` (diurai nspell dari resources/kamus/*.aff/.dic)
+# — dibaca server untuk pemeriksa kalimat. Jangan disunting tangan.
+resources/kamus/*-kata.txt linguist-generated=true -diff

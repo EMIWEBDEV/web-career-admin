@@ -10,7 +10,7 @@
                  seluruh isian tanpa peringatan. Penutupan hanya lewat tombol
                  Batal / X. Klik latar dibalas goyangan singkat sebagai isyarat
                  bahwa modal memang sengaja bertahan — bukan aplikasi macet. -->
-            <div v-if="show" class="wca-modal-mask wca" @click.self="tolakTutup">
+            <div v-if="show" class="wca-modal-mask wca" :style="zIndex ? { zIndex } : null" @click.self="tolakTutup">
                 <div
                     class="wca-modal"
                     :class="[
@@ -141,6 +141,10 @@ const props = defineProps({
        bahwa kliknya SUDAH diterima. */
     busy: { type: Boolean, default: false },
     busyLabel: { type: String, default: 'Menyimpan…' },
+    /* Lapisan khusus. Bawaan CSS 1200 berada DI BAWAH drawer/dialog Element
+       Plus (2000+, naik tiap dibuka) — modal yang dibuka dari dalam el-drawer
+       harus memakai nilai dari useZIndex() supaya tampil di atasnya. */
+    zIndex: { type: Number, default: null },
 });
 
 const emit = defineEmits(['close', 'save']);

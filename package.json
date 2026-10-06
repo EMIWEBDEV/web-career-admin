@@ -8,7 +8,8 @@
         "host": "php artisan serve --host=0.0.0.0 --port=5678",
         "tunnel": "cloudflared tunnel run n8n-tunnel",
         "dev:fresh": "vite --force",
-        "fresh": "php artisan optimize:clear && vite --force"
+        "fresh": "php artisan optimize:clear && vite --force",
+        "kamus": "node resources/kamus/rakit-daftar-kata.mjs"
     },
     "devDependencies": {
         "@prettier/plugin-php": "^0.24.0",
@@ -60,6 +61,7 @@
         "js-sha256": "^0.11.1",
         "marked": "^15.0.12",
         "moment": "^2.30.1",
+        "nspell": "^2.1.5",
         "pdfjs-dist": "^5.6.205",
         "primeicons": "^7.0.0",
         "primevue": "^4.3.3",

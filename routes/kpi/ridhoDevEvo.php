@@ -161,6 +161,19 @@ Route::prefix('api/v1/karir')
 
         // Jadwal wawancara / tes tatap muka + undangan email ke kandidat.
         Route::patch('/lamaran/sub-tes/{id}/jadwal', [LamaranController::class, 'subTesJadwal'])->name('lamaran.subtes.jadwal')->middleware('career.permission:pelamarPage,EDIT');
+        // Instruksi bawaan dari Master Alur + riwayat jadwal (jejak) — bahan jendela Atur Jadwal.
+        Route::get('/lamaran/sub-tes/{id}/jadwal-info', [LamaranController::class, 'subTesJadwalInfo'])->name('lamaran.subtes.jadwalinfo')->middleware('career.permission:pelamarPage,VIEW');
+        // SURAT PENGANTAR (MCU vendor / mandiri): unggah dulu → ref terenkripsi
+        // yang dibawa permintaan jadwal satuan maupun massal; lalu dibuka dari
+        // worklist lewat aktivitasnya.
+        Route::post('/lamaran/jadwal/surat', [LamaranController::class, 'jadwalSurat'])->name('lamaran.jadwal.surat')->middleware('career.permission:pelamarPage,EDIT');
+        Route::get('/lamaran/sub-tes/{id}/surat/{urutan?}', [LamaranController::class, 'subTesSurat'])->where('urutan', '[0-9]+')->name('lamaran.subtes.surat')->middleware('career.permission:pelamarPage,VIEW');
+        // Perpanjang batas jadwal berrentang tanggal (alasan wajib, kandidat dikabari).
+        Route::patch('/lamaran/sub-tes/{id}/perpanjang', [LamaranController::class, 'subTesPerpanjang'])->name('lamaran.subtes.perpanjang')->middleware('career.permission:pelamarPage,EDIT');
+        // Kirim ulang surel jadwal — satuan dan massal (maks. BATAS_PUTUS_MASSAL).
+        // Yang massal didaftarkan lebih dulu supaya tidak tertelan sebagai {id}.
+        Route::post('/lamaran/sub-tes/kirim-ulang-massal', [LamaranController::class, 'kirimUlangMassal'])->name('lamaran.subtes.kirimulangmassal')->middleware('career.permission:pelamarPage,EDIT');
+        Route::post('/lamaran/sub-tes/{id}/kirim-ulang', [LamaranController::class, 'subTesKirimUlang'])->name('lamaran.subtes.kirimulang')->middleware('career.permission:pelamarPage,EDIT');
         // JADWAL MASSAL — seratus kandidat sekaligus, serentak atau bergiliran.
         // Didaftarkan sebelum rute ber-{id} agar "jadwal-massal" tidak tertelan
         // sebagai id aktivitas.
@@ -286,6 +299,8 @@ Route::prefix('kandidat')
         // pernyataan ini admin menilai tanpa tahu apakah masih ada susulan.
         Route::patch('/lamaran/tes/{id}/berkas/kirim', [LamaranController::class, 'tesBerkasKirim'])->name('tes.berkas.kirim');
         Route::get('/lamaran/tes/berkas/{id}/file', [LamaranController::class, 'tesBerkasFile'])->name('tes.berkas.file');
+        // Surat pengantar jadwal (MCU) milik kandidat sendiri.
+        Route::get('/lamaran/tes/{id}/surat/{urutan?}', [LamaranController::class, 'tesSurat'])->where('urutan', '[0-9]+')->name('tes.surat');
 
         // ── SIMPAN SEMENTARA (DRAF) FORMULIR TAHAP ──
         // Semua endpoint memeriksa kepemilikan tahap lewat Lamaran.Id_Users, jadi
@@ -366,3 +381,11 @@ Route::prefix('api/v1/lamaran')
 Route::get('/karir/laporan/{lamaran}/berkas/{berkas}', [LamaranController::class, 'laporanBerkas'])
     ->middleware('signed')
     ->name('career.laporan.berkas');
+
+// SURAT PENGANTAR JADWAL dari tautan SUREL — alasan yang sama: surel dibuka di
+// aplikasi surat tanpa sesi portal. Bertanda tangan & berumur (lihat
+// SuratJadwal::tautanEmail); tanpa login, tanpa bisa ditebak.
+Route::get('/karir/surat-jadwal/{id}/{urutan?}', [LamaranController::class, 'suratJadwalPublik'])
+    ->where('urutan', '[0-9]+')
+    ->middleware('signed')
+    ->name('career.surat.jadwal');

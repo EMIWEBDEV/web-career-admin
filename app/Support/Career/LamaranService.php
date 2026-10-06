@@ -1137,6 +1137,10 @@ class LamaranService
             'Updated_At' => $now, 'Updated_By' => $nama, 'Updated_By_Id' => $adminId,
         ]);
 
+        // Tahap diputus: undangan konfirmasi & permintaan jadwal lain yang masih
+        // terbuka di tahap ini selesai — tidak ada lagi surel untuknya.
+        KonfirmasiJadwal::tutupTahap($lamaranTahapId, 'DIPUTUS');
+
         // KEPUTUSAN DARI KANDIDAT (menolak penawaran / mengundurkan diri).
         //
         // Dipisah dari GUGUR bukan demi kerapian: keduanya menutup lamaran, tapi
@@ -1943,6 +1947,46 @@ class LamaranService
 
             return $this->evaluasiTahap($lamaranTahapId, null);
         });
+    }
+
+    /**
+     * TIDAK HADIR — satu-satunya implementasi, dipakai dua pintu:
+     *   • tombol "Tidak Hadir" tim (LamaranController::subTesKehadiran);
+     *   • pernyataan "tidak melanjutkan seleksi" — dari kandidat (portal /
+     *     tautan email) atau dicatat tim (KonfirmasiJadwal::jawab). Keputusan
+     *     user 2 Okt 2026: pernyataan itu berlaku PERSIS seperti tim menekan
+     *     "Tidak Hadir", supaya tim tak perlu mengekliknya lagi.
+     *
+     * Aktivitas ditandai tidak hadir berikut catatannya, ditutup (GAGAL,
+     * kecuali INFORMATIF yang memang tanpa verdict), lalu mesin keputusan
+     * menilai tahapnya — bisa gugur, bisa menunggu aktivitas lain.
+     *
+     * Transaksi & gerbangnya (jadwal ada, kunciUrutan) milik pemanggil.
+     *
+     * @return array{outcome: ?string}
+     */
+    public function catatTidakHadir(object $sub, ?string $html, ?string $ringkas, ?string $oleh, ?int $olehId): array
+    {
+        $now = now();
+
+        DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')->where('Id_Lamaran_Tahap_Tes', $sub->Id_Lamaran_Tahap_Tes)->update([
+            'Jadwal_Hadir' => 'T',
+            'Jadwal_Hadir_At' => $now,
+            'Jadwal_Hadir_By' => $oleh,
+            // Catatan lama TIDAK ditimpa dengan kosong: menandai kehadiran sering
+            // dilakukan dua kali (salah klik, lalu dibetulkan), dan pembetulan
+            // yang catatannya kosong akan menghapus catatan percobaan pertama.
+            'Catatan' => $ringkas ?: $sub->Catatan,
+            'Catatan_Html' => $html ?: $sub->Catatan_Html,
+            'Status' => 'TIDAK_HADIR',
+            'Hasil' => $sub->Peran === 'INFORMATIF' ? null : 'GAGAL',
+            'Flag_Selesai' => 'Y',
+            'Waktu_Selesai' => $now,
+            'Updated_At' => $now,
+            'Updated_By' => $oleh,
+        ]);
+
+        return $this->evaluasiTahap((int) $sub->Lamaran_Tahap_Id, $olehId);
     }
 
     /**

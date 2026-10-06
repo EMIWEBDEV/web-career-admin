@@ -251,13 +251,15 @@ class WcLaporanKandidatJob implements ShouldQueue
         // ── Sheet perjalanan tahap ──────────────────────────────────────
         $t = $book->createSheet();
         $t->setTitle('Perjalanan');
-        $t->fromArray(['#', 'Tahap', 'Status', 'Hasil', 'Aktivitas', 'Nilai', 'Diputus', 'Oleh'], null, 'A1');
-        $this->kepala($t, 'A1:H1');
+        // "Biaya" = penggantian biaya aktivitas (MCU): Diganti / Tidak diganti /
+        // Menunggu hasil — turunan hasilnya, dibaca Finance.
+        $t->fromArray(['#', 'Tahap', 'Status', 'Hasil', 'Aktivitas', 'Nilai', 'Biaya', 'Diputus', 'Oleh'], null, 'A1');
+        $this->kepala($t, 'A1:I1');
 
         $r = 2;
         foreach ($d['tahap'] as $th) {
             if (! $th['aktivitas']) {
-                $t->fromArray([$th['urutan'], $th['label'], $th['status'], $th['hasil'] ?: '—', '—', '—',
+                $t->fromArray([$th['urutan'], $th['label'], $th['status'], $th['hasil'] ?: '—', '—', '—', '—',
                     $th['diputusAt'] ?: '—', $th['diputusOleh'] ?: '—'], null, "A{$r}");
                 $r++;
 
@@ -271,12 +273,13 @@ class WcLaporanKandidatJob implements ShouldQueue
                     $th['urutan'], $th['label'], $th['status'], $th['hasil'] ?: '—',
                     $a['label'] . ($a['internal'] ? ' (internal)' : ''),
                     $a['nilai'] ?? '—',
+                    $a['biaya'] ?? '—',
                     $th['diputusAt'] ?: '—', $th['diputusOleh'] ?: '—',
                 ], null, "A{$r}");
                 $r++;
             }
         }
-        $this->rapikanTabel($t, 'A', 'H', $r);
+        $this->rapikanTabel($t, 'A', 'I', $r);
 
         // ── Sheet jawaban formulir ──────────────────────────────────────
         $f = $book->createSheet();

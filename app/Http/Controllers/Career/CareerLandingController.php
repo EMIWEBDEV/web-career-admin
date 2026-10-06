@@ -7,6 +7,7 @@ use App\Support\Career\KatalogPrefill;
 use App\Support\Seo\Seo;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Vinkla\Hashids\Facades\Hashids;
@@ -1691,8 +1692,17 @@ class CareerLandingController extends Controller
                     ->groupBy('AlurKode');
             }
 
-            // Jumlah pelamar nyata per program — hanya yang BELUM gugur dihitung
-            // sebagai "pelamar aktif" (yang gugur tidak lagi meminati program).
+            // Jumlah pelamar per TERBITAN dan per LOKER di dalamnya — SEMUA
+            // lamaran, termasuk yang gugur dan yang mundur. Definisinya sama
+            // persis dengan admin (angka di daftar Pembukaan Program dan "Pelamar
+            // Masuk" di AnalitikPembukaan): untuk terbitan yang sama, landing dan
+            // admin tidak boleh menyebut dua angka berbeda. Dulu landing membuang
+            // yang gugur — 608 pelamar MT tampil sebagai 442, seolah programnya
+            // kurang diminati. Yang gugur tetap pernah melamar.
+            //
+            // Kartu POSISI dihitung per posisinya sendiri, bukan per program:
+            // program berisi dua loker dulu memajang total program yang sama di
+            // kedua kartu, lalu kartu tim menjumlahkannya — terhitung dua kali.
             //
             // TIDAK ADA hitungan kursi terisi di sini. Landing publik tidak lagi
             // memajang kuota apa pun (lihat kartuPosisi & dbMtCards), jadi dua
@@ -1700,15 +1710,22 @@ class CareerLandingController extends Controller
             // satunya bahkan kueri kembar persis dari $pelamar dan tidak pernah
             // dibaca siapa pun. Kuota tetap hidup di sisi internal: gerbangnya
             // ada di LamaranService saat kandidat DITERIMA di tahap terakhir.
-            $pelamar = collect();
+            $pelamar = ['terbitan' => collect(), 'posisi' => collect()];
             try {
-                $pelamar = DB::table('N_WEB_CAREERS_Lamaran')
-                    ->where('Status', '!=', 'GUGUR')
-                    ->select('Program_Id', DB::raw('COUNT(*) as Jml'))
-                    ->groupBy('Program_Id')
-                    ->pluck('Jml', 'Program_Id');
+                $idTerbitan = $pembukaan->pluck('Id_Pembukaan')->all();
+                if ($idTerbitan) {
+                    $jml = DB::table('N_WEB_CAREERS_Lamaran')
+                        ->whereIn('Pembukaan_Id', $idTerbitan)
+                        ->select('Pembukaan_Id', 'Program_Posisi_Id', DB::raw('COUNT(*) as Jml'))
+                        ->groupBy('Pembukaan_Id', 'Program_Posisi_Id')
+                        ->get();
+                    $pelamar = [
+                        'terbitan' => $jml->groupBy('Pembukaan_Id')->map(fn ($g) => (int) $g->sum('Jml')),
+                        'posisi' => $jml->mapWithKeys(fn ($r) => [$r->Pembukaan_Id . ':' . $r->Program_Posisi_Id => (int) $r->Jml]),
+                    ];
+                }
             } catch (\Throwable $e) {
-                $pelamar = collect();
+                $pelamar = ['terbitan' => collect(), 'posisi' => collect()];
             }
 
             $this->openingsCache = compact(
@@ -1806,7 +1823,7 @@ class CareerLandingController extends Controller
             // peluangnya dari sana, dan angka itu juga bergerak sepanjang seleksi.
             // Kuota tetap ditegakkan di tempat yang memang menentukan, yaitu
             // LamaranService saat kandidat DITERIMA di tahap terakhir.
-            'pelamar' => (int) ($o['pelamar'][$pb->Program_Id] ?? 0),
+            'pelamar' => (int) ($o['pelamar']['posisi'][$pb->Id_Pembukaan . ':' . $x->Id_Program_Posisi] ?? 0),
             'tanggalTutup' =>
                 $pb->Masa_Berlaku === 'BERBATAS'
                     ? ($pb->Tanggal_Tutup
@@ -2045,7 +2062,7 @@ class CareerLandingController extends Controller
                 'lokasi' => optional($listPosisi->first())->Lokasi ?: null,
                 'penempatan' => $listPosisi->pluck('Lokasi')->filter()->unique()->implode(' & ') ?: null,
                 // TANPA 'kuota'/'kuotaTerisi' — sama alasannya dengan kartuPosisi().
-                'pelamar' => (int) ($o['pelamar'][$pb->Program_Id] ?? 0),
+                'pelamar' => (int) ($o['pelamar']['terbitan'][$pb->Id_Pembukaan] ?? 0),
                 'tanggalBuka' => $pb->Tanggal_Buka ? substr($pb->Tanggal_Buka, 0, 16) : null,
                 'tanggalTutup' =>
                     $pb->Masa_Berlaku === 'BERBATAS'

@@ -70,6 +70,9 @@ class BatasIsiController extends Controller
             'batas.required' => 'Isi batas akhirnya.',
             'batas.after' => 'Batas akhir harus sesudah waktu formulir dibuka dan belum lewat.',
         ]);
+        if ($galat = self::galatBukaLampau(Carbon::parse($data['buka']))) {
+            return ResponseHelper::error($galat, 422);
+        }
 
         [$programId, $kolom, $galat] = $this->kolomProgram($data['programId'], $data['kodeTahap']);
         if ($galat) {
@@ -342,6 +345,10 @@ class BatasIsiController extends Controller
 
         $buka = in_array($data['cara'], ['ATUR', 'UBAH'], true) && ! empty($data['buka']) ? Carbon::parse($data['buka']) : null;
         $sampai = ! empty($data['sampai']) ? Carbon::parse($data['sampai']) : null;
+        // UBAH superadmin sengaja boleh ke masa lalu — membetulkan jadwal yang salah.
+        if ($data['cara'] === 'ATUR' && $buka && ($galat = self::galatBukaLampau($buka))) {
+            return ResponseHelper::error($galat, 422);
+        }
         if ($buka && $sampai && ! $sampai->gt($buka)) {
             return ResponseHelper::error('Batas akhir harus sesudah waktu formulir dibuka.', 422);
         }
@@ -424,6 +431,19 @@ class BatasIsiController extends Controller
             ]);
 
         return ResponseHelper::success($baris, 'Riwayat jadwal');
+    }
+
+    /**
+     * Hari yang sudah lewat tidak bisa dipilih sebagai waktu formulir dibuka
+     * (masukan user 2 Okt 2026) — cermin kalendernya (sebelumHariIni di
+     * Pelamar.vue). Jam yang sudah lewat HARI INI tetap boleh: artinya
+     * "dibuka sekarang", dan itulah isian bawaannya (waktuKini).
+     */
+    private static function galatBukaLampau(Carbon $buka): ?string
+    {
+        return $buka->lt(now()->startOfDay())
+            ? 'Waktu formulir dibuka tidak boleh di hari yang sudah lewat — pilih hari ini atau sesudahnya.'
+            : null;
     }
 
     private static function maksNilai(mixed $cara): int

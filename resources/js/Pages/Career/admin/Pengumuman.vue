@@ -45,7 +45,7 @@
                                 <el-option label="Hanya kirim info (status tetap)" value="INFO" />
                             </el-select>
                         </div>
-                        <div><label class="wca-field-lbl">Tanggal Publish</label><el-date-picker v-model="pf.tanggal" type="date" value-format="YYYY-MM-DD" placeholder="Pilih tanggal" style="width:100%" /></div>
+                        <div><label class="wca-field-lbl">Tanggal Publish</label><el-date-picker v-model="pf.tanggal" type="date" value-format="YYYY-MM-DD" placeholder="Pilih tanggal" style="width:100%" :disabled-date="hariLampau" /></div>
                         <div><label class="wca-field-lbl">Isi Pengumuman</label><el-input v-model="pf.isi" type="textarea" :rows="4" placeholder="Tulis isi pengumuman untuk kandidat…" /></div>
                         <div class="wca-hint"><i class="bi bi-info-circle"></i> Pengumuman langsung tampil di dashboard kandidat terpilih beserta status kelulusannya.</div>
                         <button class="wca-btn wca-btn--primary" :disabled="!selected.length || !pf.judul.trim()" :onClick="!selected.length || !pf.judul.trim() ? null : publishToCandidates"><i class="bi bi-send"></i> Publikasikan ke {{ selected.length }} Kandidat</button>
@@ -120,7 +120,7 @@
                         </div>
                         <div>
                             <label class="wca-field-lbl">Tanggal Publish</label>
-                            <el-date-picker v-model="form.publish" type="date" value-format="YYYY-MM-DD" placeholder="Pilih tanggal" />
+                            <el-date-picker v-model="form.publish" type="date" value-format="YYYY-MM-DD" placeholder="Pilih tanggal" :disabled-date="hariLampau" />
                         </div>
                     </div>
                     <div>
@@ -141,6 +141,13 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import AdminModal from '@career/AdminModal.vue';
 import { initials, statusBadge } from '@utils/career/admin';
 import { announceResult, getApps } from '@utils/career/session';
+
+/** Hari yang sudah lewat tidak bisa dipilih sebagai tanggal publish (masukan user 2 Okt 2026). */
+function hariLampau(d) {
+    const k = new Date();
+
+    return d < new Date(k.getFullYear(), k.getMonth(), k.getDate());
+}
 
 const props = defineProps({
     pengumuman: { type: Array, default: () => [] },

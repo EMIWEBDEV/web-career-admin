@@ -565,6 +565,62 @@
                                             </label>
                                         </div>
                                     </div>
+
+                                    <!-- INSTRUKSI UNTUK KANDIDAT — ditulis SEKALI di sini,
+                                         lalu ikut di undangan & portal setiap kandidat
+                                         saat aktivitas ini dijadwalkan. Rekruter tidak
+                                         mengetik ulang paket pemeriksaan atau persiapan
+                                         tiap angkatan; per program cukup di alurnya.
+                                         Hanya untuk aktivitas BERJADWAL yang dibaca
+                                         kandidat — jadwal privat tidak pernah dikirim. -->
+                                    <div v-if="bolehInstruksi(t, s)" class="alr-unggah" :class="{ 'is-on': adaInstruksi(t) }">
+                                        <div class="alr-unggah__head">
+                                            <div>
+                                                <b><i class="bi bi-card-checklist"></i> Instruksi untuk kandidat</b>
+                                                <small>
+                                                    Ikut otomatis di undangan &amp; portal tiap kandidat. Tulis yang sama untuk semua
+                                                    (pemeriksaan, persiapan, dokumen) — tanggal dan tempat sudah dirakit sistem.
+                                                </small>
+                                            </div>
+                                            <button v-if="!t.instruksiBuka && !adaInstruksi(t)" type="button" class="alr-instruksi__buka" @click="t.instruksiBuka = true">
+                                                <i class="bi bi-pencil"></i> Tulis
+                                            </button>
+                                        </div>
+                                        <div v-if="t.instruksiBuka || adaInstruksi(t)" class="alr-unggah__body">
+                                            <EditorQuill
+                                                v-model="t.instruksiHtml"
+                                                ringkas
+                                                placeholder="mis. Pemeriksaan yang wajib ada: darah & urine lengkap, rontgen thorax. Bawa KTP asli. Puasa 10 jam sebelum pemeriksaan."
+                                            />
+                                        </div>
+                                    </div>
+                                    <!-- INFORMASI BIAYA — hanya untuk tipe yang punya kalimat
+                                         biaya (mis. MCU). Bawaan untuk setiap jadwal di alur ini;
+                                         rekruter masih bisa mengubahnya per jadwal. Matikan bila
+                                         biayanya dijelaskan sendiri di instruksi, atau ditanggung
+                                         langsung perusahaan. -->
+                                    <div
+                                        v-if="bolehInstruksi(t, s) && infoTipe(t.tipe || s.tipe)?.biaya"
+                                        class="alr-unggah" :class="{ 'is-on': t.tampilBiaya !== false }"
+                                    >
+                                        <div class="alr-unggah__head">
+                                            <div>
+                                                <b><i class="bi bi-cash-coin"></i> Tampilkan informasi biaya ke kandidat</b>
+                                                <small>Bawaan untuk setiap jadwal di alur ini — rekruter masih bisa mengubahnya per jadwal.</small>
+                                            </div>
+                                            <el-switch v-model="t.tampilBiaya" />
+                                        </div>
+                                        <!-- Kalimatnya bisa disunting per alur. Kosong = kalimat
+                                             bawaan tipenya (terlihat sebagai contoh di kotaknya). -->
+                                        <div v-if="t.tampilBiaya !== false" class="alr-unggah__body">
+                                            <label class="wca-field-lbl">Kalimat biaya</label>
+                                            <el-input
+                                                v-model="t.kalimatBiaya" type="textarea" :rows="3" maxlength="1000" show-word-limit
+                                                :placeholder="infoTipe(t.tipe || s.tipe).biaya"
+                                            />
+                                            <small class="alr-biaya__hint">Kosongkan untuk memakai kalimat bawaan di atas (abu-abu).</small>
+                                        </div>
+                                    </div>
                                 </div>
                                 <button class="wca-iconbtn wca-iconbtn--danger" type="button" title="Hapus tes" @click="removeTest(s, k)"><i class="bi bi-trash"></i></button>
                             </div>
@@ -789,6 +845,7 @@ import AdminModal from '@career/AdminModal.vue';
 import ConfirmModal from '@career/ConfirmModal.vue';
 import AuditStamp from '@career/AuditStamp.vue';
 import RefSelect from '@career/RefSelect.vue';
+import EditorQuill from '@career/EditorQuill.vue';
 import { ingatModal } from '@utils/ingatModal';
 
 const API = '/api/v1/master-alur';
@@ -800,7 +857,7 @@ const CFG = { headers: { Accept: 'application/json' } };
 const PEMERIKSAAN_CADANGAN = ['REFERENCE_CHECK', 'BACKGROUND_CHECK'];
 
 export default {
-    components: { Head, AdminModal, ConfirmModal, AuditStamp, RefSelect },
+    components: { Head, AdminModal, ConfirmModal, AuditStamp, RefSelect, EditorQuill },
     // Modal di halaman ini selamat dari refresh — lihat @utils/ingatModal.
     mixins: [ingatModal('admin/master-alur/masterAlur')],
     data() {
@@ -927,6 +984,20 @@ export default {
 
         /** Info satu tipe dari master (bukan daftar kode yang ditulis di sini). */
         infoTipe(kode) { return this.tipeTahap.find((t) => t.value === kode) || null; },
+        /**
+         * Aktivitas ini menerima instruksi untuk kandidat? Hanya yang BERJADWAL
+         * dan diumumkan ke kandidat (Flag_Jadwal, bukan jadwal privat) — dari
+         * master tipe, bukan daftar kode.
+         */
+        bolehInstruksi(t, s) {
+            const i = this.infoTipe(t.tipe || s.tipe);
+
+            return !!i?.jadwal && !i?.jadwalPrivat;
+        },
+        /** Instruksinya berisi sesuatu (bukan sekadar paragraf kosong editor). */
+        adaInstruksi(t) {
+            return !!String(t.instruksiHtml || '').replace(/<[^>]*>/g, '').trim();
+        },
         /**
          * Tahap ini memakai tipe yang sudah dinonaktifkan? (punya nilai, tapi
          * tak ada di daftar pilihan). Dijaga agar tidak berteriak sebelum
@@ -1248,6 +1319,9 @@ export default {
         tesPunyaSetelan(x) {
             return x.unggahKandidat === true
                 || x.tampilKandidat === false
+                // Instruksi untuk kandidat juga setelan milik aktivitas ini —
+                // menyembunyikan barisnya berarti tak ada tempat menyuntingnya.
+                || this.adaInstruksi(x)
                 || !!x.penilaianMode
                 || !!x.lanjutMode
                 || x.ambang != null
@@ -1308,7 +1382,8 @@ export default {
                 // sadar; kalau bawaannya tersembunyi, satu aktivitas yang lupa
                 // disetel akan hilang dari portal tanpa ada yang menyadarinya.
                 tampilKandidat: true,
-                lanjutMode: null, penilaianMode: null, penilaianOpsi: '', nilaiMaks: null });
+                lanjutMode: null, penilaianMode: null, penilaianOpsi: '', nilaiMaks: null,
+                instruksiHtml: '', tampilBiaya: true, kalimatBiaya: '' });
             this.samakanMode(s);
         },
         removeTest(s, k) {
@@ -1447,6 +1522,10 @@ export default {
                     penilaianMode: t.penilaianMode || null,
                     penilaianOpsi: t.penilaianOpsi || '',
                     nilaiMaks: t.nilaiMaks || null,
+                    instruksiHtml: t.instruksiHtml || '',
+                    // `!== false` — alur lama tanpa kunci ini tetap menampilkan biaya.
+                    tampilBiaya: t.tampilBiaya !== false,
+                    kalimatBiaya: t.kalimatBiaya || '',
                 })),
             }));
             // Turunkan titik cut-off dari data: tahap PERTAMA yang talentPool aktif.
@@ -1598,6 +1677,13 @@ export default {
                         penilaianOpsi: t.penilaianOpsi || null,
                         nilaiMaks: t.nilaiMaks || null,
                         ambang: t.ambang ?? null,
+                        // Instruksi hanya untuk aktivitas berjadwal yang dibaca
+                        // kandidat; selebihnya dikosongkan supaya sisa ketikan dari
+                        // tipe sebelumnya tidak ikut terkirim diam-diam.
+                        instruksiHtml: this.bolehInstruksi(t, s) && this.adaInstruksi(t) ? t.instruksiHtml : null,
+                        tampilBiaya: t.tampilBiaya !== false,
+                        // Kosong = kalimat bawaan tipe.
+                        kalimatBiaya: (t.kalimatBiaya || '').trim() || null,
                     })),
                     // Hanya berarti bila aktivitasnya lebih dari satu — server
                     // pun memaksanya ke mode tak-mengunci bila tidak.
@@ -1867,6 +1953,9 @@ export default {
 .alr-unggah__head small { display: block; font-size: 11px; color: #94a3b8; margin-top: 2px; }
 .alr-unggah__body { padding: 0 13px 13px; border-top: 1px dashed rgba(99, 102, 241, .22); padding-top: 12px; }
 .alr-unggah__wajib { display: flex; align-items: center; gap: 9px; margin-top: 10px; font-size: 12px; color: #475569; }
+.alr-biaya__hint { display: block; margin-top: 4px; font-size: 11px; color: #94a3b8; }
+.alr-instruksi__buka { flex: none; display: inline-flex; align-items: center; gap: 5px; padding: 6px 11px; border-radius: 9px; border: 1px solid #c7d2fe; background: #fff; font-size: 11.5px; font-weight: 800; color: #4f46e5; cursor: pointer; }
+.alr-instruksi__buka:hover { background: #eef2ff; }
 .alr-unggah__wajib b { color: #dc2626; }
 
 /* BATAS PENGISIAN FORMULIR — sepola dengan kotak unggah di atas. */

@@ -361,6 +361,7 @@
                                     format="DD MMM YYYY HH:mm"
                                     value-format="YYYY-MM-DD HH:mm:ss"
                                     :default-time="jamMulaiBawaan"
+                                    :disabled-date="(d) => sebelumHari(d, null)"
                                     class="pjd-date"
                                 />
                             </div>
@@ -389,6 +390,13 @@
                              sampai server: admin sudah mencentang puluhan kandidat
                              saat menekan Generate, dan penolakan di ujung jalan
                              berarti ia mengulang seluruh pemilihan itu. -->
+                        <div v-if="jendelaLewat" class="pjd-warn">
+                            <i class="bi bi-exclamation-triangle-fill"></i>
+                            <div>
+                                <b>Waktu berakhir sudah lewat.</b>
+                                Sesi yang jendelanya sudah tertutup tidak bisa dikerjakan siapa pun — pilih waktu berakhir yang akan datang.
+                            </div>
+                        </div>
                         <div v-if="jendelaSalah" class="pjd-warn">
                             <i class="bi bi-exclamation-triangle-fill"></i>
                             <div>
@@ -1362,10 +1370,14 @@
                 </p>
 
                 <label class="pjd-lbl">Waktu Mulai</label>
-                <el-date-picker v-model="editMulai" type="datetime" placeholder="Tanggal &amp; jam mulai" format="DD MMM YYYY HH:mm" value-format="YYYY-MM-DD HH:mm:ss" :default-time="jamMulaiBawaan" class="pjd-date" />
+                <el-date-picker v-model="editMulai" type="datetime" placeholder="Tanggal &amp; jam mulai" format="DD MMM YYYY HH:mm" value-format="YYYY-MM-DD HH:mm:ss" :default-time="jamMulaiBawaan" :disabled-date="(d) => sebelumHari(d, null)" class="pjd-date" />
                 <label class="pjd-lbl pjd-lbl--gap">Waktu Berakhir</label>
                 <el-date-picker v-model="editAkhir" type="datetime" placeholder="Tanggal &amp; jam berakhir" format="DD MMM YYYY HH:mm" value-format="YYYY-MM-DD HH:mm:ss" :default-time="jamAkhirBawaan" :disabled-date="(d) => sebelumHari(d, editMulai)" class="pjd-date" />
 
+                <div v-if="editLewat" class="pjd-warn pjd-warn--gap">
+                    <i class="bi bi-exclamation-triangle-fill"></i>
+                    <div><b>Waktu berakhir sudah lewat.</b> Pilih waktu berakhir yang akan datang.</div>
+                </div>
                 <div v-if="editSalah" class="pjd-warn pjd-warn--gap">
                     <i class="bi bi-exclamation-triangle-fill"></i>
                     <div><b>Waktu berakhir tidak boleh sebelum waktu mulai.</b> Perbaiki dulu sebelum menyimpan.</div>
@@ -1663,9 +1675,20 @@ export default {
         editSalah() {
             return this.terbalik(this.editMulai, this.editAkhir);
         },
+        /** Jendela yang SUDAH tertutup (berakhir di masa lalu) — tak bisa dikerjakan siapa pun. */
+        jendelaLewat() {
+            const b = this.keTanggal(this.form.waktuAkhir);
+
+            return !!b && b.getTime() <= Date.now();
+        },
+        editLewat() {
+            const b = this.keTanggal(this.editAkhir);
+
+            return !!b && b.getTime() <= Date.now();
+        },
         bisaGenerate() {
             const f = this.form;
-            if (this.jendelaSalah) return false;
+            if (this.jendelaSalah || this.jendelaLewat) return false;
 
             return !!(f.programId && f.tahapUrutan && f.idMasterUjian && f.waktuMulai && f.waktuAkhir && f.peserta.length);
         },
@@ -2662,8 +2685,13 @@ export default {
          * mulai 17:00 akan ikut memadamkan hari yang sama.
          */
         sebelumHari(sel, mulai) {
+            if (!sel) return false;
+            // HARI YANG SUDAH LEWAT tidak bisa dipilih sama sekali (masukan user
+            // 2 Okt 2026) — termasuk saat waktu mulainya belum diisi.
+            const k = new Date();
+            if (sel.getTime() < new Date(k.getFullYear(), k.getMonth(), k.getDate()).getTime()) return true;
             const a = this.keTanggal(mulai);
-            if (!a || !sel) return false;
+            if (!a) return false;
             const awal = new Date(a.getFullYear(), a.getMonth(), a.getDate()).getTime();
 
             return sel.getTime() < awal;
@@ -2672,6 +2700,11 @@ export default {
             if (this.editSibuk || !this.editTarget) return;
             if (!this.editMulai || !this.editAkhir) {
                 this.beritahu('Isi waktu mulai dan waktu berakhir dulu.', 'error');
+
+                return;
+            }
+            if (this.editLewat) {
+                this.beritahu('Waktu berakhir sudah lewat — pilih waktu yang akan datang.', 'error');
 
                 return;
             }

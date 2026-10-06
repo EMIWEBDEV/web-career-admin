@@ -55,6 +55,7 @@ class SeedKandidatUji extends Command
         {--loker= : Id lowongan (Program_Posisi). Kosong = disebar rata ke seluruh lowongan program}
         {--tahap= : Parkir SEMUA kandidat di tahap ini (1-based). Kosong = sebaran corong}
         {--bersihkan : Hapus kandidat uji ber-slug ini, jangan membuat yang baru}
+        {--email= : Pola email SUNGGUHAN untuk menguji surel, mis. fransbachtiar4+konf[n]@gmail.com ([n] = nomor kandidat)}
         {--seed=2026 : Benih pengacak; nilai sama menghasilkan sebaran yang sama}';
 
     protected $description = 'Buat kandidat uji yang tersebar di seluruh tahap alur sebuah program';
@@ -86,6 +87,9 @@ class SeedKandidatUji extends Command
      */
     private const SLUG_MAKS = 6;
 
+    /** Pola email sungguhan (--email), atau null = alamat .test yang tak bisa dikirimi. */
+    private ?string $polaEmail = null;
+
     public function handle(LamaranService $svc): int
     {
         $slug = Str::slug((string) $this->option('slug')) ?: 'uji';
@@ -105,6 +109,17 @@ class SeedKandidatUji extends Command
 
             return self::FAILURE;
         }
+
+        // --email: alamat SUNGGUHAN (plus-addressing satu kotak masuk) untuk
+        // melihat surel uji sampai ke penerima. [n] wajib — tanpa itu semua
+        // kandidat berebut satu alamat, dan akun kedua menimpa yang pertama.
+        $polaEmail = trim((string) $this->option('email'));
+        if ($polaEmail !== '' && (! str_contains($polaEmail, '[n]') || ! filter_var(str_replace('[n]', '1', $polaEmail), FILTER_VALIDATE_EMAIL))) {
+            $this->error("Pola --email harus alamat sah yang memuat [n], mis. fransbachtiar4+konf[n]@gmail.com");
+
+            return self::FAILURE;
+        }
+        $this->polaEmail = $polaEmail ?: null;
 
         $programId = (int) $this->option('program');
         if (! $programId) {
@@ -355,7 +370,11 @@ class SeedKandidatUji extends Command
      */
     private function buatAkun(string $slug, int $nomor): int
     {
-        $email = "uji.{$slug}+{$nomor}@contoh.test";
+        // --email: alamat sungguhan (uji surel). Penanda Kode_Calon tetap
+        // UJI-<SLUG>-<nomor>, jadi --bersihkan tetap menjangkaunya.
+        $email = $this->polaEmail
+            ? str_replace('[n]', (string) $nomor, $this->polaEmail)
+            : "uji.{$slug}+{$nomor}@contoh.test";
         $ada = DB::table('N_WEB_CAREERS_Users')->where('Email', $email)->value('Id_Users');
         if ($ada) {
             return (int) $ada;
@@ -508,6 +527,43 @@ class SeedKandidatUji extends Command
             // gelombang penjadwalannya sendiri sengaja TIDAK dihapus — ia bisa
             // memuat kandidat sungguhan juga.
             $hapus('N_WEB_CAREERS_Penjadwalan_Peserta', 'Lamaran_Id', $lamaranIds);
+
+            // JEJAK YANG LAHIR SAAT DATA UJI DICOBA DI LAYAR — jadwal yang diatur,
+            // berkas yang diunggah, keputusan yang diketuk, hold, ulang tahap,
+            // Talent Pool. Tanpa ini barisnya tertinggal menunjuk lamaran yang
+            // sudah tidak ada. Tabel yang belum dibuat di basis data ini dilewati.
+            $ada = fn (string $t) => \App\Support\Career\Skema::adaTabel($t);
+            // Dicicil 500-an: SQL Server menolak lebih dari 2100 parameter, dan
+            // 500 kandidat × 7 tahap sudah 3500.
+            $tesIds = $tahapIds->chunk(500)->flatMap(fn ($b) => DB::table('N_WEB_CAREERS_Lamaran_Tahap_Tes')
+                ->whereIn('Lamaran_Tahap_Id', $b->all())->pluck('Id_Lamaran_Tahap_Tes'))->values();
+            if ($ada(\App\Support\Career\JejakJadwal::TABEL)) {
+                $hapus(\App\Support\Career\JejakJadwal::TABEL, 'Lamaran_Tahap_Tes_Id', $tesIds);
+            }
+            // Konfirmasi kehadiran: permintaan jadwal lain & snapshot CRM —
+            // SESUDAH jejak (jejak menunjuk permintaan), SEBELUM aktivitasnya.
+            foreach ([\App\Support\Career\KonfirmasiJadwal::T_MINTA, \App\Support\Career\KonfirmasiJadwal::T_CRM] as $tabel) {
+                if ($ada($tabel)) {
+                    $hapus($tabel, 'Lamaran_Tahap_Tes_Id', $tesIds);
+                }
+            }
+            foreach ([
+                ['N_WEB_CAREERS_Lamaran_Tes_Berkas', 'Lamaran_Id', $lamaranIds],
+                // Proyeksi jawaban formulir (karir:seed-konfirmasi menyalinnya
+                // dari lamaran sumber bersama formulir & berkasnya).
+                ['N_WEB_CAREERS_Formulir_Jawaban_Index', 'Lamaran_Id', $lamaranIds],
+                ['N_WEB_CAREERS_Lamaran_Tahap_Berkas', 'Lamaran_Id', $lamaranIds],
+                ['N_WEB_CAREERS_Lamaran_Keputusan_Jejak', 'Lamaran_Id', $lamaranIds],
+                ['N_WEB_CAREERS_Lamaran_Tahap_Hold', 'Lamaran_Id', $lamaranIds],
+                ['N_WEB_CAREERS_Lamaran_Tahap_Tes_Riwayat', 'Lamaran_Tahap_Id', $tahapIds],
+                ['N_WEB_CAREERS_Lamaran_Tahap_Riwayat', 'Lamaran_Id', $lamaranIds],
+                ['N_WEB_CAREERS_Lamaran_Ulang', 'Lamaran_Id', $lamaranIds],
+                ['N_WEB_CAREERS_Talent_Pool', 'Lamaran_Id', $lamaranIds],
+            ] as [$tabel, $kolom, $ids]) {
+                if ($ada($tabel)) {
+                    $hapus($tabel, $kolom, $ids);
+                }
+            }
             $hapus('N_WEB_CAREERS_Formulir_Berkas', 'Formulir_Pengisian_Id', $pengisianIds);
             $hapus('N_WEB_CAREERS_Formulir_Pengisian', 'Lamaran_Id', $lamaranIds);
             $hapus('N_WEB_CAREERS_Lamaran_Tahap_Tes', 'Lamaran_Tahap_Id', $tahapIds);

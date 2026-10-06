@@ -56,3 +56,5 @@ require base_path('routes/career/MasterPertanyaan/MasterPertanyaanWeb.php');
 require base_path('routes/career/PemulihanBerkas/PemulihanBerkasWeb.php');
 // Batas pengisian formulir tahap (tanggal kolom & perpanjangan kandidat).
 require base_path('routes/career/BatasIsi/BatasIsiWeb.php');
+// Agenda Seleksi — konfirmasi kehadiran, permintaan jadwal lain, pengingat manual.
+require base_path('routes/career/AgendaSeleksi/AgendaSeleksiWeb.php');

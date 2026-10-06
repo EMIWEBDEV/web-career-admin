@@ -30,5 +30,11 @@ class VerifyCsrfToken extends Middleware
         // [feat/landing-page] Master info divisi — dilindungi career.auth +
         // career.role + career.permission:masterInfoDivisiPage.
         'api/v1/master-info-divisi/*',
+        // Konfirmasi kehadiran kandidat — POST bertanda tangan (middleware
+        // `signed`): tanda tangan tautan adalah rahasianya; peramban dalam
+        // aplikasi surel kerap tanpa cookie sesi sehingga CSRF berujung 419.
+        'karir/konfirmasi/*/*/jawab',
+        'karir/konfirmasi/*/*/cabut',
+        'karir/konfirmasi/*/*/dibuka',
     ];
 }

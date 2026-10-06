@@ -40,6 +40,8 @@
                      yang ditegakkan server saat berkasnya diperiksa. -->
                 <p class="ld-upl__aturan">
                     Format {{ (u.format || []).join(', ').toUpperCase() }} &middot; maksimal {{ u.maksMb }} MB per berkas
+                    <!-- Batas unggah (MCU mandiri: akhir rentang pemeriksaan). -->
+                    <template v-if="u.batasTeks && !u.terkirim"> &middot; paling lambat <b>{{ u.batasTeks }}</b><template v-if="u.diperpanjang"> (diperpanjang)</template></template>
                 </p>
             </div>
         </div>
@@ -52,7 +54,7 @@
              menjatuhkan berkas ke sesuatu yang akan menolaknya; yang ia dapat
              cuma pesan galat atas perbuatan yang layarnya sendiri tawarkan. -->
         <label
-            v-if="!u.terkirim"
+            v-if="!u.terkirim && !u.tertutup"
             class="ld-upl__drop"
             :class="{ 'is-over': seretDi === u.key, 'is-busy': unggahDi === u.key }"
             @dragover.prevent="seretDi = u.key"
@@ -90,12 +92,20 @@
                 >
                     <i class="bi bi-lock-fill"></i>
                 </span>
+                <!-- Batas unggah lewat: yang sudah masuk dibekukan apa adanya
+                     (server menolak penghapusannya juga). -->
+                <span
+                    v-else-if="u.tertutup" class="ld-upl__kunci"
+                    title="Batas unggah sudah lewat — berkas ini tidak bisa dihapus lagi dan tetap terbaca tim."
+                >
+                    <i class="bi bi-lock-fill"></i>
+                </span>
                 <button v-else type="button" class="ld-upl__del" title="Hapus berkas" @click="$emit('hapus', b, u)">
                     <i class="bi bi-x-lg"></i>
                 </button>
             </div>
         </div>
-        <p v-else-if="u.wajib" class="ld-upl__kosong">
+        <p v-else-if="u.wajib && !u.tertutup" class="ld-upl__kosong">
             <i class="bi bi-exclamation-circle-fill"></i>
             Belum ada berkas — aktivitas ini belum bisa dianggap selesai.
         </p>
@@ -115,6 +125,20 @@
                             ditambah, diubah, atau dihapus lagi. Isinya tetap bisa kamu lihat
                             dengan mengklik nama berkas. Hubungi tim rekrutmen bila ada yang
                             perlu diperbaiki.
+                        </small>
+                    </span>
+                </span>
+            </template>
+            <!-- BATAS UNGGAH LEWAT — kotaknya ditutup; jalan keluarnya disebut. -->
+            <template v-else-if="u.tertutup">
+                <span class="ld-upl__tutup">
+                    <i class="bi bi-lock-fill"></i>
+                    <span>
+                        <b>Batas unggah sudah lewat — kotak unggah ditutup</b>
+                        <small>
+                            Batasnya {{ u.batasTeks || '—' }}.
+                            <template v-if="(berkas[u.key] || []).length">Berkas yang sudah kamu unggah tetap terbaca tim.</template>
+                            Hubungi tim rekrutmen bila kamu membutuhkan perpanjangan.
                         </small>
                     </span>
                 </span>
@@ -286,6 +310,12 @@ export default {
 .ld-upl__ok i { flex: 0 0 auto; margin-top: 1px; font-size: 16px; color: #059669; }
 .ld-upl__ok b { display: block; font-size: 13px; font-weight: 800; color: #065f46; }
 .ld-upl__ok small { display: block; margin-top: 3px; font-size: 11.5px; line-height: 1.55; color: #475569; }
+.ld-upl__aturan b { color: #b45309; font-weight: 800; }
+/* Kotak unggah tertutup — merah redup: keadaan final yang butuh tindakan tim. */
+.ld-upl__tutup { display: flex; align-items: flex-start; gap: 9px; padding: 11px 14px; border-radius: 13px; background: rgba(239, 68, 68, .07); border: 1px solid rgba(239, 68, 68, .24); width: 100%; }
+.ld-upl__tutup i { flex: 0 0 auto; margin-top: 1px; font-size: 15px; color: #dc2626; }
+.ld-upl__tutup b { display: block; font-size: 13px; font-weight: 800; color: #991b1b; }
+.ld-upl__tutup small { display: block; margin-top: 3px; font-size: 11.5px; line-height: 1.55; color: #475569; }
 
 @media (max-width: 520px) {
     .ld-upl__btn { width: 100%; justify-content: center; }

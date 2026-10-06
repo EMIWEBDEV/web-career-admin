@@ -185,6 +185,11 @@ class UlangTahap
                 DB::table(self::T_TES)
                     ->whereIn('Id_Lamaran_Tahap_Tes', $tesIds)
                     ->update(self::aktivitasBersih($nama, $adminId, $now));
+
+                // Undangan konfirmasi & permintaan jadwal lain putaran lalu
+                // selesai — jadwalnya barusan dilepas. Jadwal_Versi SENGAJA
+                // tidak dinolkan: tautan dari surel lama harus tetap mati.
+                KonfirmasiJadwal::tutupAktivitas($tesIds, 'DIULANG');
             }
 
             // Tahap tujuan kini BERJALAN lagi: batas pengisiannya dihitung ulang
@@ -381,6 +386,42 @@ class UlangTahap
             'Updated_At' => $now,
             'Updated_By' => $nama,
             'Updated_By_Id' => $adminId,
-        ];
+        ] + self::jadwalTambahanBersih();
+    }
+
+    /**
+     * Kolom jadwal 30-09-2026 (instruksi, tempat vendor, peta, surat pengantar)
+     * — ikut dilepas bila kolomnya sudah ada. Tanpa ini, surat pengantar
+     * percobaan sebelumnya terbawa diam-diam ke jadwal percobaan berikutnya.
+     */
+    private static function jadwalTambahanBersih(): array
+    {
+        $kolom = [];
+        if (UndanganJadwal::siapInstruksi()) {
+            $kolom['Jadwal_Catatan_Html'] = null;
+        }
+        if (UndanganJadwal::siapVendor()) {
+            $kolom += [
+                'Jadwal_Lokasi_Html' => null,
+                'Jadwal_Maps_Url' => null,
+                'Jadwal_Surat_Json' => null,
+            ];
+        }
+        if (UndanganJadwal::siapTampilBiaya()) {
+            $kolom['Jadwal_Tampil_Biaya'] = null;
+        }
+        if (Skema::adaKolom('N_WEB_CAREERS_Lamaran_Tahap_Tes', 'Jadwal_Kalimat_Biaya')) {
+            $kolom['Jadwal_Kalimat_Biaya'] = null;
+        }
+        if (UndanganJadwal::siapBatasUnggah()) {
+            $kolom['Jadwal_Batas_Unggah'] = null;
+        }
+        // Jawaban konfirmasi ikut dilepas; Jadwal_Versi TIDAK (lihat
+        // KonfirmasiJadwal — versi tidak pernah mundur).
+        if (Skema::adaKolom('N_WEB_CAREERS_Lamaran_Tahap_Tes', 'Konfirmasi_Status')) {
+            $kolom['Konfirmasi_Status'] = null;
+        }
+
+        return $kolom;
     }
 }

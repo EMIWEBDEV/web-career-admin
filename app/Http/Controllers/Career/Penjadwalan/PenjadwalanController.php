@@ -202,6 +202,28 @@ class PenjadwalanController extends Controller
      * yang sedang ia perbaiki. Selama kolomnya belum ada, jalur cadangan
      * (Tes_Urutan) yang dipakai, persis seperti sebelumnya.
      */
+    /**
+     * Jendela tes yang sudah lewat (masukan user 2 Okt 2026): waktu berakhir
+     * yang sudah lewat tidak bisa dikerjakan siapa pun, dan sesi tidak boleh
+     * dimulai di HARI yang sudah lewat. Jendela yang sedang berjalan dan waktu
+     * mulainya tidak diubah (`$mulaiLama`) tetap boleh disunting — mis.
+     * memperpanjang waktu berakhirnya. Cermin kalender & peringatan di
+     * penjadwalan.vue (sebelumHari, jendelaLewat, editLewat).
+     */
+    private static function galatJendelaLampau(string $mulai, string $akhir, ?string $mulaiLama = null): ?string
+    {
+        $m = \Illuminate\Support\Carbon::parse($mulai);
+        if (\Illuminate\Support\Carbon::parse($akhir)->lte(now())) {
+            return 'Waktu berakhir sudah lewat — pilih waktu berakhir yang akan datang.';
+        }
+        $tetap = $mulaiLama && \Illuminate\Support\Carbon::parse($mulaiLama)->format('Y-m-d H:i') === $m->format('Y-m-d H:i');
+        if (! $tetap && $m->lt(now()->startOfDay())) {
+            return 'Waktu mulai tidak boleh di hari yang sudah lewat.';
+        }
+
+        return null;
+    }
+
     private static function punyaKolomIdentitasTes(): bool
     {
         static $ada = null;
@@ -1246,6 +1268,10 @@ class PenjadwalanController extends Controller
                 'waktuAkhir.after' => 'Waktu berakhir harus setelah waktu mulai.',
             ]);
 
+            if ($galat = self::galatJendelaLampau($data['waktuMulai'], $data['waktuAkhir'])) {
+                return ResponseHelper::error($galat, 422);
+            }
+
             $program = DB::table('N_WEB_CAREERS_Program')->where('Id_Program', $data['programId'])->first();
             if (! $program) {
                 return ResponseHelper::error('Program tidak ditemukan.', 422);
@@ -2268,6 +2294,10 @@ class PenjadwalanController extends Controller
                 'waktuAkhir.after' => 'Waktu berakhir harus setelah waktu mulai.',
             ]);
 
+            if ($galat = self::galatJendelaLampau($data['waktuMulai'], $data['waktuAkhir'], $peserta->Waktu_Mulai ?? null)) {
+                return ResponseHelper::error($galat, 422);
+            }
+
             $terkunci = in_array($peserta->Status_Pengerjaan, ['mengerjakan', 'selesai', 'timeout'], true)
                 || $peserta->Flag_Selesai === 'Y';
             if ($terkunci) {
@@ -2360,6 +2390,9 @@ class PenjadwalanController extends Controller
                 ->first();
             if (! $tahap) {
                 return ResponseHelper::error('Tahap tes terjadwal tidak ditemukan.', 404);
+            }
+            if ($galat = self::galatJendelaLampau($data['waktuMulai'], $data['waktuAkhir'], $tahap->Waktu_Mulai ?? null)) {
+                return ResponseHelper::error($galat, 422);
             }
 
             $pesertaRows = DB::table('N_WEB_CAREERS_Penjadwalan_Peserta')

@@ -160,10 +160,19 @@ export default {
          * "Tulis penjelasan…" dan kalimat penilai saling menimpa di baris
          * yang sama.
          *
-         * `dangerouslyPasteHTML` melewati model, jadi ql-blank ikut benar.
-         * Mode 'silent' dipakai supaya ia tidak memancing text-change —
-         * kalau tidak, memuat nilai dari server langsung dihitung sebagai
-         * "diketik orang" dan memancarkan update:modelValue kembali.
+         * HTML diubah ke Delta lalu dipasang lewat `setContents` — lewat
+         * model, jadi ql-blank ikut benar. Mode 'silent' dipakai supaya ia
+         * tidak memancing text-change — kalau tidak, memuat nilai dari server
+         * langsung dihitung sebagai "diketik orang" dan memancarkan
+         * update:modelValue kembali.
+         *
+         * SENGAJA BUKAN `dangerouslyPasteHTML(html)`: bentuk itu menutup
+         * dengan `setSelection(0)` yang MEREBUT FOKUS ke editor. Editor yang
+         * dipasang berisi di dalam jendela (catatan cabang vendor, catatan
+         * penilaian) lalu memegang kursor di simpul yang sesaat kemudian
+         * dipindah jendelanya — dan setiap `selectionchange` sesudahnya
+         * membuat Quill melempar "Cannot read properties of null (reading
+         * 'offset')".
          */
         pasangIsi(html) {
             if (! this.quill) {
@@ -171,7 +180,7 @@ export default {
             }
 
             if (html) {
-                this.quill.clipboard.dangerouslyPasteHTML(html, 'silent');
+                this.quill.setContents(this.quill.clipboard.convert({ html, text: '' }), 'silent');
             } else {
                 this.quill.setText('', 'silent');
             }

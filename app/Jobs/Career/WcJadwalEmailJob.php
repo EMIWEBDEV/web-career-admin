@@ -54,7 +54,13 @@ class WcJadwalEmailJob implements ShouldQueue
     {
         $this->userId = $userId;
         $this->data = $data;
-        $this->kunci = 'jadwal:'.$userId.':'.Str::random(16);
+        $awalan = match (true) {
+            ! empty($data['pengingat']) => 'ingat:',
+            ! empty($data['kirim_ulang']) => 'ulang:',
+            ! empty($data['perpanjang']) => 'panjang:',
+            default => 'jadwal:',
+        };
+        $this->kunci = $awalan.$userId.':'.Str::random(16);
 
         $this->aturAntrean(self::QUEUE);
     }
@@ -87,7 +93,12 @@ class WcJadwalEmailJob implements ShouldQueue
                     // Agustus 2026 · 09.00 – 10.30 WIB" menuntut nama hari
                     // berbahasa Indonesia dan zona waktu yang benar, dan
                     // keduanya milik layanan yang menyimpan jadwalnya.
-                    'waktu_teks' => $this->susunWaktu($this->data['mulai'] ?? null, $this->data['selesai'] ?? null),
+                    //
+                    // Mode BERRENTANG TANGGAL (MCU vendor / mandiri) tidak
+                    // punya jam janji temu — yang dijanjikan rentangnya.
+                    'waktu_teks' => ! empty($this->data['batas_waktu'])
+                        ? ($this->data['rentang_teks'] ?? ('Paling lambat '.($this->data['batas_teks'] ?? '—')))
+                        : $this->susunWaktu($this->data['mulai'] ?? null, $this->data['selesai'] ?? null),
                     'daring' => strtoupper((string) ($this->data['mode'] ?? '')) === 'DARING',
                 ],
                 kunciIdempotensi: $this->kunci,
