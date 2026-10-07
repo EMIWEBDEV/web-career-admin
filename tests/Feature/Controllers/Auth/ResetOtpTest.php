@@ -13,13 +13,12 @@ use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 /**
- * WEB CAREER — Reset kata sandi via OTP.
+ * WEB CAREER — Reset kata sandi panel admin via OTP (hanya akun STAF).
  *
- * Mengikuti house-style HomepageControllerTest: SQLite in-memory yang dibuat di
- * setUp(), user dibangun manual (tabel N_WEB_CAREERS_Users dikelola eksternal
- * sehingga UserFactory tidak dipakai). CSRF dimatikan tapi StartSession tetap
- * jalan (controller memakai $request->session()). Job di-fake — dispatch cukup
- * diverifikasi tanpa menjalankan handle().
+ * SQLite in-memory yang dibuat di setUp(), user dibangun manual (tabel
+ * N_WEB_CAREERS_Users dikelola eksternal). CSRF dimatikan tapi StartSession
+ * tetap jalan (controller memakai $request->session()). Job di-fake — dispatch
+ * cukup diverifikasi tanpa menjalankan handle().
  */
 class ResetOtpTest extends TestCase
 {
@@ -44,6 +43,7 @@ class ResetOtpTest extends TestCase
             $table->string('Nama')->nullable();
             $table->string('Email')->nullable();
             $table->string('Password')->nullable();
+            $table->string('Role')->nullable();
             $table->string('Status')->nullable();
             $table->string('Flag_Email_Verified')->nullable();
             $table->dateTime('Valid_Until')->nullable();
@@ -81,13 +81,14 @@ class ResetOtpTest extends TestCase
         parent::tearDown();
     }
 
-    /** Buat satu user aktif + terverifikasi. */
+    /** Buat satu akun STAF aktif + terverifikasi. */
     private function buatUser(array $overrides = []): int
     {
         return DB::table('N_WEB_CAREERS_Users')->insertGetId(array_merge([
-            'Nama' => 'Kandidat Uji',
-            'Email' => 'kandidat@contoh.test',
+            'Nama' => 'Staf Uji',
+            'Email' => 'staf@contoh.test',
             'Password' => Hash::make('oldpass'),
+            'Role' => 'ADMIN',
             'Status' => 'AKTIF',
             'Flag_Email_Verified' => 'Y',
         ], $overrides), 'Id_Users');
@@ -114,7 +115,7 @@ class ResetOtpTest extends TestCase
         $this->setOtp('123456', Carbon::now()->subMinute());
 
         $res = $this->postJson('/api/v1/ganti-sandi', [
-            'email' => 'kandidat@contoh.test',
+            'email' => 'staf@contoh.test',
             'otp' => '123456',
             'password' => 'newpass123',
         ]);
@@ -132,7 +133,7 @@ class ResetOtpTest extends TestCase
         // Dua percobaan pertama → OTP_INVALID.
         for ($i = 1; $i <= 2; $i++) {
             $this->postJson('/api/v1/ganti-sandi', [
-                'email' => 'kandidat@contoh.test',
+                'email' => 'staf@contoh.test',
                 'otp' => '000000',
                 'password' => 'newpass123',
             ])->assertStatus(422)->assertJsonPath('code', 'OTP_INVALID');
@@ -140,7 +141,7 @@ class ResetOtpTest extends TestCase
 
         // Percobaan ke-3 → terkunci & OTP dihanguskan.
         $this->postJson('/api/v1/ganti-sandi', [
-            'email' => 'kandidat@contoh.test',
+            'email' => 'staf@contoh.test',
             'otp' => '000000',
             'password' => 'newpass123',
         ])->assertStatus(429)->assertJsonPath('code', 'OTP_LOCKED');
@@ -158,14 +159,14 @@ class ResetOtpTest extends TestCase
 
         // Pemakaian pertama → sukses.
         $this->postJson('/api/v1/ganti-sandi', [
-            'email' => 'kandidat@contoh.test',
+            'email' => 'staf@contoh.test',
             'otp' => '123456',
             'password' => 'newpass123',
         ])->assertOk();
 
         // Pemakaian kedua dengan OTP sama → ditolak, kata sandi tetap yang baru.
         $this->postJson('/api/v1/ganti-sandi', [
-            'email' => 'kandidat@contoh.test',
+            'email' => 'staf@contoh.test',
             'otp' => '123456',
             'password' => 'passlain456',
         ])->assertStatus(422)->assertJsonPath('code', 'OTP_INVALID');
@@ -179,7 +180,7 @@ class ResetOtpTest extends TestCase
         $this->setOtp('123456');
 
         $this->postJson('/api/v1/ganti-sandi', [
-            'email' => 'kandidat@contoh.test',
+            'email' => 'staf@contoh.test',
             'otp' => '123456',
             'password' => 'newpass123',
         ])->assertOk();
@@ -197,7 +198,7 @@ class ResetOtpTest extends TestCase
     public function test_minta_otp_tidak_membocorkan_keberadaan_email(): void
     {
         $takTerdaftar = $this->postJson('/api/v1/lupa-sandi', ['email' => 'entah@contoh.test']);
-        $terdaftar = $this->postJson('/api/v1/lupa-sandi', ['email' => 'kandidat@contoh.test']);
+        $terdaftar = $this->postJson('/api/v1/lupa-sandi', ['email' => 'staf@contoh.test']);
 
         // Status + pesan identik → tidak membedakan email terdaftar/tidak.
         $this->assertSame($takTerdaftar->getStatusCode(), $terdaftar->getStatusCode());
@@ -218,7 +219,7 @@ class ResetOtpTest extends TestCase
         $this->setOtp('123456');
 
         $this->postJson('/api/v1/verifikasi-otp', [
-            'email' => 'kandidat@contoh.test',
+            'email' => 'staf@contoh.test',
             'otp' => '000000',
         ])->assertStatus(422)->assertJsonPath('code', 'OTP_INVALID');
 
@@ -234,7 +235,7 @@ class ResetOtpTest extends TestCase
 
         // Langkah cek OTP dulu → sukses, password belum berubah, OTP masih ada.
         $this->postJson('/api/v1/verifikasi-otp', [
-            'email' => 'kandidat@contoh.test',
+            'email' => 'staf@contoh.test',
             'otp' => '123456',
         ])->assertOk();
 
@@ -245,7 +246,7 @@ class ResetOtpTest extends TestCase
 
         // Langkah simpan password → sukses, OTP baru dikonsumsi di sini.
         $this->postJson('/api/v1/ganti-sandi', [
-            'email' => 'kandidat@contoh.test',
+            'email' => 'staf@contoh.test',
             'otp' => '123456',
             'password' => 'newpass123',
         ])->assertOk();
@@ -259,7 +260,7 @@ class ResetOtpTest extends TestCase
         $this->setOtp('123456'); // OTP masih hidup
         DB::table('N_WEB_CAREERS_Users')->where('Id_Users', $this->userId)->update(['Reset_Otp_Sent_At' => now()]);
 
-        $this->postJson('/api/v1/lupa-sandi', ['email' => 'kandidat@contoh.test'])->assertOk();
+        $this->postJson('/api/v1/lupa-sandi', ['email' => 'staf@contoh.test'])->assertOk();
 
         Bus::assertNotDispatched(WcSyncEmailJob::class); // cooldown → tidak kirim
         $this->assertDatabaseHas('N_WEB_CAREERS_Reset_Audit', ['Event' => 'REQUEST', 'Keterangan' => 'cooldown']);
@@ -275,10 +276,24 @@ class ResetOtpTest extends TestCase
             'Reset_Otp_Sent_At' => now(),
         ]);
 
-        $this->postJson('/api/v1/lupa-sandi', ['email' => 'kandidat@contoh.test'])->assertOk();
+        $this->postJson('/api/v1/lupa-sandi', ['email' => 'staf@contoh.test'])->assertOk();
 
         Bus::assertDispatched(WcSyncEmailJob::class); // tidak kena cooldown → kirim
         $row = DB::table('N_WEB_CAREERS_Users')->where('Id_Users', $this->userId)->first();
         $this->assertNotNull($row->Reset_Otp_Hash, 'OTP baru harus dibuat.');
+    }
+
+    /** Panel admin hanya me-reset sandi STAF — akun kandidat tidak pernah mendapat OTP di sini. */
+    public function test_akun_kandidat_tidak_mendapat_otp(): void
+    {
+        $this->buatUser(['Email' => 'calon@contoh.test', 'Role' => 'KANDIDAT']);
+
+        $kandidat = $this->postJson('/api/v1/lupa-sandi', ['email' => 'calon@contoh.test']);
+        $tak = $this->postJson('/api/v1/lupa-sandi', ['email' => 'entah@contoh.test']);
+
+        $kandidat->assertOk();
+        $this->assertSame($tak->json('message'), $kandidat->json('message'), 'respons tetap generik');
+        Bus::assertNotDispatched(WcSyncEmailJob::class);
+        $this->assertDatabaseHas('N_WEB_CAREERS_Reset_Audit', ['Email' => 'calon@contoh.test', 'Keterangan' => 'tidak memenuhi syarat']);
     }
 }

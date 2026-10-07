@@ -6,6 +6,7 @@ use App\Jobs\Career\Concerns\AntreanWebCareers;
 use App\Jobs\Career\Concerns\CatatGagalWebCareers;
 use App\Support\Career\GcsBerkas;
 use App\Support\Career\LamaranService;
+use App\Support\Career\TerimaLamaran;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -92,47 +93,11 @@ class WcApplyFormJob implements ShouldQueue, ShouldBeUnique
                 }
                 $lamaranId = $hasil['lamaranId'];
 
-                // Berkas ditautkan ke pengisian formulir PENDAFTARAN (tahap 1).
-                $pengisian = DB::table('N_WEB_CAREERS_Formulir_Pengisian')
-                    ->where('Lamaran_Id', $lamaranId)
-                    ->where('Sumber', 'PENDAFTARAN')
-                    ->orderBy('Id_Formulir_Pengisian')
-                    ->first();
-
-                // Ada berkas tapi tak ada pengisian untuk ditempeli: dulu berkasnya
-                // dilewati diam-diam lalu Berkas_Json dikosongkan — lamaran jadi
-                // tercatat tanpa satu berkas pun dan jejak path-nya ikut lenyap.
-                // Sekarang dibatalkan: lebih baik gagal & terlihat daripada tuntas
-                // tapi kehilangan CV.
-                if ($berkasSiap && ! $pengisian) {
-                    throw new \RuntimeException('Pengisian pendaftaran tidak terbentuk — berkas lamaran tidak bisa ditautkan.');
-                }
-
-                if ($berkasSiap) {
-                    $now = now();
-                    foreach ($berkasSiap as $i => $b) {
-                        DB::table('N_WEB_CAREERS_Formulir_Berkas')->insert([
-                            'Formulir_Pengisian_Id' => $pengisian->Id_Formulir_Pengisian,
-                            'Id_Users' => (int) $payload['userId'],
-                            'Field_Key' => $b['field'],
-                            // Posisi baris bagian berulang — tanpa ini worklist tak
-                            // bisa memasangkan sertifikat ke barisnya sendiri.
-                            'Bagian_Key' => $b['bagian'] ?? null,
-                            'Baris_Index' => $b['baris'] ?? null,
-                            'Urutan' => $i + 1,
-                            'Nama_Asli' => $b['nama'],
-                            'Path_File' => $b['path'],
-                            'Ukuran_Byte' => $b['ukuran'],
-                            'Mime' => $b['mime'],
-                            'Ekstensi' => $b['ext'],
-                            'Hash_File' => $b['hash'],
-                            'Status_Verifikasi' => 'BELUM',
-                            'Waktu_Unggah' => $now,
-                            'Created_At' => $now, 'Created_By' => $row->Nama_Kandidat, 'Created_By_Id' => (int) $payload['userId'],
-                            'Updated_At' => $now, 'Updated_By' => $row->Nama_Kandidat, 'Updated_By_Id' => (int) $payload['userId'],
-                        ]);
-                    }
-                }
+                // Berkas ditautkan ke pengisian formulir PENDAFTARAN (tahap 1) —
+                // aturan yang sama dengan peristiwa Lamaran.Dikirim dari situs
+                // kandidat. Tanpa pengisian untuk ditempeli → galat (lebih baik
+                // gagal & terlihat daripada tuntas tapi kehilangan CV).
+                TerimaLamaran::simpanBerkasPendaftaran($lamaranId, (int) $payload['userId'], $berkasSiap, $row->Nama_Kandidat);
 
                 // SELESAI ditulis DI DALAM transaksi yang sama. Kalau ditulis
                 // sesudahnya lalu gagal, lamarannya sudah ada tetapi payload-nya
@@ -216,67 +181,9 @@ class WcApplyFormJob implements ShouldQueue, ShouldBeUnique
         }
     }
 
-    /**
-     * Tentukan hasil lamaran & antrekan email ke kandidat (queue wc-applymail).
-     * Status:
-     *   GUGUR    = lamaran auto-gugur (Status lamaran GUGUR).
-     *   LOLOS    = lolos syarat otomatis (tahap 1 = LULUS).
-     *   MENUNGGU = tanpa syarat / menunggu keputusan admin (tahap 1 masih BERJALAN).
-     * Dibungkus try: kegagalan email tidak boleh menggagalkan proses apply.
-     */
+    /** Surel hasil lamaran — lihat TerimaLamaran::kirimEmailHasil(). */
     protected function kirimEmailHasil(int $lamaranId, int $userId): void
     {
-        try {
-            $lam = DB::table('N_WEB_CAREERS_Lamaran as l')
-                ->leftJoin('N_WEB_CAREERS_Program_Posisi as pos', 'pos.Id_Program_Posisi', '=', 'l.Program_Posisi_Id')
-                ->leftJoin('N_WEB_CAREERS_Program as pr', 'pr.Id_Program', '=', 'l.Program_Id')
-                ->where('l.Id_Lamaran', $lamaranId)
-                ->select('l.Kode', 'l.Status', 'l.Total_Tahap', 'pos.Posisi as posisi', 'pr.Nama as program')
-                ->first();
-
-            if (! $lam) {
-                return;
-            }
-
-            $extra = ['kode' => $lam->Kode, 'posisi' => $lam->posisi, 'program' => $lam->program];
-
-            // Data kartu kandidat untuk email (tanggal lahir, kampus, PATH foto).
-            // Pengambilannya dipakai bersama dengan email keputusan tahap —
-            // lihat LamaranService::dataKandidatEmail().
-            $extra += \App\Support\Career\LamaranService::dataKandidatEmail($lamaranId);
-
-            if ($lam->Status === 'GUGUR') {
-                $status = 'GUGUR';
-            } else {
-                // Tahap TERAKHIR yang sudah diputus LULUS. CATATAN penting: saat lolos,
-                // tahap di-set Status='SELESAI' + Hasil='LULUS' (BUKAN Status='LULUS').
-                // Jadi deteksi lolos memakai kolom Hasil, bukan Status. Reusable untuk
-                // tahap mana pun (administrasi, psikotes, wawancara, dst.).
-                $lolos = DB::table('N_WEB_CAREERS_Lamaran_Tahap')
-                    ->where('Lamaran_Id', $lamaranId)->where('Hasil', 'LULUS')
-                    ->orderByDesc('Urutan')->first();
-
-                if ($lolos) {
-                    $status = 'LOLOS';
-                    $extra['tahapLolos'] = $lolos->Label;
-                    $extra['urutan'] = (int) $lolos->Urutan;
-                    $extra['total'] = (int) ($lam->Total_Tahap ?? 0);
-                    // Tahap berikutnya (null bila ini tahap terakhir → berarti DITERIMA).
-                    $extra['tahapBerikut'] = DB::table('N_WEB_CAREERS_Lamaran_Tahap')
-                        ->where('Lamaran_Id', $lamaranId)->where('Urutan', '>', $lolos->Urutan)
-                        ->orderBy('Urutan')->value('Label');
-                    $extra['diterima'] = $lam->Status === 'LULUS';
-                } else {
-                    // Belum ada keputusan otomatis (tahap 1 masih BERJALAN) → menunggu admin.
-                    $status = 'MENUNGGU';
-                }
-            }
-
-            WcApplyEmailJob::dispatch($userId, $status, $extra);
-
-            Log::info("[APPLY] email hasil '{$status}' di-antre user #{$userId} lamaran #{$lamaranId} (queue " . WcApplyEmailJob::QUEUE . ').');
-        } catch (\Throwable $e) {
-            Log::error("[APPLY] gagal antre email hasil lamaran #{$lamaranId}: " . $e->getMessage());
-        }
+        TerimaLamaran::kirimEmailHasil($lamaranId, $userId);
     }
 }

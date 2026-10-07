@@ -15,7 +15,7 @@ use PHPUnit\Framework\TestCase;
  */
 class KatalogFieldSinkronTest extends TestCase
 {
-    private const JS = __DIR__ . '/../../resources/js/components/career/formulir/inti/katalogField.js';
+    private const JS = __DIR__ . '/../../resources/js/utils/formulir/katalogField.js';
 
     public function test_daftar_tipe_sama_dengan_katalog_js(): void
     {

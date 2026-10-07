@@ -3,7 +3,6 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Career\MasterFeedback\MasterFeedbackController;
 use App\Http\Controllers\Career\FeedbackAssignment\FeedbackAssignmentController;
-use App\Http\Controllers\Career\Feedback\FeedbackController;
 use App\Http\Controllers\Career\Feedback\FeedbackAdminController;
 
 /*
@@ -13,8 +12,9 @@ use App\Http\Controllers\Career\Feedback\FeedbackAdminController;
 | 1. Master Feedback Form + Pertanyaan (CRUD)          → admin
 | 2. Assignment form ke program (specific/general)     → admin
 | 3. Dashboard agregat + export                        → admin
-| 4. Halaman isi feedback (token-based, tanpa login)   → publik
-| 5. Cek status feedback per lamaran                   → kandidat (auth)
+|
+| Halaman isi feedback untuk kandidat ada di situs kandidat (project
+| web-careers-pengguna); tautannya dibuat App\Support\Sinkron\TautanPengguna.
 */
 
 // ── Master Feedback Form + Pertanyaan (admin) ──
@@ -79,38 +79,18 @@ Route::middleware(['career.auth', 'career.role:ADMIN,SUPERADMIN'])->group(functi
         });
 });
 
-// ── Halaman isi feedback (PUBLIK — token-based, tanpa login) ──
-Route::get('/feedback/{hashids}/{signature}', [FeedbackController::class, 'show'])
-    ->name('career.feedback.form');
-
-Route::post('/feedback/{hashids}/{signature}', [FeedbackController::class, 'submit'])
-    ->name('career.feedback.submit')
-    ->middleware('throttle:3,10'); // max 3 submit per 10 menit
-
-// ── Master Info Divisi (admin) — konten landing page divisi/sub-divisi ──
+// ── Master Info Divisi (admin) — konten divisi/sub-divisi situs kandidat ──
 Route::middleware(['career.auth', 'career.role:ADMIN,SUPERADMIN'])->group(function () {
     require base_path('routes/career/MasterDivisiInfo/MasterDivisiInfoWeb.php');
+
+    // Gambar divisi/sub-divisi — pratinjau di Master Info Divisi.
+    Route::get('/karir/tim-img/{jenis}/{id}/{slot}', [\App\Http\Controllers\Career\MasterDivisiInfo\MasterDivisiInfoController::class, 'gambar'])
+        ->where(['jenis' => 'divisi|sub', 'slot' => 'header|utama|img2|img3'])
+        ->name('career.tim.img');
 });
 require base_path('routes/career/MasterDivisiInfo/MasterDivisiInfoApi.php');
 
-// ── Gambar divisi/sub-divisi (PUBLIK — dipakai landing page & preview admin) ──
-Route::get('/karir/tim-img/{jenis}/{id}/{slot}', [\App\Http\Controllers\Career\MasterDivisiInfo\MasterDivisiInfoController::class, 'gambarPublik'])
-    ->where(['jenis' => 'divisi|sub', 'slot' => 'header|utama|img2|img3'])
-    ->name('career.tim.img');
-
-// ── Master FAQ (admin) — konten accordion landing + halaman /karir/faq ──
+// ── Master FAQ (admin) — konten FAQ situs kandidat ──
 Route::middleware(['career.auth', 'career.role:ADMIN,SUPERADMIN'])->group(function () {
     require base_path('routes/career/MasterFaq/MasterFaqWeb.php');
 });
-
-// ── FAQ (PUBLIK — halaman baca selengkapnya + penghitung dilihat/membantu) ──
-require base_path('routes/career/MasterFaq/MasterFaqPublik.php');
-
-// ── Cek status feedback (kandidat auth) ──
-Route::middleware('career.auth')
-    ->prefix('api/v1/kandidat/feedback')
-    ->name('career.api.kandidat.feedback.')
-    ->group(function () {
-        Route::get('/status/{lamaranId}', [FeedbackController::class, 'status'])
-            ->name('status');
-    });

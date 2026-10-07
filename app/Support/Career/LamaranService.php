@@ -391,7 +391,13 @@ class LamaranService
      *                                    Lamaran TETAP tercatat agar muncul di "Lamaran Saya" berstatus Gugur.
      * @return array{ok:bool, pesan:string, lamaranId?:int}
      */
-    public function buatLamaran(int $userId, int $pembukaanId, int $posisiId, ?int $userAdminId = null, ?string $gugurAlasan = null, ?array $jawaban = null): array
+    /**
+     * @param  string|null  $kode  kode lamaran yang SUDAH dipakai situs kandidat
+     *                             (peristiwa Lamaran.Dikirim) — kode yang sama
+     *                             di kedua zona; null = dibuat di sini
+     * @param  string|null  $nama  nama pencatat (Created_By); null = dari sesi
+     */
+    public function buatLamaran(int $userId, int $pembukaanId, int $posisiId, ?int $userAdminId = null, ?string $gugurAlasan = null, ?array $jawaban = null, ?string $kode = null, ?string $nama = null): array
     {
         // Validasi dipisah agar controller dan job memakai aturan yang sama tanpa
         // terus menambah ukuran LamaranService yang sudah menjadi hot spot konflik.
@@ -433,9 +439,9 @@ class LamaranService
                 ->get()
             : collect();
 
-        $kode = 'LMR-'.strtoupper(Str::random(8));
+        $kode ??= 'LMR-'.strtoupper(Str::random(8));
         $now = now();
-        $nama = session('career_auth.nama', 'KANDIDAT');
+        $nama ??= session('career_auth.nama', 'KANDIDAT');
 
         $tahapPertama = $tahap->values()->first();
         $labelTahap1 = $tahapPertama->Label ?? 'Seleksi Administrasi';
@@ -593,7 +599,7 @@ class LamaranService
                 ->first();
 
             if ($stage1 && $stage1->Status === 'BERJALAN') {
-                $hasilIsi = $this->simpanPengisian($stage1->Id_Lamaran_Tahap, $userId, $jawaban);
+                $hasilIsi = $this->simpanPengisian($stage1->Id_Lamaran_Tahap, $userId, $jawaban, null, $nama);
 
                 $stage1Kini = DB::table('N_WEB_CAREERS_Lamaran_Tahap')
                     ->where('Id_Lamaran_Tahap', $stage1->Id_Lamaran_Tahap)->first();
@@ -628,7 +634,7 @@ class LamaranService
      * @param  array  $jawaban  isi Jawaban_Json (key => nilai)
      * @return array{ok:bool, pesan:string, rekomendasi?:string}
      */
-    public function simpanPengisian(int $lamaranTahapId, int $userId, array $jawaban, ?string $ip = null): array
+    public function simpanPengisian(int $lamaranTahapId, int $userId, array $jawaban, ?string $ip = null, ?string $nama = null): array
     {
         $tahap = DB::table('N_WEB_CAREERS_Lamaran_Tahap')->where('Id_Lamaran_Tahap', $lamaranTahapId)->first();
         if (! $tahap) {
@@ -658,7 +664,7 @@ class LamaranService
             ? FormulirSchema::byKodeDanVersi($tahap->Formulir_Kode, $tahap->Formulir_Versi ?? null)
             : FormulirSchema::pendaftaranUntukKategori((string) ($lamaran->Kategori ?? ''));
         $now = now();
-        $nama = session('career_auth.nama', 'KANDIDAT');
+        $nama ??= session('career_auth.nama', 'KANDIDAT');
 
         // Field turunan (usia dari tanggal lahir, jenjang gabungan) — dihitung
         // sistem, lalu digabung ke jawaban untuk dinilai & diproyeksikan.

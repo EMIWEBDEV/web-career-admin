@@ -2,15 +2,14 @@
 
 namespace App\Support\Career;
 
+use App\Support\Sinkron\TautanPengguna;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\HeaderUtils;
-use Vinkla\Hashids\Facades\Hashids;
 
 /**
  * WEB CAREERS — SURAT PENGANTAR JADWAL (mis. surat pengantar MCU).
@@ -188,7 +187,8 @@ final class SuratJadwal
     }
 
     /**
-     * Tautan satu surat untuk SUREL — bertanda tangan, tanpa login.
+     * Tautan satu surat untuk SUREL — bertanda tangan, tanpa login, di SITUS
+     * KANDIDAT (project pengguna).
      *
      * Surel dibuka di aplikasi surat yang tidak membawa sesi portal; tautan ke
      * rute berlogin akan selalu mendarat di halaman masuk. Umurnya mengikuti
@@ -205,11 +205,7 @@ final class SuratJadwal
         }
         $maks = now()->addDays(180);
 
-        return URL::temporarySignedRoute(
-            'career.surat.jadwal',
-            $akhir->gt($maks) ? $maks : $akhir,
-            ['id' => Hashids::encode($subTesId), 'urutan' => $urutan],
-        );
+        return TautanPengguna::suratJadwal($subTesId, $urutan, $akhir->gt($maks) ? $maks : $akhir);
     }
 
     /** Path surat urutan ke-N sebuah jadwal; null bila tak ada. */

@@ -4,11 +4,11 @@ namespace App\Support\Career;
 
 use App\Http\Controllers\Career\Lamaran\LamaranController;
 use App\Jobs\Career\WcKonfirmasiEmailJob;
+use App\Support\Sinkron\TautanPengguna;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\URL;
 use Vinkla\Hashids\Facades\Hashids;
 
 /**
@@ -2110,16 +2110,13 @@ final class KonfirmasiJadwal
     }
 
     /**
-     * Tautan bertanda tangan untuk satu versi. `$rute` = halaman | jawab |
-     * cabut | dibuka.
+     * Tautan bertanda tangan ke halaman konfirmasi satu versi — di SITUS
+     * KANDIDAT (project pengguna); halaman itu sendiri yang membuat tautan
+     * jawab/cabut-nya.
      */
-    public static function tautan(int $subTesId, int $versi, ?string $mulai, string $rute = 'halaman'): string
+    public static function tautan(int $subTesId, int $versi, ?string $mulai, ?string $kode = null): string
     {
-        return URL::temporarySignedRoute(
-            'career.konfirmasi.'.$rute,
-            self::kedaluwarsa($mulai),
-            ['id' => Hashids::encode($subTesId), 'versi' => $versi],
-        );
+        return TautanPengguna::konfirmasi($subTesId, $versi, self::kedaluwarsa($mulai), $kode);
     }
 
     // ════════════════════════════════════════════════════════════════════════
@@ -2328,66 +2325,6 @@ final class KonfirmasiJadwal
             ],
             'ubah' => self::bentukUbah(self::aturanUbahUntuk($sub)),
             'url' => $url,
-        ];
-    }
-
-    /**
-     * Konfirmasi untuk PORTAL KANDIDAT — null bila aktivitas ini tidak meminta
-     * konfirmasi. Satu kueri per aktivitas: portal memuat segelintir saja.
-     */
-    public static function untukKandidat(object $s): ?array
-    {
-        if (! self::siap() || empty($s->Konfirmasi_Status)) {
-            return null;
-        }
-
-        $id = (int) $s->Id_Lamaran_Tahap_Tes;
-
-        // DITUNDA — kandidat wajib tahu: alasannya, perkiraan jadwal pengganti
-        // (atau "akan dikabarkan"), pesan tim. Tidak ada yang perlu dijawab.
-        if ($s->Konfirmasi_Status === self::DITUNDA) {
-            if (! empty($s->Jadwal_Mulai)) {
-                return null;
-            }
-            $def = self::master()->get(self::DITUNDA);
-
-            return [
-                'status' => self::DITUNDA,
-                'kalimat' => $def->Kalimat_Kandidat ?? 'Jadwal ini ditunda. Jadwal pengganti akan kami kabarkan.',
-                'warna' => $def->Warna ?? '#7c3aed',
-                'ikon' => $def->Ikon ?? 'bi-pause-circle-fill',
-                'bolehJawab' => false,
-                'tunda' => self::tundaUntukKandidat(self::infoTunda($id)),
-            ];
-        }
-        if (empty($s->Jadwal_Mulai)) {
-            return null;
-        }
-
-        // Konteks lengkap (status lamaran, tipe, kandidat) untuk bahan jawab —
-        // satu kueri per aktivitas: portal memuat segelintir saja.
-        $sub = self::konteks($id);
-        if (! $sub) {
-            return null;
-        }
-        $versi = (int) ($sub->Jadwal_Versi ?? 0);
-        $hash = Hashids::encode($id);
-        $bahan = self::bahanJawab($sub, $versi, [
-            'jawab' => route('career.portal.konfirmasi.jawab', ['id' => $hash, 'versi' => $versi], false),
-            'cabut' => route('career.portal.konfirmasi.cabut', ['id' => $hash, 'versi' => $versi], false),
-        ]);
-        $k = $bahan['konfirmasi'];
-
-        return [
-            'status' => $k['status'],
-            'kalimat' => $k['kalimat'],
-            'warna' => $k['warna'],
-            'ikon' => $k['ikon'],
-            'batas' => $k['batas'],
-            'batasTeks' => $k['batasTeks'],
-            'bolehJawab' => $k['bolehJawab'],
-            // Dijawab LANGSUNG di kartu portal — tanpa pindah halaman.
-            'jawab' => $bahan,
         ];
     }
 

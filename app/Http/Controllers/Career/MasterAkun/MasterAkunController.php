@@ -4,10 +4,10 @@ namespace App\Http\Controllers\Career\MasterAkun;
 
 use App\Helpers\ResponseHelper;
 use App\Http\Controllers\Controller;
-use App\Support\Career\AksesService;
 use App\Support\Career\PenerimaSerahTerima;
 use App\Support\Career\SerahTerimaPic;
 use App\Support\CareerShell;
+use App\Support\Sinkron\StatusAkun;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -310,6 +310,11 @@ class MasterAkunController extends Controller
     {
         try {
             $data = $request->validate($this->rules(true));
+            // DUA ZONA: akun kandidat lahir dari pendaftaran di situs kandidat —
+            // akun yang dibuat di sini tidak akan pernah bisa masuk di sana.
+            if ($data['role'] === 'KANDIDAT') {
+                return ResponseHelper::error('Akun kandidat dibuat lewat pendaftaran di situs kandidat, bukan dari panel ini.', 422);
+            }
             if (DB::table('N_WEB_CAREERS_Users')->where('Email', $data['email'])->exists()) {
                 return ResponseHelper::error('Email sudah digunakan akun lain.', 422);
             }
@@ -359,6 +364,9 @@ class MasterAkunController extends Controller
                 return ResponseHelper::error('Akun tidak ditemukan.', 404);
             }
             $data = $request->validate($this->rules(false));
+            if ($row->Role === 'KANDIDAT' || $data['role'] === 'KANDIDAT') {
+                return $this->updateKandidat($row, $data);
+            }
             if (DB::table('N_WEB_CAREERS_Users')->where('Email', $data['email'])->where('Id_Users', '!=', $realId)->exists()) {
                 return ResponseHelper::error('Email sudah digunakan akun lain.', 422);
             }
@@ -394,6 +402,43 @@ class MasterAkunController extends Controller
         }
     }
 
+    /**
+     * Akun KANDIDAT: profil, email, dan sandinya milik situs kandidat — yang
+     * berubah di sini tidak akan pernah sampai ke sana. Yang boleh: status
+     * aktif (menyeberang lewat Akun.Status) dan kode karyawan (data internal).
+     */
+    private function updateKandidat(object $row, array $data)
+    {
+        if ($row->Role !== 'KANDIDAT') {
+            return ResponseHelper::error('Akun tim tidak bisa diubah menjadi akun kandidat.', 422);
+        }
+
+        $berubah = $data['role'] !== 'KANDIDAT'
+            || trim((string) $data['nama']) !== trim((string) $row->Nama)
+            || strcasecmp(trim((string) $data['email']), trim((string) $row->Email)) !== 0
+            || trim((string) ($data['phone'] ?? '')) !== trim((string) ($row->No_Hp ?? ''))
+            || (string) $data['klasifikasi'] !== (string) $row->Klasifikasi
+            || ! empty($data['password']);
+        if ($berubah) {
+            return ResponseHelper::error(StatusAkun::PESAN_KANDIDAT, 422);
+        }
+        if ($galat = $this->galatKodeKaryawan($data['kodeKaryawan'] ?? null, (int) $row->Id_Users)) {
+            return $galat;
+        }
+
+        DB::table('N_WEB_CAREERS_Users')->where('Id_Users', $row->Id_Users)->update([
+            'Status' => $data['status'],
+            'Kode_Karyawan' => $this->kodeKaryawanBersih($data['kodeKaryawan'] ?? null),
+            'Updated_At' => now(), 'Updated_By' => session('career_auth.nama', 'ADMIN'), 'Updated_By_Id' => session('career_auth.id'),
+        ]);
+        if ($data['status'] !== $row->Status) {
+            StatusAkun::kabarkan((int) $row->Id_Users, $data['status']);
+        }
+        Log::channel('web_career')->info("Akun kandidat diperbarui #{$row->Id_Users} (status {$data['status']})");
+
+        return ResponseHelper::success(null, 'Akun diperbarui');
+    }
+
     public function toggle(Request $request, $id)
     {
         try {
@@ -405,6 +450,9 @@ class MasterAkunController extends Controller
             ]);
             if (! $terpengaruh) {
                 return ResponseHelper::error('Akun tidak ditemukan.', 404);
+            }
+            if (DB::table('N_WEB_CAREERS_Users')->where('Id_Users', $realId)->value('Role') === 'KANDIDAT') {
+                StatusAkun::kabarkan((int) $realId, $aktif ? 'AKTIF' : 'NONAKTIF');
             }
             Log::channel('web_career')->info("Akun #{$realId} status " . ($aktif ? 'AKTIF' : 'NONAKTIF'));
 
@@ -451,6 +499,12 @@ class MasterAkunController extends Controller
 
         if (($row->Flag_Email_Verified ?? 'T') === 'Y') {
             return ResponseHelper::error('Email akun ini sudah terverifikasi.', 422);
+        }
+
+        // DUA ZONA: tautan verifikasi kandidat diperiksa situs kandidat terhadap
+        // token yang IA simpan — token yang dibuat di sini tidak dikenalnya.
+        if ($row->Role === 'KANDIDAT') {
+            return ResponseHelper::error('Tautan verifikasi kandidat dikirim ulang dari situs kandidat (tombol "Kirim ulang" di halaman masuk).', 422);
         }
 
         $adminNama = session('career_auth.nama', 'ADMIN');
@@ -520,6 +574,10 @@ class MasterAkunController extends Controller
             }
             if ($row->Role === 'SUPERADMIN' && DB::table('N_WEB_CAREERS_Users')->where('Role', 'SUPERADMIN')->count() <= 1) {
                 return ResponseHelper::error('Tidak dapat menghapus Superadmin terakhir.', 422);
+            }
+            // DUA ZONA: akunnya tetap hidup di situs kandidat (beserta lamarannya).
+            if ($row->Role === 'KANDIDAT') {
+                return ResponseHelper::error('Akun kandidat tidak dihapus dari panel ini — nonaktifkan saja (kandidat tidak bisa masuk lagi).', 422);
             }
             DB::table('N_WEB_CAREERS_Users')->where('Id_Users', $realId)->delete();
             Log::channel('web_career')->info("Akun dihapus #{$realId} ({$row->Email})");

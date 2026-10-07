@@ -100,6 +100,36 @@ return [
             ],
         ],
 
+        /*
+         | DATABASE PENGGUNA (zona luar) — mis. emi_tm_demo.
+         |
+         | Database milik aplikasi publik (web-careers-pengguna): salinan master,
+         | data yang diisi kandidat, Outbox, dan proyeksi portal. Koneksi ini HANYA
+         | dipakai proses Sync Worker, yang menjangkau dari dalam ke luar:
+         | mendorong salinan & proyeksi, dan tidak pernah menerima panggilan dari
+         | luar. Aplikasi admin di web tidak memerlukannya — di produksi, isi
+         | DB_PENGGUNA_* HANYA pada layanan worker. Kebalikannya tidak pernah ada:
+         | aplikasi publik tidak memegang kredensial database admin.
+         */
+        'pengguna' => [
+            'driver' => 'sqlsrv',
+            'host' => env('DB_PENGGUNA_HOST', 'localhost'),
+            'port' => env('DB_PENGGUNA_PORT', '1433'),
+            'database' => env('DB_PENGGUNA_DATABASE', 'emi_tm_demo'),
+            'username' => env('DB_PENGGUNA_USERNAME', ''),
+            'password' => env('DB_PENGGUNA_PASSWORD', ''),
+            'charset' => 'utf8',
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'encrypt' => env('DB_PENGGUNA_ENCRYPT', 'yes'),
+            'trust_server_certificate' => env('DB_PENGGUNA_TRUST_SERVER_CERTIFICATE', 'false'),
+            'options' => [
+                'LoginTimeout' => 30,
+                'ConnectRetryCount' => 3,
+                'ConnectRetryInterval' => 10,
+            ],
+        ],
+
     ],
 
     /*

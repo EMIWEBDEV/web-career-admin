@@ -590,12 +590,13 @@ class PembukaanProgramController extends Controller
                     'mppRef' => $posisi->Mpp_Ref ?? null,
                     'aktif' => ($posisi->Flag_Aktif ?? 'Y') !== 'N',
                 ],
-                // Tautan publik loker ini — dirakit di SERVER dari host
-                // permintaan, jadi benar di lokal, staging, dan produksi tanpa
-                // domain yang ditulis di mana pun. Ini yang disalin tombol
-                // "Salin tautan" untuk dibagikan ke LinkedIn.
-                'tautan' => rtrim(request()->getSchemeAndHttpHost(), '/')
-                    . '/karir/landing-page/lowongan/PB-' . $pb->Kode . '-' . $posisi->Id_Program_Posisi,
+                // Tautan publik loker ini di SITUS KANDIDAT (PENGGUNA_URL). Ini
+                // yang disalin tombol "Salin tautan" untuk dibagikan ke LinkedIn.
+                // Null bila PENGGUNA_URL belum diatur — panelnya tetap terbuka.
+                'tautan' => rescue(
+                    fn () => \App\Support\Sinkron\TautanPengguna::lowongan('PB-' . $pb->Kode . '-' . $posisi->Id_Program_Posisi),
+                    null,
+                ),
                 'mpp' => \App\Support\Career\DetailMppLoker::untuk($posisi->Mpp_Ref ?? null),
                 // Piramida seleksi + rincian hasil akhir LOKER INI. Dihitung
                 // di sini, bukan ikut payload analitik terbitan: satu terbitan

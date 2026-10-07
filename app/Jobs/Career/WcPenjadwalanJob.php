@@ -4,6 +4,7 @@ namespace App\Jobs\Career;
 
 use App\Jobs\Career\Concerns\AntreanWebCareers;
 use App\Services\WebCareers\HclClient;
+use App\Support\Sinkron\TautanPengguna;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -12,7 +13,6 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
-use Vinkla\Hashids\Facades\Hashids;
 
 /**
  * WEB CAREERS — PENERBITAN TOKEN UJIAN KE HCLEARN (latar belakang).
@@ -371,6 +371,12 @@ class WcPenjadwalanJob implements ShouldQueue
     /** Muatan satu potongan — bentuknya sama persis, berapa pun potongannya. */
     private function muatan(object $penjadwalan, ?object $tahap, ?object $program, \Illuminate\Support\Collection $peserta): array
     {
+        // Kode lamaran per peserta — tautan pulang menunjuk ke portal SITUS
+        // KANDIDAT, yang mengenal lamaran lewat kodenya.
+        $kodeLamaran = DB::table('N_WEB_CAREERS_Lamaran')
+            ->whereIn('Id_Lamaran', $peserta->pluck('Lamaran_Id')->filter()->unique()->values())
+            ->pluck('Kode', 'Id_Lamaran');
+
         return [
             'Kode_WC_Penjadwalan' => $penjadwalan->Kode,
             'Nama_Penjadwalan' => $penjadwalan->Nama,
@@ -408,19 +414,16 @@ class WcPenjadwalanJob implements ShouldQueue
                 // halaman yang bukan milik kandidat kita, tanpa jalan balik.
                 //
                 // Dikirim PER PESERTA, bukan per penjadwalan: alamatnya memuat
-                // id lamaran, dan satu penjadwalan berisi banyak lamaran.
+                // kode lamaran, dan satu penjadwalan berisi banyak lamaran.
                 //
-                // Basisnya `hclearn.public_url`, BUKAN app.url: itulah alamat
-                // yang memang sudah ditetapkan sebagai "cara dunia luar
-                // menjangkau kami" untuk integrasi ini — sama dengan yang
-                // dipakai Url_Callback, jadi keduanya tak bisa lagi menyimpang.
+                // Tujuannya portal SITUS KANDIDAT (project pengguna), bukan panel
+                // ini — panel admin tidak melayani halaman kandidat.
                 //
                 // `?dari=tes` adalah penanda ASAL, bukan hiasan: halaman lamaran
                 // memakainya untuk menyambut kandidat yang baru pulang dari tes
                 // dan menunggu hasilnya masuk — lihat LamaranDetail.vue.
-                'Url_Kembali' => $p->Lamaran_Id
-                    ? rtrim(config('hclearn.public_url'), '/')
-                        .'/kandidat/lamaran/'.Hashids::encode($p->Lamaran_Id).'?dari=tes'
+                'Url_Kembali' => isset($kodeLamaran[$p->Lamaran_Id])
+                    ? TautanPengguna::lamaran((string) $kodeLamaran[$p->Lamaran_Id], ['dari' => 'tes'])
                     : null,
             ])->values()->all(),
         ];

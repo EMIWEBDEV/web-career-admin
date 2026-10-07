@@ -34,12 +34,6 @@ export default defineConfig({
             },
         }),
     ],
-    // Web Worker (utils/career/ejaanWorker.js — pemeriksa ejaan nspell) dibangun
-    // sebagai modul ES, sama dengan di dev: pekerja dibuat `type: 'module'`,
-    // dan di dev dibungkus Blob sesama-origin (lihat utils/career/ejaan.js).
-    worker: {
-        format: "es",
-    },
     server: {
         host: "localhost",
 
@@ -70,21 +64,15 @@ export default defineConfig({
     },
     resolve: {
         alias: {
-            // TAMBAHKAN BARIS INI:
-            // Memaksa menggunakan versi Vue yang memiliki compiler
+            // Versi Vue ber-compiler (template string dirakit saat runtime).
             vue: "vue/dist/vue.esm-bundler.js",
 
-            // Alias lain yang mungkin sudah ada
-            "@": path.resolve(__dirname, "./src"),
             // Komponen reusable Web Career (modal, dsb) — dipakai lintas halaman master.
             "@career": path.resolve(__dirname, "./resources/js/components/career"),
-            // Utilitas non-komponen (JS murni + berkas ujinya). Dipakai lintas
-            // halaman yang kedalaman foldernya berbeda-beda, jadi jalur relatif
+            // Utilitas non-komponen (JS murni). Dipakai lintas halaman yang
+            // kedalaman foldernya berbeda-beda, jadi jalur relatif
             // ("../../../utils/…") cuma jadi sumber salah ketik.
             "@utils": path.resolve(__dirname, "./resources/js/utils"),
-            // Kamus Hunspell (id_ID, en_US) + tambahan.txt — dibaca pekerja
-            // ejaan peramban (utils/career/ejaanWorker.js) dan server (Kamus.php).
-            "@kamus": path.resolve(__dirname, "./resources/kamus"),
         },
     },
     build: {
@@ -96,13 +84,10 @@ export default defineConfig({
                     }
 
                     if (id.includes("@fullcalendar")) return "vendor-calendar";
-                    if (id.includes("pdfjs-dist")) return "vendor-pdf";
-                    if (id.includes("exceljs")) return "vendor-excel";
-                    if (id.includes("apexcharts") || id.includes("chart.js") || id.includes("highcharts")) return "vendor-charts";
-                    if (id.includes("datatables.net") || id.includes("jquery")) return "vendor-tables";
-                    if (id.includes("primevue") || id.includes("@primeuix") || id.includes("element-plus")) return "vendor-ui";
-                    if (id.includes("@formkit") || id.includes("vee-validate") || id.includes("yup")) return "vendor-forms";
-                    if (id.includes("quill") || id.includes("marked") || id.includes("turndown")) return "vendor-editor";
+                    if (id.includes("apexcharts") || id.includes("highcharts")) return "vendor-charts";
+                    if (id.includes("element-plus")) return "vendor-ui";
+                    if (id.includes("@formkit")) return "vendor-forms";
+                    if (id.includes("quill")) return "vendor-editor";
                     if (id.includes("vue") || id.includes("@inertiajs")) return "vendor-vue";
 
                     return "vendor";

@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Support\Audit\RiwayatLogin;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -37,17 +38,17 @@ class CareerAuth
             ->first();
 
         if (! $row) {
-            return $this->keluar($request, 'Akun tidak ditemukan.');
+            return $this->keluar($request, 'Akun tidak ditemukan.', 'TIDAK_ADA');
         }
 
         if ($row->Status !== 'AKTIF') {
-            return $this->keluar($request, 'Akun Anda dinonaktifkan. Hubungi tim rekrutmen EVO Group.');
+            return $this->keluar($request, 'Akun Anda dinonaktifkan. Hubungi tim rekrutmen EVO Group.', 'NONAKTIF');
         }
 
         if ($row->Valid_Until !== null
             && Carbon::parse($row->Valid_Until)->startOfDay()->lessThan(Carbon::now()->startOfDay())) {
             return $this->keluar($request, 'Masa berlaku akun Anda telah berakhir pada '
-                . Carbon::parse($row->Valid_Until)->format('d M Y') . '.');
+                . Carbon::parse($row->Valid_Until)->format('d M Y') . '.', 'KEDALUWARSA');
         }
 
         // Kata sandi diganti SETELAH sesi ini dibuat → sesi lama tidak lagi sah.
@@ -56,7 +57,7 @@ class CareerAuth
         // paksa keluar (mencegah logout massal saat kolom baru ditambahkan).
         // Bandingkan sebagai string agar aman dari perbedaan tipe Carbon/DateTime.
         if ($row->Pwd_Changed_At !== null && (string) ($auth['pwd_epoch'] ?? '') !== (string) $row->Pwd_Changed_At) {
-            return $this->keluar($request, 'Kata sandi akun kamu baru saja diubah. Silakan masuk kembali.');
+            return $this->keluar($request, 'Kata sandi akun kamu baru saja diubah. Silakan masuk kembali.', 'SANDI_DIGANTI');
         }
 
         // Peran diambil ULANG dari DB, bukan dari sesi. Kalau admin menurunkan
@@ -80,9 +81,11 @@ class CareerAuth
         return redirect($this->alamatMasuk($request))->with('pesan', $pesan);
     }
 
-    /** Sesi tidak lagi sah — bersihkan lalu arahkan ke halaman masuk. */
-    private function keluar(Request $request, string $pesan): Response
+    /** Sesi tidak lagi sah — catat, bersihkan, lalu arahkan ke halaman masuk. */
+    private function keluar(Request $request, string $pesan, string $alasan): Response
     {
+        $auth = session('career_auth');
+        RiwayatLogin::catat($request, RiwayatLogin::DIKELUARKAN, (int) ($auth['id'] ?? 0) ?: null, $auth['email'] ?? null, $alasan);
         session()->forget(['career_auth', 'career_akses']);
 
         if ($request->expectsJson()) {

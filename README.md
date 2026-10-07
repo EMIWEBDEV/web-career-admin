@@ -1,67 +1,67 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Web Careers — Admin (zona dalam)
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Panel tim rekrutmen EVO Group: program & pembukaan, worklist seleksi,
+penjadwalan & integrasi CAT/HCLearn, monitoring, talent pool, feedback, master
+data, dan hak akses. Situs kandidat (landing, lowongan, daftar/masuk kandidat,
+portal lamaran, konfirmasi kehadiran, surat jadwal, isian feedback) adalah
+project terpisah: **web-careers-pengguna**.
 
-## About Laravel
+## Aturan panel
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+- **Khusus staf.** Login hanya untuk peran `ADMIN`/`SUPERADMIN`; akun kandidat
+  ditolak dan diarahkan ke situs kandidat. Reset kata sandi juga khusus staf.
+- **Tanpa SEO.** Tidak ada meta sosial, sitemap, robots dinamis, atau gambar OG.
+  Setiap jawaban membawa `X-Robots-Tag: noindex, nofollow` (middleware `TanpaIndeks`).
+- **Tautan untuk kandidat** di surel (konfirmasi kehadiran, surat jadwal,
+  feedback, verifikasi, portal) dibuat `App\Support\Sinkron\TautanPengguna` dan
+  menunjuk ke `PENGGUNA_URL`. Tanda tangannya memakai `TAUTAN_KUNCI` yang sama
+  dengan project pengguna.
+- **CSRF** hanya dikecualikan untuk pemanggil mesin tanpa sesi (Cloud Tasks,
+  webhook CAT). Endpoint panel bersesi selalu memeriksa token.
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## Sinkron dua zona (Sync Worker)
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+Panel ini sumber kebenaran; situs kandidat punya database sendiri (publik).
 
-## Learning Laravel
+- **Masuk:** aksi kandidat → Outbox publik → Pub/Sub `wc-masuk` → langganan
+  `wc-masuk-sinkron` → kotak masuk (`N_WEB_CAREERS_Sinkron_Masuk`) → kode panel
+  yang sudah ada (`app/Support/Sinkron/Penangan`), urut per akun, tepat sekali.
+- **Keluar:** potret portal kandidat, hasil peristiwa, dokumen, status akun
+  (`N_WEB_CAREERS_Sinkron_Keluar`) dan salinan 49 tabel master → database publik.
+- **Penggerak:** Cloud Scheduler tiap menit `POST /api/tugas/sinkron` (antrean
+  `wc-sinkron`), atau `php artisan sinkron:jalan`. Langganan push opsional:
+  `POST /api/pubsub/wc-masuk` (token OIDC Google).
+- **Perawatan:** `sinkron:status`, `sinkron:ulang`, `sinkron:potret`,
+  `sinkron:salinan`, `sinkron:migrasi-awal` (sekali, saat pindah).
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+Panduan GCP & rilis: `docs/06-10-2026/01-PANDUAN-SYNC-WORKER.md`.
 
-You may also try the [Laravel Bootcamp](https://bootcamp.laravel.com), where you will be guided through building a modern Laravel application from scratch.
+## Kunci `.env` penting
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+| Kunci | Keterangan |
+|---|---|
+| `DB_*` | database admin (`Web_HRIS`) |
+| `PENGGUNA_URL` | alamat situs kandidat |
+| `TAUTAN_KUNCI`, `SINKRON_KUNCI_RAHASIA` | **sama persis** dengan project pengguna |
+| `DB_PENGGUNA_*` | database publik situs kandidat (koneksi `pengguna`) — peran `wc_publik_worker` |
+| `PUBSUB_*`, `GCS_BUCKET_KARANTINA`, `GCS_BUCKET_PUBLIK` | Sync Worker (lihat `config/sinkron.php`) |
+| `HCLEARN_*`, `WC_PUBLIC_URL`, `WC_CALLBACK_SECRET` | integrasi CAT/HCLearn |
+| `SURAT_*` | EVO Mail Server (seluruh surel) |
+| `TUGAS_TOKEN`, `GEMBOK_SECRET`, `LOG_VIEWER_SECRET` | setara kredensial — buat baru per lingkungan |
 
-## Laravel Sponsors
+## Menjalankan lokal
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+```bash
+composer install
+npm ci
+npm run dev        # atau: npm run build
+```
 
-### Premium Partners
+## Pengujian
 
-- **[Vehikl](https://vehikl.com/)**
-- **[Tighten Co.](https://tighten.co)**
-- **[WebReinvent](https://webreinvent.com/)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel/)**
-- **[Cyber-Duck](https://cyber-duck.co.uk)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Jump24](https://jump24.co.uk)**
-- **[Redberry](https://redberry.international/laravel/)**
-- **[Active Logic](https://activelogic.com)**
-- **[byte5](https://byte5.de)**
-- **[OP.GG](https://op.gg)**
+```bash
+php vendor/bin/phpunit
+```
 
-## Contributing
-
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
-
-## Code of Conduct
-
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
-
-## Security Vulnerabilities
-
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
-
-## License
-
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
-"# kpi-fix" 
+`phpunit.xml` memaksa SQLite memori — pengujian tidak pernah menyentuh database
+dari `.env` (yang bisa saja menunjuk staging/produksi).

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Career\Tugas;
 
 use App\Http\Controllers\Controller;
 use App\Jobs\Career\WcPengingatKonfirmasiJob;
+use App\Jobs\Career\WcSinkronJob;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -36,6 +37,8 @@ class PemicuTugasController extends Controller
      */
     private const TUGAS = [
         'pengingat-konfirmasi' => WcPengingatKonfirmasiJob::class,
+        // Sync Worker dua zona — tiap menit (lihat App\Support\Sinkron\Siklus).
+        'sinkron' => WcSinkronJob::class,
     ];
 
     public function jalankan(Request $request, string $tugas)

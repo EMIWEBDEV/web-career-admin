@@ -14,9 +14,8 @@ use Symfony\Component\HttpFoundation\Response;
  * Selalu dipasang SESUDAH career.auth, karena middleware ini menganggap sesi
  * sudah diperiksa keabsahannya (termasuk peran yang sudah disegarkan dari DB).
  *
- * Kandidat yang tersasar ke URL admin TIDAK diberi 403 kosong — dia dikembalikan
- * ke portalnya sendiri. Halaman 403 di tengah alur lamaran cuma bikin panik
- * orang yang sebenarnya tidak melakukan kesalahan apa pun.
+ * Panel ini hanya untuk staf. Sesi tanpa peran admin dikembalikan ke halaman
+ * masuk — portal kandidat ada di situs kandidat (project web-careers-pengguna).
  */
 class CareerRole
 {
@@ -43,6 +42,6 @@ class CareerRole
     /** Beranda yang sesuai untuk sebuah peran. Dipakai juga sesudah login. */
     public static function beranda(?string $role): string
     {
-        return in_array($role, self::ADMIN, true) ? '/karir' : '/kandidat/portal';
+        return in_array($role, self::ADMIN, true) ? '/karir' : '/login';
     }
 }

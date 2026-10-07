@@ -11,8 +11,7 @@ use Tests\TestCase;
  *
  * unggah() sengaja deterministik dan tetap begitu untuk berkas biasa. Untuk
  * baris berulang, determinisme itulah yang membuat sertifikat kedua menimpa
- * yang pertama di bucket — jebakan yang komentarnya sudah tertulis di
- * unggahGambarCatatan() tapi tidak pernah diterapkan ke jalur ini.
+ * yang pertama di bucket — karena itu jalurnya lewat unggahUnik().
  */
 class GcsBerkasBarisTest extends TestCase
 {
@@ -21,8 +20,8 @@ class GcsBerkasBarisTest extends TestCase
         Storage::fake(GcsBerkas::DISK);
         $gcs = app(GcsBerkas::class);
 
-        $a = $gcs->unggahBaris('formulir-tahap/2026/08/12/budi', 'sert_file', 'pdf', 'isi-a');
-        $b = $gcs->unggahBaris('formulir-tahap/2026/08/12/budi', 'sert_file', 'pdf', 'isi-b');
+        $a = $gcs->unggahUnik('formulir-tahap/2026/08/12/budi', 'sert_file', 'pdf', 'isi-a');
+        $b = $gcs->unggahUnik('formulir-tahap/2026/08/12/budi', 'sert_file', 'pdf', 'isi-b');
 
         $this->assertNotSame($a, $b);
         $this->assertSame('isi-a', Storage::disk(GcsBerkas::DISK)->get($a));
@@ -34,7 +33,7 @@ class GcsBerkasBarisTest extends TestCase
         Storage::fake(GcsBerkas::DISK);
         $gcs = app(GcsBerkas::class);
 
-        $p = $gcs->unggahBaris('formulir-tahap/2026/08/12/budi', 'sert_file', 'PDF', 'isi');
+        $p = $gcs->unggahUnik('formulir-tahap/2026/08/12/budi', 'sert_file', 'PDF', 'isi');
 
         $this->assertStringStartsWith('formulir-tahap/2026/08/12/budi/sert-file/', $p);
         $this->assertStringEndsWith('.pdf', $p);
