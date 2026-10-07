@@ -5,6 +5,8 @@ namespace App\Jobs\Career;
 use App\Jobs\Career\Concerns\AntreanWebCareers;
 use App\Jobs\Career\Concerns\CatatGagalWebCareers;
 use App\Services\Surat\SuratClient;
+use App\Support\Sinkron\RahasiaSinkron;
+use App\Support\Sinkron\TautanPengguna;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -111,11 +113,31 @@ class WcSyncEmailJob implements ShouldQueue
     {
         $sidik = fn (string $nilai) => substr(hash('sha256', $nilai.'|'.$this->userId), 0, 24);
 
+        // Kandidat (situs pengguna): rahasianya masih terbungkus — sidik dari
+        // bungkusnya, yang juga unik per permintaan dan stabil lintas percobaan.
         return match ($this->jenis) {
-            self::JENIS_VERIFIKASI => 'verif:'.$this->userId.':'.$sidik((string) ($this->data['token'] ?? '')),
-            self::JENIS_RESET_OTP => 'otp:'.$this->userId.':'.$sidik((string) ($this->data['otp'] ?? '')),
+            self::JENIS_VERIFIKASI => 'verif:'.$this->userId.':'.$sidik((string) ($this->data['token'] ?? $this->data['rahasia'] ?? '')),
+            self::JENIS_RESET_OTP => 'otp:'.$this->userId.':'.$sidik((string) ($this->data['otp'] ?? $this->data['rahasia'] ?? '')),
             default => 'sandi:'.$this->userId.':'.Str::random(16),
         };
+    }
+
+    /**
+     * Surel untuk KANDIDAT dari peristiwa Akun.KodeDiminta (situs kandidat).
+     *
+     * Akunnya hidup di database publik: di sana token/OTP di-hash, cooldown
+     * dihitung, dan verifikasinya diperiksa. Zona dalam hanya MENGIRIM — jadi
+     * penjaga berbasis kolom akun admin (Flag_Email_Verified, Reset_Otp_Hash)
+     * tidak berlaku. Rahasianya ikut TERBUNGKUS (SINKRON_KUNCI_RAHASIA) dan
+     * baru dibuka di handle(), sesaat sebelum dikirim.
+     *
+     * @param  array{rahasia: string, menit?: int, kepada?: string, nama?: string}  $data
+     */
+    public static function untukKandidat(string $jenis, int $userId, array $data): void
+    {
+        // Antrean biasa, bukan afterResponse(): pemanggilnya pemroses sinkron
+        // (job / proses panjang) yang tidak punya "sesudah respons".
+        self::dispatch($jenis, $userId, ['kandidat' => true] + $data);
     }
 
     /**
@@ -149,6 +171,17 @@ class WcSyncEmailJob implements ShouldQueue
         }
 
         try {
+            if (! empty($this->data['rahasia'])) {
+                // Hanya di memori proses ini — tidak pernah ditulis balik ke
+                // muatan job, database, atau log.
+                $this->data = array_merge($this->data, RahasiaSinkron::buka((string) $this->data['rahasia']));
+            }
+            // Penerima & sapaan dari peristiwanya (keadaan akun saat diminta).
+            $user = (object) array_merge((array) $user, array_filter([
+                'Email' => $this->data['kepada'] ?? null,
+                'Nama' => $this->data['nama'] ?? null,
+            ]));
+
             match ($this->jenis) {
                 self::JENIS_VERIFIKASI => $this->kirimVerifikasi($user),
                 self::JENIS_RESET_OTP => $this->kirimResetOtp($user),
@@ -174,7 +207,8 @@ class WcSyncEmailJob implements ShouldQueue
     protected function kirimVerifikasi(object $user): void
     {
         // Sudah terverifikasi (mis. klik tautan sebelum retry) → tak perlu kirim.
-        if (($user->Flag_Email_Verified ?? 'T') === 'Y') {
+        // Akun kandidat diverifikasi di situs kandidat — penjaganya di sana.
+        if (empty($this->data['kandidat']) && ($user->Flag_Email_Verified ?? 'T') === 'Y') {
             return;
         }
 
@@ -185,10 +219,8 @@ class WcSyncEmailJob implements ShouldQueue
             return;
         }
 
-        $verifUrl = rtrim(config('app.url'), '/') . '/verifikasi-email?' . http_build_query([
-            'email' => $user->Email,
-            'token' => $token,
-        ]);
+        // Halaman verifikasi ada di SITUS KANDIDAT (project pengguna).
+        $verifUrl = TautanPengguna::verifikasiEmail((string) $user->Email, $token);
 
         app(SuratClient::class)->kirim(
             kepada: $user->Email,
@@ -219,7 +251,8 @@ class WcSyncEmailJob implements ShouldQueue
     protected function kirimResetOtp(object $user): void
     {
         // OTP sudah dipakai/dihanguskan sebelum job jalan → tak perlu kirim.
-        if (empty($user->Reset_Otp_Hash)) {
+        // OTP kandidat di-hash & dihanguskan di situs kandidat, bukan di sini.
+        if (empty($this->data['kandidat']) && empty($user->Reset_Otp_Hash)) {
             return;
         }
 

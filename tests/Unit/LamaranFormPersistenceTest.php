@@ -33,6 +33,8 @@ class LamaranFormPersistenceTest extends TestCase
             $table->integer('Master_Alur_Tahap_Id')->nullable();
             $table->integer('Urutan');
             $table->string('Formulir_Kode')->nullable();
+            $table->string('Formulir_Komponen')->nullable();
+            $table->integer('Formulir_Versi')->nullable();
             $table->string('Status');
             $table->integer('Formulir_Pengisian_Id')->nullable();
             $table->string('Rekomendasi')->nullable();
@@ -68,6 +70,7 @@ class LamaranFormPersistenceTest extends TestCase
             $table->integer('Lamaran_Tahap_Id');
             $table->integer('Master_Formulir_Id')->nullable();
             $table->string('Komponen_Kode')->nullable();
+            $table->integer('Formulir_Versi')->nullable();
             $table->string('Sumber');
             $table->integer('Master_Alur_Tahap_Id')->nullable();
             $table->integer('Program_Id');

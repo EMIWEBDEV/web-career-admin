@@ -12,6 +12,8 @@ class Kernel extends HttpKernel
      * @var array<int, class-string|string>
      */
     protected $middleware = [
+        // Panel admin tidak untuk mesin pencari (X-Robots-Tag: noindex, nofollow).
+        \App\Http\Middleware\TanpaIndeks::class,
         \App\Http\Middleware\TrustProxies::class,
         \Illuminate\Http\Middleware\HandleCors::class,
         \App\Http\Middleware\PreventRequestsDuringMaintenance::class,
@@ -35,17 +37,20 @@ class Kernel extends HttpKernel
             \Illuminate\Routing\Middleware\SubstituteBindings::class,
             \App\Http\Middleware\HandleInertiaRequests::class,
             \App\Http\Middleware\NoCacheInLocal::class,
+            // Siapa & dari mana untuk jejak audit — sesudah StartSession.
+            \App\Http\Middleware\KonteksAuditPermintaan::class . ':PANEL',
         ],
 
         'api' => [
             \Illuminate\Routing\Middleware\ThrottleRequests::class . ':api',
             \Illuminate\Routing\Middleware\SubstituteBindings::class,
             \App\Http\Middleware\NoCacheInLocal::class,
+            \App\Http\Middleware\KonteksAuditPermintaan::class . ':TUGAS',
         ],
     ];
 
     /**
-     * Middleware aliases (framework only — middleware kustom sudah dihapus).
+     * Middleware aliases — hanya yang dipakai rute panel ini.
      *
      * @var array<string, class-string|string>
      */
@@ -56,16 +61,7 @@ class Kernel extends HttpKernel
         'career.role' => \App\Http\Middleware\CareerRole::class,
         // Gerbang hak akses per halaman & aksi: career.permission:{jenisPage},{AKSI}
         'career.permission' => \App\Http\Middleware\CareerPermission::class,
-        'auth' => \App\Http\Middleware\Authenticate::class,
-        'auth.basic' => \Illuminate\Auth\Middleware\AuthenticateWithBasicAuth::class,
-        'auth.session' => \Illuminate\Session\Middleware\AuthenticateSession::class,
-        'cache.headers' => \Illuminate\Http\Middleware\SetCacheHeaders::class,
-        'can' => \Illuminate\Auth\Middleware\Authorize::class,
-        'guest' => \App\Http\Middleware\RedirectIfAuthenticated::class,
-        'password.confirm' => \Illuminate\Auth\Middleware\RequirePassword::class,
-        'precognitive' => \Illuminate\Foundation\Http\Middleware\HandlePrecognitiveRequests::class,
         'signed' => \App\Http\Middleware\ValidateSignature::class,
         'throttle' => \Illuminate\Routing\Middleware\ThrottleRequests::class,
-        'verified' => \Illuminate\Auth\Middleware\EnsureEmailIsVerified::class,
     ];
 }

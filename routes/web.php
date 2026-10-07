@@ -1,7 +1,6 @@
 <?php
 
 use App\Http\Controllers\Career\CareerAdminController;
-use App\Http\Controllers\Career\CareerLandingController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
@@ -9,35 +8,34 @@ use Inertia\Inertia;
 
 /*
 |--------------------------------------------------------------------------
-| WEB ROUTES — PROJECT: WEB CAREER
+| WEB ROUTES — PROJECT: WEB CAREERS ADMIN
 |--------------------------------------------------------------------------
-| Seluruh fitur legacy (KPI / LMS / HCIS / Visitor) telah dihapus.
+| Panel admin (zona dalam). Situs kandidat — landing, lowongan, daftar/masuk
+| kandidat, portal, konfirmasi kehadiran, surat jadwal, feedback — adalah
+| project terpisah (web-careers-pengguna); tautan ke sana dibuat lewat
+| App\Support\Sinkron\TautanPengguna. Panel ini tidak diindeks mesin pencari
+| (public/robots.txt + header X-Robots-Tag).
+|
 | Rute dipecah ke dua file "induk" per developer:
-|   - routes/kpi/fransDevEvo.php  → publik + auth kandidat
-|   - routes/kpi/ridhoDevEvo.php  → admin panel + portal kandidat
+|   - routes/kpi/fransDevEvo.php  → autentikasi panel admin
+|   - routes/kpi/ridhoDevEvo.php  → panel admin & webhook integrasi
 | Semua rute berjalan di grup middleware "web" (session, CSRF, Inertia).
 */
 
-// robots.txt DINAMIS — menggantikan berkas statis public/robots.txt yang dulu
-// berisi "Disallow: /" dan ikut terbawa ke produksi. Lihat RobotsController.
-Route::get('/robots.txt', \App\Http\Controllers\RobotsController::class)->name('robots');
+// Root = dasbor admin; yang belum masuk dibawa career.auth ke halaman masuk.
+Route::redirect('/', '/karir')->name('beranda');
 
-// Root = halaman utama situs karir (landing).
-Route::get('/', [CareerLandingController::class, 'index'])->name('career.home');
-
-// Auth REAL (DB) — komponen SAMA dengan halaman test (Career/Auth), kini nyambung DB.
-// Turnstile hanya dipakai di LOGIN; sitekey dibagikan ke frontend (kosong = fitur mati).
-Route::get('/login', fn() => Inertia::render('Career/Auth', ['mode' => 'login', 'turnstileSiteKey' => config('services.cloudflare.turnstile_sitekey')]))->name('login');
-Route::get('/register', fn() => Inertia::render('Career/Auth', ['mode' => 'register']))->name('register');
+// Masuk panel admin. Turnstile hanya dipakai di sini; sitekey dibagikan ke
+// frontend (kosong = fitur mati).
+Route::get('/login', fn () => Inertia::render('Career/Auth', ['mode' => 'login', 'turnstileSiteKey' => config('services.cloudflare.turnstile_sitekey')]))->name('login');
 
 // Ganti / reset kata sandi (form). Email opsional dari query (alur lupa sandi).
 Route::get(
     '/ganti-sandi',
-    fn(Request $request) => Inertia::render('Career/GantiSandi', ['email' => (string) $request->query('email', '')]),
+    fn (Request $request) => Inertia::render('Career/GantiSandi', ['email' => (string) $request->query('email', '')]),
 )->name('ganti-sandi');
 
-// Profil — SATU route untuk semua akun (admin & kandidat); shell menyesuaikan role.
-// Wajib login, tanpa gerbang peran: ini halaman milik pengguna itu sendiri.
+// Profil akun yang sedang masuk.
 Route::get('/profil', [CareerAdminController::class, 'profil'])
     ->middleware('career.auth')
     ->name('profil');
@@ -55,14 +53,12 @@ Route::get('/logout', function (Request $request) {
 require __DIR__ . '/kpi/fransDevEvo.php';
 require __DIR__ . '/kpi/ridhoDevEvo.php';
 
-// Endpoint pendidikan untuk formulir kandidat (cascade jenjang→jenis→kampus).
+// Pilihan jenjang & jenis institusi untuk master pendidikan.
 require __DIR__ . '/career/Pendidikan/PendidikanWeb.php';
 
-// KONFIRMASI KEHADIRAN (PUBLIK, tautan bertanda tangan dari surel undangan).
-require __DIR__ . '/career/KonfirmasiJadwal/KonfirmasiJadwalWeb.php';
-
-// Media hero slide (PUBLIK — dipakai landing page & preview admin).
-Route::get('/karir/hero-media/{id}/{slot}', [\App\Http\Controllers\Career\MasterHero\MasterHeroController::class, 'mediaPublik'])
+// Media hero slide — pratinjau di Master Hero (situs kandidat membaca salinannya sendiri).
+Route::get('/karir/hero-media/{id}/{slot}', [\App\Http\Controllers\Career\MasterHero\MasterHeroController::class, 'media'])
+    ->middleware(['career.auth', 'career.role:ADMIN,SUPERADMIN'])
     ->where(['slot' => 'desktop|mobile|video_desktop|video_mobile|poster_desktop|poster_mobile'])
     ->name('career.hero.media');
 
@@ -75,7 +71,7 @@ Route::middleware(['career.auth', 'career.role:ADMIN,SUPERADMIN'])->group(functi
 
 require __DIR__ . '/career/ridhoDeveloperEvoDevEvo.php';
 
-// [feat/feedback] Modul Feedback — admin master + dashboard + kandidat + public
+// [feat/feedback] Modul Feedback — master, penugasan & dasbor admin
 require __DIR__ . '/career/ridhoDeveloperEvoDevEvo-v2.php';
 
 // Diagnostik jalur jaringan (SMTP) — dijalankan lewat peramban karena Cloud Run

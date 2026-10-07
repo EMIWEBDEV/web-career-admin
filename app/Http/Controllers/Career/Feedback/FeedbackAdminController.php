@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Jobs\Career\FeedbackExportJob;
 use App\Support\Career\FeedbackService;
 use App\Support\CareerShell;
+use App\Support\Sinkron\TautanPengguna;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -563,9 +564,9 @@ class FeedbackAdminController extends Controller
             if($old->Status_Pengisian==='TERISI'){$skipped++;continue;}
             DB::transaction(function()use($fid,$v,$now,$un,$uid,$old,&$c){DB::table('N_WEB_CAREERS_Feedback_Jawaban')->where('Id_Feedback_Jawaban',$fid)->update(['Flag_Cancellation'=>'Y','Cancelled_At'=>$now,'Cancelled_By'=>$un]);DB::table('N_WEB_CAREERS_Feedback_Jawaban_Detail')->where('Feedback_Jawaban_Id',$fid)->delete();
                 $nid=DB::table('N_WEB_CAREERS_Feedback_Jawaban')->insertGetId(['Lamaran_Id'=>$old->Lamaran_Id,'Master_Feedback_Form_Id'=>$v['new_form_id'],'Email_Token'=>$old->Email_Token,'Status_Pengisian'=>'MENUNGGU','Created_At'=>$now],'Id_Feedback_Jawaban');
-                $fs=app(FeedbackService::class);$t=$fs->generateTokenPair($nid,$old->Email_Token);DB::table('N_WEB_CAREERS_Feedback_Jawaban')->where('Id_Feedback_Jawaban',$nid)->update(['Token_Hash'=>$t['hashids'].'.'.$t['signature']]);$c++;
-                // Wajib kirim email — link lama expired, user harus dapat link baru
-                $l=DB::table('N_WEB_CAREERS_Lamaran')->where('Id_Lamaran',$old->Lamaran_Id)->first();if($l){$st=$l->Hasil_Akhir==='DITERIMA'?'LOLOS':'GUGUR';$url=rtrim(config('app.url'),'/').'/feedback/'.$t['hashids'].'/'.$t['signature'];\App\Jobs\Career\WcApplyEmailJob::dispatchSync((int)$l->Id_Users,$st,['kode'=>$l->Kode,'feedbackUrl'=>$url]);}
+                $c++;
+                // Wajib kirim email — link lama expired, user harus dapat link baru (di situs kandidat)
+                $l=DB::table('N_WEB_CAREERS_Lamaran')->where('Id_Lamaran',$old->Lamaran_Id)->first();if($l){$st=$l->Hasil_Akhir==='DITERIMA'?'LOLOS':'GUGUR';$url=TautanPengguna::feedback((int)$nid,(string)$l->Kode);\App\Jobs\Career\WcApplyEmailJob::dispatchSync((int)$l->Id_Users,$st,['kode'=>$l->Kode,'feedbackUrl'=>$url]);}
             });}
         $msg = $c > 0 ? "$c feedback di-reassign." : "Tidak ada yang di-reassign.";
         if($skipped > 0) $msg .= " $skipped dilewati (sudah TERISI).";
@@ -577,7 +578,7 @@ class FeedbackAdminController extends Controller
         foreach($v['feedback_ids'] as $fid){$fb=DB::table('N_WEB_CAREERS_Feedback_Jawaban')->where('Id_Feedback_Jawaban',$fid)->where('Flag_Cancellation','T')->first();if(!$fb||!$fb->Email_Token)continue;
             if($fb->Status_Pengisian==='TERISI'){$skipped++;continue;}
             $l=DB::table('N_WEB_CAREERS_Lamaran')->where('Id_Lamaran',$fb->Lamaran_Id)->first();if(!$l)continue;
-            $st=$l->Hasil_Akhir==='DITERIMA'?'LOLOS':'GUGUR';$pt=explode('.',$fb->Token_Hash,2);$url=rtrim(config('app.url'),'/').'/feedback/'.($pt[0]??'').'/'.($pt[1]??'');
+            $st=$l->Hasil_Akhir==='DITERIMA'?'LOLOS':'GUGUR';$url=TautanPengguna::feedback((int)$fid,(string)$l->Kode);
             try {
                 // dispatchSync: proses job langsung (blocking) tapi logic email tetap di Job class
                 \App\Jobs\Career\WcApplyEmailJob::dispatchSync((int)$l->Id_Users, $st, ['kode'=>$l->Kode, 'feedbackUrl'=>$url]);

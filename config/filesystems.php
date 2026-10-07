@@ -67,6 +67,27 @@ return [
             'visibility_handler' => \League\Flysystem\GoogleCloudStorage\UniformBucketLevelAccessVisibility::class, // Penting jika UBLA aktif
         ],
 
+        // DUA ZONA — bucket yang ditulis situs kandidat (dibaca & disalin ke
+        // bucket admin oleh Sync Worker) dan bucket yang hanya dibaca situs
+        // kandidat (diisi Sync Worker). Lihat config/sinkron.php.
+        'karantina' => [
+            'driver' => 'gcs',
+            'key_file_path' => env('GOOGLE_CLOUD_KEY_FILE_PATH', null),
+            'project_id' => env('GOOGLE_CLOUD_PROJECT_ID', 'your-project-id'),
+            'bucket' => env('GCS_BUCKET_KARANTINA', 'web-careers-karantina'),
+            'visibility' => 'private',
+            'visibility_handler' => \League\Flysystem\GoogleCloudStorage\UniformBucketLevelAccessVisibility::class,
+        ],
+
+        'publik' => [
+            'driver' => 'gcs',
+            'key_file_path' => env('GOOGLE_CLOUD_KEY_FILE_PATH', null),
+            'project_id' => env('GOOGLE_CLOUD_PROJECT_ID', 'your-project-id'),
+            'bucket' => env('GCS_BUCKET_PUBLIK', 'web-careers-publik'),
+            'visibility' => 'private',
+            'visibility_handler' => \League\Flysystem\GoogleCloudStorage\UniformBucketLevelAccessVisibility::class,
+        ],
+
 
     ],
 

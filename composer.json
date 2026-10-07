@@ -19,13 +19,10 @@
         "league/flysystem-google-cloud-storage": "^3.30",
         "opcodesio/log-viewer": "^3.17",
         "phpoffice/phpspreadsheet": "^5.4",
-        "realrashid/sweet-alert": "^7.2",
-        "resend/resend-laravel": "*",
         "setasign/fpdf": "^1.8",
         "setasign/fpdi": "^2.6",
         "smalot/pdfparser": "^2.12",
         "spatie/laravel-google-cloud-storage": "^2.3",
-        "spatie/pdf-to-image": "^3.2",
         "stackkit/laravel-google-cloud-tasks-queue": "^4.0",
         "vinkla/hashids": "^11.0"
     },
@@ -41,7 +38,6 @@
     "autoload": {
         "psr-4": {
             "App\\": "app/",
-            "Database\\Factories\\": "database/factories/",
             "Database\\Seeders\\": "database/seeders/"
         },
         "files": [

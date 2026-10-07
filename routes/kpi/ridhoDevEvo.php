@@ -2,7 +2,6 @@
 
 use App\Http\Controllers\Career\CareerAdminController;
 use App\Http\Controllers\Career\Dashboard\DashboardController;
-use App\Http\Controllers\Career\Lamaran\FormulirDrafController;
 use App\Http\Controllers\Career\Lamaran\LamaranController;
 use App\Http\Controllers\Career\Monitoring\MonitoringController;
 use App\Http\Controllers\Career\Lamaran\SkriningSesiController;
@@ -12,7 +11,7 @@ use Illuminate\Support\Facades\Route;
 
 /*
 |--------------------------------------------------------------------------
-| WEB CAREER — Admin Panel & Portal Kandidat  (induk route: developer Ridho)
+| WEB CAREER — Admin Panel & Webhook Integrasi  (induk route: developer Ridho)
 |--------------------------------------------------------------------------
 | KEAMANAN: seluruh grup di bawah WAJIB login (career.auth), dan panel admin
 | dibatasi peran ADMIN/SUPERADMIN (career.role). Sebelumnya semua halaman ini
@@ -272,66 +271,11 @@ Route::prefix('api/v1/karir')
         // seluruh master kini punya modulnya sendiri di routes/career/Master*/.
     });
 
-// ── Portal Kandidat (prefix /kandidat) ──
-// Wajib login, TANPA gerbang peran: milik kandidat itu sendiri; admin juga
-// boleh menengok untuk melihat tampilan kandidat.
-Route::prefix('kandidat')
-    ->middleware('career.auth')
-    ->name('career.portal.')
-    ->group(function () {
-        Route::get('/loker', [LamaranController::class, 'loker'])->name('loker')->middleware('career.permission:lokerPage,VIEW');
-        Route::get('/portal', [LamaranController::class, 'portalIndex'])->name('index')->middleware('career.permission:portalPage,VIEW');
-        Route::get('/lamaran/{id}', [LamaranController::class, 'portalDetail'])->name('detail')->middleware('career.permission:portalPage,VIEW');
-        // Pratinjau berkas milik kandidat sendiri (signed URL GCS).
-        Route::get('/lamaran/berkas/file/{id}', [LamaranController::class, 'portalBerkasFile'])->name('berkas.file');
-        // Berkas HASIL TAHAP (MCU, hasil wawancara) — boleh dilihat kandidat.
-        // Nilai tetap ditahan di payload; yang dibuka hanya dokumennya.
-        Route::get('/lamaran/tahap/berkas/{id}', [LamaranController::class, 'portalBerkasTahap'])->name('tahap.berkas');
-
-        // ── BERKAS AKTIVITAS yang diunggah KANDIDAT (tes offline dsb.) ──
-        // Aturan format & ukuran dibaca dari aktivitasnya sendiri, jadi tiap
-        // aktivitas boleh menuntut hal yang berbeda.
-        Route::get('/lamaran/tes/{id}/berkas', [LamaranController::class, 'tesBerkas'])->name('tes.berkas');
-        Route::post('/lamaran/tes/{id}/berkas', [LamaranController::class, 'tesBerkasUnggah'])->name('tes.berkas.unggah');
-        Route::delete('/lamaran/tes/berkas/{id}', [LamaranController::class, 'tesBerkasHapus'])->name('tes.berkas.hapus');
-        // Kandidat menyatakan berkasnya SUDAH LENGKAP. Terpisah dari unggah:
-        // "mengunggah" dan "selesai mengunggah" bukan hal yang sama, dan tanpa
-        // pernyataan ini admin menilai tanpa tahu apakah masih ada susulan.
-        Route::patch('/lamaran/tes/{id}/berkas/kirim', [LamaranController::class, 'tesBerkasKirim'])->name('tes.berkas.kirim');
-        Route::get('/lamaran/tes/berkas/{id}/file', [LamaranController::class, 'tesBerkasFile'])->name('tes.berkas.file');
-        // Surat pengantar jadwal (MCU) milik kandidat sendiri.
-        Route::get('/lamaran/tes/{id}/surat/{urutan?}', [LamaranController::class, 'tesSurat'])->where('urutan', '[0-9]+')->name('tes.surat');
-
-        // ── SIMPAN SEMENTARA (DRAF) FORMULIR TAHAP ──
-        // Semua endpoint memeriksa kepemilikan tahap lewat Lamaran.Id_Users, jadi
-        // id tahap milik orang lain tidak bisa dipakai membaca atau menimpa draf.
-        // Berkas draf HANYA dibuka lewat endpoint berkas di bawah (signed URL
-        // 15 menit) — front-end tidak pernah menyentuh API storage langsung.
-        Route::get('/lamaran/tahap/{id}/draf', [FormulirDrafController::class, 'ambil'])->name('draf.ambil');
-        Route::post('/lamaran/tahap/{id}/draf', [FormulirDrafController::class, 'simpan'])->name('draf.simpan');
-        Route::post('/lamaran/tahap/{id}/draf/berkas', [FormulirDrafController::class, 'unggahBerkas'])->name('draf.berkas.unggah');
-        Route::get('/lamaran/tahap/{id}/draf/berkas/{field}', [FormulirDrafController::class, 'berkas'])->name('draf.berkas');
-        // Dipanggil saat kandidat menghapus SATU BARIS bagian berulang. Tanpa
-        // ini berkas baris itu menetap di bucket selamanya, dan indeks berkas
-        // di atasnya tidak pernah turun.
-        Route::delete('/lamaran/tahap/{id}/draf/berkas', [FormulirDrafController::class, 'hapusBerkas'])->name('draf.berkas.hapus');
-
-        // JAWABAN KANDIDAT ATAS PENAWARAN — DICABUT.
-        //
-        // Kandidat tidak lagi menyatakan "terima" atau "mundur" sendiri lewat
-        // portal; keputusan itu dicatat tim di worklist (Keputusan dari
-        // Kandidat). Rutenya ikut dihapus, bukan cuma tombolnya disembunyikan:
-        // pintu yang masih terbuka tetap bisa diketuk langsung tanpa lewat
-        // layar, dan lamaran bisa tertutup oleh permintaan yang tak seorang pun
-        // tahu datang dari mana.
-    });
-
-// ── Referensi pendidikan untuk formulir (login saja) ──
+// ── Referensi pendidikan untuk pratinjau Master Formulir ──
 // Dipakai field ber-tipe `referensi`: jenjang, jenis institusi, kampus, prodi.
-// Kandidat memakainya saat mengisi formulir; admin memakainya di pratinjau
-// Master Formulir — jadi cukup career.auth, tanpa gerbang peran.
+// (Formulir kandidat yang sesungguhnya diisi di situs kandidat.)
 Route::prefix('api/v1/referensi')
-    ->middleware('career.auth')
+    ->middleware(['career.auth', 'career.role:ADMIN,SUPERADMIN'])
     ->name('career.referensi.')
     ->group(function () {
         Route::get('/{sumber}', [\App\Http\Controllers\Career\Referensi\ReferensiController::class, 'opsi'])
@@ -352,20 +296,6 @@ Route::post('/api/v1/webhook/hclearn-hasil', [LamaranController::class, 'hasilUj
 Route::get('/api/v1/webhook/master-sinkron-hris', [\App\Http\Controllers\Career\Integrasi\SinkronHrisController::class, 'index'])
     ->name('career.webhook.master-sinkron-hris');
 
-// ── API Lamaran kandidat (login saja, TANPA gerbang peran admin) ──
-// Dipisah dari api/v1/karir yang khusus admin, supaya kandidat bisa melamar
-// & mengirim formulir tanpa dianggap admin.
-Route::prefix('api/v1/lamaran')
-    ->middleware('career.auth')
-    ->name('career.lamaran.')
-    ->group(function () {
-        Route::get('/loker', [LamaranController::class, 'lokerList'])->name('loker')->middleware('career.permission:lokerPage,VIEW');
-        Route::post('/', [LamaranController::class, 'lamar'])->name('lamar')->middleware('career.permission:portalPage,CREATE');
-        Route::get('/apply-status/{processId}', [LamaranController::class, 'applyStatus'])->name('apply.status');
-        Route::post('/tahap/{id}/kirim', [LamaranController::class, 'kirimFormulir'])->name('kirim')->middleware('career.permission:portalPage,EDIT');
-        Route::delete('/{id}', [LamaranController::class, 'batalkan'])->name('batal');
-    });
-
 // ── BERKAS YANG DITAUTKAN DARI DALAM LAPORAN PDF (tanpa sesi) ──────────────
 //
 // PDF laporan dibuka di aplikasi pembaca PDF, dan aplikasi itu TIDAK membawa
@@ -381,11 +311,3 @@ Route::prefix('api/v1/lamaran')
 Route::get('/karir/laporan/{lamaran}/berkas/{berkas}', [LamaranController::class, 'laporanBerkas'])
     ->middleware('signed')
     ->name('career.laporan.berkas');
-
-// SURAT PENGANTAR JADWAL dari tautan SUREL — alasan yang sama: surel dibuka di
-// aplikasi surat tanpa sesi portal. Bertanda tangan & berumur (lihat
-// SuratJadwal::tautanEmail); tanpa login, tanpa bisa ditebak.
-Route::get('/karir/surat-jadwal/{id}/{urutan?}', [LamaranController::class, 'suratJadwalPublik'])
-    ->where('urutan', '[0-9]+')
-    ->middleware('signed')
-    ->name('career.surat.jadwal');

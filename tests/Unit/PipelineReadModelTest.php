@@ -3,11 +3,31 @@
 namespace Tests\Unit;
 
 use App\Support\Career\PipelineReadModel;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Collection;
-use PHPUnit\Framework\TestCase;
+use Illuminate\Support\Facades\Schema;
+use Tests\TestCase;
 
 class PipelineReadModelTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // urutanMengunci() membaca master mode urutan; tabel kosong = aktivitas
+        // dalam tahap tidak saling mengunci.
+        Schema::create('N_WEB_CAREERS_Master_Mode_Urutan', function (Blueprint $t) {
+            $t->string('Kode')->primary();
+            $t->string('Flag_Berurutan', 1)->default('T');
+        });
+    }
+
+    protected function tearDown(): void
+    {
+        Schema::dropIfExists('N_WEB_CAREERS_Master_Mode_Urutan');
+        parent::tearDown();
+    }
+
     private function lamaran(string $status): object
     {
         return (object) ['Status' => $status];

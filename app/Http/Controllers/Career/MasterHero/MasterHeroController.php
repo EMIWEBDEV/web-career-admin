@@ -279,11 +279,12 @@ class MasterHeroController extends Controller
     }
 
     /**
-     * PUBLIK — stream media (gambar/video) hero slide dari GCS untuk landing page.
-     * Path selalu dibaca dari kolom DB, tidak pernah dari URL. Tanpa filter
-     * Flag_Aktif: URL yang sama dipakai preview admin untuk slide NONAKTIF.
+     * Stream media (gambar/video) hero slide dari GCS untuk PRATINJAU admin —
+     * situs kandidat menyajikan salinannya sendiri. Path selalu dibaca dari
+     * kolom DB, tidak pernah dari URL. Tanpa filter Flag_Aktif: pratinjau juga
+     * menampilkan slide NONAKTIF.
      */
-    public function mediaPublik($id, $slot)
+    public function media($id, $slot)
     {
         $realId = Hashids::decode($id)[0] ?? null;
         $kolom = self::SLOT_KOLOM[$slot] ?? null;
@@ -308,7 +309,8 @@ class MasterHeroController extends Controller
             fpassthru($stream);
         }, 200, [
             'Content-Type' => $mime,
-            'Cache-Control' => 'public, max-age=86400, immutable',
+            // Di balik login admin — jangan disimpan cache bersama.
+            'Cache-Control' => 'private, max-age=86400, immutable',
         ]);
     }
 

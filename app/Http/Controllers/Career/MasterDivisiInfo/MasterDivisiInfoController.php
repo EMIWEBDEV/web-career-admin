@@ -326,18 +326,17 @@ class MasterDivisiInfoController extends Controller
     }
 
     /**
-     * PUBLIK — stream gambar divisi/sub dari GCS untuk landing page.
-     * Path selalu dibaca dari kolom DB (bukan dari URL) dan hanya untuk baris aktif.
+     * Stream gambar divisi/sub dari GCS untuk PRATINJAU admin — situs kandidat
+     * menyajikan salinannya sendiri. Path selalu dibaca dari kolom DB, tidak
+     * pernah dari URL.
      */
-    public function gambarPublik($jenis, $id, $slot)
+    public function gambar($jenis, $id, $slot)
     {
         $realId = Hashids::decode($id)[0] ?? null;
         $kolom = self::SLOT_KOLOM[$slot] ?? null;
         abort_if(! $realId || ! $kolom, 404);
 
-        // Tanpa filter Flag_Aktif: URL yang sama dipakai preview admin untuk baris
-        // NONAKTIF. Konten gambar landing tidak sensitif; keamanannya ada pada
-        // path yang selalu dibaca dari kolom DB (tidak pernah dari URL).
+        // Tanpa filter Flag_Aktif: pratinjau juga menampilkan baris NONAKTIF.
         [$tabel, $kunci] = $this->tabelJenis($jenis);
         $path = DB::table($tabel)->where($kunci, $realId)->value($kolom);
         abort_if(! $path, 404);
@@ -352,7 +351,8 @@ class MasterDivisiInfoController extends Controller
             fpassthru($stream);
         }, 200, [
             'Content-Type' => $mime,
-            'Cache-Control' => 'public, max-age=86400, immutable',
+            // Di balik login admin — jangan disimpan cache bersama.
+            'Cache-Control' => 'private, max-age=86400, immutable',
         ]);
     }
 

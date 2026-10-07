@@ -202,7 +202,8 @@ class CekSurat extends Command
      */
     private static function contoh(): array
     {
-        $portal = rtrim((string) config('app.url'), '/');
+        // Tautan untuk kandidat menunjuk ke SITUS KANDIDAT (project pengguna).
+        $portal = (string) config('sinkron.pengguna_url') ?: rtrim((string) config('app.url'), '/');
 
         return [
             'verifikasi-email' => [
